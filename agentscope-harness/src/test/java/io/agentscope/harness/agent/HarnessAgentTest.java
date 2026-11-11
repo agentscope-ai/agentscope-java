@@ -40,11 +40,14 @@ import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.ToolResultBlock;
+import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.middleware.MiddlewareBase;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.ExecutionConfig;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.Model;
+import io.agentscope.core.model.ModelRegistry;
 import io.agentscope.core.model.ToolSchema;
 import io.agentscope.core.session.SessionHistoryMode;
 import io.agentscope.core.session.SessionRecorder;
@@ -1287,6 +1290,33 @@ class HarnessAgentTest {
     }
 
     @Test
+    void fromAgent_modelStringRefSource_pinsCurrentInstance() {
+        Model registered = stubModel("ref-pinned");
+        ModelRegistry.register("from-agent-ref", registered);
+        try {
+            ReActAgent source =
+                    ReActAgent.builder()
+                            .name("source")
+                            .model("from-agent-ref")
+                            .toolkit(new Toolkit())
+                            .build();
+
+            HarnessAgent wrapped =
+                    HarnessAgent.Builder.fromAgent(source)
+                            .workspace(workspace)
+                            .abstractFilesystem(new LocalFilesystem(workspace))
+                            .build();
+
+            assertSame(
+                    registered,
+                    wrapped.getModel(),
+                    "a string-reference source must be pinned to its current instance");
+        } finally {
+            ModelRegistry.reset();
+        }
+    }
+
+    @Test
     void fromAgent_rebuildsHarnessPlatformToolsWithoutCollision() {
         // A HarnessAgent-built source carries harness platform tool instances in its toolkit.
         // fromAgent().build() must strip those and let buildInstance() re-register fresh ones:
@@ -2014,6 +2044,65 @@ class HarnessAgentTest {
     // =========================================================================
     // general-purpose mirroring
     // =========================================================================
+
+    @ParameterizedTest
+    @ValueSource(strings = {"parent", "general-purpose", "read-worker"})
+    void configuredReadFileMaximumReachesParentAndBuiltInSubagents(String agentName)
+            throws Exception {
+        Files.createDirectories(workspace);
+        Files.writeString(workspace.resolve("large.txt"), "x".repeat(100_000));
+        HarnessAgent.Builder builder =
+                HarnessAgent.builder()
+                        .model(stubModel("ok"))
+                        .workspace(workspace)
+                        .abstractFilesystem(new LocalFilesystem(workspace))
+                        .readFileMaxChars(64_000)
+                        .subagent(
+                                SubagentDeclaration.builder()
+                                        .name("read-worker")
+                                        .description("Reads files")
+                                        .workspaceMode(WorkspaceMode.SHARED)
+                                        .inlineAgentsBody("Read the requested file.")
+                                        .build());
+        try (HarnessAgent agent =
+                "parent".equals(agentName)
+                        ? builder.build()
+                        : (HarnessAgent)
+                                builder.buildSubagentEntries(workspace).stream()
+                                        .filter(entry -> agentName.equals(entry.name()))
+                                        .findFirst()
+                                        .orElseThrow()
+                                        .factory()
+                                        .create(RuntimeContext.empty())) {
+            ToolUseBlock use =
+                    ToolUseBlock.builder()
+                            .id("configured-read")
+                            .name("read_file")
+                            .input(Map.of("path", "large.txt", "max_chars", Integer.MAX_VALUE))
+                            .build();
+            ToolResultBlock result =
+                    agent.getToolkit()
+                            .callTools(List.of(use), null, null, RuntimeContext.empty())
+                            .block(Duration.ofSeconds(5))
+                            .get(0);
+            String output =
+                    result.getOutput().stream()
+                            .filter(TextBlock.class::isInstance)
+                            .map(TextBlock.class::cast)
+                            .map(TextBlock::getText)
+                            .collect(Collectors.joining());
+            assertTrue(output.startsWith("x".repeat(64_000) + "\n[Output truncated."));
+            assertTrue(output.contains("char_offset=64000"));
+        }
+    }
+
+    @ParameterizedTest
+    @ValueSource(ints = {-1, 0, 15_999})
+    void readFileMaximumRejectsValuesBelowDefaultPageSize(int maximum) {
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> HarnessAgent.builder().readFileMaxChars(maximum));
+    }
 
     @Test
     void generalPurpose_mirrorDisableFilesystemTools() throws Exception {

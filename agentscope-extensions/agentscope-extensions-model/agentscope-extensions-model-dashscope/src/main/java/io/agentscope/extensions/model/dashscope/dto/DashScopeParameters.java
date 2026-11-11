@@ -115,6 +115,17 @@ public class DashScopeParameters {
     @JsonProperty("response_format")
     ResponseFormat responseFormat;
 
+    /**
+     * Skills for document-capable models, e.g. PPT generation on {@code qwen-doc-turbo}. Requires
+     * streaming: the API rejects the parameter in non-streaming mode.
+     *
+     * <p>From {@link io.agentscope.core.model.GenerateOptions} this is set per call with
+     * {@code additionalBodyParam("skill", List.of(DashScopeSkill.pptTemplate("news_01")))}; the
+     * DashScope HTTP client merges additional body params into this parameters object.
+     */
+    @JsonProperty("skill")
+    private List<DashScopeSkill> skill;
+
     public DashScopeParameters() {}
 
     public String getResultFormat() {
@@ -285,6 +296,24 @@ public class DashScopeParameters {
         this.responseFormat = responseFormat;
     }
 
+    /**
+     * Get the skills enabled for this request.
+     *
+     * @return the skill list, or null when no skill is configured
+     */
+    public List<DashScopeSkill> getSkill() {
+        return skill;
+    }
+
+    /**
+     * Set the skills enabled for this request.
+     *
+     * @param skill the skill list (e.g. PPT generation for qwen-doc-turbo)
+     */
+    public void setSkill(List<DashScopeSkill> skill) {
+        this.skill = skill;
+    }
+
     public static Builder builder() {
         return new Builder();
     }
@@ -394,6 +423,17 @@ public class DashScopeParameters {
 
         public Builder responseFormat(ResponseFormat responseFormat) {
             params.setResponseFormat(responseFormat);
+            return this;
+        }
+
+        /**
+         * Set the skills enabled for this request.
+         *
+         * @param skill the skill list (e.g. PPT generation for qwen-doc-turbo)
+         * @return this builder
+         */
+        public Builder skill(List<DashScopeSkill> skill) {
+            params.setSkill(skill);
             return this;
         }
 

@@ -59,6 +59,7 @@ import java.util.function.UnaryOperator;
 import org.a2aproject.sdk.client.Client;
 import org.a2aproject.sdk.client.ClientBuilder;
 import org.a2aproject.sdk.client.ClientEvent;
+import org.a2aproject.sdk.client.config.ClientConfig;
 import org.a2aproject.sdk.client.transport.jsonrpc.JSONRPCTransport;
 import org.a2aproject.sdk.client.transport.jsonrpc.JSONRPCTransportConfig;
 import org.a2aproject.sdk.spec.A2AClientException;
@@ -364,7 +365,12 @@ public class A2aAgent extends AgentBase {
         LoggerUtil.debug(
                 log, "[{}] A2aAgent build A2a Client with Agent Card: {}.", requestId, agentCard);
         A2aCall call =
-                new A2aCall(requestId, session, client, new ClientEventContext(requestId, this));
+                new A2aCall(
+                        requestId,
+                        session,
+                        client,
+                        new ClientEventContext(requestId, this),
+                        isStreaming(agentCard));
         runningCalls.put(session, call);
         return call;
     }
@@ -411,8 +417,9 @@ public class A2aAgent extends AgentBase {
     }
 
     /**
-     * Sends {@code msgs} to the remote agent. Streams the text and thinking it replies with, and
-     * keeps its reply in {@code reply}.
+     * Sends {@code msgs} to the remote agent, carrying the user and session id of the call: the
+     * user id as an envelope-level metadata key and the session id as the A2A {@code contextId}.
+     * Streams the text and thinking it replies with, and keeps its reply in {@code reply}.
      */
     private Flux<AgentEvent> exchange(
             A2aCall call, List<Msg> msgs, ReplyEvents events, AtomicReference<Msg> reply) {
@@ -423,7 +430,12 @@ public class A2aAgent extends AgentBase {
                                     null == events ? call.requestId() : events.replyId(),
                                     sink::next);
                     Disposable disposable =
-                            doExecute(call, MessageConvertUtil.convertFromMsg(msgs))
+                            doExecute(
+                                            call,
+                                            MessageConvertUtil.convertFromMsg(
+                                                    msgs,
+                                                    call.session().userId(),
+                                                    call.session().sessionId()))
                                     .subscribe(
                                             msg -> {
                                                 reply.set(msg);
@@ -517,6 +529,14 @@ public class A2aAgent extends AgentBase {
         return null != memory ? memory : new StateMemory(getAgentState(null));
     }
 
+    /** Whether the client streams, decided the same way as {@link Client#sendMessage}. */
+    private boolean isStreaming(AgentCard agentCard) {
+        ClientConfig clientConfig = this.a2aAgentConfig.clientConfig();
+        return (null == clientConfig || clientConfig.isStreaming())
+                && null != agentCard.capabilities()
+                && agentCard.capabilities().streaming();
+    }
+
     private Client buildA2aClient(AgentCard agentCard) {
         ClientBuilder builder = Client.builder(agentCard);
         if (this.a2aAgentConfig.clientTransports().isEmpty()) {
@@ -572,7 +592,24 @@ public class A2aAgent extends AgentBase {
                                 }
                                 eventContext.completeExceptionally(err);
                             });
+                    if (!call.streaming() && !eventContext.isTerminalDelivered()) {
+                        // A non-streaming reply is the only event, so an unfinished task ends here.
+                        eventContext.completeExceptionally(
+                                new IllegalStateException(unfinishedTaskMessage(eventContext)));
+                    }
                 });
+    }
+
+    private static String unfinishedTaskMessage(ClientEventContext eventContext) {
+        Task task = eventContext.getTask();
+        if (null == task) {
+            return "A2A reply ended without a final response.";
+        }
+        return "A2A task "
+                + task.id()
+                + " is still in state "
+                + (null != task.status() ? task.status().state() : null)
+                + " after a non-streaming reply; A2aAgent does not poll unfinished tasks.";
     }
 
     /** Where the events of a reply go. */
@@ -580,7 +617,11 @@ public class A2aAgent extends AgentBase {
 
     /** The client and the event context of one call. */
     private record A2aCall(
-            String requestId, Session session, Client client, ClientEventContext eventContext) {}
+            String requestId,
+            Session session,
+            Client client,
+            ClientEventContext eventContext,
+            boolean streaming) {}
 
     /** A session of the agent. */
     private record Session(String userId, String sessionId) {}

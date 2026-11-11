@@ -153,7 +153,8 @@ class GeminiChatModelTest {
         GeminiChatModel model = GeminiChatModel.builder().apiKey(mockApiKey).build();
 
         assertNotNull(model, "Model should be created");
-        assertEquals("gemini-2.5-flash", model.getModelName());
+        assertEquals("gemini-3.8-flash", model.getModelName());
+        assertEquals(1_048_576, model.getContextWindowSize());
     }
 
     @Test

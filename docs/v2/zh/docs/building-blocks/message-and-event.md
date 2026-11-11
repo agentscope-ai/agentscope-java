@@ -197,7 +197,7 @@ sequenceDiagram
 | `getId()` | `String` | 唯一事件标识符 |
 | `getCreatedAt()` | `String` | ISO 8601 时间戳 |
 | `getType()` | `AgentEventType` | 事件类型枚举 |
-| `getSource()` | `String` | 事件来源路径。顶层 Agent 为 `null`；子 Agent 事件为斜杠分隔的路径（如 `"main/researcher"`），用于区分父子 Agent 事件 |
+| `getSource()` | `String` | 事件来源路径。顶层 Agent 为 `null`；本地子 Agent 事件为 `parentSessionId/agentId/subagentSessionId`（如 `"main/researcher/sub-1"`），远程子 Agent 事件为 `parentSessionId/agentId/taskId` |
 | `getMetadata()` | `Map<String, Object>` | 可选键值元数据。远程子 agent 转发时会写入 `taskId`（`AgentEvent.METADATA_TASK_ID`，对应 harness / Agent Protocol 任务 id）与 `parentSessionId`（`AgentEvent.METADATA_PARENT_SESSION_ID`，对应父 session） |
 
 事件按类别分组如下。除特别说明外，每个事件还携带 `getReplyId()`，关联到正在构建的消息。

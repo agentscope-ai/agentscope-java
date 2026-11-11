@@ -167,6 +167,8 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.CancellationException;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
@@ -258,6 +260,15 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
 
     private final String sysPrompt;
     private final Model model;
+
+    /**
+     * Model identity string set by {@link Builder#model(String)} — a reference-style alternative
+     * to the instance form, resolved once per run at run entry through {@link ModelRegistry}
+     * (composite {@code contextId@modelId} or a plain registry string). {@code null} when the
+     * agent was given a {@link Model} instance.
+     */
+    private final String modelIdentity;
+
     private final int maxIters;
     private final ExecutionConfig modelExecutionConfig;
     private final ExecutionConfig toolExecutionConfig;
@@ -328,6 +339,12 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
      * Builder-time permission template, applied to every freshly-created slot. Nullable.
      */
     private final PermissionContextState initialPermissionContext;
+
+    /**
+     * Slots that have already applied this agent's {@link #initialPermissionContext}. The context
+     * replaces the slot's persisted context once, when the slot is first activated by this agent.
+     */
+    private final Set<String> permissionContextAppliedSlots = ConcurrentHashMap.newKeySet();
 
     // ==================== 2.0 Core Fields ====================
 
@@ -411,6 +428,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         this.skillWorkDir = builder.skillWorkDir;
         this.sysPrompt = builder.sysPrompt;
         this.model = builder.model;
+        this.modelIdentity = builder.modelIdentity;
         this.maxIters = builder.maxIters;
         this.modelExecutionConfig = builder.modelExecutionConfig;
         this.toolExecutionConfig = builder.toolExecutionConfig;
@@ -430,7 +448,9 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         this.sessionLogStore = builder.sessionLogStore;
         this.sessionHistoryMode = builder.sessionHistoryMode;
         this.sessionLogAgentId =
-                builder.sessionLogAgentId == null ? getName() : builder.sessionLogAgentId;
+                builder.sessionLogAgentId != null
+                        ? builder.sessionLogAgentId
+                        : (getName() != null && !getName().isBlank() ? getName() : getAgentId());
         this.conflictPolicy =
                 builder.conflictPolicy != null ? builder.conflictPolicy : ConflictPolicy.OVERWRITE;
         this.defaultSessionId =
@@ -564,16 +584,26 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         AgentState toSave = scope.state;
         return Mono.<Void>fromRunnable(
                         () -> {
-                            long newVersion =
-                                    persistAgentStateCas(
-                                            ref.userId,
-                                            ref.sessionId,
-                                            scope.slotKey,
-                                            toSave,
-                                            scope.loadedVersion,
-                                            scope.loadedContextSize);
-                            if (newVersion != AgentStateStore.UNVERSIONED) {
-                                scope.loadedVersion = newVersion;
+                            CompletableFuture<Void> write = scope.beginStateWrite();
+                            if (write == null) {
+                                // The call was cancelled before this write started; a cancelled
+                                // call no longer owns the session, so it must not write it.
+                                return;
+                            }
+                            try {
+                                long newVersion =
+                                        persistAgentStateCas(
+                                                ref.userId,
+                                                ref.sessionId,
+                                                scope.slotKey,
+                                                toSave,
+                                                scope.loadedVersion,
+                                                scope.loadedContextSize);
+                                if (newVersion != AgentStateStore.UNVERSIONED) {
+                                    scope.loadedVersion = newVersion;
+                                }
+                            } finally {
+                                write.complete(null);
                             }
                         })
                 .subscribeOn(Schedulers.boundedElastic());
@@ -790,14 +820,23 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                             .value());
         }
         final AgentState resolvedState = loaded;
+        boolean applyInitialPermissionContext =
+                initialPermissionContext != null && permissionContextAppliedSlots.add(slot);
+        PermissionContextState effectivePermissionContext =
+                applyInitialPermissionContext
+                        ? initialPermissionContext
+                        : resolvedState.getPermissionContext();
+        if (applyInitialPermissionContext) {
+            resolvedState.setPermissionContext(effectivePermissionContext);
+        }
         PermissionEngine loadedEngine;
         if (stateStore != null || activeRecorder != null) {
-            loadedEngine = new PermissionEngine(loaded.getPermissionContext());
+            loadedEngine = new PermissionEngine(effectivePermissionContext);
             permissionEngineCache.put(slot, loadedEngine);
         } else {
             loadedEngine =
                     permissionEngineCache.computeIfAbsent(
-                            slot, k -> new PermissionEngine(resolvedState.getPermissionContext()));
+                            slot, k -> new PermissionEngine(effectivePermissionContext));
         }
         return new CallExecution(loaded, loadedEngine, slot, loadedVersion);
     }
@@ -837,58 +876,112 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             List<Msg> msgs, RuntimeContext rc, RunControl control) {
         if (sessionLogStore == null || sessionHistoryMode == SessionHistoryMode.LEGACY)
             return super.acquireCallExecution(msgs, rc, control);
-        return Mono.fromCallable(
-                        () -> {
-                            RuntimeContext callContext =
-                                    rc == null
-                                            ? RuntimeContext.empty()
-                                            : RuntimeContext.builder(rc).build();
-                            String sid = callContext.getSessionId();
-                            if (sid == null || sid.isBlank()) sid = defaultSessionId;
-                            SessionRecorder recorder =
-                                    new SessionRecorder(
-                                            sessionLogStore.open(
-                                                    new SessionKey(
-                                                            callContext.getUserId(),
-                                                            sessionLogAgentId,
-                                                            sid),
-                                                    callContext),
-                                            (String) callContext.get(SessionRecorder.TURN_ID_KEY),
-                                            control.runId(),
-                                            (SessionExportSink)
-                                                    callContext.get(SessionExportSink.CONTEXT_KEY));
-                            callContext.put(SessionRecorder.CONTEXT_KEY, recorder);
-                            if (callContext.get(SessionRecorder.PARENT_KEY) != null)
-                                recorder.append(
-                                        "subagent/linked",
-                                        callContext.get(SessionRecorder.PARENT_KEY));
-                            try {
-                                SessionExecution execution = SessionExecution.from(callContext);
-                                if (execution != null) execution.prepare(recorder);
-                                CallExecution acquired =
-                                        (CallExecution)
-                                                beforeAgentExecution(msgs, callContext, control);
-                                if (rc != null) rc.setAgentState(acquired.state);
-                                return (Object) acquired;
-                            } catch (Throwable error) {
-                                closeFailedSessionExecution(callContext, error);
-                                throw error;
-                            }
-                        })
-                .subscribeOn(Schedulers.boundedElastic())
-                .flatMap(
-                        scope -> {
-                            CallExecution ce = (CallExecution) scope;
-                            return SessionRecorder.from(ce.rc)
-                                    .start(
-                                            SessionExecution.from(ce.rc) == null
-                                                    ? msgs
-                                                    : SessionExecution.from(ce.rc).inputs(),
-                                            ce.state)
-                                    .thenReturn(scope)
-                                    .doOnError(error -> closeFailedSessionExecution(ce.rc, error));
-                        })
-                .doOnDiscard(CallExecution.class, scope -> SessionRecorder.from(scope.rc).close());
+        // A subscriber can cancel after the recorder is created, which already holds the writer
+        // lease. `usingWhen` has no scope to release until this Mono emits, so the lease would
+        // stay taken until it expires and the next call on the same session is rejected. Remember
+        // the cancellation and close the recorder once it exists — both when the cancel lands
+        // before this Mono emits and when it lands while the first journal write is in flight.
+        return Mono.defer(
+                () -> {
+                    AtomicBoolean cancelled = new AtomicBoolean();
+                    return Mono.fromCallable(
+                                    () -> {
+                                        RuntimeContext callContext =
+                                                rc == null
+                                                        ? RuntimeContext.empty()
+                                                        : RuntimeContext.builder(rc).build();
+                                        String sid = callContext.getSessionId();
+                                        if (sid == null || sid.isBlank()) sid = defaultSessionId;
+                                        SessionRecorder recorder =
+                                                new SessionRecorder(
+                                                        sessionLogStore.open(
+                                                                new SessionKey(
+                                                                        callContext.getUserId(),
+                                                                        sessionLogAgentId,
+                                                                        sid),
+                                                                callContext),
+                                                        (String)
+                                                                callContext.get(
+                                                                        SessionRecorder
+                                                                                .TURN_ID_KEY),
+                                                        control.runId(),
+                                                        (SessionExportSink)
+                                                                callContext.get(
+                                                                        SessionExportSink
+                                                                                .CONTEXT_KEY));
+                                        callContext.put(SessionRecorder.CONTEXT_KEY, recorder);
+                                        try {
+                                            if (cancelled.get()) {
+                                                cancelBeforeSessionStart(callContext);
+                                                return null;
+                                            }
+                                            if (callContext.get(SessionRecorder.PARENT_KEY) != null)
+                                                recorder.append(
+                                                        "subagent/linked",
+                                                        callContext.get(
+                                                                SessionRecorder.PARENT_KEY));
+                                            SessionExecution execution =
+                                                    SessionExecution.from(callContext);
+                                            if (execution != null)
+                                                execution.prepare(recorder, msgs);
+                                            CallExecution acquired =
+                                                    (CallExecution)
+                                                            beforeAgentExecution(
+                                                                    msgs, callContext, control);
+                                            if (rc != null) rc.setAgentState(acquired.state);
+                                            if (cancelled.get()) {
+                                                cancelBeforeSessionStart(callContext);
+                                                return null;
+                                            }
+                                            return (Object) acquired;
+                                        } catch (Throwable error) {
+                                            closeFailedSessionExecution(callContext, error);
+                                            throw error;
+                                        }
+                                    })
+                            .subscribeOn(Schedulers.boundedElastic())
+                            .doOnCancel(() -> cancelled.set(true))
+                            .flatMap(
+                                    scope -> {
+                                        CallExecution ce = (CallExecution) scope;
+                                        return SessionRecorder.from(ce.rc)
+                                                .start(msgs, ce.state)
+                                                .thenReturn(scope)
+                                                .doOnError(
+                                                        error ->
+                                                                closeFailedSessionExecution(
+                                                                        ce.rc, error))
+                                                .doOnCancel(() -> cancelJournalStart(ce));
+                                    })
+                            .doOnDiscard(
+                                    CallExecution.class,
+                                    scope -> SessionRecorder.from(scope.rc).close());
+                });
+    }
+
+    /**
+     * Same window as the acquisition start, one step earlier: the cancel lands after the
+     * recorder exists but before the acquisition emits.
+     */
+    private void cancelBeforeSessionStart(RuntimeContext context) {
+        closeFailedSessionExecution(
+                context, new CancellationException("Call cancelled before session start"));
+    }
+
+    /**
+     * Same window as the acquisition start, one step later: the cancel lands while the journal
+     * is starting, before the resource has been emitted.
+     */
+    private void cancelJournalStart(CallExecution scope) {
+        // The first journal flush may still hold the recorder monitor. Closing here would block
+        // the cancelling thread (often an event loop), so hand the cleanup to boundedElastic.
+        Schedulers.boundedElastic()
+                .schedule(
+                        () ->
+                                closeFailedSessionExecution(
+                                        scope.rc,
+                                        new CancellationException(
+                                                "Call cancelled during journal startup")));
     }
 
     private void closeFailedSessionExecution(RuntimeContext context, Throwable error) {
@@ -910,7 +1003,12 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
     protected Mono<Void> releaseCallExecution(Object scope, String status) {
         if (!(scope instanceof CallExecution ce)) return Mono.empty();
         SessionRecorder recorder = SessionRecorder.from(ce.rc);
-        if (recorder == null) return Mono.empty();
+        if (recorder == null) {
+            // Cancelling cannot abort a state write already running on boundedElastic. Hold the
+            // session gate until it lands, so the next same-session call loads after it instead
+            // of being overwritten by it.
+            return "cancelled".equals(status) ? Mono.defer(ce::closeStateWrites) : Mono.empty();
+        }
         return Mono.fromRunnable(
                         () -> {
                             SessionExecution execution = SessionExecution.from(ce.rc);
@@ -1001,8 +1099,6 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
 
     @Override
     protected List<Msg> inputsForCall(Object scope, List<Msg> inputs) {
-        if (scope instanceof CallExecution ce && SessionExecution.from(ce.rc) != null)
-            inputs = SessionExecution.from(ce.rc).inputs();
         if (!(scope instanceof CallExecution ce)
                 || SessionRecorder.from(ce.rc) == null
                 || inputs == null) return inputs;
@@ -1305,24 +1401,46 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                     effective.put(SessionRecorder.TURN_ID_KEY, identity.turnId());
                     effective.put(ExecutionIdentity.CONTEXT_KEY, identity);
                     Flux<AgentEvent> events =
-                            buildIdentifiedAgentStream(msgs, effective, doCallFn)
-                                    .doOnNext(
-                                            event -> {
-                                                if (event.getSource() == null
-                                                        || event.getSource().isBlank())
-                                                    event.withExecution(identity);
-                                            })
-                                    .doOnEach(
-                                            signal -> {
-                                                if (signal.isOnComplete() || signal.isOnError())
-                                                    source.setAgentState(effective.getAgentState());
-                                            })
-                                    .contextWrite(control::attach);
+                            resolveModelAtEntry(
+                                    effective,
+                                    buildIdentifiedAgentStream(msgs, effective, doCallFn)
+                                            .doOnNext(
+                                                    event -> {
+                                                        if (event.getSource() == null
+                                                                || event.getSource().isBlank())
+                                                            event.withExecution(identity);
+                                                    })
+                                            .doOnEach(
+                                                    signal -> {
+                                                        if (signal.isOnComplete()
+                                                                || signal.isOnError())
+                                                            source.setAgentState(
+                                                                    effective.getAgentState());
+                                                    })
+                                            .contextWrite(control::attach));
                     if (inherited != null) return events;
                     return events.doOnComplete(() -> control.finish(AgentRun.Status.COMPLETED))
                             .doOnError(error -> control.finish(AgentRun.Status.FAILED))
                             .doOnCancel(control::cancel);
                 });
+    }
+
+    /**
+     * Resolves the agent's identity string once at run entry, off the subscriber's thread: {@code
+     * ModelRegistry.resolve} may run a factory or wait on a shared in-flight creation, which
+     * must never block a Reactor event-loop thread. The resolved instance is memoized into
+     * {@code effective} by {@link #getModel(RuntimeContext)}, so every later model boundary of
+     * the run is a plain cache read. Runs with a pinned model, and agents configured with a
+     * {@link Model} instance, skip the scheduler hop — there is nothing to resolve.
+     */
+    private Flux<AgentEvent> resolveModelAtEntry(
+            RuntimeContext effective, Flux<AgentEvent> events) {
+        if (modelIdentity == null || effective.get(Model.class) != null) {
+            return events;
+        }
+        return Mono.fromCallable(() -> getModel(effective))
+                .subscribeOn(Schedulers.boundedElastic())
+                .thenMany(events);
     }
 
     private Flux<AgentEvent> buildIdentifiedAgentStream(
@@ -1585,10 +1703,13 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                             !scope.activeToolkit
                                     .getToolSchemas(activeGroups, scope.toolRequestConfig)
                                     .isEmpty();
+                    // Probe the model actually serving this call (per-call modelId when set),
+                    // not the build-time default: native structured-output support may differ.
+                    Model callModel = getModel(scope.rc);
                     boolean useNative =
                             hasTools
-                                    ? model.supportsNativeStructuredOutputWithTools()
-                                    : model.supportsNativeStructuredOutput();
+                                    ? callModel.supportsNativeStructuredOutputWithTools()
+                                    : callModel.supportsNativeStructuredOutput();
                     log.debug(
                             "Structured output routing: native={}, hasTools={} (agent={}#{})",
                             useNative,
@@ -2063,6 +2184,42 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
 
         /** Context size at load time; used by {@link ConflictPolicy#APPEND_MERGE}. */
         int loadedContextSize;
+
+        /** Guards {@link #stateWriteInFlight} and {@link #stateWritesClosed}. */
+        private final Object stateWriteLock = new Object();
+
+        /** Last state write started by this call; already complete when none is running. */
+        private CompletableFuture<Void> stateWriteInFlight =
+                CompletableFuture.completedFuture(null);
+
+        /** Set once the call is cancelled: no further state writes may start. */
+        private boolean stateWritesClosed;
+
+        /**
+         * Registers a state write about to start.
+         *
+         * @return the future to complete when the write ends, or {@code null} when the call has
+         *     been cancelled and must not write
+         */
+        CompletableFuture<Void> beginStateWrite() {
+            synchronized (stateWriteLock) {
+                if (stateWritesClosed) {
+                    return null;
+                }
+                stateWriteInFlight = new CompletableFuture<>();
+                return stateWriteInFlight;
+            }
+        }
+
+        /** Stops new state writes and completes once the write already running (if any) ends. */
+        Mono<Void> closeStateWrites() {
+            CompletableFuture<Void> running;
+            synchronized (stateWriteLock) {
+                stateWritesClosed = true;
+                running = stateWriteInFlight;
+            }
+            return Mono.fromFuture(running, true);
+        }
 
         /**
          * Per-call system message, propagated across PreCallEvent → PreReasoningEvent /
@@ -2818,7 +2975,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                             hookDispatcher.firePreReasoning(
                                                     state.contextMutable(),
                                                     systemMsg,
-                                                    model.getModelName())))
+                                                    getModel(rc).getModelName())))
                     .flatMap(
                             event -> {
                                 GenerateOptions options =
@@ -2839,7 +2996,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                 // (soTool != null), where nativeResponseFormat is always null.
                                 if (soForceToolChoiceCount > 0
                                         && soTool != null
-                                        && model.supportsToolChoiceSpecific()) {
+                                        && getModel(rc).supportsToolChoiceSpecific()) {
                                     options =
                                             GenerateOptions.mergeOptions(
                                                     GenerateOptions.builder()
@@ -2959,7 +3116,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         @SuppressWarnings("deprecation")
         private Mono<Msg> runPostReasoningPipeline(Msg msg, int iter) {
             return hookDispatcher
-                    .firePostReasoning(msg, model.getModelName())
+                    .firePostReasoning(msg, getModel(rc).getModelName())
                     .flatMap(
                             event -> {
                                 Msg eventMsg = event.getReasoningMessage();
@@ -3027,7 +3184,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                     log.warn(
                                             "Final response has no visible content (empty reply),"
                                                     + " model: {}, iter: {}",
-                                            model.getModelName(),
+                                            getModel(rc).getModelName(),
                                             iter);
                                     state.contextMutable().add(buildEmptyResponseReminder());
                                 }
@@ -3925,7 +4082,11 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             if (toolCalls == null || toolCalls.isEmpty()) {
                 return Mono.just(new PermissionGate(List.of(), Set.of()));
             }
-            boolean useEngine = !state.getPermissionContext().isTrivial();
+            // Ask the engine whenever the context it was actually built from is non-trivial, not
+            // the persisted one: with the builder's rules authoritative the engine may carry rules
+            // for a session whose persisted context is empty, and reading the session's context
+            // here would leave that session on the lightweight path where no rule is consulted.
+            boolean useEngine = !permissionEngine.getContext().isTrivial();
             return Flux.fromIterable(toolCalls)
                     .concatMap(use -> evaluateOne(use, useEngine))
                     .collectList()
@@ -4998,13 +5159,17 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             RuntimeContext callContext,
             ModelRequestPreparer.Purpose purpose,
             Consumer<AgentEvent> events) {
+        // Per-call selection: the context's modelId when set (fails fast on unresolvable ids),
+        // otherwise the build-time default. Runtime provider failures of the selected model are
+        // still covered by the configured fallback model below.
+        Model callModel = getModel(callContext);
         Model fallbackModel = modelConfig.fallbackModel();
         if (fallbackModel == null) {
-            return SessionModels.wrap(model, callContext, purpose.name());
+            return SessionModels.wrap(callModel, callContext, purpose.name());
         }
         FailoverListener failoverListener = modelConfig.failoverListener();
 
-        AtomicReference<Model> activeModel = new AtomicReference<>(model);
+        AtomicReference<Model> activeModel = new AtomicReference<>(callModel);
         return new SessionModels.ManagedModel() {
             @Override
             public Flux<ChatResponse> stream(
@@ -5013,8 +5178,9 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                 Flux<ChatResponse> primaryFlux =
                         Flux.defer(
                                 () -> {
-                                    activeModel.set(model);
-                                    return SessionModels.wrap(model, callContext, purpose.name())
+                                    activeModel.set(callModel);
+                                    return SessionModels.wrap(
+                                            callModel, callContext, purpose.name())
                                             .stream(messages, tools, options);
                                 });
                 return primaryFlux.switchOnFirst(
@@ -5030,16 +5196,16 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                                     "reason",
                                                     "fallback",
                                                     "from",
-                                                    model.getModelName(),
+                                                    callModel.getModelName(),
                                                     "to",
                                                     fallbackModel.getModelName()));
                                 activeModel.set(fallbackModel);
                                 log.warn(
                                         "Primary model {} failed, switching to fallback {}",
-                                        model.getModelName(),
+                                        callModel.getModelName(),
                                         fallbackModel.getModelName(),
                                         error);
-                                notifyFailover(failoverListener, model, error);
+                                notifyFailover(failoverListener, callModel, error);
                                 if (modelRequestPreparer == null) {
                                     return SessionModels.wrap(
                                             fallbackModel, callContext, purpose.name())
@@ -5228,8 +5394,73 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         return sysPrompt;
     }
 
+    /**
+     * Plain accessor for the builder-configured {@link Model} instance: performs no resolution
+     * and no fallback, and returns {@code null} when the agent was configured with a model
+     * identity string ({@link Builder#model(String)}). For the model effective on a call use
+     * {@link #getModel(RuntimeContext)}; for the configured identity use {@link
+     * #getModelIdentity()}.
+     */
     public Model getModel() {
         return model;
+    }
+
+    /**
+     * Returns the builder-configured model identity string, or {@code null} when a {@link
+     * Model} instance was configured directly.
+     *
+     * @see Builder#model(String)
+     */
+    public String getModelIdentity() {
+        return modelIdentity;
+    }
+
+    /**
+     * Returns the model effective for a call carrying {@code ctx}, by priority: a {@link Model}
+     * pinned on the context's typed bag ({@code ctx.put(Model.class, ...)} — pinned by the
+     * caller, or memoized at run entry by the {@code call()}/{@code streamEvents()} pipeline),
+     * then this agent's identity string resolved through {@link ModelRegistry}, then the
+     * configured {@link Model} instance.
+     *
+     * <p>The {@code Model.class} slot of {@link RuntimeContext} is intentionally the generic
+     * typed channel, not a private framework flag: the caller may pin a per-call selection,
+     * and middleware or tools may replace the model mid-run through the same {@code
+     * ctx.put(Model.class, ...)} call to adapt to per-request business needs — RuntimeContext
+     * content is designed to be reworked mid-run by middleware. What the framework itself
+     * guarantees is narrower: the pipeline resolves the identity once at run entry, memoizes
+     * the result into {@code ctx}, and from then on every model boundary of the run is a plain
+     * read of the slot — the framework never re-resolves or switches the model on its own
+     * mid-response; a fresh context re-resolves. Run-entry resolution happens on a
+     * boundedElastic scheduler ({@code ModelRegistry.resolve} may run a factory), so the
+     * subscriber's thread — possibly a Reactor event loop — is never blocked. A
+     * set-but-unresolvable identity throws {@link IllegalArgumentException} — an explicit
+     * model choice fails loudly rather than silently falling back (wrong model, wrong
+     * credentials in multi-tenant setups).
+     *
+     * @param ctx the per-call runtime context (may be {@code null}, meaning no per-call pin
+     *     and no memoization)
+     */
+    public Model getModel(RuntimeContext ctx) {
+        if (ctx != null) {
+            Model pinned = ctx.get(Model.class);
+            if (pinned != null) {
+                return pinned;
+            }
+        }
+        Model resolved;
+        if (modelIdentity != null) {
+            // Composite contextId@modelId and plain registry strings both resolve here; a
+            // named reference carries its own (contextId, modelId) pairing, so per-call
+            // switching needs no agent-level context assumptions.
+            resolved = ModelRegistry.resolve(modelIdentity);
+        } else {
+            resolved =
+                    Objects.requireNonNull(model, "agent has neither a model nor a modelIdentity");
+        }
+        if (ctx != null) {
+            ctx.put(Model.class, resolved); // memoize: decided once at the start of the run
+        }
+        return resolved;
     }
 
     public int getMaxIters() {
@@ -5806,6 +6037,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         String description;
         String sysPrompt;
         Model model;
+        String modelIdentity;
         Toolkit toolkit = new Toolkit();
 
         int maxIters = 10;
@@ -5923,6 +6155,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             copy.description = this.description;
             copy.sysPrompt = this.sysPrompt;
             copy.model = this.model;
+            copy.modelIdentity = this.modelIdentity;
             copy.toolkit = this.toolkit;
             copy.maxIters = this.maxIters;
             copy.modelExecutionConfig = this.modelExecutionConfig;
@@ -6015,29 +6248,40 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         }
 
         /**
-         * Sets the language model for this agent.
+         * Sets the language model for this agent. This overload and {@link #model(String)} are
+         * two forms of one configuration slot: the last setter wins, and this call clears any
+         * previously configured identity string.
          *
          * @param model The language model to use for reasoning, must not be null
          * @return This builder instance for method chaining
          */
         public Builder model(Model model) {
             this.model = model;
+            this.modelIdentity = null;
             return this;
         }
 
         /**
-         * Configures the model from a string id resolved via {@link ModelRegistry}: a named
-         * registration ({@link ModelRegistry#register(String, Model)}) or an extension provider
-         * pattern such as {@code openai:gpt-5.5}, {@code dashscope:qwen-max}, {@code
-         * anthropic:claude-sonnet-4-5}, {@code gemini:gemini-2.0-flash}, or {@code ollama:llama3}.
-         * Extension modules read API keys from their standard environment variables when auto-created.
+         * Sets the model by identity string, held as a lazy reference and resolved through
+         * {@link ModelRegistry} once at run entry, off the subscriber's thread (boundedElastic)
+         * — reference-style usage: after registering models/contexts in the registry, the agent
+         * refers to them by string, and registry re-registrations apply to runs that start
+         * afterwards. Accepted forms: the composite {@code contextId@modelId} (e.g. {@code
+         * mytokenplan01@dashscope:qwen-plus}), a registered instance id, a bare modelId, or a
+         * factory-matched string; an unresolvable identity fails the run at entry with {@link
+         * IllegalArgumentException} instead of silently falling back. This
+         * overload and {@link #model(Model)} are two forms of one configuration slot: the
+         * last setter wins, and this call clears any previously configured instance. Per-call
+         * selection pins an instance on the context ({@code ctx.put(Model.class, ...)}),
+         * which outranks both forms; middleware may likewise replace the effective model
+         * mid-run through that same typed slot — see {@link #getModel(RuntimeContext)}.
          *
-         * @param modelId registry id or {@code provider:model} string
+         * @param modelIdentity a registry-resolvable identity string
          * @return this builder
-         * @throws IllegalArgumentException if the id cannot be resolved
          */
-        public Builder model(String modelId) {
-            this.model = ModelRegistry.resolve(modelId);
+        public Builder model(String modelIdentity) {
+            this.modelIdentity = modelIdentity;
+            this.model = null;
             return this;
         }
 
@@ -6328,8 +6572,9 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
 
         /**
          * Convenience overload that resolves {@code modelId} via
-         * {@link ModelRegistry#resolve(String)} (named registration or
+         * {@link ModelRegistry#resolve(String)} (a modelInstanceId or
          * {@code provider:model} pattern like {@code openai:gpt-5.5}, {@code dashscope:qwen-max}).
+         *
          *
          * @throws IllegalArgumentException if the id cannot be resolved
          */
@@ -6360,8 +6605,13 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         }
 
         /**
-         * Sets the {@link PermissionContextState} consulted by the {@link PermissionEngine} during tool
-         * execution. When unset, an empty permission context is used (PASSTHROUGH for all tools).
+         * Sets the {@link PermissionContextState} consulted by the {@link PermissionEngine} during
+         * tool execution.
+         *
+         * <p>A non-null context replaces the slot's persisted context the first time this agent
+         * activates that slot. Passing {@code null} leaves an existing slot untouched. To preserve
+         * runtime permission state across a rebuild, read the old context from {@link
+         * #getAgentState(String, String)} and construct the new context from it.
          */
         public Builder permissionContext(PermissionContextState permissionContext) {
             this.permissionContext = permissionContext;
@@ -6557,6 +6807,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             b.description = agent.getDescription();
             b.sysPrompt = agent.getSysPrompt();
             b.model = agent.getModel();
+            b.modelIdentity = agent.getModelIdentity();
             b.maxIters = agent.getMaxIters();
             b.generateOptions = agent.getGenerateOptions();
             ModelConfig srcModelConfig = agent.getModelConfig();

@@ -59,7 +59,7 @@ import reactor.core.scheduler.Schedulers;
  *
  * <ul>
  * <li>System messages are handled via the system parameter, not as messages
- * <li>Tool results must be in separate user messages
+ * <li>All results for a tool batch must be in one following user message
  * <li>Supports Claude models (claude-3-*, claude-sonnet-*, etc.)
  * </ul>
  */
@@ -375,7 +375,11 @@ public class AnthropicChatModel extends ChatModelBase {
 
         // Apply timeout and retry if configured
         return ModelUtils.applyTimeoutAndRetry(
-                responseFlux, options, defaultOptions, modelName, "anthropic");
+                responseFlux.subscribeOn(Schedulers.boundedElastic()),
+                options,
+                defaultOptions,
+                modelName,
+                "anthropic");
     }
 
     /**

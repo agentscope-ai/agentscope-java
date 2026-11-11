@@ -16,12 +16,17 @@
 
 package io.agentscope.core.a2a.agent.event;
 
+import io.agentscope.core.a2a.agent.message.MessageConstants;
 import io.agentscope.core.a2a.agent.utils.LoggerUtil;
 import io.agentscope.core.a2a.agent.utils.MessageConvertUtil;
 import io.agentscope.core.message.Msg;
+import io.agentscope.core.message.MsgRole;
+import java.util.HashMap;
+import java.util.Map;
 import org.a2aproject.sdk.client.TaskEvent;
 import org.a2aproject.sdk.spec.Task;
 import org.a2aproject.sdk.spec.TaskState;
+import org.a2aproject.sdk.spec.TaskStatus;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -55,6 +60,12 @@ public class TaskEventHandler implements ClientEventHandler<TaskEvent> {
                         && task.status().state() != null
                         && task.status().state().isFinal();
         if (!isFinal) {
+            if (task.status() != null
+                    && task.status().state() != null
+                    && task.status().state().isInterrupted()) {
+                completeWaiting(task.id(), task.status(), context);
+                return;
+            }
             LoggerUtil.debug(
                     log,
                     "[{}] TaskEventHandler: task state {} is not terminal, waiting for more"
@@ -86,5 +97,46 @@ public class TaskEventHandler implements ClientEventHandler<TaskEvent> {
                     "[{}] TaskEventHandler: duplicate terminal event ignored.",
                     context.getCurrentRequestId());
         }
+    }
+
+    /**
+     * Ends the call with what a task that waits for the caller (input or authorization required)
+     * asks for. The task stays open on the remote agent; the reply carries its id and state.
+     */
+    static void completeWaiting(String taskId, TaskStatus status, ClientEventContext context) {
+        String agentName = context.getAgent().getName();
+        Msg question =
+                null != status.message()
+                        ? MessageConvertUtil.convertFromMessage(status.message(), agentName)
+                        : Msg.builder()
+                                .name(agentName)
+                                .role(MsgRole.ASSISTANT)
+                                .textContent(
+                                        "A2A task "
+                                                + taskId
+                                                + " is waiting in state "
+                                                + status.state()
+                                                + ".")
+                                .build();
+        Map<String, Object> metadata = new HashMap<>();
+        if (null != question.getMetadata()) {
+            metadata.putAll(question.getMetadata());
+        }
+        metadata.put(MessageConstants.TASK_ID_METADATA_KEY, taskId);
+        metadata.put(MessageConstants.TASK_STATE_METADATA_KEY, status.state().name());
+        Msg msg = context.publishPostReasoning(question.withMetadata(metadata));
+        if (!context.complete(msg)) {
+            LoggerUtil.debug(
+                    log,
+                    "[{}] TaskEventHandler: duplicate terminal event ignored.",
+                    context.getCurrentRequestId());
+            return;
+        }
+        LoggerUtil.info(
+                log,
+                "[{}] A2aAgent task {} waits in state {}.",
+                context.getCurrentRequestId(),
+                taskId,
+                status.state());
     }
 }
