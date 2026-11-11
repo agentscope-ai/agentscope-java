@@ -78,9 +78,13 @@ class BoundedMemoryGetTest {
     void unicodePagesReassembleWithoutSplittingSurrogates() throws Exception {
         String line = "a\uD83D\uDE00中".repeat(19);
         Files.writeString(workspace.resolve("MEMORY.md"), line);
+        // memory_get numbers each line and terminates it with the platform line
+        // separator (%n: "\n" on Linux, "\r\n" on Windows), so page through the
+        // formatted content rather than assuming the raw line's length.
+        String formatted = "1|" + line + System.lineSeparator();
+        int total = formatted.codePointCount(0, formatted.length());
         StringBuilder restored = new StringBuilder();
-        // "1|" prefix + line + trailing line separator = 60 code points in total.
-        for (int start = 0; start < 60; start += 5) {
+        for (int start = 0; start < total; start += 5) {
             String output =
                     text(tool().memoryGet(RuntimeContext.empty(), "MEMORY.md", 1, 1, start, 5));
             int marker = output.indexOf("\n[Output truncated.");
@@ -91,7 +95,7 @@ class BoundedMemoryGetTest {
             if (marker >= 0) assertTrue(output.contains("char_offset=" + (start + 5)));
             restored.append(page);
         }
-        assertEquals("1|" + line + System.lineSeparator(), restored.toString());
+        assertEquals(formatted, restored.toString());
     }
 
     @Test
