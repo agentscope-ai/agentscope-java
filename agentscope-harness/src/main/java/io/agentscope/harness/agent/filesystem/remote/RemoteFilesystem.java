@@ -219,6 +219,16 @@ public class RemoteFilesystem implements AbstractFilesystem {
                 .collect(java.util.stream.Collectors.joining("."));
     }
 
+    /**
+     * Returns the effective storage namespace for this call as an immutable snapshot.
+     *
+     * @param rc call identity; null is treated as an empty context
+     * @return the namespace used for remote file operations
+     */
+    public List<String> storageNamespace(RuntimeContext rc) {
+        return List.copyOf(getNamespace(rc != null ? rc : RuntimeContext.empty()));
+    }
+
     private List<String> getNamespace(RuntimeContext rc) {
         List<String> ns = namespaceFactory.getNamespace(rc);
         if (ns == null || ns.isEmpty()) {
@@ -341,11 +351,7 @@ public class RemoteFilesystem implements AbstractFilesystem {
         // CAS create-if-absent: atomic under concurrent writers across nodes.
         boolean written = store.putIfVersion(ns, filePath, fileDataToStoreValue(fileData), 0L);
         if (!written) {
-            return WriteResult.fail(
-                    "Cannot write to "
-                            + filePath
-                            + " because it already exists. Read and then make an edit,"
-                            + " or write to a new path.");
+            return WriteResult.alreadyExists(filePath);
         }
         return WriteResult.ok(filePath);
     }

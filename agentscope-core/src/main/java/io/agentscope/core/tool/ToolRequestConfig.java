@@ -87,6 +87,11 @@ public record ToolRequestConfig(
      * Toolkit#getTool(String, ToolRequestConfig)} and the executor so they cannot drift.
      */
     AgentTool resolveTool(String name, ToolRegistry registry) {
+        // Models occasionally emit a tool call without a name; the immutable externalTools map
+        // rejects null keys with an NPE, so resolve to "not found" instead.
+        if (name == null) {
+            return null;
+        }
         AgentTool external = externalTools.get(name);
         if (external != null) {
             return external;

@@ -105,8 +105,19 @@ func (s *Server) createServiceCommand(c *gin.Context) {
 		return
 	}
 	if serviceapi.Terminal(inv.Status) {
-		c.JSON(409, ErrorResponse{Error: "invocation has ended; submit a new invocation"})
-		return
+		_, blocking, err := s.failedNativeServiceTurn(c, ep, inv)
+		if err != nil {
+			s.writeControlPlaneError(c, err)
+			return
+		}
+		if !blocking {
+			c.JSON(409, ErrorResponse{Error: "invocation has ended; submit a new invocation"})
+			return
+		}
+		if kind != "cancel" {
+			c.JSON(409, ErrorResponse{Error: "turn failed and holds later turns in this session; cancel it to continue"})
+			return
+		}
 	}
 	if err = s.validateServiceCommand(c, inv, ep, &command, input); err != nil {
 		c.JSON(409, ErrorResponse{Error: err.Error()})
@@ -362,6 +373,14 @@ func (s *Server) applyServiceCommand(ctx context.Context, inv *model.EndpointInv
 	}
 	switch cmd.Kind {
 	case "cancel":
+		if serviceapi.Terminal(inv.Status) {
+			turn, blocking, err := s.failedNativeServiceTurn(ctx, ep, inv)
+			if err != nil || !blocking {
+				return err
+			}
+			_, err = s.product.ManagedServiceRequest(ctx, turn.Owner, inv.SessionID, "POST", "/turns/"+url.PathEscape(turn.ID)+"/cancel", "", map[string]any{})
+			return err
+		}
 		return s.cancelServiceInvocation(ctx, inv.ID, false)
 	case "resume":
 		if inv.RunID == nil {
