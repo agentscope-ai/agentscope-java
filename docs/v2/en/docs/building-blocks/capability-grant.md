@@ -6,25 +6,25 @@ zh_link: /v2/zh/docs/building-blocks/capability-grant
 
 ## Overview
 
-In enterprise deployments an agent serves many users with different permissions. The capability
-grant layer lets you **cut out every capability the current user is not authorized for** — a cut
-capability does not exist for the model: it never enters tool schemas, cannot be enumerated,
-cannot be activated via `reset_equipped_tools`, cannot be loaded via `load_skill_through_path`,
-and cannot be executed. The harness skill chain (`HarnessSkillMiddleware`'s prompt and catalog,
-plus the harness `load_skill_through_path`) is equally governed by the grant surface.
+One-line positioning: **SkillFilter decides what the agent is designed to have; grant decides what the current user is authorized to use. The effective capability set is the intersection.**
 
-It is orthogonal to the existing layers:
+Why grant exists: in enterprise deployments, one agent serves many users with different permissions (multi-tenant, multi-role). The grant layer cuts out every capability the current user is not authorized for — a cut capability **does not exist for the model**: it never enters tool schemas, cannot be enumerated, cannot be activated via `reset_equipped_tools`, cannot be loaded via `load_skill_through_path`, and cannot be executed. The harness skill chain (`HarnessSkillMiddleware`'s prompt and catalog, plus the harness `load_skill_through_path`) is equally governed by the grant surface.
+
+It is orthogonal to the existing layers — each layer answers exactly one question:
 
 | Layer | Relation |
 |-------|----------|
 | **grant (this page)** | When a whitelist is set, only whitelisted capabilities pass; ALLOW_ALL (no trimming) applies when no resolver is configured or it returns null |
+| SkillFilter / dynamic visibility (`skillFilter(...)`, RuntimeContext overlay, `filterVisible`) | The configuration-intent layer: which skills the agent is designed to show; runtime overlays may widen or tighten (canary and temporary toggles are legitimate). Grant runs after it — the visible set is SkillFilter ∩ grant, and overlays cannot raise the grant surface |
 | activation (`activatedGroups`) | Session-level switch deciding whether an existing capability is currently active; stacks independently with grant |
 | Permission system | Execution-time approval (ALLOW / DENY / ASK); grant trims up-front, the two complement each other |
 | External tools (`ToolRequestConfig`) | Caller-controlled via the request; never trimmed |
 
+One-line composition: a capability actually executes only if it passes, in order — configuration intent (SkillFilter) → user grant → current activation → per-call Permission approval. Each layer answers exactly one question; they intersect, they never overlap.
+
 ## Quick start
 
-Implement a `CapabilityResolver` and register it on the `ReActAgent`.
+Two things: implement a `CapabilityResolver`, register it on the agent.
 
 ```java
 CapabilityResolver resolver = (ctx, agent) -> {
@@ -45,21 +45,14 @@ ReActAgent agent = ReActAgent.builder()
         .build();
 ```
 
-The `CapabilitySurface` is an immutable grant enumeration. The framework resolves it once per
-`call()` (server-side — a `null` return means no trimming) and carries it on the
-`RuntimeContext` through the whole call chain (frozen per request, never persisted);
-sub-agents without their own resolver reuse the parent's surface instance (zero re-computation).
-`HarnessAgent.builder().capabilityResolver(...)` is supported as well: resolution happens
-before the sandbox acquire and skill pre-staging, so the staged set, the prompt catalog and
-every gate observe the same surface.
+Runtime rules:
 
-**Caching**: the resolver runs at every call entry (exactly once per call). If its backend is
-an expensive lookup (DB / RPC), consider caching it yourself to match your business needs
-(e.g. per `userId` with a TTL), accepting the corresponding permission-propagation delay; the
-framework does not cache resolver results.
-
-Returning a superset is safe: surface contents may exceed any agent's actual capabilities —
-names the agent does not have are simply never matched.
+- **When it resolves**: once per `call()`, server-side, at the call entry; a `null` return means no trimming.
+- **Lifecycle**: the resolved surface rides the `RuntimeContext` through the whole call chain — frozen per request, never persisted.
+- **Sub-agents**: sub-agents without their own resolver reuse the parent's surface instance (zero re-computation).
+- **Harness**: `HarnessAgent.builder().capabilityResolver(...)` is supported as well; resolution happens before the sandbox acquire and skill pre-staging, so the staged set, the prompt catalog and every gate observe the same surface.
+- **Caching**: the resolver runs at every call entry (exactly once per call). If its backend is an expensive lookup (DB / RPC), cache it yourself to match your business needs (e.g. per `userId` with a TTL), accepting the corresponding permission-propagation delay; the framework does not cache resolver results.
+- **Supersets are safe**: surface contents may exceed any agent's actual capabilities — names the agent does not have are simply never matched.
 
 ## The three surface shapes (read this)
 
@@ -82,72 +75,43 @@ new CapabilitySurface(null, null, null);
 new CapabilitySurface(Set.of(), Set.of(), Set.of());
 ```
 
-`Set.of()` (explicitly empty) and `null` (not set) are semantically different: the former
-declares "zero grants via this dimension", the latter "not participating". Once the surface is
-not all-`null`, the two have the same grant outcome (nothing passes via that dimension); the
-accessors (`allowedSkills()` etc.) still preserve the distinction.
+`null` (not set) and `Set.of()` (explicitly empty) are two different things: the latter declares "zero grants via this dimension", the former "not participating". Once the surface is not all-`null`, the two have the same grant outcome (nothing passes via that dimension); the accessors (`allowedSkills()` etc.) still preserve the distinction.
 
 ## Grant decision rules
 
-Positive authorization is hierarchical; matching **any set dimension** grants:
+Whitelists only — matching **any set dimension** grants:
 
-- Granting a **skill** implicitly grants its manual, scripts and associated tools (the skill
-  tool group, convention-named `skillId + "_skill_tools"`), **and automatically enables custom
-  tool groups bound to it via `activateOnSkill`** (the call entry merges bound groups into the
-  grant set);
+- Granting a **skill** implicitly grants its manual, scripts and associated tools (the skill tool group, convention-named `skillId + "_skill_tools"`), **and automatically enables custom tool groups bound to it via `activateOnSkill`** (the call entry merges bound groups into the grant set);
 - Granting a **ToolGroup** implicitly grants every tool in it;
-- Granting a **tool** by name grants exactly that tool (grouping is ignored, and it does not
-  amplify to sibling tools in the same group).
+- Granting a **tool** by name grants exactly that tool (grouping is ignored, and it does not amplify to sibling tools in the same group).
 
-Skills are granted **by skill name** (the business identity, the industry-standard unique
-locator): one entry covers every copy of that name in the catalog (catalogs use the standard
-merge semantics — same name keeps the higher-priority repository's copy). The skillId (`name +
-"_" + source`) remains the framework-internal registration and addressing key: loading takes a
-skillId, and because the standard naming rule forbids underscores in names, the first
-underscore in a skillId is always the separator — the split is unambiguous.
+**Grant skills by name, not by skillId.** The name is the business identity and the industry-standard unique locator: one entry covers every copy of that name in the catalog (catalogs use the standard merge semantics — same name keeps the higher-priority repository's copy). The skillId (`name + "_" + source`) remains the framework-internal registration and addressing key: loading takes a skillId, and because the standard naming rule forbids underscores in names, the first underscore in a skillId is always the separator — the split is unambiguous.
 
-Only whitelists are provided; there is no deny (reverse-ban) capability. Default is deny —
-anything not reachable from the enumeration does not exist.
+Only whitelists are provided; there is no deny (reverse-ban) capability. Default is deny — anything not reachable from the enumeration does not exist.
 
 ## System capability markers (`system`)
 
-As a rule, tools marked `system` are **basic core capabilities that keep the agent running**
-(the framework meta tools are exactly this); the marker is not a control axis for
-business-shaped capability trimming — do not use it as a business capability switch.
+Which capabilities skip trimming? **Basic core capabilities that keep the agent running** (the framework meta tools are exactly this). The marker is not a control axis for business-shaped capability trimming — do not use it as a business capability switch.
 
-The framework's own meta tools (`reset_equipped_tools`, `load_skill_through_path`) are marked
-system and stay usable under any surface (including DENY_ALL). Assemblers may also mark their
-own tools/groups/skills `system = true` (`@Tool(system = true)` or the corresponding builder) —
-an explicit declaration that the capability is exempt from trimming; registration logs an INFO
-trace for auditability.
+The framework's own meta tools (`reset_equipped_tools`, `load_skill_through_path`) are marked system and stay usable under any surface (including DENY_ALL). Assemblers may also mark their own tools/groups/skills `system = true` (`@Tool(system = true)` or the corresponding builder) — an explicit declaration that the capability is exempt from trimming; registration logs an INFO trace for auditability.
 
-**The marker applies only to the object it marks — it does not propagate**: a tool's `system`
-exempts that tool's visibility and execution; **a group's `system` exempts only the group's own
-enumeration and activation** — member tools stay governed by the grant surface (mark each
-member `system` if it needs the exemption); a skill's `system` exempts its prompt visibility
-and loading.
+**The marker applies only to the object it marks — it does not propagate**:
 
-> **Trust boundary**: the `system` marker is open to and trusted from the assembler (the agent
-> developer). The threat model is "end user vs. the agent's capability surface", not defense
-> against the assembler.
+- a tool's `system` exempts that tool's visibility and execution;
+- a group's `system` exempts only the group's own enumeration and activation — member tools stay governed by the grant surface (mark each member `system` if it needs the exemption);
+- a skill's `system` exempts its prompt visibility and loading.
+
+> **Trust boundary**: the `system` marker is open to and trusted from the assembler (the agent developer). The threat model is "end user vs. the agent's capability surface", not defense against the assembler.
 
 ## Fail-closed behavior
 
-When the resolver throws, **the call is aborted**: the exception propagates to the caller and
-ERROR is logged — an authorization-infrastructure failure is not "no grants". Catch inside
-your resolver and return `DENY_ALL` if graceful degradation is wanted.
+Principle: **when the authorization infrastructure fails, fail the call — never open up.**
 
-**Direct execution**: paths that execute tools directly without going through an agent
-`call()` entry (e.g. `Toolkit.callTool` / `callTools`) bypass grant resolution — a missing
-surface means no trimming; place a surface on the `RuntimeContext`
-(`rc.put(CapabilitySurface.class, surface)`) to have grants applied.
+- A throwing resolver **aborts the call**: the exception propagates to the caller and ERROR is logged — an authorization-infrastructure failure is not "no grants". Catch inside your resolver and return `DENY_ALL` if graceful degradation is wanted.
+- Direct execution: paths that execute tools directly without going through an agent `call()` entry (e.g. `Toolkit.callTool` / `callTools`) bypass grant resolution — a missing surface means no trimming; place a surface on the `RuntimeContext` (`rc.put(CapabilitySurface.class, surface)`) to have grants applied.
 
 ## Static skillBox path limitation
 
-`skillBox(...)` is deprecated since 2.0.0 (retiring with the hook system); **do not use it in
-new code** — register skills with `skillRepositories(...)` instead. The static path (the
-static `skillBox(...)` registration, or `dynamicSkillsEnabled(false)`) has no per-call
-skill-visibility filtering, so it **cannot be combined with a capability resolver**:
-configuring both fails the build with an `IllegalStateException` (an authorization setting
-must never silently degrade to an untrimmed agent). Use `skillRepositories(...)` (the default
-dynamic path) for per-call skill trimming.
+`skillBox(...)` is deprecated since 2.0.0 (retiring with the hook system); **do not use it in new code** — register skills with `skillRepositories(...)` (the default dynamic path) instead.
+
+Why the static path cannot combine with a resolver: it has no per-call skill-visibility filtering, so "static skillBox + capability resolver" would silently void the authorization — configuring both fails the build with an `IllegalStateException` (an authorization setting must never silently degrade to an untrimmed agent).
