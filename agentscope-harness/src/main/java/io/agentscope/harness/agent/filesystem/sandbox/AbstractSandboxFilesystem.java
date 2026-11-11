@@ -17,6 +17,7 @@ package io.agentscope.harness.agent.filesystem.sandbox;
 
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
+import io.agentscope.harness.agent.filesystem.ShellSyntax;
 import io.agentscope.harness.agent.filesystem.model.ExecuteResponse;
 
 /**
@@ -46,4 +47,14 @@ public interface AbstractSandboxFilesystem extends AbstractFilesystem {
      *         command output
      */
     ExecuteResponse execute(RuntimeContext runtimeContext, String command, Integer timeoutSeconds);
+
+    /**
+     * Shell family {@link #execute} interprets commands with, for callers that build a command
+     * string or describe the shell to the model.
+     *
+     * @return shell syntax, POSIX for a backend that runs commands in its own image
+     */
+    default ShellSyntax shellSyntax() {
+        return ShellSyntax.POSIX;
+    }
 }

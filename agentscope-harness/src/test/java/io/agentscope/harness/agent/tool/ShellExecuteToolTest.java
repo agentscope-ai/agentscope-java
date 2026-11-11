@@ -16,8 +16,8 @@
 package io.agentscope.harness.agent.tool;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.CALLS_REAL_METHODS;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -31,6 +31,7 @@ import io.agentscope.core.tool.Toolkit;
 import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
 import io.agentscope.harness.agent.filesystem.OverlayFilesystem;
 import io.agentscope.harness.agent.filesystem.RoutedSandboxFilesystem;
+import io.agentscope.harness.agent.filesystem.ShellSyntax;
 import io.agentscope.harness.agent.filesystem.local.LocalFilesystemWithShell;
 import io.agentscope.harness.agent.filesystem.model.ExecuteResponse;
 import io.agentscope.harness.agent.filesystem.sandbox.AbstractSandboxFilesystem;
@@ -136,40 +137,54 @@ class ShellExecuteToolTest {
     }
 
     @Test
-    void commandWithWorkingDirectory_usesCmdCompatibleQuotingOnWindows() {
+    void commandWithWorkingDirectory_usesCmdCompatibleQuotingForCmd() {
         assertEquals(
                 "cd /d \"workspace dir\" && dir",
-                ShellExecuteTool.commandWithWorkingDirectory("workspace dir", "dir", true));
+                ShellExecuteTool.commandWithWorkingDirectory(
+                        "workspace dir", "dir", ShellSyntax.CMD));
     }
 
     @Test
     void commandWithWorkingDirectory_preservesShellSafeQuotingOnUnix() {
         assertEquals(
                 "cd 'workspace dir' && ls",
-                ShellExecuteTool.commandWithWorkingDirectory("workspace dir", "ls", false));
+                ShellExecuteTool.commandWithWorkingDirectory(
+                        "workspace dir", "ls", ShellSyntax.POSIX));
     }
 
     @Test
-    void shellSelectionFollowsLocalOverlayAndPrimaryRouting() {
-        AbstractFilesystem lower = mock(AbstractFilesystem.class);
-        AbstractSandboxFilesystem remote = mock(AbstractSandboxFilesystem.class);
+    void commandWithWorkingDirectory_usesPowerShellQuoting() {
+        assertEquals(
+                "Set-Location -LiteralPath 'work''space' -ErrorAction Stop; ls",
+                ShellExecuteTool.commandWithWorkingDirectory(
+                        "work'space", "ls", ShellSyntax.POWERSHELL));
+    }
 
-        assertTrue(ShellExecuteTool.usesWindowsShell(sandbox, true));
-        assertFalse(ShellExecuteTool.usesWindowsShell(sandbox, false));
-        assertTrue(ShellExecuteTool.usesWindowsShell(OverlayFilesystem.of(sandbox, lower), true));
-        assertTrue(
-                ShellExecuteTool.usesWindowsShell(
-                        new RoutedSandboxFilesystem(sandbox, Map.of()), true));
-        assertFalse(ShellExecuteTool.usesWindowsShell(remote, true));
-        assertFalse(ShellExecuteTool.usesWindowsShell(OverlayFilesystem.of(remote, lower), true));
-        assertFalse(
-                ShellExecuteTool.usesWindowsShell(
-                        new RoutedSandboxFilesystem(remote, Map.of()), true));
+    @Test
+    void shellSyntaxFollowsLocalOverlayAndPrimaryRouting() {
+        AbstractFilesystem lower = mock(AbstractFilesystem.class);
+        AbstractSandboxFilesystem cmdShell = mock(AbstractSandboxFilesystem.class);
+        // CALLS_REAL_METHODS so the interface default is what answers shellSyntax().
+        AbstractSandboxFilesystem posixShell =
+                mock(AbstractSandboxFilesystem.class, CALLS_REAL_METHODS);
+        when(cmdShell.shellSyntax()).thenReturn(ShellSyntax.CMD);
+
+        assertEquals(ShellSyntax.CMD, ShellSyntax.of(cmdShell));
+        assertEquals(ShellSyntax.CMD, ShellSyntax.of(OverlayFilesystem.of(cmdShell, lower)));
+        assertEquals(
+                ShellSyntax.CMD, ShellSyntax.of(new RoutedSandboxFilesystem(cmdShell, Map.of())));
+        // A backend that keeps the default runs commands in its own POSIX image.
+        assertEquals(ShellSyntax.POSIX, ShellSyntax.of(posixShell));
+        assertEquals(ShellSyntax.POSIX, ShellSyntax.of(OverlayFilesystem.of(posixShell, lower)));
+        assertEquals(
+                ShellSyntax.POSIX,
+                ShellSyntax.of(new RoutedSandboxFilesystem(posixShell, Map.of())));
     }
 
     @Test
     void remoteWorkingDirectoryUsesPosixSyntaxEvenOnWindowsHost() {
-        AbstractSandboxFilesystem remote = mock(AbstractSandboxFilesystem.class);
+        AbstractSandboxFilesystem remote =
+                mock(AbstractSandboxFilesystem.class, CALLS_REAL_METHODS);
         when(remote.execute(RT, "cd 'project dir' && echo ok", 30))
                 .thenReturn(new ExecuteResponse("ok", 0, false));
 
