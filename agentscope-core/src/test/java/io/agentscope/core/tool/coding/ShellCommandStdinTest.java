@@ -21,6 +21,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import io.agentscope.core.message.TextBlock;
 import java.time.Duration;
 import java.util.Locale;
+import java.util.Set;
 import org.junit.jupiter.api.Test;
 
 class ShellCommandStdinTest {
@@ -30,7 +31,7 @@ class ShellCommandStdinTest {
         boolean windows = System.getProperty("os.name").toLowerCase(Locale.ROOT).contains("win");
         String command = windows ? "sort" : "exec sort";
         var result =
-                new ShellCommandTool()
+                new ShellCommandTool(Set.of(windows ? "sort" : "exec"))
                         .executeShellCommand(command, 3)
                         .block(Duration.ofSeconds(10));
 
