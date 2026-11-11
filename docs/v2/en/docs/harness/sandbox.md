@@ -35,6 +35,24 @@ agent.call(msg, RuntimeContext.builder()
 
 Same `userId` across `call()` → automatically reuses the same sandbox (or restores from snapshot). Different `userId` → separate sandbox. When `userId` is absent, falls back to `sessionId` as the isolation key.
 
+## Optional lazy initialization
+
+Sandbox initialization remains eager by default. Opt in to defer create/resume, workspace projection, and startup until the first sandbox filesystem operation in each call:
+
+```java
+.filesystem(new DockerFilesystemSpec()
+    .image("ubuntu:24.04")
+    .lazyInitialization(true))
+```
+
+A call that never uses the sandbox filesystem does not acquire a sandbox or an execution lease, and does not stop, snapshot, or update sandbox state at completion. Concurrent first accesses within the same call share one acquisition. Once initialized, the existing isolation scope, snapshot, and cleanup rules still apply, including cancellation and startup failures.
+
+**This is lazy filesystem initialization, not tool-call detection.** Loading `AGENTS.md`, skills, `MEMORY.md`, conversation journals, or other framework data from the sandbox also initializes it. A text-only conversation can therefore still start a sandbox with the default workspace configuration. To avoid this, configure independent storage for those capabilities (for example `sessionLogStore(...)` and appropriate filesystem routes), or disable capabilities your application does not use. Existing sandbox data is neither moved to the host nor silently skipped.
+
+The default `WorkspaceMessageBus` and `WorkspaceAsyncToolRegistry` use an empty context and cannot trigger lazy acquisition. Before enabling this option, provide independently backed `messageBus(...)` and `asyncToolRegistry(...)` implementations, or route `.agentscope/bus` to a filesystem that does not require a sandbox. Keep eager initialization when these stores need access to existing sandbox data.
+
+The first operation may be a read, listing, upload/download, or shell command. Custom callers must pass the active call's `RuntimeContext`; an empty context cannot initialize a deferred sandbox. A completed call cannot acquire a sandbox later through a retained context.
+
 ## IsolationScope — who shares a sandbox
 
 All sandbox configuration lives on the `SandboxFilesystemSpec` (e.g. `DockerFilesystemSpec`). The key parameter is `isolationScope`:

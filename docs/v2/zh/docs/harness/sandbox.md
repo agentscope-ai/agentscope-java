@@ -35,6 +35,24 @@ agent.call(msg, RuntimeContext.builder()
 
 同一 `userId` 的多次 `call()` → 自动复用同一沙箱（或从快照恢复）；不同 `userId` → 各自独立。如果 `userId` 缺失，自动降级为按 `sessionId` 隔离。
 
+## 可选的延迟初始化
+
+沙箱默认仍在每次调用开始时初始化。可以显式开启延迟初始化，将创建或恢复、工作区投影和启动推迟到本轮第一次沙箱文件系统操作：
+
+```java
+.filesystem(new DockerFilesystemSpec()
+    .image("ubuntu:24.04")
+    .lazyInitialization(true))
+```
+
+本轮如果没有使用沙箱文件系统，就不会获取沙箱或执行租约，结束时也不会停止沙箱、生成快照或更新沙箱状态。同一轮的并发首次访问只会获取一次沙箱。初始化后，原有的隔离范围、快照和清理规则仍然生效，包括取消调用和启动失败时的清理。
+
+**此选项按文件系统访问延迟初始化，不是只检测工具调用。** 从沙箱加载 `AGENTS.md`、技能、`MEMORY.md`、会话日志等框架数据，同样会触发初始化。因此，使用默认工作区配置的纯文本对话仍可能启动沙箱。若要避免启动，应为这些能力配置独立存储（例如 `sessionLogStore(...)` 和适当的文件系统路由），或关闭应用不需要的能力。已有沙箱数据不会被迁移到宿主机或被静默跳过。
+
+默认的 `WorkspaceMessageBus` 和 `WorkspaceAsyncToolRegistry` 使用空上下文，无法触发延迟获取。启用此选项前，应通过 `messageBus(...)` 和 `asyncToolRegistry(...)` 配置使用独立存储的实现，或将 `.agentscope/bus` 路由到不依赖沙箱的文件系统。如果这些存储需要访问已有的沙箱数据，请保留默认的立即初始化。
+
+第一次操作可能是读取、列目录、上传下载或执行命令。自定义调用必须传递当前调用的 `RuntimeContext`；空上下文无法初始化延迟沙箱。调用结束后，保留的上下文也不能再次触发沙箱获取。
+
 ## IsolationScope —— 谁和谁共享同一沙箱
 
 所有沙箱配置都集中在 `SandboxFilesystemSpec`（如 `DockerFilesystemSpec`）上。核心参数是 `isolationScope`：
