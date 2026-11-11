@@ -1,5 +1,6 @@
 ---
 title: Overview
+zh_link: /v2/zh/integration/rag/overview
 ---
 
 `io.agentscope.core.rag.Knowledge` is AgentScope's interface for plugging in an external knowledge base. The Agent uses it during inference to retrieve documents that are then handed to the model. The `agentscope-extensions-*` repository ships several implementations:

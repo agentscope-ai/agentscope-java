@@ -1,13 +1,14 @@
 ---
 title: 计划模式（Plan Mode）
 description: 动手前先想清楚：只读阶段写计划文件，HITL 后再进入执行阶段
+en_link: /v2/en/docs/harness/plan-mode
 ---
 
 ## 作用
 
 Plan Mode 让 agent 在动手前先"把意图想清楚 + 写下来"再执行。开启后 agent 进入一个**只读阶段**：
 
-- 只能调用**只读工具**和 4 个白名单工具：`plan_enter` / `plan_write` / `plan_exit` / `todo_write`（shell 可按需放开，见[下文](#在-plan-阶段放开-shell可选)）；
+- 只能调用**只读工具**和 9 个白名单工具：`plan_enter` / `plan_write` / `plan_exit` / `todo_write` / `agent_spawn` / `agent_send` / `agent_list` / `task_output` / `task_list`（shell 可按需放开，见[下文](#在-plan-阶段放开-shell可选)）；
 - 其它工具调用一律被拒绝（agent 看到一条"plan 阶段拒绝"提示）；
 - 退出 Plan Mode 走 HITL 确认（复用权限系统的 ASK），避免模型一意孤行直接进入执行。
 
@@ -64,11 +65,10 @@ sequenceDiagram
     A->>A: 进入执行阶段，所有工具解禁
 ```
 
-中间任意时刻调用非白名单工具（比如 `write_file`；`execute` 默认也被拒，除非你[按需放开](#在-plan-阶段放开-shell可选)）都会被即时拒绝并返回类似这样的结果给模型：
+中间任意时刻调用非白名单工具（比如 `write_file`；`execute` 默认也被拒，除非你[按需放开](#在-plan-阶段放开-shell可选)）都会被即时拒绝。模型看到的工具结果就是 `PlanModeMiddleware.DENY_MESSAGE` 常量的原文：
 
 ```text
-[Tool denied — plan mode is active]
-Only read-only tools and plan_enter / plan_write / plan_exit / todo_write are allowed.
+Blocked: you are in PLAN mode (read-only). You may investigate and run read-only tools, record your plan with plan_write, and call plan_exit when ready to execute. Do not modify files or run mutating commands until the plan is approved.
 ```
 
 模型看到拒绝信息会自然地切回"先写计划"。
@@ -126,6 +126,19 @@ PermissionMode current = agent.getPermissionMode(userId, sessionId);
 
 `setPermissionMode(...)` 会保留该 session 已配置的 allow/deny/ask 规则与工作目录——只改 mode——并重建该 session 缓存的权限引擎，使切换在**下一次** call 生效；正在进行中的 call 仍沿用它启动时的引擎。
 
+如果连规则也要换——比如一个共享的 agent 服务多个用户，每个用户的角色对应不同的规则集——请用 `replacePermissionContext(...)`。它只为这一个 `(userId, sessionId)` 装上一份完整的替换上下文，不影响其它 session：
+
+```java
+PermissionContextState rules =
+        PermissionContextState.builder()
+                .addDenyRule(
+                        "execute",
+                        new PermissionRule("execute", null, PermissionBehavior.DENY, "role-policy"))
+                .build();
+
+agent.replacePermissionContext(userId, sessionId, rules);
+```
+
 ⚠ `BYPASS` 会关闭所有规则评估，因此应当作为显式的、按 session 的主动操作，并建议配合沙箱使用。如果想要**无人值守且不弹确认、但仍保留管控**，请改用 `PermissionMode.DONT_ASK`（ASK 决策会变成 DENY，而不是被自动放行）。
 
 ## Plan 阶段的状态会被持久化
@@ -147,12 +160,9 @@ agent.isPlanModeActive(ctx);
 
 ## 与子 agent 的关系
 
-⚠ 当前**已知缺口**：Plan Mode 期间通过 `agent_spawn` 启动的子 agent **不会自动继承只读限制**。如果希望子 agent 也只读：
+Plan Mode 期间通过 `agent_spawn` 启动的子 agent **会自动继承只读限制**：父 agent 的 plan-mode 上下文会在 spawn 时传播给子 agent，子 agent 同样处于只读阶段，直到计划被批准。
 
-- 在子 agent 的声明里把 `tools` 过滤到只读集合；或
-- 在子 agent 的 builder 里也开 `enablePlanMode()` 并自行进入
-
-未来版本会让 plan 阶段的限制按父→子自动传播。
+如需进一步收紧，仍可在子 agent 的声明里把 `tools` 过滤到只读集合。
 
 ## 与 `todo_write` 的协作
 

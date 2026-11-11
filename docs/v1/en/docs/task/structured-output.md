@@ -1,5 +1,6 @@
 ---
 title: Structured Output
+zh_link: /v1/zh/docs/task/structured-output
 ---
 
 Structured output enables Agents to generate typed data conforming to predefined schemas, achieving reliable conversion from natural language to structured data.

@@ -16,7 +16,9 @@
 package io.agentscope.extensions.model.dashscope;
 
 import io.agentscope.core.formatter.Formatter;
+import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.Msg;
+import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.model.ChatModelBase;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.GenerateOptions;
@@ -33,10 +35,12 @@ import io.agentscope.core.model.transport.ProxyConfig;
 import io.agentscope.extensions.model.dashscope.dto.DashScopeMessage;
 import io.agentscope.extensions.model.dashscope.dto.DashScopeRequest;
 import io.agentscope.extensions.model.dashscope.dto.DashScopeResponse;
+import io.agentscope.extensions.model.dashscope.dto.DashScopeSkill;
 import io.agentscope.extensions.model.dashscope.formatter.DashScopeChatFormatter;
 import io.agentscope.extensions.model.dashscope.formatter.DashScopeMultiAgentFormatter;
 import java.time.Instant;
 import java.util.Collection;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import org.slf4j.Logger;
@@ -76,6 +80,11 @@ public class DashScopeChatModel extends ChatModelBase {
 
     // HTTP client for API calls
     private final DashScopeHttpClient httpClient;
+
+    @Override
+    public boolean supportsToolChoiceSpecific() {
+        return true;
+    }
 
     /**
      * Creates a new DashScope chat model instance with automatic API type detection.
@@ -288,9 +297,10 @@ public class DashScopeChatModel extends ChatModelBase {
         List<DashScopeMessage> dashScopeMessages;
         if (useMultimodal) {
             if (formatter instanceof DashScopeChatFormatter chatFormatter) {
-                dashScopeMessages = chatFormatter.formatMultiModal(messages);
+                dashScopeMessages = chatFormatter.formatMultiModal(messages, effectiveOptions);
             } else if (formatter instanceof DashScopeMultiAgentFormatter multiAgentFormatter) {
-                dashScopeMessages = multiAgentFormatter.formatMultiModal(messages);
+                dashScopeMessages =
+                        multiAgentFormatter.formatMultiModal(messages, effectiveOptions);
             } else {
                 throw new IllegalStateException(
                         "DashScope vision models require DashScopeChatFormatter or"
@@ -298,7 +308,7 @@ public class DashScopeChatModel extends ChatModelBase {
                                 + formatter.getClass().getName());
             }
         } else {
-            dashScopeMessages = formatter.format(messages);
+            dashScopeMessages = formatter.format(messages, effectiveOptions);
         }
 
         // Build request using formatter
@@ -327,26 +337,25 @@ public class DashScopeChatModel extends ChatModelBase {
         // Apply thinking mode if enabled
         applyThinkingMode(request, effectiveOptions);
 
-        // Apply cache control if enabled (adds cache_control to system msgs + last msg)
-        if (Boolean.TRUE.equals(effectiveOptions.getCacheControl())) {
-            if (formatter instanceof DashScopeChatFormatter chatFmt) {
-                chatFmt.applyCacheControl(request.getInput().getMessages());
-            } else if (formatter instanceof DashScopeMultiAgentFormatter multiFmt) {
-                multiFmt.applyCacheControl(request.getInput().getMessages());
-            }
-        }
+        // DashScope rejects `skill` outside streaming mode with a dedicated error; fail fast with
+        // an actionable message instead.
+        validateSkillStreamRequirement(request, effectiveOptions);
 
         // Set endpoint type for endpoint selection
         request.setEndpointType(endpointType);
 
         if (stream) {
             // Streaming mode
+            boolean skillActive =
+                    DashScopeHttpClient.isSkillConfigured(
+                            request, effectiveOptions.getAdditionalBodyParams());
             return httpClient.stream(
                             request,
                             effectiveOptions.getAdditionalHeaders(),
                             effectiveOptions.getAdditionalBodyParams(),
                             effectiveOptions.getAdditionalQueryParams())
-                    .map(response -> formatter.parseResponse(response, start));
+                    .map(response -> formatter.parseResponse(response, start))
+                    .map(chatResponse -> annotateSkillOutput(chatResponse, skillActive));
         } else {
             // Non-streaming mode
             return Flux.defer(
@@ -371,6 +380,69 @@ public class DashScopeChatModel extends ChatModelBase {
                             })
                     .subscribeOn(Schedulers.boundedElastic());
         }
+    }
+
+    /**
+     * Fail fast when a {@code skill} is configured for a non-streaming model.
+     *
+     * <p>DashScope rejects the parameter with {@code The parameter skill is only supported in
+     * stream mode}; surfacing that here names the fix instead of an opaque provider error.
+     *
+     * @param request the built request (its parameters may carry a skill directly)
+     * @param options the effective per-call options (a skill may arrive via additional body
+     *     params, which the HTTP client merges into the parameters object)
+     */
+    private void validateSkillStreamRequirement(DashScopeRequest request, GenerateOptions options) {
+        if (stream) {
+            return;
+        }
+        if (DashScopeHttpClient.isSkillConfigured(request, options.getAdditionalBodyParams())) {
+            throw new IllegalStateException(DashScopeHttpClient.SKILL_STREAM_REQUIREMENT_MESSAGE);
+        }
+    }
+
+    /**
+     * Marks streaming chunks whose text content carries skill output.
+     *
+     * <p>In skill mode the outline and page content stream through {@code reasoning_content}
+     * (thinking blocks) while the final download URL arrives in {@code content} (text blocks), so
+     * a chunk with text content carries the artifact. The flag propagates through the reasoning
+     * accumulator into the final assistant message metadata under
+     * {@link DashScopeSkill#RESPONSE_METADATA_KEY}, letting consumers identify skill output. The
+     * download URL remains in the text content.
+     *
+     * @param response the parsed response chunk
+     * @param skillActive whether the request was configured with a skill
+     * @return the annotated response, unchanged when no skill is active or the chunk has no text
+     */
+    private static ChatResponse annotateSkillOutput(ChatResponse response, boolean skillActive) {
+        if (!skillActive || !hasTextContent(response)) {
+            return response;
+        }
+        Map<String, Object> metadata =
+                new HashMap<>(response.getMetadata() != null ? response.getMetadata() : Map.of());
+        metadata.put(DashScopeSkill.RESPONSE_METADATA_KEY, DashScopeSkill.TYPE_PPT);
+        return ChatResponse.builder()
+                .id(response.getId())
+                .content(response.getContent())
+                .usage(response.getUsage())
+                .metadata(metadata)
+                .finishReason(response.getFinishReason())
+                .build();
+    }
+
+    private static boolean hasTextContent(ChatResponse response) {
+        if (response.getContent() == null) {
+            return false;
+        }
+        for (ContentBlock block : response.getContent()) {
+            if (block instanceof TextBlock textBlock
+                    && textBlock.getText() != null
+                    && !textBlock.getText().isEmpty()) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**

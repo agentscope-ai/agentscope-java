@@ -103,17 +103,31 @@
 
         <dependency>
             <groupId>io.agentscope</groupId>
+            <artifactId>agentscope-extensions-jev</artifactId>
+            <scope>compile</scope>
+            <optional>true</optional>
+        </dependency>
+
+        <dependency>
+            <groupId>io.agentscope</groupId>
+            <artifactId>agentscope-extensions-openai-decisions</artifactId>
+            <scope>compile</scope>
+            <optional>true</optional>
+        </dependency>
+
+        <dependency>
+            <groupId>io.agentscope</groupId>
             <artifactId>agentscope-extensions-model-openai</artifactId>
             <scope>compile</scope>
             <optional>true</optional>
         </dependency>
 
-<!--        <dependency>-->
-<!--            <groupId>io.agentscope</groupId>-->
-<!--            <artifactId>agentscope-extensions-model-openai-official</artifactId>-->
-<!--            <scope>compile</scope>-->
-<!--            <optional>true</optional>-->
-<!--        </dependency>-->
+        <dependency>
+            <groupId>io.agentscope</groupId>
+            <artifactId>agentscope-extensions-model-openai-official</artifactId>
+            <scope>compile</scope>
+            <optional>true</optional>
+        </dependency>
 
         <dependency>
             <groupId>io.agentscope</groupId>
@@ -334,6 +348,13 @@
 
         <dependency>
             <groupId>io.agentscope</groupId>
+            <artifactId>agentscope-extensions-channel-weixin</artifactId>
+            <scope>compile</scope>
+            <optional>true</optional>
+        </dependency>
+
+        <dependency>
+            <groupId>io.agentscope</groupId>
             <artifactId>agentscope-extensions-channel-wecom</artifactId>
             <scope>compile</scope>
             <optional>true</optional>
@@ -390,15 +411,19 @@
 
         <dependency>
             <groupId>io.agentscope</groupId>
-            <artifactId>agentscope-extensions-aistio</artifactId>
+            <artifactId>agentscope-extensions-controlplane</artifactId>
             <scope>compile</scope>
             <optional>true</optional>
         </dependency>
 
-        <!-- Model Context Protocol (MCP) SDK -->
+        <!-- Model Context Protocol (MCP) SDK: core + Jackson 2 binding -->
         <dependency>
             <groupId>io.modelcontextprotocol.sdk</groupId>
-            <artifactId>mcp</artifactId>
+            <artifactId>mcp-core</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.modelcontextprotocol.sdk</groupId>
+            <artifactId>mcp-json-jackson2</artifactId>
         </dependency>
 
         <!-- SLF4J API -->
@@ -470,6 +495,9 @@
                                     <include>io.agentscope:agentscope-extensions-*</include>
                                 </includes>
                             </artifactSet>
+                            <transformers>
+                                <transformer implementation="org.apache.maven.plugins.shade.resource.ServicesResourceTransformer"/>
+                            </transformers>
                         </configuration>
                     </execution>
                 </executions>
@@ -484,6 +512,12 @@
                         <dependencySourceInclude>io.agentscope:agentscope-*</dependencySourceInclude>
                     </dependencySourceIncludes>
                     <additionalDependencies>
+                        <!-- JEV browser adapter exposes optional Playwright types in its API. -->
+                        <additionalDependency>
+                            <groupId>com.microsoft.playwright</groupId>
+                            <artifactId>playwright</artifactId>
+                            <version>1.45.0</version>
+                        </additionalDependency>
                         <additionalDependency>
                             <groupId>org.springframework</groupId>
                             <artifactId>spring-webflux</artifactId>

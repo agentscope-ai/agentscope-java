@@ -179,10 +179,20 @@ export function runtimeEventsToConversation(events: SessionEventItem[]): Convers
 export function runtimeEventsToMessages(events: SessionEventItem[]): ConversationMessage[] {
   const messages: ConversationMessage[] = [];
   const streamedMessages = new Map<string, ConversationMessage>();
+  const committedMessages = new Map<string, ConversationMessage>();
   const toolBlocks = new Map<string, ConversationContentBlock>();
   const starts = new Map<string, { block: ConversationContentBlock; at?: string }>();
   const callTimes = new Map<string, string | undefined>();
-  for (const [index, event] of events.entries()) {
+  const transcriptEvents = events.flatMap<SessionEventItem>(event => {
+    const meta = (event.frameworkMeta || {}) as Record<string, unknown>;
+    if (event.eventType !== 'agent.tool_result' || !Array.isArray(meta.tool_results)) return [event];
+    return (meta.tool_results as Record<string, unknown>[]).map(result => ({ ...event,
+      toolName: String(result.name ?? event.toolName ?? 'tool'),
+      toolOutput: String(result.output ?? ''),
+      frameworkMeta: { ...meta, ...result, tool_results: undefined },
+    }));
+  });
+  for (const [index, event] of transcriptEvents.entries()) {
     const type = event.eventType || 'event';
     const category = eventCategory(type, event.role);
     const meta = (event.frameworkMeta || {}) as Record<string, unknown>;
@@ -197,8 +207,23 @@ export function runtimeEventsToMessages(events: SessionEventItem[]): Conversatio
       for (const block of toolBlocks.values()) if (block.result === undefined) block.toolState = 'unavailable';
     }
     if (!['message', 'tool', 'error', 'model'].includes(category)) continue;
-    const id = `runtime-event-message-${event.id ?? event.seq ?? index}`;
+    const id = `runtime-event-message-${event.id ?? event.seq ?? index}${meta.tool_use_id ? `-${String(meta.tool_use_id)}` : ""}`;
     const role = roleOf(event.role || (category === 'tool' ? 'assistant' : category === 'error' ? 'error' : 'system'));
+    if (meta.message_id && (type === 'agent.message' || type === 'user.message')) {
+      const key = String(meta.message_id);
+      const existing = committedMessages.get(key);
+      if (existing) {
+        existing.blocks = [{ kind: 'text', id: key, text: event.content || '' }];
+        existing.raw = event;
+      } else {
+        const message: ConversationMessage = { id: key, seq: event.seq, role,
+          occurredAt: event.occurredAt, blocks: [{ kind: 'text', id: key, text: event.content || '' }],
+          state: 'complete', raw: event };
+        messages.push(message);
+        committedMessages.set(key, message);
+      }
+      continue;
+    }
     if (meta.turnId && (type === 'assistant.delta' || type === 'assistant.message')) {
       const existing = streamedMessages.get(scope);
       if (existing) {

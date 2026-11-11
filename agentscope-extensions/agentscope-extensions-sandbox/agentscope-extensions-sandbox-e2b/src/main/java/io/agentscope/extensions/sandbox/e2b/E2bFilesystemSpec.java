@@ -21,6 +21,8 @@ import io.agentscope.harness.agent.sandbox.SandboxClientOptions;
 import io.agentscope.harness.agent.sandbox.WorkspaceSpec;
 import io.agentscope.harness.agent.sandbox.snapshot.NoopSnapshotSpec;
 import io.agentscope.harness.agent.sandbox.snapshot.SandboxSnapshotSpec;
+import java.util.List;
+import java.util.function.Supplier;
 
 /** {@link SandboxFilesystemSpec} for E2B cloud sandboxes. */
 public class E2bFilesystemSpec extends SandboxFilesystemSpec {
@@ -50,6 +52,20 @@ public class E2bFilesystemSpec extends SandboxFilesystemSpec {
         return this;
     }
 
+    /**
+     * Sets a fixed envd gateway URL, equivalent to the official SDK's {@code E2B_SANDBOX_URL}.
+     * When configured, envd traffic for every sandbox is sent to this gateway and routed by the
+     * {@code E2b-Sandbox-Id}/{@code E2b-Sandbox-Port} request headers instead of wildcard-DNS
+     * hosts derived from {@code domain}.
+     *
+     * @param envdSandboxUrl fixed data-plane gateway URL for envd requests
+     * @return this spec
+     */
+    public E2bFilesystemSpec envdSandboxUrl(String envdSandboxUrl) {
+        options.setEnvdSandboxUrl(envdSandboxUrl);
+        return this;
+    }
+
     public E2bFilesystemSpec templateId(String templateId) {
         options.setTemplateId(templateId);
         return this;
@@ -70,6 +86,21 @@ public class E2bFilesystemSpec extends SandboxFilesystemSpec {
         return this;
     }
 
+    /** Registers a sandbox-creation environment variable with a fixed value. */
+    public E2bFilesystemSpec env(String name, String value) {
+        options.env(name, value);
+        return this;
+    }
+
+    /**
+     * Registers a sandbox-creation environment variable whose value is resolved on every sandbox
+     * creation — use this for short-lived values such as access tokens.
+     */
+    public E2bFilesystemSpec env(String name, Supplier<String> valueSupplier) {
+        options.env(name, valueSupplier);
+        return this;
+    }
+
     public E2bFilesystemSpec persistenceMode(E2bPersistenceMode persistenceMode) {
         options.setPersistenceMode(persistenceMode);
         return this;
@@ -77,6 +108,30 @@ public class E2bFilesystemSpec extends SandboxFilesystemSpec {
 
     public E2bFilesystemSpec codec(E2bCodec codec) {
         options.setCodec(codec);
+        return this;
+    }
+
+    public E2bFilesystemSpec volumeMount(String name, String path) {
+        options.addVolumeMount(name, path);
+        return this;
+    }
+
+    public E2bFilesystemSpec volumeMount(E2bVolumeMount mount) {
+        options.addVolumeMount(mount);
+        return this;
+    }
+
+    /**
+     * Replaces all configured volume mounts.
+     *
+     * <p>A null or empty list clears mounts on this spec, but note that {@link E2bSandboxClient}
+     * merging treats an empty call-level list as "not set" (same convention as AgentRun OSS
+     * mounts), so clearing only takes effect when these options are also the client defaults.
+     *
+     * @param mounts replacement mounts (null or empty clears previously added ones)
+     */
+    public E2bFilesystemSpec volumeMounts(List<E2bVolumeMount> mounts) {
+        options.setVolumeMounts(mounts);
         return this;
     }
 
@@ -92,6 +147,17 @@ public class E2bFilesystemSpec extends SandboxFilesystemSpec {
 
     public E2bFilesystemSpec maxRetries(int maxRetries) {
         options.setMaxRetries(maxRetries);
+        return this;
+    }
+
+    /**
+     * Maximum number of snapshots created by this session that are kept on shutdown; {@code <= 0}
+     * disables pruning. Defaults to {@code 0} (disabled), matching the historical no-pruning
+     * behaviour. See {@link E2bSandboxClientOptions#setSnapshotRetention(int)} for the full
+     * contract.
+     */
+    public E2bFilesystemSpec snapshotRetention(int snapshotRetention) {
+        options.setSnapshotRetention(snapshotRetention);
         return this;
     }
 

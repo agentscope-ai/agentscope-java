@@ -37,9 +37,11 @@ import io.agentscope.core.middleware.MiddlewareBase;
 import io.agentscope.core.state.AgentState;
 import io.agentscope.core.tool.ToolResultMessageBuilder;
 import java.util.ArrayList;
+import java.util.EnumSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.function.Function;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -78,6 +80,12 @@ public class ToolConfirmationMiddleware implements MiddlewareBase {
         this.sessionService = sessionService;
     }
 
+    /** Narrow declaration: subclasses overriding more hooks must extend this set. */
+    @Override
+    public Set<ExtensionPoint> activePoints() {
+        return EnumSet.of(ExtensionPoint.ON_ACTING);
+    }
+
     @Override
     public Flux<AgentEvent> onActing(
             Agent agent,
@@ -112,6 +120,21 @@ public class ToolConfirmationMiddleware implements MiddlewareBase {
                 if (toolUse.getInput() != null) {
                     toolInput.putAll(toolUse.getInput());
                 }
+                var jevApproval =
+                        io.agentscope.extensions.judge.jev.JevConfirmedCalls.snapshot(toolUse);
+                var recorder = io.agentscope.core.session.SessionRecorder.from(ctx);
+                if (recorder != null)
+                    recorder.recordNow(
+                            "interaction/requested",
+                            Map.of(
+                                    "requestId",
+                                    toolUse.getId(),
+                                    "kind",
+                                    "confirmation",
+                                    "protocol",
+                                    "service_ticket",
+                                    "call",
+                                    toolUse));
                 ToolConfirmationCoordinator.ConfirmationDecision decision =
                         coordinator.awaitDecision(
                                 sessionId,
@@ -119,7 +142,18 @@ public class ToolConfirmationMiddleware implements MiddlewareBase {
                                 toolUse.getName(),
                                 toolInput,
                                 ctx.get(ManagedTurnContext.class));
+                if (recorder != null)
+                    recorder.recordNow(
+                            "interaction/resolved",
+                            Map.of(
+                                    "requestId",
+                                    toolUse.getId(),
+                                    "kind",
+                                    "confirmation",
+                                    "allowed",
+                                    decision.allow()));
                 if (decision.allow()) {
+                    io.agentscope.extensions.judge.jev.JevConfirmedCalls.remember(ctx, jevApproval);
                     allowed.add(toolUse);
                 } else {
                     denied.add(

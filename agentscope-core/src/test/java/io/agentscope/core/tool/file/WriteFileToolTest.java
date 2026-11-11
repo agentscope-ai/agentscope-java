@@ -18,6 +18,7 @@ package io.agentscope.core.tool.file;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolResultState;
 import java.io.IOException;
@@ -40,7 +41,9 @@ class WriteFileToolTest {
     @BeforeEach
     void setUp() throws IOException {
         tool = new WriteFileTool(tempDir.toString());
-        file = tempDir.resolve("sample.txt");
+        Files.writeString(
+                tempDir.resolve("sample.txt"), "one\ntwo\nthree\n", StandardCharsets.UTF_8);
+        file = tempDir.resolve("range-sample.txt");
         Files.writeString(file, ORIGINAL_CONTENT, StandardCharsets.UTF_8);
     }
 
@@ -122,6 +125,22 @@ class WriteFileToolTest {
         assertEquals("fresh content", readFile(newFile));
     }
 
+    @Test
+    void insertShowsSnippetForPathRelativeToBaseDir() {
+        assertEquals(
+                "Insert content into sample.txt at line 2 successfully. The new content between"
+                        + " lines 1-4 is:\n```\n1: one\n2: inserted\n3: two\n4: three\n```",
+                resultText(tool.insertTextFile("sample.txt", "inserted", 2).block()));
+    }
+
+    @Test
+    void writeRangeShowsSnippetForPathRelativeToBaseDir() {
+        assertEquals(
+                "Write sample.txt successfully. The new content snippet:\n"
+                        + "```\n1: one\n2: replaced\n3: three\n```",
+                resultText(tool.writeTextFile("sample.txt", "replaced", "2,2").block()));
+    }
+
     private String readFile() {
         return readFile(file);
     }
@@ -132,5 +151,9 @@ class WriteFileToolTest {
         } catch (IOException e) {
             throw new RuntimeException(e);
         }
+    }
+
+    private String resultText(ToolResultBlock result) {
+        return ((TextBlock) result.getOutput().get(0)).getText();
     }
 }

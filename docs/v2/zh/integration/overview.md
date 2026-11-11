@@ -1,5 +1,6 @@
 ---
 title: 概览
+en_link: /v2/en/integration/overview
 ---
 
 本节汇总 AgentScope Java 与第三方系统、生态服务的集成扩展。每个扩展都是 `agentscope-extensions/` 下的独立 Maven 模块，按需引入即可。
@@ -13,6 +14,7 @@ title: 概览
 | 提供商 | Maven artifact | `ModelRegistry` id | 标准环境变量 | 文档 |
 |--------|----------------|--------------------|--------------|------|
 | OpenAI | `agentscope-extensions-model-openai` | `openai:<model>` | `OPENAI_API_KEY` | <a class="reference internal" href="/v2/zh/integration/model/openai">OpenAI</a> |
+| OpenAI Official | `agentscope-extensions-model-openai-official` | `openai-official:<model>` | `OPENAI_API_KEY` | <a class="reference internal" href="/v2/zh/integration/model/openai-official">OpenAI Official</a> |
 | DeepSeek | `agentscope-extensions-model-openai` | `deepseek:<model>` | `DEEPSEEK_API_KEY` | <a class="reference internal" href="/v2/zh/integration/model/deepseek">DeepSeek</a> |
 | GLM | `agentscope-extensions-model-openai` | `glm:<model>` | `ZAI_API_KEY` / `GLM_API_KEY` / `ZHIPUAI_API_KEY` | <a class="reference internal" href="/v2/zh/integration/model/glm">GLM</a> |
 | Kimi | `agentscope-extensions-model-openai` | `kimi:<model>` | `MOONSHOT_API_KEY` / `KIMI_API_KEY` | <a class="reference internal" href="/v2/zh/integration/model/kimi">Kimi</a> |
@@ -30,13 +32,17 @@ title: 概览
 </Note>
 
 
+## 结构化决策
+
+[OpenAI Decisions](/v2/zh/integration/judge/openai-decisions) 通过独立 judge 客户端判断文本和图片，返回类型化的 predicate、choice 和 score 结果。
+
 ## 分布式存储（Distributed Store）
 
 生产多副本部署所需的全链路分布式存储组件。通过 `DistributedStore` 一键配置 Agent 状态、工作区文件系统、沙箱快照与并发锁。
 
 - [分布式存储总览](/v2/zh/integration/distributed/index) — `DistributedStore` API、能力矩阵、混合后端
 - [Redis](/v2/zh/integration/distributed/redis) — `AgentStateStore` + `BaseStore` + `SandboxSnapshotSpec` + `SandboxExecutionGuard`
-- [MySQL / JDBC](/v2/zh/integration/distributed/mysql) — `AgentStateStore` + `JdbcStore` + `JdbcSnapshotSpec` + `JdbcSandboxExecutionGuard`
+- [JDBC](/v2/zh/integration/distributed/jdbc) — `AgentStateStore` + `JdbcStore` + `JdbcSnapshotSpec` + `JdbcSandboxExecutionGuard`
 - [阿里云 OSS](/v2/zh/integration/distributed/oss) — `AgentStateStore` + `OssBaseStore` + `OssSnapshotSpec`
 
 ## 沙箱执行环境（Sandbox）

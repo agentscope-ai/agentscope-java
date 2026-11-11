@@ -1,5 +1,6 @@
 ---
 title: 概览
+en_link: /v2/en/integration/ecosystem/overview
 ---
 
 放在这一组里的扩展不属于"记忆/会话/RAG/协议/基础设施"任一具体大类，而是对运行环境、语言生态、调试工具、训练流水线的扩展：

@@ -57,7 +57,8 @@ class McpNamespacedToolTest {
 
     @Test
     void callsOriginalNameWithNamespacedModelName() {
-        McpClientWrapper client = Mockito.mock(McpClientWrapper.class);
+        // McpTool.callAsync reads the connection-level switch live; default it to on.
+        McpClientWrapper client = McpClientWrapperTestSupport.mockWrapper("crm-client", true);
         Mockito.when(client.callTool(Mockito.eq("search"), Mockito.anyMap(), Mockito.anyMap()))
                 .thenReturn(Mono.just(McpSchema.CallToolResult.builder().isError(false).build()));
         McpTool tool =

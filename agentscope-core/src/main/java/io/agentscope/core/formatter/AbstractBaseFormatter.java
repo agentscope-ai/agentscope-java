@@ -19,6 +19,8 @@ import io.agentscope.core.message.AudioBlock;
 import io.agentscope.core.message.Base64Source;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.DataBlock;
+import io.agentscope.core.message.DocumentBlock;
+import io.agentscope.core.message.FileIdSource;
 import io.agentscope.core.message.HintBlock;
 import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.MessageMetadataKeys;
@@ -75,7 +77,33 @@ public abstract class AbstractBaseFormatter<TReq, TResp, TParams>
         return TracerRegistry.get().callFormat(this, msgs, () -> doFormat(msgs));
     }
 
+    /**
+     * Format AgentScope messages using request-scoped generation options.
+     *
+     * @param msgs list of AgentScope messages
+     * @param options request-scoped generation options; may be {@code null}
+     * @return list of provider-specific request messages
+     */
+    @Override
+    public List<TReq> format(List<Msg> msgs, GenerateOptions options) {
+        return TracerRegistry.get().callFormat(this, msgs, () -> doFormat(msgs, options));
+    }
+
     protected abstract List<TReq> doFormat(List<Msg> msgs);
+
+    /**
+     * Format AgentScope messages using request-scoped generation options.
+     *
+     * <p>The default implementation delegates to {@link #doFormat(List)} for providers that do not
+     * need options during message conversion.
+     *
+     * @param msgs list of AgentScope messages
+     * @param options request-scoped generation options; may be {@code null}
+     * @return list of provider-specific request messages
+     */
+    protected List<TReq> doFormat(List<Msg> msgs, GenerateOptions options) {
+        return doFormat(msgs);
+    }
 
     /**
      * Extract text content from a message, filtering out ThinkingBlock.
@@ -93,11 +121,11 @@ public abstract class AbstractBaseFormatter<TReq, TResp, TParams>
                                 return Stream.of(hb.getHint());
                             } else if (block instanceof ThinkingBlock) {
                                 // IMPORTANT: ThinkingBlock is NOT sent back to LLM APIs
-                                // ThinkingBlock is stored in memory but skipped when formatting
-                                // messages
+                                // ThinkingBlock is stored in memory but skipped when
+                                // formatting messages
                                 log.debug(
-                                        "Skipping ThinkingBlock when formatting message for LLM"
-                                                + " API");
+                                        "Skipping ThinkingBlock when formatting message"
+                                                + " for LLM API");
                                 return Stream.empty();
                             } else if (block instanceof ToolResultBlock toolResult) {
                                 // Extract text from tool result output
@@ -223,6 +251,10 @@ public abstract class AbstractBaseFormatter<TReq, TResp, TParams>
             } else if (block instanceof DataBlock db) {
                 String reference = convertMediaBlockToTextReference(db, "data");
                 textualOutput.add(reference);
+            } else if (block instanceof DocumentBlock doc) {
+                // A document is described by name and location. Rendering base64 through the
+                // temp-file path would hand a remote model a path on the local disk.
+                textualOutput.add(DocumentReferenceRenderer.render(doc));
             }
             // Other block types (e.g., ThinkingBlock) are ignored
         }
@@ -236,10 +268,13 @@ public abstract class AbstractBaseFormatter<TReq, TResp, TParams>
     }
 
     /**
-     * Convert a media block (image/audio/video) to a textual reference.
+     * Convert a media block (image/audio/video/data) to a textual reference.
      *
-     * @param block     The media block (ImageBlock, AudioBlock, or VideoBlock)
-     * @param mediaType The media type string ("image", "audio", or "video")
+     * <p>Documents never reach this helper: {@link #convertToolResultToString} renders them as
+     * references directly, so no payload is written to a temporary file.
+     *
+     * @param block     The media block (ImageBlock, AudioBlock, VideoBlock, or DataBlock)
+     * @param mediaType The media type string ("image", "audio", "video", or "data")
      * @return Textual reference to the media (URL or temp file path)
      */
     private String convertMediaBlockToTextReference(ContentBlock block, String mediaType) {
@@ -259,6 +294,10 @@ public abstract class AbstractBaseFormatter<TReq, TResp, TParams>
                 log.error("Failed to save base64 data to temp file", e);
                 return String.format("[%s - failed to save file: %s]", mediaType, e.getMessage());
             }
+        } else if (source instanceof FileIdSource fileIdSource) {
+            return String.format(
+                    "The %s is available as a provider file id: %s",
+                    mediaType, fileIdSource.getFileId());
         }
 
         return String.format("[%s - unsupported source type]", mediaType);

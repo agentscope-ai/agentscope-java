@@ -29,6 +29,8 @@ import java.nio.file.Path;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Optional;
+import java.util.regex.Pattern;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 
@@ -41,7 +43,7 @@ import java.util.zip.ZipInputStream;
  * <p><b>Usage example:</b>
  * <pre>{@code
  * // Create skill from markdown with default source
- * String skillMd = "---\nname: my_skill\ndescription: Does something\n---\nContent here";
+ * String skillMd = "---\nname: my-skill\ndescription: Does something\n---\nContent here";
  * Map<String, String> resources = Map.of("file1.txt", "content1");
  * AgentSkill skill = SkillUtil.createFrom(skillMd, resources);
  *
@@ -56,9 +58,74 @@ public class SkillUtil {
     private static final String DEFAULT_SOURCE = "custom";
 
     /**
+     * Maximum length of a skill name, following the Agent Skills ecosystem standard.
+     */
+    public static final int MAX_SKILL_NAME_LENGTH = 64;
+
+    /**
+     * Pattern a skill name must match: starts with a lowercase letter or digit, then lowercase
+     * letters, digits and dashes only. Underscores are excluded because they collide with the
+     * {@code name_source} skill-id separator.
+     */
+    public static final Pattern VALID_SKILL_NAME_PATTERN = Pattern.compile("^[a-z0-9][a-z0-9-]*$");
+
+    /**
      * Private constructor to prevent instantiation.
      */
     private SkillUtil() {}
+
+    /**
+     * Checks whether the given skill name is non-null, matches {@link #VALID_SKILL_NAME_PATTERN},
+     * and is at most {@link #MAX_SKILL_NAME_LENGTH} characters long.
+     *
+     * @param name the skill name to validate (may be {@code null})
+     * @return {@code true} when the name is valid, {@code false} otherwise
+     */
+    public static boolean isValidSkillName(String name) {
+        return name != null
+                && name.length() <= MAX_SKILL_NAME_LENGTH
+                && VALID_SKILL_NAME_PATTERN.matcher(name).matches();
+    }
+
+    /**
+     * Fails fast when the given skill name is invalid. Shared by all write boundaries so the
+     * rule set and rejection message stay identical.
+     *
+     * @param name the skill name to validate
+     * @throws IllegalArgumentException when the name is null, does not match {@link
+     *     #VALID_SKILL_NAME_PATTERN}, or exceeds {@link #MAX_SKILL_NAME_LENGTH}
+     */
+    public static void requireValidSkillName(String name) {
+        if (!isValidSkillName(name)) {
+            throw new IllegalArgumentException(
+                    "Invalid skill name '"
+                            + name
+                            + "': names must match "
+                            + VALID_SKILL_NAME_PATTERN.pattern()
+                            + " and be at most "
+                            + MAX_SKILL_NAME_LENGTH
+                            + " characters");
+        }
+    }
+
+    /**
+     * Resolves {@code relativeSegment} under {@code baseDir} and returns the normalized result
+     * only when it stays inside {@code baseDir}; an empty result means "refuse to write".
+     *
+     * <p>Normalization before the containment check is essential: {@code Path.resolve} replaces
+     * the base entirely for absolute segments, and {@code ..} segments can cancel their way out.
+     * Skill write paths (including the local mirror writer) must reuse this method instead of
+     * re-implementing the check.
+     *
+     * @param baseDir the directory the resolved path must stay inside
+     * @param relativeSegment the unresolved segment (skill id or resource relative path)
+     * @return the normalized contained path, or {@code Optional.empty()} when it escapes {@code
+     *     baseDir}
+     */
+    public static Optional<Path> resolveContainedPath(Path baseDir, String relativeSegment) {
+        Path resolved = baseDir.resolve(relativeSegment).normalize();
+        return resolved.startsWith(baseDir) ? Optional.of(resolved) : Optional.empty();
+    }
 
     /**
      * Creates an AgentSkill from markdown with YAML frontmatter.

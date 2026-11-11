@@ -87,7 +87,13 @@ class AgentProtocolControllerTest {
                         "decisions",
                         List.of(
                                 Map.of("toolCallId", "tc1", "approved", true),
-                                Map.of("tool_call_id", "tc2", "approved", "false")));
+                                Map.of(
+                                        "tool_call_id",
+                                        "tc2",
+                                        "approved",
+                                        "false",
+                                        "reason",
+                                        "not allowed")));
 
         ResponseEntity<Map<String, Object>> resp = controller.resume("t-hitl", body);
 
@@ -104,6 +110,7 @@ class AgentProtocolControllerTest {
         assertTrue(decisions.get(0).isApproved());
         assertEquals("tc2", decisions.get(1).getToolCallId());
         assertFalse(decisions.get(1).isApproved());
+        assertEquals("not allowed", decisions.get(1).getReason());
     }
 
     @Test

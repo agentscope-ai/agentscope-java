@@ -32,7 +32,7 @@ import java.util.Map;
  * {@code metadata}, {@code timestamp}, {@code usage} or {@code generateReason}.
  *
  * <p>Allowed content blocks follow the rules enforced by {@link Msg}'s constructor:
- * text, image, audio, video, and data blocks.
+ * text, data, document, image, audio, and video blocks.
  */
 public final class UserMessage extends Msg {
 
@@ -74,7 +74,6 @@ public final class UserMessage extends Msg {
     private UserMessage(
             @JsonProperty("id") String id,
             @JsonProperty("name") String name,
-            @JsonProperty("role") MsgRole role,
             @JsonProperty("content") List<ContentBlock> content,
             @JsonProperty("metadata") Map<String, Object> metadata,
             @JsonProperty("timestamp") String timestamp,
@@ -169,7 +168,7 @@ public final class UserMessage extends Msg {
 
         @Override
         public UserMessage build() {
-            return new UserMessage(id, name, MsgRole.USER, content, metadata, timestamp, usage);
+            return new UserMessage(id, name, content, metadata, timestamp, usage);
         }
     }
 }

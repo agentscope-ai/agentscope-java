@@ -1,5 +1,6 @@
 ---
 title: 技能仓库
+en_link: /v2/en/integration/skill/index
 ---
 
 选择下方指南，了解技能仓库的配置与使用。

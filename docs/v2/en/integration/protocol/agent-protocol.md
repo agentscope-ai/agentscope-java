@@ -1,5 +1,6 @@
 ---
 title: Agent Protocol
+zh_link: /v2/zh/integration/protocol/agent-protocol
 ---
 
 `agentscope-extensions-agent-protocol` exposes AgentScope's [Harness Agent](/v2/en/docs/harness/architecture) as a standard [Agent Protocol](https://agentprotocol.ai/) HTTP API, letting external systems (CI, other agent platforms, automation jobs) submit "tasks" using a uniform contract — no need to know the implementation details.
@@ -65,7 +66,7 @@ You may supply your own `ProtocolTaskRepository` bean to override the default. C
 
 ## Concurrent execution
 
-The agent is stateless between calls — a singleton handles multiple concurrent tasks. Each task carries its own `(userId, sessionId)` via `RuntimeContext`, so state is fully isolated:
+This adapter uses a Spring-managed `HarnessAgent` Bean whose lifetime covers protocol execution and recovery, ending at application shutdown. Each task supplies its identity through `RuntimeContext`. For ordinary web handlers, use a shared Builder and a new Agent per request; see [Instance lifecycle](/v2/en/docs/building-blocks/agent#instance-lifecycle). Do not close the adapter-owned Agent when task submission returns:
 
 ```java
 @Bean
@@ -267,7 +268,7 @@ Both are additive: a client that ignores them keeps reading the flat fields (`te
 {
   "decisions": [
     { "toolCallId": "call-1", "approved": true },
-    { "toolCallId": "call-2", "approved": false }
+    { "toolCallId": "call-2", "approved": false, "reason": "not allowed in production" }
   ]
 }
 ```

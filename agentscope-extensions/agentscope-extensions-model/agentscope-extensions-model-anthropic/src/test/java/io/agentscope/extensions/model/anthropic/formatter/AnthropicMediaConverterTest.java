@@ -21,13 +21,18 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.anthropic.models.messages.Base64ImageSource;
+import com.anthropic.models.messages.DocumentBlockParam;
 import com.anthropic.models.messages.ImageBlockParam;
 import com.anthropic.models.messages.UrlImageSource;
 import io.agentscope.core.message.Base64Source;
 import io.agentscope.core.message.DataBlock;
+import io.agentscope.core.message.DocumentBlock;
+import io.agentscope.core.message.FileIdSource;
 import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.Source;
 import io.agentscope.core.message.URLSource;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.Base64;
 import org.junit.jupiter.api.Test;
 
@@ -69,6 +74,18 @@ class AnthropicMediaConverterTest extends AnthropicFormatterTestBase {
         assertNotNull(base64Source.data());
         // Verify it's valid base64
         byte[] decoded = Base64.getDecoder().decode(base64Source.data());
+        assertEquals("fake image content", new String(decoded));
+    }
+
+    @Test
+    void testConvertImageBlockWithFileUri() throws Exception {
+        URLSource source = URLSource.builder().url(tempImageFile.toUri().toString()).build();
+        ImageBlock block = ImageBlock.builder().source(source).build();
+
+        ImageBlockParam result = converter.convertImageBlock(block);
+
+        assertTrue(result.source().isBase64());
+        byte[] decoded = Base64.getDecoder().decode(result.source().asBase64().data());
         assertEquals("fake image content", new String(decoded));
     }
 
@@ -234,6 +251,40 @@ class AnthropicMediaConverterTest extends AnthropicFormatterTestBase {
     }
 
     @Test
+    void testConvertDataBlockWithFileUri() throws Exception {
+        URLSource source =
+                URLSource.builder()
+                        .url(tempImageFile.toUri().toString())
+                        .mimeType("image/png")
+                        .build();
+        DataBlock block = DataBlock.builder().source(source).build();
+
+        ImageBlockParam result = converter.convertDataBlock(block);
+
+        assertTrue(result.source().isBase64());
+        byte[] decoded = Base64.getDecoder().decode(result.source().asBase64().data());
+        assertEquals("fake image content", new String(decoded));
+    }
+
+    @Test
+    void testConvertImageWithUnsupportedRemoteSchemeThrows() {
+        DataBlock block =
+                DataBlock.builder()
+                        .source(
+                                URLSource.builder()
+                                        .url("ftp://example.com/image.png")
+                                        .mimeType("image/png")
+                                        .build())
+                        .build();
+
+        IllegalArgumentException error =
+                assertThrows(
+                        IllegalArgumentException.class, () -> converter.convertDataBlock(block));
+
+        assertTrue(error.getMessage().contains("HTTP(S)"));
+    }
+
+    @Test
     void testConvertDataBlockNonImageMimeTypeThrows() {
         // Anthropic only supports image — audio/video DataBlocks must throw
         Base64Source source =
@@ -250,10 +301,194 @@ class AnthropicMediaConverterTest extends AnthropicFormatterTestBase {
     }
 
     @Test
+    void testConvertPdfDataBlockThrows() {
+        Base64Source source =
+                Base64Source.builder().data("JVBERi0xLjQK").mediaType("application/pdf").build();
+        DataBlock block = DataBlock.builder().source(source).build();
+
+        IllegalArgumentException ex =
+                assertThrows(
+                        IllegalArgumentException.class, () -> converter.convertDataBlock(block));
+
+        assertTrue(ex.getMessage().contains("image DataBlocks"));
+        assertTrue(ex.getMessage().contains("application/pdf"));
+    }
+
+    @Test
     void testConvertDataBlockNoExtensionNoHintThrows() {
         URLSource source = URLSource.builder().url("https://cdn.example.com/media/abc123").build();
         DataBlock block = DataBlock.builder().source(source).build();
 
         assertThrows(Exception.class, () -> converter.convertDataBlock(block));
+    }
+
+    @Test
+    void testConvertLocalPdfDocumentBlockToBase64() throws Exception {
+        Path pdf = Files.createTempFile("test_document", ".pdf");
+        try {
+            Files.writeString(pdf, "%PDF-1.4");
+            DocumentBlock block =
+                    DocumentBlock.builder()
+                            .name("guide.pdf")
+                            .mimeType("application/pdf")
+                            .source(URLSource.builder().url(pdf.toString()).build())
+                            .build();
+
+            DocumentBlockParam result = converter.convertDocumentBlock(block);
+
+            assertTrue(result.source().isBase64());
+            byte[] decoded = Base64.getDecoder().decode(result.source().asBase64().data());
+            assertEquals("%PDF-1.4", new String(decoded));
+        } finally {
+            Files.deleteIfExists(pdf);
+        }
+    }
+
+    @Test
+    void testConvertFileUriPdfDocumentBlockToBase64() throws Exception {
+        Path pdf = Files.createTempFile("test_document_uri", ".pdf");
+        try {
+            Files.writeString(pdf, "%PDF-1.4");
+            DocumentBlock block =
+                    DocumentBlock.builder()
+                            .name("guide.pdf")
+                            .mimeType("application/pdf")
+                            .source(URLSource.builder().url(pdf.toUri().toString()).build())
+                            .build();
+
+            DocumentBlockParam result = converter.convertDocumentBlock(block);
+
+            assertTrue(result.source().isBase64());
+            byte[] decoded = Base64.getDecoder().decode(result.source().asBase64().data());
+            assertEquals("%PDF-1.4", new String(decoded));
+        } finally {
+            Files.deleteIfExists(pdf);
+        }
+    }
+
+    @Test
+    void testConvertPdfDocumentBlockWithUnsupportedRemoteSchemeThrows() {
+        DocumentBlock block =
+                DocumentBlock.builder()
+                        .mimeType("application/pdf")
+                        .source(
+                                URLSource.builder()
+                                        .url("ftp://example.com/document.pdf")
+                                        .mimeType("application/pdf")
+                                        .build())
+                        .build();
+
+        IllegalArgumentException error =
+                assertThrows(
+                        IllegalArgumentException.class,
+                        () -> converter.convertDocumentBlock(block));
+
+        assertTrue(error.getMessage().contains("HTTP(S)"));
+    }
+
+    @Test
+    void testConvertPdfDocumentBlockFromExtensionWithoutExplicitMimeType() throws Exception {
+        DocumentBlock block =
+                DocumentBlock.builder()
+                        .source(URLSource.builder().url("https://example.com/document.pdf").build())
+                        .build();
+
+        DocumentBlockParam result = converter.convertDocumentBlock(block);
+
+        assertTrue(result.source().isUrl());
+        assertEquals("https://example.com/document.pdf", result.source().asUrl().url());
+    }
+
+    @Test
+    void testConvertDocumentBlockWithBase64Source() throws Exception {
+        DocumentBlock block =
+                DocumentBlock.builder()
+                        .name("guide.pdf")
+                        .mimeType("application/pdf")
+                        .source(
+                                Base64Source.builder()
+                                        .data("JVBERi0xLjQK")
+                                        .mediaType("application/pdf")
+                                        .build())
+                        .build();
+
+        DocumentBlockParam result = converter.convertDocumentBlock(block);
+
+        assertTrue(result.source().isBase64());
+        assertEquals("JVBERi0xLjQK", result.source().asBase64().data());
+        assertEquals("guide.pdf", result.title().orElseThrow());
+    }
+
+    @Test
+    void testConvertDocumentBlockWithRemoteUrl() throws Exception {
+        DocumentBlock block =
+                DocumentBlock.builder()
+                        .name("guide.pdf")
+                        .mimeType("application/pdf")
+                        .source(URLSource.builder().url("https://example.com/guide.pdf").build())
+                        .build();
+
+        DocumentBlockParam result = converter.convertDocumentBlock(block);
+
+        assertTrue(result.source().isUrl());
+        assertEquals("https://example.com/guide.pdf", result.source().asUrl().url());
+    }
+
+    @Test
+    void testConvertDocumentBlockWithAnthropicFileId() throws Exception {
+        DocumentBlock block =
+                DocumentBlock.builder()
+                        .name("guide.pdf")
+                        .source(
+                                FileIdSource.builder()
+                                        .provider("anthropic")
+                                        .fileId("file-abc")
+                                        .build())
+                        .build();
+
+        DocumentBlockParam result = converter.convertDocumentBlock(block);
+
+        assertTrue(result.source().isFile());
+        assertEquals("file-abc", result.source().asFile().fileId());
+        assertEquals("guide.pdf", result.title().orElseThrow());
+    }
+
+    @Test
+    void testConvertDocumentBlockRejectsNonAnthropicFileId() {
+        DocumentBlock block =
+                DocumentBlock.builder()
+                        .source(
+                                FileIdSource.builder()
+                                        .provider("dashscope")
+                                        .fileId("file-abc")
+                                        .build())
+                        .build();
+
+        IllegalArgumentException error =
+                assertThrows(
+                        IllegalArgumentException.class,
+                        () -> converter.convertDocumentBlock(block));
+
+        assertTrue(error.getMessage().contains("Anthropic file id"));
+    }
+
+    @Test
+    void testConvertDocumentBlockUsesDocumentMimeTypeOverSourceHint() {
+        DocumentBlock block =
+                DocumentBlock.builder()
+                        .mimeType("application/json")
+                        .source(
+                                URLSource.builder()
+                                        .url("https://example.com/guide.pdf")
+                                        .mimeType("application/pdf")
+                                        .build())
+                        .build();
+
+        IllegalArgumentException error =
+                assertThrows(
+                        IllegalArgumentException.class,
+                        () -> converter.convertDocumentBlock(block));
+
+        assertTrue(error.getMessage().contains("application/json"));
     }
 }

@@ -20,6 +20,8 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.google.genai.types.Content;
+import io.agentscope.core.message.Base64Source;
+import io.agentscope.core.message.DocumentBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
@@ -103,5 +105,42 @@ class GeminiMultiAgentFormatterTest {
 
         assertNotNull(contents);
         assertTrue(contents.size() >= 1);
+    }
+
+    @Test
+    void testFormatMultiAgentConversationKeepsDocumentBlock() {
+        Msg agent1 =
+                Msg.builder()
+                        .name("Agent1")
+                        .role(MsgRole.USER)
+                        .content(
+                                List.of(
+                                        TextBlock.builder().text("Please read this").build(),
+                                        DocumentBlock.builder()
+                                                .name("report.pdf")
+                                                .mimeType("application/pdf")
+                                                .source(
+                                                        Base64Source.builder()
+                                                                .data("JVBERi0xLjQ=")
+                                                                .mediaType("application/pdf")
+                                                                .build())
+                                                .build()))
+                        .build();
+
+        List<Content> contents = formatter.format(List.of(agent1));
+
+        boolean hasInlinePdf =
+                contents.stream()
+                        .flatMap(content -> content.parts().orElse(List.of()).stream())
+                        .anyMatch(
+                                part ->
+                                        part.inlineData().isPresent()
+                                                && "application/pdf"
+                                                        .equals(
+                                                                part.inlineData()
+                                                                        .get()
+                                                                        .mimeType()
+                                                                        .orElse("")));
+        assertTrue(hasInlinePdf, "Document must survive merging as inline data");
     }
 }
