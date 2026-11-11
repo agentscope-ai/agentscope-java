@@ -21,8 +21,10 @@ import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.middleware.ActingInput;
 import io.agentscope.core.middleware.MiddlewareBase;
+import java.util.EnumSet;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Set;
 import java.util.function.Function;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -45,6 +47,12 @@ public class ToolNotificationMiddleware implements MiddlewareBase {
 
     public ToolNotificationMiddleware(ToolEventBus bus) {
         this.bus = bus;
+    }
+
+    /** Narrow declaration: subclasses overriding more hooks must extend this set. */
+    @Override
+    public Set<ExtensionPoint> activePoints() {
+        return EnumSet.of(ExtensionPoint.ON_ACTING);
     }
 
     @Override
