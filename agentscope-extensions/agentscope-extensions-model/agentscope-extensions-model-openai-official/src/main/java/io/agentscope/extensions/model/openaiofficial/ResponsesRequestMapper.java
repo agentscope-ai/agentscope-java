@@ -29,6 +29,7 @@ import com.openai.models.responses.ResponseFormatTextJsonSchemaConfig;
 import com.openai.models.responses.ResponseFunctionCallOutputItem;
 import com.openai.models.responses.ResponseFunctionToolCall;
 import com.openai.models.responses.ResponseInputContent;
+import com.openai.models.responses.ResponseInputFile;
 import com.openai.models.responses.ResponseInputImage;
 import com.openai.models.responses.ResponseInputImageContent;
 import com.openai.models.responses.ResponseInputItem;
@@ -36,26 +37,40 @@ import com.openai.models.responses.ResponseInputText;
 import com.openai.models.responses.ResponseInputTextContent;
 import com.openai.models.responses.ResponseReasoningItem;
 import com.openai.models.responses.ResponseTextConfig;
+import com.openai.models.responses.ResponseToolSearchOutputItemParam;
 import com.openai.models.responses.Tool;
 import com.openai.models.responses.ToolChoiceFunction;
 import com.openai.models.responses.ToolChoiceOptions;
+import io.agentscope.core.formatter.DocumentReferenceRenderer;
 import io.agentscope.core.formatter.JsonSchema;
+import io.agentscope.core.formatter.MediaUtils;
 import io.agentscope.core.formatter.ResponseFormat;
 import io.agentscope.core.message.Base64Source;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.DataBlock;
+import io.agentscope.core.message.DocumentBlock;
+import io.agentscope.core.message.FileIdSource;
 import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.Source;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ThinkingBlock;
 import io.agentscope.core.message.ToolResultBlock;
+import io.agentscope.core.message.ToolResultState;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.message.URLSource;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.ToolChoice;
 import io.agentscope.core.model.ToolSchema;
+import io.agentscope.core.tool.search.ToolSearchTool;
 import io.agentscope.core.util.JsonUtils;
+import io.agentscope.extensions.model.openaiofficial.tool.OpenAIServerTool;
+import io.agentscope.extensions.model.openaiofficial.tool.ResponsesServerToolHelper;
+import io.agentscope.extensions.model.openaiofficial.tool.ResponsesToolHelper;
+import java.io.IOException;
+import java.net.URI;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -71,13 +86,17 @@ import java.util.function.Function;
  */
 final class ResponsesRequestMapper {
 
+    // Keep inline documents consistent with MediaUtils.fileToBase64's existing limit.
+    private static final long MAX_DOCUMENT_SIZE_BYTES = 50L * 1024 * 1024;
+
     private ResponsesRequestMapper() {}
 
     /**
      * Maps AgentScope messages, tools, and options to a {@link ResponseCreateParams}.
      *
      * @param messages         the conversation history
-     * @param tools            the tool definitions (may be null or empty)
+     * @param tools            local function tool definitions
+     * @param serverTools      provider-executed built-in tools
      * @param effectiveOptions the merged (per-call + configured) generation options
      * @param strictTools      the model-level strict tools setting (null = not set)
      * @param strictJsonSchema the model-level strict JSON schema setting (null = not set)
@@ -90,6 +109,7 @@ final class ResponsesRequestMapper {
     static ResponseCreateParams map(
             List<Msg> messages,
             List<ToolSchema> tools,
+            List<OpenAIServerTool> serverTools,
             GenerateOptions effectiveOptions,
             Boolean strictTools,
             Boolean strictJsonSchema,
@@ -113,17 +133,73 @@ final class ResponsesRequestMapper {
             mapAdditionalBodyParams(builder, additionalBodyParams);
         }
 
-        builder.inputOfResponse(historyMapper.apply(messages));
+        builder.inputOfResponse(
+                applyToolSearchStrictDefaults(historyMapper.apply(messages), strictTools));
 
-        if (tools != null && !tools.isEmpty()) {
-            builder.tools(mapTools(tools, strictTools));
+        boolean hasToolSearchServerTool =
+                serverTools != null
+                        && serverTools.stream()
+                                .anyMatch(
+                                        serverTool ->
+                                                OpenAIServerTool.TOOL_SEARCH.equals(
+                                                        serverTool.getType()));
+        if (hasToolSearchServerTool
+                && tools != null
+                && tools.stream().anyMatch(ToolSchema::isToolSearch)) {
+            throw new OpenAIOfficialModelException(
+                    "Hosted and client-executed tool search cannot be combined");
         }
+        List<Tool> mappedTools =
+                tools != null && !tools.isEmpty()
+                        ? mapTools(tools, strictTools, hasToolSearchServerTool)
+                        : List.of();
+        List<Tool> mergedTools = ResponsesServerToolHelper.mergeTools(mappedTools, serverTools);
+        if (!mergedTools.isEmpty()) {
+            builder.tools(mergedTools);
+        }
+        ResponsesServerToolHelper.applyIncludes(builder, serverTools);
 
         if (effectiveOptions.getToolChoice() != null) {
             mapToolChoice(builder, effectiveOptions.getToolChoice());
         }
 
         return builder.build();
+    }
+
+    private static List<ResponseInputItem> applyToolSearchStrictDefaults(
+            List<ResponseInputItem> items, Boolean strictTools) {
+        return items.stream()
+                .map(
+                        item -> {
+                            if (!item.isToolSearchOutput()
+                                    || item.asToolSearchOutput()
+                                            .execution()
+                                            .filter(
+                                                    ResponseToolSearchOutputItemParam.Execution
+                                                                    .CLIENT
+                                                            ::equals)
+                                            .isEmpty()) return item;
+                            var output = item.asToolSearchOutput();
+                            List<Tool> tools =
+                                    output.tools().stream()
+                                            .map(
+                                                    tool -> {
+                                                        if (!tool.isFunction()
+                                                                || tool.asFunction()
+                                                                        .strict()
+                                                                        .isPresent()) return tool;
+                                                        return Tool.ofFunction(
+                                                                tool.asFunction().toBuilder()
+                                                                        .strict(
+                                                                                Boolean.TRUE.equals(
+                                                                                        strictTools))
+                                                                        .build());
+                                                    })
+                                            .toList();
+                            return ResponseInputItem.ofToolSearchOutput(
+                                    output.toBuilder().tools(tools).build());
+                        })
+                .toList();
     }
 
     // ── Options mapping ──────────────────────────────────────────
@@ -424,6 +500,8 @@ final class ResponsesRequestMapper {
                                         .imageUrl(imageUrl)
                                         .detail(ResponseInputImage.Detail.of("auto"))
                                         .build()));
+            } else if (block instanceof DocumentBlock document) {
+                parts.add(ResponseInputContent.ofInputFile(mapDocument(document)));
             } else if (block instanceof DataBlock db) {
                 String imageUrl = resolveDataBlockImageUrl(db);
                 parts.add(
@@ -463,7 +541,7 @@ final class ResponsesRequestMapper {
             mapReasoningReplay(msg, encryptedContent, items);
         }
 
-        String text = collectText(msg);
+        String text = collectAssistantText(msg);
         if (text != null && !text.isEmpty()) {
             items.add(
                     ResponseInputItem.ofEasyInputMessage(
@@ -478,12 +556,17 @@ final class ResponsesRequestMapper {
             for (Object block : blocks) {
                 if (block instanceof ToolUseBlock tb) {
                     mapToolUseBlock(tb, items);
+                } else if (block instanceof ToolResultBlock trb && trb.isServerTool()) {
+                    ResponsesServerToolHelper.restoreServerToolItem(trb.getMetadata())
+                            .ifPresent(items::add);
                 } else if (block instanceof ThinkingBlock) {
                     if (encryptedContent == null) {
                         throw new OpenAIOfficialModelException(
                                 "Cannot map ThinkingBlock to a Responses reasoning"
                                         + " input item without encrypted_content.");
                     }
+                } else if (block instanceof DocumentBlock) {
+                    // Rendered by collectAssistantText; keep the block visible in history.
                 } else if (!(block instanceof TextBlock)) {
                     throw new OpenAIOfficialModelException(
                             "Unsupported content block in assistant message: "
@@ -517,15 +600,29 @@ final class ResponsesRequestMapper {
         Objects.requireNonNull(
                 tb.getName(), "ToolUseBlock.name must not be null for history replay");
 
+        if (Boolean.TRUE.equals(
+                tb.getMetadata().get(ResponsesToolHelper.CLIENT_TOOL_SEARCH_CALL_METADATA))) {
+            items.add(ResponsesToolHelper.restoreClientToolSearch(tb));
+            return;
+        }
+        if (tb.isServerTool()) {
+            ResponsesServerToolHelper.restoreServerToolItem(tb.getMetadata()).ifPresent(items::add);
+            return;
+        }
+
         String arguments = JsonUtils.resolveToolCallArgsJson(tb);
 
-        items.add(
-                ResponseInputItem.ofFunctionCall(
-                        ResponseFunctionToolCall.builder()
-                                .callId(tb.getId())
-                                .name(tb.getName())
-                                .arguments(arguments)
-                                .build()));
+        ResponseFunctionToolCall.Builder functionCall =
+                ResponseFunctionToolCall.builder()
+                        .callId(tb.getId())
+                        .name(tb.getName())
+                        .arguments(arguments);
+        Object namespace = tb.getMetadata().get(OpenAIOfficialConstants.MD_FUNCTION_CALL_NAMESPACE);
+        if (namespace instanceof String value && !value.isBlank()) {
+            functionCall.namespace(value);
+        }
+
+        items.add(ResponseInputItem.ofFunctionCall(functionCall.build()));
     }
 
     static void mapToolMessage(Msg msg, List<ResponseInputItem> items) {
@@ -550,6 +647,57 @@ final class ResponsesRequestMapper {
         Objects.requireNonNull(
                 trb.getId(), "ToolResultBlock.id must not be null for history replay");
 
+        boolean clientSearch =
+                items.stream()
+                        .filter(ResponseInputItem::isToolSearchCall)
+                        .map(ResponseInputItem::asToolSearchCall)
+                        .anyMatch(
+                                call ->
+                                        call.callId().filter(trb.getId()::equals).isPresent()
+                                                && call.execution()
+                                                        .filter(
+                                                                value ->
+                                                                        "client"
+                                                                                .equals(
+                                                                                        value
+                                                                                                .asString()))
+                                                        .isPresent());
+        if (clientSearch) {
+            ResponseToolSearchOutputItemParam.Builder result =
+                    ResponseToolSearchOutputItemParam.builder()
+                            .callId(trb.getId())
+                            .execution(ResponseToolSearchOutputItemParam.Execution.CLIENT)
+                            .status(ResponseToolSearchOutputItemParam.Status.COMPLETED)
+                            .tools(List.of());
+            Object matches = trb.getMetadata().get(ToolSearchTool.METADATA_TOOLS);
+            if (matches instanceof List<?> list && trb.getState() != ToolResultState.ERROR) {
+                for (Object match : list) {
+                    if (match instanceof Map<?, ?> schema) {
+                        @SuppressWarnings("unchecked")
+                        Map<String, Object> parameters =
+                                (Map<String, Object>) schema.get("parameters");
+                        @SuppressWarnings("unchecked")
+                        Map<String, Object> outputSchema =
+                                (Map<String, Object>) schema.get("output_schema");
+                        ToolSchema loaded =
+                                ToolSchema.builder()
+                                        .name((String) schema.get("name"))
+                                        .description((String) schema.get("description"))
+                                        .parameters(parameters)
+                                        .strict((Boolean) schema.get("strict"))
+                                        .outputSchema(outputSchema)
+                                        .deferLoading(true)
+                                        .build();
+                        FunctionTool function = mapFunctionTool(loaded, null, true);
+                        if (loaded.getStrict() == null)
+                            function = function.toBuilder().strict(JsonMissing.of()).build();
+                        result.addTool(function);
+                    }
+                }
+            }
+            items.add(ResponseInputItem.ofToolSearchOutput(result.build()));
+            return;
+        }
         List<ContentBlock> outputBlocks = trb.getOutput();
 
         // When all output blocks are text, use the simpler string form;
@@ -592,6 +740,12 @@ final class ResponsesRequestMapper {
                 result.add(buildImageOutputItem(resolveImageUrl(ib.getSource())));
             } else if (block instanceof DataBlock db) {
                 result.add(buildImageOutputItem(resolveDataBlockImageUrl(db)));
+            } else if (block instanceof DocumentBlock document) {
+                result.add(
+                        ResponseFunctionCallOutputItem.ofInputText(
+                                ResponseInputTextContent.builder()
+                                        .text(DocumentReferenceRenderer.render(document))
+                                        .build()));
             } else {
                 throw new OpenAIOfficialModelException(
                         "Unsupported output block in ToolResultBlock: "
@@ -639,15 +793,30 @@ final class ResponsesRequestMapper {
 
     // ── Tool definition mapping ──────────────────────────────────
 
-    private static List<Tool> mapTools(List<ToolSchema> tools, Boolean strictTools) {
+    private static List<Tool> mapTools(
+            List<ToolSchema> tools, Boolean strictTools, boolean hasToolSearchServerTool) {
         List<Tool> result = new ArrayList<>();
         for (ToolSchema schema : tools) {
-            result.add(Tool.ofFunction(mapFunctionTool(schema, strictTools)));
+            if (schema.isToolSearch()) {
+                result.add(
+                        Tool.ofSearch(
+                                com.openai.models.responses.ToolSearchTool.builder()
+                                        .execution(
+                                                com.openai.models.responses.ToolSearchTool.Execution
+                                                        .CLIENT)
+                                        .description(schema.getDescription())
+                                        .parameters(JsonValue.from(schema.getParameters()))
+                                        .build()));
+                continue;
+            }
+            result.add(
+                    Tool.ofFunction(mapFunctionTool(schema, strictTools, hasToolSearchServerTool)));
         }
         return result;
     }
 
-    private static FunctionTool mapFunctionTool(ToolSchema schema, Boolean strictTools) {
+    private static FunctionTool mapFunctionTool(
+            ToolSchema schema, Boolean strictTools, boolean hasToolSearchServerTool) {
         // Resolve strict to a boolean upfront (tool-level > builder-level > false),
         boolean effectiveStrict =
                 schema.getStrict() != null ? schema.getStrict() : Boolean.TRUE.equals(strictTools);
@@ -667,6 +836,18 @@ final class ResponsesRequestMapper {
 
         if (schema.getOutputSchema() != null && !schema.getOutputSchema().isEmpty()) {
             builder.outputSchema(buildOutputSchema(schema.getOutputSchema()));
+        }
+
+        if (Boolean.TRUE.equals(schema.getDeferLoading())) {
+            if (!hasToolSearchServerTool) {
+                throw new OpenAIOfficialModelException(
+                        "Tool '"
+                                + schema.getName()
+                                + "' requests deferLoading, but no tool_search server tool is"
+                                + " configured; deferred tools can only be loaded through"
+                                + " tool_search.");
+            }
+            builder.deferLoading(true);
         }
 
         return builder.build();
@@ -750,6 +931,140 @@ final class ResponsesRequestMapper {
             }
         }
         return sb.length() > 0 ? sb.toString() : null;
+    }
+
+    private static String collectAssistantText(Msg msg) {
+        StringBuilder result = new StringBuilder();
+        List<?> blocks = msg.getContent();
+        if (blocks == null) {
+            return null;
+        }
+        for (Object block : blocks) {
+            if (block instanceof TextBlock textBlock) {
+                if (result.length() > 0) {
+                    result.append('\n');
+                }
+                result.append(textBlock.getText());
+            } else if (block instanceof DocumentBlock document) {
+                if (result.length() > 0) {
+                    result.append('\n');
+                }
+                result.append(DocumentReferenceRenderer.render(document));
+            }
+        }
+        return result.length() > 0 ? result.toString() : null;
+    }
+
+    /** Converts user documents for both direct mapping and multi-agent history merging. */
+    static ResponseInputFile mapDocument(DocumentBlock document) {
+        Source source = document.getSource();
+        if (source instanceof FileIdSource fileId) {
+            if (!"openai".equals(fileId.getProvider())
+                    && !OpenAIOfficialConstants.PROVIDER_ID.equals(fileId.getProvider())) {
+                throw new OpenAIOfficialModelException(
+                        "OpenAI document input requires an OpenAI file id, got provider '"
+                                + fileId.getProvider()
+                                + "'.");
+            }
+            if (fileId.getFileId().isBlank()) {
+                throw new OpenAIOfficialModelException("Document file id must not be blank.");
+            }
+            return ResponseInputFile.builder().fileId(fileId.getFileId()).build();
+        }
+        if (source instanceof Base64Source base64) {
+            validateDocumentData(base64.getData());
+            String mimeType =
+                    documentMimeType(
+                            document,
+                            base64.getMediaType(),
+                            "Set the MIME type for Base64 document input; use"
+                                    + " DocumentBlock.mimeType or Base64Source.mediaType.");
+            return ResponseInputFile.builder()
+                    .filename(documentFilename(document.getName(), null))
+                    .fileData("data:" + mimeType + ";base64," + base64.getData())
+                    .build();
+        }
+        if (source instanceof URLSource urlSource) {
+            String url = urlSource.getUrl();
+            if (url.regionMatches(true, 0, "https://", 0, 8)
+                    || url.regionMatches(true, 0, "http://", 0, 7)) {
+                return ResponseInputFile.builder().fileUrl(url).build();
+            }
+            if (url.isBlank()
+                    || (!url.regionMatches(true, 0, "file:", 0, 5)
+                            && url.matches("^[a-zA-Z][a-zA-Z0-9+.-]*:.*")
+                            && !url.matches("^[a-zA-Z]:.*"))) {
+                throw new OpenAIOfficialModelException(
+                        "Document URLs must use HTTP(S), file, or a local path.");
+            }
+            try {
+                Path path =
+                        url.regionMatches(true, 0, "file:", 0, 5)
+                                ? Path.of(URI.create(url))
+                                : Path.of(url);
+                if (!Files.isRegularFile(path)) {
+                    throw new IOException("Local document must be a regular file: " + path);
+                }
+                String sourceMimeType = urlSource.getMimeType();
+                String mimeType =
+                        documentMimeType(
+                                document,
+                                sourceMimeType,
+                                "Set the MIME type for local document input; use"
+                                        + " DocumentBlock.mimeType or URLSource.mimeType.");
+                String data = MediaUtils.fileToBase64(path.toString());
+                validateDocumentData(data);
+                String name = documentFilename(document.getName(), path.getFileName().toString());
+                return ResponseInputFile.builder()
+                        .filename(name)
+                        .fileData("data:" + mimeType + ";base64," + data)
+                        .build();
+            } catch (IOException | IllegalArgumentException e) {
+                throw new OpenAIOfficialModelException(
+                        "Cannot read local document: " + url, e, null);
+            }
+        }
+        throw new OpenAIOfficialModelException(
+                "Unsupported document source type: " + source.getClass().getSimpleName());
+    }
+
+    private static void validateDocumentData(String data) {
+        if (data.isBlank()) {
+            throw new OpenAIOfficialModelException("Document data must not be empty.");
+        }
+        // Raw Base64 may be padded or unpadded. Avoid allocating a decoded copy just to size it.
+        long decodedSize = (long) data.length() * 3 / 4;
+        if (data.endsWith("==")) {
+            decodedSize -= 2;
+        } else if (data.endsWith("=")) {
+            decodedSize--;
+        }
+        if (decodedSize > MAX_DOCUMENT_SIZE_BYTES) {
+            throw new OpenAIOfficialModelException(
+                    "Document data exceeds the 50 MB decoded-size limit.");
+        }
+    }
+
+    private static String documentMimeType(
+            DocumentBlock document, String sourceMimeType, String missingMimeTypeMessage) {
+        String mimeType = document.getMimeType();
+        if (mimeType == null || mimeType.isBlank()) {
+            mimeType = sourceMimeType;
+        }
+        if (mimeType == null || mimeType.isBlank()) {
+            throw new OpenAIOfficialModelException(missingMimeTypeMessage);
+        }
+        return mimeType;
+    }
+
+    private static String documentFilename(String name, String fallbackName) {
+        if (name != null && !name.isBlank()) {
+            return name;
+        }
+        if (fallbackName != null && !fallbackName.isBlank()) {
+            return fallbackName;
+        }
+        throw new OpenAIOfficialModelException("Set DocumentBlock.name for document input.");
     }
 
     static String resolveImageUrl(Source source) {

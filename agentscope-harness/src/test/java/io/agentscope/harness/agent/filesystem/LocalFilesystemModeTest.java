@@ -23,6 +23,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.harness.agent.filesystem.local.LocalFilesystem;
+import io.agentscope.harness.agent.filesystem.model.EditResult;
 import io.agentscope.harness.agent.filesystem.model.LsResult;
 import io.agentscope.harness.agent.filesystem.model.ReadResult;
 import io.agentscope.harness.agent.filesystem.remote.store.NamespaceFactory;
@@ -43,6 +44,32 @@ import org.junit.jupiter.api.io.TempDir;
  * UNRESTRICTED accepts any absolute path.
  */
 class LocalFilesystemModeTest {
+
+    @Test
+    void edit_rejectsNullNewString_andEmptyOldString(@TempDir Path workspace) throws IOException {
+        Path file = workspace.resolve("f.txt");
+        Files.writeString(file, "Hello World");
+        LocalFilesystem fs =
+                new LocalFilesystem(workspace, LocalFsMode.UNRESTRICTED, null, 10, null);
+        RuntimeContext rt = RuntimeContext.empty();
+
+        // null is not a deletion: pass "" instead. Uniform across filesystems.
+        EditResult nullNew = fs.edit(rt, file.toString(), "World", null, false);
+        assertFalse(nullNew.isSuccess());
+        assertTrue(nullNew.error().contains("must not be null"));
+        assertEquals("Hello World", Files.readString(file), "file must be untouched");
+
+        // "" is a real deletion and keeps the normal occurrence count.
+        EditResult emptyNew = fs.edit(rt, file.toString(), "World", "", false);
+        assertTrue(emptyNew.isSuccess(), () -> "expected success, got: " + emptyNew.error());
+        assertEquals(1, emptyNew.occurrences());
+        assertEquals("Hello ", Files.readString(file));
+
+        // An empty oldString would make the occurrence counter loop forever.
+        EditResult emptyOld = fs.edit(rt, file.toString(), "", "x", false);
+        assertFalse(emptyOld.isSuccess());
+        assertEquals("Hello ", Files.readString(file), "file must be untouched");
+    }
 
     @Test
     void sandboxed_rejectsAbsolutePathOutsideRoot(@TempDir Path workspace, @TempDir Path other)

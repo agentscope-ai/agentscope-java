@@ -1,0 +1,56 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:agentscope:session-event:1",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "eventId",
+    "seq",
+    "occurredAt",
+    "type",
+    "executionRunId",
+    "turnId",
+    "required",
+    "payloadJson"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": 1
+    },
+    "eventId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "seq": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "occurredAt": {
+      "type": "integer"
+    },
+    "type": {
+      "type": "string",
+      "pattern": "^[^/]+/.+$"
+    },
+    "executionRunId": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "turnId": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "required": {
+      "type": "boolean"
+    },
+    "payloadJson": {
+      "type": "string",
+      "contentMediaType": "application/json"
+    }
+  },
+  "additionalProperties": false
+}

@@ -306,4 +306,42 @@ class ToolSchemaProviderTest {
         assertEquals(1, schemas.size());
         assertEquals(Boolean.TRUE, schemas.get(0).getStrict());
     }
+
+    @Test
+    void testGetToolSchemasPreserveDeferLoadingFromAgentTool() {
+        AgentTool deferredTool =
+                new AgentTool() {
+                    @Override
+                    public String getName() {
+                        return "deferred_tool";
+                    }
+
+                    @Override
+                    public String getDescription() {
+                        return "Deferred tool";
+                    }
+
+                    @Override
+                    public Map<String, Object> getParameters() {
+                        return Map.of("type", "object");
+                    }
+
+                    @Override
+                    public Boolean getDeferLoading() {
+                        return true;
+                    }
+
+                    @Override
+                    public Mono<ToolResultBlock> callAsync(ToolCallParam input) {
+                        return Mono.just(ToolResultBlock.text("ok"));
+                    }
+                };
+
+        RegisteredToolFunction registered = new RegisteredToolFunction(deferredTool, null, null);
+        registry.registerTool("deferred_tool", deferredTool, registered);
+
+        List<ToolSchema> schemas = schemaProvider.getToolSchemas();
+        assertEquals(1, schemas.size());
+        assertEquals(Boolean.TRUE, schemas.get(0).getDeferLoading());
+    }
 }

@@ -34,15 +34,19 @@
  *   | DDL (abstract)     |   | DDL (abstract)         |   | DDL (abstract)     |
  *   | ANSI SQL (default) |   | ANSI SQL (default)     |   | ANSI SQL (default) |
  *   | base name "store"  |   | base name "sessions"   |   | base name "snaps"  |
- *   +--------+-----------+   +----------+-------------+   +--------+-----------+
+ *   +--------------------+   +------------------------+   +--------------------+
+ *   +--------------------+   +----------------------------+
+ *   | SkillDialect       |   | SkillResourcesDialect      |     base table group: store/sessions/snapshots
+ *   | base name "skills" |   | base name "skill_resources"|     skill table group: skills/skill_resources
+ *   +--------------------+   +----------------------------+
  *            |                          |                          |
  *            v                          v                          v             &lt;- implements (aggregate implements all table-domain interfaces + SandboxLockStrategy)
  *   +--------+--------------------------+--------------------------+-----------+
  *   | AbstractJdbcDialect  aggregate abstract class                                |
- *   | Implements StoreDialect, SessionStateDialect, SnapshotDialect, SandboxLockStrategy |
- *   | Holds tablePrefix + per-table overrides; from(DataSource) returns builder     |
- *   | build() detects DB -> binds DataSource -> assembles names -> auto-creates tables |
- *   | createTableDdls() collects all DDL; tryEnter() default = table-based lock       |
+ *   | Implements all table-domain interfaces + SandboxLockStrategy                |
+ *   | Holds tablePrefix + per-table overrides + table-group flags; from(DataSource) returns builder |
+ *   | build() detects DB -> binds DataSource -> assembles names/groups -> creates or validates tables |
+ *   | createTableDdls() collects the enabled groups' DDL; tryEnter() default = table-based lock    |
  *   | Final name resolution: override > prefix + base                               |
  *   +--------+--------------------------+--------------------------+-----------+
  *            |                          |                          |
@@ -64,8 +68,15 @@
  * <ol>
  *   <li>Create a table-domain interface in {@code table} (methods prefixed with the table short name).</li>
  *   <li>Add it to the aggregate's {@code implements} clause, plus name-override field + final resolver
- *       + builder method + add a line to {@code createTableDdls()}.</li>
+ *       + builder method + a gated line in {@code createTableDdls()}.</li>
  *   <li>Override the abstract DDL in each vendor class.</li>
+ * </ol>
+ *
+ * <h2>Adding a new table group</h2>
+ * <ol>
+ *   <li>Follow "Adding a new table" for each table of the group.</li>
+ *   <li>Add one {@code enableXxxTables(boolean)} builder switch (setter semantics, default off)
+ *       and gate the group's lines in {@code createTableDdls()}.</li>
  * </ol>
  *
  * <h2>Adding a new database</h2>
@@ -77,5 +88,20 @@
  *   <li>Register the class in
  *       {@code META-INF/services/io.agentscope.extensions.jdbc.dialect.AbstractJdbcDialect}.</li>
  * </ol>
+ *
+ * <p>"Override DDL" means implementing <em>every</em> table domain's abstract create-table
+ * method. Table domains added by framework upgrades arrive as new abstract methods on the
+ * aggregate, so an out-of-tree vendor class fails to compile until it implements them —
+ * deliberate: a dialect that cannot create a domain's tables must not assemble silently
+ * behind a default that hides the gap. In-tree vendor classes are updated in the same
+ * change, so only third-party dialects ever see that compile step.
+ *
+ * <p>On the runtime side, a third-party dialect compiled against the previous artifact is
+ * not recompiled, and the JVM raises {@link AbstractMethodError} only when the missing
+ * abstract method is actually invoked. The only invocation site sits inside the skill-group
+ * gate of {@code createTableDdls()}, so an un-migrated dialect keeps serving the base
+ * tables until somebody opts into the skill group — at which point it fails with an {@code
+ * AbstractMethodError} on the skill DDL methods, the signal to recompile and implement the
+ * skill domains.
  */
 package io.agentscope.extensions.jdbc.dialect;

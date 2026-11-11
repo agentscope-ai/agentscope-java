@@ -17,8 +17,8 @@ package io.agentscope.claw2.web.config;
 
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.RuntimeContext;
-import io.agentscope.extensions.aistio.adapter.AgentRuntimeSource;
-import io.agentscope.extensions.aistio.model.Inventory;
+import io.agentscope.extensions.controlplane.adapter.AgentRuntimeSource;
+import io.agentscope.extensions.controlplane.model.Inventory;
 import io.agentscope.harness.agent.HarnessAgent;
 import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
 import io.agentscope.harness.agent.filesystem.model.FileInfo;
@@ -93,7 +93,7 @@ public final class HarnessAgentRuntimeSource implements AgentRuntimeSource {
             try {
                 size = Files.exists(root) ? directorySize(root) : 0L;
             } catch (Exception e) {
-                log.debug("aistio: workspace size failed: {}", e.getMessage());
+                log.debug("controlplane: workspace size failed: {}", e.getMessage());
             }
         }
         return List.of(new Inventory.WorkspaceInfo(path, "primary", size, harness.getName()));
@@ -215,7 +215,7 @@ public final class HarnessAgentRuntimeSource implements AgentRuntimeSource {
             }
             return Optional.of(content);
         } catch (Exception e) {
-            log.debug("aistio: plan excerpt read failed: {}", e.getMessage());
+            log.debug("controlplane: plan excerpt read failed: {}", e.getMessage());
             return Optional.empty();
         }
     }
@@ -258,7 +258,7 @@ public final class HarnessAgentRuntimeSource implements AgentRuntimeSource {
                 out.add(Map.of("name", name));
             }
         } catch (Exception e) {
-            log.debug("aistio: skill list failed: {}", e.getMessage());
+            log.debug("controlplane: skill list failed: {}", e.getMessage());
         }
         return out;
     }

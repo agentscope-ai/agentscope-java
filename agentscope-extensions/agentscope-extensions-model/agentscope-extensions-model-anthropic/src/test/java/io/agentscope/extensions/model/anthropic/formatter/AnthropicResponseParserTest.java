@@ -25,6 +25,8 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 import com.anthropic.core.JsonValue;
+import com.anthropic.core.ObjectMappers;
+import com.anthropic.models.messages.CitationPageLocation;
 import com.anthropic.models.messages.CodeExecutionResultBlock;
 import com.anthropic.models.messages.CodeExecutionToolResultBlock;
 import com.anthropic.models.messages.ContentBlock;
@@ -38,24 +40,41 @@ import com.anthropic.models.messages.RawMessageDeltaEvent;
 import com.anthropic.models.messages.RawMessageStartEvent;
 import com.anthropic.models.messages.RawMessageStreamEvent;
 import com.anthropic.models.messages.ServerToolUseBlock;
+import com.anthropic.models.messages.StopReason;
 import com.anthropic.models.messages.Usage;
 import com.anthropic.models.messages.WebSearchResultBlock;
 import com.anthropic.models.messages.WebSearchToolResultBlock;
 import com.anthropic.models.messages.WebSearchToolResultError;
 import com.anthropic.models.messages.WebSearchToolResultErrorCode;
+import io.agentscope.core.ReActAgent;
+import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ThinkingBlock;
 import io.agentscope.core.message.ToolCallState;
+import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.ChatUsage;
+import io.agentscope.core.model.GenerateOptions;
+import io.agentscope.core.model.Model;
+import io.agentscope.core.model.ToolSchema;
+import io.agentscope.core.tool.AgentTool;
+import io.agentscope.core.tool.ToolCallParam;
+import io.agentscope.core.tool.Toolkit;
+import io.agentscope.core.util.JsonUtils;
 import java.lang.reflect.Method;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
 
 /** Unit tests for AnthropicResponseParser. */
@@ -130,6 +149,66 @@ class AnthropicResponseParserTest extends AnthropicFormatterTestBase {
     }
 
     @Test
+    void testParseMessageWithPdfCitation() {
+        CitationPageLocation providerCitation =
+                CitationPageLocation.builder()
+                        .citedText("PDF source text")
+                        .documentIndex(0)
+                        .documentTitle("guide.pdf")
+                        .fileId(Optional.empty())
+                        .startPageNumber(2)
+                        .endPageNumber(3)
+                        .build();
+        com.anthropic.models.messages.TextBlock providerText =
+                com.anthropic.models.messages.TextBlock.builder()
+                        .text("The feature is supported.")
+                        .addCitation(providerCitation)
+                        .build();
+        Message message =
+                Message.builder()
+                        .id("msg_cited")
+                        .diagnostics(Optional.empty())
+                        .stopDetails(Optional.empty())
+                        .addContent(providerText)
+                        .model("claude-sonnet-4-20250514")
+                        .role(JsonValue.from("assistant"))
+                        .stopReason(Optional.empty())
+                        .stopSequence(Optional.empty())
+                        .type(JsonValue.from("message"))
+                        .usage(
+                                Usage.builder()
+                                        .cacheCreation(Optional.empty())
+                                        .cacheCreationInputTokens(Optional.empty())
+                                        .cacheReadInputTokens(Optional.empty())
+                                        .inferenceGeo(Optional.empty())
+                                        .inputTokens(10)
+                                        .outputTokens(5)
+                                        .outputTokensDetails(Optional.empty())
+                                        .serverToolUse(Optional.empty())
+                                        .serviceTier(Optional.empty())
+                                        .build())
+                        .build();
+
+        ChatResponse response = AnthropicResponseParser.parseMessage(message, Instant.now());
+
+        TextBlock parsed = assertInstanceOf(TextBlock.class, response.getContent().get(0));
+        assertEquals("The feature is supported.", parsed.getText());
+        List<Map<String, Object>> citations =
+                (List<Map<String, Object>>)
+                        response.getMetadata().get(AnthropicCitationConverter.MD_CITATIONS);
+        assertNotNull(citations);
+        assertEquals(1, citations.size());
+        Map<String, Object> citation = citations.get(0);
+        assertEquals("page_location", citation.get("type"));
+        assertEquals(0L, citation.get("block_index"));
+        assertEquals("PDF source text", citation.get("cited_text"));
+        assertEquals(0L, citation.get("document_index"));
+        assertEquals("guide.pdf", citation.get("document_title"));
+        assertEquals(2L, citation.get("start_page_number"));
+        assertEquals(3L, citation.get("end_page_number"));
+    }
+
+    @Test
     void testParseMessageReadsCacheReadInputTokens() {
         Message message = mock(Message.class);
         Usage usage = mock(Usage.class);
@@ -196,6 +275,101 @@ class AnthropicResponseParserTest extends AnthropicFormatterTestBase {
         assertNotNull(parsedToolUse.getInput());
         // Null input should result in empty map
         assertTrue(parsedToolUse.getInput().isEmpty());
+    }
+
+    @ParameterizedTest
+    @ValueSource(
+            strings = {
+                "{\"store_id\":\"S001\",\"month\":\"2026-10\"}",
+                "{\"query\":\"a=1,"
+                        + " b=2\",\"filters\":{\"active\":true},\"ids\":[1,2],\"optional\":null}",
+                "{}"
+            })
+    void nonStreamingToolArgumentsSurviveAgentExecution(String arguments) throws Exception {
+        String json =
+                """
+                {"id":"msg_tool","type":"message","role":"assistant","model":"claude-sonnet-4-5",
+                 "content":[{"type":"tool_use","id":"call_store","name":"get_store_sales","input":%s}],
+                 "stop_reason":"tool_use","usage":{"input_tokens":10,"output_tokens":20}}
+                """
+                        .formatted(arguments);
+        Message message = ObjectMappers.jsonMapper().readValue(json, Message.class);
+        ChatResponse parsed = AnthropicResponseParser.parseMessage(message, Instant.now());
+        ToolUseBlock call = assertInstanceOf(ToolUseBlock.class, parsed.getContent().get(0));
+        Map<?, ?> expected = JsonUtils.getJsonCodec().fromJson(arguments, Map.class);
+        assertEquals(expected, call.getInput());
+        assertEquals(expected, JsonUtils.getJsonCodec().fromJson(call.getContent(), Map.class));
+
+        AtomicReference<Map<String, Object>> executedArguments = new AtomicReference<>();
+        Toolkit toolkit = new Toolkit();
+        toolkit.registerTool(
+                new AgentTool() {
+                    @Override
+                    public String getName() {
+                        return "get_store_sales";
+                    }
+
+                    @Override
+                    public String getDescription() {
+                        return "Get store sales";
+                    }
+
+                    @Override
+                    public Map<String, Object> getParameters() {
+                        return Map.of("type", "object", "properties", Map.of());
+                    }
+
+                    @Override
+                    public Mono<ToolResultBlock> callAsync(ToolCallParam param) {
+                        executedArguments.set(param.getToolUseBlock().getInput());
+                        return Mono.just(ToolResultBlock.text("1286400"));
+                    }
+                });
+        AtomicInteger requests = new AtomicInteger();
+        Model model =
+                new Model() {
+                    @Override
+                    public String getModelName() {
+                        return "nonstream-fixture";
+                    }
+
+                    @Override
+                    public Flux<ChatResponse> stream(
+                            List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
+                        if (requests.getAndIncrement() == 0) {
+                            return Flux.just(parsed);
+                        }
+                        ToolResultBlock result =
+                                messages.stream()
+                                        .flatMap(
+                                                msg ->
+                                                        msg
+                                                                .getContentBlocks(
+                                                                        ToolResultBlock.class)
+                                                                .stream())
+                                        .findFirst()
+                                        .orElseThrow();
+                        assertEquals("call_store", result.getId());
+                        assertEquals("1286400", ((TextBlock) result.getOutput().get(0)).getText());
+                        return Flux.just(
+                                ChatResponse.builder()
+                                        .content(List.of(TextBlock.builder().text("done").build()))
+                                        .build());
+                    }
+                };
+        try (ReActAgent agent =
+                ReActAgent.builder()
+                        .name("fixture")
+                        .model(model)
+                        .toolkit(toolkit)
+                        .maxIters(3)
+                        .build()) {
+            Msg answer = agent.call(List.of()).block(Duration.ofSeconds(5));
+            assertNotNull(answer);
+            assertEquals("done", answer.getTextContent());
+        }
+        assertEquals(expected, executedArguments.get());
+        assertEquals(2, requests.get());
     }
 
     @Test
@@ -406,6 +580,63 @@ class AnthropicResponseParserTest extends AnthropicFormatterTestBase {
                 assertInstanceOf(ThinkingBlock.class, response.getContent().get(0));
         assertEquals("Let me reason through this.", parsedThinking.getThinking());
         assertNull(response.getUsage());
+    }
+
+    @Test
+    void testParseStreamEventsAccumulateCitationsUntilMessageDelta() {
+        CitationPageLocation providerCitation =
+                CitationPageLocation.builder()
+                        .citedText("Streamed PDF source")
+                        .documentIndex(1)
+                        .documentTitle(Optional.empty())
+                        .fileId(Optional.empty())
+                        .startPageNumber(4)
+                        .endPageNumber(5)
+                        .build();
+        RawContentBlockDeltaEvent citationDelta =
+                RawContentBlockDeltaEvent.builder()
+                        .index(2)
+                        .citationsDelta(providerCitation)
+                        .build();
+
+        RawMessageStreamEvent citationEvent =
+                RawMessageStreamEvent.ofContentBlockDelta(citationDelta);
+
+        RawMessageStreamEvent terminalEvent = mock(RawMessageStreamEvent.class);
+        RawMessageDeltaEvent messageDelta = mock(RawMessageDeltaEvent.class);
+        MessageDeltaUsage deltaUsage = mock(MessageDeltaUsage.class);
+        when(terminalEvent.isMessageDelta()).thenReturn(true);
+        when(terminalEvent.asMessageDelta()).thenReturn(messageDelta);
+        when(messageDelta.usage()).thenReturn(deltaUsage);
+        when(messageDelta.delta()).thenReturn(mock(RawMessageDeltaEvent.Delta.class));
+        when(deltaUsage.outputTokens()).thenReturn(12L);
+        when(deltaUsage.outputTokensDetails()).thenReturn(Optional.empty());
+        when(deltaUsage.inputTokens()).thenReturn(Optional.empty());
+        when(deltaUsage.cacheReadInputTokens()).thenReturn(Optional.empty());
+        when(deltaUsage.cacheCreationInputTokens()).thenReturn(Optional.empty());
+
+        Flux<ChatResponse> responseFlux =
+                AnthropicResponseParser.parseStreamEvents(
+                        Flux.just(citationEvent, terminalEvent), Instant.now());
+
+        StepVerifier.create(responseFlux)
+                .assertNext(
+                        response -> {
+                            List<Map<String, Object>> citations =
+                                    (List<Map<String, Object>>)
+                                            response.getMetadata()
+                                                    .get(AnthropicCitationConverter.MD_CITATIONS);
+                            assertNotNull(citations);
+                            assertEquals(1, citations.size());
+                            Map<String, Object> citation = citations.get(0);
+                            assertEquals("page_location", citation.get("type"));
+                            assertEquals(2L, citation.get("block_index"));
+                            assertEquals("Streamed PDF source", citation.get("cited_text"));
+                            assertEquals(1L, citation.get("document_index"));
+                            assertEquals(4L, citation.get("start_page_number"));
+                            assertEquals(5L, citation.get("end_page_number"));
+                        })
+                .verifyComplete();
     }
 
     @Test
@@ -725,6 +956,7 @@ class AnthropicResponseParserTest extends AnthropicFormatterTestBase {
         when(deltaEvent.isMessageDelta()).thenReturn(true);
         when(deltaEvent.asMessageDelta()).thenReturn(messageDelta);
         when(messageDelta.usage()).thenReturn(deltaUsage);
+        when(messageDelta.delta()).thenReturn(mock(RawMessageDeltaEvent.Delta.class));
         when(deltaUsage.outputTokens()).thenReturn(42L);
         when(deltaUsage.outputTokensDetails()).thenReturn(Optional.empty());
         when(deltaUsage.inputTokens()).thenReturn(Optional.empty());
@@ -762,6 +994,7 @@ class AnthropicResponseParserTest extends AnthropicFormatterTestBase {
         when(deltaEvent.isMessageDelta()).thenReturn(true);
         when(deltaEvent.asMessageDelta()).thenReturn(messageDelta);
         when(messageDelta.usage()).thenReturn(deltaUsage);
+        when(messageDelta.delta()).thenReturn(mock(RawMessageDeltaEvent.Delta.class));
         when(deltaUsage.outputTokens()).thenReturn(42L);
         when(deltaUsage.outputTokensDetails()).thenReturn(Optional.empty());
         when(deltaUsage.inputTokens()).thenReturn(Optional.of(100L));
@@ -782,6 +1015,136 @@ class AnthropicResponseParserTest extends AnthropicFormatterTestBase {
                             assertEquals(30, usage.getCacheCreationTokens());
                             assertEquals(42, usage.getOutputTokens());
                         })
+                .verifyComplete();
+    }
+
+    @Test
+    void testParseMessageWithoutIdFallsBackToGeneratedId() throws Exception {
+        // A proxy may strip the top-level id, and the SDK throws on the typed accessor (issue
+        // #592).
+        String json =
+                "{\"type\":\"message\",\"role\":\"assistant\",\"model\":\"claude-sonnet-4-5\","
+                        + "\"content\":[{\"type\":\"text\",\"text\":\"2 + 3 = 5\"}],"
+                        + "\"stop_reason\":\"end_turn\","
+                        + "\"usage\":{\"input_tokens\":10,\"output_tokens\":5}}";
+        Message message = ObjectMappers.jsonMapper().readValue(json, Message.class);
+
+        ChatResponse response = AnthropicResponseParser.parseMessage(message, Instant.now());
+
+        assertNotNull(response);
+        assertNotNull(response.getId());
+        assertFalse(response.getId().isBlank());
+        assertEquals(1, response.getContent().size());
+        TextBlock parsedText = assertInstanceOf(TextBlock.class, response.getContent().get(0));
+        assertEquals("2 + 3 = 5", parsedText.getText());
+    }
+
+    @Test
+    void testParseMessageReusesRawId() throws Exception {
+        // Covers the raw _id() branch: the hand-rolled mocks only stub the typed accessor.
+        String json =
+                "{\"id\":\"msg_01ABC\",\"type\":\"message\",\"role\":\"assistant\","
+                        + "\"model\":\"claude-sonnet-4-5\","
+                        + "\"content\":[{\"type\":\"text\",\"text\":\"hi\"}],"
+                        + "\"usage\":{\"input_tokens\":1,\"output_tokens\":2}}";
+        Message message = ObjectMappers.jsonMapper().readValue(json, Message.class);
+
+        ChatResponse response = AnthropicResponseParser.parseMessage(message, Instant.now());
+
+        assertEquals("msg_01ABC", response.getId());
+    }
+
+    @Test
+    void testParseStreamEventMessageStartWithoutIdDoesNotThrow() throws Exception {
+        // Before the fix this threw, which aborted the whole message_start branch and dropped the
+        // prompt-token accounting that message_delta reads back out of the shared usage state.
+        String json =
+                "{\"type\":\"message\",\"role\":\"assistant\",\"model\":\"claude-sonnet-4-5\","
+                        + "\"content\":[],\"usage\":{\"input_tokens\":10,\"output_tokens\":1}}";
+        Message message = ObjectMappers.jsonMapper().readValue(json, Message.class);
+
+        RawMessageStartEvent messageStart = mock(RawMessageStartEvent.class);
+        when(messageStart.message()).thenReturn(message);
+
+        RawMessageStreamEvent event = mock(RawMessageStreamEvent.class);
+        when(event.isMessageStart()).thenReturn(true);
+        when(event.asMessageStart()).thenReturn(messageStart);
+        when(event.isContentBlockDelta()).thenReturn(false);
+        when(event.isContentBlockStart()).thenReturn(false);
+        when(event.isMessageDelta()).thenReturn(false);
+
+        ChatResponse response = invokeParseStreamEvent(event, Instant.now());
+
+        assertNotNull(response);
+        assertNotNull(response.getId()); // generated, since the proxy stripped it
+        assertTrue(response.getContent().isEmpty());
+    }
+
+    // ==================== Finish reason ====================
+
+    @Test
+    void testParseMessageReportsStopReasonAsFinishReason() {
+        Message message = mock(Message.class);
+        Usage usage = mock(Usage.class);
+
+        when(message.id()).thenReturn("msg_truncated");
+        when(message.content()).thenReturn(List.of());
+        when(message.usage()).thenReturn(usage);
+        when(message.stopReason()).thenReturn(Optional.of(StopReason.MAX_TOKENS));
+        when(usage.inputTokens()).thenReturn(10L);
+        when(usage.outputTokens()).thenReturn(5L);
+        when(usage.outputTokensDetails()).thenReturn(Optional.empty());
+        when(usage.cacheReadInputTokens()).thenReturn(Optional.empty());
+        when(usage.cacheCreationInputTokens()).thenReturn(Optional.empty());
+
+        ChatResponse response = AnthropicResponseParser.parseMessage(message, Instant.now());
+
+        assertEquals("max_tokens", response.getFinishReason());
+    }
+
+    @Test
+    void testParseMessageWithoutStopReasonHasNoFinishReason() {
+        Message message = mock(Message.class);
+        Usage usage = mock(Usage.class);
+
+        when(message.id()).thenReturn("msg_no_stop_reason");
+        when(message.content()).thenReturn(List.of());
+        when(message.usage()).thenReturn(usage);
+        when(message.stopReason()).thenReturn(Optional.empty());
+        when(usage.inputTokens()).thenReturn(10L);
+        when(usage.outputTokens()).thenReturn(5L);
+        when(usage.outputTokensDetails()).thenReturn(Optional.empty());
+        when(usage.cacheReadInputTokens()).thenReturn(Optional.empty());
+        when(usage.cacheCreationInputTokens()).thenReturn(Optional.empty());
+
+        ChatResponse response = AnthropicResponseParser.parseMessage(message, Instant.now());
+
+        assertNull(response.getFinishReason());
+    }
+
+    @Test
+    void testParseStreamEventsReportsStopReasonOfMessageDelta() {
+        RawMessageStreamEvent deltaEvent = mock(RawMessageStreamEvent.class);
+        RawMessageDeltaEvent messageDelta = mock(RawMessageDeltaEvent.class);
+        RawMessageDeltaEvent.Delta delta = mock(RawMessageDeltaEvent.Delta.class);
+        MessageDeltaUsage deltaUsage = mock(MessageDeltaUsage.class);
+
+        when(deltaEvent.isMessageDelta()).thenReturn(true);
+        when(deltaEvent.asMessageDelta()).thenReturn(messageDelta);
+        when(messageDelta.delta()).thenReturn(delta);
+        when(delta.stopReason()).thenReturn(Optional.of(StopReason.MAX_TOKENS));
+        when(messageDelta.usage()).thenReturn(deltaUsage);
+        when(deltaUsage.outputTokens()).thenReturn(42L);
+        when(deltaUsage.outputTokensDetails()).thenReturn(Optional.empty());
+        when(deltaUsage.inputTokens()).thenReturn(Optional.empty());
+        when(deltaUsage.cacheReadInputTokens()).thenReturn(Optional.empty());
+        when(deltaUsage.cacheCreationInputTokens()).thenReturn(Optional.empty());
+
+        Flux<ChatResponse> responseFlux =
+                AnthropicResponseParser.parseStreamEvents(Flux.just(deltaEvent), Instant.now());
+
+        StepVerifier.create(responseFlux)
+                .assertNext(response -> assertEquals("max_tokens", response.getFinishReason()))
                 .verifyComplete();
     }
 }

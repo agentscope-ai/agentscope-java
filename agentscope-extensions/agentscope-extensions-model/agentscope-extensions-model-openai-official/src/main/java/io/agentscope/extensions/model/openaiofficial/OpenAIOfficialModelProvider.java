@@ -28,6 +28,7 @@ import io.agentscope.core.model.transport.ProxyConfig;
 import java.util.Map;
 import java.util.regex.Pattern;
 
+/** OpenAI Official provider registered through {@link java.util.ServiceLoader}. */
 public final class OpenAIOfficialModelProvider implements ModelProvider {
 
     private static final String PREFIX = "openai-official:";

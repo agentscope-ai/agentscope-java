@@ -25,16 +25,23 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import com.openai.client.OpenAIClient;
 import com.openai.core.http.StreamResponse;
 import com.openai.errors.OpenAIServiceException;
 import com.openai.models.responses.ResponseCreateParams;
+import com.openai.models.responses.ResponseIncludable;
+import com.openai.models.responses.ResponseInputFile;
 import com.openai.models.responses.ResponseStreamEvent;
+import com.openai.models.responses.Tool;
+import com.openai.models.responses.WebSearchTool;
 import com.openai.services.blocking.ResponseService;
+import io.agentscope.core.message.DocumentBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.URLSource;
 import io.agentscope.core.message.UserMessage;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.ExecutionConfig;
@@ -42,15 +49,28 @@ import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.ModelException;
 import io.agentscope.core.model.ModelUtils;
 import io.agentscope.core.model.transport.ProxyConfig;
+import io.agentscope.extensions.model.openaiofficial.tool.OpenAIServerTool;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.time.Duration;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Predicate;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
+import org.mockito.ArgumentCaptor;
 import reactor.core.Disposable;
+import reactor.core.Exceptions;
+import reactor.core.publisher.Flux;
+import reactor.core.scheduler.Scheduler;
+import reactor.core.scheduler.Schedulers;
 
 class OpenAIResponsesChatModelTest {
 
@@ -94,9 +114,19 @@ class OpenAIResponsesChatModelTest {
 
     private static OpenAIResponsesChatModel createModel(
             OpenAIClient client, boolean stream, String apiKey, String baseUrl) {
+        return createModel(client, stream, apiKey, baseUrl, null);
+    }
+
+    private static OpenAIResponsesChatModel createModel(
+            OpenAIClient client,
+            boolean stream,
+            String apiKey,
+            String baseUrl,
+            List<OpenAIServerTool> serverTools) {
         GenerateOptions options = configuredOptions(stream, apiKey, baseUrl);
         OpenAIResponsesChatModel model =
-                new OpenAIResponsesChatModel(client, options, apiKey, baseUrl, null, null, null);
+                new OpenAIResponsesChatModel(
+                        client, options, apiKey, baseUrl, null, null, null, serverTools);
         model.applyNativeStructuredOutputDefaults();
         return model;
     }
@@ -106,6 +136,254 @@ class OpenAIResponsesChatModelTest {
         ResponseService responseService = mock(ResponseService.class);
         when(client.responses()).thenReturn(responseService);
         return client;
+    }
+
+    @Test
+    void supportsSpecificToolChoice() {
+        OpenAIResponsesChatModel model = createModel(mockClientWithResponseService(), false);
+
+        assertTrue(model.supportsToolChoiceSpecific());
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {true, false})
+    void localDocumentsAreMappedOffEventLoopForBothResponseModes(
+            boolean stream, @TempDir Path directory) throws Exception {
+        Path path = directory.resolve("report.pdf");
+        Files.writeString(path, "abc");
+        URLSource source =
+                new URLSource(path.toUri().toString()) {
+                    @Override
+                    public String getUrl() {
+                        assertFalse(
+                                Schedulers.isInNonBlockingThread(),
+                                "Local documents must not be read on an event loop");
+                        return super.getUrl();
+                    }
+                };
+        List<Msg> messages =
+                List.of(
+                        UserMessage.builder()
+                                .content(
+                                        DocumentBlock.builder()
+                                                .source(source)
+                                                .mimeType("application/pdf")
+                                                .build())
+                                .build());
+        OpenAIClient client = mockClientWithResponseService();
+        ResponseService service = client.responses();
+        if (stream) {
+            StreamResponse<ResponseStreamEvent> response =
+                    TestSdkFixtures.streamOf(
+                            List.of(
+                                    TestSdkFixtures.completedEvent(
+                                            TestSdkFixtures.textResponse("ok"))));
+            when(service.createStreaming(any(ResponseCreateParams.class))).thenReturn(response);
+        } else {
+            when(service.create(any(ResponseCreateParams.class)))
+                    .thenReturn(TestSdkFixtures.textResponse("ok"));
+        }
+        OpenAIResponsesChatModel model = createModel(client, stream);
+        Scheduler eventLoop = Schedulers.newSingle("document-input-caller");
+        try {
+            List<ChatResponse> results =
+                    Flux.defer(() -> model.stream(messages, null, null))
+                            .subscribeOn(eventLoop)
+                            .collectList()
+                            .block(Duration.ofSeconds(10));
+            assertNotNull(results);
+            assertFalse(results.isEmpty());
+        } finally {
+            eventLoop.dispose();
+        }
+        ArgumentCaptor<ResponseCreateParams> captor =
+                ArgumentCaptor.forClass(ResponseCreateParams.class);
+        if (stream) {
+            verify(service).createStreaming(captor.capture());
+        } else {
+            verify(service).create(captor.capture());
+        }
+        ResponseInputFile file =
+                captor.getValue()
+                        .input()
+                        .orElseThrow()
+                        .asResponse()
+                        .get(0)
+                        .asEasyInputMessage()
+                        .content()
+                        .asResponseInputMessageContentList()
+                        .get(0)
+                        .asInputFile();
+        assertEquals("report.pdf", file.filename().orElseThrow());
+        assertEquals("data:application/pdf;base64,YWJj", file.fileData().orElseThrow());
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {true, false})
+    void localDocumentReadErrorsFollowTheConfiguredRetryPolicy(
+            boolean stream, @TempDir Path directory) {
+        AtomicInteger attempts = new AtomicInteger();
+        URLSource source =
+                new URLSource(directory.resolve("missing.pdf").toString()) {
+                    @Override
+                    public String getUrl() {
+                        attempts.incrementAndGet();
+                        return super.getUrl();
+                    }
+                };
+        List<Msg> messages =
+                List.of(
+                        UserMessage.builder()
+                                .content(
+                                        DocumentBlock.builder()
+                                                .source(source)
+                                                .mimeType("application/pdf")
+                                                .build())
+                                .build());
+        OpenAIClient client = mockClientWithResponseService();
+        ResponseService service = client.responses();
+        OpenAIResponsesChatModel model = createModel(client, stream);
+        GenerateOptions options =
+                GenerateOptions.builder()
+                        .executionConfig(
+                                ExecutionConfig.builder()
+                                        .maxAttempts(3)
+                                        .initialBackoff(Duration.ofMillis(1))
+                                        .maxBackoff(Duration.ofMillis(1))
+                                        .build())
+                        .build();
+
+        RuntimeException error =
+                assertThrows(
+                        RuntimeException.class,
+                        () ->
+                                model.stream(messages, null, options)
+                                        .blockLast(Duration.ofSeconds(10)));
+
+        assertTrue(Exceptions.isRetryExhausted(error));
+        assertTrue(error.getCause() instanceof OpenAIOfficialModelException);
+        assertTrue(error.getCause().getCause() instanceof java.io.IOException);
+        assertEquals(3, attempts.get());
+        verifyNoInteractions(service);
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {true, false})
+    void documentPreparationTimeoutIsRetriedAndInterruptsEachAttempt(
+            boolean stream, @TempDir Path directory) throws Exception {
+        Path path = directory.resolve("report.pdf");
+        Files.writeString(path, "abc");
+        AtomicInteger attempts = new AtomicInteger();
+        CountDownLatch started = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        CountDownLatch interrupted = new CountDownLatch(1);
+        URLSource source =
+                new URLSource(path.toString()) {
+                    @Override
+                    public String getUrl() {
+                        attempts.incrementAndGet();
+                        started.countDown();
+                        try {
+                            release.await();
+                        } catch (InterruptedException e) {
+                            interrupted.countDown();
+                            Thread.currentThread().interrupt();
+                        }
+                        return super.getUrl();
+                    }
+                };
+        List<Msg> messages =
+                List.of(
+                        UserMessage.builder()
+                                .content(DocumentBlock.builder().source(source).build())
+                                .build());
+        OpenAIClient client = mockClientWithResponseService();
+        ResponseService service = client.responses();
+        OpenAIResponsesChatModel model = createModel(client, stream);
+        GenerateOptions options =
+                GenerateOptions.builder()
+                        .executionConfig(
+                                ExecutionConfig.builder()
+                                        // Allow time for the scheduler hand-off before testing
+                                        // interruption of each preparation attempt.
+                                        .timeout(Duration.ofSeconds(1))
+                                        .maxAttempts(3)
+                                        .initialBackoff(Duration.ofMillis(1))
+                                        .build())
+                        .build();
+        try {
+            RuntimeException error =
+                    assertThrows(
+                            RuntimeException.class,
+                            () ->
+                                    model.stream(messages, null, options)
+                                            .blockLast(Duration.ofSeconds(10)));
+            assertTrue(Exceptions.isRetryExhausted(error));
+            assertTrue(error.getCause() instanceof ModelException);
+            assertTrue(error.getCause().getCause() instanceof TimeoutException);
+            assertTrue(started.await(5, TimeUnit.SECONDS));
+            assertTrue(interrupted.await(5, TimeUnit.SECONDS));
+            assertEquals(3, attempts.get());
+            verifyNoInteractions(service);
+        } finally {
+            release.countDown();
+        }
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {true, false})
+    void providerRetriesRepeatDocumentPreparation(boolean stream) {
+        AtomicInteger mappings = new AtomicInteger();
+        URLSource source =
+                new URLSource("https://example.invalid/report.pdf") {
+                    @Override
+                    public String getUrl() {
+                        mappings.incrementAndGet();
+                        return super.getUrl();
+                    }
+                };
+        List<Msg> messages =
+                List.of(
+                        UserMessage.builder()
+                                .content(DocumentBlock.builder().source(source).build())
+                                .build());
+        OpenAIClient client = mockClientWithResponseService();
+        ResponseService service = client.responses();
+        if (stream) {
+            when(service.createStreaming(any(ResponseCreateParams.class)))
+                    .thenThrow(TestSdkFixtures.rateLimit("retry"))
+                    .thenReturn(
+                            TestSdkFixtures.streamOf(
+                                    List.of(
+                                            TestSdkFixtures.completedEvent(
+                                                    TestSdkFixtures.textResponse("ok")))));
+        } else {
+            when(service.create(any(ResponseCreateParams.class)))
+                    .thenThrow(TestSdkFixtures.rateLimit("retry"))
+                    .thenReturn(TestSdkFixtures.textResponse("ok"));
+        }
+        GenerateOptions options =
+                GenerateOptions.builder()
+                        .executionConfig(
+                                ExecutionConfig.builder()
+                                        .timeout(Duration.ofSeconds(2))
+                                        .maxAttempts(2)
+                                        .initialBackoff(Duration.ofMillis(200))
+                                        .maxBackoff(Duration.ofMillis(200))
+                                        .build())
+                        .build();
+        List<ChatResponse> results =
+                createModel(client, stream).stream(messages, null, options)
+                        .collectList()
+                        .block(Duration.ofSeconds(5));
+        assertNotNull(results);
+        assertFalse(results.isEmpty());
+        assertEquals(2, mappings.get());
+        if (stream) {
+            verify(service, times(2)).createStreaming(any(ResponseCreateParams.class));
+        } else {
+            verify(service, times(2)).create(any(ResponseCreateParams.class));
+        }
     }
 
     @Nested
@@ -235,6 +513,36 @@ class OpenAIResponsesChatModelTest {
             assertNotNull(results);
             assertEquals(1, results.size());
         }
+
+        @Test
+        void builderServerToolsAreSentOnEveryRequest() {
+            OpenAIClient client = mockClientWithResponseService();
+            ResponseService svc = client.responses();
+            when(svc.create(any(ResponseCreateParams.class)))
+                    .thenReturn(TestSdkFixtures.textResponse("ok"));
+
+            OpenAIServerTool serverTool =
+                    OpenAIServerTool.of(
+                            Tool.ofWebSearch(
+                                    WebSearchTool.builder()
+                                            .type(WebSearchTool.Type.WEB_SEARCH)
+                                            .build()));
+            OpenAIResponsesChatModel model =
+                    createModel(client, false, API_KEY, null, List.of(serverTool));
+
+            model.stream(simpleMessages(), null, null).collectList().block();
+
+            ArgumentCaptor<ResponseCreateParams> captor =
+                    ArgumentCaptor.forClass(ResponseCreateParams.class);
+            verify(svc).create(captor.capture());
+            ResponseCreateParams params = captor.getValue();
+            assertEquals(1, params.tools().orElseThrow().size());
+            assertTrue(params.tools().orElseThrow().get(0).isWebSearch());
+            assertTrue(
+                    params.include()
+                            .orElseThrow()
+                            .contains(ResponseIncludable.WEB_SEARCH_CALL_RESULTS));
+        }
     }
 
     @Nested
@@ -319,7 +627,8 @@ class OpenAIResponsesChatModelTest {
 
             GenerateOptions options = configuredOptions(true);
             OpenAIResponsesChatModel model =
-                    new OpenAIResponsesChatModel(client, options, API_KEY, null, null, null, null);
+                    new OpenAIResponsesChatModel(
+                            client, options, API_KEY, null, null, null, null, null);
             model.applyNativeStructuredOutputDefaults();
 
             model.stream(simpleMessages(), null, null).collectList().block();
