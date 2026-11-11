@@ -107,9 +107,6 @@ public class InboxMiddleware implements HarnessRuntimeMiddleware {
             return next.apply(input);
         }
 
-        // Hints can only be injected into a resolved agent state. Draining the inbox without
-        // one would consume the hints and silently lose them, so leave them queued for a later
-        // round that can resolve state.
         AgentState state = RuntimeContext.resolveAgentState(ctx, agent);
         if (state == null) {
             return next.apply(input);
