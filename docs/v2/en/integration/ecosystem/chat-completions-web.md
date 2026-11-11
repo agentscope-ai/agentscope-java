@@ -33,14 +33,36 @@ import reactor.core.publisher.Flux;
 ChatCompletionsStreamingAdapter adapter = new ChatCompletionsStreamingAdapter();
 
 // Convert OpenAI-style request → Agent invocation, and Agent events → OpenAI chunks
-Flux<ChatCompletionsChunk> stream = adapter.stream(agent, request);
+List<Msg> messages = new ChatMessageConverter().convertMessages(request.getMessages());
+Flux<ChatCompletionsChunk> stream =
+        adapter.stream(agent, messages, requestId, request.getModel(), request.isIncludeUsage());
 ```
 
-The adapter converts AgentScope's `Event` stream (including `REASONING` and `TOOL_RESULT`) into OpenAI-compatible `ChatCompletionsChunk` objects:
+The adapter consumes `ReActAgent#streamEvents` and converts the events into OpenAI-compatible `ChatCompletionsChunk` objects:
 
 - Text deltas → `delta.content`
-- Tool calls → `delta.tool_calls[]`
-- Stream end → a chunk with `finish_reason`
+- Tool calls → `delta.tool_calls[]` (a chunk with `id` and `name`, then the arguments in pieces)
+- Stream end → one chunk with `finish_reason`
+- With `"stream_options": {"include_usage": true}` → one more chunk with empty `choices` and the `usage` of the whole request (all model calls, including tool steps). It is not sent when no model call reported usage.
+
+## Runtime context and driving the agent yourself
+
+To pass a `RuntimeContext` (session, user, ...), use the overload that takes one:
+
+```java
+adapter.stream(agent, messages, ctx, requestId, request.getModel(), request.isIncludeUsage());
+```
+
+To also look at the events as they pass, for example to tell a finished reply from one that stopped for tool confirmation, run `streamEvents` yourself and convert each event with a converter. A converter keeps state for one stream, so create a new one for every stream:
+
+```java
+Function<AgentEvent, List<ChatCompletionsChunk>> convert =
+        adapter.newEventConverter(requestId, request.getModel(), request.isIncludeUsage());
+Flux<ChatCompletionsChunk> stream =
+        agent.streamEvents(messages, ctx)
+                .doOnNext(event -> { /* inspect AgentResultEvent etc. */ })
+                .concatMapIterable(convert);
+```
 
 ## Expose as SSE in Spring Boot
 
@@ -50,13 +72,16 @@ Easiest is the starter — it registers the controller. To do it manually:
 @RestController
 public class ChatController {
     private final ChatCompletionsStreamingAdapter adapter = new ChatCompletionsStreamingAdapter();
-    @Autowired private Agent agent;
+    private final ChatMessageConverter converter = new ChatMessageConverter();
+    @Autowired private ReActAgent agent;
 
     @PostMapping(value = "/v1/chat/completions",
                  produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public Flux<String> chat(@RequestBody ChatCompletionsRequest req) {
-        return adapter.stream(agent, req)
-            .map(this::toSseLine);  // serialize and wrap "data: ..."
+        List<Msg> messages = converter.convertMessages(req.getMessages());
+        String requestId = "chatcmpl-" + UUID.randomUUID();
+        return adapter.stream(agent, messages, requestId, req.getModel(), req.isIncludeUsage())
+            .map(this::toSseLine);  // serialize and wrap "data: ...", then end with "data: [DONE]"
     }
 }
 ```
@@ -67,8 +92,8 @@ OpenAI clients send a `model` field; route at the controller layer:
 
 ```java
 String model = req.getModel();   // e.g. "gpt-4o"; route to different Agents
-Agent target = agentRegistry.lookup(model);
-return adapter.stream(target, req);
+ReActAgent target = agentRegistry.lookup(model);
+return adapter.stream(target, messages, requestId, model, req.isIncludeUsage());
 ```
 
 ## Pairs well with

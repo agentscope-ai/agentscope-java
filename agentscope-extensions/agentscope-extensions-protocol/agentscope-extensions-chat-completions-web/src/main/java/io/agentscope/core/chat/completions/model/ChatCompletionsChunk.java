@@ -77,6 +77,12 @@ public class ChatCompletionsChunk {
 
     private List<ChatChoice> choices;
 
+    /**
+     * Token usage of the whole request. Set only on the final usage chunk sent when the request
+     * has {@code stream_options.include_usage}; omitted on every other chunk.
+     */
+    private ChatCompletionsResponse.Usage usage;
+
     /** Default constructor. */
     public ChatCompletionsChunk() {
         this.created = Instant.now().getEpochSecond();
@@ -217,6 +223,23 @@ public class ChatCompletionsChunk {
         return chunk;
     }
 
+    /**
+     * Create the final usage chunk for {@code stream_options.include_usage}: empty {@code
+     * choices} and the usage of the whole request.
+     *
+     * @param id The chunk ID
+     * @param model The model name
+     * @param usage The usage of the whole request
+     * @return A chunk carrying only the usage
+     */
+    public static ChatCompletionsChunk usageChunk(
+            String id, String model, ChatCompletionsResponse.Usage usage) {
+        ChatCompletionsChunk chunk = new ChatCompletionsChunk(id, model);
+        chunk.setChoices(List.of());
+        chunk.setUsage(usage);
+        return chunk;
+    }
+
     public String getId() {
         return id;
     }
@@ -255,5 +278,13 @@ public class ChatCompletionsChunk {
 
     public void setChoices(List<ChatChoice> choices) {
         this.choices = choices;
+    }
+
+    public ChatCompletionsResponse.Usage getUsage() {
+        return usage;
+    }
+
+    public void setUsage(ChatCompletionsResponse.Usage usage) {
+        this.usage = usage;
     }
 }
