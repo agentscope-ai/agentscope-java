@@ -111,6 +111,23 @@ class InMemoryAgentStateStoreTest {
     }
 
     @Test
+    @DisplayName("Should delete both single and list state stored under a key")
+    void testDeleteKeyRemovesSingleAndListState() {
+        String user = "alice";
+        String sessionKey = "session_delete_key";
+        stateStore.save(user, sessionKey, "k", new TestState("single", 1));
+        stateStore.save(user, sessionKey, "k", List.of(new TestState("listed", 2)));
+        stateStore.save(user, sessionKey, "other", new TestState("other", 3));
+
+        stateStore.delete(user, sessionKey, "k");
+
+        assertFalse(stateStore.get(user, sessionKey, "k", TestState.class).isPresent());
+        assertTrue(stateStore.getList(user, sessionKey, "k", TestState.class).isEmpty());
+        // Deleting one key must not touch another key's state.
+        assertTrue(stateStore.get(user, sessionKey, "other", TestState.class).isPresent());
+    }
+
+    @Test
     @DisplayName("Should list all session keys")
     void testListSessionKeys() {
         String key1 = "session1";
