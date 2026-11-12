@@ -28,9 +28,11 @@ npm run broken-links
 
 `npm run check` verifies all published v1/v2 pages are reachable from navigation, every page
 has a title, local images/links/anchors exist, and redirects have valid targets. It follows
-`.mintignore`, as Mintlify does. Repository-only design notes can remain at their established
-paths when explicitly excluded there; they are not published, and public navigation or links
-to excluded files still fail validation.
+`.mintignore`, as Mintlify does. Public navigation and links to excluded files fail validation.
+Keep this directory focused on user guides and reference documentation. Research and development
+plans, implementation/test progress, validation reports and data used solely for test acceptance
+belong outside the source repository, under `~/agentscope-3/docs`. Do not add them here as
+unpublished drafts or hide them with `.mintignore`.
 `npm run validate` also runs Mintlify's strict build validation. The GitHub Actions
 workflow runs these checks on documentation PRs and pushes to `main` or `Mintlify`.
 

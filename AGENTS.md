@@ -84,6 +84,7 @@ AI coding instructions for AgentScope Java.
 - Do not weaken assertions for Windows-only flakes; mirror the production guard in the test.
 - Edit UI source in `agentscope-service/frontend/`; do not hand-edit generated `agentscope-service/service-controlplane/ui/`.
 - Keep English and Chinese docs aligned; follow `.editorconfig`.
+- Keep repository documentation user-facing. Store research/development plans, implementation and test progress, validation reports, and data used solely for test acceptance outside the source repository, under `~/agentscope-3/docs`. Do not add these as repository documentation or unpublished site drafts.
 
 ## 4. Commands
 

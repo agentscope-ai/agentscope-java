@@ -10,7 +10,7 @@ Use the [single-attempt native profile](evaluation-native-single-profile.json) a
 
 Run each task once per Harness initially. Consider at most one separate retry after failure triage, preserving initial scores. The new AppWorld profile allows 1,800 seconds, 120 model/tool calls and sixteen million cumulative tokens to cover longer chains than the old 900-second baseline; auxiliary calls consume the same budget. Check the path using separate historical smoke tasks, then freeze budgets before formal execution without adjusting them in response to formal failures.
 
-`run_appworld.py --split dev --task-list /private/new-tasks.json` accepts an explicit JSON ID array. Preserve order and reject empty, duplicate, wrong-split or out-of-range selections; nondefault offset/count cannot accompany a task list. Preflight exactly validates evaluated model bindings and records the full catalog hash and extra-binding count, preserving unrelated model aliases. See the [next-phase plan](../../../docs/poc/benchmark/harness-eval-next-phase-20261102.en.md).
+`run_appworld.py --split dev --task-list /private/new-tasks.json` accepts an explicit JSON ID array. Preserve order and reject empty, duplicate, wrong-split or out-of-range selections; nondefault offset/count cannot accompany a task list. Preflight exactly validates evaluated model bindings and records the full catalog hash and extra-binding count, preserving unrelated model aliases.
 
 ## Frozen inputs
 

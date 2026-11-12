@@ -10,7 +10,7 @@
 
 首轮每题每 Harness 一次；失败排查后最多考虑一次独立补跑，保留首轮分数。AppWorld 新批次预设 1,800 秒、120 次模型/工具调用、1,600 万累计 token 上限，用于覆盖旧 900 秒基线中的长链执行；辅助调用计入预算。先以独立旧题冒烟确认链路，正式批次启动前冻结这些预算，运行中不因失败调整。
 
-`run_appworld.py --split dev --task-list /private/new-tasks.json` 支持显式 JSON ID 数组；保留输入顺序并拒绝空、重复、跨 split 或超出范围的题单，不能同时传入非默认 offset/count。预检严格核对被测模型绑定，同时记录完整模型目录 hash 和额外绑定数量，允许保留其他工作使用的模型别名。新规划见[下一阶段计划](../../../docs/poc/benchmark/harness-eval-next-phase-20261102.md)。
+`run_appworld.py --split dev --task-list /private/new-tasks.json` 支持显式 JSON ID 数组；保留输入顺序并拒绝空、重复、跨 split 或超出范围的题单，不能同时传入非默认 offset/count。预检严格核对被测模型绑定，同时记录完整模型目录 hash 和额外绑定数量，允许保留其他工作使用的模型别名。
 
 ## 冻结输入
 

@@ -22,6 +22,3 @@ v2/zh/blogs/Managed Agents 改造待办.md
 v2/zh/blogs/Managed Agents MQ 与 Redis 架构设计 v2.md
 v2/zh/blogs/harness-design.md
 v2/zh/blogs/Managed Agents Brain Harness 内核设计.md
-
-# Repository-only Service POC references imported with the runtime backport.
-poc/**
