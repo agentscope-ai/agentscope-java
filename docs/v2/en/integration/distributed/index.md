@@ -106,3 +106,4 @@ HarnessAgent.builder()
 - **Turn gate + `ConflictPolicy.FAIL`** are optional: they reduce duplicate LLM turns on multi-replica setups; correctness still comes from CAS when the backend supports versioning.
 - Auth today is a shared internal token; tenant (`agentName` / `namespace`) comes from the request body — **not** for mutually untrusted multi-tenant agents on one control plane.
 - `MessageBus.queueDrain` is **destructive** (ack-on-read); a wrong tenant key drops messages.
+- For the filesystem-backed `WorkspaceMessageBus`, replay-log appends (including `sessionPublishEvent`) signal an error when the backend reports a failed write; no success cursor, log capping, or live-event fan-out follows that failure. A failed acknowledgement may still leave a persisted entry, so the bus does not automatically retry or delete it.
