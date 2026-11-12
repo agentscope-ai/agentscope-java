@@ -896,7 +896,7 @@ public abstract class AgentBase implements Agent {
             fullInput.addAll(callArgs);
         }
 
-        PreCallEvent event = new PreCallEvent(this, fullInput);
+        PreCallEvent event = new PreCallEvent(this, fullInput, runtimeForCall(callScope));
 
         Mono<PreCallEvent> result =
                 seedSystemMsg(callScope).doOnNext(event::setSystemMessage).thenReturn(event);

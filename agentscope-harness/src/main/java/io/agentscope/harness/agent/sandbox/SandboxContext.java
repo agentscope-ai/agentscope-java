@@ -60,10 +60,23 @@ public final class SandboxContext {
         return snapshotSpec;
     }
 
+    /**
+     * A caller-managed sandbox that bypasses client acquisition entirely. Note: it
+     * projects by its own state's spec — a workspaceSpec carried on this context is
+     * ignored for it, including any grant narrowing (the middleware logs a warning when
+     * it detects this combination).
+     */
     public Sandbox getExternalSandbox() {
         return externalSandbox;
     }
 
+    /**
+     * A caller-supplied state resumed without the per-call spec overwrite that state
+     * resumes normally apply. Since the grant-managed marker on a projection entry is
+     * per-call runtime intent (never serialized), a spec round-tripped through JSON
+     * resumes unmanaged: overlay semantics, no revocation. Grant-narrowing callers
+     * should prefer the regular state-store path.
+     */
     public SandboxState getExternalSandboxState() {
         return externalSandboxState;
     }
