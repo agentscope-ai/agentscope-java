@@ -16,6 +16,7 @@
 package io.agentscope.harness.agent.tool;
 
 import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.tool.Tool;
 import io.agentscope.core.tool.ToolParam;
 import io.agentscope.harness.agent.workspace.WorkspaceManager;
@@ -39,8 +40,9 @@ public class MemoryGetTool {
             readOnly = true,
             description =
                     "Read specific lines from a memory file. Use after memory_search to pull"
-                            + " full context around matched lines. Path is relative to workspace.")
-    public String memoryGet(
+                            + " full context around matched lines. Path is relative to the"
+                            + " caller's memory namespace.")
+    public ToolResultBlock memoryGet(
             RuntimeContext runtimeContext,
             @ToolParam(
                             name = "path",
@@ -53,18 +55,29 @@ public class MemoryGetTool {
             @ToolParam(name = "endLine", description = "End line number (1-based, inclusive)")
                     int endLine) {
         if (path == null || path.isBlank()) {
-            return "Error: path is required";
+            return ToolResultBlock.error("path is required");
         }
-
-        Path resolved = workspaceManager.getWorkspace().resolve(path).normalize();
-        if (!resolved.startsWith(workspaceManager.getWorkspace())) {
-            return "Error: path traversal not allowed";
+        // Use the manager's own rule so the two checks cannot drift; it also normalizes leading
+        // whitespace and slashes, so "  ../x" still names a traversal.
+        try {
+            WorkspaceManager.requireSafeRelativePath(path);
+        } catch (IllegalArgumentException e) {
+            return ToolResultBlock.error("path traversal not allowed");
         }
 
         RuntimeContext rc = runtimeContext != null ? runtimeContext : RuntimeContext.empty();
-        String text = workspaceManager.readManagedWorkspaceFileUtf8(rc, path);
+
+        // Containment on the spelled path, which differs from the relative spelling once a
+        // namespace applies; readMemoryFileUtf8 below does the real isolation.
+        Path workspace = workspaceManager.getWorkspace();
+        Path resolved = workspaceManager.resolveRuntimeDataPath(rc, path).normalize();
+        if (!resolved.startsWith(workspace)) {
+            return ToolResultBlock.error("path must be relative to the memory namespace: " + path);
+        }
+
+        String text = workspaceManager.readMemoryFileUtf8(rc, path);
         if (text == null || text.isBlank()) {
-            return "Error: file not found: " + path;
+            return ToolResultBlock.error("file not found: " + path);
         }
 
         List<String> lines = List.of(text.split("\n", -1));
@@ -72,13 +85,14 @@ public class MemoryGetTool {
         int end = Math.min(lines.size(), endLine);
 
         if (start >= lines.size()) {
-            return "Error: startLine " + startLine + " exceeds file length " + lines.size();
+            return ToolResultBlock.error(
+                    "startLine " + startLine + " exceeds file length " + lines.size());
         }
 
         StringBuilder sb = new StringBuilder();
         for (int i = start; i < end; i++) {
             sb.append(String.format("%d|%s%n", i + 1, lines.get(i)));
         }
-        return sb.toString();
+        return ToolResultBlock.success(sb.toString());
     }
 }

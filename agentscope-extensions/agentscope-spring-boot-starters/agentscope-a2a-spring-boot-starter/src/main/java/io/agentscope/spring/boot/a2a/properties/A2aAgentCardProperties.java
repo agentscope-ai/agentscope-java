@@ -16,16 +16,15 @@
 
 package io.agentscope.spring.boot.a2a.properties;
 
-import io.a2a.spec.AgentInterface;
-import io.a2a.spec.AgentProvider;
-import io.a2a.spec.AgentSkill;
-import io.a2a.spec.SecurityScheme;
 import java.util.List;
 import java.util.Map;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
 /**
  * A2a server agent card properties.
+ *
+ * <p>Nested values use types of this starter rather than A2A SDK types, so the configuration keeps
+ * binding when the SDK types change. Property names follow the fields of the A2A agent card.
  */
 @ConfigurationProperties(Constants.A2A_SERVER_CARD_PREFIX)
 public class A2aAgentCardProperties {
@@ -36,7 +35,7 @@ public class A2aAgentCardProperties {
 
     private String url;
 
-    private AgentProvider provider;
+    private Provider provider;
 
     private String version;
 
@@ -46,7 +45,7 @@ public class A2aAgentCardProperties {
 
     private List<String> defaultOutputModes;
 
-    private List<AgentSkill> skills;
+    private List<Skill> skills;
 
     private Map<String, SecurityScheme> securitySchemes;
 
@@ -83,11 +82,11 @@ public class A2aAgentCardProperties {
         this.url = url;
     }
 
-    public AgentProvider getProvider() {
+    public Provider getProvider() {
         return provider;
     }
 
-    public void setProvider(AgentProvider provider) {
+    public void setProvider(Provider provider) {
         this.provider = provider;
     }
 
@@ -123,11 +122,11 @@ public class A2aAgentCardProperties {
         this.defaultOutputModes = defaultOutputModes;
     }
 
-    public List<AgentSkill> getSkills() {
+    public List<Skill> getSkills() {
         return skills;
     }
 
-    public void setSkills(List<AgentSkill> skills) {
+    public void setSkills(List<Skill> skills) {
         this.skills = skills;
     }
 
@@ -170,4 +169,109 @@ public class A2aAgentCardProperties {
     public void setPreferredTransport(String preferredTransport) {
         this.preferredTransport = preferredTransport;
     }
+
+    /**
+     * The organization providing the agent.
+     *
+     * @param organization organization name
+     * @param url organization website
+     */
+    public record Provider(String organization, String url) {}
+
+    /**
+     * A skill the agent can perform.
+     *
+     * @param id unique skill identifier
+     * @param name skill name
+     * @param description skill description
+     * @param tags keywords describing the skill
+     * @param examples example prompts
+     * @param inputModes supported input media types, overriding the card defaults
+     * @param outputModes supported output media types, overriding the card defaults
+     * @param security security requirements for this skill
+     */
+    public record Skill(
+            String id,
+            String name,
+            String description,
+            List<String> tags,
+            List<String> examples,
+            List<String> inputModes,
+            List<String> outputModes,
+            List<Map<String, List<String>>> security) {}
+
+    /**
+     * A security scheme declared by the agent card. Which fields apply depends on {@code type}:
+     *
+     * <ul>
+     *   <li>{@code apiKey}: {@code name} and {@code in} ({@code header}, {@code query} or {@code
+     *       cookie})
+     *   <li>{@code http}: {@code scheme} and optionally {@code bearerFormat}
+     *   <li>{@code oauth2}: {@code flows} and optionally {@code oauth2MetadataUrl}
+     *   <li>{@code openIdConnect}: {@code openIdConnectUrl}
+     *   <li>{@code mutualTLS}: no other fields
+     * </ul>
+     *
+     * @param type scheme type
+     * @param description scheme description
+     * @param name name of the header, query parameter or cookie holding the API key
+     * @param in location of the API key
+     * @param scheme HTTP authentication scheme, such as {@code bearer}
+     * @param bearerFormat format of the bearer token, such as {@code JWT}
+     * @param flows OAuth 2.0 flows
+     * @param oauth2MetadataUrl OAuth 2.0 authorization server metadata URL
+     * @param openIdConnectUrl OpenID Connect discovery URL
+     */
+    public record SecurityScheme(
+            String type,
+            String description,
+            String name,
+            String in,
+            String scheme,
+            String bearerFormat,
+            OAuthFlows flows,
+            String oauth2MetadataUrl,
+            String openIdConnectUrl) {}
+
+    /**
+     * OAuth 2.0 flows of an {@code oauth2} security scheme.
+     *
+     * @param authorizationCode authorization code flow
+     * @param clientCredentials client credentials flow
+     * @param deviceCode device authorization flow
+     * @param implicit not supported: A2A 1.0 has no implicit flow, setting it fails the startup
+     * @param password not supported: A2A 1.0 has no password flow, setting it fails the startup
+     */
+    public record OAuthFlows(
+            OAuthFlow authorizationCode,
+            OAuthFlow clientCredentials,
+            OAuthFlow deviceCode,
+            OAuthFlow implicit,
+            OAuthFlow password) {}
+
+    /**
+     * One OAuth 2.0 flow. Which fields apply depends on the flow.
+     *
+     * @param authorizationUrl authorization URL of the authorization code flow
+     * @param tokenUrl token URL
+     * @param refreshUrl refresh URL
+     * @param deviceAuthorizationUrl device authorization URL of the device code flow
+     * @param pkceRequired whether the authorization code flow requires PKCE
+     * @param scopes available scopes and their descriptions
+     */
+    public record OAuthFlow(
+            String authorizationUrl,
+            String tokenUrl,
+            String refreshUrl,
+            String deviceAuthorizationUrl,
+            Boolean pkceRequired,
+            Map<String, String> scopes) {}
+
+    /**
+     * A transport interface the agent is reachable at.
+     *
+     * @param transport transport protocol, such as {@code JSONRPC}
+     * @param url endpoint URL
+     */
+    public record AgentInterface(String transport, String url) {}
 }

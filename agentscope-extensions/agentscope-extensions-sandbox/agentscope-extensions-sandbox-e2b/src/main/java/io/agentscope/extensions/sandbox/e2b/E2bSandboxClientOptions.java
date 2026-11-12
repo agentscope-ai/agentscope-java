@@ -17,6 +17,11 @@ package io.agentscope.extensions.sandbox.e2b;
 
 import io.agentscope.harness.agent.sandbox.SandboxClient;
 import io.agentscope.harness.agent.sandbox.SandboxClientOptions;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.function.Supplier;
 import okhttp3.OkHttpClient;
 
 /** Options for {@link E2bSandboxClient}. */
@@ -26,6 +31,15 @@ public class E2bSandboxClientOptions extends SandboxClientOptions {
     private String apiKey;
     private String apiBaseUrl = "https://api.e2b.app";
     private String domain = "e2b.app";
+
+    /**
+     * Fixed data-plane URL replacing the per-sandbox {@code <port>-<sandboxId>.<domain>} envd
+     * address — the equivalent of the official SDK's {@code E2B_SANDBOX_URL}. The gateway behind
+     * it must route by the {@code E2b-Sandbox-Id}/{@code E2b-Sandbox-Port} request headers (sent
+     * on every envd request). When set, the data plane ignores {@code domain}; control-plane
+     * calls still use {@link #getApiBaseUrl()}.
+     */
+    private String envdSandboxUrl;
 
     /** E2B template id (or snapshot id when creating from a snapshot). */
     private String templateId = "base";
@@ -37,6 +51,10 @@ public class E2bSandboxClientOptions extends SandboxClientOptions {
     private String runUser = "user";
     private E2bPersistenceMode persistenceMode = E2bPersistenceMode.TAR;
     private E2bCodec codec = E2bCodec.PROTO;
+
+    /** Pre-existing E2B volumes to mount at sandbox creation time. */
+    private List<E2bVolumeMount> volumeMounts = new ArrayList<>();
+
     private int connectTimeoutSeconds = 30;
     private int readTimeoutSeconds = 120;
     private int maxRetries = 3;
@@ -68,6 +86,15 @@ public class E2bSandboxClientOptions extends SandboxClientOptions {
      * (and a single call cannot disable a client-level retention — disable it on the client).
      */
     private int snapshotRetention = 0;
+
+    /**
+     * Environment variables injected into the sandbox at creation time. Values are resolved
+     * through their suppliers on every sandbox creation (not once at construction), so dynamic
+     * values such as short-lived tokens stay fresh. {@code null} values are skipped. Applies only
+     * when a sandbox is created; {@code connect} to an existing sandbox keeps its original
+     * environment.
+     */
+    private Map<String, Supplier<String>> envs = new LinkedHashMap<>();
 
     @Override
     public String getType() {
@@ -107,8 +134,27 @@ public class E2bSandboxClientOptions extends SandboxClientOptions {
         return domain;
     }
 
+    /**
+     * Sets the fallback envd domain used to build per-sandbox data-plane URLs such as {@code
+     * https://<port>-<sandboxId>.<domain>} when {@link #getEnvdSandboxUrl()} is unset. This does
+     * not affect the control-plane base URL, which remains {@link #getApiBaseUrl()}.
+     */
     public void setDomain(String domain) {
         this.domain = domain;
+    }
+
+    public String getEnvdSandboxUrl() {
+        return envdSandboxUrl;
+    }
+
+    /**
+     * Sets a fixed data-plane gateway URL, equivalent to the official SDK's {@code
+     * E2B_SANDBOX_URL}. When present, envd requests go to this gateway and route by the {@code
+     * E2b-Sandbox-Id}/{@code E2b-Sandbox-Port} headers instead of composing a per-sandbox host
+     * from {@link #getDomain()}; control-plane calls still use {@link #getApiBaseUrl()}.
+     */
+    public void setEnvdSandboxUrl(String envdSandboxUrl) {
+        this.envdSandboxUrl = envdSandboxUrl;
     }
 
     public String getTemplateId() {
@@ -159,6 +205,53 @@ public class E2bSandboxClientOptions extends SandboxClientOptions {
         this.codec = codec != null ? codec : E2bCodec.PROTO;
     }
 
+    /**
+     * Returns the volume mounts attached at sandbox creation time.
+     *
+     * @return defensive copy of the configured mounts (never null)
+     */
+    public List<E2bVolumeMount> getVolumeMounts() {
+        if (volumeMounts == null) {
+            return new ArrayList<>();
+        }
+        List<E2bVolumeMount> out = new ArrayList<>(volumeMounts.size());
+        for (E2bVolumeMount m : volumeMounts) {
+            if (m == null) {
+                continue;
+            }
+            out.add(new E2bVolumeMount(m.getName(), m.getPath()));
+        }
+        return out;
+    }
+
+    public void setVolumeMounts(List<E2bVolumeMount> volumeMounts) {
+        List<E2bVolumeMount> checked = new ArrayList<>();
+        if (volumeMounts != null) {
+            for (E2bVolumeMount m : volumeMounts) {
+                if (m == null) {
+                    continue;
+                }
+                checked.add(new E2bVolumeMount(m.getName(), m.getPath()));
+            }
+        }
+        E2bVolumeMount.requireDistinctMountPaths(checked);
+        this.volumeMounts = checked;
+    }
+
+    public E2bSandboxClientOptions addVolumeMount(String name, String path) {
+        List<E2bVolumeMount> next = getVolumeMounts();
+        next.add(new E2bVolumeMount(name, path));
+        setVolumeMounts(next);
+        return this;
+    }
+
+    public E2bSandboxClientOptions addVolumeMount(E2bVolumeMount mount) {
+        if (mount == null) {
+            return this;
+        }
+        return addVolumeMount(mount.getName(), mount.getPath());
+    }
+
     public int getConnectTimeoutSeconds() {
         return connectTimeoutSeconds;
     }
@@ -189,5 +282,29 @@ public class E2bSandboxClientOptions extends SandboxClientOptions {
 
     public void setSnapshotRetention(int snapshotRetention) {
         this.snapshotRetention = snapshotRetention;
+    }
+
+    public Map<String, Supplier<String>> getEnvs() {
+        return envs;
+    }
+
+    public void setEnvs(Map<String, Supplier<String>> envs) {
+        this.envs = envs != null ? new LinkedHashMap<>(envs) : new LinkedHashMap<>();
+    }
+
+    /** Registers a sandbox-creation environment variable with a fixed value. */
+    public void env(String name, String value) {
+        if (name == null || name.isBlank()) {
+            throw new IllegalArgumentException("env name must not be blank");
+        }
+        envs.put(name, () -> value);
+    }
+
+    /** Registers a sandbox-creation environment variable resolved on every sandbox creation. */
+    public void env(String name, Supplier<String> valueSupplier) {
+        if (name == null || name.isBlank()) {
+            throw new IllegalArgumentException("env name must not be blank");
+        }
+        envs.put(name, valueSupplier);
     }
 }

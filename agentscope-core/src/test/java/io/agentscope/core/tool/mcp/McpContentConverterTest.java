@@ -22,8 +22,11 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.agentscope.core.message.AudioBlock;
+import io.agentscope.core.message.Base64Source;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.ImageBlock;
+import io.agentscope.core.message.Source;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.URLSource;
@@ -31,6 +34,7 @@ import io.modelcontextprotocol.spec.McpSchema;
 import java.lang.reflect.InvocationTargetException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.Test;
 
 class McpContentConverterTest {
@@ -53,7 +57,8 @@ class McpContentConverterTest {
     @Test
     void testConvertCallToolResult_Success() {
         // Create successful MCP result with text content
-        McpSchema.TextContent textContent = new McpSchema.TextContent("Operation successful");
+        McpSchema.TextContent textContent =
+                McpSchema.TextContent.builder("Operation successful").build();
         McpSchema.CallToolResult mcpResult =
                 McpSchema.CallToolResult.builder()
                         .content(List.of(textContent))
@@ -74,7 +79,8 @@ class McpContentConverterTest {
     @Test
     void testConvertCallToolResult_Error() {
         // Create error MCP result
-        McpSchema.TextContent errorContent = new McpSchema.TextContent("File not found");
+        McpSchema.TextContent errorContent =
+                McpSchema.TextContent.builder("File not found").build();
         McpSchema.CallToolResult mcpResult =
                 McpSchema.CallToolResult.builder()
                         .content(List.of(errorContent))
@@ -125,8 +131,8 @@ class McpContentConverterTest {
     @Test
     void testConvertCallToolResult_MultipleErrorMessages() {
         // Create error result with multiple text contents
-        McpSchema.TextContent error1 = new McpSchema.TextContent("Error 1");
-        McpSchema.TextContent error2 = new McpSchema.TextContent("Error 2");
+        McpSchema.TextContent error1 = McpSchema.TextContent.builder("Error 1").build();
+        McpSchema.TextContent error2 = McpSchema.TextContent.builder("Error 2").build();
         McpSchema.CallToolResult mcpResult =
                 McpSchema.CallToolResult.builder()
                         .content(List.of(error1, error2))
@@ -148,7 +154,7 @@ class McpContentConverterTest {
     @Test
     void testConvertContentList_MixedContent() {
         // Create a list with multiple content types
-        McpSchema.TextContent textContent = new McpSchema.TextContent("Hello");
+        McpSchema.TextContent textContent = McpSchema.TextContent.builder("Hello").build();
         McpSchema.ImageContent imageContent =
                 new McpSchema.ImageContent(null, "base64data==", "image/png");
 
@@ -188,7 +194,7 @@ class McpContentConverterTest {
     void testConvertContentList_WithNullElements() {
         // Create list with null element (should be filtered out)
         List<McpSchema.Content> contents = new ArrayList<>();
-        contents.add(new McpSchema.TextContent("Valid text"));
+        contents.add(McpSchema.TextContent.builder("Valid text").build());
         contents.add(null);
 
         List<ContentBlock> blocks = McpContentConverter.convertContentList(contents);
@@ -201,7 +207,7 @@ class McpContentConverterTest {
 
     @Test
     void testConvertContent_TextContent() {
-        McpSchema.TextContent textContent = new McpSchema.TextContent("Test message");
+        McpSchema.TextContent textContent = McpSchema.TextContent.builder("Test message").build();
 
         ContentBlock block = McpContentConverter.convertContent(textContent);
 
@@ -212,7 +218,7 @@ class McpContentConverterTest {
 
     @Test
     void testConvertContent_TextContent_EmptyText() {
-        McpSchema.TextContent textContent = new McpSchema.TextContent("");
+        McpSchema.TextContent textContent = McpSchema.TextContent.builder("").build();
 
         ContentBlock block = McpContentConverter.convertContent(textContent);
 
@@ -223,13 +229,10 @@ class McpContentConverterTest {
 
     @Test
     void testConvertContent_TextContent_NullText() {
-        McpSchema.TextContent textContent = new McpSchema.TextContent(null);
-
-        ContentBlock block = McpContentConverter.convertContent(textContent);
-
-        assertNotNull(block);
-        assertTrue(block instanceof TextBlock);
-        assertEquals("", ((TextBlock) block).getText());
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> McpSchema.TextContent.builder(null).build(),
+                "MCP SDK 2.0 rejects null text at construction time");
     }
 
     @Test
@@ -286,11 +289,10 @@ class McpContentConverterTest {
 
     @Test
     void testConvertContent_ImageContent_NullData() {
-        McpSchema.ImageContent imageContent = new McpSchema.ImageContent(null, null, "image/png");
-
-        ContentBlock block = McpContentConverter.convertContent(imageContent);
-
-        assertNull(block);
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> new McpSchema.ImageContent(null, null, "image/png"),
+                "MCP SDK 2.0 rejects null image data at construction time");
     }
 
     @Test
@@ -301,10 +303,44 @@ class McpContentConverterTest {
         ContentBlock block = McpContentConverter.convertContent(audioContent);
 
         assertNotNull(block);
-        assertTrue(block instanceof TextBlock);
-        String text = ((TextBlock) block).getText();
-        assertTrue(text.contains("Audio content"));
-        assertTrue(text.contains("audio/mp3"));
+        assertTrue(block instanceof AudioBlock);
+        Source source = ((AudioBlock) block).getSource();
+        assertTrue(source instanceof Base64Source);
+        assertEquals("audio/mp3", ((Base64Source) source).getMediaType());
+        assertEquals("audiodata", ((Base64Source) source).getData());
+    }
+
+    @Test
+    void testConvertContent_AudioContent_Url() {
+        String audioUrl = "https://example.com/audio.mp3";
+        McpSchema.AudioContent audioContent =
+                new McpSchema.AudioContent(null, audioUrl, "audio/mp3");
+
+        ContentBlock block = McpContentConverter.convertContent(audioContent);
+
+        assertNotNull(block);
+        assertTrue(block instanceof AudioBlock);
+        Source source = ((AudioBlock) block).getSource();
+        assertTrue(source instanceof URLSource);
+        assertEquals(audioUrl, ((URLSource) source).getUrl());
+        assertEquals("audio/mp3", ((URLSource) source).getMimeType());
+    }
+
+    @Test
+    void testConvertContent_AudioContent_EmptyData() {
+        McpSchema.AudioContent audioContent = new McpSchema.AudioContent(null, "", "audio/wav");
+
+        ContentBlock block = McpContentConverter.convertContent(audioContent);
+
+        assertNull(block);
+    }
+
+    @Test
+    void testConvertContent_AudioContent_NullData() {
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> new McpSchema.AudioContent(null, null, "audio/wav"),
+                "MCP SDK 2.0 rejects null audio data at construction time");
     }
 
     @Test
@@ -406,9 +442,9 @@ class McpContentConverterTest {
     @Test
     void testComplexScenario_MultipleContentTypes() {
         // Create a complex result with multiple content types
-        McpSchema.TextContent text1 = new McpSchema.TextContent("Header text");
+        McpSchema.TextContent text1 = McpSchema.TextContent.builder("Header text").build();
         McpSchema.ImageContent image = new McpSchema.ImageContent(null, "imagedata", "image/png");
-        McpSchema.TextContent text2 = new McpSchema.TextContent("Footer text");
+        McpSchema.TextContent text2 = McpSchema.TextContent.builder("Footer text").build();
         McpSchema.AudioContent audio = new McpSchema.AudioContent(null, "audiodata", "audio/wav");
 
         List<McpSchema.Content> contents = List.of(text1, image, text2, audio);
@@ -427,6 +463,68 @@ class McpContentConverterTest {
         assertEquals("Header text", ((TextBlock) outputs.get(0)).getText());
         // Second should be image
         assertTrue(outputs.get(1) instanceof ImageBlock);
+        // Third is text again
+        assertTrue(outputs.get(2) instanceof TextBlock);
+        // Fourth should be audio
+        assertTrue(outputs.get(3) instanceof AudioBlock);
+    }
+
+    // ==================== structuredContent handling ====================
+
+    @Test
+    void testConvertCallToolResult_StructuredContentOnly() {
+        // Some content is required by the SDK, but it can be an empty list
+        Map<String, Object> structured = Map.of("answer", 42, "source", "database");
+        McpSchema.CallToolResult mcpResult =
+                new McpSchema.CallToolResult(List.of(), false, structured, null);
+
+        ToolResultBlock result = McpContentConverter.convertCallToolResult(mcpResult);
+
+        assertNotNull(result);
+        List<ContentBlock> outputs = result.getOutput();
+        // Empty content falls back to one empty TextBlock, then structuredContent is appended
+        assertEquals(2, outputs.size());
+        assertTrue(outputs.get(0) instanceof TextBlock);
+        assertEquals("", ((TextBlock) outputs.get(0)).getText());
+        // The structuredContent should be serialized as JSON in a TextBlock
+        assertTrue(outputs.get(1) instanceof TextBlock);
+        String json = ((TextBlock) outputs.get(1)).getText();
+        assertTrue(json.contains("\"answer\":42"));
+        assertTrue(json.contains("\"source\":\"database\""));
+    }
+
+    @Test
+    void testConvertCallToolResult_ContentPlusStructuredContent() {
+        McpSchema.TextContent textContent = McpSchema.TextContent.builder("Summary text").build();
+        Map<String, Object> structured = Map.of("result", "ok");
+        McpSchema.CallToolResult mcpResult =
+                new McpSchema.CallToolResult(List.of(textContent), false, structured, null);
+
+        ToolResultBlock result = McpContentConverter.convertCallToolResult(mcpResult);
+
+        assertNotNull(result);
+        List<ContentBlock> outputs = result.getOutput();
+        // Text content plus the JSON-serialized structuredContent
+        assertEquals(2, outputs.size());
+        assertTrue(outputs.get(0) instanceof TextBlock);
+        assertEquals("Summary text", ((TextBlock) outputs.get(0)).getText());
+        assertTrue(outputs.get(1) instanceof TextBlock);
+        assertTrue(((TextBlock) outputs.get(1)).getText().contains("\"result\":\"ok\""));
+    }
+
+    @Test
+    void testConvertCallToolResult_NoStructuredContent() {
+        McpSchema.TextContent textContent = McpSchema.TextContent.builder("Text only").build();
+        McpSchema.CallToolResult mcpResult =
+                new McpSchema.CallToolResult(List.of(textContent), false, null, null);
+
+        ToolResultBlock result = McpContentConverter.convertCallToolResult(mcpResult);
+
+        assertNotNull(result);
+        List<ContentBlock> outputs = result.getOutput();
+        assertEquals(1, outputs.size());
+        assertTrue(outputs.get(0) instanceof TextBlock);
+        assertEquals("Text only", ((TextBlock) outputs.get(0)).getText());
     }
 
     // Note: Cannot test unknown ResourceContents type because it's a sealed class

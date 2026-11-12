@@ -102,6 +102,8 @@ public class OllamaChatModel extends ChatModelBase {
                 defaultOptions != null ? defaultOptions : OllamaOptions.builder().build();
         this.formatter = formatter != null ? formatter : new OllamaChatFormatter();
         this.stream = stream;
+        setNativeStructuredOutput(true);
+        setNativeStructuredOutputWithTools(false);
 
         HttpTransport transport =
                 httpTransport != null ? httpTransport : HttpTransportFactory.getDefault();
@@ -131,6 +133,11 @@ public class OllamaChatModel extends ChatModelBase {
     @Override
     public String getModelName() {
         return this.modelName;
+    }
+
+    @Override
+    public boolean supportsToolChoiceSpecific() {
+        return true;
     }
 
     public boolean isStreaming() {
@@ -272,6 +279,8 @@ public class OllamaChatModel extends ChatModelBase {
         private ProxyConfig proxyConfig;
         private int contextWindowSize = -1;
         private boolean stream = true;
+        private boolean nativeStructuredOutput = true;
+        private boolean nativeStructuredOutputWithTools = false;
 
         public Builder modelName(String modelName) {
             this.modelName = modelName;
@@ -364,6 +373,37 @@ public class OllamaChatModel extends ChatModelBase {
             return this;
         }
 
+        /**
+         * Sets whether this model supports native structured output via Ollama's
+         * {@code format} field.
+         *
+         * <p>Defaults to {@code true}. Set to {@code false} for endpoints that do not
+         * support JSON Schema-constrained output; the agent will use the synthetic
+         * {@code generate_response} tool instead.
+         *
+         * @param nativeStructuredOutput false to disable native structured output
+         * @return this builder instance
+         */
+        public Builder nativeStructuredOutput(boolean nativeStructuredOutput) {
+            this.nativeStructuredOutput = nativeStructuredOutput;
+            return this;
+        }
+
+        /**
+         * Sets whether this model handles native structured output alongside tool calling.
+         *
+         * <p>Defaults to {@code false} because Ollama does not document guaranteed behavior
+         * for combining {@code format} and {@code tools}. Set to {@code true} for models and
+         * endpoints where that combination has been verified.
+         *
+         * @param nativeStructuredOutputWithTools true to use native output with tools
+         * @return this builder instance
+         */
+        public Builder nativeStructuredOutputWithTools(boolean nativeStructuredOutputWithTools) {
+            this.nativeStructuredOutputWithTools = nativeStructuredOutputWithTools;
+            return this;
+        }
+
         public OllamaChatModel build() {
             OllamaOptions finalOptions =
                     defaultOptions != null
@@ -381,6 +421,8 @@ public class OllamaChatModel extends ChatModelBase {
             OllamaChatModel model =
                     new OllamaChatModel(
                             modelName, baseUrl, finalOptions, formatter, transport, stream);
+            model.setNativeStructuredOutput(nativeStructuredOutput);
+            model.setNativeStructuredOutputWithTools(nativeStructuredOutputWithTools);
             if (contextWindowSize >= 0) {
                 model.setContextWindowSize(contextWindowSize);
             }

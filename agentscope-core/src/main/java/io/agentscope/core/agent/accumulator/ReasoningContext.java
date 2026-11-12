@@ -25,6 +25,7 @@ import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.ChatUsage;
+import io.agentscope.core.model.FinishReasons;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -52,6 +53,8 @@ public class ReasoningContext {
     private final ToolCallsAccumulator toolCallsAcc = new ToolCallsAccumulator();
     private final ServerToolResultAccumulator serverToolResults = new ServerToolResultAccumulator();
 
+    private String finishReason;
+
     // ChatUsage
     private int inputTokens = 0;
     private int outputTokens = 0;
@@ -62,7 +65,6 @@ public class ReasoningContext {
     private double time = 0;
 
     // Provider-specific response metadata to propagate to the final message
-    // (e.g. openai.reasoning.encrypted_content for reasoning replay)
     private final Map<String, Object> responseMetadata = new HashMap<>();
 
     public ReasoningContext(String agentName) {
@@ -85,6 +87,9 @@ public class ReasoningContext {
      */
     public List<Msg> processChunk(ChatResponse chunk) {
         this.messageId = chunk.getId();
+        if (chunk.getFinishReason() != null) {
+            finishReason = chunk.getFinishReason();
+        }
 
         // Accumulate ChatUsage
         ChatUsage usage = chunk.getUsage();
@@ -178,7 +183,8 @@ public class ReasoningContext {
         }
 
         // Add all tool calls, placing server tool results right after their calls
-        List<ToolUseBlock> toolCalls = toolCallsAcc.buildAllToolCalls();
+        boolean outputLimitReached = isTruncated();
+        List<ToolUseBlock> toolCalls = toolCallsAcc.buildAllToolCalls(outputLimitReached);
         blocks.addAll(serverToolResults.placeAfterToolCalls(toolCalls));
 
         // If no content at all, return null
@@ -188,6 +194,9 @@ public class ReasoningContext {
 
         // Build metadata: start with propagated response metadata, then add ChatUsage
         Map<String, Object> metadata = new HashMap<>(responseMetadata);
+        if (outputLimitReached) {
+            metadata.put(MessageMetadataKeys.OUTPUT_LIMIT_REACHED, true);
+        }
         ChatUsage chatUsage = null;
         if (inputTokens > 0 || outputTokens > 0 || time > 0) {
             chatUsage =
@@ -210,6 +219,10 @@ public class ReasoningContext {
                 .metadata(metadata)
                 .usage(chatUsage)
                 .build();
+    }
+
+    private boolean isTruncated() {
+        return FinishReasons.indicatesOutputLimit(finishReason, responseMetadata);
     }
 
     /**
@@ -249,6 +262,7 @@ public class ReasoningContext {
                 .input(block.getInput())
                 .content(block.getContent())
                 .metadata(block.getMetadata())
+                .state(block.getState())
                 .build();
     }
 

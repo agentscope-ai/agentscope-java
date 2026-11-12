@@ -27,10 +27,13 @@ import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.UserMessage;
 import io.agentscope.core.middleware.MiddlewareBase;
 import java.time.Duration;
+import java.util.EnumSet;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
@@ -90,21 +93,9 @@ class AgentRunTest {
             AgentRun<Msg> a = agent.prepareCall(input(), context("a", "same"));
             AgentRun<Msg> b = agent.prepareCall(input(), context("b", "same"));
             AgentRun<Msg> c = agent.prepareCall(input(), context("c", "same"));
-            var ar =
-                    a.stream()
-                            .single()
-                            .toFuture()
-                            .orTimeout(5, java.util.concurrent.TimeUnit.SECONDS);
-            var br =
-                    b.stream()
-                            .single()
-                            .toFuture()
-                            .orTimeout(5, java.util.concurrent.TimeUnit.SECONDS);
-            var cr =
-                    c.stream()
-                            .single()
-                            .toFuture()
-                            .orTimeout(5, java.util.concurrent.TimeUnit.SECONDS);
+            var ar = a.stream().single().toFuture().orTimeout(5, TimeUnit.SECONDS);
+            var br = b.stream().single().toFuture().orTimeout(5, TimeUnit.SECONDS);
+            var cr = c.stream().single().toFuture().orTimeout(5, TimeUnit.SECONDS);
             try {
                 assertEquals(AgentRun.Status.RUNNING, a.status());
                 assertEquals(AgentRun.Status.QUEUED, b.status());
@@ -115,8 +106,9 @@ class AgentRunTest {
                 assertFalse(gates.entered.containsKey("b"));
                 assertFalse(gates.entered.containsKey("c"));
                 gates.release("a");
-                assertEquals(AgentRun.Status.COMPLETED, a.status());
                 assertNotNull(ar.join());
+                assertEquals(AgentRun.Status.COMPLETED, a.status());
+                gates.await("c");
                 assertEquals(AgentRun.Status.RUNNING, c.status());
                 gates.release("c");
                 assertNotNull(cr.join());
@@ -136,16 +128,8 @@ class AgentRunTest {
         try (ReActAgent agent = agent(gates)) {
             AgentRun<Msg> a = agent.prepareCall(input(), context("a", "same"));
             AgentRun<Msg> b = agent.prepareCall(input(), context("b", "same"));
-            var ar =
-                    a.stream()
-                            .single()
-                            .toFuture()
-                            .orTimeout(5, java.util.concurrent.TimeUnit.SECONDS);
-            var br =
-                    b.stream()
-                            .single()
-                            .toFuture()
-                            .orTimeout(5, java.util.concurrent.TimeUnit.SECONDS);
+            var ar = a.stream().single().toFuture().orTimeout(5, TimeUnit.SECONDS);
+            var br = b.stream().single().toFuture().orTimeout(5, TimeUnit.SECONDS);
             try {
                 assertTrue(a.cancel());
                 assertTrue(ar.isCompletedExceptionally());
@@ -167,16 +151,8 @@ class AgentRunTest {
         try (ReActAgent agent = agent(gates)) {
             AgentRun<Msg> a = agent.prepareCall(input(), context("a", "same"));
             AgentRun<Msg> b = agent.prepareCall(input(), context("b", "same"));
-            var ar =
-                    a.stream()
-                            .single()
-                            .toFuture()
-                            .orTimeout(5, java.util.concurrent.TimeUnit.SECONDS);
-            var br =
-                    b.stream()
-                            .single()
-                            .toFuture()
-                            .orTimeout(5, java.util.concurrent.TimeUnit.SECONDS);
+            var ar = a.stream().single().toFuture().orTimeout(5, TimeUnit.SECONDS);
+            var br = b.stream().single().toFuture().orTimeout(5, TimeUnit.SECONDS);
             try {
                 assertTrue(a.interrupt(new UserMessage("stop")));
                 gates.release("a");
@@ -196,16 +172,8 @@ class AgentRunTest {
         try (ReActAgent agent = agent(gates)) {
             AgentRun<Msg> a = agent.prepareCall(input(), context("a", "one"));
             AgentRun<Msg> b = agent.prepareCall(input(), context("b", "two"));
-            var ar =
-                    a.stream()
-                            .single()
-                            .toFuture()
-                            .orTimeout(5, java.util.concurrent.TimeUnit.SECONDS);
-            var br =
-                    b.stream()
-                            .single()
-                            .toFuture()
-                            .orTimeout(5, java.util.concurrent.TimeUnit.SECONDS);
+            var ar = a.stream().single().toFuture().orTimeout(5, TimeUnit.SECONDS);
+            var br = b.stream().single().toFuture().orTimeout(5, TimeUnit.SECONDS);
             try {
                 agent.interrupt("u", "one");
                 gates.release("a");
@@ -225,6 +193,11 @@ class AgentRunTest {
         Sinks.One<String> resumed = Sinks.one();
         MiddlewareBase retry =
                 new MiddlewareBase() {
+                    @Override
+                    public Set<ExtensionPoint> activePoints() {
+                        return EnumSet.of(ExtensionPoint.ON_AGENT, ExtensionPoint.ON_SYSTEM_PROMPT);
+                    }
+
                     @Override
                     public Flux<io.agentscope.core.event.AgentEvent> onAgent(
                             Agent agent,
@@ -252,11 +225,7 @@ class AgentRunTest {
                         .middlewares(List.of(retry))
                         .build()) {
             AgentRun<Msg> run = agent.prepareCall(input(), context("a", "same"));
-            var reply =
-                    run.stream()
-                            .single()
-                            .toFuture()
-                            .orTimeout(5, java.util.concurrent.TimeUnit.SECONDS);
+            var reply = run.stream().single().toFuture().orTimeout(5, TimeUnit.SECONDS);
             try {
                 assertEquals(2, attempts.get());
                 assertEquals(AgentRun.Status.RUNNING, run.status());
@@ -277,6 +246,11 @@ class AgentRunTest {
         MiddlewareBase nested =
                 new MiddlewareBase() {
                     @Override
+                    public Set<ExtensionPoint> activePoints() {
+                        return EnumSet.of(ExtensionPoint.ON_SYSTEM_PROMPT);
+                    }
+
+                    @Override
                     public Mono<String> onSystemPrompt(
                             Agent agent, RuntimeContext ctx, String prompt) {
                         if (ctx.get(Label.class).value().equals("parent")) {
@@ -295,11 +269,7 @@ class AgentRunTest {
                         .middlewares(List.of(nested))
                         .build()) {
             AgentRun<Msg> run = agent.prepareCall(input(), context("parent", "parent-session"));
-            var reply =
-                    run.stream()
-                            .single()
-                            .toFuture()
-                            .orTimeout(5, java.util.concurrent.TimeUnit.SECONDS);
+            var reply = run.stream().single().toFuture().orTimeout(5, TimeUnit.SECONDS);
             try {
                 assertTrue(run.interrupt());
                 childGate.tryEmitValue("system");
@@ -334,6 +304,11 @@ class AgentRunTest {
         ConcurrentLinkedQueue<String> observed = new ConcurrentLinkedQueue<>();
         MiddlewareBase recorder =
                 new MiddlewareBase() {
+                    @Override
+                    public Set<ExtensionPoint> activePoints() {
+                        return EnumSet.of(ExtensionPoint.ON_SYSTEM_PROMPT);
+                    }
+
                     @Override
                     public Mono<String> onSystemPrompt(
                             Agent agent, RuntimeContext ctx, String prompt) {
@@ -378,12 +353,30 @@ class AgentRunTest {
     private static final class Gates implements MiddlewareBase {
         private final ConcurrentHashMap<String, Sinks.One<String>> entered =
                 new ConcurrentHashMap<>();
+        private final ConcurrentHashMap<String, Sinks.One<String>> admissions =
+                new ConcurrentHashMap<>();
+
+        @Override
+        public Set<ExtensionPoint> activePoints() {
+            return EnumSet.of(ExtensionPoint.ON_SYSTEM_PROMPT);
+        }
 
         @Override
         public Mono<String> onSystemPrompt(Agent agent, RuntimeContext ctx, String prompt) {
             Sinks.One<String> gate = Sinks.one();
-            entered.put(ctx.get(Label.class).value(), gate);
+            String label = ctx.get(Label.class).value();
+            entered.put(label, gate);
+            admissions.computeIfAbsent(label, ignored -> Sinks.one()).tryEmitValue(label);
             return gate.asMono();
+        }
+
+        void await(String label) {
+            assertEquals(
+                    label,
+                    admissions
+                            .computeIfAbsent(label, ignored -> Sinks.one())
+                            .asMono()
+                            .block(TIMEOUT));
         }
 
         void release(String label) {

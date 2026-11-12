@@ -11,7 +11,7 @@ export default defineConfig({
     },
   },
   build: {
-    outDir: '../aistio/ui',
+    outDir: '../service-controlplane/ui',
     emptyOutDir: true,
   },
   server: {

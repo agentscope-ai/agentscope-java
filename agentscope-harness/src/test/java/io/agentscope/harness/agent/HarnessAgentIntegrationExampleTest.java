@@ -55,7 +55,8 @@ import reactor.core.publisher.Flux;
  * <pre>
  * workspace/
  * ├── AGENTS.md              # persona / local rules
- * ├── MEMORY.md              # optional long-term scratch (loaded into &lt;memory_context&gt;)
+ * ├── integration-session-1/
+ * │   └── MEMORY.md          # per-session scratch (loaded into &lt;memory_context&gt;)
  * ├── knowledge/
  * │   └── KNOWLEDGE.md       # optional domain summary
  * └── subagents/
@@ -90,7 +91,12 @@ class HarnessAgentIntegrationExampleTest {
         Files.writeString(
                 workspace.resolve(WorkspaceConstants.AGENTS_MD),
                 "# Agent\n\n" + agentsPersona + "\n");
-        Files.writeString(workspace.resolve(WorkspaceConstants.MEMORY_MD), memoryNote);
+        // MEMORY.md is per-identity runtime data, so it lives under the namespace the call's
+        // RuntimeContext resolves to; AGENTS.md and knowledge/ stay at the workspace root as
+        // shared agent configuration.
+        Path sessionMemory = workspace.resolve("integration-session-1");
+        Files.createDirectories(sessionMemory);
+        Files.writeString(sessionMemory.resolve(WorkspaceConstants.MEMORY_MD), memoryNote);
 
         Path knowledgeDir = workspace.resolve(WorkspaceConstants.KNOWLEDGE_DIR);
         Files.createDirectories(knowledgeDir);
@@ -143,22 +149,21 @@ class HarnessAgentIntegrationExampleTest {
             String combined =
                     captor.getAllValues().stream()
                             .map(HarnessAgentIntegrationExampleTest::joinAllText)
-                            .filter(s -> s.contains("## AgentStateStore Context"))
+                            .filter(s -> s.contains("## Runtime Environment"))
                             .findFirst()
                             .orElse("");
 
             assertTrue(
-                    combined.contains("## AgentStateStore Context"),
-                    "AgentStateStore context should be injected; model saw: "
+                    combined.contains("## Runtime Environment"),
+                    "Runtime environment should be injected; model saw: "
                             + captor.getAllValues().stream()
                                     .map(HarnessAgentIntegrationExampleTest::joinAllText)
                                     .toList());
-            // Current WorkspaceContextHook uses markdown (##) guidance + XML <loaded_context>
-            // blocks
+            // The final builder renders workspace instructions and references separately.
             assertTrue(
                     combined.contains("## Domain Knowledge") || combined.contains("## Workspace"),
                     "expected workspace guidance sections");
-            assertTrue(combined.contains("`AGENTS.md`") || combined.contains("agents_context"));
+            assertTrue(combined.contains("<project_rules "));
             assertTrue(
                     combined.contains(agentsPersona),
                     "AGENTS.md should appear under workspace hook");

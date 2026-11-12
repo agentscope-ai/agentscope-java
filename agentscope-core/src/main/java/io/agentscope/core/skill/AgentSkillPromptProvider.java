@@ -20,6 +20,7 @@ import java.util.Collection;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.Predicate;
 import java.util.regex.Pattern;
 
 /**
@@ -177,11 +178,35 @@ public class AgentSkillPromptProvider {
     /**
      * Gets the skill system prompt filtered by the given {@link SkillFilter}.
      *
+     * <p>The filter matches skills by {@link AgentSkill#getName() skill name}, not by the composite
+     * registry id, so {@code only("x")} / {@code disable("x")} apply to every source variant of
+     * {@code x}, and a composite id such as {@code "x_custom"} does not match.
+     *
      * @param filter the filter deciding which skills to include (null treated as all)
      * @return The skill system prompt, or empty string if no skills pass the filter
      */
     public String getSkillSystemPrompt(SkillFilter filter) {
         SkillFilter effectiveFilter = filter != null ? filter : SkillFilter.all();
+        return getSkillSystemPrompt(skill -> effectiveFilter.isAllowed(skill.getName()));
+    }
+
+    /**
+     * Gets the skill system prompt filtered by a per-skill predicate.
+     *
+     * <p>Package-private on purpose: a public same-arity overload would make the existing
+     * {@code getSkillSystemPrompt(null)} call (null = all, a documented contract of the
+     * {@link SkillFilter} overload) ambiguous and break source compatibility.
+     *
+     * <p>Unlike the {@link SkillFilter} overload this decides per {@link AgentSkill}
+     * instance, so grant layers with exact-copy semantics (e.g. full-skillId entries of a
+     * capability surface) keep their precision instead of being normalized to the skill
+     * name.
+     *
+     * @param matcher the per-skill visibility predicate ({@code null} treated as all visible)
+     * @return The skill system prompt, or empty string if no skills pass
+     */
+    String getSkillSystemPrompt(Predicate<AgentSkill> matcher) {
+        Predicate<AgentSkill> effective = matcher != null ? matcher : skill -> true;
 
         Set<String> skillIds = skillRegistry.getSkillIds();
         if (skillIds.isEmpty()) {
@@ -194,11 +219,8 @@ public class AgentSkillPromptProvider {
         int withOriginDir = 0;
 
         for (String skillId : skillIds) {
-            if (!effectiveFilter.isAllowed(skillId)) {
-                continue;
-            }
             AgentSkill skill = skillRegistry.getSkill(skillId);
-            if (skill == null) {
+            if (skill == null || !effective.test(skill)) {
                 continue;
             }
             if (!hasSkills) {

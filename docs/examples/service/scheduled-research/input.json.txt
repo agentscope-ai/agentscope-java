@@ -1,0 +1,21 @@
+{
+  "title": "Daily research for account A-101",
+  "input": {
+    "request": "Summarize changes in the supplied source snapshot. List observed changes separately from sales hypotheses and cite source IDs. Do not contact the customer.",
+    "account_id": "A-101",
+    "research_date": "2026-10-05",
+    "strategy_version": "research-v1",
+    "sources": [
+      {
+        "id": "release",
+        "version": "2026-10-05",
+        "text": "Fictional Northstar launched a web support portal on October 4."
+      },
+      {
+        "id": "crm",
+        "version": "rev-3",
+        "text": "The account asked about order lookup. Budget and purchase date are unconfirmed."
+      }
+    ]
+  }
+}

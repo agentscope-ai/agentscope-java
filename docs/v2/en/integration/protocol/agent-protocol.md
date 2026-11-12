@@ -66,7 +66,7 @@ You may supply your own `ProtocolTaskRepository` bean to override the default. C
 
 ## Concurrent execution
 
-The agent is stateless between calls — a singleton handles multiple concurrent tasks. Each task carries its own `(userId, sessionId)` via `RuntimeContext`, so state is fully isolated:
+This adapter uses a Spring-managed `HarnessAgent` Bean whose lifetime covers protocol execution and recovery, ending at application shutdown. Each task supplies its identity through `RuntimeContext`. For ordinary web handlers, use a shared Builder and a new Agent per request; see [Instance lifecycle](/v2/en/docs/building-blocks/agent#instance-lifecycle). Do not close the adapter-owned Agent when task submission returns:
 
 ```java
 @Bean
@@ -215,6 +215,12 @@ Optional `context` fields:
 | `attributes` | Caller-defined key/values for routing and for the run's `RuntimeContext`; see [Context attributes](#context-attributes) |
 
 Response on success: `{ "task_id", "status": "pending" }`.
+
+Within one `AgentProtocolTaskStore` instance, concurrent submissions of the same
+`task_id` do not start another run while its execution is in progress. Different
+task IDs can execute independently. Submitting an already completed task ID returns
+HTTP 409. This in-process coordination does not deduplicate submissions across
+server replicas.
 
 ### Poll / wait / cancel
 

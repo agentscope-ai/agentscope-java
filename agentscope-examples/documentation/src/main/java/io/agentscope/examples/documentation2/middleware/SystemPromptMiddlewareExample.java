@@ -27,6 +27,8 @@ import io.agentscope.extensions.model.dashscope.formatter.DashScopeChatFormatter
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import java.time.Instant;
+import java.util.EnumSet;
+import java.util.Set;
 import reactor.core.publisher.Mono;
 
 /**
@@ -127,6 +129,12 @@ public class SystemPromptMiddlewareExample {
      */
     public static class TimestampMiddleware implements MiddlewareBase {
 
+        /** Declares participation only at the overridden extension point. */
+        @Override
+        public Set<ExtensionPoint> activePoints() {
+            return EnumSet.of(ExtensionPoint.ON_SYSTEM_PROMPT);
+        }
+
         /**
          * Appends the current UTC timestamp to the system prompt.
          *
@@ -159,6 +167,12 @@ public class SystemPromptMiddlewareExample {
         public EnvironmentMiddleware(String environment, String userId) {
             this.environment = environment;
             this.userId = userId;
+        }
+
+        /** Declares participation only at the overridden extension point. */
+        @Override
+        public Set<ExtensionPoint> activePoints() {
+            return EnumSet.of(ExtensionPoint.ON_SYSTEM_PROMPT);
         }
 
         /**

@@ -111,7 +111,7 @@ export default function SessionTranscript({
   const [savingMounts, setSavingMounts] = useState(false);
   const navigate = useNavigate();
 
-  const archived = !!managedSession?.archivedAt;
+  const archived = managedSession?.status === 'archived';
 
   async function reload() {
     setErr(null);

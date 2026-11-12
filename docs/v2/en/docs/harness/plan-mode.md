@@ -127,6 +127,19 @@ PermissionMode current = agent.getPermissionMode(userId, sessionId);
 
 `setPermissionMode(...)` preserves the session's configured allow/deny/ask rules and working directories — only the mode changes — and rebuilds that session's cached permission engine so the switch takes effect on the **next** call. An in-flight call keeps the engine it started with.
 
+To replace a session's rules as well — for example when one shared agent serves several users and each user's role maps to a different rule set — use `replacePermissionContext(...)`. It installs a complete replacement context for that `(userId, sessionId)` only; other sessions are not affected:
+
+```java
+PermissionContextState rules =
+        PermissionContextState.builder()
+                .addDenyRule(
+                        "execute",
+                        new PermissionRule("execute", null, PermissionBehavior.DENY, "role-policy"))
+                .build();
+
+agent.replacePermissionContext(userId, sessionId, rules);
+```
+
 ⚠ `BYPASS` disables all rule evaluation, so treat it as an explicit, per-session, opt-in action and prefer pairing it with a sandbox. To run unattended without prompts but *with* enforcement, use `PermissionMode.DONT_ASK` instead (ASK decisions become DENY rather than being auto-allowed).
 
 ## Plan state is persisted

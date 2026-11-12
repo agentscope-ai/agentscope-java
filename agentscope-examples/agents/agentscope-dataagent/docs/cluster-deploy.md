@@ -142,7 +142,7 @@ http {
 
 Startup will refuse to come up if any of these are misconfigured:
 
-- `dataagent.jwt.secret` left at the dev placeholder in a non-`dev` profile.
+- `dataagent.jwt.secret` missing, blank, shorter than 32 bytes, or equal to the former public default, in any profile.
 - `dataagent.workspace` blank in a non-`dev` profile.
 - `dataagent.session.redis.enabled=true` with `dataagent.workspace` pointing
   at an ephemeral path (`/tmp/`, `/var/tmp/`, `/private/tmp/`, `/dev/shm/`).

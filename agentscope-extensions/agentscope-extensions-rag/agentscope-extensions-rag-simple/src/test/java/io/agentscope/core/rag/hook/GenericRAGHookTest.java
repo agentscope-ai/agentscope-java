@@ -23,6 +23,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.agent.AgentBase;
 import io.agentscope.core.embedding.EmbeddingModel;
+import io.agentscope.core.embedding.EmbeddingResponse;
 import io.agentscope.core.hook.PreCallEvent;
 import io.agentscope.core.hook.PreReasoningEvent;
 import io.agentscope.core.interruption.InterruptContext;
@@ -383,7 +384,7 @@ class GenericRAGHookTest {
         }
 
         @Override
-        public Mono<double[]> embed(ContentBlock block) {
+        public Mono<EmbeddingResponse> embed(ContentBlock block) {
             if (shouldThrowError) {
                 return Mono.error(new RuntimeException("Mock embedding error"));
             }
@@ -393,7 +394,7 @@ class GenericRAGHookTest {
                         () -> {
                             double[] embedding =
                                     embeddings.computeIfAbsent(text, k -> generateEmbedding(text));
-                            return embedding.clone();
+                            return new EmbeddingResponse(embedding.clone(), null);
                         });
             }
             return Mono.error(new UnsupportedOperationException("Unsupported content block type"));
