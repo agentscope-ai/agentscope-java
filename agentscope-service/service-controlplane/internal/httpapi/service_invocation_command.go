@@ -21,6 +21,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"strings"
@@ -78,7 +79,9 @@ func (s *Server) createServiceCommand(c *gin.Context) {
 	var input serviceActionInput
 	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 1<<20)
 	if c.Request.ContentLength != 0 {
-		if err := c.ShouldBindJSON(&input); err != nil {
+		// An empty body (including a chunked request with no payload) must not
+		// fail the command; ShouldBindJSON reports io.EOF for it.
+		if err := c.ShouldBindJSON(&input); err != nil && !errors.Is(err, io.EOF) {
 			c.JSON(400, ErrorResponse{Error: err.Error()})
 			return
 		}

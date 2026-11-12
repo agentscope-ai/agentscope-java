@@ -1576,6 +1576,11 @@ func (s *Server) downloadEndpointJobArtifact(c *gin.Context) {
 }
 
 func prepareEventStream(c *gin.Context) {
+	// http.Server.WriteTimeout is an absolute deadline for the whole response,
+	// not an idle timeout. Clear it for long-lived streams; heartbeat frames
+	// keep intermediaries alive and the request context still handles clients
+	// that disconnect.
+	_ = http.NewResponseController(c.Writer).SetWriteDeadline(time.Time{})
 	c.Header("Content-Type", "text/event-stream")
 	c.Header("Cache-Control", "no-cache, no-transform")
 	c.Header("Connection", "keep-alive")
