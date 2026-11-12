@@ -16,12 +16,14 @@
 package io.agentscope.extensions.redis;
 
 import io.agentscope.core.state.AgentStateStore;
+import io.agentscope.extensions.redis.bus.RedisMessageBus;
 import io.agentscope.extensions.redis.sandbox.RedisSandboxExecutionGuard;
 import io.agentscope.extensions.redis.snapshot.RedisSnapshotSpec;
 import io.agentscope.extensions.redis.state.RedisAgentStateStore;
 import io.agentscope.extensions.redis.state.RedisAgentStateStore.KeyLayoutVersion;
 import io.agentscope.extensions.redis.store.RedisStore;
 import io.agentscope.harness.agent.DistributedStore;
+import io.agentscope.harness.agent.bus.MessageBus;
 import io.agentscope.harness.agent.filesystem.remote.store.BaseStore;
 import io.agentscope.harness.agent.sandbox.SandboxExecutionGuard;
 import io.agentscope.harness.agent.sandbox.snapshot.SandboxSnapshotSpec;
@@ -123,5 +125,10 @@ public class RedisDistributedStore implements DistributedStore {
     @Override
     public SandboxExecutionGuard sandboxExecutionGuard() {
         return RedisSandboxExecutionGuard.builder(jedis).keyPrefix(keyPrefix + "guard:").build();
+    }
+
+    @Override
+    public MessageBus messageBus() {
+        return new RedisMessageBus(jedis, keyPrefix + "bus:");
     }
 }
