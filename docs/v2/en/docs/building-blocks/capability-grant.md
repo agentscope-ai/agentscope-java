@@ -10,6 +10,8 @@ One-line positioning: **SkillFilter decides what the agent is designed to have; 
 
 Why grant exists: in enterprise deployments, one agent serves many users with different permissions (multi-tenant, multi-role). The grant layer cuts out every capability the current user is not authorized for — a cut capability **does not exist for the model**: it never enters tool schemas, cannot be enumerated, cannot be activated via `reset_equipped_tools`, cannot be loaded via `load_skill_through_path`, and cannot be executed. The harness skill chain (`HarnessSkillMiddleware`'s prompt and catalog, plus the harness `load_skill_through_path`) is equally governed by the grant surface. The staged cache is clamped the same way: sandbox workspace projection hydrates only the granted skills' `.skills-cache` subtrees for the current call — residue staged under an earlier, wider grant stays on disk (the grace-window GC owns deletion), no longer enters the sandbox, and is revoked out of a reused or snapshot-restored workspace when the current call no longer authorizes it.
 
+> **Deployment boundary**: the file-system boundary of the grant layer is the sandbox projection — a restricted user's reach ends at what the current call projects into their sandbox. Local-with-shell deployments (no sandbox) have no such boundary: the shared host `.skills-cache` residue and workspace files remain directly readable by any caller holding shell or file-read tools. Serve restricted users from a sandboxed deployment.
+
 It is orthogonal to the existing layers — each layer answers exactly one question:
 
 | Layer | Relation |

@@ -425,15 +425,20 @@ public final class MarketplaceStager {
     /**
      * Stages an immutable on-disk skill tree (a repository's materialized version directory)
      * into {@code stagedDir}. A staged tree pinned to the same version token is reused — the
-     * source never changes under one token — while a missing tree, an incomplete tree, or a
+     * source never changes under one token; a readable {@code SKILL.md} plus a matching
+     * marker is the completeness proxy (a tree damaged beyond its manifest does not
+     * self-heal here). A missing tree, a tree without a readable {@code SKILL.md}, or a
      * tree staged under a different token is (re)built by a recursive copy through {@link
-     * #writeIfChanged}, inheriting its sha-compare and executable-bit heuristics. The copy is
-     * additive on rebuild: files only present in the superseded version remain until orphan
-     * GC sweeps them, because concurrent calls may still hold the staged tree as their live
-     * {@code files-root} — the shared cache is never deleted mid-flight. An unstamped
-     * ({@code null} version) source takes no fast path: it is sha-compared on every pass, so
-     * in-place edits of a live tier propagate. Returns {@code true} when {@code stagedDir}
-     * holds a complete skill (a readable {@code SKILL.md}) on return.
+     * #writeIfChanged}, inheriting its sha-compare and executable-bit heuristics. The
+     * rebuild is additive: files only present in the superseded version are never removed —
+     * concurrent sessions may legitimately serve different versions of the same name (a PIN
+     * session anchored to the superseded version still needs them), so a live staged tree
+     * is never pruned mid-flight; the manifest ({@code SKILL.md}) and the loader always
+     * serve the call's bound version, and orphan GC only ever removes whole skill
+     * directories that no call retained. An unstamped ({@code null} version) source takes
+     * no fast path: it is sha-compared on every pass, so in-place edits of a live tier
+     * propagate. Returns {@code true} when {@code stagedDir} holds a complete skill (a
+     * readable {@code SKILL.md}) on return.
      */
     private boolean materializeDirectoryIfChanged(
             Path stagedDir, Path originDir, String versionToken) throws IOException {
