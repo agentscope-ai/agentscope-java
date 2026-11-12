@@ -233,6 +233,24 @@ func (s *Server) sendAgentConversationTurn(ctx context.Context, session *store.S
 	}
 	switch binding.Kind {
 	case controlmodel.DataPlaneManaged:
+		if s.runtimeBindings != nil {
+			// Console chat must walk the same AgentTask admission the scheduler
+			// uses. Waking the data plane without a claimed attempt leaves the
+			// session unmanaged in the data plane's eyes, so the event mirror
+			// never starts and the chat panel stays empty (issue #3919).
+			var cfg controlmodel.ManagedBindingConfiguration
+			if json.Unmarshal(binding.Configuration, &cfg) != nil {
+				return fmt.Errorf("Managed binding configuration is invalid")
+			}
+			runtimeBinding, bindErr := binding.RuntimeBinding()
+			if bindErr != nil {
+				return bindErr
+			}
+			runtimeBinding.ManagedOwnerRef = cfg.OwnerRef
+			runtimeBinding.ManagedDefinitionRef = cfg.ManagedDefinitionRef
+			_, _, turnErr := s.runtimeBindings.DispatchManagedChatTurn(ctx, session, runtimeBinding, cfg.OwnerRef, message)
+			return turnErr
+		}
 		if s.product == nil {
 			return fmt.Errorf("Managed runtime is unavailable")
 		}

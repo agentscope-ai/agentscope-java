@@ -501,6 +501,13 @@ func (s *Server) applyManagedSessionStatus(ctx context.Context, session *store.S
 	if controlmodel.IsAgentTaskTerminal(task.Status) {
 		return nil
 	}
+	// Console chat turns close with the mirrored turn outcome. A text-only
+	// reply is a legitimate completion there (unlike scheduler tasks, which
+	// must call task.complete), so settle the chat attempt before the
+	// managed_turn_incomplete projection would fail it below.
+	if settled, settleErr := s.projectManagedChatTurnTerminal(ctx, session, task, report); settleErr != nil || settled {
+		return settleErr
+	}
 	code, message := "", ""
 	switch eventType {
 	case "session.status_idle":
