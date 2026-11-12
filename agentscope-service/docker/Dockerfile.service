@@ -2,10 +2,13 @@ FROM --platform=$BUILDPLATFORM maven:3.9-eclipse-temurin-21 AS build
 ARG MODULE
 WORKDIR /src
 COPY . .
-RUN --mount=type=cache,target=/root/.m2 case "$MODULE" in service-gateway|service-session-portal|service-dataplane|service-hands) ;; *) exit 1 ;; esac \
-    && mvn -B -ntp -T1 -pl agentscope-service/$MODULE -am package -DskipTests \
+RUN --mount=type=cache,target=/root/.m2 case "$MODULE" in gateway|agent-service|agent-harness-runtime|tool-worker) ;; *) exit 1 ;; esac \
+    && if [ "$MODULE" = agent-harness-runtime ]; then MODULE_PATH=agent-harness-runtime/java/brain-agentscope; else MODULE_PATH=$MODULE; fi \
+    && mvn -B -ntp -T1 -pl managed-agents/$MODULE_PATH -am package -DskipTests \
     && mkdir /out \
-    && find agentscope-service/$MODULE/target -maxdepth 1 -name "$MODULE-*.jar" \
+    && JAR_PATTERN="managed-agents-$MODULE-*.jar" \
+    && if [ "$MODULE" = tool-worker ]; then JAR_PATTERN="managed-agents-tool-worker-*-exec.jar"; fi \
+    && find managed-agents/$MODULE_PATH/target -maxdepth 1 -name "$JAR_PATTERN" \
        ! -name '*sources*' ! -name '*javadoc*' -exec cp {} /out/app.jar \;
 
 FROM eclipse-temurin:21-jre
@@ -13,12 +16,12 @@ RUN if ! command -v curl >/dev/null 2>&1; then \
         apt-get update && apt-get install -y --no-install-recommends curl \
         && rm -rf /var/lib/apt/lists/*; \
     fi \
-    && groupadd --gid 65532 agentscope \
-    && useradd --uid 65532 --gid 65532 --home-dir /data --no-create-home agentscope \
-    && mkdir -p /data/workspaces /data/artifacts /data/hands /data/managed-runtime-blobs \
+    && groupadd --gid 65532 managed-agents \
+    && useradd --uid 65532 --gid 65532 --home-dir /data --no-create-home managed-agents \
+    && mkdir -p /data/workspaces /data/artifacts /data/tool-worker /data/managed-runtime-blobs \
     && chown -R 65532:65532 /data
 COPY --from=build /out/app.jar /app.jar
-ENV BUILDER_WORKSPACE_ROOT=/data/workspaces
+ENV MANAGED_AGENTS_WORKSPACE_ROOT=/data/workspaces
 USER 65532:65532
 EXPOSE 8080
 ENTRYPOINT ["java", "-jar", "/app.jar"]

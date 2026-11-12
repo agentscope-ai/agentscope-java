@@ -1,0 +1,64 @@
+{
+  "interest": {
+    "protocolVersion": "0.1.0",
+    "scope": {
+      "tenant": "t1",
+      "namespace": "demo",
+      "sessionId": "s1"
+    },
+    "turnId": "turn1",
+    "fence": {
+      "owner": {
+        "instanceId": "brain-a",
+        "incarnationId": "boot-a"
+      },
+      "epoch": "7",
+      "executionToken": "token7"
+    },
+    "modelCallId": "model-preview"
+  },
+  "interestResponse": {
+    "protocolVersion": "0.1.0",
+    "scope": {
+      "tenant": "t1",
+      "namespace": "demo",
+      "sessionId": "s1"
+    },
+    "turnId": "turn1",
+    "interested": true
+  },
+  "publish": {
+    "protocolVersion": "0.1.0",
+    "scope": {
+      "tenant": "t1",
+      "namespace": "demo",
+      "sessionId": "s1"
+    },
+    "turnId": "turn1",
+    "fence": {
+      "owner": {
+        "instanceId": "brain-a",
+        "incarnationId": "boot-a"
+      },
+      "epoch": "7",
+      "executionToken": "token7"
+    },
+    "modelCallId": "model-preview",
+    "messageId": "message-preview",
+    "sequence": "0",
+    "chunks": [
+      "你好🙂",
+      " streamed"
+    ]
+  },
+  "publishResponse": {
+    "protocolVersion": "0.1.0",
+    "scope": {
+      "tenant": "t1",
+      "namespace": "demo",
+      "sessionId": "s1"
+    },
+    "turnId": "turn1",
+    "accepted": true
+  }
+}

@@ -14,13 +14,13 @@ POST /v1/sessions/{session_id}/events
 GET  /v1/sessions/{session_id}/events
 ```
 
-Agent/Environment 准备仍使用本项目控制面接口。下方 `POST /api/v1/agents` 是平台配置步骤，不是 Claude 兼容的 `/v1/agents` 接口。Turn/Input 查询、独立最终输出、`agentscope_service` 意图及能力查询是可选平台扩展，见 [Reference](api-reference.md#api-layers)。
+Agent/Environment 准备仍使用本项目控制面接口。下方 `POST /api/v1/agents` 是平台配置步骤，不是 Claude 兼容的 `/v1/agents` 接口。Turn/Input 查询、独立最终输出、`managed_agents` 意图及能力查询是可选平台扩展，见 [Reference](api-reference.md#api-layers)。
 
 ## 开始之前
 
-准备当前版本的部署，应用数据库迁移，启动 Runtime、Hands，并配置有效的服务端模型。PostgreSQL、Redis、MQ 的准备见[部署指南](../deploy/README.md)。示例关闭工具，不请求文件或 Sandbox 操作。
+准备当前版本的部署，应用数据库迁移，启动 Runtime、Tool Worker，并配置有效的服务端模型。PostgreSQL、Redis、MQ 的准备见[部署指南](../deploy/README.md)。示例关闭工具，不请求文件或 Sandbox 操作。
 
-- **本地开发**：启用 `BUILDER_LOCAL_DEV=true`，使用 `http://localhost:18080`，`TOKEN` 留空，允许默认本地 Environment。
+- **本地开发**：启用 `MANAGED_AGENTS_LOCAL_DEV=true`，使用 `http://localhost:18080`，`TOKEN` 留空，允许默认本地 Environment。
 - **认证部署**：设置公网地址、用户 JWT `TOKEN`、所属 `TENANT`/`NAMESPACE` 和有权使用的可运行 `ENVIRONMENT_ID`。登录使用 `POST /api/auth/login`；创建 Agent 需要管理身份和资源权限。
 
 cURL 流程用同一个 JWT 完成管理与 Session 调用；Application key 也可通过 `X-API-Key` 访问 Session API，但不能替代创建 Agent 所需的管理身份。后面的 SDK 示例支持两种认证方式。这里使用本部署的凭据，不是 Anthropic 或模型供应商密钥。
@@ -40,7 +40,7 @@ export NAMESPACE="${NAMESPACE:-default}"
 export TOKEN="${TOKEN:-}"
 export ENVIRONMENT_ID="${ENVIRONMENT_ID:-}"
 export RUN_ID="quickstart-$(date +%s)-$$"
-export D=$(mktemp -d "${TMPDIR:-/tmp}/agentscope-service-api.XXXXXX")
+export D=$(mktemp -d "${TMPDIR:-/tmp}/managed-agents-api.XXXXXX")
 
 api() {
   local path="$1"
@@ -51,8 +51,8 @@ api() {
   fi
   curl --fail-with-body -sS "$BASE_URL$path" \
     "${auth[@]}" \
-    -H "X-AgentScope-Tenant: $TENANT" \
-    -H "X-AgentScope-Namespace: $NAMESPACE" \
+    -H "X-Managed-Agents-Tenant: $TENANT" \
+    -H "X-Managed-Agents-Namespace: $NAMESPACE" \
     -H 'Content-Type: application/json' \
     -H 'anthropic-version: 2023-06-01' \
     -H 'anthropic-beta: managed-agents-2026-04-01' \
@@ -236,8 +236,8 @@ with Anthropic(
     default_headers={
         "X-Api-Key": omit if token else api_key,
         "Authorization": f"Bearer {token}" if token else omit,
-        "X-AgentScope-Tenant": os.environ.get("TENANT", "default"),
-        "X-AgentScope-Namespace": os.environ.get("NAMESPACE", "default"),
+        "X-Managed-Agents-Tenant": os.environ.get("TENANT", "default"),
+        "X-Managed-Agents-Namespace": os.environ.get("NAMESPACE", "default"),
     },
 ) as client:
     request_key = os.environ["RUN_ID"] + "-sdk"

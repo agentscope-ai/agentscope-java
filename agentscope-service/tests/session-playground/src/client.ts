@@ -28,8 +28,8 @@ export class SessionClient {
     this.path = `/api/v1/agent-sessions/${encodeURIComponent(session)}`;
     this.headers = { 'Content-Type': 'application/json',
       ...(token.trim() ? { Authorization: `Bearer ${token.trim()}` } : {}),
-      ...(tenant.trim() ? { 'X-AgentScope-Tenant': tenant.trim() } : {}),
-      ...(namespace.trim() ? { 'X-AgentScope-Namespace': namespace.trim() } : {}),
+      ...(tenant.trim() ? { 'X-Managed-Agents-Tenant': tenant.trim() } : {}),
+      ...(namespace.trim() ? { 'X-Managed-Agents-Namespace': namespace.trim() } : {}),
     };
   }
   async request<T>(suffix: string, signal: AbortSignal, init: RequestInit = {}): Promise<T> {

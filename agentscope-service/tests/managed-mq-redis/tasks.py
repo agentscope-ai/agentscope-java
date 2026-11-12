@@ -14,7 +14,7 @@ import replicas
 def control(path, body=None, internal=False, method=None):
     headers = {"Content-Type": "application/json"}
     if internal:
-        headers["X-Builder-Internal-Token"] = "managed-replica-fixture-internal-token-2026"
+        headers["X-Managed-Agents-Internal-Token"] = "managed-replica-fixture-internal-token-2026"
     request = urllib.request.Request("http://127.0.0.1:19081" + path,
         None if body is None else json.dumps(body).encode(), headers, method=method)
     with urllib.request.urlopen(request, timeout=40) as response:
@@ -57,7 +57,7 @@ def run(state, seconds):
     output.write_text(json.dumps(record, indent=2) + "\n")
     assert task["status"] == "completed", (task, output)
     assert attempt and attempt["state"] == "succeeded", attempt
-    assert "brain-confirmed-hands-" + label in json.dumps(task.get("result")), task
+    assert "harness-runtime-confirmed-tool-worker-" + label in json.dumps(task.get("result")), task
     assert attempt.get("leaseExpiresAt") is None and attempt.get("heartbeatAt") is None and not attempt.get("leaseToken"), attempt
     session, turn = attempt["sessionId"], attempt["turnId"]
     base = "/v1/sessions/" + session
@@ -65,7 +65,7 @@ def run(state, seconds):
     events = replicas.request(19184, base + "/events?limit=100")
     assert not events["has_more"], events
     encoded = json.dumps(events)
-    assert "brain-task-complete-" + label in encoded, events
+    assert "harness-runtime-task-complete-" + label in encoded, events
     assert "taskToken" not in encoded and "X-Agent-Task-Token" not in encoded, "private credential exposed in public events"
     facts = json.loads(replicas.fact(state, """SELECT json_build_object(
         'turns', (SELECT count(*) FROM ma.turn t JOIN ma.session s ON s.scope_key=t.scope_key WHERE s.session_id=:'session'),

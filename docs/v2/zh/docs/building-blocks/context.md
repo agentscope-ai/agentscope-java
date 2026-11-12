@@ -45,6 +45,7 @@ Agent 实例仍持有执行门、状态缓存和后台资源，应在执行结�
 | `AgentState` 字段 | 内容 |
 |---|---|
 | `getSessionId()` | 本份状态所属的会话标识 |
+| `getThreadId()` | Session 内持续的 Agent 上下文身份，默认 `main` |
 | `getUserId()` | 所属用户标识(匿名会话为 null) |
 | `getContext()` / `contextMutable()` | 当前对话历史(用户输入、assistant 回复、工具调用、工具结果) |
 | `getSummary()` | 压缩后的摘要(如果开了压缩) |
@@ -55,7 +56,7 @@ Agent 实例仍持有执行门、状态缓存和后台资源，应在执行结�
 
 执行控制与 `AgentState` 分离，每次调用拥有独立中断信号，详见下方[Per-session 中断](#per-session-中断)。
 
-在 LEGACY 或未启用原生日志的 Core Agent 中，一次 `call()` 结束,框架把整份 `AgentState` 以 `agent_state` 这个键写进状态存储,按该次调用的 `(userId, sessionId)` 寻址。下次同 `(userId, sessionId)` 的 `call()` 会自动从存储读回——配置共享状态存储后，其他实例可以加载已成功保存的状态；这不保证并发调用间实时一致，也不恢复尚未保存的进度或外部副作用。
+在快照模式或未启用原生日志的 Core Agent 中，一次 `call()` 结束后，框架把整份 `AgentState` 写入状态存储的 `(userId, sessionId)` 分区，条目键由 `agent.threadKey(context).stateEntry("agent_state")` 生成，包含 Agent 和 Thread 身份。同一 Thread 的后续调用自动恢复状态；不同 Thread 的历史、权限和计划状态独立。通过 `RuntimeContext.builder().threadId("research")` 选择 Thread，省略时使用 `main`，公开的 sessionId 保持原值——配置共享状态存储后，其他实例可以加载已成功保存的状态；这不保证并发调用间实时一致，也不恢复尚未保存的进度或外部副作用。
 
 ### 任务状态不是自动业务判定
 
@@ -68,20 +69,20 @@ Todo 完成、要求已确认、限定检查通过是不同含义，都不自动
 Harness 是否展示这些信息由 taskContext 配置控制；字段与更新入口的完整对照见
 [可选任务信息](/v2/zh/docs/harness/context#可选任务信息)。
 
-### Session Log 与 AgentStateStore 的关系
+### Thread 日志与 AgentStateStore 的关系
 
-`call` / `streamEvents` 与 `AgentSession` 使用相同的会话存储配置。多轮对话、历史查询和状态持久化不要求启用会话调度；需要后台任务、持久排队或会话级中断续做时，再使用 [AgentSession](/v2/zh/docs/harness/session-log)。直接调用的入门用法见[快速开始](/v2/zh/docs/quickstart)。
+`call` / `streamEvents` 可独立保存和恢复同一 Thread 的上下文。需要持久排队、后台接管和任务控制时使用 [Durable](/v2/zh/docs/harness/durable)，由 Runtime 的 Client 操作 Session、Thread 与 Turn。直接调用见[快速开始](/v2/zh/docs/quickstart)。
 
-HarnessAgent 默认 EVENT_LOG：已有原生日志时，AgentState 从日志 checkpoint 及后续可应用事实重建，保存时向日志提交 checkpoint；AgentStateStore 不再是该会话的恢复权威。LEGACY 和未启用日志的 Core Agent 使用下文的状态存储链路。
+HarnessAgent 默认日志模式：已有原生日志时，AgentState 从日志 checkpoint 及后续可应用事实重建，保存时向日志提交 checkpoint；AgentStateStore 不再是该会话的恢复权威。快照模式和未启用日志的 Core Agent 使用下文的状态存储链路。
 
-原生日志默认复用 Workspace Filesystem（也支持分布式），或用 sessionLogStore 指定。稳定 agentId、userId、sessionId、namespace 与存储都要保持一致。SDK 历史查询、未知工具核对和 checkpoint 接续见 [会话日志与恢复](/v2/zh/docs/harness/session-log)。下面仅配置 stateStore 的跨节点示例显式选择 LEGACY；默认 EVENT_LOG 还须共享原生日志。
+原生日志默认复用 Workspace Filesystem（也支持分布式），或用 threadJournalStore 指定。稳定 agentId、userId、sessionId、threadId、namespace 与存储都要保持一致。SDK 历史查询、未知工具核对和 checkpoint 接续见 [会话日志与恢复](/v2/zh/docs/harness/session-log)。下面仅配置 stateStore 的跨节点示例显式选择快照模式；默认日志模式 还须共享原生日志。
 
 ### 自动持久化与恢复链路
 
 ```
-call(msgs, RuntimeContext(userId, sessionId))
+call(msgs, RuntimeContext(userId, sessionId, threadId))
   │
-  ├─ 实例内 per-session 门: 相同 (uid, sid) 串行, 不同会话并行
+  ├─ 实例内按 Thread 加锁：同一 Thread 串行，不同 Thread 可并行
   │
   ▼
   配置 store 时每次 call 重新加载；否则使用槽位缓存
@@ -94,7 +95,7 @@ call(msgs, RuntimeContext(userId, sessionId))
   │
   ▼
   保存 AgentState
-  │   stateStore.save(userId, sessionId, "agent_state", state)
+  │   stateStore.save(userId, sessionId, threadKey.stateEntry("agent_state"), state)
   │
   ▼
   返回结果
@@ -111,7 +112,7 @@ call(msgs, RuntimeContext(userId, sessionId))
 | 实现 | 模块 | 适用场景 |
 |---|---|---|
 | `InMemoryAgentStateStore` | `agentscope-core` | 单元测试 / 单进程演示;进程退出全部丢失 |
-| `JsonFileAgentStateStore` | `agentscope-core` | 单机开发、文件落盘即可恢复;不能跨节点共享。**`HarnessAgent` LEGACY 模式默认值**,落在 `~/.agentscope/state/<agentId>/`(可通过 `agentscope.state.home` 系统属性改根目录);**单机** |
+| `JsonFileAgentStateStore` | `agentscope-core` | 单机开发、文件落盘即可恢复;不能跨节点共享。**`HarnessAgent` 快照模式 模式默认值**,落在 `~/.agentscope/state/<agentId>/`(可通过 `agentscope.state.home` 系统属性改根目录);**单机** |
 | `RedisAgentStateStore` | `agentscope-extensions-redis` | **生产首选**,多副本共享;支持 Jedis / Lettuce / Redisson(Standalone / Cluster / Sentinel) |
 | `JdbcAgentStateStore` | `agentscope-extensions-jdbc` | 需要把状态沉淀进关系型库(审计、报表)时使用 |
 
@@ -120,7 +121,7 @@ call(msgs, RuntimeContext(userId, sessionId))
 ```java
 // 默认(单机):省略 .stateStore(...) 即可,自动用本地 JsonFileAgentStateStore
 HarnessAgent agent = HarnessAgent.builder()
-    .legacySessionHistory(true)
+    .journalEnabled(false)
     .name("MyAgent")
     .model(model)
     .workspace(workspace)
@@ -129,7 +130,7 @@ HarnessAgent agent = HarnessAgent.builder()
 // 多副本生产:使用 DistributedStore
 JedisPooled jedis = new JedisPooled("redis://redis.prod:6379");
 HarnessAgent agent = HarnessAgent.builder()
-    .legacySessionHistory(true)
+    .journalEnabled(false)
         .name("MyAgent")
         .model(model)
         .workspace(workspace)
@@ -141,7 +142,7 @@ HarnessAgent agent = HarnessAgent.builder()
 
 <Warning>
 
-内置的 `JsonFileAgentStateStore` / `InMemoryAgentStateStore` 仅适合单机。如果你已经在用 `filesystem(SandboxFilesystemSpec)` 或 `filesystem(RemoteFilesystemSpec)`(分布式工作区),LEGACY 模式的 HarnessAgent 会**强制要求**状态存储也换成分布式后端,否则 `build()` 直接抛 `IllegalStateException`——因为 sandbox 状态必须跨副本共享。请通过 `.distributedStore(...)` 或 `.stateStore(...)` 配置分布式后端(例如 `RedisDistributedStore`)。
+内置的 `JsonFileAgentStateStore` / `InMemoryAgentStateStore` 仅适合单机。如果你已经在用 `filesystem(SandboxFilesystemSpec)` 或 `filesystem(RemoteFilesystemSpec)`(分布式工作区),快照模式 模式的 HarnessAgent 会**强制要求**状态存储也换成分布式后端,否则 `build()` 直接抛 `IllegalStateException`——因为 sandbox 状态必须跨副本共享。请通过 `.distributedStore(...)` 或 `.stateStore(...)` 配置分布式后端(例如 `RedisDistributedStore`)。
 
 </Warning>
 
@@ -153,7 +154,7 @@ HarnessAgent agent = HarnessAgent.builder()
 ```java
 // 节点 A:开了一段对话
 HarnessAgent agentA = HarnessAgent.builder()
-    .legacySessionHistory(true)
+    .journalEnabled(false)
     .stateStore(redisStore)
     /* ... */ .build();
 agentA.call(msg, RuntimeContext.builder()
@@ -163,7 +164,7 @@ agentA.call(msg, RuntimeContext.builder()
 
 // 节点 B:不同物理机,完全独立的 JVM
 HarnessAgent agentB = HarnessAgent.builder()
-    .legacySessionHistory(true)
+    .journalEnabled(false)
     .stateStore(redisStore)
     /* 同一份存储后端 */ .build();
 
@@ -224,11 +225,11 @@ AgentState restored = AgentState.fromJsonString(json);
 
 ### 清空会话对话上下文
 
-EVENT_LOG 模式下，`getAgentState()` 返回原生日志投影的独立快照；`clearContext()`、权限修改和 `saveAgentState()` 均以 writer 租约和版本检查提交原生 checkpoint。旧的 get→修改→save 调用可继续使用，但过期快照会被拒绝；并发管理操作推荐 `updateAgentState(rc, reason, mutation)`。清空的是工作上下文，完整 Session Log 历史仍然保留；直接改 AgentStateStore 不影响原生会话。
+日志模式 模式下，`getAgentState()` 返回原生日志投影的独立快照；`clearContext()`、权限修改和 `saveAgentState()` 均以 writer 租约和版本检查提交原生 checkpoint。旧的 get→修改→save 调用可继续使用，但过期快照会被拒绝；并发管理操作推荐 `updateAgentState(rc, reason, mutation)`。清空的是工作上下文，完整 Thread 日志 历史仍然保留；直接改 AgentStateStore 不影响原生会话。
 
 若要让用户在不创建新会话的情况下开始新话题，可调用 `clearContext`。该方法保留相同的
 `(userId, sessionId)`，也保留权限、工具、任务和 Plan Mode 等非对话状态；它会清空模型可见的
-历史消息缓冲和压缩摘要，并立即持久化结果：原生模式提交 checkpoint，LEGACY 使用配置的 AgentStateStore。
+历史消息缓冲和压缩摘要，并立即持久化结果：原生模式提交 checkpoint，快照模式 使用配置的 AgentStateStore。
 
 ```java
 agent.clearContext("alice", "session-001");
@@ -261,7 +262,7 @@ agent.interrupt("alice", "session-001");
 agent.interrupt("alice", "session-001", new UserMessage("请停止。"));
 ```
 
-空闲 session 不受影响。通过 AgentSession 提交的任务使用 `session.interrupt()`；界面已绑定某次执行时可传入 `session.interrupt(runId)`，拒绝误中断后续执行。中断后用 `session.resume(turnId)` 继续原任务，见[会话使用指南](/v2/zh/docs/harness/session-log)。
+Durable 任务通过 `turn.pause(requestId)` 请求暂停，观察到 PAUSED 后携带 revision 调用 `turn.resume`；取消使用 `turn.cancel`。这些持久控制与一次原生调用的中断不同，见 [Durable](/v2/zh/docs/harness/durable)。
 
 推理循环在协作检查点读取本次执行的信号。用户中断会生成带中断标记的恢复回复并保存会话状态。已废弃的无参 `interrupt()` 定位默认 session 的当前执行，不读取最近一次调用的上下文。
 
@@ -295,7 +296,7 @@ Mono<Msg> bobCall = Mono.using(
 Mono.zip(aliceCall, bobCall).block();
 ```
 
-不同会话可以并行；同一会话的多个请求应由应用按顺序调度，或交给持有后台生命周期的 `AgentSession` 排队。单实例的执行门不会协调其他实例；原生日志的 writer 隔离避免并发提交，不保证跨实例请求自动等待或按 FIFO 执行。
+不同 Thread 可以并行；同一 Thread 的直接调用由应用协调，持久任务交给 Durable 的 FIFO 队列。原生日志的 writer fencing 防止并发提交，但不提供跨实例的请求排队和自动接管。
 
 跨请求中断必须找到正在执行的实例；新建实例不持有旧调用的中断信号。请求结束后关闭 Agent，释放该实例的缓存与运行资源；模型、连接池等应用级共享依赖在应用退出时统一关闭。
 
@@ -323,7 +324,8 @@ Msg result = agent.call(List.of(new UserMessage("Hi")), ctx).block();
 | 方法 | 说明 |
 |------|------|
 | `getSessionId()` / `getUserId()` | 内置字段,用于路由状态槽位与租户 |
-| `getRunId()` | 每次调用的稳定关联 ID(见下方[runId 关联](#runid-关联)),恒非 null |
+| `getThreadId()` / `getTurnId()` | 持续上下文及宿主可选指定的逻辑任务身份 |
+| `getRunId()` | 实际调用身份；请求上下文中可为空，进入执行后绑定 |
 | `getAgentState()` / `setAgentState(AgentState)` | call-scoped 的 `AgentState`,由框架在 call 入口注入。中间件和工具应从这里读状态,而非 `agent.getAgentState()` |
 | `resolveAgentState(ctx, agent)` | 静态辅助方法:优先返回 `ctx.getAgentState()`,回退到 `agent.getAgentState()`。执行期间应确保当前调用已注入状态；回退不保证选中正确业务会话 |
 | `get(String)` / `put(String, Object)` | 字符串键存取 |
@@ -333,29 +335,19 @@ Msg result = agent.call(List.of(new UserMessage("Hi")), ctx).block();
 
 ### runId 关联
 
-`RuntimeContext` 上有一个恒非 null 的 `runId`:`builder().runId(x)` 显式传入非空白值时原样保留,否则(未设置或为空白)在 `build()` 时自动生成(32 位 hex)。它的用途是把**一次执行**在执行层和产品层串起来:
-
-- 中间件、工具、日志、tracing 都能用 `ctx.getRunId()` 关联同一次调用——多会话并发时,grep 一个 runId 即可还原某次调用的完整链路;
-- `prepareRun` / `prepareCall` 创建的 `AgentRun` 句柄直接采纳 ctx 的 runId,因此 `run.runId() == ctx.getRunId()`,与 `AgentRunRegistry` 注册键、SSE 的 `SESSION_RUN_STARTED` 事件、前端取消运行所用的 id 天然同源;
-- 子代理上下文经 `RuntimeContext.builder(parentRc)` 派生时拷贝 runId,`agent_spawn` 触发的子代理自动继承父调用的 id——即使子代理有独立 sessionId,链路 id 也能把整条执行串起来。
+请求上下文只确定用户、Session 和 Thread，不会创建执行。除非宿主显式指定调用 ID，否则 `getRunId()` 为 null。`prepareRun` / `prepareCall` 为单次执行句柄分配 ID；直接调用在开始执行时分配。中间件和工具接收到的执行上下文中，runId 与句柄、原生事件和日志保持一致。
 
 ```java
-// 编排层显式贯穿业务链路 id(唯一性由调用方负责):
-RuntimeContext ctx = RuntimeContext.builder()
-    .userId("alice")
-    .sessionId("s-001")
-    .runId("trace-2026-09-25-0001")   // 贯穿整个多 agent 流程
-    .build();
-
-// 中间件 / 工具中关联本次执行:
-log.info("[runId={}] tool executed", ctx.getRunId());
-
-// 句柄与执行层同 id:
-AgentRun<Msg> run = agent.prepareCall(msgs, ctx);
-assert run.runId().equals(ctx.getRunId());
+RuntimeContext request = RuntimeContext.builder()
+    .userId("alice").sessionId("s-001").threadId("research").build();
+AgentRun<Msg> run = agent.prepareCall(msgs, request);
+String invocationId = run.runId();
+run.stream().blockLast();
 ```
 
-每次创建新的执行句柄时，都应使用一个新的 `RuntimeContext`。如果需要保留上一次调用的 Session 和其他属性，可以使用 `RuntimeContext.builder(previous).runId(null).build()`，为新执行生成新的 runId。外部工具返回结果后，即使仍在继续同一个 Turn，也需要遵循这一规则。子 Agent 的派生上下文可以继承父调用的 runId 来关联调用链路。启用原生 Session Log 后，如果执行句柄重复使用该 Session 已记录的 runId，执行会被拒绝；Service 中的 `AgentRunRegistry` 也会拒绝并发注册重复的 runId。
+没有绑定 runId 的请求上下文可以用于后续调用，每次实际执行都会获得新 Run ID。宿主也可以通过 `builder().runId("invocation-1")` 指定 ID，但每次新调用必须使用新 ID。null 清除继承的 ID；空白 ID 会被拒绝。原生日志拒绝重复使用已记录的显式 Run ID。
+
+子 Agent 使用独立调用 ID，通过父子关联记录原始 Run/Thread。跨越多个调用的业务追踪使用单独的 tracing 属性。同一逻辑任务恢复时保留 Turn 身份，并开始新的 Run。
 
 
 <Tip>
@@ -381,3 +373,5 @@ assert run.runId().equals(ctx.getRunId());
 - [智能体（Agent）](/v2/zh/docs/building-blocks/agent) —— `ReActAgent` 完整接口与 Builder 参数
 - [记忆](/v2/zh/docs/harness/memory) —— 长期记忆与后台维护
 - [权限系统](/v2/zh/docs/building-blocks/permission-system) —— 权限规则的持久化
+
+<span id="session-log-与-agentstatestore-的关系" />

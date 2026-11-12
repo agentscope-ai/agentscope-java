@@ -45,7 +45,8 @@ An [`AgentStateStore`](/v2/en/integration/session/index) persists an **`AgentSta
 
 | `AgentState` field | Content |
 |---|---|
-| `getSessionId()` | The session identifier this state belongs to |
+| `getSessionId()` | The business Session this state belongs to |
+| `getThreadId()` | The continuing Agent context within that Session; defaults to `main` |
 | `getUserId()` | The user identifier (nullable for anonymous sessions) |
 | `getContext()` / `contextMutable()` | Current conversation history (user / assistant / tool calls / tool results) |
 | `getSummary()` | Compacted summary (when compaction is enabled) |
@@ -56,7 +57,7 @@ An [`AgentStateStore`](/v2/en/integration/session/index) persists an **`AgentSta
 
 Execution controls are separate from `AgentState`: each invocation owns an independent interrupt signal. See [Per-session interrupt](#per-session-interrupt) below.
 
-In LEGACY or Core agents without native logging, the end of each call writes the entire `AgentState` to the state store under the key `agent_state`, addressed by the call's `(userId, sessionId)`. The next `call()` with the same `(userId, sessionId)` loads it back automatically. A shared store lets other instances load successfully persisted state. It does not guarantee real-time consistency between concurrent calls or recover unsaved progress and external side effects.
+In snapshot mode or Core agents without native logging, the end of each call writes the entire `AgentState` into the store's `(userId, sessionId)` bucket. The entry is `agent.threadKey(context).stateEntry("agent_state")`, which includes the Agent and Thread identity. The next call with the same Thread identity restores it; sibling Threads have independent history, permissions and plan state. Set `RuntimeContext.builder().threadId("research")` to select a Thread, or omit it for `main`. The public sessionId remains unchanged. A shared store lets other instances load successfully persisted state. It does not guarantee real-time consistency between concurrent calls or recover unsaved progress and external side effects.
 
 ### Task state is not automatic business acceptance
 
@@ -71,20 +72,20 @@ automatically establishes overall completion. Harness taskContext options contro
 See [Optional task information](/v2/en/docs/harness/context#optional-task-information)
 for the field/writer mapping and display configuration.
 
-### Session Log and AgentStateStore
+### Thread journal and AgentStateStore
 
-`call` / `streamEvents` and `AgentSession` use the same conversation storage configuration. Multi-turn context, history queries and persistence do not require session scheduling. Introduce [AgentSession](/v2/en/docs/harness/session-log) for background tasks, durable queues or coordinated interruption and continuation. For direct calls, start with the [Quick Start](/v2/en/docs/quickstart).
+Durable tasks use `turn.pause(requestId)`, then `turn.resume(requestId, revision)` after observing PAUSED. Cancellation uses `turn.cancel`. These persistent controls differ from interruption of one native invocation; see [Durable](/v2/en/docs/harness/durable).
 
-HarnessAgent defaults to EVENT_LOG: existing native checkpoints plus applicable facts restore AgentState, and saves commit checkpoints to the log. AgentStateStore is no longer that session's recovery authority. LEGACY and Core agents without native logging use the state-store flow below.
+HarnessAgent defaults to journal mode: existing native checkpoints plus applicable facts restore AgentState, and saves commit checkpoints to the log. AgentStateStore is no longer that session's recovery authority. snapshot mode and Core agents without native logging use the state-store flow below.
 
-Native history follows Workspace Filesystem, including distributed backends, or an explicit sessionLogStore. Keep stable agentId, userId, sessionId, namespace and storage consistent. See [Session logs](/v2/en/docs/harness/session-log) for inspection, reconciliation and continuation. StateStore-only examples below explicitly select LEGACY; default EVENT_LOG also needs shared native history.
+Native history follows Workspace Filesystem, including distributed backends, or an explicit threadJournalStore. Keep stable agentId, userId, sessionId, threadId, namespace and storage consistent. See [Session logs](/v2/en/docs/harness/session-log) for inspection, reconciliation and continuation. StateStore-only examples below explicitly select snapshot mode; default journal mode also needs shared native history.
 
 ### The auto-persistence and recovery flow
 
 ```
-call(msgs, RuntimeContext(userId, sessionId))
+call(msgs, RuntimeContext(userId, sessionId, threadId))
   │
-  ├─ per-session gate: serialise same (uid, sid), others run in parallel
+  ├─ per-Thread gate: serialise the same Thread, siblings can run in parallel
   │
   ▼
   reload from store on each call if configured; otherwise use slot cache
@@ -97,7 +98,7 @@ call(msgs, RuntimeContext(userId, sessionId))
   │
   ▼
   save AgentState
-  │   stateStore.save(userId, sessionId, "agent_state", state)
+  │   stateStore.save(userId, sessionId, threadKey.stateEntry("agent_state"), state)
   │
   ▼
   return result
@@ -114,7 +115,7 @@ Anything implementing `io.agentscope.core.state.AgentStateStore` works. Pick by 
 | Implementation | Module | Use case |
 |---|---|---|
 | `InMemoryAgentStateStore` | `agentscope-core` | Unit tests / single-process demos; lost on exit |
-| `JsonFileAgentStateStore` | `agentscope-core` | Local dev with file persistence; not cross-node. **`HarnessAgent` LEGACY default**, rooted at `~/.agentscope/state/<agentId>/` (override the base via the `agentscope.state.home` system property); **single-host** |
+| `JsonFileAgentStateStore` | `agentscope-core` | Local dev with file persistence; not cross-node. **`HarnessAgent` snapshot mode default**, rooted at `~/.agentscope/state/<agentId>/` (override the base via the `agentscope.state.home` system property); **single-host** |
 | `RedisAgentStateStore` | `agentscope-extensions-redis` | **Production default** for multi-replica deployments; supports Jedis / Lettuce / Redisson (Standalone / Cluster / Sentinel) |
 | `JdbcAgentStateStore` | `agentscope-extensions-jdbc` | When state needs to flow into a relational store (audit, reporting) |
 
@@ -123,7 +124,7 @@ Switching is one call at builder time:
 ```java
 // Default (single host) — omit .stateStore(...); a local JsonFileAgentStateStore is used automatically
 HarnessAgent agent = HarnessAgent.builder()
-    .legacySessionHistory(true)
+    .journalEnabled(false)
     .name("MyAgent")
     .model(model)
     .workspace(workspace)
@@ -132,7 +133,7 @@ HarnessAgent agent = HarnessAgent.builder()
 // Production multi-replica — use DistributedStore
 JedisPooled jedis = new JedisPooled("redis://redis.prod:6379");
 HarnessAgent agent = HarnessAgent.builder()
-    .legacySessionHistory(true)
+    .journalEnabled(false)
         .name("MyAgent")
         .model(model)
         .workspace(workspace)
@@ -144,7 +145,7 @@ HarnessAgent agent = HarnessAgent.builder()
 
 <Warning>
 
-The built-in `JsonFileAgentStateStore` / `InMemoryAgentStateStore` are single-host only. If you've already chosen `filesystem(SandboxFilesystemSpec)` or `filesystem(RemoteFilesystemSpec)` (distributed workspace), HarnessAgent in LEGACY mode **rejects** a local state store at build time with `IllegalStateException` — sandbox state must be shared across replicas. Configure a distributed store via `.distributedStore(...)` (e.g. `RedisDistributedStore`) or `.stateStore(...)`.
+The built-in `JsonFileAgentStateStore` / `InMemoryAgentStateStore` are single-host only. If you've already chosen `filesystem(SandboxFilesystemSpec)` or `filesystem(RemoteFilesystemSpec)` (distributed workspace), HarnessAgent in snapshot mode mode **rejects** a local state store at build time with `IllegalStateException` — sandbox state must be shared across replicas. Configure a distributed store via `.distributedStore(...)` (e.g. `RedisDistributedStore`) or `.stateStore(...)`.
 
 </Warning>
 
@@ -156,7 +157,7 @@ With a shared store, each call reloads the slot's persisted state. This example 
 ```java
 // Node A — start a conversation
 HarnessAgent agentA = HarnessAgent.builder()
-    .legacySessionHistory(true)
+    .journalEnabled(false)
     .stateStore(redisStore)
     /* ... */ .build();
 agentA.call(msg, RuntimeContext.builder()
@@ -166,7 +167,7 @@ agentA.call(msg, RuntimeContext.builder()
 
 // Node B — different physical machine, separate JVM
 HarnessAgent agentB = HarnessAgent.builder()
-    .legacySessionHistory(true)
+    .journalEnabled(false)
     .stateStore(redisStore)
     /* same state store */ .build();
 
@@ -227,12 +228,12 @@ AgentState restored = AgentState.fromJsonString(json);
 
 ### Clearing a session's conversation context
 
-In EVENT_LOG mode, `getAgentState()` returns a detached native projection. `clearContext()`, permission changes and `saveAgentState()` commit a native checkpoint with writer leases and version checks. Existing get→mutate→save calls remain supported, but stale snapshots are rejected; prefer `updateAgentState(rc, reason, mutation)` for atomic administration. Clearing working context retains full history. Direct AgentStateStore edits do not affect native sessions.
+In journal mode mode, `getAgentState()` returns a detached native projection. `clearContext()`, permission changes and `saveAgentState()` commit a native checkpoint with writer leases and version checks. Existing get→mutate→save calls remain supported, but stale snapshots are rejected; prefer `updateAgentState(rc, reason, mutation)` for atomic administration. Clearing working context retains full history. Direct AgentStateStore edits do not affect native sessions.
 
 To let a user start a fresh topic without creating a new session, call `clearContext`. It keeps the
 same `(userId, sessionId)` and preserves non-conversation state such as permissions, tools, tasks,
 and Plan Mode. It clears the historical message buffer and compaction summary, then immediately
-persists a native checkpoint in EVENT_LOG mode, or saves the configured AgentStateStore in LEGACY mode.
+persists a native checkpoint in journal mode mode, or saves the configured AgentStateStore in snapshot mode mode.
 
 ```java
 agent.clearContext("alice", "session-001");
@@ -265,7 +266,7 @@ agent.interrupt("alice", "session-001");
 agent.interrupt("alice", "session-001", new UserMessage("Please stop."));
 ```
 
-An idle session is unaffected. Tasks submitted through AgentSession use `session.interrupt()`, or `session.interrupt(runId)` to reject a stale request targeting a newer execution. Continue the original task with `session.resume(turnId)`; see the [session guide](/v2/en/docs/harness/session-log).
+Durable tasks use `turn.pause(requestId)`, then `turn.resume(requestId, revision)` after observing PAUSED. Cancellation uses `turn.cancel`. These persistent controls differ from interruption of one native invocation; see [Durable](/v2/en/docs/harness/durable).
 
 The reasoning loop checks its execution's signal at cooperative checkpoints. A user interrupt produces an interrupted recovery reply and saves conversation state. The deprecated no-argument `interrupt()` targets the default session's current execution, never the most recently used context.
 
@@ -299,7 +300,7 @@ Mono<Msg> bobCall = Mono.using(
 Mono.zip(aliceCall, bobCall).block();
 ```
 
-Different sessions can run concurrently. Order requests to the same conversation in the application, or queue them through an `AgentSession` with a background owner. Per-instance gates do not coordinate other instances. Native journal writer fencing prevents competing commits; it does not guarantee automatic waiting or FIFO order across instances.
+Applications coordinate concurrent direct calls on one Thread; Durable provides persistent FIFO and autonomous takeover. Native journal fencing prevents conflicting writes without providing a background task scheduler.
 
 Interrupting from another request requires the currently executing instance; a new Agent does not hold the old call's interrupt signal. Close request Agents after execution to release their caches and runtime resources. Close application-owned model clients and pools at application shutdown.
 
@@ -327,7 +328,8 @@ Available accessors:
 | Method | Description |
 |------|------|
 | `getSessionId()` / `getUserId()` | Built-in fields used to route the state slot and tenant |
-| `getRunId()` | Stable per-call correlation id (see [runId correlation](#runid-correlation) below), never null |
+| `getThreadId()` / `getTurnId()` | Continuing context and optional host-supplied logical task |
+| `getRunId()` | Actual invocation identity; unset on a request context, bound inside execution |
 | `getAgentState()` / `setAgentState(AgentState)` | Call-scoped `AgentState`, injected by the framework at call entry. Middleware and tools should read state from here, not from `agent.getAgentState()` |
 | `resolveAgentState(ctx, agent)` | Static helper: returns `ctx.getAgentState()` if available, falls back to `agent.getAgentState()`. Ensure the current call has injected its state; fallback does not guarantee the intended business session |
 | `get(String)` / `put(String, Object)` | String-keyed get/put |
@@ -337,29 +339,19 @@ Available accessors:
 
 ### runId correlation
 
-Every `RuntimeContext` carries a never-null `runId`: a non-blank value supplied via `builder().runId(x)` is kept as-is; otherwise (unset or blank) `build()` generates one (32-char hex). Its purpose is to tie a **single execution** together across the execution layer and the product layer:
-
-- Middleware, tools, logs, and tracing can all correlate one invocation via `ctx.getRunId()` — under multi-session concurrency, grepping a single runId recovers the full trace of that call;
-- Handles created by `prepareRun` / `prepareCall` adopt the context's runId, so `run.runId() == ctx.getRunId()` — naturally aligned with the `AgentRunRegistry` registration key, the SSE `SESSION_RUN_STARTED` event, and the id the frontend uses to cancel a run;
-- Subagent contexts are derived via `RuntimeContext.builder(parentRc)`, which copies the runId, so subagents spawned through `agent_spawn` inherit the parent call's id — even when the subagent gets an independent sessionId, the chain id keeps the whole execution linked.
+A request context identifies a user, Session and Thread without creating an execution. Its `getRunId()` is null unless a host explicitly supplies an invocation ID. `prepareRun` / `prepareCall` allocate an ID for their single-use handle; direct calls allocate one when execution starts. Middleware and tools receive an invocation context whose runId matches the handle, native events and journal.
 
 ```java
-// Orchestration layer threading an explicit chain id (uniqueness is the caller's job):
-RuntimeContext ctx = RuntimeContext.builder()
-    .userId("alice")
-    .sessionId("s-001")
-    .runId("trace-2026-09-25-0001")   // spans the whole multi-agent flow
-    .build();
-
-// Correlate this execution from middleware / tools:
-log.info("[runId={}] tool executed", ctx.getRunId());
-
-// Handle and execution layer share the same id:
-AgentRun<Msg> run = agent.prepareCall(msgs, ctx);
-assert run.runId().equals(ctx.getRunId());
+RuntimeContext request = RuntimeContext.builder()
+    .userId("alice").sessionId("s-001").threadId("research").build();
+AgentRun<Msg> run = agent.prepareCall(msgs, request);
+String invocationId = run.runId();
+run.stream().blockLast();
 ```
 
-Create a fresh `RuntimeContext` for each prepared execution. To retain session attributes while starting another run, use `RuntimeContext.builder(previous).runId(null).build()`; this also applies when resuming the same Turn after an external tool result. Derived subagent contexts can retain the parent runId for correlation. With native Session Log enabled, a prepared execution cannot reuse a runId already recorded in that session, and `AgentRunRegistry` rejects concurrent duplicate runIds in the Service.
+An unbound request context can be reused for another call: each invocation receives a new Run ID. A host can supply `builder().runId("invocation-1")`; it must supply a fresh ID for every actual invocation. Null clears an inherited ID; blank IDs are rejected. A native journal rejects reusing an explicitly supplied Run ID.
+
+Subagents receive distinct invocation IDs. Parent linkage records the originating Run/Thread separately; use a separate tracing attribute when a business trace spans multiple invocations. A resumed logical task keeps its Turn identity and starts a new Run.
 
 
 <Tip>
@@ -385,3 +377,5 @@ Create a fresh `RuntimeContext` for each prepared execution. To retain session a
 - [Agent](/v2/en/docs/building-blocks/agent) — full `ReActAgent` API and builder fields
 - [Memory](/v2/en/docs/harness/memory) — long-term memory, background maintenance
 - [Permissions](/v2/en/docs/building-blocks/permission-system) — persistence of permission rules
+
+<span id="session-log-and-agentstatestore" />

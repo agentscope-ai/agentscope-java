@@ -22,6 +22,8 @@ import io.agentscope.core.hook.PostCallEvent;
 import io.agentscope.core.hook.PreCallEvent;
 import io.agentscope.core.interruption.InterruptContext;
 import io.agentscope.core.interruption.InterruptSource;
+import io.agentscope.core.message.AssistantMessage;
+import io.agentscope.core.message.GenerateReason;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.model.ModelSchedulers;
@@ -428,9 +430,9 @@ public abstract class AgentBase implements Agent {
         GracefulShutdownManager.getInstance().bindRequestState(requestId, stateForCall(scope));
         List<Msg> acceptedInputs = inputsForCall(scope, msgs);
         RuntimeContext activeRuntime = runtimeForCall(scope);
-        AgentFinalization finalization =
-                activeRuntime == null ? null : activeRuntime.get(AgentFinalization.class);
-        Msg resumedResult = finalization == null ? null : finalization.resumeResult();
+        AgentExecutionHost host =
+                activeRuntime == null ? null : activeRuntime.get(AgentExecutionHost.class);
+        Msg resumedResult = host == null ? null : host.resumeResult();
         Mono<Msg> body =
                 TracerRegistry.get()
                         .callAgent(
@@ -444,24 +446,22 @@ public abstract class AgentBase implements Agent {
                                                         : Mono.just(resumedResult))
                                                 .flatMap(
                                                         result ->
-                                                                (finalization == null
-                                                                                ? beforeCallComplete(
-                                                                                        scope,
-                                                                                        result)
-                                                                                : finalization
-                                                                                        .finish(
-                                                                                                activeRuntime,
-                                                                                                result,
-                                                                                                () ->
-                                                                                                        beforeCallComplete(
-                                                                                                                scope,
-                                                                                                                result)))
+                                                                finishInvocation(
+                                                                                scope,
+                                                                                activeRuntime,
+                                                                                host,
+                                                                                result)
                                                                         .thenReturn(result))
                                                 .onErrorResume(
                                                         createErrorHandler(
                                                                 control,
                                                                 msgs.toArray(new Msg[0]))));
-        body = body.doOnNext(result -> onCallResult(scope, result));
+        body =
+                body.doOnNext(
+                        result -> {
+                            onCallResult(scope, result);
+                            control.result(RunOutcome.fromResult(result));
+                        });
         Mono<Msg> scoped =
                 scope == null ? body : body.contextWrite(c -> c.put(CALL_SCOPE_KEY, scope));
         // Nested calls own their own control; only the outer execution receives this handle.
@@ -472,6 +472,26 @@ public abstract class AgentBase implements Agent {
                                 ? c.delete(RunControl.CONTEXT_KEY)
                                 : c.delete(RunControl.CONTEXT_KEY)
                                         .put(RUNTIME_CONTEXT_KEY, runtime));
+    }
+
+    private Mono<Void> finishInvocation(
+            Object scope, RuntimeContext runtime, AgentExecutionHost host, Msg result) {
+        if (host == null) return beforeCallComplete(scope, result);
+        return Mono.defer(
+                () ->
+                        host.finish(
+                                runtime,
+                                result,
+                                () ->
+                                        host.beforeBoundary(
+                                                        AgentExecutionHost.Boundary.FINALIZATION,
+                                                        runtime,
+                                                        stateForCall(scope))
+                                                .then(
+                                                        Mono.defer(
+                                                                () ->
+                                                                        beforeCallComplete(
+                                                                                scope, result)))));
     }
 
     protected List<Msg> inputsForCall(Object scope, List<Msg> inputs) {
@@ -659,6 +679,14 @@ public abstract class AgentBase implements Agent {
     private Function<Throwable, Mono<Msg>> createErrorHandler(
             RunControl control, Msg... originalArgs) {
         return error -> {
+            if (error instanceof AgentExecutionHost.Paused) {
+                return Mono.just(
+                        AssistantMessage.builder()
+                                .name(getName())
+                                .textContent("")
+                                .generateReason(GenerateReason.HOST_PAUSED)
+                                .build());
+            }
             if (error instanceof InterruptedException
                     || (error.getCause() instanceof InterruptedException)) {
                 return handleInterrupt(control.interruption().toContext(), originalArgs);

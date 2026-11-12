@@ -14,10 +14,11 @@
         <version>${spring.boot.version}</version><type>pom</type><scope>import</scope>
     </dependency></dependencies></dependencyManagement>
     <dependencies>
-        <dependency><groupId>io.agentscope</groupId><artifactId>agentscope-harness</artifactId></dependency>
+        <dependency><groupId>io.agentscope</groupId><artifactId>agentscope-durable-adapter-harness-agentscope</artifactId></dependency>
+        <dependency><groupId>io.agentscope</groupId><artifactId>agentscope-extensions-durable-jdbc</artifactId></dependency>
         <dependency><groupId>io.agentscope</groupId><artifactId>agentscope-extensions-model-dashscope</artifactId></dependency>
         <dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-webflux</artifactId></dependency>
-        <dependency><groupId>org.junit.jupiter</groupId><artifactId>junit-jupiter</artifactId><scope>test</scope></dependency>
+        <dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-test</artifactId><scope>test</scope></dependency>
     </dependencies>
     <build><finalName>agentscope-chat</finalName><plugins><plugin>
         <groupId>org.springframework.boot</groupId><artifactId>spring-boot-maven-plugin</artifactId>

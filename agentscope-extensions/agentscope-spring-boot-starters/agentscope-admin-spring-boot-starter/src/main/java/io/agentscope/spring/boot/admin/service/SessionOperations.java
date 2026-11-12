@@ -17,6 +17,7 @@ package io.agentscope.spring.boot.admin.service;
 
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.Agent;
+import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.state.AgentState;
 import io.agentscope.core.state.AgentStateStore;
@@ -437,12 +438,18 @@ public final class SessionOperations {
         if (stateStore == null) {
             return Mono.empty();
         }
+        RuntimeContext context =
+                RuntimeContext.builder()
+                        .userId(state.getUserId())
+                        .sessionId(state.getSessionId())
+                        .threadId(state.getThreadId())
+                        .build();
         return Mono.fromRunnable(
                         () ->
                                 stateStore.save(
                                         state.getUserId(),
-                                        react.getDefaultSessionId(),
-                                        "agent_state",
+                                        state.getSessionId(),
+                                        react.threadKey(context).stateEntry("agent_state"),
                                         state))
                 .subscribeOn(Schedulers.boundedElastic())
                 .then();

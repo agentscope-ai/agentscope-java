@@ -73,7 +73,7 @@ public final class ControlPlaneBaseStore implements BaseStore {
     }
 
     @Override
-    public boolean supportsAtomicSessionStorage() {
+    public boolean supportsAtomicJournalStorage() {
         return true;
     }
 

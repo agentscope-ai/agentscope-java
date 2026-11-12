@@ -1,0 +1,17 @@
+spring:
+  application:
+    name: agentscope-durable-example-sandbox-hands
+  main:
+    banner-mode: "off"
+    log-startup-info: false
+logging:
+  level:
+    root: warn
+durable:
+  sandbox-hands:
+    phase: start
+    data-directory: durable-sandbox-hands-data
+    namespace: demo
+    session-id: conversation
+    request-id: request-1
+    timeout: 15s

@@ -27,9 +27,9 @@ from urllib.request import urlopen
 
 import yaml
 
-UPSTREAM = "agentscope-ai/agentscope-java"
-HELM_REPOSITORY = "chickenlj/helm-charts"
-HELM_URL = "https://chickenlj.github.io/helm-charts"
+UPSTREAM = os.environ.get("MANAGED_AGENTS_GITHUB_REPOSITORY", "")
+HELM_REPOSITORY = os.environ.get("MANAGED_AGENTS_HELM_GITHUB_REPOSITORY", "")
+HELM_URL = os.environ.get("MANAGED_AGENTS_HELM_URL", "").rstrip("/")
 
 
 def gh_api(endpoint, payload=None):
@@ -46,7 +46,7 @@ def gh_api(endpoint, payload=None):
 def release_digest(release, version):
     if release.get("draft") or release.get("tag_name") != f"v{version}":
         raise ValueError("Expected a public Release with the requested tag")
-    filename = f"agentscope-service-{version}.tgz"
+    filename = f"managed-agents-{version}.tgz"
     asset = next((a for a in release.get("assets", []) if a["name"] == filename), None)
     if not asset or not re.fullmatch(r"sha256:[0-9a-f]{64}", asset.get("digest") or ""):
         raise ValueError("Published Release chart or its SHA-256 digest is missing")
@@ -56,8 +56,8 @@ def release_digest(release, version):
 def verify_publication(index, archive, version, digest):
     if not isinstance(index, dict):
         raise ValueError("Public Helm index is not a YAML mapping")
-    filename = f"agentscope-service-{version}.tgz"
-    entries = index.get("entries", {}).get("agentscope-service", [])
+    filename = f"managed-agents-{version}.tgz"
+    entries = index.get("entries", {}).get("managed-agents", [])
     matching = [entry for entry in entries if entry["version"] == version]
     if len(matching) != 1:
         raise ValueError("Requested chart version is missing or duplicated in the public index")
@@ -74,6 +74,8 @@ def sync(version):
     if (not re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?", version)
             or "SNAPSHOT" in version.upper()):
         raise ValueError("Expected a non-SNAPSHOT Service version without v")
+    if not UPSTREAM or not HELM_REPOSITORY or not HELM_URL:
+        raise ValueError("Configure MANAGED_AGENTS_GITHUB_REPOSITORY, MANAGED_AGENTS_HELM_GITHUB_REPOSITORY and MANAGED_AGENTS_HELM_URL before publishing")
     release = gh_api(f"repos/{UPSTREAM}/releases/tags/v{version}")
     digest = release_digest(release, version)
     dispatch = gh_api(
@@ -97,7 +99,7 @@ def sync(version):
         try:
             with urlopen(f"{HELM_URL}/index.yaml?run={run_id}", timeout=20) as response:
                 index = yaml.safe_load(response.read())
-            with urlopen(f"{HELM_URL}/agentscope-service-{version}.tgz", timeout=20) as response:
+            with urlopen(f"{HELM_URL}/managed-agents-{version}.tgz", timeout=20) as response:
                 archive = response.read()
             verify_publication(index, archive, version, digest)
             break

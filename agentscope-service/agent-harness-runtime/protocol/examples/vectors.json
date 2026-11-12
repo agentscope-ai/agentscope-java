@@ -1,0 +1,164 @@
+{
+  "algorithm": "JCS-SHA256 and ManagedScope UTF-16-length framing",
+  "canonical": [
+    {
+      "name": "unicode-and-order",
+      "value": {
+        "z": "😀",
+        "a": "中文",
+        "items": [
+          true,
+          null,
+          "é",
+          "é"
+        ]
+      },
+      "canonical": "{\"a\":\"中文\",\"items\":[true,null,\"é\",\"é\"],\"z\":\"😀\"}",
+      "sha256": "f7863608ebfb9c532624c6447370ebe6758ca5a8c0d6e65ed85d462a466dcb07"
+    },
+    {
+      "name": "utf16-key-order",
+      "value": {
+        "": 1,
+        "😀": 2,
+        "\r": 3
+      },
+      "canonical": "{\"\\r\":3,\"😀\":2,\"\":1}",
+      "sha256": "91a29a4e74bcc0853617c740c3f947095c4259e7c7004cfca2ce8157b7f1b556"
+    },
+    {
+      "name": "numbers",
+      "value": {
+        "tiny": 1e-07,
+        "large": 1e+20,
+        "zero": -0.0,
+        "fraction": 1.25
+      },
+      "canonical": "{\"fraction\":1.25,\"large\":100000000000000000000,\"tiny\":1e-7,\"zero\":0}",
+      "sha256": "46cd856f4ef32142c51c58aa488ebdec441c4936cc442ff1b6972b32ec31d665"
+    },
+    {
+      "name": "tool-commit",
+      "value": {
+        "protocolVersion": "0.1.0",
+        "scope": {
+          "tenant": "t1",
+          "namespace": "demo",
+          "sessionId": "s1"
+        },
+        "turnId": "turn1",
+        "commitId": "commit1",
+        "fence": {
+          "owner": {
+            "instanceId": "brain-a",
+            "incarnationId": "boot-a"
+          },
+          "epoch": "7",
+          "executionToken": "token7"
+        },
+        "expectedBrainRevision": "0",
+        "nativeState": {
+          "harnessType": "agentscope-java",
+          "stateFormatVersion": "fixture-v1",
+          "nativeCursor": "1",
+          "checkpointRef": {
+            "scope": {
+              "tenant": "t1",
+              "namespace": "demo",
+              "sessionId": "s1"
+            },
+            "backendId": "objects",
+            "key": "fixture/checkpoint-1",
+            "sha256": "56fe515303b27726f65c280378f492af14027a7db304a3b000a58f23a3ed1fab",
+            "size": "21",
+            "mediaType": "application/octet-stream",
+            "formatVersion": "synthetic-v1"
+          }
+        },
+        "changes": {
+          "toolCalls": [
+            {
+              "nativeCallId": "call1",
+              "position": {
+                "nativeCursor": "1",
+                "recordId": "record-1"
+              }
+            }
+          ],
+          "toolOperations": [
+            {
+              "operationId": "call1_0",
+              "taskId": "tool_e2af6b0a5a0ace3cf4cff7d3a564aa71c18639f491b0304a7718ec4df173638a",
+              "executionId": "tool_e2af6b0a5a0ace3cf4cff7d3a564aa71c18639f491b0304a7718ec4df173638a",
+              "nativeCallIds": [
+                "call1"
+              ],
+              "toolName": "fs.read",
+              "arguments": {
+                "inline": {
+                  "path": "/workspace/a.txt"
+                }
+              },
+              "configurationRef": {
+                "scope": {
+                  "tenant": "t1",
+                  "namespace": "demo",
+                  "sessionId": "s1"
+                },
+                "backendId": "objects",
+                "key": "fixture/config",
+                "sha256": "4a180ef66750c0827c66e67fdda6058985bf659ca1505a3a05bce84c2115098d",
+                "size": "21",
+                "mediaType": "application/json",
+                "formatVersion": "config-v1"
+              }
+            }
+          ]
+        }
+      },
+      "canonical": "{\"changes\":{\"toolCalls\":[{\"nativeCallId\":\"call1\",\"position\":{\"nativeCursor\":\"1\",\"recordId\":\"record-1\"}}],\"toolOperations\":[{\"arguments\":{\"inline\":{\"path\":\"/workspace/a.txt\"}},\"configurationRef\":{\"backendId\":\"objects\",\"formatVersion\":\"config-v1\",\"key\":\"fixture/config\",\"mediaType\":\"application/json\",\"scope\":{\"namespace\":\"demo\",\"sessionId\":\"s1\",\"tenant\":\"t1\"},\"sha256\":\"4a180ef66750c0827c66e67fdda6058985bf659ca1505a3a05bce84c2115098d\",\"size\":\"21\"},\"executionId\":\"tool_e2af6b0a5a0ace3cf4cff7d3a564aa71c18639f491b0304a7718ec4df173638a\",\"nativeCallIds\":[\"call1\"],\"operationId\":\"call1_0\",\"taskId\":\"tool_e2af6b0a5a0ace3cf4cff7d3a564aa71c18639f491b0304a7718ec4df173638a\",\"toolName\":\"fs.read\"}]},\"commitId\":\"commit1\",\"expectedBrainRevision\":\"0\",\"fence\":{\"epoch\":\"7\",\"executionToken\":\"token7\",\"owner\":{\"incarnationId\":\"boot-a\",\"instanceId\":\"brain-a\"}},\"nativeState\":{\"checkpointRef\":{\"backendId\":\"objects\",\"formatVersion\":\"synthetic-v1\",\"key\":\"fixture/checkpoint-1\",\"mediaType\":\"application/octet-stream\",\"scope\":{\"namespace\":\"demo\",\"sessionId\":\"s1\",\"tenant\":\"t1\"},\"sha256\":\"56fe515303b27726f65c280378f492af14027a7db304a3b000a58f23a3ed1fab\",\"size\":\"21\"},\"harnessType\":\"agentscope-java\",\"nativeCursor\":\"1\",\"stateFormatVersion\":\"fixture-v1\"},\"protocolVersion\":\"0.1.0\",\"scope\":{\"namespace\":\"demo\",\"sessionId\":\"s1\",\"tenant\":\"t1\"},\"turnId\":\"turn1\"}",
+      "sha256": "2afae6d558f01746679bcb21d27385d902d574cb8dc4773ef8aa4f49d8cab14b"
+    }
+  ],
+  "identity": [
+    {
+      "parts": [
+        "t1",
+        "demo",
+        "s1"
+      ],
+      "framedUtf8Hex": "323a7431343a64656d6f323a7331",
+      "sha256": "95ba130b77b3d31eb695b4f63be392079bbec6dce2694138ba5a93232700f7e3",
+      "base64url": "lboTC3ez0x62lbT2O-OSB5u-xtziaUE4ulqTIycA9-M"
+    },
+    {
+      "parts": [
+        "租户😀",
+        "demo",
+        "会话"
+      ],
+      "framedUtf8Hex": "343ae7a79fe688b7f09f9880343a64656d6f323ae4bc9ae8af9d",
+      "sha256": "4846320ce926bdea5c3db4e71ba8ca38be43270a6a13f46e5ef04583d39a6755",
+      "base64url": "SEYyDOkmvepcPbTnG6jKOL5DJwpqE_RuXvBFg9OaZ1U"
+    },
+    {
+      "parts": [
+        "lboTC3ez0x62lbT2O-OSB5u-xtziaUE4ulqTIycA9-M",
+        "turn1",
+        "call1_0"
+      ],
+      "framedUtf8Hex": "34333a6c626f544333657a307836326c6254324f2d4f534235752d78747a6961554534756c715449796341392d4d353a7475726e31373a63616c6c315f30",
+      "sha256": "e2af6b0a5a0ace3cf4cff7d3a564aa71c18639f491b0304a7718ec4df173638a",
+      "base64url": "4q9rCloKzjz0z_fTpWSqccGGOfSRsDBKdxjsTfFzY4o"
+    },
+    {
+      "parts": [
+        "tool_e2af6b0a5a0ace3cf4cff7d3a564aa71c18639f491b0304a7718ec4df173638a",
+        "tool_e2af6b0a5a0ace3cf4cff7d3a564aa71c18639f491b0304a7718ec4df173638a"
+      ],
+      "framedUtf8Hex": "36393a746f6f6c5f6532616636623061356130616365336366346366663764336135363461613731633138363339663439316230333034613737313865633464663137333633386136393a746f6f6c5f65326166366230613561306163653363663463666637643361353634616137316331383633396634393162303330346137373138656334646631373336333861",
+      "sha256": "5a9a91bf6d590eda8b77ee12b014ff456d06fa4c7c6da950a16fa86caa894fd1",
+      "base64url": "WpqRv21ZDtqLd-4SsBT_RW0G-kx8balQoW-obKqJT9E"
+    }
+  ]
+}

@@ -132,9 +132,9 @@ verification. The source namespace must contain the existing deployment names
 used by `infra.py`. The kubeconfig stays outside the repository.
 
 ```bash
-probe_dir=agentscope-service/tests/managed-mq-redis/suspend-isolation
+probe_dir=managed-agents/tests/managed-mq-redis/suspend-isolation
 probe_output=/absolute/path/to/verification-output
-probe_namespace=agentscope-suspend-YYYYMMDD
+probe_namespace=managed-agents-suspend-YYYYMMDD
 probe_kubeconfig=/absolute/path/to/kubeconfig
 probe_sdk=/absolute/path/to/rocketmq-client-java-5.2.2.jar
 

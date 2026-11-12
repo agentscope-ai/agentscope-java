@@ -43,14 +43,21 @@ create_parent() {
   admin_command updateSubGroup -n "$MANAGED_MQ_NAMESRV" -c "$MANAGED_MQ_CLUSTER" -g "$2" \
     -o true -m true --attributes "+lite.bind.topic=$1,+lite.sub.model=Shared,+lite.sub.wildcard=true"
 }
-for channel in turns tools resumes executes controls; do
+for channel in turns tools resumes executes controls projections; do
   case "$channel" in
-    turns) topic=${BUILDER_MANAGED_MQ_TURN_TOPIC:-ma_turns_v3}; group=${BUILDER_MANAGED_MQ_BRAIN_GROUP:-ma_brain_v3};;
-    tools) topic=${BUILDER_MANAGED_MQ_TOOL_EVENT_TOPIC:-ma_tool_events_v3}; group=${BUILDER_MANAGED_MQ_TOOL_EVENTS_GROUP:-ma_brain_tool_events_v3};;
-    executes) topic=${BUILDER_MANAGED_MQ_TOOL_EXECUTE_TOPIC:-ma_tool_execute_v1}; group=${BUILDER_MANAGED_MQ_TOOL_EXECUTE_GROUP:-ma_hands_execute_v1};;
-    controls) topic=${BUILDER_MANAGED_MQ_TOOL_CONTROL_TOPIC:-ma_tool_control_v1}; group=${BUILDER_MANAGED_MQ_TOOL_CONTROL_GROUP:-ma_hands_control_v1};;
-    resumes) topic=${BUILDER_MANAGED_MQ_RESUME_TOPIC:-ma_turn_resumes_v3}; group=${BUILDER_MANAGED_MQ_RESUME_GROUP:-ma_brain_resumes_v3};;
+    turns) topic=${MANAGED_AGENTS_RUNTIME_MQ_TURN_TOPIC:-ma_turns_v3}; group=${MANAGED_AGENTS_RUNTIME_MQ_HARNESS_RUNTIME_GROUP:-ma_brain_v3};;
+    tools) topic=${MANAGED_AGENTS_RUNTIME_MQ_TOOL_EVENT_TOPIC:-ma_tool_events_v3}; group=${MANAGED_AGENTS_RUNTIME_MQ_TOOL_EVENTS_GROUP:-ma_brain_tool_events_v3};;
+    executes) topic=${MANAGED_AGENTS_RUNTIME_MQ_TOOL_EXECUTE_TOPIC:-ma_tool_execute_v1}; group=${MANAGED_AGENTS_RUNTIME_MQ_TOOL_EXECUTE_GROUP:-ma_hands_execute_v1};;
+    controls) topic=${MANAGED_AGENTS_RUNTIME_MQ_TOOL_CONTROL_TOPIC:-ma_tool_control_v1}; group=${MANAGED_AGENTS_RUNTIME_MQ_TOOL_CONTROL_GROUP:-ma_hands_control_v1};;
+    projections) topic=${MANAGED_AGENTS_RUNTIME_MQ_PROJECTION_TOPIC:-ma_session_projections_v3}; group=${MANAGED_AGENTS_RUNTIME_MQ_PROJECTION_GROUP:-ma_session_projections_v3};;
+    resumes) topic=${MANAGED_AGENTS_RUNTIME_MQ_RESUME_TOPIC:-ma_turn_resumes_v3}; group=${MANAGED_AGENTS_RUNTIME_MQ_RESUME_GROUP:-ma_brain_resumes_v3};;
   esac
   create_parent "$topic" "$group"
 
 done
+
+# Provision only when explicitly enabling the database Session queue.
+if [ "${MANAGED_AGENTS_RUNTIME_SESSION_QUEUE_ENABLED:-false}" = true ]; then
+  create_parent "${MANAGED_AGENTS_RUNTIME_MQ_SESSION_READY_TOPIC:-ma_session_ready_v1}" \
+    "${MANAGED_AGENTS_RUNTIME_MQ_SESSION_READY_GROUP:-ma_session_ready_v1}"
+fi

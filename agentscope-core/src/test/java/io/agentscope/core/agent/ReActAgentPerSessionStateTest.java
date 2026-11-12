@@ -120,7 +120,7 @@ class ReActAgentPerSessionStateTest {
         store.save(
                 "u1",
                 "persisted-empty",
-                "agent_state",
+                new ThreadKey(null, "asst", "unused-bucket", "main").stateEntry("agent_state"),
                 AgentState.builder().userId("u1").sessionId("persisted-empty").build());
 
         Toolkit toolkit = new Toolkit();
@@ -169,7 +169,7 @@ class ReActAgentPerSessionStateTest {
         store.save(
                 "u1",
                 "legacy-empty",
-                "agent_state",
+                new ThreadKey(null, "asst", "unused-bucket", "main").stateEntry("agent_state"),
                 LegacyStateLoader.loadFromLegacySession(store, "u1", "legacy-empty"));
         agent.clearStateCache("u1", "legacy-empty");
         assertTrue(
@@ -670,12 +670,14 @@ class ReActAgentPerSessionStateTest {
         // getAgentState seeds slotVersions with 0L for a fresh slot on a versioning store;
         // drop the entry to recreate the "version unknown → unconditional persist" window
         // (e.g. a restart whose version cache is empty), which is the path this fix hardens.
-        clearSlotVersion(agent, "u1/sessA");
+        clearSlotVersion(agent, new ThreadKey("u1", "asst", "sessA", "main").storagePath());
         agent.saveAgentState("u1", "sessA");
 
         assertEquals(1, store.unconditionalVersions.size());
         assertEquals(1L, store.unconditionalVersions.get(0));
-        assertEquals(1L, slotVersionOf(agent, "u1/sessA"));
+        assertEquals(
+                1L,
+                slotVersionOf(agent, new ThreadKey("u1", "asst", "sessA", "main").storagePath()));
     }
 
     @Test

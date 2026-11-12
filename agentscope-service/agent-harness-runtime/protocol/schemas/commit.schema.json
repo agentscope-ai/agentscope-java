@@ -1,0 +1,574 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.agentcore.invalid/managed-agents/0.1.0/commit.schema.json",
+  "title": "Managed Agents commit protocol 0.1.0",
+  "$defs": {
+    "NativeCall": {
+      "type": "object",
+      "properties": {
+        "nativeCallId": {
+          "$ref": "common.schema.json#/$defs/Id"
+        },
+        "position": {
+          "$ref": "common.schema.json#/$defs/NativePosition"
+        }
+      },
+      "required": [
+        "nativeCallId",
+        "position"
+      ],
+      "additionalProperties": false
+    },
+    "InputApplication": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "inputId": {
+              "$ref": "common.schema.json#/$defs/Id"
+            },
+            "status": {
+              "const": "applied"
+            },
+            "position": {
+              "$ref": "common.schema.json#/$defs/NativePosition"
+            }
+          },
+          "required": [
+            "inputId",
+            "status",
+            "position"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "inputId": {
+              "$ref": "common.schema.json#/$defs/Id"
+            },
+            "status": {
+              "const": "rejected"
+            },
+            "reason": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 2048
+            }
+          },
+          "required": [
+            "inputId",
+            "status",
+            "reason"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "ResultApplication": {
+      "type": "object",
+      "properties": {
+        "nativeCallId": {
+          "$ref": "common.schema.json#/$defs/Id"
+        },
+        "resultIds": {
+          "type": "array",
+          "items": {
+            "$ref": "common.schema.json#/$defs/Id"
+          },
+          "minItems": 1,
+          "maxItems": 256
+        },
+        "position": {
+          "$ref": "common.schema.json#/$defs/NativePosition"
+        }
+      },
+      "required": [
+        "nativeCallId",
+        "resultIds",
+        "position"
+      ],
+      "additionalProperties": false
+    },
+    "Usage": {
+      "type": "object",
+      "properties": {
+        "inputTokens": {
+          "$ref": "common.schema.json#/$defs/UInt"
+        },
+        "outputTokens": {
+          "$ref": "common.schema.json#/$defs/UInt"
+        },
+        "cacheReadInputTokens": {
+          "$ref": "common.schema.json#/$defs/UInt"
+        },
+        "cacheWriteInputTokens": {
+          "$ref": "common.schema.json#/$defs/UInt"
+        }
+      },
+      "required": [
+        "inputTokens",
+        "outputTokens"
+      ],
+      "additionalProperties": false
+    },
+    "ModelUpdate": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "modelCallId": {
+              "$ref": "common.schema.json#/$defs/Id"
+            },
+            "phase": {
+              "const": "dispatch"
+            },
+            "model": {
+              "$ref": "common.schema.json#/$defs/Id"
+            },
+            "purpose": {
+              "$ref": "common.schema.json#/$defs/Id"
+            },
+            "requestHash": {
+              "$ref": "common.schema.json#/$defs/Hash"
+            },
+            "requestRef": {
+              "$ref": "common.schema.json#/$defs/ObjectRef"
+            },
+            "position": {
+              "$ref": "common.schema.json#/$defs/NativePosition"
+            }
+          },
+          "required": [
+            "modelCallId",
+            "phase",
+            "model",
+            "purpose",
+            "requestHash",
+            "requestRef",
+            "position"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "modelCallId": {
+              "$ref": "common.schema.json#/$defs/Id"
+            },
+            "phase": {
+              "const": "complete"
+            },
+            "status": {
+              "type": "string",
+              "enum": [
+                "completed",
+                "failed",
+                "cancelled"
+              ]
+            },
+            "resultRef": {
+              "$ref": "common.schema.json#/$defs/ObjectRef"
+            },
+            "usage": {
+              "$ref": "commit.schema.json#/$defs/Usage"
+            },
+            "usageUnknown": {
+              "const": true
+            },
+            "position": {
+              "$ref": "common.schema.json#/$defs/NativePosition"
+            }
+          },
+          "required": [
+            "modelCallId",
+            "phase",
+            "status",
+            "resultRef",
+            "position"
+          ],
+          "additionalProperties": false,
+          "oneOf": [
+            {
+              "required": [
+                "usage"
+              ]
+            },
+            {
+              "required": [
+                "usageUnknown"
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "InteractionUpdate": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "actionId": {
+              "$ref": "common.schema.json#/$defs/Id"
+            },
+            "phase": {
+              "const": "requested"
+            },
+            "actionType": {
+              "$ref": "common.schema.json#/$defs/Id"
+            },
+            "request": {
+              "$ref": "common.schema.json#/$defs/Content"
+            },
+            "position": {
+              "$ref": "common.schema.json#/$defs/NativePosition"
+            }
+          },
+          "required": [
+            "actionId",
+            "phase",
+            "actionType",
+            "request",
+            "position"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "actionId": {
+              "$ref": "common.schema.json#/$defs/Id"
+            },
+            "phase": {
+              "const": "resolved"
+            },
+            "inputId": {
+              "$ref": "common.schema.json#/$defs/Id"
+            },
+            "position": {
+              "$ref": "common.schema.json#/$defs/NativePosition"
+            },
+            "decision": {
+              "enum": [
+                "allow",
+                "deny"
+              ]
+            }
+          },
+          "required": [
+            "actionId",
+            "phase",
+            "inputId",
+            "position"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "Suspension": {
+      "type": "object",
+      "properties": {
+        "suspensionId": {
+          "$ref": "common.schema.json#/$defs/Id"
+        },
+        "pendingTaskIds": {
+          "type": "array",
+          "items": {
+            "$ref": "common.schema.json#/$defs/Id"
+          },
+          "minItems": 0,
+          "maxItems": 256
+        },
+        "pendingActionIds": {
+          "type": "array",
+          "items": {
+            "$ref": "common.schema.json#/$defs/Id"
+          },
+          "minItems": 0,
+          "maxItems": 256
+        },
+        "resumePhase": {
+          "type": "string",
+          "enum": [
+            "WAIT_TOOLS",
+            "APPLY_INPUTS"
+          ]
+        },
+        "waitPolicy": {
+          "const": "all"
+        }
+      },
+      "required": [
+        "suspensionId",
+        "pendingTaskIds",
+        "pendingActionIds",
+        "resumePhase",
+        "waitPolicy"
+      ],
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "resumePhase": {
+                "const": "WAIT_TOOLS"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "pendingTaskIds": {
+                "minItems": 1
+              },
+              "pendingActionIds": {
+                "maxItems": 0
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "pendingTaskIds": {
+                "maxItems": 0
+              },
+              "pendingActionIds": {
+                "minItems": 1
+              }
+            }
+          }
+        }
+      ]
+    },
+    "Terminal": {
+      "type": "object",
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": [
+            "succeeded",
+            "failed",
+            "cancelled"
+          ]
+        },
+        "output": {
+          "$ref": "common.schema.json#/$defs/Content"
+        },
+        "messageId": {
+          "$ref": "common.schema.json#/$defs/Id"
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2048
+        }
+      },
+      "required": [
+        "status",
+        "output"
+      ],
+      "additionalProperties": false
+    },
+    "PublicFact": {
+      "type": "object",
+      "properties": {
+        "factId": {
+          "$ref": "common.schema.json#/$defs/Id"
+        },
+        "type": {
+          "$ref": "common.schema.json#/$defs/Id"
+        },
+        "occurredAt": {
+          "$ref": "common.schema.json#/$defs/Timestamp"
+        },
+        "content": {
+          "$ref": "common.schema.json#/$defs/Content"
+        }
+      },
+      "required": [
+        "factId",
+        "type",
+        "occurredAt",
+        "content"
+      ],
+      "additionalProperties": false
+    },
+    "Changes": {
+      "type": "object",
+      "properties": {
+        "toolCalls": {
+          "type": "array",
+          "items": {
+            "$ref": "commit.schema.json#/$defs/NativeCall"
+          },
+          "minItems": 0,
+          "maxItems": 256
+        },
+        "toolOperations": {
+          "type": "array",
+          "items": {
+            "$ref": "tools.schema.json#/$defs/Operation"
+          },
+          "minItems": 0,
+          "maxItems": 256
+        },
+        "inputApplications": {
+          "type": "array",
+          "items": {
+            "$ref": "commit.schema.json#/$defs/InputApplication"
+          },
+          "minItems": 0,
+          "maxItems": 256
+        },
+        "resultApplications": {
+          "type": "array",
+          "items": {
+            "$ref": "commit.schema.json#/$defs/ResultApplication"
+          },
+          "minItems": 0,
+          "maxItems": 256
+        },
+        "modelUpdates": {
+          "type": "array",
+          "items": {
+            "$ref": "commit.schema.json#/$defs/ModelUpdate"
+          },
+          "minItems": 0,
+          "maxItems": 256
+        },
+        "interactionUpdates": {
+          "type": "array",
+          "items": {
+            "$ref": "commit.schema.json#/$defs/InteractionUpdate"
+          },
+          "minItems": 0,
+          "maxItems": 256
+        },
+        "suspension": {
+          "$ref": "commit.schema.json#/$defs/Suspension"
+        },
+        "terminal": {
+          "$ref": "commit.schema.json#/$defs/Terminal"
+        }
+      },
+      "required": [],
+      "additionalProperties": false,
+      "not": {
+        "required": [
+          "suspension",
+          "terminal"
+        ]
+      }
+    },
+    "CommitBoundary": {
+      "type": "object",
+      "properties": {
+        "protocolVersion": {
+          "$ref": "common.schema.json#/$defs/Version"
+        },
+        "scope": {
+          "$ref": "common.schema.json#/$defs/Scope"
+        },
+        "turnId": {
+          "$ref": "common.schema.json#/$defs/Id"
+        },
+        "commitId": {
+          "$ref": "common.schema.json#/$defs/Id"
+        },
+        "fence": {
+          "$ref": "common.schema.json#/$defs/Fence"
+        },
+        "expectedBrainRevision": {
+          "$ref": "common.schema.json#/$defs/UInt"
+        },
+        "nativeState": {
+          "$ref": "common.schema.json#/$defs/NativeState"
+        },
+        "changes": {
+          "$ref": "commit.schema.json#/$defs/Changes"
+        },
+        "publicFacts": {
+          "type": "array",
+          "items": {
+            "$ref": "commit.schema.json#/$defs/PublicFact"
+          },
+          "minItems": 0,
+          "maxItems": 256
+        }
+      },
+      "required": [
+        "protocolVersion",
+        "scope",
+        "turnId",
+        "commitId",
+        "fence",
+        "expectedBrainRevision",
+        "nativeState",
+        "changes"
+      ],
+      "additionalProperties": false
+    },
+    "CommitReceipt": {
+      "type": "object",
+      "properties": {
+        "protocolVersion": {
+          "$ref": "common.schema.json#/$defs/Version"
+        },
+        "scope": {
+          "$ref": "common.schema.json#/$defs/Scope"
+        },
+        "turnId": {
+          "$ref": "common.schema.json#/$defs/Id"
+        },
+        "commitId": {
+          "$ref": "common.schema.json#/$defs/Id"
+        },
+        "contentHash": {
+          "$ref": "common.schema.json#/$defs/Hash"
+        },
+        "outcome": {
+          "const": "committed"
+        },
+        "brainRevision": {
+          "$ref": "common.schema.json#/$defs/Positive"
+        },
+        "nativeCursor": {
+          "$ref": "common.schema.json#/$defs/Id"
+        }
+      },
+      "required": [
+        "protocolVersion",
+        "scope",
+        "turnId",
+        "commitId",
+        "contentHash",
+        "outcome",
+        "brainRevision",
+        "nativeCursor"
+      ],
+      "additionalProperties": false
+    },
+    "ReceiptRequest": {
+      "type": "object",
+      "properties": {
+        "protocolVersion": {
+          "$ref": "common.schema.json#/$defs/Version"
+        },
+        "scope": {
+          "$ref": "common.schema.json#/$defs/Scope"
+        },
+        "turnId": {
+          "$ref": "common.schema.json#/$defs/Id"
+        },
+        "commitId": {
+          "$ref": "common.schema.json#/$defs/Id"
+        }
+      },
+      "required": [
+        "protocolVersion",
+        "scope",
+        "turnId",
+        "commitId"
+      ],
+      "additionalProperties": false
+    }
+  }
+}

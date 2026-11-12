@@ -1,4 +1,4 @@
-# AgentScope Service Claude-compatible Session API design — Draft 3
+# Managed Agents Claude-compatible Session API design — Draft 3
 
 Confirmed design, first-release implementation. The full Chinese specification is
 [Draft 3](claude-compatible-session-api-design.md). This English companion defines the same release
@@ -8,8 +8,8 @@ SDK and behavioral checks pass for an explicitly named subset.
 ## Protocol and release boundary
 
 Use one public interaction endpoint: `POST /v1/sessions/{session_id}/events`. An event keeps Claude's
-`type` and content-block array. Platform intent belongs to `agentscope_service` in the event body.
-`AgentScope-Extensions: turn-inputs-v1` selects additional fields and notifications on reads and
+`type` and content-block array. Platform intent belongs to `managed_agents` in the event body.
+`Managed-Agents-Extensions: turn-inputs-v1` selects additional fields and notifications on reads and
 streams. It does not select a different execution intent or change business idempotency.
 
 First release supports single-agent text Sessions: create/retrieve, ordinary messages while idle,
@@ -17,11 +17,13 @@ interrupt or interrupt followed by one ordinary message, explicit new_turn/steer
 Turn/Input reads, event history, a live SSE stream, and independent final output.
 
 Session listing, updates, lifecycle writes, client tool confirmations/results, threads, outcomes,
-files, preview deltas, reliable delivery and snapshots are unavailable in this release. Return an
+files, reliable delivery and snapshots are unavailable in this release. Return an
 explicit unsupported-capability error; do not accept and ignore an operation. Management of Agents
 and Environments stays with the existing resource APIs. Platform tools keep their actual permission
 checks; configurations requiring unsupported client interactions must be rejected, never approved
 automatically.
+
+The October 23 revision adds optional `event_deltas[]=agent.message`: authorized online assistant-text previews only, delivered best effort without persistence or replay. Complete durable messages reconcile previews. Thinking/tool previews and Last-Event-ID remain unsupported; see [the Session Store contract](session-store.en.md).
 
 ## Identities, admission and execution
 
@@ -97,12 +99,12 @@ for first-release result retrieval.
 
 ## Component and upgrade boundaries
 
-Session Portal owns HTTP validation, original-caller authorization, admission and public reads. Agent
-Brain consumes the existing Turn/Input protocol and commits native state. Hands
+Agent Service owns HTTP validation, original-caller authorization, admission and public reads. Agent
+Harness Runtime consumes the existing Turn/Input protocol and commits native state. Tool Worker
 executes and settles real tools. Gateway routes and clears internal credentials; Control Plane owns
 resource configuration and scope. Runtime code does not depend on public HTTP headers.
 
-Only the standalone agentscope-service repository changes. AgentScope Java stays a binary dependency;
+Only the standalone managed-agents repository changes. AgentScope Java stays a binary dependency;
 existing database table names, MQ groups and required native contracts are retained. New protocol
 persistence uses an additive migration. Before a separate upgrade, drain accepted work or preserve its
 execution ledger and identities. The initial implementation record remains in verification.md; the follow-up audit and isolated upgrade are recorded in draft3-audit.md. Existing records are retained without backfilling old public history.
@@ -123,6 +125,6 @@ pages and finish with an empty collection for terminal Turns without output. Con
 nonterminal Turns independently of SSE, retries unavailable projections and retains cancellation keys
 across uncertain responses. See `../tests/session-protocol/draft3-audit.md` for audit evidence.
 
-Hands publishes durable tool events. Brain applies complete results and atomically
+Tool Worker publishes durable tool events. Agent Harness Runtime applies complete results and atomically
 stages a Resume outbox intent when the current suspension is ready; its independent Resume consumer
 restores inference. Worker completion notifications are retired, while the Resume Topic is retained.

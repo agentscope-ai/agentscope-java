@@ -171,7 +171,7 @@ UI 上点 **New agent** 按钮可以基于空白脚手架、内置模板或 AI �
 
 ## 与 Control Plane Operate 联调（BYO 与原生会话历史）
 
-Harness 默认在 Workspace Filesystem 的私有分区保存原生 Session Log。`AgentSessionHistorySource` 通过 `sessionTranscript()` 提供消息接口；Paw 历史页面也读取相同记录。旧 TranscriptMiddleware、分段 transcript 与 `.log.jsonl` 写入已经移除，已有文件不会被自动删除。
+Harness 默认在 Workspace Filesystem 的私有分区保存原生 Thread 日志。`AgentSessionHistorySource` 通过 `threadTranscript()` 提供消息接口；Paw 历史页面也读取相同记录。旧 TranscriptMiddleware、分段 transcript 与 `.log.jsonl` 写入已经移除，已有文件不会被自动删除。
 
 ```bash
 export CLAW_CONTROLPLANE_ENABLED=true
@@ -192,7 +192,7 @@ export CLAW_SESSION_LOG_ROOT=/data/paw-session-history
 | `claw.controlplane.contract-port` | `CLAW_CONTROLPLANE_CONTRACT_PORT` | `18090` |
 | `claw.session-log.root` | `CLAW_SESSION_LOG_ROOT` | 空，使用 Workspace 后端 |
 
-移除旧 `claw.transcript.*` / `CLAW_TRANSCRIPT_*` 配置。分布式或自定义存储可提供 `SessionLogStore` Spring Bean；它会同时应用于内置和动态 Agent。完整存储、恢复与 SSE 说明见[会话日志指南](../../../../docs/v2/zh/docs/harness/session-log.md)。
+移除旧 `claw.transcript.*` / `CLAW_TRANSCRIPT_*` 配置。分布式或自定义存储可提供 `ThreadJournalStore` Spring Bean；它会同时应用于内置和动态 Agent。完整存储、恢复与 SSE 说明见[会话日志指南](../../../../docs/v2/zh/docs/harness/session-log.md)。
 
 ## 这个 fork 不再做的事
 

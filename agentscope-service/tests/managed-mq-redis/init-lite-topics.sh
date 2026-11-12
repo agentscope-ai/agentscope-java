@@ -34,21 +34,9 @@ create_parent() {
   admin_command updateTopic \
     -n namesrv:9876 -c ManagedLiteTest -t "$1" -r 1 -w 1 \
     -a '+message.type=LITE,+lite.topic.expiration=20160'
-  case "$2" in
-    ma_push_bus_*)
-      # The raw callback-capacity stress test requests short Suspend cycles.
-      # Keep broker retries bounded and prompt without spending its depth budget on backoff.
-      admin_command updateSubGroup \
-        -n namesrv:9876 -c ManagedLiteTest -g "$2" -o true -m true -r 1000 \
-        -p '{"type":"CUSTOMIZED","customizedRetryPolicy":{"next":[100]}}' \
-        --attributes "+lite.bind.topic=$1,+lite.sub.model=Shared,+lite.sub.wildcard=true"
-      ;;
-    *)
-      admin_command updateSubGroup \
-        -n namesrv:9876 -c ManagedLiteTest -g "$2" -o true -m true \
-        --attributes "+lite.bind.topic=$1,+lite.sub.model=Shared,+lite.sub.wildcard=true"
-      ;;
-  esac
+  admin_command updateSubGroup \
+    -n namesrv:9876 -c ManagedLiteTest -g "$2" -o true -m true \
+    --attributes "+lite.bind.topic=$1,+lite.sub.model=Shared,+lite.sub.wildcard=true"
 }
 for prefix in ma_push_bus; do
   for channel in turns tools resumes; do
@@ -65,3 +53,8 @@ create_parent ma_turn_resumes_v3 ma_brain_resumes_v3
 
 create_parent ma_tool_execute_v1 ma_hands_execute_v1
 create_parent ma_tool_control_v1 ma_hands_control_v1
+
+create_parent ma_session_ready_v1 ma_session_ready_v1
+
+# Agent Service asynchronous projection consumer.
+create_parent ma_session_projections_v3 ma_session_projections_v3

@@ -20,6 +20,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.event.AgentResultEvent;
+import io.agentscope.core.journal.InMemoryThreadJournalStore;
 import io.agentscope.core.message.GenerateReason;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.TextBlock;
@@ -28,7 +29,6 @@ import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.Model;
 import io.agentscope.core.model.ToolSchema;
-import io.agentscope.core.session.InMemorySessionLogStore;
 import java.time.Duration;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -44,7 +44,7 @@ class AgentExecutionPositionTest {
     void restoredPositionPreservesIterationAndLimitForBothCallPaths(
             boolean streaming, int iteration) {
         var calls = new AtomicInteger();
-        var logs = new InMemorySessionLogStore();
+        var logs = new InMemoryThreadJournalStore();
         Model model =
                 new Model() {
                     public String getModelName() {
@@ -65,7 +65,7 @@ class AgentExecutionPositionTest {
                         .name("agent")
                         .model(model)
                         .maxIters(3)
-                        .sessionLogStore(logs)
+                        .threadJournalStore(logs)
                         .build();
         var context =
                 RuntimeContext.builder()
@@ -89,7 +89,7 @@ class AgentExecutionPositionTest {
                 result.getGenerateReason());
         var log = logs.open(logs.list(context).get(0), context);
         assertEquals(
-                iteration == 3 ? List.of() : List.of(2),
+                List.of(iteration),
                 StreamSupport.stream(log.scan(0, log.head().seq()).spliterator(), false)
                         .filter(event -> "step/start".equals(event.type()))
                         .map(event -> ((Number) event.data().get("iteration")).intValue())

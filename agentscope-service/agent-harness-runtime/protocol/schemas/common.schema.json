@@ -1,0 +1,362 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.agentcore.invalid/managed-agents/0.1.0/common.schema.json",
+  "title": "Managed Agents common protocol 0.1.0",
+  "$defs": {
+    "Id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 1024,
+      "pattern": "\\S"
+    },
+    "UInt": {
+      "type": "string",
+      "description": "Canonical decimal in [0, 9223372036854775807]; upper bound is a semantic check.",
+      "pattern": "^(0|[1-9][0-9]{0,18})$"
+    },
+    "Positive": {
+      "type": "string",
+      "description": "Canonical decimal in [1, 9223372036854775807]; upper bound is a semantic check.",
+      "pattern": "^[1-9][0-9]{0,18}$"
+    },
+    "Hash": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "Timestamp": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "Version": {
+      "const": "0.1.0"
+    },
+    "Scope": {
+      "type": "object",
+      "properties": {
+        "tenant": {
+          "$ref": "common.schema.json#/$defs/Id"
+        },
+        "namespace": {
+          "$ref": "common.schema.json#/$defs/Id"
+        },
+        "sessionId": {
+          "$ref": "common.schema.json#/$defs/Id"
+        }
+      },
+      "required": [
+        "tenant",
+        "namespace",
+        "sessionId"
+      ],
+      "additionalProperties": false
+    },
+    "Owner": {
+      "type": "object",
+      "properties": {
+        "instanceId": {
+          "$ref": "common.schema.json#/$defs/Id"
+        },
+        "incarnationId": {
+          "$ref": "common.schema.json#/$defs/Id"
+        }
+      },
+      "required": [
+        "instanceId",
+        "incarnationId"
+      ],
+      "additionalProperties": false
+    },
+    "Fence": {
+      "type": "object",
+      "properties": {
+        "owner": {
+          "$ref": "common.schema.json#/$defs/Owner"
+        },
+        "epoch": {
+          "$ref": "common.schema.json#/$defs/Positive"
+        },
+        "executionToken": {
+          "$ref": "common.schema.json#/$defs/Id"
+        }
+      },
+      "required": [
+        "owner",
+        "epoch",
+        "executionToken"
+      ],
+      "additionalProperties": false
+    },
+    "ObjectRef": {
+      "type": "object",
+      "properties": {
+        "scope": {
+          "$ref": "common.schema.json#/$defs/Scope"
+        },
+        "backendId": {
+          "$ref": "common.schema.json#/$defs/Id"
+        },
+        "key": {
+          "$ref": "common.schema.json#/$defs/Id"
+        },
+        "sha256": {
+          "$ref": "common.schema.json#/$defs/Hash"
+        },
+        "size": {
+          "$ref": "common.schema.json#/$defs/UInt"
+        },
+        "mediaType": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "formatVersion": {
+          "$ref": "common.schema.json#/$defs/Id"
+        }
+      },
+      "required": [
+        "scope",
+        "backendId",
+        "key",
+        "sha256",
+        "size",
+        "mediaType",
+        "formatVersion"
+      ],
+      "additionalProperties": false
+    },
+    "Content": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "inline": {}
+          },
+          "required": [
+            "inline"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "ref": {
+              "$ref": "common.schema.json#/$defs/ObjectRef"
+            }
+          },
+          "required": [
+            "ref"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "NativePosition": {
+      "type": "object",
+      "properties": {
+        "nativeCursor": {
+          "$ref": "common.schema.json#/$defs/Id"
+        },
+        "recordId": {
+          "$ref": "common.schema.json#/$defs/Id"
+        }
+      },
+      "required": [
+        "nativeCursor"
+      ],
+      "additionalProperties": false
+    },
+    "NativeState": {
+      "type": "object",
+      "properties": {
+        "harnessType": {
+          "$ref": "common.schema.json#/$defs/Id"
+        },
+        "stateFormatVersion": {
+          "$ref": "common.schema.json#/$defs/Id"
+        },
+        "nativeCursor": {
+          "$ref": "common.schema.json#/$defs/Id"
+        },
+        "checkpointRef": {
+          "$ref": "common.schema.json#/$defs/ObjectRef"
+        },
+        "journalRefs": {
+          "type": "array",
+          "items": {
+            "$ref": "common.schema.json#/$defs/ObjectRef"
+          },
+          "minItems": 1,
+          "maxItems": 4096
+        }
+      },
+      "required": [
+        "harnessType",
+        "stateFormatVersion",
+        "nativeCursor"
+      ],
+      "additionalProperties": false,
+      "anyOf": [
+        {
+          "required": [
+            "checkpointRef"
+          ]
+        },
+        {
+          "required": [
+            "journalRefs"
+          ]
+        }
+      ]
+    },
+    "ErrorCode": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]{0,127}$",
+      "examples": [
+        "invalid_request",
+        "unauthenticated",
+        "forbidden",
+        "not_found",
+        "ownership_lost",
+        "execution_busy",
+        "revision_conflict",
+        "identity_conflict",
+        "invalid_reference",
+        "unsupported_version",
+        "unsupported_capability",
+        "budget_exceeded",
+        "capacity_exceeded",
+        "temporarily_unavailable"
+      ],
+      "description": "Stable platform error code; unrecognized codes must fail closed, never authorize a new external attempt."
+    },
+    "Error": {
+      "type": "object",
+      "properties": {
+        "protocolVersion": {
+          "$ref": "common.schema.json#/$defs/Version"
+        },
+        "code": {
+          "$ref": "common.schema.json#/$defs/ErrorCode"
+        },
+        "message": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2048
+        },
+        "retryable": {
+          "type": "boolean"
+        },
+        "retryAfterMs": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 300000
+        }
+      },
+      "required": [
+        "protocolVersion",
+        "code",
+        "message",
+        "retryable"
+      ],
+      "additionalProperties": false
+    },
+    "ObjectWriteRequest": {
+      "type": "object",
+      "properties": {
+        "protocolVersion": {
+          "$ref": "common.schema.json#/$defs/Version"
+        },
+        "scope": {
+          "$ref": "common.schema.json#/$defs/Scope"
+        },
+        "objectId": {
+          "$ref": "common.schema.json#/$defs/Id"
+        },
+        "sha256": {
+          "$ref": "common.schema.json#/$defs/Hash"
+        },
+        "size": {
+          "$ref": "common.schema.json#/$defs/UInt"
+        },
+        "mediaType": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "formatVersion": {
+          "$ref": "common.schema.json#/$defs/Id"
+        },
+        "dataBase64": {
+          "type": "string",
+          "contentEncoding": "base64",
+          "maxLength": 89478488
+        }
+      },
+      "required": [
+        "protocolVersion",
+        "scope",
+        "objectId",
+        "sha256",
+        "size",
+        "mediaType",
+        "formatVersion",
+        "dataBase64"
+      ],
+      "additionalProperties": false
+    },
+    "ObjectWriteResponse": {
+      "type": "object",
+      "properties": {
+        "protocolVersion": {
+          "$ref": "common.schema.json#/$defs/Version"
+        },
+        "ref": {
+          "$ref": "common.schema.json#/$defs/ObjectRef"
+        }
+      },
+      "required": [
+        "protocolVersion",
+        "ref"
+      ],
+      "additionalProperties": false
+    },
+    "ObjectReadRequest": {
+      "type": "object",
+      "properties": {
+        "protocolVersion": {
+          "$ref": "common.schema.json#/$defs/Version"
+        },
+        "ref": {
+          "$ref": "common.schema.json#/$defs/ObjectRef"
+        }
+      },
+      "required": [
+        "protocolVersion",
+        "ref"
+      ],
+      "additionalProperties": false
+    },
+    "ObjectReadResponse": {
+      "type": "object",
+      "properties": {
+        "protocolVersion": {
+          "$ref": "common.schema.json#/$defs/Version"
+        },
+        "ref": {
+          "$ref": "common.schema.json#/$defs/ObjectRef"
+        },
+        "dataBase64": {
+          "type": "string",
+          "contentEncoding": "base64",
+          "maxLength": 89478488
+        }
+      },
+      "required": [
+        "protocolVersion",
+        "ref",
+        "dataBase64"
+      ],
+      "additionalProperties": false
+    }
+  }
+}

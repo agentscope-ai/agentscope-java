@@ -1,0 +1,39 @@
+{
+  "assistantMessage": {
+    "factId": "message_first",
+    "type": "item.completed",
+    "occurredAt": "2026-10-29T00:00:00Z",
+    "content": {
+      "inline": {
+        "schema_version": 1,
+        "turn_id": "turn_1",
+        "item_id": "item_message_first",
+        "item": {
+          "id": "item_message_first",
+          "message_id": "message_first",
+          "type": "message",
+          "role": "assistant",
+          "status": "completed",
+          "content": [
+            {
+              "type": "text",
+              "text": "Checking the authorized tool."
+            }
+          ]
+        }
+      }
+    }
+  },
+  "selectedFinalMessage": {
+    "status": "succeeded",
+    "messageId": "message_final",
+    "output": {
+      "inline": [
+        {
+          "type": "text",
+          "text": "Completed."
+        }
+      ]
+    }
+  }
+}

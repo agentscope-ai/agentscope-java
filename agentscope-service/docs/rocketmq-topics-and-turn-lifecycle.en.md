@@ -2,7 +2,7 @@
 
 [中文](rocketmq-topics-and-turn-lifecycle.md)
 
-This document describes business topics, producers, subscribers and a Turn involving a long-running tool in the backported AgentScope Service implementation dated 2026-10-21. Names below are configuration defaults, not a live inspection of deployed MQ resources.
+This document describes business topics, producers, subscribers, and a Turn involving a long-running tool. It is based on the `master` source in `/Users/ken/agentcore/agentcore-managed-agents` on 2026-10-21. Names below are configuration defaults, not a live inspection of deployed MQ resources.
 
 ## Topics, producers, and subscribers
 
@@ -10,11 +10,11 @@ The implementation uses five LITE parent topics, each with a separate consumer g
 
 | Parent topic | Logical channel | Producer | Subscriber | Default consumer group | Purpose |
 | --- | --- | --- | --- | --- | --- |
-| `ma_turns_v3` | `TURNS` | Session Portal | Brain | `ma_brain_v3` | Accepted Turns that drive inference |
-| `ma_tool_execute_v1` | `TOOL_EXECUTE` | Brain | Hands | `ma_hands_execute_v1` | Tool execution commands: `execute` |
-| `ma_tool_control_v1` | `TOOL_CONTROL` | Brain | Hands | `ma_hands_control_v1` | Cancellation (`cancel`) and event replay requests (`replay`) |
-| `ma_tool_events_v3` | `TOOL_EVENTS` | Hands and Brain | Brain | `ma_brain_tool_events_v3` | Tool progress, output deltas, output gaps, and final results; Runtime also publishes events from child Agent execution |
-| `ma_turn_resumes_v3` | `TURN_RESUMES` | Brain | Brain | `ma_brain_resumes_v3` | Scheduling suspended Turn recovery through MQ |
+| `ma_turns_v3` | `TURNS` | Agent Service | Agent Harness Runtime | `ma_brain_v3` | Accepted Turns that drive inference |
+| `ma_tool_execute_v1` | `TOOL_EXECUTE` | Agent Harness Runtime | Tool Worker | `ma_hands_execute_v1` | Tool execution commands: `execute` |
+| `ma_tool_control_v1` | `TOOL_CONTROL` | Agent Harness Runtime | Tool Worker | `ma_hands_control_v1` | Cancellation (`cancel`) and event replay requests (`replay`) |
+| `ma_tool_events_v3` | `TOOL_EVENTS` | Tool Worker and Agent Harness Runtime | Agent Harness Runtime | `ma_brain_tool_events_v3` | Tool progress, output deltas, output gaps, and final results; Runtime also publishes events from child Agent execution |
+| `ma_turn_resumes_v3` | `TURN_RESUMES` | Agent Harness Runtime | Agent Harness Runtime | `ma_brain_resumes_v3` | Scheduling suspended Turn recovery through MQ |
 
 Gateway and Control Plane do not directly publish or subscribe to these business topics. The self-hosted MQ initialization script also creates `DefaultHeartBeatSyncerTopic` for Proxy heartbeats; it is not one of the five business topics. This project does not need to create that internal topic for cloud MQ.
 
@@ -43,10 +43,10 @@ The diagram shows a tool exceeding the inline wait window and causing suspension
 sequenceDiagram
     autonumber
     actor C as Client
-    participant S as Session Portal
-    participant R as Brain
+    participant S as Agent Service
+    participant R as Harness Runtime
     participant Q as RocketMQ
-    participant W as Hands
+    participant W as Tool Worker
     participant T as External tool / MCP
     participant D as PostgreSQL
 
@@ -125,13 +125,13 @@ The Execute Broker ACK proves only MQ admission. Worker must still check databas
 
 ## Implementation entry points
 
-- [Topic defaults, role publication permissions, and consumer groups](../service-common/src/main/java/io/agentscope/builder/runtime/managed/ManagedInfrastructureConfiguration.java)
-- [MQ publication and subscription](../service-common/src/main/java/io/agentscope/builder/runtime/managed/RocketMqManagedMessageBus.java)
-- [Tool Execute / Control publication](../service-common/src/main/java/io/agentscope/builder/runtime/managed/ManagedToolTransport.java)
-- [Worker authorization checks and command admission](../service-common/src/main/java/io/agentscope/builder/runtime/managed/ManagedHandsCommands.java)
-- [Continuation records and MQ / direct routing](../service-common/src/main/java/io/agentscope/builder/runtime/managed/ManagedSuspensions.java)
-- [Direct continuation executor](../service-common/src/main/java/io/agentscope/builder/runtime/managed/ManagedContinuationLoop.java)
-- [Resume publisher](../service-common/src/main/java/io/agentscope/builder/runtime/managed/ManagedResumePublisher.java)
-- [Terminal ACK for original Turns messages](../service-common/src/main/java/io/agentscope/builder/runtime/managed/ManagedTurnAcknowledgements.java)
+- [Topic defaults, role publication permissions, and consumer groups](../common/src/main/java/io/agentcore/managed/server/runtime/managed/ManagedInfrastructureConfiguration.java)
+- [MQ publication and subscription](../common/src/main/java/io/agentcore/managed/server/runtime/managed/RocketMqManagedMessageBus.java)
+- [Tool Execute / Control publication](../common/src/main/java/io/agentcore/managed/server/runtime/managed/ManagedToolTransport.java)
+- [Worker authorization checks and command admission](../tool-worker/src/main/java/io/agentcore/managed/server/runtime/managed/ManagedToolWorkerCommands.java)
+- [Continuation records and MQ / direct routing](../common/src/main/java/io/agentcore/managed/server/runtime/managed/ManagedSuspensions.java)
+- [Direct continuation executor](../common/src/main/java/io/agentcore/managed/server/runtime/managed/ManagedContinuationLoop.java)
+- [Resume publisher](../agent-service/src/main/java/io/agentcore/managed/server/runtime/managed/ManagedResumePublisher.java)
+- [Terminal ACK for original Turns messages](../agent-harness-runtime/java/adapter-agentscope/src/main/java/io/agentcore/managed/server/runtime/managed/ManagedTurnAcknowledgements.java)
 - [MCP batch execution and recovery](mcp-execution-recovery.en.md)
 - [Cloud RocketMQ configuration](cloud-rocketmq.en.md)

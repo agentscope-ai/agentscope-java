@@ -17,13 +17,20 @@ package io.agentscope.core.tool.subagent;
 
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.Agent;
+import io.agentscope.core.agent.AgentExecutionHost;
+import io.agentscope.core.agent.AgentExecutionPosition;
 import io.agentscope.core.agent.Event;
+import io.agentscope.core.agent.ExecutionIdentity;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.agent.StreamOptions;
+import io.agentscope.core.journal.InvocationRecorder;
+import io.agentscope.core.journal.JournalExportSink;
+import io.agentscope.core.journal.ModelInvocation;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
+import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.state.AgentState;
 import io.agentscope.core.state.AgentStateStore;
 import io.agentscope.core.tool.AgentTool;
@@ -149,10 +156,12 @@ public class SubAgentTool implements AgentTool {
                         // Create agent for this session
                         final String finalSessionId = sessionId;
                         Agent agent = agentProvider.provide();
+                        RuntimeContext runtimeContext =
+                                childContext(param.getRuntimeContext(), finalSessionId);
 
                         // Load existing state if continuing session
                         if (!isNewSession) {
-                            loadAgentState(finalSessionId, agent);
+                            loadAgentState(runtimeContext, agent);
                         }
 
                         // Build user message
@@ -161,7 +170,6 @@ public class SubAgentTool implements AgentTool {
                                         .role(MsgRole.USER)
                                         .content(TextBlock.builder().text(message).build())
                                         .build();
-                        RuntimeContext runtimeContext = param.getRuntimeContext();
 
                         logger.debug(
                                 "AgentStateStore {} with agent '{}': {}",
@@ -210,7 +218,7 @@ public class SubAgentTool implements AgentTool {
                                         });
 
                         // Save state after execution
-                        return result.doOnSuccess(r -> saveAgentState(finalSessionId, agent));
+                        return result.doOnSuccess(r -> saveAgentState(runtimeContext, agent));
                     } catch (Exception e) {
                         logger.error("Error in session setup: {}", e.getMessage(), e);
                         return Mono.just(
@@ -240,18 +248,23 @@ public class SubAgentTool implements AgentTool {
      * {@link SubAgentConfig#getStateStore()} and merges it into the live agent's
      * {@link AgentState}. Errors are logged but do not interrupt execution.
      */
-    private void loadAgentState(String sessionId, Agent agent) {
-        if (!(agent instanceof ReActAgent ra) || ra.sessionLogEnabled()) {
+    private void loadAgentState(RuntimeContext context, Agent agent) {
+        if (!(agent instanceof ReActAgent ra) || ra.journalEnabled()) {
             return;
         }
         AgentStateStore subSession = config.getStateStore();
         if (subSession == null) {
             return;
         }
+        String sessionId = context.getSessionId();
         try {
             subSession
-                    .get(null, sessionId, "agent_state", AgentState.class)
-                    .ifPresent(loaded -> applyLoadedState(ra, loaded));
+                    .get(
+                            context.getUserId(),
+                            sessionId,
+                            ra.threadKey(context).stateEntry("agent_state"),
+                            AgentState.class)
+                    .ifPresent(loaded -> applyLoadedState(ra, context, loaded));
             logger.debug("Loaded sub-agent state for session: {}", sessionId);
         } catch (Exception e) {
             logger.warn(
@@ -263,16 +276,21 @@ public class SubAgentTool implements AgentTool {
      * Saves the live {@link AgentState} for the conversation identified by {@code sessionId} into
      * {@link SubAgentConfig#getStateStore()}. Errors are logged but do not interrupt execution.
      */
-    private void saveAgentState(String sessionId, Agent agent) {
-        if (!(agent instanceof ReActAgent ra) || ra.sessionLogEnabled()) {
+    private void saveAgentState(RuntimeContext context, Agent agent) {
+        if (!(agent instanceof ReActAgent ra) || ra.journalEnabled()) {
             return;
         }
         AgentStateStore subSession = config.getStateStore();
         if (subSession == null) {
             return;
         }
+        String sessionId = context.getSessionId();
         try {
-            subSession.save(null, sessionId, "agent_state", ra.getAgentState());
+            subSession.save(
+                    context.getUserId(),
+                    sessionId,
+                    ra.threadKey(context).stateEntry("agent_state"),
+                    ra.getAgentState(context));
             logger.debug("Saved sub-agent state for session: {}", sessionId);
         } catch (Exception e) {
             logger.warn(
@@ -280,8 +298,9 @@ public class SubAgentTool implements AgentTool {
         }
     }
 
-    private static void applyLoadedState(ReActAgent agent, AgentState loaded) {
-        AgentState live = agent.getAgentState();
+    private static void applyLoadedState(
+            ReActAgent agent, RuntimeContext context, AgentState loaded) {
+        AgentState live = agent.getAgentState(context);
         if (live == null) {
             return;
         }
@@ -292,6 +311,42 @@ public class SubAgentTool implements AgentTool {
         live.setCurIter(loaded.getCurIter());
         live.setShutdownInterrupted(loaded.isShutdownInterrupted());
         live.getToolContext().setActivatedGroups(loaded.getToolContext().getActivatedGroups());
+    }
+
+    private static RuntimeContext childContext(RuntimeContext parent, String sessionId) {
+        RuntimeContext child =
+                RuntimeContext.builder(parent == null ? RuntimeContext.empty() : parent)
+                        .sessionId(sessionId)
+                        .threadId(null)
+                        .turnId(null)
+                        .runId(null)
+                        .agentState(null)
+                        .build();
+        child.put(InvocationRecorder.CONTEXT_KEY, null);
+        child.put(InvocationRecorder.PARENT_KEY, null);
+        child.put(AgentExecutionHost.class, null);
+        child.put(AgentExecutionPosition.class, null);
+        child.put(ModelInvocation.class, null);
+        child.put(ExecutionIdentity.CONTEXT_KEY, null);
+        child.put(ToolUseBlock.class, null);
+        child.put(JournalExportSink.CONTEXT_KEY, null);
+        if (parent != null
+                && parent.get(JournalExportSink.CONTEXT_KEY) instanceof JournalExportSink sink)
+            child.put(JournalExportSink.CONTEXT_KEY, sink.forChild(sessionId));
+        if (parent != null
+                && parent.get(ExecutionIdentity.CONTEXT_KEY)
+                        instanceof ExecutionIdentity identity) {
+            var correlation = new HashMap<String, Object>();
+            correlation.put("parentSessionId", identity.sessionId());
+            correlation.put("parentThreadId", identity.threadId());
+            correlation.put("parentRunId", identity.runId());
+            if (identity.turnId() != null) correlation.put("parentTurnId", identity.turnId());
+            var recorder = InvocationRecorder.from(parent);
+            String stepId = recorder == null ? null : recorder.stepId();
+            if (stepId != null) correlation.put("parentStepId", stepId);
+            child.put(InvocationRecorder.PARENT_KEY, Map.copyOf(correlation));
+        }
+        return child;
     }
 
     /**

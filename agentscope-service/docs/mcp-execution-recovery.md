@@ -2,7 +2,7 @@
 
 [English](mcp-execution-recovery.en.md)
 
-AgentScope Service 恢复扩展 v1 通过现有 tools/list、tools/call 和 _meta，让新 Worker 查询原执行。
+Managed Agents 恢复扩展 v1 通过现有 tools/list、tools/call 和 _meta，让新 Worker 查询原执行。
 它不修改 AgentScope Java 二进制依赖。第三方 MCP 服务须实现相同约定；普通工具仍不会重放不确定操作。
 
 ## MCP 调用批次与统一完成通知
@@ -36,7 +36,7 @@ Worker 只通过现有 `TOOL_EVENTS` 发布父批次完成事件，完整结果�
 
 原始 TURNS 的 60 秒 Suspend、终态后的主动 ACK、Session settled sequence 和前驱校验保持不变。
 批次执行完成、完成消息 ACK 或恢复意图领取均不能提前放行 T2，必须等 T1 终态提交。
-部署先通过 schema job 追加 `managed-mcp-batch.sql`，为 Session Portal 与 Runtime 授予新增 `ma.mcp_batch_call` 表的 SELECT/INSERT/UPDATE/DELETE 权限，
+部署先通过 schema job 追加 `managed-mcp-batch.sql`，为 Agent Service 与 Runtime 授予新增 `ma.mcp_batch_call` 表的 SELECT/INSERT/UPDATE/DELETE 权限，
 再更新使用严格 schema 校验的 Java 服务；Worker 仍只访问私有执行状态。先完成 Worker 更新，再放行会提交批次的 Runtime 流量，
 升级期间避免旧 Worker/Runtime 接收新批次。
 本地回归覆盖双 MCP 调用的真实 Harness 恢复、跨 Runtime、部分结果接管、取消、结果先于/晚于挂起、无额外 Resume 消息、
@@ -47,7 +47,7 @@ Runtime 领取后恢复意图保留以及 T1/T2 顺序；远端验证需另外�
 可恢复工具在 Tool._meta 声明：
 
 ```json
-{"io.agentscope/execution-recovery":{"version":1,"queryTool":"managed_execution_get"}}
+{"io.agentcore.managed/execution-recovery":{"version":1,"queryTool":"managed_execution_get"}}
 ```
 
 同一服务必须提供 queryTool，声明 readOnlyHint=true。查询工具不加入模型工具目录。
@@ -55,7 +55,7 @@ Runtime 领取后恢复意图保留以及 T1/T2 顺序；远端验证需另外�
 首次调用的 _meta 由平台添加如下内容，用户元数据不能覆盖：
 
 ```json
-{"io.agentscope/execution-recovery":{"version":1,"execution_id":"mcp_exec_..."}}
+{"io.agentcore.managed/execution-recovery":{"version":1,"execution_id":"mcp_exec_..."}}
 ```
 
 标识由 Session 作用域和原 task.execution_id 派生，跨 Worker、连接和重投递不变。
@@ -89,7 +89,7 @@ Runtime 领取后恢复意图保留以及 T1/T2 顺序；远端验证需另外�
 
 ## Runtime 直接发现工具
 
-Brain 在推理前直接初始化 MCP 客户端并读取 `tools/list`，将描述固定在每 Turn 的
+Agent Harness Runtime 在推理前直接初始化 MCP 客户端并读取 `tools/list`，将描述固定在每 Turn 的
 `ma.mcp_catalog` 快照中。发现使用有界的阻塞线程和连接容量，遵守初始化/请求超时，等待响应时检查取消，
 连接在结束后关闭；不阻塞 Reactor I/O 线程。必需服务不可用仍拒绝运行，可选服务降级记录只在该 Turn 内固定，
 下一 Turn 重新发现。工具过滤、只读恢复查询声明、描述 hash 和显式 local 环境下的 stdio 限制保持一致。
@@ -102,7 +102,7 @@ Brain 在推理前直接初始化 MCP 客户端并读取 `tools/list`，将描�
 
 `TOOL_EXECUTE` 的成功回执表示不可变任务与封存配置已写入 `hands_execution`，不表示工具已经完成。
 回调只做持久受理与本地唤醒；数据库不可用时仍返回 Suspend。唤醒丢失、ACK 后退出或执行容量耗尽时，
-独立的有界 `ManagedHandsLoop` 从数据库恢复任务，不依赖执行命令的周期性 MQ 重投。
+独立的有界 `ManagedToolWorkerLoop` 从数据库恢复任务，不依赖执行命令的周期性 MQ 重投。
 
 执行器在整个后台执行期间持有 Redis 租约（默认 60 秒），每 15 秒续租，并以相同 worker_token
 刷新 `last_dispatched_at`。该时间同时用于恢复调度；旧 token 不能刷新新 owner 的恢复时间。
@@ -131,7 +131,7 @@ MCP HTTP 调用通过异步完成信号收取响应；连接准备、JDBC 结果
 ## Runtime Turn 的长挂起与主动 ACK
 
 等待工具或输入时，原始 `TURNS` 消息继续占据 Session 的 MQ FIFO 队首，默认返回
-60 秒 Suspend（`builder.managed.turn-suspend-seconds`）。工具结果仍经
+60 秒 Suspend（`managed-agents.runtime.turn-suspend-seconds`）。工具结果仍经
 `TOOL_EVENTS` 持久化，MCP 批次由持久恢复意图直接恢复；旧工具任务和输入等待仍通过独立 `TURN_RESUMES` 通道恢复；工具结果到达本身不会 ACK 原始 Turn。
 执行容量或租约竞争仍采用短重试，避免让短暂竞争变成长时间等待。
 
@@ -172,4 +172,4 @@ MQ 已接收但回执尚未落库时发生崩溃，恢复仍可能产生物理�
 
 部署时通过已有 schema job 追加 `managed-tool-publication-lease.sql`。迁移前停止所有旧 Runtime
 发布器，再启动兼容镜像；旧发布器不认识新租约字段，不能与新发布器混跑。已有待发送命令和成功
-回执均保留。Session Portal、Hands 的共享 schema 校验器也需要部署包含新迁移的兼容镜像。
+回执均保留。Agent Service、Tool Worker 的共享 schema 校验器也需要部署包含新迁移的兼容镜像。

@@ -85,7 +85,7 @@ def closing(state):
         status, duplicate = post(19084, endpoint, body, key)
         assert status in {200, 201, 202} and duplicate["id"] == receipt["id"] and duplicate["sequence"] == receipt["sequence"], (status, duplicate)
     path = write(state, "input-close", {"passed": True, "session": session["id"], "turn": turn["id"], "accepted": len(accepted), "contenders": results, "closing_probes": closing_probes, "warmup_turn": warmup["id"], "terminal": terminal, "receipts": receipts, "late": late})
-    print("PASS cross-Portal input/close boundary, all accepted inputs settled, retry after close", flush=True)
+    print("PASS cross-Agent Service input/close boundary, all accepted inputs settled, retry after close", flush=True)
     print(path, flush=True)
 
 
@@ -126,11 +126,11 @@ def reply(state):
     snapshot = replicas.request(19184, base + "/turns/" + first["id"] + "/snapshot")
     assert snapshot["resources"]["required_actions"]["data"] == [], snapshot
     events = replicas.request(19084, base + "/events?limit=256")
-    assert "brain-confirmed-hands-" + label in json.dumps(events), events
+    assert "harness-runtime-confirmed-tool-worker-" + label in json.dumps(events), events
     files = [path for path in (state / "sandbox").glob("*/side-effects.txt") if "start-" + label in path.read_text()]
     assert len(files) == 1 and files[0].read_text().splitlines() == ["start-" + label, "done-" + label], files
     path = write(state, "reply", {"passed": True, "session": session["id"], "first": first["id"], "second": second["id"], "action": action, "receipt": receipt, "events": events, "side_effect": str(files[0])})
-    print("PASS cross-Portal reply identity, same Turn continuation, next-Turn order, one tool execution", flush=True)
+    print("PASS cross-Agent Service reply identity, same Turn continuation, next-Turn order, one tool execution", flush=True)
     print(path, flush=True)
 
 

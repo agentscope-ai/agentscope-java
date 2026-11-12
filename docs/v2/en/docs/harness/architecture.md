@@ -8,7 +8,7 @@ zh_link: /v2/zh/docs/harness/architecture
 
 `ReActAgent` provides the reasoning loop, tools, permissions and conversation context APIs. Harness composes these capabilities with additional defaults and integrations. Both support `call` and `streamEvents`.
 
-Configure a shared `HarnessAgent.Builder` at startup, build a fresh instance for each direct request, and close it after execution. Stable identity and the same log backend preserve the conversation. See [Instance lifecycle](/v2/en/docs/building-blocks/agent#instance-lifecycle) for code and the shared-instance option. A session manager retains the Agent for background `AgentSession` execution.
+Configure a shared `HarnessAgent.Builder` at startup, build a fresh instance for each direct request, and close it after execution. Stable identity and the same log backend preserve the conversation. See [Instance lifecycle](/v2/en/docs/building-blocks/agent#instance-lifecycle) for code and the shared-instance option. A Durable adapter factory creates native Agents for managed invocations; Runtime owns persistent task scheduling.
 
 ## Core working principle
 
@@ -18,11 +18,13 @@ An execution loads the conversation state, builds model input, calls tools as ne
 
 - **Get a reply or invoke an Agent within a workflow**: use `call(input, ctx)`.
 - **Display live text and tool progress within the current request**: use `streamEvents(input, ctx)`.
-- **Keep tasks running in the background, with queueing, guidance and interrupted-task continuation**: use `AgentSession` from `agent.session(ctx)`.
+- **Run persistent background tasks with queueing, guidance and recovery**: use [DurableRuntime](/v2/en/docs/harness/durable).
 
-Direct calls support ongoing conversations and save state through the default Session Log and checkpoints. AgentSession also handles durable task acceptance, scheduling and pending-action association, so applications do not need to manage execution subscriptions for these operations. Both styles use the same Agent's model, tools and middleware configuration.
+Direct calls support ongoing conversations and save state through the default Thread journal and checkpoints. Durable handles persistent admission, Thread queues and interaction association. Harness supplies the same model, tools and middleware capabilities through the AgentScope adapter; it does not own another task scheduler.
 
-See [Agent](/v2/en/docs/building-blocks/agent) for direct calls and [Session operations, events and recovery](/v2/en/docs/harness/session-log) for background session workflows. Applications with an existing workflow scheduler can continue using direct calls; hosted HTTP integrations use the [Service Agent API](/v2/en/service/session-event-log).
+Ordinary calls do not create persistent Turns. Local subagents have their own Runs and execution counters, with parent Run/Step references for provenance. They do not inherit parent control objects or recovery positions. Durable manages the corresponding Thread/Turn when persistent tasks, background takeover and cross-process control are required.
+
+See [Agent](/v2/en/docs/building-blocks/agent) for direct calls and [Durable](/v2/en/docs/harness/durable) for background task workflows. Applications with an existing workflow scheduler can continue using direct calls; hosted HTTP integrations use the [Service Agent API](/v2/en/service/session-event-log).
 
 ## Core components
 
@@ -31,8 +33,8 @@ Configure capabilities and use session operations as your application needs them
 | Capability | What it solves | Configuration or operation | Detail |
 |---|---|---|---|
 | Workspace-driven persona | Persona, knowledge, subagent specs, skills, MCP allowlist all live as files | `.workspace(path)` | [Workspace](/v2/en/docs/harness/workspace) |
-| State and execution history | Full facts, checkpoints, cross-request/node recovery | EVENT_LOG by default; override sessionLogStore | [Session logs](/v2/en/docs/harness/session-log) |
-| Session task management | Background work, durable queueing, guidance and recovery | `agent.session(ctx)` | [Session operations](/v2/en/docs/harness/session-log) |
+| State and execution history | Full facts, checkpoints, cross-request/node recovery | journal mode by default; override threadJournalStore | [Session logs](/v2/en/docs/harness/session-log) |
+| Persistent tasks | Background work, queueing, guidance and recovery | `DurableRuntime` | [Durable](/v2/en/docs/harness/durable) |
 | Two-layer long-term memory | Facts in long conversations sediment into `MEMORY.md` | on by default; `.memory(...)` customizes prompts / trigger policy | [Memory](/v2/en/docs/harness/memory) |
 | Conversation compaction | History bounded; force-retry on real overflow | `.compaction(...)` | [Context management](/v2/en/docs/harness/context) |
 | Large tool-result offloading | >80K-char results moved to disk + placeholder | `.toolResultEviction(...)` | [Context management](/v2/en/docs/harness/context) |
@@ -49,14 +51,14 @@ Configure capabilities and use session operations as your application needs them
 Three layers exist; the framework moves data between them automatically.
 
 - **In-call state** — `AgentState` (conversation context, permission rules, Plan Mode state, tool state) plus `RuntimeContext` (`sessionId`, `userId`, sandbox handle, extras).
-- **Cross-call state** — Default recovery uses native checkpoints and applicable facts; full history remains and JSONL is exported only on demand. LEGACY use AgentStateStore; files, tasks and sandbox metadata retain their own backends.
+- **Cross-call state** — Default recovery uses native checkpoints and applicable facts; full history remains and JSONL is exported only on demand. snapshot mode use AgentStateStore; files, tasks and sandbox metadata retain their own backends.
 - **Long-term memory** — accumulated across sessions: `memory/YYYY-MM-DD.md` is append-only, periodically merged into `MEMORY.md` by a throttled background job; `MEMORY.md` loads once per call as reference context, not System instructions.
 
 Three invariants worth remembering:
 
 - Final requests are rebuilt each reasoning step, but workspace files load per call. Edits to AGENTS.md or MEMORY.md take effect on the next call without restarting.
 - Compaction, memory distillation, and background maintenance are throttled; they don't run every turn.
-- Core manages persistence: EVENT_LOG commits checkpoints; LEGACY save legacy state. Harness selects the default log backend.
+- Core manages persistence: journal mode commits checkpoints; snapshot mode save legacy state. Harness selects the default log backend.
 
 ## Adding your own middleware
 

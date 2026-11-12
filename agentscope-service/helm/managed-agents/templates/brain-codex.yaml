@@ -1,0 +1,93 @@
+{{- if and (not .Values.schema.only) (eq .Values.brain.type "codex") -}}
+{{- $name := include "service.name" . -}}
+{{- $config := index .Values "agent-harness-runtime" -}}
+{{- $codex := .Values.brain.codex -}}
+{{- $secret := required "brain.codex.existingSecret must name a dedicated Brain Secret" $codex.existingSecret -}}
+{{- if has $secret (list .Values.existingSecret .Values.schema.existingSecret .Values.data.existingSecret .Values.schema.dataExistingSecret .Values.runtime.mq.existingSecret .Values.objectStore.existingSecret .Values.queryStore.existingSecret) -}}
+{{- fail "Codex Brain Secret must differ from database, MQ, object-store and migration Secrets" -}}
+{{- end -}}
+{{- if not .Values.runtime.sessionQueue.enabled -}}
+{{- fail "Codex Brain requires runtime.sessionQueue.enabled=true" -}}
+{{- end -}}
+{{- if or (lt (int $codex.concurrency) 1) (gt (int $codex.concurrency) 64) -}}
+{{- fail "brain.codex.concurrency must be 1..64" -}}
+{{- end -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $name }}-agent-harness-runtime
+  labels:
+    {{- include "service.labels" . | nindent 4 }}
+    app.kubernetes.io/component: agent-harness-runtime
+spec:
+  replicas: {{ $config.replicas }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate: {maxSurge: 1, maxUnavailable: 0}
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      app.kubernetes.io/component: agent-harness-runtime
+  template:
+    metadata:
+      labels:
+        {{- include "service.labels" . | nindent 8 }}
+        app.kubernetes.io/component: agent-harness-runtime
+    spec:
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: {{ $codex.terminationGracePeriodSeconds }}
+      securityContext: {runAsNonRoot: true, runAsUser: 10001, runAsGroup: 10001, fsGroup: 10001}
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: agent-harness-runtime
+          image: {{ $config.image | default (printf "%s/managed-agents-brain-codex:%s" (required "imageRepository is required" .Values.imageRepository) ($codex.imageTag | default .Values.imageTag | default .Chart.AppVersion)) | quote }}
+          imagePullPolicy: {{ .Values.imagePullPolicy }}
+          securityContext:
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+            capabilities: {drop: [ALL]}
+          ports: [{name: http, containerPort: 8082}]
+          envFrom: [{secretRef: {name: {{ $secret | quote }}}}]
+          env:
+            - {name: PORT, value: "8082"}
+            - {name: SESSION_SERVICE_URL, value: "http://{{ $name }}-agent-service:8084/internal/session-service/v0"}
+            - {name: MANAGED_AGENTS_HARNESS_TYPE, value: {{ .Values.brain.type | quote }}}
+            {{- include "service.evaluationEnv" . | nindent 12 }}
+            - {name: BRAIN_CONCURRENCY, value: {{ $codex.concurrency | quote }}}
+            - {name: BRAIN_INLINE_WAIT_MS, value: {{ $codex.inlineWaitMs | quote }}}
+            - {name: CODEX_MODEL_PROVIDER, value: {{ $codex.modelProvider | quote }}}
+            - {name: CODEX_MODEL_BASE_URL, value: {{ $codex.modelBaseUrl | quote }}}
+            - {name: HOME, value: /tmp/brain}
+          startupProbe: {httpGet: {path: /healthz, port: http}, periodSeconds: 2, failureThreshold: 30}
+          livenessProbe: {httpGet: {path: /healthz, port: http}, periodSeconds: 15}
+          readinessProbe: {httpGet: {path: /readyz, port: http}, periodSeconds: 5}
+          volumeMounts:
+            - {name: workspace, mountPath: /workspace}
+            - {name: tmp, mountPath: /tmp}
+          resources:
+            {{- toYaml $config.resources | nindent 12 }}
+      volumes:
+        - {name: workspace, emptyDir: {}}
+        - {name: tmp, emptyDir: {}}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $name }}-agent-harness-runtime
+spec:
+  selector:
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/component: agent-harness-runtime
+  ports: [{name: http, port: 8082, targetPort: http}]
+{{- end }}

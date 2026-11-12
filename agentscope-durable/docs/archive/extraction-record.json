@@ -1,0 +1,30 @@
+{
+  "sourceCommit": "77df8dee65008f0550fe20a900565210355e4eb4",
+  "sources": [
+    {
+      "path": "managed-agents/common/src/main/java/io/agentcore/managed/server/runtime/managed/ManagedToolWorkStore.java",
+      "sha256": "585a1692ef0ab8d4d25f6593577cc080316a7b3361df9ad1e75f151f79b1e5e1"
+    },
+    {
+      "path": "managed-agents/common/src/main/java/io/agentcore/managed/server/runtime/managed/ManagedShardWakeup.java",
+      "sha256": "a37328092b6fe677def3447443678d1e316510c7d5977dc6479e545f760a16d7"
+    },
+    {
+      "path": "managed-agents/agent-service/src/main/java/io/agentcore/managed/server/runtime/managed/SessionCommitTransactions.java",
+      "sha256": "3c6f9a645085597186601cbc20b692d540e24583a36f2f5b1560e70ffabd6881"
+    },
+    {
+      "path": "managed-agents/tool-worker/src/main/java/io/agentcore/managed/server/runtime/managed/ManagedToolWorkerLoop.java",
+      "sha256": "35a4b2b66e3ca0293d6eee701ea51d384b4ad7a26293b9a8a3909071efb9639b"
+    },
+    {
+      "path": "managed-agents/tool-worker/src/main/java/io/agentcore/managed/server/runtime/managed/ManagedToolWorkerCommands.java",
+      "sha256": "be58fe404da2a40cb035b59e502b9177ad847579dda4789b7070a415630a3f9a"
+    },
+    {
+      "path": "managed-agents/tool-worker/src/main/resources/managed-tools.py",
+      "sha256": "9aa6d42796461d82de295f15bf8a2ea410f8f2f3a22aae30bc4dc2f74d489016"
+    }
+  ],
+  "note": "Original import manifest remains historical. Current neutral state machines reuse reliability boundaries without platform wire/schema compatibility. Selected Sandbox operation journal is adapted into the durable-sandbox extension."
+}

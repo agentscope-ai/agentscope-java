@@ -1,0 +1,182 @@
+{
+  "fencedRequest": {
+    "protocolVersion": "0.1.0",
+    "scope": {
+      "tenant": "t1",
+      "namespace": "demo",
+      "sessionId": "s1"
+    },
+    "turnId": "turn1",
+    "fence": {
+      "owner": {
+        "instanceId": "brain-a",
+        "incarnationId": "boot-a"
+      },
+      "epoch": "7",
+      "executionToken": "token7"
+    }
+  },
+  "nextRequest": {
+    "protocolVersion": "0.1.0",
+    "harnessType": "pi",
+    "limit": 4
+  },
+  "codexNextRequest": {
+    "protocolVersion": "0.1.0",
+    "harnessType": "codex",
+    "limit": 4
+  },
+  "nextResponse": {
+    "protocolVersion": "0.1.0",
+    "deliveries": [
+      {
+        "scope": {
+          "tenant": "t1",
+          "namespace": "demo",
+          "sessionId": "s1"
+        },
+        "turnId": "turn1",
+        "trigger": {
+          "kind": "ready",
+          "messageId": "ready1",
+          "queueVersion": "1"
+        }
+      }
+    ]
+  },
+  "inputsResponse": {
+    "protocolVersion": "0.1.0",
+    "scope": {
+      "tenant": "t1",
+      "namespace": "demo",
+      "sessionId": "s1"
+    },
+    "turnId": "turn1",
+    "pendingInputs": []
+  },
+  "closeReceipt": {
+    "protocolVersion": "0.1.0",
+    "scope": {
+      "tenant": "t1",
+      "namespace": "demo",
+      "sessionId": "s1"
+    },
+    "turnId": "turn1",
+    "throughSequence": "0"
+  },
+  "reserveRequest": {
+    "protocolVersion": "0.1.0",
+    "scope": {
+      "tenant": "t1",
+      "namespace": "demo",
+      "sessionId": "s1"
+    },
+    "turnId": "turn1",
+    "fence": {
+      "owner": {
+        "instanceId": "brain-a",
+        "incarnationId": "boot-a"
+      },
+      "epoch": "7",
+      "executionToken": "token7"
+    },
+    "modelCallId": "model-1",
+    "model": "gpt-4.1"
+  },
+  "reserveReceipt": {
+    "protocolVersion": "0.1.0",
+    "scope": {
+      "tenant": "t1",
+      "namespace": "demo",
+      "sessionId": "s1"
+    },
+    "turnId": "turn1",
+    "modelCallId": "model-1",
+    "outcome": "reserved"
+  },
+  "configurationResponse": {
+    "protocolVersion": "0.1.0",
+    "scope": {
+      "tenant": "t1",
+      "namespace": "demo",
+      "sessionId": "s1"
+    },
+    "turnId": "turn1",
+    "configuration": {
+      "prompt": "Summarize the workspace",
+      "system": "Use the declared tools.",
+      "maxModelCalls": 20,
+      "cwd": "/workspace",
+      "model": {
+        "provider": "openai",
+        "id": "gpt-4.1"
+      },
+      "toolConfiguration": {
+        "scope": {
+          "tenant": "t1",
+          "namespace": "demo",
+          "sessionId": "s1"
+        },
+        "backendId": "objects",
+        "key": "fixture/config",
+        "sha256": "4a180ef66750c0827c66e67fdda6058985bf659ca1505a3a05bce84c2115098d",
+        "size": "21",
+        "mediaType": "application/json",
+        "formatVersion": "config-v1"
+      },
+      "tools": []
+    },
+    "identity": {
+      "formatVersion": "managed-effective-agent-v1",
+      "harnessType": "pi",
+      "agentId": "agent1",
+      "agentVersion": 3,
+      "sourceDigest": "147039649c4750e801a3c47449ded5350e5144762ff4644f80d35c32d260cdcd",
+      "effectiveDigest": "3cd086845e4ccc17f004ec645ae2bd93988a71ef684435ca7c2e0fe7ab1787db",
+      "configurationDigest": "daeaec4ceeb1d3de182b7fa37388f2d9d93494f0a849653be187a56d328ca8fd"
+    }
+  },
+  "javaNextRequest": {
+    "protocolVersion": "0.1.0",
+    "harnessType": "agentscope-java",
+    "limit": 4
+  },
+  "releaseReceipt": {
+    "protocolVersion": "0.1.0",
+    "scope": {
+      "tenant": "t1",
+      "namespace": "demo",
+      "sessionId": "s1"
+    },
+    "turnId": "turn1",
+    "released": true
+  },
+  "notification": {
+    "scope": {
+      "tenant": "t1",
+      "namespace": "demo",
+      "sessionId": "s1"
+    },
+    "turnId": "turn1",
+    "trigger": {
+      "kind": "ready",
+      "messageId": "ready1",
+      "queueVersion": "1"
+    }
+  },
+  "resourceRequest": {
+    "scope": {
+      "tenant": "t1",
+      "namespace": "demo",
+      "sessionId": "s1"
+    },
+    "operation": "memory-get",
+    "storeId": "store1",
+    "path": "memory.md"
+  },
+  "resourceResponse": {
+    "path": "memory.md",
+    "content": "Remember context",
+    "version": 1
+  }
+}

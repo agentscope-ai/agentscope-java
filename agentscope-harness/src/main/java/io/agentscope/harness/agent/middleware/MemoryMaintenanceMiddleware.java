@@ -17,11 +17,13 @@ package io.agentscope.harness.agent.middleware;
 
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.AgentBase;
+import io.agentscope.core.agent.RunOutcome;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.event.AgentEvent;
+import io.agentscope.core.journal.InvocationRecorder;
+import io.agentscope.core.journal.JournalException;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.middleware.AgentInput;
-import io.agentscope.core.session.SessionRecorder;
 import io.agentscope.harness.agent.IsolationScope;
 import io.agentscope.harness.agent.coordination.LocalPeriodicGate;
 import io.agentscope.harness.agent.coordination.PeriodicGate;
@@ -32,6 +34,7 @@ import io.agentscope.harness.agent.memory.MemoryBackgroundTasks;
 import io.agentscope.harness.agent.memory.MemoryConsolidator;
 import io.agentscope.harness.agent.workspace.WorkspaceConstants;
 import io.agentscope.harness.agent.workspace.WorkspaceManager;
+import java.time.Clock;
 import java.time.Duration;
 import java.time.LocalDate;
 import java.util.EnumSet;
@@ -169,14 +172,15 @@ public class MemoryMaintenanceMiddleware implements HarnessRuntimeMiddleware {
     @Override
     public Mono<Void> onAgentFinish(Agent agent, RuntimeContext rc, Msg result) {
         if (!Boolean.TRUE.equals(rc.get(MemoryFlushMiddleware.INLINE_CONTEXT_KEY))
-                || SessionRecorder.from(rc) == null
-                || !"completed".equals(SessionRecorder.outcome(result.getGenerateReason())))
+                || InvocationRecorder.from(rc) == null
+                || RunOutcome.fromResult(result).status() != RunOutcome.Status.COMPLETED)
             return Mono.empty();
         return Mono.defer(() -> doMaintenance(rc))
                 .subscribeOn(Schedulers.boundedElastic())
                 .contextWrite(context -> context.put(AgentBase.RUNTIME_CONTEXT_KEY, rc))
                 .onErrorResume(
                         error -> {
+                            if (JournalException.causedBy(error)) return Mono.error(error);
                             log.warn("Memory maintenance failed: {}", error.getMessage());
                             return Mono.empty();
                         });
@@ -236,7 +240,10 @@ public class MemoryMaintenanceMiddleware implements HarnessRuntimeMiddleware {
             return;
         }
 
-        LocalDate cutoff = LocalDate.now().minusDays(dailyFileRetentionDays);
+        Clock clock = rc == null ? null : rc.get(Clock.class);
+        LocalDate cutoff =
+                LocalDate.now(clock == null ? Clock.systemDefaultZone() : clock)
+                        .minusDays(dailyFileRetentionDays);
         for (FileInfo fi : glob.matches()) {
             if (fi.isDirectory()) {
                 continue;

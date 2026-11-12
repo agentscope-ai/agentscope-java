@@ -37,6 +37,7 @@ import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.AgentRun;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.event.AgentEvent;
+import io.agentscope.core.journal.InvocationRecorder;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
@@ -46,8 +47,6 @@ import io.agentscope.core.model.ExecutionConfig;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.Model;
 import io.agentscope.core.model.ToolSchema;
-import io.agentscope.core.session.SessionHistoryMode;
-import io.agentscope.core.session.SessionRecorder;
 import io.agentscope.core.shutdown.GracefulShutdownMiddleware;
 import io.agentscope.core.skill.SkillFilter;
 import io.agentscope.core.state.AgentState;
@@ -63,6 +62,7 @@ import io.agentscope.harness.agent.filesystem.local.LocalFilesystem;
 import io.agentscope.harness.agent.filesystem.remote.store.InMemoryStore;
 import io.agentscope.harness.agent.filesystem.sandbox.SandboxBackedFilesystem;
 import io.agentscope.harness.agent.filesystem.spec.RemoteFilesystemSpec;
+import io.agentscope.harness.agent.journal.WorkspaceThreadJournalStore;
 import io.agentscope.harness.agent.memory.MemoryConfig;
 import io.agentscope.harness.agent.memory.compaction.CompactionConfig;
 import io.agentscope.harness.agent.middleware.AgentTraceMiddleware;
@@ -71,7 +71,6 @@ import io.agentscope.harness.agent.middleware.WorkspaceContextMiddleware;
 import io.agentscope.harness.agent.sandbox.SandboxAcquireResult;
 import io.agentscope.harness.agent.sandbox.SandboxContext;
 import io.agentscope.harness.agent.sandbox.SandboxException;
-import io.agentscope.harness.agent.session.WorkspaceSessionLogStore;
 import io.agentscope.harness.agent.subagent.AgentSpecLoader;
 import io.agentscope.harness.agent.subagent.SubagentDeclaration;
 import io.agentscope.harness.agent.subagent.WorkspaceMode;
@@ -167,7 +166,7 @@ class HarnessAgentTest {
                         .toList();
         assertFalse(toolNames.contains("memory_search"));
         assertFalse(toolNames.contains("memory_get"));
-        assertFalse(toolNames.contains("session_search"));
+        assertFalse(toolNames.contains("thread_search"));
     }
 
     @Test
@@ -207,7 +206,7 @@ class HarnessAgentTest {
         try (HarnessAgent agent =
                 HarnessAgent.builder()
                         .name("t")
-                        .sessionHistoryMode(SessionHistoryMode.LEGACY)
+                        .journalEnabled(false)
                         .model(stubModel("ok"))
                         .workspace(workspace)
                         .abstractFilesystem(new LocalFilesystem(workspace))
@@ -342,8 +341,8 @@ class HarnessAgentTest {
                         .model(model)
                         .workspace(workspace)
                         .filesystem(spec)
-                        .sessionLogStore(
-                                new WorkspaceSessionLogStore(
+                        .threadJournalStore(
+                                new WorkspaceThreadJournalStore(
                                         new LocalFilesystem(workspace.resolve("journal"))))
                         .artifactDeliveryTarget((rc, request) -> ArtifactDeliveryResult.success())
                         .build();
@@ -368,8 +367,8 @@ class HarnessAgentTest {
                         .model(model)
                         .workspace(workspace)
                         .filesystem(spec)
-                        .sessionLogStore(
-                                new WorkspaceSessionLogStore(
+                        .threadJournalStore(
+                                new WorkspaceThreadJournalStore(
                                         new LocalFilesystem(workspace.resolve("journal"))))
                         .disableFilesystemTools()
                         .artifactDeliveryTarget((rc, request) -> ArtifactDeliveryResult.success())
@@ -648,7 +647,7 @@ class HarnessAgentTest {
         assertEquals(source.getSessionId(), seen.get().getSessionId());
         assertSame(sandboxContext, seen.get().get(SandboxContext.class));
         assertSame(agentFilesystem, seen.get().get(AbstractFilesystem.class));
-        assertNotNull(SessionRecorder.from(seen.get()));
+        assertNotNull(InvocationRecorder.from(seen.get()));
     }
 
     @Test
@@ -665,8 +664,8 @@ class HarnessAgentTest {
                         .model(stubModel("done"))
                         .workspace(workspace)
                         .filesystem(spec)
-                        .sessionLogStore(
-                                new WorkspaceSessionLogStore(
+                        .threadJournalStore(
+                                new WorkspaceThreadJournalStore(
                                         new LocalFilesystem(workspace.resolve("journal"))))
                         .middleware(
                                 new MiddlewareBase() {
@@ -703,7 +702,7 @@ class HarnessAgentTest {
                 assertEquals(AgentRun.Status.RUNNING, run.status());
                 assertNotNull(active.get().get(SandboxAcquireResult.class));
                 SandboxAcquireResult acquired = active.get().get(SandboxAcquireResult.class);
-                var log = agent.sessionLog(active.get());
+                var log = agent.threadJournal(active.get());
                 assertTrue(run.cancel());
                 Flux.interval(Duration.ofMillis(10))
                         .filter(ignored -> acquired.isReleased() && log.head().owner() == null)
@@ -743,8 +742,8 @@ class HarnessAgentTest {
                         .model(model)
                         .workspace(workspace.toAbsolutePath().normalize().toString())
                         .filesystem(spec)
-                        .sessionLogStore(
-                                new WorkspaceSessionLogStore(
+                        .threadJournalStore(
+                                new WorkspaceThreadJournalStore(
                                         new LocalFilesystem(workspace.resolve("journal"))))
                         .middleware(
                                 new MiddlewareBase() {

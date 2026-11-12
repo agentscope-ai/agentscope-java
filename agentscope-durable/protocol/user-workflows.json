@@ -1,0 +1,437 @@
+{
+  "schemaVersion": "1",
+  "description": "Language-neutral public operation flow; $turn binds the admitted turnId. The same steps run locally and through public HTTP.",
+  "steps": [
+    {
+      "request": {
+        "version": "durable.v1",
+        "operation": "createSession",
+        "payload": {
+          "session": {
+            "namespace": "vectors",
+            "sessionId": "admission"
+          },
+          "definition": "agent",
+          "metadata": null
+        }
+      },
+      "expect": {
+        "/key": {
+          "namespace": "vectors",
+          "sessionId": "admission"
+        }
+      }
+    },
+    {
+      "request": {
+        "version": "durable.v1",
+        "operation": "submit",
+        "payload": {
+          "session": {
+            "namespace": "vectors",
+            "sessionId": "admission"
+          },
+          "requestId": "one",
+          "input": {
+            "schemaVersion": "1",
+            "content": [
+              {
+                "type": "text",
+                "text": "hello"
+              }
+            ]
+          },
+          "threadId": "main"
+        }
+      },
+      "expect": {
+        "/requestId": "one"
+      },
+      "captureTurn": true
+    },
+    {
+      "request": {
+        "version": "durable.v1",
+        "operation": "submit",
+        "payload": {
+          "session": {
+            "namespace": "vectors",
+            "sessionId": "admission"
+          },
+          "requestId": "one",
+          "input": {
+            "schemaVersion": "1",
+            "content": [
+              {
+                "type": "text",
+                "text": "hello"
+              }
+            ]
+          },
+          "threadId": "main"
+        }
+      },
+      "expect": {
+        "/turnId": "$turn"
+      }
+    },
+    {
+      "request": {
+        "version": "durable.v1",
+        "operation": "getTurn",
+        "payload": {
+          "session": {
+            "namespace": "vectors",
+            "sessionId": "admission"
+          },
+          "turnId": "$turn",
+          "threadId": "main"
+        }
+      },
+      "expect": {
+        "/status": "QUEUED",
+        "/revision": 0
+      }
+    },
+    {
+      "request": {
+        "version": "durable.v1",
+        "operation": "history",
+        "payload": {
+          "session": {
+            "namespace": "vectors",
+            "sessionId": "admission"
+          },
+          "cursor": null,
+          "limit": 10,
+          "threadId": "main"
+        }
+      },
+      "expect": {
+        "/items/0/inputKind": "submit",
+        "/items/0/message/role": "user",
+        "/items/0/requestId": "one"
+      }
+    },
+    {
+      "request": {
+        "version": "durable.v1",
+        "operation": "events",
+        "payload": {
+          "session": {
+            "namespace": "vectors",
+            "sessionId": "admission"
+          },
+          "cursor": null,
+          "limit": 10
+        }
+      },
+      "expect": {
+        "/events/0/type": "session.created",
+        "/events/0/threadId": null,
+        "/events/1/type": "thread.created",
+        "/events/1/threadId": "main",
+        "/events/2/type": "turn.queued",
+        "/events/3/type": "message.completed",
+        "/events/3/turnId": "$turn"
+      }
+    },
+    {
+      "request": {
+        "version": "durable.v1",
+        "operation": "control",
+        "payload": {
+          "session": {
+            "namespace": "vectors",
+            "sessionId": "admission"
+          },
+          "threadId": "main",
+          "command": {
+            "turnId": "$turn",
+            "requestId": "no-pause",
+            "kind": "RESUME",
+            "target": null,
+            "value": null,
+            "expectedRevision": 0
+          }
+        }
+      },
+      "error": "CONFLICT"
+    },
+    {
+      "request": {
+        "version": "durable.v1",
+        "operation": "control",
+        "payload": {
+          "session": {
+            "namespace": "vectors",
+            "sessionId": "admission"
+          },
+          "threadId": "main",
+          "command": {
+            "turnId": "$turn",
+            "requestId": "pause",
+            "kind": "PAUSE",
+            "target": null,
+            "value": null,
+            "expectedRevision": 0
+          }
+        }
+      },
+      "expect": {
+        "/operation": "PAUSE",
+        "/status": "accepted"
+      }
+    },
+    {
+      "request": {
+        "version": "durable.v1",
+        "operation": "control",
+        "payload": {
+          "session": {
+            "namespace": "vectors",
+            "sessionId": "admission"
+          },
+          "threadId": "main",
+          "command": {
+            "turnId": "$turn",
+            "requestId": "pause",
+            "kind": "PAUSE",
+            "target": null,
+            "value": null,
+            "expectedRevision": 0
+          }
+        }
+      },
+      "expect": {
+        "/operation": "PAUSE",
+        "/status": "accepted"
+      }
+    },
+    {
+      "request": {
+        "version": "durable.v1",
+        "operation": "getTurn",
+        "payload": {
+          "session": {
+            "namespace": "vectors",
+            "sessionId": "admission"
+          },
+          "threadId": "main",
+          "turnId": "$turn"
+        }
+      },
+      "expect": {
+        "/status": "PAUSED",
+        "/revision": 2
+      }
+    },
+    {
+      "request": {
+        "version": "durable.v1",
+        "operation": "control",
+        "payload": {
+          "session": {
+            "namespace": "vectors",
+            "sessionId": "admission"
+          },
+          "threadId": "main",
+          "command": {
+            "turnId": "$turn",
+            "requestId": "old-wait-key",
+            "kind": "RESUME",
+            "target": "x.wait",
+            "value": null,
+            "expectedRevision": 2
+          }
+        }
+      },
+      "error": "INVALID"
+    },
+    {
+      "request": {
+        "version": "durable.v1",
+        "operation": "control",
+        "payload": {
+          "session": {
+            "namespace": "vectors",
+            "sessionId": "admission"
+          },
+          "threadId": "main",
+          "command": {
+            "turnId": "$turn",
+            "requestId": "stale",
+            "kind": "RESUME",
+            "target": null,
+            "value": null,
+            "expectedRevision": 0
+          }
+        }
+      },
+      "error": "CONFLICT"
+    },
+    {
+      "request": {
+        "version": "durable.v1",
+        "operation": "control",
+        "payload": {
+          "session": {
+            "namespace": "vectors",
+            "sessionId": "admission"
+          },
+          "threadId": "main",
+          "command": {
+            "turnId": "$turn",
+            "requestId": "resume",
+            "kind": "RESUME",
+            "target": null,
+            "value": null,
+            "expectedRevision": 2
+          }
+        }
+      },
+      "expect": {
+        "/operation": "RESUME",
+        "/status": "accepted"
+      }
+    },
+    {
+      "request": {
+        "version": "durable.v1",
+        "operation": "control",
+        "payload": {
+          "session": {
+            "namespace": "vectors",
+            "sessionId": "admission"
+          },
+          "threadId": "main",
+          "command": {
+            "turnId": "$turn",
+            "requestId": "resume",
+            "kind": "RESUME",
+            "target": null,
+            "value": null,
+            "expectedRevision": 2
+          }
+        }
+      },
+      "expect": {
+        "/operation": "RESUME",
+        "/status": "accepted"
+      }
+    },
+    {
+      "request": {
+        "version": "durable.v1",
+        "operation": "getTurn",
+        "payload": {
+          "session": {
+            "namespace": "vectors",
+            "sessionId": "admission"
+          },
+          "threadId": "main",
+          "turnId": "$turn"
+        }
+      },
+      "expect": {
+        "/status": "QUEUED",
+        "/revision": 3
+      }
+    },
+    {
+      "request": {
+        "version": "durable.v1",
+        "operation": "control",
+        "payload": {
+          "session": {
+            "namespace": "vectors",
+            "sessionId": "admission"
+          },
+          "command": {
+            "turnId": "$turn",
+            "requestId": "cancel",
+            "kind": "CANCEL",
+            "target": null,
+            "value": null,
+            "expectedRevision": 0
+          },
+          "threadId": "main"
+        }
+      },
+      "expect": {
+        "/operation": "CANCEL",
+        "/status": "accepted"
+      }
+    },
+    {
+      "request": {
+        "version": "durable.v1",
+        "operation": "getTurn",
+        "payload": {
+          "session": {
+            "namespace": "vectors",
+            "sessionId": "admission"
+          },
+          "turnId": "$turn",
+          "threadId": "main"
+        }
+      },
+      "expect": {
+        "/status": "CANCELLED"
+      }
+    },
+    {
+      "request": {
+        "version": "durable.v1",
+        "operation": "submit",
+        "payload": {
+          "session": {
+            "namespace": "vectors",
+            "sessionId": "admission"
+          },
+          "requestId": "one",
+          "input": {
+            "schemaVersion": "1",
+            "content": [
+              {
+                "type": "text",
+                "text": "changed"
+              }
+            ]
+          },
+          "threadId": "main"
+        }
+      },
+      "error": "CONFLICT"
+    },
+    {
+      "request": {
+        "version": "durable.v1",
+        "operation": "getSession",
+        "payload": {
+          "session": {
+            "namespace": "vectors",
+            "sessionId": "admission"
+          },
+          "unexpected": true
+        }
+      },
+      "error": "INVALID"
+    },
+    {
+      "request": {
+        "version": "durable.v1",
+        "operation": "claim",
+        "payload": {
+          "session": {
+            "namespace": "vectors",
+            "sessionId": "admission"
+          },
+          "owner": "forbidden",
+          "duration": 1000
+        }
+      },
+      "error": "INVALID"
+    }
+  ]
+}

@@ -594,8 +594,8 @@ public class LocalFilesystem implements AbstractFilesystem {
     }
 
     @Override
-    public io.agentscope.core.session.AtomicSessionStorage sessionStorage(RuntimeContext rc) {
-        return new io.agentscope.harness.agent.session.LocalSessionStorage(
+    public io.agentscope.core.journal.AtomicJournalStorage journalStorage(RuntimeContext rc) {
+        return new io.agentscope.harness.agent.journal.LocalJournalStorage(
                 resolvePath(rc, ".").resolve(".agentscope-runtime"));
     }
 

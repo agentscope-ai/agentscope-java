@@ -1,0 +1,15 @@
+# Optional, temporary VPC-only ingress for PTS; selects both existing Gateway replicas.
+apiVersion: v1
+kind: Service
+metadata:
+  name: managed-agents-pts-gateway
+  namespace: agencore-ma
+  annotations:
+    service.beta.kubernetes.io/alibaba-cloud-loadbalancer-address-type: intranet
+    service.beta.kubernetes.io/alibaba-cloud-loadbalancer-vswitch-id: vsw-bp13l755rjruryev21jn2
+spec:
+  type: LoadBalancer
+  selector:
+    app.kubernetes.io/component: gateway
+    app.kubernetes.io/instance: ma
+  ports: [{name: http, port: 80, targetPort: http}]

@@ -25,7 +25,7 @@ import io.agentscope.claw2.web.catalog.AgentCatalogService;
 import io.agentscope.claw2.web.session.SessionReadStateStore;
 import io.agentscope.claw2.web.session.SessionTurnParser;
 import io.agentscope.core.agent.RuntimeContext;
-import io.agentscope.core.session.SessionTranscriptExport;
+import io.agentscope.core.journal.ThreadTranscriptExport;
 import io.agentscope.harness.agent.HarnessAgent;
 import io.agentscope.harness.agent.gateway.MsgContext;
 import io.agentscope.harness.agent.gateway.channel.chatui.ChatUiChannel;
@@ -247,7 +247,7 @@ public class SessionController {
         if (ha != null && entry.kind() == SessionKind.MAIN) {
             RuntimeContext rc =
                     RuntimeContext.builder().userId(null).sessionId(entry.sessionId()).build();
-            return SessionTranscriptExport.jsonl(ha.sessionTranscript(rc));
+            return ThreadTranscriptExport.jsonl(ha.threadTranscript(rc));
         }
         HistoryResult raw = sessionAgentManager.history(entry.sessionKey(), 0);
         return raw != null && raw.error() == null && raw.content() != null ? raw.content() : "";

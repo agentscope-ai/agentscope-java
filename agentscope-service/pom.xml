@@ -20,26 +20,26 @@
     <modelVersion>4.0.0</modelVersion>
 
     <parent>
-        <groupId>io.agentscope</groupId>
-        <artifactId>agentscope-parent</artifactId>
+        <groupId>io.agentcore.managed</groupId>
+        <artifactId>managed-agents-parent</artifactId>
         <version>${revision}</version>
         <relativePath>../pom.xml</relativePath>
     </parent>
 
-    <groupId>io.agentscope</groupId>
-    <artifactId>agentscope-service</artifactId>
+    <groupId>io.agentcore.managed</groupId>
+    <artifactId>managed-agents-platform</artifactId>
     <packaging>pom</packaging>
 
-    <name>AgentScope Java - Service</name>
+    <name>Managed Agents</name>
     <description>Agent service platform: Go control plane with orchestration and scheduling, Java execution services</description>
 
     <modules>
-        <module>service-client</module>
-        <module>service-common</module>
-        <module>service-session-portal</module>
-        <module>service-hands</module>
-        <module>service-gateway</module>
-        <module>service-dataplane</module>
+        <module>java-client</module>
+        <module>common</module>
+        <module>agent-service</module>
+        <module>tool-worker</module>
+        <module>gateway</module>
+        <module>agent-harness-runtime/java</module>
     </modules>
 
     <properties>

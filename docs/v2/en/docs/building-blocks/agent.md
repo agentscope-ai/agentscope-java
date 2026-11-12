@@ -30,7 +30,7 @@ Both `ReActAgent` and `HarnessAgent` support structured output (`call(msgs, stru
 | --- | --- |
 | Replies, structured extraction or one step in a workflow | `agent.call(input, ctx)` |
 | Incremental text and tool progress within the current request | `agent.streamEvents(input, ctx)` |
-| Background execution, durable queueing, guidance during work or interrupted-task continuation | Session operations from `agent.session(ctx)`, available on HarnessAgent |
+| Background execution, durable queueing and recovery | Session/Thread/Turn operations from `DurableRuntime` |
 
 Both `call` and `streamEvents` support ongoing conversations, and each call can include multiple reasoning steps and tool calls. With the default HarnessAgent configuration, both also save Session Log and checkpoints. Continue using direct calls if you only need conversation memory or history queries.
 
@@ -77,7 +77,7 @@ A new instance does not mean a new conversation. Harness restores committed stat
 
 **Sharing an Agent instance is also supported.** The execution engine is stateless, with session state addressed by identity. The application closes a shared instance at shutdown. Within one instance, the execution gate serializes direct calls for the same user/session while different sessions can run concurrently. Instances still own caches, execution gates and background resources; stateless does not mean lifecycle-free. The examples below use the recommended per-request pattern.
 
-Background `AgentSession`, Channel and hosted runtimes are owned by their managers. Do not close their Agent when a submission request returns. Interrupting a direct call also requires its running instance; constructing another Agent cannot interrupt the old instance's execution.
+Durable and Channel hosts own their Agent lifecycles. Do not close a hosted Agent when a submission request returns. Interrupting a direct call requires its active invocation handle or running instance; constructing another Agent cannot interrupt it.
 
 ## Configuring an agent
 
@@ -268,21 +268,23 @@ return Mono.using(
 
 For a streaming HTTP response, use `Flux.using(agentBuilder::build, agent -> agent.streamEvents(input, ctx), ReActAgent::close)`. Let the web framework subscribe; do not close the Agent before subscription.
 
-Different sessions can run concurrently. Per-instance execution gates do not coordinate other instances. Order requests to the same conversation in an application queue, or use an `AgentSession` owned by a background manager. Native journal fencing prevents competing writes but does not provide cross-instance FIFO queueing; a legacy `stateStore` alone is not a distributed execution lock.
+Different Threads can execute concurrently. Per-instance execution gates do not coordinate other instances. Use an application queue or Durable to serialize persistent tasks in one Thread. Native journal fencing prevents conflicting writes; it does not provide autonomous FIFO scheduling.
 
 The full Spring Boot example is `agentscope-examples/documentation/.../streaming/StreamingWebExample.java`.
 
 ## Execution control in session applications
 
-Use `AgentSession` when a chat product needs work to continue after the page closes, durable task queueing, or coordinated recovery and pending-action handling. Ordinary conversations, streaming interfaces and applications managing their own HITL flow can continue using direct calls.
+Use [Durable](/v2/en/docs/harness/durable) for background work, persistent task queues and recovery. Core/Harness own individual invocations and native state; they do not provide a second task dispatcher. Direct calls remain available for ordinary conversations and application-managed HITL.
 
-The session accepts new tasks through `submit`, receives guidance through `steer` / `inject`, and continues existing tasks through `respond` / `resume`. The framework owns background execution; frontends read snapshots and durable events. See the [session guide](/v2/en/docs/harness/session-log) for the complete workflow.
+Submit a Turn through its DurableSession or DurableThread. Guidance and responses target that Turn through `steer`, `inject` and `respond`. Runtime owns background execution; frontends read public snapshots and committed events through the [Durable API](/v2/en/docs/harness/durable).
 
 Choose direct calls or session operations to drive a given conversation; read-only history access can be shared. Observe an already submitted task by reading its events. Calling `streamEvents` would start another execution.
 
 <Accordion title="Advanced: own a single execution">
 
 `ReActAgent` and `HarnessAgent` provide `prepareRun(messages, context)` for events and `prepareCall(messages, context)` for the final reply. Both return an `AgentRun<T>` with a unique `runId()`. Preparing a handle does not execute the agent; subscribe once to `stream()` to start it.
+
+Direct calls leave `turnId` absent. It is optional task correlation supplied by an execution host, never generated by the Agent. Reusing a Thread preserves context, while each invocation uses a new Run. With native journaling, Run start and its initial checkpoint commit together. Explicitly continuing suspended or interrupted execution restores the position by source Run, associates tool results with their original requests and creates a new Step. A new direct call after completion starts a fresh execution budget. For Durable-managed calls, the adapter supplies Turn identity and Durable accumulates the task budget across Runs.
 
 ```java
 AgentRun<AgentEvent> run = agent.prepareRun(List.of(new UserMessage("Hello")), context);
@@ -296,6 +298,7 @@ run.cancel();
 - `cancel()` cancels the reactive execution immediately, including before subscription and while waiting for the session gate. Subscribers receive `CancellationException`. Cancelling queued B never interrupts running A or allows C to overtake A.
 - `interrupt()` / `interrupt(message)` asks an admitted execution to stop at a cooperative checkpoint. ReActAgent returns its interrupted recovery reply; the handle then completes normally. Before admission, interruption cancels only that queued execution.
 - `status()` returns `CREATED`, `QUEUED`, `RUNNING`, `COMPLETED`, `FAILED`, or `CANCELLED`. `QUEUED` includes setup before admission to the core lifecycle. `termination()` observes the terminal status without starting execution. Downstream subscription disposal also cancels the handle.
+- `outcome()` observes a replayable `RunOutcome`. Normal completion and errors wait for state commits and cleanup; explicit cancellation immediately reports `CANCELLED` without confirming that external operations have settled. Outcome statuses are `COMPLETED`, `SUSPENDED`, `INTERRUPTED`, `FAILED`, and `CANCELLED`, with reasons such as `TOOL_SUSPENDED` or `MAX_ITERATIONS`. A normally completed publisher may still be suspended or semantically unsuccessful; a failed state commit produces a failed outcome. Observing the outcome does not start or cancel execution. Durable separately decides the Turn state, including pending inputs and external operations.
 - A handle permits one subscription. Create a new handle for a new execution; repeated subscriptions are rejected. Terminal handles cannot interrupt later calls.
 
 Run managers own lookup, authorization and terminal cleanup. The Agent does not retain a registry of RuntimeContext objects. Cancellation does not roll back external effects or forcibly terminate a blocking tool that ignores cancellation. Hard cancellation also does not promise the cooperative interrupted reply/state-save path.
@@ -304,7 +307,7 @@ Run managers own lookup, authorization and terminal cleanup. The Agent does not 
 
 ## Interrupt
 
-The following applies to executions started with `call` / `streamEvents`. For interruption from another request, the application must locate the Agent instance running the target execution and remove and close it when execution ends. Use `agent.interrupt` for cooperative interruption. For tasks submitted through AgentSession, use `session.interrupt()` and follow the [session continuation guide](/v2/en/docs/harness/session-log#continue-after-interruption):
+The following applies to `call` / `streamEvents`. Locate the running Agent instance or AgentRun to interrupt that invocation, and release owned resources after it ends. Durable task cancellation targets `DurableTurn.cancel(requestId)`; interrupting one native invocation does not cancel the persistent task.
 
 ```java
 import io.agentscope.core.agent.RuntimeContext;
@@ -398,7 +401,7 @@ A legacy `ToolExecutionContext` (`io.agentscope.core.tool`) is `@Deprecated`. Ne
 
 ## Human-in-the-loop
 
-The examples below handle confirmations and external results through direct calls. Use the same conversation context (`ctx`) for the request and its answer. Your application manages the interaction UI and subsequent invocation. For durable pending actions and automatic task association, use [AgentSession.respond](/v2/en/docs/harness/session-log#answer-hitl-requests).
+The examples below handle confirmations and external results through direct calls, using the same conversation context for the request and answer. For durable interactions, use [DurableTurn.respond](/v2/en/docs/harness/durable) with the pending interaction identity; Durable resumes the owning Turn.
 
 The agent pauses and emits a special event in two cases: a tool call requiring **user confirmation** (the permission system returned ASK), or a tool marked as **external execution** (the result must come from outside the agent). In both cases, you resume the agent by feeding the result back through the next `call`.
 

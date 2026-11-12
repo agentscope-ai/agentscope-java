@@ -1,20 +1,22 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: agentscope-service-long-tool-mcp
+  name: managed-agents-long-tool-mcp
+  namespace: agencore-ma
 spec:
-  replicas: 2
+  replicas: 5
   strategy:
     type: RollingUpdate
     rollingUpdate: {maxSurge: 1, maxUnavailable: 0}
   selector:
-    matchLabels: {app: agentscope-service-long-tool-mcp}
+    matchLabels: {app: managed-agents-long-tool-mcp}
   template:
     metadata:
-      labels: {app: agentscope-service-long-tool-mcp}
+      labels: {app: managed-agents-long-tool-mcp}
     spec:
       automountServiceAccountToken: false
       terminationGracePeriodSeconds: 200
+      imagePullSecrets: [{name: acr-pull}]
       securityContext:
         runAsNonRoot: true
         runAsUser: 65532
@@ -22,19 +24,12 @@ spec:
         seccompProfile: {type: RuntimeDefault}
       containers:
         - name: mcp
-          image: registry.example.com/agentscope/http-mcp-long-tool:latest
+          image: sca-registry.cn-hangzhou.cr.aliyuncs.com/agentcore/managed-agents-long-tool-mcp@sha256:e78fab648ef4d4af820842b41c56b8fd0e30b019a01e8237c6cd21966eda8ab6
           ports: [{name: http, containerPort: 8000}]
           env:
-            - name: MCP_DATABASE_POOL_SIZE
-              value: "16"
-            - name: MCP_EXECUTION_POLL_SECONDS
-              value: "1"
-            - name: MCP_EXECUTION_DATABASE_URI
-              valueFrom:
-                secretKeyRef: {name: agentscope-service-long-tool-mcp-execution, key: uri}
             - name: MCP_TEST_TOKEN
               valueFrom:
-                secretKeyRef: {name: agentscope-service-long-tool-mcp-auth, key: token}
+                secretKeyRef: {name: managed-agents-long-tool-mcp-auth, key: token}
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
@@ -44,20 +39,23 @@ spec:
             periodSeconds: 5
             failureThreshold: 60
           readinessProbe:
-            httpGet: {path: /healthz, port: http}
+            httpGet: {path: /readyz, port: http}
+            timeoutSeconds: 5
             periodSeconds: 5
           livenessProbe:
             httpGet: {path: /healthz, port: http}
+            timeoutSeconds: 5
             periodSeconds: 15
           resources:
-            requests: {cpu: 250m, memory: 256Mi}
-            limits: {memory: 1Gi}
+            requests: {cpu: "4", memory: 8Gi}
+            limits: {cpu: "4", memory: 8Gi}
 ---
 apiVersion: v1
 kind: Service
 metadata:
-  name: agentscope-service-long-tool-mcp
+  name: managed-agents-long-tool-mcp
+  namespace: agencore-ma
 spec:
   type: ClusterIP
-  selector: {app: agentscope-service-long-tool-mcp}
+  selector: {app: managed-agents-long-tool-mcp}
   ports: [{name: http, port: 8000, targetPort: http}]

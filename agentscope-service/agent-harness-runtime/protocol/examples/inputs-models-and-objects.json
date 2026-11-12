@@ -1,0 +1,900 @@
+{
+  "objectWrite1": {
+    "protocolVersion": "0.1.0",
+    "scope": {
+      "tenant": "t1",
+      "namespace": "demo",
+      "sessionId": "s1"
+    },
+    "objectId": "checkpoint-1",
+    "sha256": "56fe515303b27726f65c280378f492af14027a7db304a3b000a58f23a3ed1fab",
+    "size": "21",
+    "mediaType": "application/octet-stream",
+    "formatVersion": "synthetic-v1",
+    "dataBase64": "Zml4dHVyZS1jaGVja3BvaW50LTEK"
+  },
+  "objectReceipt1": {
+    "protocolVersion": "0.1.0",
+    "ref": {
+      "scope": {
+        "tenant": "t1",
+        "namespace": "demo",
+        "sessionId": "s1"
+      },
+      "backendId": "objects",
+      "key": "fixture/checkpoint-1",
+      "sha256": "56fe515303b27726f65c280378f492af14027a7db304a3b000a58f23a3ed1fab",
+      "size": "21",
+      "mediaType": "application/octet-stream",
+      "formatVersion": "synthetic-v1"
+    }
+  },
+  "objectWrite2": {
+    "protocolVersion": "0.1.0",
+    "scope": {
+      "tenant": "t1",
+      "namespace": "demo",
+      "sessionId": "s1"
+    },
+    "objectId": "checkpoint-2",
+    "sha256": "754f3d4df8274b7b92269923919d1104a8a3e186c5d8dc3c36e5dc194c87374b",
+    "size": "21",
+    "mediaType": "application/octet-stream",
+    "formatVersion": "synthetic-v1",
+    "dataBase64": "Zml4dHVyZS1jaGVja3BvaW50LTIK"
+  },
+  "objectReceipt2": {
+    "protocolVersion": "0.1.0",
+    "ref": {
+      "scope": {
+        "tenant": "t1",
+        "namespace": "demo",
+        "sessionId": "s1"
+      },
+      "backendId": "objects",
+      "key": "fixture/checkpoint-2",
+      "sha256": "754f3d4df8274b7b92269923919d1104a8a3e186c5d8dc3c36e5dc194c87374b",
+      "size": "21",
+      "mediaType": "application/octet-stream",
+      "formatVersion": "synthetic-v1"
+    }
+  },
+  "objectWrite3": {
+    "protocolVersion": "0.1.0",
+    "scope": {
+      "tenant": "t1",
+      "namespace": "demo",
+      "sessionId": "s1"
+    },
+    "objectId": "checkpoint-3",
+    "sha256": "5d6b015d9243d4946d971fce593b29e650e1d1dd945d504b16220a394b94c75f",
+    "size": "21",
+    "mediaType": "application/octet-stream",
+    "formatVersion": "synthetic-v1",
+    "dataBase64": "Zml4dHVyZS1jaGVja3BvaW50LTMK"
+  },
+  "objectReceipt3": {
+    "protocolVersion": "0.1.0",
+    "ref": {
+      "scope": {
+        "tenant": "t1",
+        "namespace": "demo",
+        "sessionId": "s1"
+      },
+      "backendId": "objects",
+      "key": "fixture/checkpoint-3",
+      "sha256": "5d6b015d9243d4946d971fce593b29e650e1d1dd945d504b16220a394b94c75f",
+      "size": "21",
+      "mediaType": "application/octet-stream",
+      "formatVersion": "synthetic-v1"
+    }
+  },
+  "objectWrite4": {
+    "protocolVersion": "0.1.0",
+    "scope": {
+      "tenant": "t1",
+      "namespace": "demo",
+      "sessionId": "s1"
+    },
+    "objectId": "checkpoint-4",
+    "sha256": "717bf7c425941894ff367784e41110c2cfee6bbad289026677907330b8c6c7ac",
+    "size": "21",
+    "mediaType": "application/octet-stream",
+    "formatVersion": "synthetic-v1",
+    "dataBase64": "Zml4dHVyZS1jaGVja3BvaW50LTQK"
+  },
+  "objectReceipt4": {
+    "protocolVersion": "0.1.0",
+    "ref": {
+      "scope": {
+        "tenant": "t1",
+        "namespace": "demo",
+        "sessionId": "s1"
+      },
+      "backendId": "objects",
+      "key": "fixture/checkpoint-4",
+      "sha256": "717bf7c425941894ff367784e41110c2cfee6bbad289026677907330b8c6c7ac",
+      "size": "21",
+      "mediaType": "application/octet-stream",
+      "formatVersion": "synthetic-v1"
+    }
+  },
+  "objectRead": {
+    "protocolVersion": "0.1.0",
+    "ref": {
+      "scope": {
+        "tenant": "t1",
+        "namespace": "demo",
+        "sessionId": "s1"
+      },
+      "backendId": "objects",
+      "key": "fixture/checkpoint-1",
+      "sha256": "56fe515303b27726f65c280378f492af14027a7db304a3b000a58f23a3ed1fab",
+      "size": "21",
+      "mediaType": "application/octet-stream",
+      "formatVersion": "synthetic-v1"
+    }
+  },
+  "objectContent": {
+    "protocolVersion": "0.1.0",
+    "ref": {
+      "scope": {
+        "tenant": "t1",
+        "namespace": "demo",
+        "sessionId": "s1"
+      },
+      "backendId": "objects",
+      "key": "fixture/checkpoint-1",
+      "sha256": "56fe515303b27726f65c280378f492af14027a7db304a3b000a58f23a3ed1fab",
+      "size": "21",
+      "mediaType": "application/octet-stream",
+      "formatVersion": "synthetic-v1"
+    },
+    "dataBase64": "Zml4dHVyZS1jaGVja3BvaW50LTEK"
+  },
+  "inputAndModelCommit": {
+    "protocolVersion": "0.1.0",
+    "scope": {
+      "tenant": "t1",
+      "namespace": "demo",
+      "sessionId": "s1"
+    },
+    "turnId": "turn1",
+    "commitId": "model-commit1",
+    "fence": {
+      "owner": {
+        "instanceId": "brain-a",
+        "incarnationId": "boot-a"
+      },
+      "epoch": "7",
+      "executionToken": "token7"
+    },
+    "expectedBrainRevision": "0",
+    "nativeState": {
+      "harnessType": "agentscope-java",
+      "stateFormatVersion": "fixture-v1",
+      "nativeCursor": "1",
+      "checkpointRef": {
+        "scope": {
+          "tenant": "t1",
+          "namespace": "demo",
+          "sessionId": "s1"
+        },
+        "backendId": "objects",
+        "key": "fixture/checkpoint-1",
+        "sha256": "56fe515303b27726f65c280378f492af14027a7db304a3b000a58f23a3ed1fab",
+        "size": "21",
+        "mediaType": "application/octet-stream",
+        "formatVersion": "synthetic-v1"
+      }
+    },
+    "changes": {
+      "inputApplications": [
+        {
+          "inputId": "input1",
+          "status": "applied",
+          "position": {
+            "nativeCursor": "1",
+            "recordId": "record-1"
+          }
+        }
+      ],
+      "modelUpdates": [
+        {
+          "modelCallId": "model1",
+          "phase": "dispatch",
+          "model": "configured-model",
+          "purpose": "REASONING",
+          "requestHash": "86b5c8fec143c27e098847ce84d8fe8d33b5556b4d6e517e047fe14bd6dccaa5",
+          "requestRef": {
+            "scope": {
+              "tenant": "t1",
+              "namespace": "demo",
+              "sessionId": "s1"
+            },
+            "backendId": "objects",
+            "key": "fixture/model-request",
+            "sha256": "86b5c8fec143c27e098847ce84d8fe8d33b5556b4d6e517e047fe14bd6dccaa5",
+            "size": "48",
+            "mediaType": "application/octet-stream",
+            "formatVersion": "synthetic-v1"
+          },
+          "position": {
+            "nativeCursor": "1",
+            "recordId": "record-1"
+          }
+        }
+      ]
+    }
+  },
+  "modelAndInteractionCommit": {
+    "protocolVersion": "0.1.0",
+    "scope": {
+      "tenant": "t1",
+      "namespace": "demo",
+      "sessionId": "s1"
+    },
+    "turnId": "turn1",
+    "commitId": "model-commit2",
+    "fence": {
+      "owner": {
+        "instanceId": "brain-a",
+        "incarnationId": "boot-a"
+      },
+      "epoch": "7",
+      "executionToken": "token7"
+    },
+    "expectedBrainRevision": "1",
+    "nativeState": {
+      "harnessType": "agentscope-java",
+      "stateFormatVersion": "fixture-v1",
+      "nativeCursor": "2",
+      "checkpointRef": {
+        "scope": {
+          "tenant": "t1",
+          "namespace": "demo",
+          "sessionId": "s1"
+        },
+        "backendId": "objects",
+        "key": "fixture/checkpoint-2",
+        "sha256": "754f3d4df8274b7b92269923919d1104a8a3e186c5d8dc3c36e5dc194c87374b",
+        "size": "21",
+        "mediaType": "application/octet-stream",
+        "formatVersion": "synthetic-v1"
+      }
+    },
+    "changes": {
+      "modelUpdates": [
+        {
+          "modelCallId": "model1",
+          "phase": "complete",
+          "status": "completed",
+          "resultRef": {
+            "scope": {
+              "tenant": "t1",
+              "namespace": "demo",
+              "sessionId": "s1"
+            },
+            "backendId": "objects",
+            "key": "fixture/model-result",
+            "sha256": "cbbbdcd27692344de5dbab3abcaba413fb0f45307267de7081401576df1cb176",
+            "size": "16",
+            "mediaType": "application/octet-stream",
+            "formatVersion": "synthetic-v1"
+          },
+          "usage": {
+            "inputTokens": "10",
+            "outputTokens": "5",
+            "cacheReadInputTokens": "0"
+          },
+          "position": {
+            "nativeCursor": "2",
+            "recordId": "record-2"
+          }
+        }
+      ],
+      "interactionUpdates": [
+        {
+          "actionId": "action1",
+          "phase": "requested",
+          "actionType": "approval",
+          "request": {
+            "inline": {
+              "question": "Continue?"
+            }
+          },
+          "position": {
+            "nativeCursor": "2",
+            "recordId": "record-2"
+          }
+        }
+      ],
+      "suspension": {
+        "suspensionId": "wait-input1",
+        "pendingTaskIds": [],
+        "pendingActionIds": [
+          "action1"
+        ],
+        "resumePhase": "APPLY_INPUTS",
+        "waitPolicy": "all"
+      }
+    }
+  },
+  "interactionAnswerCommit": {
+    "protocolVersion": "0.1.0",
+    "scope": {
+      "tenant": "t1",
+      "namespace": "demo",
+      "sessionId": "s1"
+    },
+    "turnId": "turn1",
+    "commitId": "model-commit3",
+    "fence": {
+      "owner": {
+        "instanceId": "brain-a",
+        "incarnationId": "boot-a"
+      },
+      "epoch": "7",
+      "executionToken": "token7"
+    },
+    "expectedBrainRevision": "2",
+    "nativeState": {
+      "harnessType": "agentscope-java",
+      "stateFormatVersion": "fixture-v1",
+      "nativeCursor": "3",
+      "checkpointRef": {
+        "scope": {
+          "tenant": "t1",
+          "namespace": "demo",
+          "sessionId": "s1"
+        },
+        "backendId": "objects",
+        "key": "fixture/checkpoint-3",
+        "sha256": "5d6b015d9243d4946d971fce593b29e650e1d1dd945d504b16220a394b94c75f",
+        "size": "21",
+        "mediaType": "application/octet-stream",
+        "formatVersion": "synthetic-v1"
+      }
+    },
+    "changes": {
+      "inputApplications": [
+        {
+          "inputId": "answer1",
+          "status": "applied",
+          "position": {
+            "nativeCursor": "3",
+            "recordId": "record-3"
+          }
+        }
+      ],
+      "interactionUpdates": [
+        {
+          "actionId": "action1",
+          "phase": "resolved",
+          "inputId": "answer1",
+          "position": {
+            "nativeCursor": "3",
+            "recordId": "record-3"
+          }
+        }
+      ]
+    }
+  },
+  "rejectedInputCommit": {
+    "protocolVersion": "0.1.0",
+    "scope": {
+      "tenant": "t1",
+      "namespace": "demo",
+      "sessionId": "s1"
+    },
+    "turnId": "turn1",
+    "commitId": "reject1",
+    "fence": {
+      "owner": {
+        "instanceId": "brain-a",
+        "incarnationId": "boot-a"
+      },
+      "epoch": "7",
+      "executionToken": "token7"
+    },
+    "expectedBrainRevision": "3",
+    "nativeState": {
+      "harnessType": "agentscope-java",
+      "stateFormatVersion": "fixture-v1",
+      "nativeCursor": "4",
+      "checkpointRef": {
+        "scope": {
+          "tenant": "t1",
+          "namespace": "demo",
+          "sessionId": "s1"
+        },
+        "backendId": "objects",
+        "key": "fixture/checkpoint-4",
+        "sha256": "717bf7c425941894ff367784e41110c2cfee6bbad289026677907330b8c6c7ac",
+        "size": "21",
+        "mediaType": "application/octet-stream",
+        "formatVersion": "synthetic-v1"
+      }
+    },
+    "changes": {
+      "inputApplications": [
+        {
+          "inputId": "input2",
+          "status": "rejected",
+          "reason": "withdrawn_before_application"
+        }
+      ]
+    }
+  },
+  "unknownUsageCommit": {
+    "protocolVersion": "0.1.0",
+    "scope": {
+      "tenant": "t1",
+      "namespace": "demo",
+      "sessionId": "s1"
+    },
+    "turnId": "turn1",
+    "commitId": "model-unknown",
+    "fence": {
+      "owner": {
+        "instanceId": "brain-a",
+        "incarnationId": "boot-a"
+      },
+      "epoch": "7",
+      "executionToken": "token7"
+    },
+    "expectedBrainRevision": "1",
+    "nativeState": {
+      "harnessType": "agentscope-java",
+      "stateFormatVersion": "fixture-v1",
+      "nativeCursor": "2",
+      "checkpointRef": {
+        "scope": {
+          "tenant": "t1",
+          "namespace": "demo",
+          "sessionId": "s1"
+        },
+        "backendId": "objects",
+        "key": "fixture/checkpoint-2",
+        "sha256": "754f3d4df8274b7b92269923919d1104a8a3e186c5d8dc3c36e5dc194c87374b",
+        "size": "21",
+        "mediaType": "application/octet-stream",
+        "formatVersion": "synthetic-v1"
+      }
+    },
+    "changes": {
+      "modelUpdates": [
+        {
+          "modelCallId": "model1",
+          "phase": "complete",
+          "status": "completed",
+          "resultRef": {
+            "scope": {
+              "tenant": "t1",
+              "namespace": "demo",
+              "sessionId": "s1"
+            },
+            "backendId": "objects",
+            "key": "fixture/model-result",
+            "sha256": "cbbbdcd27692344de5dbab3abcaba413fb0f45307267de7081401576df1cb176",
+            "size": "16",
+            "mediaType": "application/octet-stream",
+            "formatVersion": "synthetic-v1"
+          },
+          "position": {
+            "nativeCursor": "2",
+            "recordId": "record-2"
+          },
+          "usageUnknown": true
+        }
+      ]
+    }
+  },
+  "multipleOperations": {
+    "protocolVersion": "0.1.0",
+    "scope": {
+      "tenant": "t1",
+      "namespace": "demo",
+      "sessionId": "s1"
+    },
+    "turnId": "turn1",
+    "commitId": "multi1",
+    "fence": {
+      "owner": {
+        "instanceId": "brain-a",
+        "incarnationId": "boot-a"
+      },
+      "epoch": "7",
+      "executionToken": "token7"
+    },
+    "expectedBrainRevision": "0",
+    "nativeState": {
+      "harnessType": "agentscope-java",
+      "stateFormatVersion": "fixture-v1",
+      "nativeCursor": "1",
+      "checkpointRef": {
+        "scope": {
+          "tenant": "t1",
+          "namespace": "demo",
+          "sessionId": "s1"
+        },
+        "backendId": "objects",
+        "key": "fixture/checkpoint-1",
+        "sha256": "56fe515303b27726f65c280378f492af14027a7db304a3b000a58f23a3ed1fab",
+        "size": "21",
+        "mediaType": "application/octet-stream",
+        "formatVersion": "synthetic-v1"
+      }
+    },
+    "changes": {
+      "toolCalls": [
+        {
+          "nativeCallId": "call1",
+          "position": {
+            "nativeCursor": "1",
+            "recordId": "record-1"
+          }
+        }
+      ],
+      "toolOperations": [
+        {
+          "operationId": "call1_0",
+          "taskId": "tool_e2af6b0a5a0ace3cf4cff7d3a564aa71c18639f491b0304a7718ec4df173638a",
+          "executionId": "tool_e2af6b0a5a0ace3cf4cff7d3a564aa71c18639f491b0304a7718ec4df173638a",
+          "nativeCallIds": [
+            "call1"
+          ],
+          "toolName": "fs.read",
+          "arguments": {
+            "inline": {
+              "path": "/workspace/a.txt"
+            }
+          },
+          "configurationRef": {
+            "scope": {
+              "tenant": "t1",
+              "namespace": "demo",
+              "sessionId": "s1"
+            },
+            "backendId": "objects",
+            "key": "fixture/config",
+            "sha256": "4a180ef66750c0827c66e67fdda6058985bf659ca1505a3a05bce84c2115098d",
+            "size": "21",
+            "mediaType": "application/json",
+            "formatVersion": "config-v1"
+          }
+        },
+        {
+          "operationId": "call1_1",
+          "taskId": "tool_6cfd07d411131c7a9bea1dedbb9b2da3a6abb09e8f05cf2328329b165b6f9c18",
+          "executionId": "tool_6cfd07d411131c7a9bea1dedbb9b2da3a6abb09e8f05cf2328329b165b6f9c18",
+          "nativeCallIds": [
+            "call1"
+          ],
+          "toolName": "fs.read",
+          "arguments": {
+            "inline": {
+              "path": "/workspace/a.txt"
+            }
+          },
+          "configurationRef": {
+            "scope": {
+              "tenant": "t1",
+              "namespace": "demo",
+              "sessionId": "s1"
+            },
+            "backendId": "objects",
+            "key": "fixture/config",
+            "sha256": "4a180ef66750c0827c66e67fdda6058985bf659ca1505a3a05bce84c2115098d",
+            "size": "21",
+            "mediaType": "application/json",
+            "formatVersion": "config-v1"
+          }
+        }
+      ]
+    }
+  },
+  "freshRecovery": {
+    "protocolVersion": "0.1.0",
+    "scope": {
+      "tenant": "t1",
+      "namespace": "demo",
+      "sessionId": "s1"
+    },
+    "turnId": "turn1",
+    "snapshotId": "fresh",
+    "bundle": {
+      "protocolVersion": "0.1.0",
+      "scope": {
+        "tenant": "t1",
+        "namespace": "demo",
+        "sessionId": "s1"
+      },
+      "turnId": "turn1",
+      "snapshotId": "fresh",
+      "capturedAt": "2026-10-28T10:00:00Z",
+      "brainRevision": "0",
+      "pendingInputs": [
+        {
+          "inputId": "input1",
+          "sequence": "1",
+          "type": "message",
+          "content": {
+            "inline": {
+              "text": "hello"
+            }
+          }
+        }
+      ],
+      "inputApplications": [],
+      "toolCalls": [],
+      "toolOperations": [],
+      "acceptedResults": [],
+      "resultApplications": [],
+      "modelUpdates": [],
+      "interactionUpdates": []
+    }
+  },
+  "inputWaitRecovery": {
+    "protocolVersion": "0.1.0",
+    "scope": {
+      "tenant": "t1",
+      "namespace": "demo",
+      "sessionId": "s1"
+    },
+    "turnId": "turn1",
+    "snapshotId": "input-wait",
+    "bundle": {
+      "protocolVersion": "0.1.0",
+      "scope": {
+        "tenant": "t1",
+        "namespace": "demo",
+        "sessionId": "s1"
+      },
+      "turnId": "turn1",
+      "snapshotId": "input-wait",
+      "capturedAt": "2026-10-28T10:00:00Z",
+      "brainRevision": "2",
+      "pendingInputs": [
+        {
+          "inputId": "answer1",
+          "sequence": "2",
+          "type": "interaction_response",
+          "actionId": "action1",
+          "content": {
+            "inline": {
+              "approved": true
+            }
+          }
+        }
+      ],
+      "inputApplications": [
+        {
+          "inputId": "input1",
+          "status": "applied",
+          "position": {
+            "nativeCursor": "1",
+            "recordId": "record-1"
+          }
+        }
+      ],
+      "toolCalls": [],
+      "toolOperations": [],
+      "acceptedResults": [],
+      "resultApplications": [],
+      "modelUpdates": [
+        {
+          "modelCallId": "model1",
+          "phase": "dispatch",
+          "model": "configured-model",
+          "purpose": "REASONING",
+          "requestHash": "86b5c8fec143c27e098847ce84d8fe8d33b5556b4d6e517e047fe14bd6dccaa5",
+          "requestRef": {
+            "scope": {
+              "tenant": "t1",
+              "namespace": "demo",
+              "sessionId": "s1"
+            },
+            "backendId": "objects",
+            "key": "fixture/model-request",
+            "sha256": "86b5c8fec143c27e098847ce84d8fe8d33b5556b4d6e517e047fe14bd6dccaa5",
+            "size": "48",
+            "mediaType": "application/octet-stream",
+            "formatVersion": "synthetic-v1"
+          },
+          "position": {
+            "nativeCursor": "1",
+            "recordId": "record-1"
+          }
+        },
+        {
+          "modelCallId": "model1",
+          "phase": "complete",
+          "status": "completed",
+          "resultRef": {
+            "scope": {
+              "tenant": "t1",
+              "namespace": "demo",
+              "sessionId": "s1"
+            },
+            "backendId": "objects",
+            "key": "fixture/model-result",
+            "sha256": "cbbbdcd27692344de5dbab3abcaba413fb0f45307267de7081401576df1cb176",
+            "size": "16",
+            "mediaType": "application/octet-stream",
+            "formatVersion": "synthetic-v1"
+          },
+          "usage": {
+            "inputTokens": "10",
+            "outputTokens": "5",
+            "cacheReadInputTokens": "0"
+          },
+          "position": {
+            "nativeCursor": "2",
+            "recordId": "record-2"
+          }
+        }
+      ],
+      "interactionUpdates": [
+        {
+          "actionId": "action1",
+          "phase": "requested",
+          "actionType": "approval",
+          "request": {
+            "inline": {
+              "question": "Continue?"
+            }
+          },
+          "position": {
+            "nativeCursor": "2",
+            "recordId": "record-2"
+          }
+        }
+      ],
+      "nativeState": {
+        "harnessType": "agentscope-java",
+        "stateFormatVersion": "fixture-v1",
+        "nativeCursor": "2",
+        "checkpointRef": {
+          "scope": {
+            "tenant": "t1",
+            "namespace": "demo",
+            "sessionId": "s1"
+          },
+          "backendId": "objects",
+          "key": "fixture/checkpoint-2",
+          "sha256": "754f3d4df8274b7b92269923919d1104a8a3e186c5d8dc3c36e5dc194c87374b",
+          "size": "21",
+          "mediaType": "application/octet-stream",
+          "formatVersion": "synthetic-v1"
+        }
+      },
+      "suspension": {
+        "suspensionId": "wait-input1",
+        "pendingTaskIds": [],
+        "pendingActionIds": [
+          "action1"
+        ],
+        "resumePhase": "APPLY_INPUTS",
+        "waitPolicy": "all"
+      }
+    }
+  },
+  "opaqueToolArguments": {
+    "protocolVersion": "0.1.0",
+    "scope": {
+      "tenant": "t1",
+      "namespace": "demo",
+      "sessionId": "s1"
+    },
+    "turnId": "turn1",
+    "commitId": "opaque1",
+    "fence": {
+      "owner": {
+        "instanceId": "brain-a",
+        "incarnationId": "boot-a"
+      },
+      "epoch": "7",
+      "executionToken": "token7"
+    },
+    "expectedBrainRevision": "0",
+    "nativeState": {
+      "harnessType": "agentscope-java",
+      "stateFormatVersion": "fixture-v1",
+      "nativeCursor": "1",
+      "checkpointRef": {
+        "scope": {
+          "tenant": "t1",
+          "namespace": "demo",
+          "sessionId": "s1"
+        },
+        "backendId": "objects",
+        "key": "fixture/checkpoint-1",
+        "sha256": "56fe515303b27726f65c280378f492af14027a7db304a3b000a58f23a3ed1fab",
+        "size": "21",
+        "mediaType": "application/octet-stream",
+        "formatVersion": "synthetic-v1"
+      }
+    },
+    "changes": {
+      "toolOperations": [
+        {
+          "operationId": "call1_0",
+          "taskId": "tool_e2af6b0a5a0ace3cf4cff7d3a564aa71c18639f491b0304a7718ec4df173638a",
+          "executionId": "tool_e2af6b0a5a0ace3cf4cff7d3a564aa71c18639f491b0304a7718ec4df173638a",
+          "nativeCallIds": [
+            "call1"
+          ],
+          "toolName": "fs.read",
+          "arguments": {
+            "inline": {
+              "taskId": "business-value",
+              "executionId": "different-business-value",
+              "resultId": "business-result",
+              "status": "unknown",
+              "size": "not-a-platform-size",
+              "backendId": "business-field",
+              "scope": {
+                "tenant": "foreign-business-value"
+              },
+              "sha256": "not-a-platform-hash"
+            }
+          },
+          "configurationRef": {
+            "scope": {
+              "tenant": "t1",
+              "namespace": "demo",
+              "sessionId": "s1"
+            },
+            "backendId": "objects",
+            "key": "fixture/config",
+            "sha256": "4a180ef66750c0827c66e67fdda6058985bf659ca1505a3a05bce84c2115098d",
+            "size": "21",
+            "mediaType": "application/json",
+            "formatVersion": "config-v1"
+          }
+        }
+      ]
+    }
+  },
+  "referencedRecovery": {
+    "protocolVersion": "0.1.0",
+    "scope": {
+      "tenant": "t1",
+      "namespace": "demo",
+      "sessionId": "s1"
+    },
+    "turnId": "turn1",
+    "snapshotId": "snapshot1",
+    "bundleRef": {
+      "scope": {
+        "tenant": "t1",
+        "namespace": "demo",
+        "sessionId": "s1"
+      },
+      "backendId": "objects",
+      "key": "fixture/recovery-snapshot",
+      "sha256": "da6d9529b7483953ffc7b667a9274a2d2d527313605df882070cf8914bea7acf",
+      "size": "1973",
+      "mediaType": "application/json",
+      "formatVersion": "recovery-bundle/0.1.0"
+    }
+  },
+  "recoveryObject": {
+    "protocolVersion": "0.1.0",
+    "ref": {
+      "scope": {
+        "tenant": "t1",
+        "namespace": "demo",
+        "sessionId": "s1"
+      },
+      "backendId": "objects",
+      "key": "fixture/recovery-snapshot",
+      "sha256": "da6d9529b7483953ffc7b667a9274a2d2d527313605df882070cf8914bea7acf",
+      "size": "1973",
+      "mediaType": "application/json",
+      "formatVersion": "recovery-bundle/0.1.0"
+    },
+    "dataBase64": "eyJhY2NlcHRlZFJlc3VsdHMiOlt7ImFydGlmYWN0cyI6W10sImNvbnRlbnQiOnsiaW5saW5lIjp7InRleHQiOiJoZWxsbyJ9fSwiZXhlY3V0aW9uSWQiOiJ0b29sX2UyYWY2YjBhNWEwYWNlM2NmNGNmZjdkM2E1NjRhYTcxYzE4NjM5ZjQ5MWIwMzA0YTc3MThlYzRkZjE3MzYzOGEiLCJvdXRwdXQiOnsiYnl0ZUxlbmd0aCI6IjAiLCJtb2RlIjoibm9uZSIsInRocm91Z2hTb3VyY2VTZXEiOiIwIn0sInJlc3VsdElkIjoicmVzdWx0XzVhOWE5MWJmNmQ1OTBlZGE4Yjc3ZWUxMmIwMTRmZjQ1NmQwNmZhNGM3YzZkYTk1MGExNmZhODZjYWE4OTRmZDEiLCJzdGF0dXMiOiJzdWNjZWVkZWQiLCJ0YXNrSWQiOiJ0b29sX2UyYWY2YjBhNWEwYWNlM2NmNGNmZjdkM2E1NjRhYTcxYzE4NjM5ZjQ5MWIwMzA0YTc3MThlYzRkZjE3MzYzOGEifV0sImJyYWluUmV2aXNpb24iOiIyIiwiY2FwdHVyZWRBdCI6IjIwMjYtMTAtMjhUMTA6MDA6MDBaIiwiaW5wdXRBcHBsaWNhdGlvbnMiOltdLCJpbnRlcmFjdGlvblVwZGF0ZXMiOltdLCJtb2RlbFVwZGF0ZXMiOltdLCJuYXRpdmVTdGF0ZSI6eyJjaGVja3BvaW50UmVmIjp7ImJhY2tlbmRJZCI6Im9iamVjdHMiLCJmb3JtYXRWZXJzaW9uIjoic3ludGhldGljLXYxIiwia2V5IjoiZml4dHVyZS9jaGVja3BvaW50LTIiLCJtZWRpYVR5cGUiOiJhcHBsaWNhdGlvbi9vY3RldC1zdHJlYW0iLCJzY29wZSI6eyJuYW1lc3BhY2UiOiJkZW1vIiwic2Vzc2lvbklkIjoiczEiLCJ0ZW5hbnQiOiJ0MSJ9LCJzaGEyNTYiOiI3NTRmM2Q0ZGY4Mjc0YjdiOTIyNjk5MjM5MTlkMTEwNGE4YTNlMTg2YzVkOGRjM2MzNmU1ZGMxOTRjODczNzRiIiwic2l6ZSI6IjIxIn0sImhhcm5lc3NUeXBlIjoiYWdlbnRzY29wZS1qYXZhIiwibmF0aXZlQ3Vyc29yIjoiMiIsInN0YXRlRm9ybWF0VmVyc2lvbiI6ImZpeHR1cmUtdjEifSwicGVuZGluZ0lucHV0cyI6W10sInByb3RvY29sVmVyc2lvbiI6IjAuMS4wIiwicmVzdWx0QXBwbGljYXRpb25zIjpbXSwic2NvcGUiOnsibmFtZXNwYWNlIjoiZGVtbyIsInNlc3Npb25JZCI6InMxIiwidGVuYW50IjoidDEifSwic25hcHNob3RJZCI6InNuYXBzaG90MSIsInN1c3BlbnNpb24iOnsicGVuZGluZ0FjdGlvbklkcyI6W10sInBlbmRpbmdUYXNrSWRzIjpbInRvb2xfZTJhZjZiMGE1YTBhY2UzY2Y0Y2ZmN2QzYTU2NGFhNzFjMTg2MzlmNDkxYjAzMDRhNzcxOGVjNGRmMTczNjM4YSJdLCJyZXN1bWVQaGFzZSI6IldBSVRfVE9PTFMiLCJzdXNwZW5zaW9uSWQiOiJzdXNwZW5zaW9uMSIsIndhaXRQb2xpY3kiOiJhbGwifSwidG9vbENhbGxzIjpbeyJuYXRpdmVDYWxsSWQiOiJjYWxsMSIsInBvc2l0aW9uIjp7Im5hdGl2ZUN1cnNvciI6IjEiLCJyZWNvcmRJZCI6InJlY29yZC0xIn19XSwidG9vbE9wZXJhdGlvbnMiOlt7ImFyZ3VtZW50cyI6eyJpbmxpbmUiOnsicGF0aCI6Ii93b3Jrc3BhY2UvYS50eHQifX0sImNvbmZpZ3VyYXRpb25SZWYiOnsiYmFja2VuZElkIjoib2JqZWN0cyIsImZvcm1hdFZlcnNpb24iOiJjb25maWctdjEiLCJrZXkiOiJmaXh0dXJlL2NvbmZpZyIsIm1lZGlhVHlwZSI6ImFwcGxpY2F0aW9uL2pzb24iLCJzY29wZSI6eyJuYW1lc3BhY2UiOiJkZW1vIiwic2Vzc2lvbklkIjoiczEiLCJ0ZW5hbnQiOiJ0MSJ9LCJzaGEyNTYiOiI0YTE4MGVmNjY3NTBjMDgyN2M2NmU2N2ZkZGE2MDU4OTg1YmY2NTljYTE1MDVhM2EwNWJjZTg0YzIxMTUwOThkIiwic2l6ZSI6IjIxIn0sImV4ZWN1dGlvbklkIjoidG9vbF9lMmFmNmIwYTVhMGFjZTNjZjRjZmY3ZDNhNTY0YWE3MWMxODYzOWY0OTFiMDMwNGE3NzE4ZWM0ZGYxNzM2MzhhIiwibmF0aXZlQ2FsbElkcyI6WyJjYWxsMSJdLCJvcGVyYXRpb25JZCI6ImNhbGwxXzAiLCJ0YXNrSWQiOiJ0b29sX2UyYWY2YjBhNWEwYWNlM2NmNGNmZjdkM2E1NjRhYTcxYzE4NjM5ZjQ5MWIwMzA0YTc3MThlYzRkZjE3MzYzOGEiLCJ0b29sTmFtZSI6ImZzLnJlYWQifV0sInR1cm5JZCI6InR1cm4xIn0="
+  }
+}

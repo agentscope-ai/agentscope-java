@@ -12,7 +12,7 @@ from pathlib import Path
 import subprocess
 
 
-LABEL = "agentscope-suspend-isolation"
+LABEL = "managed-agents-suspend-isolation"
 
 
 def kubectl(args, *command, data=None):
@@ -27,8 +27,8 @@ def object_from(args, resource):
 
 
 def provision(args):
-    if not args.namespace.startswith("agentscope-suspend-") or args.namespace == args.source_namespace:
-        raise ValueError("A dedicated agentscope-suspend-* namespace is required")
+    if not args.namespace.startswith("managed-agents-suspend-") or args.namespace == args.source_namespace:
+        raise ValueError("A dedicated managed-agents-suspend-* namespace is required")
     args.output.mkdir(parents=True, exist_ok=False)
     source = [object_from(args, x) for x in ["statefulset/rocketmq-broker",
               "deployment/rocketmq-namesrv", "deployment/rocketmq-proxy", "statefulset/redis"]]
@@ -49,7 +49,7 @@ def provision(args):
     for key in ["status", "immutable"]:
         secret.pop(key, None)
     kubectl(args, "apply", "-f", "-", data=json.dumps(secret))
-    storage = json.loads(kubectl(args, "get", "storageclass/agentscope-test-disk", "-o", "json"))
+    storage = json.loads(kubectl(args, "get", "storageclass/managed-agents-test-disk", "-o", "json"))
     storage_name = args.namespace + "-disk"
     storage = {"apiVersion": "storage.k8s.io/v1", "kind": "StorageClass",
                "metadata": {"name": storage_name, "labels": {"purpose": LABEL}},
@@ -59,7 +59,7 @@ def provision(args):
         "metadata": {"name": "mq-data", "namespace": args.namespace},
         "spec": {"accessModes": ["ReadWriteOnce"], "storageClassName": storage_name,
                  "resources": {"requests": {"storage": "20Gi"}}}}]
-    config = object_from(args, "configmap/agentscope-infra-config")["data"]
+    config = object_from(args, "configmap/managed-agents-infra-config")["data"]
     broker_conf = config["broker.conf"].replace("ManagedLiteTest", "SuspendIsolation")
     broker_conf = broker_conf.replace("managed-lite-broker-a", "suspend-probe-broker")
     broker_conf = broker_conf.replace("rocketmq-namesrv", "mq-namesrv")
@@ -117,12 +117,12 @@ def provision(args):
 
 
 def clients(args):
-    if not args.namespace.startswith("agentscope-suspend-"):
+    if not args.namespace.startswith("managed-agents-suspend-"):
         raise ValueError("Refusing a non-isolated namespace")
     namespace = json.loads(kubectl(args, "get", "namespace", args.namespace, "-o", "json"))
     if namespace["metadata"]["labels"].get("purpose") != LABEL:
         raise ValueError("Namespace is not owned by this verification")
-    source = object_from(args, "deployment/service-agentscope-dataplane")
+    source = object_from(args, "deployment/service-managed-agents-dataplane")
     image = source["spec"]["template"]["spec"]["containers"][0]["image"]
     classes = args.output / "classes"
     data = {p.name: base64.b64encode(p.read_bytes()).decode() for p in classes.glob("*.class")}
@@ -168,7 +168,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--kubeconfig", type=Path, required=True)
     parser.add_argument("--namespace", required=True)
-    parser.add_argument("--source-namespace", default="agentscope-test")
+    parser.add_argument("--source-namespace", default="managed-agents-test")
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--action", choices=["provision", "clients"], default="provision")
     args = parser.parse_args()

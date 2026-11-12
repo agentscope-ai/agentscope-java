@@ -34,11 +34,11 @@ Agent *evolution* — everything the agent learns or accumulates across sessions
 - **Self-learning skills** (`skills/`) — the agent drafts new skills from successful patterns; after an optional review gate they become reusable capabilities, then a background curator ages out / archives the unused ones.
 - **Plans** (`plans/`) — plans written during Plan Mode persist and survive across calls, keeping "figure it out" decoupled from "do it".
 - **Offloaded tool results** (compaction) — oversized tool outputs are written to disk and replaced in-context with a head/tail preview + a `read_file` pointer, so the agent can re-read them later without bloating the prompt.
-- **Session history** — Native Session Log holds execution facts/checkpoints; `agents/<agentId>/sessions/` JSONL remains a compatibility message view.
+- **Session history** — Native Thread journal holds execution facts/checkpoints; `ThreadTranscriptExport` provides message exports on demand.
 
 Evolution data is long-lived by default: memory accumulates indefinitely, session logs are append-only and never purged automatically. How each channel is produced and maintained is detailed in [How the agent evolves](#how-the-agent-evolves) below.
 
-AgentState describes working state. Default EVENT_LOG saves it in native checkpoints; AgentStateStore remains the legacy authority and explicit migration source. See [Session logs](/v2/en/docs/harness/session-log).
+AgentState describes working state. Default journal mode saves it in native checkpoints; AgentStateStore saves current working state when journaling is disabled. See [Session logs](/v2/en/docs/harness/session-log).
 
 **2. Content splits into three lifecycles, kept distinct.**
 
@@ -50,7 +50,7 @@ AgentState describes working state. Default EVENT_LOG saves it in native checkpo
 
 They live in one tree purely for deployment convenience (copy a directory, get a complete agent). Inside the framework they travel different read/write paths.
 
-> **Separate file artifacts from recovery state.** Plans, skills and memory are Workspace files. AgentState is structured runtime state: default EVENT_LOG checkpoints it in the native Session Log, using a reserved Filesystem partition or custom backend. LEGACY use the separate AgentStateStore for recovery.
+> **Separate file artifacts from recovery state.** Plans, skills and memory are Workspace files. AgentState is structured runtime state: default journal mode checkpoints it in the native Thread journal, using a reserved Filesystem partition or custom backend. snapshot mode use the separate AgentStateStore for recovery.
 
 **3. Natively multi-tenant.** Workspace data (memory, sessions, tasks, skills, sandbox state) is bucketed by a single `IsolationScope` — no application-level partitioning code. The scope decides who shares one bucket:
 
@@ -162,11 +162,11 @@ Opt-out switches (rare in production, useful for debugging or self-management):
 |--------|------------------|
 | `disableWorkspaceContext()` | workspace instruction and reference loading (`AGENTS.md` / `MEMORY.md` / `knowledge/`) |
 | `disableMemoryHooks()` | memory flush + background maintenance; also drops the "automatically extracted" Persistence line from the system prompt. Combined with `disableMemoryTools()`, also skips memory material in `HARNESS_CONTEXT` (`MEMORY.md`) injection |
-| `disableMemoryTools()` | `memory_search` / `memory_get` / `memory_save` / `session_search` tools; also omits Memory Recall and tool-based Persistence guidance from the system prompt |
+| `disableMemoryTools()` | `memory_search` / `memory_get` / `memory_save` / `thread_search` tools; also omits Memory Recall and tool-based Persistence guidance from the system prompt |
 | `disableSubagents()` | the entire subagent subsystem |
 | `disableDynamicSkills()` | per-turn skill re-merge; falls back to one-shot merge at build time |
 | `disableToolsConfig()` | reading `tools.json` |
-| `disableSessionPersistence()` | Compatibility no-op; does not disable native history. See session history modes |
+| `journalEnabled(false)` | Use stateStore snapshots without execution journaling |
 
 ## How workspace content gets loaded
 
@@ -301,12 +301,12 @@ HarnessAgent agent = HarnessAgent.builder()
 
 ## How runtime data and memory are stored
 
-In default EVENT_LOG mode, AgentState checkpoints and execution facts live in native history; file artifacts and long-term memory keep their own lifecycles.
+In default journal mode mode, AgentState checkpoints and execution facts live in native history; file artifacts and long-term memory keep their own lifecycles.
 
 | Data | Storage and recovery |
 | --- | --- |
-| Native history and checkpoints | Reserved local `.agentscope-runtime/` or remote partition, or explicit SessionLogStore; read through APIs |
-| AgentStateStore | LEGACY recovery and explicit migration source; default local root `~/.agentscope/state/<agentId>/` |
+| Native history and checkpoints | Reserved local `.agentscope-runtime/` or remote partition, or explicit ThreadJournalStore; read through APIs |
+| AgentStateStore | Working-state snapshots with journaling disabled; default local root `~/.agentscope/state/<agentId>/` |
 | Tasks/plans/memory/files | Their Workspace, TaskRepository or sandbox backends; checkpoints do not copy all external content |
 
 ### Agent state and native history
@@ -362,7 +362,7 @@ Beyond its static definition, the workspace is where the agent's *accumulated ex
 | **Self-learning skills** | `skills/`, `skills/_drafts/`, `skills/.archive/` | `.enableSkillManageTool(...)` | the agent calls `propose_skill` to draft a skill from a working pattern → an optional promotion gate approves it → a background curator marks unused skills stale (30d) and archives them (90d) | [Skills — Self-learning loop](/v2/en/docs/harness/skill#self-learning-loop-optional) |
 | **Plans** | `plans/PLAN.md` | `.enablePlanMode()` | a read-only planning phase writes the plan via `plan_write`; it persists across calls and drives the execution phase, decoupling intent from action | [Plan Mode](/v2/en/docs/harness/plan-mode) |
 | **Offloaded tool results** | the eviction directory under the workspace | `.toolResultEviction(...)` | when a single tool result exceeds the threshold (default 80K chars), the full output is written to disk and the in-context message is replaced with a head/tail preview + a `read_file` pointer | [Context management](/v2/en/docs/harness/context) |
-| **Session logs** | Reserved Filesystem partition / custom SessionLogStore; compatibility JSONL also retained | EVENT_LOG by default | Execution facts and native message history; existing index supports discovery | [Session logs](/v2/en/docs/harness/session-log) |
+| **Session logs** | Reserved Filesystem partition / custom ThreadJournalStore; message export on demand | journal mode by default | Execution facts and native message history; ThreadJournalStore provides scoped discovery | [Session logs](/v2/en/docs/harness/session-log) |
 
 Memory, skills, plans and offloaded results follow Workspace isolation/routing. Native history additionally requires atomic storage and reserves its commit structure; compatibility JSONL cannot replace full execution records.
 
@@ -450,7 +450,7 @@ plans/
 └── PLAN.md           ← current plan written by plan_write
 ```
 
-PlanModeContext belongs to AgentState and restores from native checkpoints by default, or AgentStateStore in legacy mode. The plans directory holds the actual Markdown files and needs its own persistence. See [Plan Mode](/v2/en/docs/harness/plan-mode).
+PlanModeContext belongs to AgentState and restores from native checkpoints by default, or AgentStateStore with journaling disabled. The plans directory holds the actual Markdown files and needs its own persistence. See [Plan Mode](/v2/en/docs/harness/plan-mode).
 
 ### `agents/<agentId>/`
 
@@ -462,7 +462,7 @@ agents/<agentId>/
     └── <sessionId>.json       ← subagent background task records (taskId → TaskRecord)
 ```
 
-> This tree shows task records. Native Session Log lives in the reserved Filesystem partition: local `.agentscope-runtime/` or remote `__agentscope_session_log_v1__`. Read history with `sessionTranscript()`, `session_history` and `session_list`; legacy JSONL, sessions.json and segmented transcripts are no longer written.
+> This tree shows task records. Native Thread journal lives in the reserved Filesystem partition: local `.agentscope-runtime/` or remote `__agentscope_session_log_v1__`. Read history with `threadTranscript()`, `thread_history` and `thread_list`; legacy JSONL, sessions.json and segmented transcripts are no longer written.
 
 Share native history, task/file artifacts and sandbox metadata as appropriate across replicas. Configuring shared AgentStateStore alone does not share a local native log. See [Session logs](/v2/en/docs/harness/session-log) and [Filesystem](/v2/en/docs/harness/filesystem).
 

@@ -26,9 +26,9 @@ import static org.mockito.Mockito.verify;
 
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.core.journal.JournalException;
 import io.agentscope.core.message.AssistantMessage;
 import io.agentscope.core.message.Msg;
-import io.agentscope.core.session.SessionLogException;
 import io.agentscope.core.state.AgentState;
 import io.agentscope.harness.agent.HarnessAgent;
 import io.agentscope.harness.agent.middleware.SubagentEntry;
@@ -84,7 +84,7 @@ class AgentSpawnToolExecutionHostTest {
 
     @Test
     void durableHostFailuresPropagateInsteadOfBecomingSuccessfulToolText() {
-        var failure = new SessionLogException("durable host unavailable");
+        var failure = new JournalException("durable host unavailable");
         var host =
                 new SubagentExecution() {
                     @Override
@@ -104,7 +104,7 @@ class AgentSpawnToolExecutionHostTest {
         assertSame(
                 failure,
                 assertThrows(
-                        SessionLogException.class,
+                        JournalException.class,
                         () ->
                                 tool().agentSpawn(context, null, "worker", "task", null, 5, null)
                                         .block()));

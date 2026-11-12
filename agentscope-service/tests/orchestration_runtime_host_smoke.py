@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Real Portal + Go runtime machine protocol, without a control-plane process.
+"""Real Agent Service + Go runtime machine protocol, without a control-plane process.
 
-Build service-session-portal and `make build` in service-controlplane first.
+Build agent-service and `make build` in control-plane first.
 This uses a local memory runtime; durable tasks/providers are separate checks.
 """
 
@@ -53,14 +53,14 @@ def credential(host="fixture-host"):
 
 
 def run(version, attached_runtime=None, fixture_dsn=None):
-    folder = Path(tempfile.mkdtemp(prefix="agentscope-orchestration-host-smoke-"))
+    folder = Path(tempfile.mkdtemp(prefix="managed-agents-orchestration-host-smoke-"))
     processes, handles = [], []
     passed = False
-    runtime_port, portal_port = port(), port()
+    runtime_port, agent_service_port = port(), port()
     runtime_url = attached_runtime or "http://127.0.0.1:" + str(runtime_port)
-    portal_url = "http://127.0.0.1:" + str(portal_port)
+    agent_service_url = "http://127.0.0.1:" + str(agent_service_port)
     environment = {"PATH": os.environ["PATH"], "TZ": "UTC",
-                   "BUILDER_INTERNAL_TOKEN": SERVICE_SECRET, "BUILDER_JWT_SECRET": SIGNING_SECRET}
+                   "MANAGED_AGENTS_INTERNAL_TOKEN": SERVICE_SECRET, "MANAGED_AGENTS_JWT_SECRET": SIGNING_SECRET}
     if os.environ.get("JAVA_HOME"):
         environment["JAVA_HOME"] = os.environ["JAVA_HOME"]
 
@@ -90,30 +90,30 @@ def run(version, attached_runtime=None, fixture_dsn=None):
                 process.kill()
                 process.wait(timeout=5)
 
-    from portal_postgres_fixture import portal_arguments
-    portal_storage_arguments = portal_arguments(version, fixture_dsn or os.environ.get('AGENTSCOPE_TEST_POSTGRES_DSN'), folder, environment)
+    from agent_service_postgres_fixture import agent_service_arguments
+    agent_service_storage_arguments = agent_service_arguments(version, fixture_dsn or os.environ.get('MANAGED_AGENTS_TEST_POSTGRES_DSN'), folder, environment)
 
-    def start_portal():
-        jar = ROOT / "service-session-portal/target" / ("service-session-portal-" + version + ".jar")
+    def start_agent_service():
+        jar = ROOT / "agent-service/target" / ("managed-agents-agent-service-" + version + ".jar")
         return start("portal", [shutil.which("java"), "-jar", str(jar),
-                    "--server.address=127.0.0.1", "--server.port=" + str(portal_port),
-                    "--spring.profiles.active=test", "--builder.local-dev=false",
-                    "--builder.jwt.secret=" + SIGNING_SECRET, "--builder.vault.master-key=host-smoke-only",
-                    "--builder.orchestration-runtime-url=" + runtime_url,
-                    "--builder.control-plane-url=http://127.0.0.1:1"] + portal_storage_arguments, portal_url + "/actuator/health")
+                    "--server.address=127.0.0.1", "--server.port=" + str(agent_service_port),
+                    "--spring.profiles.active=test", "--managed-agents.local-dev=false",
+                    "--managed-agents.jwt.secret=" + SIGNING_SECRET, "--managed-agents.vault.master-key=host-smoke-only",
+                    "--managed-agents.orchestration-runtime-url=" + runtime_url,
+                    "--managed-agents.control-plane-url=http://127.0.0.1:1"] + agent_service_storage_arguments, agent_service_url + "/actuator/health")
 
     try:
         if not attached_runtime:
-            start("runtime", [str(ROOT / "service-controlplane/bin/service-controlplane"),
-                        "--enable-kubernetes=false", "--enable-asdp=false", "--scope-mode=multi", "--enable-runtime-workers=true",
+            start("runtime", [str(ROOT / "control-plane/bin/control-plane"),
+                        "--enable-kubernetes=false", "--enable-runtime-protocol=false", "--scope-mode=multi", "--enable-runtime-workers=true",
                         "--http-bind-address=127.0.0.1:" + str(runtime_port),
                         "--storage-driver=memory", "--local-dev"], runtime_url + "/readyz")
-        portal = start_portal()
-        host_url = portal_url + "/api/v1/runtime-hosts"
+        agentService = start_agent_service()
+        host_url = agent_service_url + "/api/v1/runtime-hosts"
         body = {"hostKey": "fixture-host", "tenant": "fixture-tenant", "namespace": "fixture-space",
                 "poolName": "configured-pool", "capacity": 2}
         headers = {"Authorization": "Bearer " + credential()}
-        service = {"X-Builder-Internal-Token": SERVICE_SECRET}
+        service = {"X-Managed-Agents-Internal-Token": SERVICE_SECRET}
         assert request(host_url + "/register", "POST", body)[0] == 401
         assert request(host_url + "/register", "POST", body, service)[0] == 401
         assert request(runtime_url + "/api/internal/runtime/runtime-hosts/register", "POST", body, service)[0] == 401
@@ -136,9 +136,9 @@ def run(version, attached_runtime=None, fixture_dsn=None):
         claim = {"generation": generation, "leaseOwner": "fixture-host", "leaseToken": "fixture-claim",
                  "tenant": "fixture-tenant", "namespace": "fixture-space", "runtimePoolName": "configured-pool"}
         assert request(owned + "/execution-attempts/claim", "POST", claim, headers)[0] == 204
-        stop(portal)
+        stop(agentService)
         assert request(runtime_url + "/readyz")[0] == 200
-        portal = start_portal()
+        agentService = start_agent_service()
         assert request(owned + "/heartbeat", "POST", {"generation": generation, "active": 0}, headers)[0] == 200
         status, replacement = request(host_url + "/register", "POST", body, headers)
         assert status == 200 and replacement["host"]["id"] == host["id"], (status, replacement)
@@ -166,6 +166,6 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--version", default="2.1.0-SNAPSHOT")
     parser.add_argument("--runtime-url", help="Attach to a separately started local fixture runtime.")
-    parser.add_argument("--fixture-dsn", help="Dedicated PostgreSQL database for Portal schemas.")
+    parser.add_argument("--fixture-dsn", help="Dedicated PostgreSQL database for Agent Service schemas.")
     options = parser.parse_args()
     run(options.version, options.runtime_url, options.fixture_dsn)

@@ -15,8 +15,8 @@ import uuid
 
 import replicas
 
-sys.path.insert(0, str(replicas.SERVICE / 'service-controlplane/sdk/python'))
-from agentscope_service import ServiceClient
+sys.path.insert(0, str(replicas.SERVICE / 'control-plane/sdk/python'))
+from managed_agents import ServiceClient
 
 
 def run(state):
@@ -72,8 +72,8 @@ def run(state):
         digest = hashlib.sha256(expected).hexdigest()
         assert artifact['turn_id'] == first['id'] and artifact['sha256'] == digest, artifact
         assert artifact['size'] == len(expected) and artifact['name'] == 'report.bin', artifact
-        assert 'brain-artifact-confirmed-' + label in json.dumps(history), history
-        assert 'brain-artifact-successor-' + label in json.dumps(history), history
+        assert 'harness-runtime-artifact-confirmed-' + label in json.dumps(history), history
+        assert 'harness-runtime-artifact-successor-' + label in json.dumps(history), history
         first_completed = next(index for index, event in enumerate(history)
                                if event['type'] == 'turn.completed' and event['data'].get('turn_id') == first['id'])
         next_running = next(index for index, event in enumerate(history)
@@ -91,7 +91,7 @@ def run(state):
         record.update(artifact=artifact, sha256=digest, events=history,
                       checkpoints=replicas.checkpoint_evidence(state, session))
         save('replace-brains-and-hands')
-        record['replacements'] = {name: restart(name) for name in ['brain-a', 'brain-b', 'hands-a', 'hands-b']}
+        record['replacements'] = {name: restart(name) for name in ['harness-runtime-a', 'harness-runtime-b', 'tool-worker-a', 'tool-worker-b']}
         assert client.artifact_content(session, artifact['artifact_id']) == expected
         assert other.artifact_metadata(session, artifact['artifact_id']) == artifact
         assert len([event for event in events(session) if event['type'] == 'artifact.published']) == 1
@@ -106,7 +106,7 @@ def run(state):
         assert facts == {'artifacts': 1, 'files': 1, 'exports': 1, 'unfinished_tools': 0, 'unfinished_turns': 0}, facts
         record.update(facts=facts, passed=True)
         save('complete')
-        print('PASSED generated artifact archive, Brain metadata, cross-Portal download and replacement:', output, flush=True)
+        print('PASSED generated artifact archive, HarnessRuntime metadata, cross-Agent Service download and replacement:', output, flush=True)
     except BaseException:
         record['error'] = traceback.format_exc()
         save('failed')

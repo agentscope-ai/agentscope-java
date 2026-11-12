@@ -7,15 +7,15 @@ schemas; schemas include future features so they do not imply this Service imple
 Install the Python requirements into the project virtualenv, run `npm ci` in `node/`, then:
 
 ```sh
-mvn -B -ntp -f agentscope-service/tests/session-protocol/java/pom.xml package dependency:build-classpath -Dmdep.outputFile=target/classpath
-BUILDER_OFFICIAL_SDK_TESTS=true mvn -B -ntp -T1 -pl agentscope-service/service-session-portal -am test -Dtest=ManagedSessionProtocolTest,ManagedSessionTurnsApiTest,SessionApiContractTest,ManagedSessionClientTest
+mvn -B -ntp -f managed-agents/tests/session-protocol/java/pom.xml package dependency:build-classpath -Dmdep.outputFile=target/classpath
+MANAGED_AGENTS_OFFICIAL_SDK_TESTS=true mvn -B -ntp -T1 -pl managed-agents/agent-service -am test -Dtest=ManagedSessionProtocolTest,ManagedSessionTurnsApiTest,SessionApiContractTest,ManagedSessionClientTest
 ```
 
-The actual Session Portal HTTP/authentication/JPA contract fixture starts the official Python,
+The actual Agent Service HTTP/authentication/JPA contract fixture starts the official Python,
 TypeScript and Java clients as separate processes. Each receives a new isolated Session and checks
 create, retrieve, send and pending event history. Python and Java use strict response validation.
 Native platform SDK tests additionally cover explicit intents, original credentials, keys and SSE
-scope checks. Runtime/Hands tests cover checkpoints, suspension, cancellation and real local
+scope checks. Runtime/Tool Worker tests cover checkpoints, suspension, cancellation and real local
 HTTP MCP execution independently of observer transport.
 
 For PostgreSQL, start a disposable local database with user `codex_protocol`, database

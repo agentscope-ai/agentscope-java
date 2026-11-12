@@ -7,7 +7,7 @@
 在仓库根目录运行：
 
 ```bash
-cd agentscope-service/tests/session-playground
+cd managed-agents/tests/session-playground
 # 首次使用：npm ci
 npm run dev
 ```
@@ -36,10 +36,10 @@ PLAYGROUND_API_TARGET=http://127.0.0.1:18080 npm run dev
 
 SSE 的 EOF、网络错误和 429/5xx 按 0.5–10 秒退避续接，不把断流视为完成。权限、游标和 schema 错误需要处理后重新连接。消息按 item_id 更新，item.finalized 不增加重复回复；工具按 Turn + tool_call_id 归并。时间线保留最近 400 条事件；SSE 单帧上限 1 MiB，归并器有 4096 条 live 事件 / 16 MiB 显示限制。用量展示 Session 完整汇总，不按加载的资源条数估算。
 
-验证后端实时投递时，可用两个标签页观察同一 Session，断开其中一个再续接，确认后续事件继续到达。Portal 内共享该 Session 的实时读取，历史续传游标仍按连接独立保存。跨副本、漏通知和数据库监听恢复的自动化测试位于 `ManagedSessionEventStreamsPostgresTest`；为新建的空 PostgreSQL 测试库设置 `PORTAL_SSE_TEST_DATABASE_URI`，从仓库根目录运行：
+验证后端实时投递时，可用两个标签页观察同一 Session，断开其中一个再续接，确认后续事件继续到达。Agent Service 内共享该 Session 的实时读取，历史续传游标仍按连接独立保存。跨副本、漏通知和数据库监听恢复的自动化测试位于 `ManagedSessionEventStreamsPostgresTest`；为新建的空 PostgreSQL 测试库设置 `MANAGED_AGENTS_AGENT_SERVICE_SSE_TEST_DATABASE_URI`，从仓库根目录运行：
 
 ```bash
-mvn -T1 -pl agentscope-service/service-session-portal -am test \
+mvn -T1 -pl managed-agents/agent-service -am test \
   -Dtest=ManagedSessionEventStreamsTest,ManagedSessionEventStreamsPostgresTest \
   -Dsurefire.failIfNoSpecifiedTests=false
 ```
@@ -51,7 +51,7 @@ mvn -T1 -pl agentscope-service/service-session-portal -am test \
 ```bash
 npm run build
 npm run preview
-# 静态产物：agentscope-service/tests/session-playground/dist/
+# 静态产物：managed-agents/tests/session-playground/dist/
 # preview 也使用相同 /api 代理；改目标时设置 PLAYGROUND_API_TARGET。
 
 npm test
@@ -59,14 +59,14 @@ npm run test:e2e
 npm run lint
 ```
 
-浏览器测试使用本地 HTTP fixture，不调用真实模型或 Sandbox。此构建不会覆盖 Console 的 UI 产物。后补测试记录在 `agentscope-service/docs/session-portal-test-backlog.md`。
+浏览器测试使用本地 HTTP fixture，不调用真实模型或 Sandbox。此构建不会覆盖 Console 的 UI 产物。后补测试记录在 `managed-agents/docs/agent-service-test-backlog.md`。
 
 ## English
 
-This test-only application has its own package, lockfile, types, event reducer and build output, with no imports from the production frontend. It sends user instructions through the Session API and displays snapshots, streaming replies, tool state and raw SSE events. Create control-plane resources in your terminal. From the repository root, run `cd agentscope-service/tests/session-playground` and `npm run dev`; open <http://127.0.0.1:18082/>. Set `PLAYGROUND_API_TARGET` to change the default Gateway at port 18081. Paste a Session ID or its root URL, then connect. The local dev deployment requires no login; optional credentials stay in page memory.
+This test-only application has its own package, lockfile, types, event reducer and build output, with no imports from the production console. It sends user instructions through the Session API and displays snapshots, streaming replies, tool state and raw SSE events. Create control-plane resources in your terminal. From the repository root, run `cd managed-agents/tests/session-playground` and `npm run dev`; open <http://127.0.0.1:18082/>. Set `PLAYGROUND_API_TARGET` to change the default Gateway at port 18081. Paste a Session ID or its root URL, then connect. The local dev deployment requires no login; optional credentials stay in page memory.
 
 Connection reads a snapshot before streaming from its as_of cursor. Transport loss retries observation; disconnecting does not cancel execution. POST receipts indicate admission, not completion. Unconfirmed submissions retain the exact body and idempotency key in the tab's sessionStorage for explicit retry, including after reload. Examples only fill the editor. Turn filters operate on the Session view. The timeline contains the latest 400 received SSE frames; historical resources come from snapshots. Finalized replies update the same item, and waiting tools remain pending until a real result arrives. Display limits require refreshing the snapshot, without stopping server execution.
 
-Observe the same Session in two tabs, disconnect one and resume it to check continued live delivery. Portal shares live reads for that Session while keeping each connection's replay cursor independent. The Maven command above runs reader regressions; set `PORTAL_SSE_TEST_DATABASE_URI` to a newly created empty PostgreSQL test database to enable cross-replica, missed-notification and listener-recovery cases. These cases use a 60-second recovery interval and require notification delivery within a few seconds so polling cannot conceal notification failures.
+Observe the same Session in two tabs, disconnect one and resume it to check continued live delivery. Agent Service shares live reads for that Session while keeping each connection's replay cursor independent. The Maven command above runs reader regressions; set `MANAGED_AGENTS_AGENT_SERVICE_SSE_TEST_DATABASE_URI` to a newly created empty PostgreSQL test database to enable cross-replica, missed-notification and listener-recovery cases. These cases use a 60-second recovery interval and require notification delivery within a few seconds so polling cannot conceal notification failures.
 
-`npm run build` writes to `agentscope-service/tests/session-playground/dist` independently of Console assets. `npm run preview` serves it with the same API proxy. Unit and browser commands above test parser boundaries, cursor replay, tool waiting/finalization and same-key submission retry using fixtures. Deferred tests remain in the test backlog.
+`npm run build` writes to `managed-agents/tests/session-playground/dist` independently of Console assets. `npm run preview` serves it with the same API proxy. Unit and browser commands above test parser boundaries, cursor replay, tool waiting/finalization and same-key submission retry using fixtures. Deferred tests remain in the test backlog.

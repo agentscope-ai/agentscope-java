@@ -37,7 +37,7 @@ graph LR
     Conv -->|每次调用结束 / 可节流| Flush["Flush LLM 调用"]
     Flush -->|提炼新事实| Daily["memory/YYYY-MM-DD.md"]
     Conv -->|超阈值| Compactor["对话压缩"]
-    Conv -->|执行事实提交| Sess["原生 Session Log"]
+    Conv -->|执行事实提交| Sess["原生 Thread 日志"]
     Compactor -->|压缩前再 flush 一次| Flush
     Daily -. 节流后台 Consolidation .-> MEM["MEMORY.md"]
     MEM -->|每次 call 加载| SYS["HARNESS_CONTEXT 参考消息"]
@@ -47,7 +47,7 @@ graph LR
 
 - 第一层只追加，不去重；第二层周期性整体重写；**两层互不覆盖**。
 - 第二层永远是 LLM 注入提示的来源；第一层等待被合并。
-- 原生 Session Log 已记录完整消息与执行事实；压缩只改变模型工作上下文，历史由 `session_history` / `session_search` 读取，不再重复落盘。
+- 原生 Thread 日志 已记录完整消息与执行事实；压缩只改变模型工作上下文，历史由 `thread_history` / `thread_search` 读取，不再重复落盘。
 
 ## Flush 的三个触发点
 
@@ -59,7 +59,7 @@ Flush（路径 1）会在以下三个时机被触发：
 
 这三处用的是 **同一份** `flushPrompt`，定制后三处行为一致。
 
-每轮结束后的长期记忆 Flush 在后台执行；压缩前 Flush 属于压缩步骤。原生 Session Log 在执行边界提交，不能把它当作异步日志副本：关键事实提交失败会阻止继续执行。
+每轮结束后的长期记忆 Flush 在后台执行；压缩前 Flush 属于压缩步骤。原生 Thread 日志 在执行边界提交，不能把它当作异步日志副本：关键事实提交失败会阻止继续执行。
 
 <span id="开启压缩" />
 
@@ -92,7 +92,7 @@ HarnessAgent agent = HarnessAgent.builder()
 | `summaryPrompt` | 见 `DEFAULT_SUMMARY_PROMPT` | 路径 3 的摘要 prompt（必须含 `{messages}` 占位符） |
 | `model` | `null`（使用 agent 主模型） | 压缩摘要使用的独立模型 |
 
-**上下文溢出自动恢复**：模型返回 `context_length_exceeded` 等错误时，只要没有禁用压缩，框架就会尝试强制压缩。默认的 `EVENT_LOG` 执行模式会在本次执行内重试当前推理一次，无需手工调用 `.compaction(...)` 开启；如果仍然溢出，错误会返回调用方。
+**上下文溢出自动恢复**：模型返回 `context_length_exceeded` 等错误时，只要没有禁用压缩，框架就会尝试强制压缩。默认的 原生日志 执行模式会在本次执行内重试当前推理一次，无需手工调用 `.compaction(...)` 开启；如果仍然溢出，错误会返回调用方。
 
 ### 想再轻一些？预处理参数截断
 
@@ -131,7 +131,7 @@ HarnessAgent.builder()
 
 - `THROTTLED` 只影响**路径 1**（per-call flush）。压缩内嵌的 flush（路径 2）和兜底 flush（路径 3）按各自的触发条件照常跑——压缩很少发生，那两条本来就不频繁。
 - 第一次符合条件的 call 会立即 flush；`Duration.ofMinutes(10)` 只限制后续的 per-call flush。
-- **原生日志不受影响**：Flush 节流不会停用 Session Log、历史检索或 checkpoint 恢复。
+- **原生日志不受影响**：Flush 节流不会停用 Thread 日志、历史检索或 checkpoint 恢复。
 
 ### 例 2：完全关掉 per-call flush
 
@@ -238,11 +238,11 @@ HarnessAgent.builder()
 - `memory_search query="..."` —— 关键词扫 `MEMORY.md` + `memory/*.md`
 - `memory_get path="memory/2026-06-02.md" startLine=10 endLine=40` —— 读指定行范围
 - `memory_save content="..."` —— 通过 `MEMORY.md` 与每日台账持久化记忆
-- `session_search query="..."` —— 搜索过往会话记录
+- `thread_search query="..."` —— 搜索过往会话记录
 
 模型在看到 `MEMORY.md` 已被截断的提示时通常会自己调 `memory_search` 找老内容。
 
-`memory_search` 和 `session_search` 支持可选参数 `matchMode`：
+`memory_search` 和 `thread_search` 支持可选参数 `matchMode`：
 
 | 模式 | 行为 |
 | --- | --- |
@@ -275,7 +275,7 @@ Memory 的记录边界为一行，Session 的记录边界为一条 entry，不�
 HarnessAgent.builder()
     ...
     .disableMemoryHooks()      // 关掉 flush + 后台维护（并去掉「对话结束自动抽取」引导）
-    .disableMemoryTools()      // 不注册 memory_search / memory_get / memory_save / session_search
+    .disableMemoryTools()      // 不注册 memory_search / memory_get / memory_save / thread_search
                                // 同时去掉对应的 Memory Recall / 工具 Persistence 引导
     .build();
 ```

@@ -2,7 +2,7 @@
 
 [中文](mcp-execution-recovery.md)
 
-AgentScope Service recovery extension v1 uses tools/list, tools/call and _meta to query the original
+Managed Agents recovery extension v1 uses tools/list, tools/call and _meta to query the original
 execution without modifying AgentScope Java binaries. Third-party servers must implement this
 contract; ordinary tools keep their protection against replaying uncertain operations.
 
@@ -49,7 +49,7 @@ retain their existing `TURN_RESUMES` path during rollout.
 The original TURNS 60-second Suspend, terminal proactive ACK, Session settled sequence and predecessor
 checks remain intact. Batch completion, notification ACK and continuation claim cannot release T2;
 T1's terminal commit remains required. Append `managed-mcp-batch.sql` through the schema job before
-updating Java services that strictly validate the migration ledger. Grant Session Portal and Runtime
+updating Java services that strictly validate the migration ledger. Grant Agent Service and Runtime
 SELECT/INSERT/UPDATE/DELETE on the new `ma.mcp_batch_call` table; Workers retain access only to their private state. Complete the Worker rollout before
 admitting batch-producing Runtime traffic, and avoid routing batches to older Workers/Runtimes during rollout. Local regressions cover two-call
 real-Harness restoration, cross-Runtime recovery, partial-result takeover, cancellation, both result/
@@ -61,7 +61,7 @@ T1/T2 ordering. Remote acceptance additionally inspects actual Pod logs and phys
 A recoverable Tool advertises metadata:
 
 ```json
-{"io.agentscope/execution-recovery":{"version":1,"queryTool":"managed_execution_get"}}
+{"io.agentcore.managed/execution-recovery":{"version":1,"queryTool":"managed_execution_get"}}
 ```
 
 The same server exposes queryTool with readOnlyHint=true; it is excluded from the model catalog.
@@ -69,7 +69,7 @@ The recovery declaration is frozen in the descriptor hash and durable mcp.call a
 descriptors omit the new null field and retain their hashes. The platform adds invocation metadata:
 
 ```json
-{"io.agentscope/execution-recovery":{"version":1,"execution_id":"mcp_exec_..."}}
+{"io.agentcore.managed/execution-recovery":{"version":1,"execution_id":"mcp_exec_..."}}
 ```
 
 Identity derives from Session scope and original task.execution_id and stays stable across Workers,
@@ -104,7 +104,7 @@ from JSONB or replica ordering. Tool settlement precedes effective Resume; T2 fo
 
 ## Direct discovery in Runtime
 
-Brain initializes an MCP client and reads `tools/list` before inference, pinning descriptors in
+Agent Harness Runtime initializes an MCP client and reads `tools/list` before inference, pinning descriptors in
 its per-Turn `ma.mcp_catalog` snapshot. Discovery uses bounded blocking threads and connection capacity,
 respects initialization/request timeouts, checks cancellation while awaiting responses, and closes connections
 afterwards. It never blocks Reactor I/O threads. Required server failures still reject execution; optional failures
@@ -120,7 +120,7 @@ drain rolling upgrades; historical serialized formats remain compatible.
 
 A successful `TOOL_EXECUTE` receipt means that the immutable task and sealed configuration are committed
 to `hands_execution`, not that the tool has completed. The callback only admits and wakes work; database
-unavailability still returns Suspend. A bounded `ManagedHandsLoop` recovers from a missed wakeup,
+unavailability still returns Suspend. A bounded `ManagedToolWorkerLoop` recovers from a missed wakeup,
 a crash after ACK, or capacity exhaustion by scanning durable tasks, without periodic Execute redelivery.
 
 The background execution owns a Redis lease for its whole lifetime (60 seconds by default), renews it
@@ -158,7 +158,7 @@ not replayed or assigned fabricated results.
 ## Long Runtime Turn suspension and proactive ACK
 
 While waiting for tools or input, the original `TURNS` message retains the Session's MQ FIFO head
-with a default 60-second Suspend (`builder.managed.turn-suspend-seconds`). Tool results are
+with a default 60-second Suspend (`managed-agents.runtime.turn-suspend-seconds`). Tool results are
 still durably ingested through `TOOL_EVENTS`; MCP batches resume directly from durable intents, while legacy operations and input waits use independent `TURN_RESUMES` messages.
 A tool result alone does not ACK that Turn. Short retries remain for capacity and lease contention.
 
@@ -212,5 +212,5 @@ ordering are unchanged. Regression entry points are `ManagedToolTransportTest` a
 Deploy the additive `managed-tool-publication-lease.sql` migration through the existing schema job.
 Stop all old Runtime publishers before migration and restart them with the compatible image; old
 publishers do not honor the new lease fields and must not overlap with new publishers. Existing
-pending commands and confirmed broker receipts are retained. Deploy compatible Session Portal and
-Hands images as their shared schema validator also knows the new migration.
+pending commands and confirmed broker receipts are retained. Deploy compatible Agent Service and
+Tool Worker images as their shared schema validator also knows the new migration.

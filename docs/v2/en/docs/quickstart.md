@@ -86,7 +86,7 @@ public class FirstAgent {
 
 `call` returns a `Mono<Msg>`. This CLI example uses `block()` to start execution and wait for the reply. One call can include multiple reasoning steps and tool calls. The next call with the same `userId` and `sessionId` uses the conversation's context.
 
-By default, Harness saves execution history and working-state snapshots (checkpoints). Keep the same `agentId`, user, session identity and storage configuration across restarts to continue the conversation. You do not need to create an `AgentSession` for this persistence.
+By default, Harness saves execution history and working-state snapshots (checkpoints). Keep the same `agentId`, user, session identity and storage configuration across restarts to continue the conversation. Direct calls support this persistence without creating a durable task.
 
 In this local example, native history lives under `.agentscope-runtime/` at the Workspace Filesystem root resolved for the current identity. With filesystem isolation or distributed storage, the location follows the selected root or namespace. See the [storage reference](/v2/en/docs/harness/session-log#storage-and-backend-configuration) when you need to inspect records or change backends.
 
@@ -135,11 +135,11 @@ return Mono.using(
 
 Take `userId` from the authenticated identity and authorize access to `sessionId`. Do not call setters on the shared Builder from request handlers. Shared models, tools and middleware must support concurrent use. Different sessions can execute in parallel; the application should order requests to the same session across instances. Journal writer fencing is not an automatic queue. See [Agent lifecycle](/v2/en/docs/building-blocks/agent#instance-lifecycle).
 
-### When to use AgentSession
+### When to use Durable
 
 Use `call` / `streamEvents` for ordinary conversations, workflow steps and streaming interfaces whose execution belongs to the current request. Returning the execution stream directly as an HTTP response can allow a client disconnect to cancel that execution.
 
-Use `agent.session(ctx)` when your product needs work to continue after the page closes, durable queueing while busy, guidance during execution, or continuation of an interrupted task. Its `AgentSession` accepts tasks and schedules background execution; the frontend independently reads snapshots and durable events.
+Use [Durable](/v2/en/docs/harness/durable) when work must continue after page closure, queue durably, accept guidance or continue after pause. Runtime assembles execution, Client admits Turns, and frontends independently observe public snapshots and events.
 
 For background work, the application session manager or task worker owns the Agent until its work stops or the application shuts down. Do not close it when the submission HTTP request returns: its lifetime covers background execution, not just admission.
 

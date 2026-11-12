@@ -21,6 +21,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.ReActAgent;
+import io.agentscope.core.journal.InMemoryThreadJournalStore;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.model.ChatResponse;
@@ -28,7 +29,6 @@ import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.Model;
 import io.agentscope.core.model.ModelSchedulers;
 import io.agentscope.core.model.ToolSchema;
-import io.agentscope.core.session.InMemorySessionLogStore;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
@@ -296,7 +296,7 @@ class ModelSchedulingIsolationTest {
                             ReActAgent.builder()
                                     .name("isolated")
                                     .model(model)
-                                    .sessionLogStore(new InMemorySessionLogStore())
+                                    .threadJournalStore(new InMemoryThreadJournalStore())
                                     .build();
                     assertEquals(
                             "answer",

@@ -32,7 +32,7 @@ AgentScope 通过 `Agent` 接口统一智能体的调用方式，提供底层的
 | --- | --- |
 | 获取回复、提取结构化数据、执行工作流中的一个步骤 | `agent.call(input, ctx)` |
 | 在当前请求中逐步展示文本和工具进度 | `agent.streamEvents(input, ctx)` |
-| 后台持续执行、忙时排队、运行中补充要求、中断后继续原任务 | `agent.session(ctx)` 的会话操作，仅 HarnessAgent 提供 |
+| 后台持续执行、持久排队与恢复 | `DurableRuntime` 的 Session/Thread/Turn 操作 |
 
 `call` 和 `streamEvents` 都可以用于多轮对话；每次调用可包含多次推理和工具执行。使用默认配置的 HarnessAgent 时，两者也会保存 Session Log 和 checkpoint。仅需要记住上一轮或查询历史时，可以继续直接调用。
 
@@ -79,7 +79,7 @@ flowchart TD
 
 **也可以共享同一个 Agent 实例。** Agent 采用无状态执行引擎设计，会话状态按身份管理；共享实例由应用在退出时关闭。同一实例内，相同用户与会话的直接调用由执行门串行化，不同会话可并行。实例仍有缓存、执行门和后台资源，因此这里的“无状态”不表示没有生命周期。后续示例统一采用每请求创建的推荐方式。
 
-后台 `AgentSession`、Channel 或托管运行时的生命周期由其管理器持有，不能套用“提交请求返回就关闭”的方式。中断一次直接调用也必须定位到正在执行的实例；临时构建另一个实例不能中断旧实例中的请求。
+Durable 和 Channel 宿主管理其 Agent 生命周期，不能在提交请求返回时关闭受管 Agent。中断直接调用需定位到活动调用句柄或执行实例；新建另一个 Agent 不能中断旧调用。
 
 ## 配置智能体
 
@@ -270,21 +270,23 @@ return Mono.using(
 
 流式 HTTP 响应可用 `Flux.using(agentBuilder::build, agent -> agent.streamEvents(input, ctx), ReActAgent::close)`。由 Web 框架订阅，不要在 handler 中提前关闭实例。
 
-不同会话可以并行。每请求创建实例后，单个实例内的执行门不会协调其他实例；同一会话由业务队列串行调度，或交给持有后台生命周期的 `AgentSession`。原生日志的写入隔离防止并发写入，但不提供跨实例 FIFO 排队；只配置旧 `stateStore` 也不会获得分布式执行锁。
+不同 Thread 可以并行。单个实例内的执行门不会协调其他实例；同 Thread 的任务排队由业务队列或 Durable 负责。原生日志 fencing 防止冲突写入，不提供自主 FIFO 调度。
 
 Spring Boot 完整示例见 `agentscope-examples/documentation/.../streaming/StreamingWebExample.java`。
 
 ## 会话应用的执行控制
 
-当聊天产品需要关闭页面后继续执行、保存排队任务或统一处理恢复和待办时，使用 `AgentSession` 管理这些操作。普通问答、流式展示或自行处理 HITL 的应用可以继续使用直接调用。
+需要后台执行、持久任务排队和恢复时，使用 [Durable](/v2/zh/docs/harness/durable)。Core/Harness 负责单次调用和原生状态，不再提供第二套任务调度器。普通对话或自行管理 HITL 的应用仍可直接调用。
 
-会话方式通过 `submit` 接收新任务，以 `steer` / `inject` 补充信息，以 `respond` / `resume` 继续原任务；框架持有后台执行。前端从快照与持久事件读取进度。完整流程见[会话使用指南](/v2/zh/docs/harness/session-log)。
+通过 DurableSession 或 DurableThread 的 `submit` 创建 Turn；通过该 Turn 的 `steer`、`inject` 和 `respond` 补充信息或回答交互。Runtime 管理后台执行，前端通过 [Durable API](/v2/zh/docs/harness/durable) 读取公共快照和已提交事件。
 
 同一个会话选择直接调用或会话操作来驱动任务；只读历史查询可以共用。已经 `submit` 的任务应通过读取事件观察，不能再调用 `streamEvents` 来订阅它，否则会发起另一次执行。
 
 <Accordion title="高级：自行管理单次执行">
 
 `ReActAgent` 和 `HarnessAgent` 提供 `prepareRun(messages, context)`（事件流）与 `prepareCall(messages, context)`（最终回复），返回带有唯一 `runId()` 的 `AgentRun<T>`。创建句柄不会执行 Agent；订阅一次 `stream()` 才开始执行。
+
+直接调用的 `turnId` 保持为空；它是执行宿主可选提供的任务关联，不由 Agent 自动生成。复用同一 Thread 可以延续上下文，每次实际调用仍使用新的 Run。启用原生日志时，Run 开始与起始 checkpoint 一起提交；显式继续挂起或中断的执行时，日志按来源 Run 恢复位置，工具结果关联原请求并产生新的 Step。一次调用完成后，下一次直接调用重新计算执行预算。Durable 托管调用由 adapter 注入 Turn 身份，任务预算仍由 Durable 跨 Run 累计。
 
 ```java
 AgentRun<AgentEvent> run = agent.prepareRun(List.of(new UserMessage("你好")), context);
@@ -298,6 +300,7 @@ run.cancel();
 - `cancel()` 立即取消响应式执行，支持订阅前和 session 排队期间取消。订阅者收到 `CancellationException`。取消排队中的 B 不会中断正在执行的 A，也不会让 C 越过 A 提前执行。
 - `interrupt()` / `interrupt(message)` 请求已获得执行位置的调用在协作检查点中断。ReActAgent 返回中断恢复消息后，句柄正常完成；若尚未获得执行位置，则只取消这次排队调用。
 - `status()` 返回 `CREATED`、`QUEUED`、`RUNNING`、`COMPLETED`、`FAILED` 或 `CANCELLED`。`QUEUED` 包含进入 Core 生命周期前的准备阶段。`termination()` 可观察终态而不启动执行。订阅者主动取消订阅也会取消句柄。
+- `outcome()` 提供可重复观察的 `RunOutcome`。正常完成和错误会等待状态提交与清理；显式取消立即报告 `CANCELLED`，不表示外部操作已经结清。其状态为 `COMPLETED`、`SUSPENDED`、`INTERRUPTED`、`FAILED` 或 `CANCELLED`，并携带 `TOOL_SUSPENDED`、`MAX_ITERATIONS` 等原因。Publisher 正常结束时，调用仍可能处于挂起或业务失败；状态提交失败会得到失败 outcome。观察 outcome 不会启动或取消执行。Durable 还会结合待消费输入和外部操作，单独决定 Turn 状态。
 - 一个句柄只允许一次订阅；下一次执行需要新句柄，重复订阅会被拒绝。已结束的句柄不能中断后续调用。
 
 运行管理器负责查找、鉴权及终态清理，Agent 不登记 RuntimeContext 对象。取消不会回滚外部副作用，也不能强行终止不响应取消的阻塞工具；立即取消不保证走协作中断的恢复回复和状态保存路径。
@@ -306,7 +309,7 @@ run.cancel();
 
 ## 中断执行（Interrupt）
 
-下面针对通过 `call` / `streamEvents` 启动的执行。跨请求发起中断时，应用应保存并找到目标执行对应的 Agent 实例，执行结束后移除并关闭。需要从外部协作中断时，使用 `agent.interrupt`；通过 AgentSession 提交的任务使用 `session.interrupt()`，再按[会话指南](/v2/zh/docs/harness/session-log#中断后继续原任务)继续：
+下面针对 `call` / `streamEvents`。定位正在执行的 Agent 实例或 AgentRun 来中断该次调用，并在结束后释放自有资源。Durable 任务取消使用 `DurableTurn.cancel(requestId)`；中断某次原生调用不等于取消持久任务。
 
 ```java
 import io.agentscope.core.agent.RuntimeContext;
@@ -400,7 +403,7 @@ Msg result = agent.call(List.of(new UserMessage("Hi.")), ctx).block();
 
 ## 人机交互
 
-下文展示直接调用时如何处理工具确认与外部结果；发起请求与交回答案时沿用同一个 `ctx`。业务自己管理交互界面和后续调用；需要持久待办和自动关联原任务时，可使用 [AgentSession.respond](/v2/zh/docs/harness/session-log#回复-agent-的问题或确认请求)。
+下文展示直接调用时如何处理确认和外部结果，请求与答案沿用同一上下文。需要持久交互时，使用 [DurableTurn.respond](/v2/zh/docs/harness/durable) 并指定待办交互身份，由 Durable 续接所属 Turn。
 
 当智能体遇到以下两种情况时，会暂停执行并发出特殊事件：需要**用户确认**的工具调用（权限系统返回 ASK），或标记为**外部执行**的工具（结果必须来自智能体外部）。两种情况下，都可以通过把结果事件再次喂给 agent 的下一次 `call` 来恢复执行。
 

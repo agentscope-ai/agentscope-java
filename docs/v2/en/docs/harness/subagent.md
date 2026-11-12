@@ -215,7 +215,7 @@ By default every `agent_spawn` creates a fresh subagent with a new session — n
 
 When `persistSession` is on, the framework derives a deterministic key from `(parentSessionId, agentId, label)`. If `agent_spawn` is called again with the same combination, the existing agent instance is reused — its conversation history and state are preserved.
 
-A service host can place a `SubagentExecution` in `RuntimeContext` to own child execution. Its `childSessionId` hook applies to both fresh and persistent spawns; returning `null` keeps the framework's default ID. The host must return a stable ID for the same persistent identity. A `SessionLogException` from hosted child execution propagates to the parent so durable storage failures or internal suspension cannot become ordinary tool-result text.
+A service host can place a `SubagentExecution` in `RuntimeContext` to own child execution. Its `childSessionId` hook applies to both fresh and persistent spawns; returning `null` keeps the framework's default ID. The host must return a stable ID for the same persistent identity. A `JournalException` from hosted child execution propagates to the parent so durable storage failures or internal suspension cannot become ordinary tool-result text.
 
 The optional `ownsChildState()` method defaults to `false`. A host returning `true` must persist the child's permission and plan state itself; Harness then avoids reading or mutating local prototype state before delegation. Existing hosts retain the default local state propagation.
 

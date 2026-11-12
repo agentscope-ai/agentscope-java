@@ -15,8 +15,8 @@ import uuid
 
 import replicas
 
-sys.path.insert(0, str(replicas.SERVICE / 'service-controlplane/sdk/python'))
-from agentscope_service import ServiceClient
+sys.path.insert(0, str(replicas.SERVICE / 'control-plane/sdk/python'))
+from managed_agents import ServiceClient
 
 
 def wait_for(check, timeout=600):
@@ -61,7 +61,7 @@ def run(state):
         save()
         replicas.wait_turn('/v1/sessions/' + session_id, value['id'], {'completed'}, timeout=600)
         history = events(session_id)
-        assert any(f'brain-checkpoint-{action}-{version}-{record["label"]}' in json.dumps(event)
+        assert any(f'harness-runtime-checkpoint-{action}-{version}-{record["label"]}' in json.dumps(event)
                    for event in history), history
         return value['id']
 
@@ -151,7 +151,7 @@ def run(state):
         record['artifact'] = client.publish_artifact(origin, {'name': 'Source-owned publication',
                 'uri': 'https://fixture.example/source-only'}, idempotency_key='artifact-' + label)
         phase('replace-both-brains-and-both-hands')
-        record['replacements'] = {name: restart(name) for name in ['brain-a', 'brain-b', 'hands-a', 'hands-b']}
+        record['replacements'] = {name: restart(name) for name in ['harness-runtime-a', 'harness-runtime-b', 'tool-worker-a', 'tool-worker-b']}
         save()
         turn(target, 'read', 'v1')
         turn(target, 'write', 'fork')

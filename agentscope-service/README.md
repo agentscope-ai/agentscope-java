@@ -1,132 +1,133 @@
-# AgentScope Service
+# Managed Agents
 
-> **A self-hostable Agent as a Service platform: configure Managed Agents built on HarnessAgent and use them from business applications through APIs.**
+> **An Agent as a Service platform for business applications: submit work through APIs, stay involved, and retrieve reviewable results and deliverables.**
 
 [中文说明](README_zh.md)
 
-AgentScope Service turns Agent capabilities into services shared by business applications. Deploy the platform on your infrastructure, configure a Managed Agent with instructions, models and tools, and let Service run it. Applications submit work, follow progress, provide human input when needed, and retrieve results through the Session API.
+Managed Agents publishes Agents that research, use tools, and verify results as callable services. Applications can generate customer proposals in a CRM, verify documents in a pipeline, investigate incidents and create PRs in an engineering product, provide an interactive specialist assistant, or run scheduled background tasks.
 
-Use it to generate customer proposals in a CRM, verify documents in a pipeline, investigate incidents in an engineering product, or provide an ongoing specialist assistant. Users work inside the existing product; Service manages Agent execution and its records. Application teams own business tools, data authorization, the interface and result acceptance. See [Use cases](../docs/v2/en/service/usecases.md) for integration designs.
+Users start work and review delivery inside their existing product. Service runs and coordinates Agents and exposes their interactions. Application teams own business tools, data authorization, the interface, and result acceptance. See [Use cases](../docs/v2/en/service/usecases.md) for integration designs.
 
-## Managed Agents: HarnessAgent as a service
+## Capabilities
 
-**Managed Agents are the primary starting point for using Service.** They use the same AgentScope HarnessAgent core as the Harness SDK. Configure an Agent directly through Console or management APIs, connect its model and tool execution Environment, then test it in a Session. Configure supported tools and Memory as the task requires, using execution records to check and improve delivery. The first native protocol does not accept Skills/multiagent configuration or client tool confirmation; consult the [current contract](../docs/v2/en/service/claude-session-api.md) before enabling extensions.
+### From task to delivery through APIs
 
-Service owns the Agent runtime, session management, background execution, checkpoints and recovery. Application teams can use these capabilities without developing and operating a separate Agent runtime service for each application. In the recommended self-hosted setup, the platform team operates Service and its shared infrastructure.
+Create or connect an Agent, configure resources, and publish an Endpoint. Applications call it with Application credentials, retain the Invocation ID, and read status, snapshots, events, pending actions, and artifacts. Jobs serve independent background work; Conversations serve session-capable single Agents. Each task or conversation turn has its own Invocation.
 
-| Approach | How you develop | Runtime ownership |
-| --- | --- | --- |
-| Harness SDK | Embed HarnessAgent in a Java / Spring Boot application and compose behavior in code | Your application team deploys and operates the runtime |
-| Managed Agents in Service | Configure HarnessAgent-based Agents through Console or APIs, then submit work through the Session API | Service manages execution and Sessions; the platform team operates the deployment |
+Endpoints define input/output contracts and releases. Applications use queries, SSE, or Webhooks to receive changes, involve people in decisions, and return verified results to a business process. Execution completion and business acceptance are separate stages.
 
-Choose the [Harness SDK](../docs/v2/en/docs/quickstart.md) when you need to embed execution deeply in application code. Choose Managed Agents when applications should delegate execution to a shared platform. An existing SDK application can also connect as an External Agent.
+Start with the [API quickstart](../docs/v2/en/service/first-session.md), then follow [Endpoint publishing](../docs/v2/en/service/endpoints.md) and [Unified service API](../docs/v2/en/service/service-api.md). Managed native session, file, subagent, and checkpoint APIs provide their respective extensions; their IDs, authentication, and event cursors are not interchangeable with public Invocations.
 
-## From deployment to your first Managed Agent
+### Choose execution for the task
 
-Start with a small task whose result you can judge. Follow this path; if your team already has a working Service deployment, begin with Agent creation.
+- **Managed:** Define a specialist Agent through instructions, models, tools, and resources. Service runs AgentScope Harness, while tools execute in the configured Environment. Deploy the platform on your own infrastructure.
+- **External:** Connect an existing Managed Agents or other framework application, retaining its process and deployment. Implement task execution, event reporting, and supported controls.
+- **Hosted:** Reuse Coding Agents such as Codex or Claude Code through a Runtime Host that manages provider processes and work directories.
 
-| Step | What you do | Guide |
-| --- | --- | --- |
-| Deploy Service | Start the platform, configure a model and prepare a tool execution Environment | [Docker Compose](../docs/v2/en/service/quickstart.md) / [Kubernetes](../docs/v2/en/service/kubernetes.md) |
-| Create a Managed Agent | Configure instructions, model and tools; submit a task and verify the result | [Your first Managed Agent](../docs/v2/en/service/create-managed-agent.md) |
-| Configure capabilities | Configure tools and Memory within the current protocol capabilities | [Tools](../docs/v2/en/service/tools.md), [Workspaces](../docs/v2/en/service/workspaces.md), [Memory](../docs/v2/en/service/memory.md) |
-| Integrate an application | Create Sessions, submit Turns and follow Events from your product | [Session API integration](../docs/v2/en/service/claude-session-api.md) |
-| Expand and operate | Add collaboration where needed and inspect execution records | [Multi-agent orchestration](../docs/v2/en/service/orchestration.md), [Sessions and tasks](../docs/v2/en/service/session-event-log.md) |
+Validate delivery with one Agent first. Use a Team for dynamic delegation or a Workflow for explicit steps, conditions, and human gates. Callers continue to consume an Endpoint and follow its Invocation. Teams and Workflows currently provide Jobs; interaction support depends on runtime capabilities.
 
-## One application model: Session, Turn and Events
+### Shared management and observation
 
-An Agent defines a reusable capability. A **Session** selects an Agent, Team or Workflow and freezes its configuration for the work that follows. Each task submitted within that Session creates a **Turn**, which Service executes in the background. Applications retain the Session and Turn IDs to correlate the work with their business records.
+The Control Plane manages the Agent catalog, bindings, releases, application identity, task coordination, and public invocations. Managed Agents, External Applications, and Runtime Hosts cooperate through durable execution contracts. Console is the visual interface for API configuration, task inspection, and operations; business users can stay in their own product.
 
-Applications read Session state, event history and Turn output to present progress and retrieve results. Current native Managed SSE delivers events after connection; after reconnecting, use paginated history and Turn/output queries. Native snapshots and SSE replay cursors are not supported. Closing the page or disconnecting SSE does not stop execution. A completed Turn still needs the application's business acceptance before its result enters the next stage of a process.
-
-Managed Agents retain conversational context within a Session. Team and Workflow Turns start separate collaboration tasks or process runs. They share Session and Turn concepts. Current Managed execution uses `/v1/sessions` with `agent` creation and `user.message` Events; other backends retain the compatibility API. Payloads, context and supported controls depend on the selected backend. See [Session API integration](../docs/v2/en/service/claude-session-api.md) and the [API reference](../docs/v2/en/service/api-reference.md).
-
-In production, application credentials belong to an Application and grant access to explicit target resources. Applications must also enforce business end-user permissions when exposing data or tools; using different credentials within one Application does not automatically isolate users' tasks.
-
-## Extend Managed Agents with collaboration
-
-Validate delivery with one Managed Agent first. Use a HarnessAgent Subagent when that Agent should delegate part of its work and incorporate the result. Add a Team when independently maintained specialists need a lead to coordinate their responsibilities. Use a Workflow when a process requires explicit steps, conditions or human approval. Applications continue to create Sessions and submit Turns for the selected target.
-
-Existing capabilities can join this collaboration. An [External Agent](../docs/v2/en/service/register-agentscope-agent.md) retains its SDK or framework implementation, process and deployment while adapting task execution and event reporting to Service. A [Hosted Agent](../docs/v2/en/service/connect-hosted-agent.md) reuses a Coding Agent such as Codex or Claude Code through a Runtime Host that manages its provider processes and work directories.
-
-Self-hosting Service means deploying the whole platform. A `self_hosted` tool Worker supplies a Managed Agent's tool execution environment; a Runtime Host runs Hosted Agents. These are separate roles. See [Environments](../docs/v2/en/service/environments.md) and [Runtime Host](../docs/v2/en/service/runtime-host.md) for setup.
-
-## Architecture
-
-The current source deploys five components: Gateway, Control Plane, Session Portal, Brain Dataplane and Hands. The diagram shows the Managed Agent execution path and its shared infrastructure. External Agents and Hosted Runtime Hosts extend the platform through the Control Plane.
-
-### How it works
-
-```mermaid
-flowchart TB
-    App["Business applications / Console"] --> Gateway
-    subgraph Service["Self-hosted AgentScope Service"]
-        Gateway -->|"Agent and resource configuration"| CP["Control Plane"]
-        Gateway -->|"Session / Turn / Input / Events"| Portal["Session Portal"]
-        Portal -->|"Turns"| MQ["RocketMQ LiteTopics"]
-        MQ <--> Brain["Brain: HarnessAgent"]
-        MQ <--> Hands
-        CP --- PG[("PostgreSQL")]
-        Portal --- PG
-        Brain --- PG
-        Hands --- PG
-        Portal -.-> Redis["Redis: leases and notifications"]
-        Brain -.-> Redis
-        Hands -.-> Redis
-    end
-    subgraph Integrations["Connected services"]
-        Models["Model services"]
-        Tools["MCP / Sandbox / self_hosted Worker"]
-    end
-    Brain --> Models
-    Hands --> Tools
-```
-
-Applications use Gateway for management and Session APIs. Control Plane manages Agent definitions, resources, identity and collaboration. Session Portal admits work and serves snapshots, queries and SSE. Brain runs HarnessAgent reasoning and commits durable execution state; Hands performs physical tool execution in the configured Environment.
-
-| Component or dependency | Responsibility |
-| --- | --- |
-| Gateway | Public entry, authentication and API routing |
-| Control Plane (`service-controlplane`) | Resource and identity management, Team / Workflow orchestration, Hosted coordination, Cron, channels and outbound delivery |
-| Session Portal | Session / Turn / Input admission, queries, public Events and SSE |
-| Brain Dataplane | HarnessAgent execution, native logs, checkpoints, tool result commits and recovery |
-| Hands | Tool and Sandbox execution, durable outputs and results, tool event publication |
-| PostgreSQL | Durable admission and execution records, checkpoints, tool results, deduplication and oversized objects |
-| Redis | Renewable execution ownership tokens and transient notifications |
-| RocketMQ | Five business channels: Turns, Tool Execute, Tool Control, Tool Events and Turn Resumes |
+Workspaces, Environments, Memory, and Vault organize execution resources. Application identity and business end-user identity require separate handling: different credentials in one Application do not automatically isolate users' tasks. Configure CRM, GitHub, order-system, and other connections in the integration.
 
 ### Managed Session runtime ownership
 
-Brain and Hands separate Agent reasoning from physical tool execution. Brain persists and authorizes tool intents with the checkpoint; Hands validates that authorization, executes the operation and durably records its result. Brain commits tool results before continuing the same logical Turn. Long-running tools can suspend execution and release active runtime resources while preserving the Session's Turn order. Recovery can run on another Brain replica from durable state.
+Public Managed Session traffic enters Agent Service for admission, queries and SSE. Agent Harness Runtime
+consumes ordered Turn commands from RocketMQ LiteTopics, runs HarnessAgent and directly commits
+native logs, checkpoints, tool intents, waiting states and terminal results in PostgreSQL.
+Before committing a tool intent, Agent Harness Runtime preserves its inert proposal and obtains an Execute Broker ACK.
+The checkpoint transaction authorizes the task and records the receipt; there is no Runtime Execute Outbox publisher scan.
+Tool Worker confirms this shared authorization before admitting operation-scoped Execute commands. A pending commit
+causes a short MQ Suspend; only a durable replacement epoch or terminal state permits discarding an uncommitted attempt.
+Recovery reuses the complete proposal under the new epoch, while already committed operations retain their identities. Tool Worker persists physical execution, covered output and immutable results, and publishes
+only tool events. Agent Harness Runtime applies the complete source prefix and atomically records a Resume
+Outbox intent when all results required by the current suspension are ready. Runtime publishes and consumes
+Session-scoped Resume messages, validates the suspension and restores the checkpoint; it does not resume
+inference inside the tool event callback. Runtime obtains and pins MCP tool descriptors directly before inference. Discovery does not create a Worker task or suspend the Turn; actual MCP calls remain asynchronous Tool Worker operations.
+A suspended Turn releases its Harness, Redis token and MQ callback, returning SDK Suspend while
+its original message retains the FIFO head. Root and descendant Sessions share one Turn Topic and
+consumer pool; frozen depth metadata and the maximum depth of 16 remain business constraints. Resume continues the same logical Turn; the original
+message can return SUCCESS only after durable terminal state. Subsequent Turns remain in MQ.
+These components share PostgreSQL for checkpoints and oversized objects and run with multiple
+replicas. SSE disconnects do not stop execution. With user files disabled, no NAS is required.
 
-MCP batch waits use durable direct continuations; other tool operations and input waits use Session-scoped Resume messages. Redis accelerates delivery and protects active ownership, while PostgreSQL preserves the execution facts needed for recovery. With user files disabled, checkpoints and oversized objects use PostgreSQL without requiring NAS. File and Artifact capabilities have their own storage requirements.
+Redis contains renewable ownership tokens and transient delivery acceleration. PostgreSQL owns
+deduplication, execution history and Outbox/Inbox facts; losing Redis never authorizes a fresh
+external side effect. Unknown RPC outcomes remain unknown until the original result is confirmed.
+Workspace checkpoint/lifecycle coordinators run in Agent Harness Runtime and send physical operations through the
+same Execute/Control boundary. Tool Worker has no runtime journal or checkpoint coordinator bean.
 
-Managed AgentTask integration and failure acceptance are still in progress. For protocol details, storage requirements and current integration limits, see [Managed runtime design](docs/managed-runtime-dataplane.md), [Redis and the Turn lifecycle](docs/redis-usage-and-turn-lifecycle.en.md) and [RocketMQ topics and the Turn lifecycle](docs/rocketmq-topics-and-turn-lifecycle.en.md).
+Channel chat and Deployment/Cron adapters submit native Turns through the control plane and Agent Service. Provider message IDs and scheduled fire coordinates remain stable across retries. Replies replay public events for the admitted Turn; adapters do not post legacy Dataplane events. Native Session configuration freezes its Environment and definition without creating a second control-plane runtime Session.
+
+Managed AgentTask dispatch records an immutable Attempt and admission input in a durable Outbox, then admits a native Turn. Transport retries reuse the same Attempt, caller and request key. Cancellation uses native Inputs; the control plane observes native execution facts instead of timing out Managed work from its own heartbeat. Other backends keep their execution paths. AgentTask integration and failure acceptance are still in progress. See [Managed runtime design](docs/managed-runtime-dataplane.md) for data flows, storage requirements and the migration boundary.
+
+## Architecture
+
+The current source deploys five components: the Go Control Plane, Gateway, Agent Service,
+Agent Harness Runtime Dataplane and platform Tool Worker. One `control-plane` binary/image owns management,
+Workflow/Team orchestration, Hosted coordination, Cron, channels, outbound messages and webhook
+sending on port 8081. There are no separate scheduler or orchestration deployments.
+
+Every control replica runs bounded workers. PostgreSQL owns message/job deduplication, claims,
+stream leases, retries and fencing; no sticky sessions or single control replica are required.
+`control-plane.executionSlots`, `control-plane.workerBatch`, `control-plane.channelSlots` and `control-plane.webhookSlots`
+set per-replica concurrency in Helm. Keep `cp` and `rt` schemas and signing/encryption keys stable.
+The new `0007_integrated_scheduler` product migration adds the shared jobs and stream leases.
+
+For an upgrade, drain incoming channel traffic and outstanding replies, stop the old Java
+Scheduler and Go orchestration deployments, run the schema jobs and reapply grants, then start
+the combined control replicas. Remove old Compose containers with `--remove-orphans`; scale down
+old Helm deployments before upgrading. Retire unused runtime/scheduler credentials only after
+cutover. This source layout requires newly built images; published BETA1 images are unchanged.
+
+
+### How it works
+
+Business applications submit and observe work through Endpoint / Invocation APIs. Developers configure capabilities through management APIs or Console. The Control Plane coordinates three execution models:
+
+- `managed`: hosted AgentScope Harness execution;
+- `external-application`: user applications built with Managed Agents, LangChain, Claude Agent SDK, and others, registered through Application SDK / Runtime Protocol;
+- `hosted-runtime`: task-scoped Codex, Claude Code, and similar processes run by Runtime Host daemons;
+
+![Managed Agents](/docs/imgs/agentservice/managed-agents-architecture.png)
 
 ### Production deployment architecture
 
-The five components share durable infrastructure and support multiple replicas. Control Plane combines management and background coordination in one binary and image on port 8081; the current source does not require separate Scheduler or orchestration deployments. Its bounded workers use PostgreSQL claims, stream leases and fencing to coordinate across replicas. Helm's `control.executionSlots`, `control.workerBatch`, `control.channelSlots` and `control.webhookSlots` set per-replica concurrency.
+In production, the recommended Managed Agents deployment looks like this:
 
-For an upgrade from the old deployment, drain incoming channel traffic and outstanding replies, stop the old Java Scheduler and Go orchestration deployments, run the schema jobs and reapply grants, then start the combined Control Plane replicas. Preserve the `cp` / `rt` schemas and signing / encryption keys; the `0007_integrated_scheduler` product migration adds shared jobs and stream leases. Remove old Compose containers with `--remove-orphans`, or scale down old Helm deployments before upgrading. Retire old runtime / scheduler credentials after cutover.
+![Managed Agents](/docs/imgs/agentservice/managed-agents-production-deploy.png)
 
-This architecture describes the current source and requires newly built images. Published `2.1.0-BETA1` images and their installation defaults remain release-specific. Follow [Docker / Helm deployment](deploy/README.md) and the [release guide](release/README.md) for released installations.
+
+| Plane | Owns | Does not own |
+| --- | --- | --- |
+| Gateway | Public entry, authentication, and API routing | Business state and Agent execution |
+| Control Plane (`control-plane`) | Resource definitions, identity, publishing, Workflow/Team orchestration, Hosted coordination, Cron, channels and outbound delivery | Harness execution |
+| Agent Service | Public Session/Turn admission, events, queries and SSE | Native execution state |
+| Dataplane | Harness reasoning, native logs/checkpoints/terminal commits, tool event Inbox and validated recovery | Resource CRUD and physical tool execution |
+| Tool Worker | Sandbox/MCP execution facts, output/result Outbox and Sandbox resources | Turn admission and native runtime commits |
+
+
+## How Agents attach
+
+Application developers can validate a call with the [API quickstart](../docs/v2/en/service/first-session.md). Platform teams prepare models, execution resources, identities, and releases. Existing applications implement the [External execution adapter](../docs/v2/en/service/register-managed-agents-agent.md) before publishing a service.
 
 ## Quick start with Docker Compose
 
 Build the current source in local development mode. Prepare Docker Compose v2 and a model credential, then run from the repository root:
 
 ```bash
-cd agentscope-service
+cd managed-agents
 export DASHSCOPE_API_KEY="YOUR_DASHSCOPE_API_KEY"
-./deploy/init-env.sh 2.1.0-local agentscope-local
-# Configure reachable BUILDER_MANAGED_REDIS_URI / BUILDER_MANAGED_MQ_ENDPOINTS
-# in deploy/.env; initialize the five business Lite parent topics and FIFO / Shared / wildcard consumer groups first.
-export BUILDER_LOCAL_DEV=true
-export BUILDER_ALLOW_LOCAL_ENVIRONMENT=true
+./deploy/init-env.sh 2.1.0-local managed-agents-local
+# Configure reachable MANAGED_AGENTS_RUNTIME_REDIS_URI / MANAGED_AGENTS_RUNTIME_MQ_ENDPOINTS
+# in deploy/.env; initialize the Turn depth family and other three Lite parents with FIFO / Shared / wildcard groups first.
+export MANAGED_AGENTS_LOCAL_DEV=true
 docker compose --env-file deploy/.env up -d --build --wait --wait-timeout 600
 ```
 
-Open http://localhost:18080. Console automatically uses the development identity and default scope; APIs require no login, user token, Application key, or grants. The explicit `BUILDER_LOCAL_DEV=true` setting enables this development flow; source Compose binds host ports to loopback. Models and external tools still need provider credentials.
+Open http://localhost:18080. Console automatically uses the development identity and default scope; APIs require no login, user token, Application key, or grants. The explicit `MANAGED_AGENTS_LOCAL_DEV=true` setting enables this development flow; source Compose binds host ports to loopback. Models and external tools still need provider credentials.
 
 Published `2.1.0-BETA1` images do not support this mode. See [production deployment](../docs/v2/en/service/kubernetes.md) for released Compose, Helm, accounts, and permissions; continue with [your first Agent](../docs/v2/en/service/create-managed-agent.md).
 
@@ -135,44 +136,62 @@ Published `2.1.0-BETA1` images do not support this mode. See [production deploym
 To connect a Coding Agent to local development, install Go 1.26+ and build both commands from the current source. Run from the repository root:
 
 ```bash
-cd agentscope-service/service-controlplane
-go install ./cmd/as ./cmd/agentscope-runtime-host
+cd managed-agents/control-plane
+go install ./cmd/mactl ./cmd/managed-agents-runtime-host
 AS_CLI_BIN_DIR="$(go env GOBIN)"
 if [ -z "$AS_CLI_BIN_DIR" ]; then
   AS_CLI_BIN_DIR="$(go env GOPATH)/bin"
 fi
 export PATH="$AS_CLI_BIN_DIR:$PATH"
-as version
-agentscope-runtime-host -help
-as connect http://localhost:18080
-as runtime status
+mactl version
+managed-agents-runtime-host -help
+mactl connect http://localhost:18080
+mactl runtime status
 ```
 
 Use your actual Service URL when the Host is on another machine. Install and
 authenticate the Coding Agent provider separately. The CLI connects to an existing
 Service and starts Runtime Host; it does not deploy the platform. Persist the PATH
 setting in your shell configuration. See the
-[Runtime Host guide](https://java.agentscope.io/v2/en/service/runtime-host).
+[Runtime Host guide](https://gitlab.alibaba-inc.com/ken.lj/agentcore-managed-agents/-/blob/master/docs/v2/en/service/runtime-host.md).
 
 ## Production installation with Helm
 
-Prepare PostgreSQL, Redis, five RocketMQ Lite Topic/group pairs, separate migration and
-workload Secrets, domain and TLS. Shared RWX Workspace/Artifact storage is needed only
-when user files are enabled. Use the current-source Chart:
+Prepare external PostgreSQL, shared RWX Workspace storage, Artifact storage,
+a configuration Secret, domain and TLS. Add the published Chart repository:
 
 ```bash
-helm lint agentscope-service/helm/agentscope-service \
-  --set imageRepository=REGISTRY/NAMESPACE \
-  --set existingSecret=service-credentials --set schema.existingSecret=service-migration
+helm repo add managed-agents https://chickenlj.github.io/helm-charts
+helm repo update managed-agents
 ```
 
-Follow the [production installation guide](https://java.agentscope.io/v2/en/service/kubernetes)
-to run schema jobs, apply business grants, then install the five RollingUpdate Deployments
-with the matching image version. Published BETA1 images/Charts retain the earlier architecture.
+Follow the [production installation guide](https://gitlab.alibaba-inc.com/ken.lj/agentcore-managed-agents/-/blob/master/docs/v2/en/service/kubernetes.md)
+to install `managed-agents/managed-agents` with `--version 2.1.0-BETA1` and the ACR
+namespace `registry.example.com/agentcore`. The Chart runs one
+replica per component with Recreate updates; allow a maintenance window.
+
+The current source Gateway expires pooled connections after 5 seconds idle or
+60 seconds lifetime and checks idle pools every 2 seconds. These limits apply
+between requests and do not cut active SSE streams. The source Helm chart drains
+Gateway and Agent Service for 10 seconds before SIGTERM, then allows 20 seconds
+for graceful shutdown within a 45-second Pod termination budget.
+
+For `POST /v1/sessions` and `POST /api/v1/agent-sessions`, send a unique
+`Idempotency-Key` for each intended Session and preserve both key and body when
+retrying. Gateway retries a connection failure once after 100 ms only for these
+creation endpoints, with a single nonblank key of at most 256 characters and a
+known body length of at most 2 MiB. Unkeyed, chunked and larger requests retain
+streaming behavior without automatic replay. Business errors, other writes and
+committed SSE responses are not retried. Unrecovered transport failures return
+JSON `502 upstream_unavailable` or `504 upstream_timeout` with `X-Request-ID`;
+timeouts are not automatically retried. A failed response can still mean the
+write succeeded, so recover it using the same key and body. Connection resets
+cannot be eliminated during crashes; bounded replay relies on durable backend
+idempotency rather than assuming that a failed response means no write occurred.
 
 ## Development
 
-For current Managed Session messages, event history and live SSE, follow the [native API quickstart](docs/api-quickstart.en.md).
+For manual Session instructions, snapshots and SSE, use the [standalone Session Playground](tests/session-playground/README.md). It runs locally on port 18082 and proxies the Gateway on port 18081 by default; create control-plane resources in your terminal.
 
 ### Start the source development stack
 
@@ -181,26 +200,25 @@ From the repository root:
 
 ```bash
 export DASHSCOPE_API_KEY=YOUR_MODEL_CREDENTIAL
-export BUILDER_MANAGED_REDIS_URI=redis://YOUR_REDIS_HOST:6379
-export BUILDER_MANAGED_MQ_ENDPOINTS=YOUR_CLUSTER_PROXY:8081
-cd agentscope-service
+cd managed-agents
 scripts/dev-down.sh
-BUILDER_REBUILD=1 scripts/dev-up.sh
+MANAGED_AGENTS_REBUILD=1 scripts/dev-up.sh
 # Stop later with scripts/dev-down.sh.
 ```
 
-The development stack enables `BUILDER_LOCAL_DEV=true`, automatically uses one development identity, and uses development secrets. Rebuilds preserve the database by default. Initialize the five MQ Topic/group pairs first;
-use `BUILDER_RESET_DB=1` only to explicitly recreate disposable development schemas.
+The development stack enables `MANAGED_AGENTS_LOCAL_DEV=true`, automatically uses one development identity, and uses development secrets. A full
+rebuild resets the disposable `cp`, `rt`, `portal` and `dp` schemas by default; set
+`MANAGED_AGENTS_RESET_DB=0` only to retain an existing compatible development database.
 It is separate from the release Compose installation above.
 
 ### Build the backend
 
-Run the Maven build from the monorepo root so all AgentScope snapshots used by the service jars are current:
+Run the Maven build from the monorepo root so all Managed Agents snapshots used by the service jars are current:
 
 ```bash
-mvn -T1 install -DskipTests
+mvn install -DskipTests
 
-cd agentscope-service/service-controlplane
+cd managed-agents/control-plane
 make build
 make test
 ```
@@ -208,9 +226,9 @@ make test
 ### Build or run the console
 
 ```bash
-cd agentscope-service/frontend
+cd managed-agents/console
 npm install
-npm run build   # emits static assets into ../service-controlplane/ui
+npm run build   # emits static assets into ../control-plane/ui
 
 npm run dev     # Vite HMR; /api proxies to the gateway
 ```
@@ -220,8 +238,8 @@ npm run dev     # Vite HMR; /api proxies to the gateway
 Build the Java artifacts first, then start the containerized stack:
 
 ```bash
-mvn -T1 install -DskipTests
-docker compose --env-file agentscope-service/deploy/.env -f agentscope-service/docker-compose.yml up --build
+mvn install -DskipTests
+docker compose --env-file managed-agents/deploy/.env -f managed-agents/docker-compose.yml up --build
 ```
 
 ### Service ports
@@ -229,39 +247,39 @@ docker compose --env-file agentscope-service/deploy/.env -f agentscope-service/d
 | Service | Port | Exposure |
 | --- | ---: | --- |
 | Gateway | 18080 | Public (container port 8080 with Docker Compose) |
-| `service-controlplane` | 8081 | Internal |
+| `control-plane` | 8081 | Internal |
 | Data plane | 8082 | Internal |
-| Session Portal | 8084 | Internal |
-| Hands | 8085 | Internal |
+| Agent Service | 8084 | Internal |
+| Tool Worker | 8085 | Internal |
 | PostgreSQL | 5432 | Local infrastructure |
 
 ### Configuration
 
-Java services use `builder.*` properties and `BUILDER_*` environment variables. All planes must agree on authentication secrets and internal URLs.
+Java services use `managed-agents.*` properties and `MANAGED_AGENTS_*` environment variables. All planes must agree on authentication secrets and internal URLs.
 
 | Variable | Purpose |
 | --- | --- |
 | `DASHSCOPE_API_KEY` | DashScope model credential for local turns |
-| `BUILDER_JWT_SECRET` | JWT signing secret shared by gateway/control components |
-| `BUILDER_INTERNAL_TOKEN` | Secret for trusted plane-to-plane requests |
-| `BUILDER_VAULT_MASTER_KEY` | Encryption key for vault credentials |
-| `BUILDER_DB_URL`, `BUILDER_DB_USER`, `BUILDER_DB_PASSWORD` | Java data-plane database |
-| `BUILDER_CONTROL_URL`, `BUILDER_DATA_URL`, `BUILDER_SESSION_PORTAL_URL` | Internal service endpoints |
-| `BUILDER_E2B_API_KEY` | E2B credential for `sandbox` environments |
-| `BUILDER_LOCAL_DEV` | Defaults to `false`; source Compose and development scripts default to `true`, bypassing platform authentication and authorization; release Compose / Helm keep it disabled. |
-| `BUILDER_ALLOW_LOCAL_ENVIRONMENT` | Allows new `local` Environment bindings. Defaults to `false` in `service-controlplane`; `scripts/dev-up.sh` and the development Compose stack opt in. Keep disabled in production. |
-| `CONTROL_PLANE_PRODUCT_DSN` | Product database used by `service-controlplane` |
+| `MANAGED_AGENTS_JWT_SECRET` | JWT signing secret shared by gateway/control components |
+| `MANAGED_AGENTS_INTERNAL_TOKEN` | Secret for trusted plane-to-plane requests |
+| `MANAGED_AGENTS_VAULT_MASTER_KEY` | Encryption key for vault credentials |
+| `MANAGED_AGENTS_AGENT_HARNESS_RUNTIME_DB_URL`, `MANAGED_AGENTS_AGENT_HARNESS_RUNTIME_DB_USER`, `MANAGED_AGENTS_AGENT_HARNESS_RUNTIME_DB_PASSWORD` | Java data-plane database |
+| `MANAGED_AGENTS_CONTROL_URL`, `MANAGED_AGENTS_AGENT_HARNESS_RUNTIME_URL`, `MANAGED_AGENTS_AGENT_SERVICE_URL` | Internal service endpoints |
+| `MANAGED_AGENTS_E2B_API_KEY` | E2B credential for `sandbox` environments |
+| `MANAGED_AGENTS_LOCAL_DEV` | Defaults to `false`; source Compose and development scripts default to `true`, bypassing platform authentication and authorization; release Compose / Helm keep it disabled. |
+| `MANAGED_AGENTS_ALLOW_LOCAL_ENVIRONMENT` | Allows new `local` Environment bindings. Defaults to `false` in `control-plane`; `scripts/dev-up.sh` and the development Compose stack opt in. Keep disabled in production. |
+| `CONTROL_PLANE_PRODUCT_DSN` | Product database used by `control-plane` |
 | `CONTROL_PLANE_ENABLE_KUBERNETES` | Enables Control Plane CRD reconcilers and Kubernetes integration |
-| `BUILDER_REBUILD=1` | Rebuilds the monorepo/service-controlplane while preserving the database |
-| `BUILDER_RESET_DB=1` | Explicitly resets the selected disposable development `cp`/`rt`/`portal`/`dp`/`ma` schemas; defaults to `0` |
-| `BUILDER_SMOKE_TEST=1` | Runs `scripts/smoke.sh` automatically after health and SQL-schema verification |
+| `MANAGED_AGENTS_REBUILD=1` | Rebuilds the monorepo/control-plane and, by default, recreates the disposable local `cp`/`rt`/`portal`/`dp` schemas |
+| `MANAGED_AGENTS_RESET_DB=0` | Preserves an already-v4 local database during a full binary rebuild |
+| `MANAGED_AGENTS_SMOKE_TEST=1` | Runs `scripts/smoke.sh` automatically after health and SQL-schema verification |
 
 Production deployments must replace all development credentials and use durable PostgreSQL.
 
 
 ## Roadmap
 
-Further development focuses on application integration and delivery: end-user authorization, file input contracts, automatic triggers through the Session API, and continued validation of long tasks, complex orchestration, and cost governance.
+Further development focuses on application integration and delivery: end-user authorization, file input contracts, automatic triggers through the public invocation path, and continued validation of long tasks, complex orchestration, and cost governance.
 
 For enterprise cloud offerings, also see Alibaba Cloud [Agent Teams](https://help.aliyun.com/zh/agentteams/magic-console-product-overview) and [Agent Loop](https://help.aliyun.com/zh/document_detail/3033860.html).
 
@@ -269,70 +287,69 @@ For enterprise cloud offerings, also see Alibaba Cloud [Agent Teams](https://hel
 
 - [Service overview](../docs/v2/en/service/index.md)
 - [Use cases and integration designs](../docs/v2/en/service/usecases.md)
-- [Deploy Service](../docs/v2/en/service/quickstart.md)
-- [Your first Managed Agent](../docs/v2/en/service/create-managed-agent.md)
-- [Session API integration](../docs/v2/en/service/claude-session-api.md)
-- [Sessions and tasks](../docs/v2/en/service/session-event-log.md)
+- [API quickstart](../docs/v2/en/service/first-session.md)
+- [Unified service API](../docs/v2/en/service/service-api.md)
+- [Managed native sessions and tasks](../docs/v2/en/service/session-event-log.md)
 - [API reference](../docs/v2/en/service/api-reference.md)
 
 
-## Session Portal refactoring development
+## Agent Service refactoring development
 
-The new Managed Session path uses `service-session-portal`, the Harness dataplane and `service-hands`. The implementation is still in progress; [the phase record](docs/session-portal-implementation-status.md) lists runnable paths and remaining integration work.
+The new Managed Session path uses `agent-service`, the Harness dataplane and `tool-worker`. The implementation is still in progress; [the phase record](docs/agent-service-implementation-status.md) lists runnable paths and remaining integration work.
 
-`make build` builds the combined `bin/service-controlplane`, CLI and Runtime Host. Execution
-workers are enabled by default with a product database; SDK-only servers keep them disabled. Portal uses `BUILDER_CONTROL_URL` for Go execution protocols;
-`BUILDER_ORCHESTRATION_RUNTIME_URL` remains an optional compatibility override. The old
+`make build` builds the combined `bin/control-plane`, CLI and Runtime Host. Execution
+workers are enabled by default with a product database; SDK-only servers keep them disabled. Agent Service uses `MANAGED_AGENTS_CONTROL_URL` for Go execution protocols;
+`MANAGED_AGENTS_ORCHESTRATION_RUNTIME_URL` remains an optional compatibility override. The old
 `--enable-runtime-workers=false` setting is only for resource-seeding test fixtures.
 
 Process fixtures require a dedicated PostgreSQL database and explicit local
-`AGENTSCOPE_TEST_REDIS_URI` / `AGENTSCOPE_TEST_MQ_ENDPOINTS`. Pass `--fixture-dsn` to
-Host/Hosted/Workflow/Team fixtures, or set `AGENTSCOPE_TEST_POSTGRES_DSN` for the native fixture.
-The deployment fixture additionally uses `AGENTSCOPE_TEST_MQ_BROKER_CONTAINER` to create an
+`MANAGED_AGENTS_TEST_REDIS_URI` / `MANAGED_AGENTS_TEST_MQ_ENDPOINTS`. Pass `--fixture-dsn` to
+Host/Hosted/Workflow/Team fixtures, or set `MANAGED_AGENTS_TEST_POSTGRES_DSN` for the native fixture.
+The deployment fixture additionally uses `MANAGED_AGENTS_TEST_MQ_BROKER_CONTAINER` to create an
 isolated Topic/group family. For the Team Java SDK check, first run
-`mvn -T1 -pl agentscope-service/service-client dependency:build-classpath -Dmdep.outputFile=target/client-classpath.txt`.
+`mvn -T1 -pl managed-agents/java-client dependency:build-classpath -Dmdep.outputFile=target/client-classpath.txt`.
 
-The focused Host smoke is `python3 agentscope-service/tests/orchestration_runtime_host_smoke.py --fixture-dsn <dedicated-local-dsn>`. If the local OS cannot launch the new Go binary through Python, start the local fixture runtime separately and pass `--runtime-url`; use the test-only credentials declared in the script. The smoke uses the combined binary without a product database and checks Portal restart and Host identity/generation. It does not run provider tasks or verify durable runtime storage.
+The focused Host smoke is `python3 managed-agents/tests/orchestration_runtime_host_smoke.py --fixture-dsn <dedicated-local-dsn>`. If the local OS cannot launch the new Go binary through Python, start the local fixture runtime separately and pass `--runtime-url`; use the test-only credentials declared in the script. The smoke uses the combined binary without a product database and checks Agent Service restart and Host identity/generation. It does not run provider tasks or verify durable runtime storage.
 
 
-The Go runtime PostgreSQL role also requires `BUILDER_VAULT_MASTER_KEY` (at least
-32 bytes, stable across its replicas) for encrypted Portal configuration,
+The Go runtime PostgreSQL role also requires `MANAGED_AGENTS_VAULT_MASTER_KEY` (at least
+32 bytes, stable across its replicas) for encrypted Agent Service configuration,
 command, and fact payloads. Its private bootstrap/inbox contracts now have a
-PostgreSQL replica test and `tests/orchestration_runtime_portal_smoke.py
+PostgreSQL replica test and `tests/orchestration_runtime_agent_service_smoke.py
 --runtime-url <local-runtime-url>` process check. Native execution from that
 inbox is connected to native Hosted Job and Conversation execution. The focused
-`tests/orchestration_runtime_native_smoke.py` check uses real Portal/Go/PostgreSQL
-processes and an authenticated fake Host, including Portal restart, final usage,
+`tests/orchestration_runtime_native_smoke.py` check uses real Agent Service/Go/PostgreSQL
+processes and an authenticated fake Host, including Agent Service restart, final usage,
 physical-stop proof and SSE continuation. Add `--exercise-daemon` to run the real
 Host daemon against a local fake Codex app-server CLI; `--daemon-cancel` exercises
 provider termination and cancellation. These modes verify collaboration MCP,
 streamed text/tool output, usage deduplication, snapshots and durable journal
 delivery without external model calls. `--daemon-approve` and `--daemon-deny`
-exercise a human tool confirmation, a lease interval spent waiting, Portal
+exercise a human tool confirmation, a lease interval spent waiting, Agent Service
 restart and the applied receipt through the public Turn actions API. Configure
-the Go role's `SESSION_PORTAL_URL` or `--session-portal-url` to reach Portal and
+the Go role's `AGENT_SERVICE_URL` or `--agent-service-url` to reach Agent Service and
 set `--execution-slots` for its local Turn advancement concurrency (default 32,
 range 1..128). Public Session creation accepts Managed, Hosted, Workflow and Team backends;
 External and mixed backends remain gated until their integrations are complete.
 Add `--public-create` to verify Hosted creation and duplicate requests through
-Portal using an isolated configuration HTTP fixture.
+Agent Service using an isolated configuration HTTP fixture.
 
 `tests/orchestration_runtime_hosted_smoke.py --fixture-dsn <dedicated-local-dsn>`
-starts the real Portal, Go runtime and Host daemon with a fake Codex app-server.
+starts the real Agent Service, Go runtime and Host daemon with a fake Codex app-server.
 Use `--approve`, `--deny` or `--cancel` for interaction checks. Create the dedicated
 PostgreSQL schema before running. No external provider credentials are used.
-Hosted task and reporting credentials last 15 minutes and refresh through Portal
+Hosted task and reporting credentials last 15 minutes and refresh through Agent Service
 using the current Host identity and physical lease proof. An attempt-local HTTP
 relay gives the provider a stable local credential for MCP and task CLI requests,
 and forwards them with the latest fenced token. The Host enrollment credential
 has its own expiry and is still managed separately.
 Gateway sends the new Session, Host machine, collaboration MCP, task-token CLI and
-ToolTask paths to `BUILDER_SESSION_PORTAL_URL` (default `http://localhost:8084`).
+ToolTask paths to `MANAGED_AGENTS_AGENT_SERVICE_URL` (default `http://localhost:8084`).
 Compose and Helm route these protocols to the combined control component.
 
 
 `tests/orchestration_runtime_workflow_smoke.py --fixture-dsn <dedicated-local-dsn>`
-checks public Workflow creation, approval, restart of Portal and the Go runtime,
+checks public Workflow creation, approval, restart of Agent Service and the Go runtime,
 applied receipts, snapshots and SSE replay with real PostgreSQL. Use `--deny`,
 `--parallel` or `--signal` for the other root interaction flows. The configuration
 admission source is an isolated HTTP fixture; the resource-seeding process stops before
@@ -344,7 +361,7 @@ runnable branches. Agent-generated signals, independent Issue child runs and the
 remaining Team controls are still being implemented.
 
 `tests/orchestration_runtime_team_smoke.py --fixture-dsn <dedicated-local-dsn>`
-checks public Hosted Team Job creation, fenced MCP conclusion, Portal restart,
+checks public Hosted Team Job creation, fenced MCP conclusion, Agent Service restart,
 physical stop, snapshots and SSE replay. Add `--cancel` for cancellation. It uses
 an authenticated Host fixture without running a provider CLI; the configuration
 source is a fixture and the resource-seeding process stops before the combined binary executes. Native memory
@@ -352,8 +369,12 @@ and PostgreSQL checks additionally cover dynamic parallel nodes and require ever
 worker's physical stop before the public Turn concludes. Child delegation and
 the remaining graph controls are still being connected.
 
-## 2026-10-21 runtime upgrade
+### ACS RocketMQ deployment
 
-The Service now includes durable MCP batches and tool submission/commit gates, unified Turn FIFO routing, recoverable acknowledgements, replica-safe outbox publication, and the Session event protocol. Apply the independent schema jobs before rolling out the services; the migration ledger preserves the existing `portal`, `dataplane`, `managed` identifiers and SQL history.
+ACS uses cloud instance `rmq-cn-mhb50f8n501`. Helm defaults `runtime.mq.existingSecret` to `managed-agents-cloud-mq`, containing the endpoint and credentials; the Secret must exist before deployment. Credentials are never packaged into images or source. See [cloud RocketMQ configuration](docs/cloud-rocketmq.en.md). For an intentional self-hosted installation, explicitly set `runtime.mq.existingSecret=""` and supply that installation's MQ endpoint in its workload Secret.
 
-Self-hosted deployment remains the default. Optional data/MQ Secret overrides are empty unless explicitly configured. Existing `BUILDER_*` settings, AgentScope packages, component names, images and release channels are preserved. See [recovery](docs/mcp-execution-recovery.en.md), [API quickstart](docs/api-quickstart.en.md), and [migration notes](docs/master-sync-20261021.en.md).
+### ACS PostgreSQL and Redis deployment
+
+ACS uses PostgreSQL `pgm-bp10083t3nwu553v` and Redis `r-bp1m16nw61zguewk63`. Helm defaults to the separate `managed-agents-cloud-data` business connection Secret and `managed-agents-cloud-data-migration` owner connection Secret. They override old workload connection values; missing cloud Secrets prevent startup. Passwords remain in Secrets. Use `deploy/managed-cloud-data-config.py --kubeconfig /private/acs-kubeconfig --namespace agencore-ma --apply` once to prepare these from the migrated Secrets, then omit `--apply` to validate before upgrades. Keep existing Vault/JWT keys. See [deployment instructions](release/KUBERNETES_README.md#acs-cloud-postgresql-and-redis).
+
+The ACS deployment uses database pools of 16 connections per service replica (Control Plane storage, Agent Service, Agent Harness Runtime and Tool Worker). Control Plane requests and limits are 2 CPU / 4 GiB. The MCP fixture also uses a pool capped at 16, awaits local execution completion without database polling, and checks remote executions once per second. Dedicated native-log connections remain separately bounded.

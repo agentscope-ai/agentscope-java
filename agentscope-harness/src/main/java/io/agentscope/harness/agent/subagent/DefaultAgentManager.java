@@ -17,16 +17,19 @@ package io.agentscope.harness.agent.subagent;
 
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.Agent;
+import io.agentscope.core.agent.AgentExecutionHost;
+import io.agentscope.core.agent.AgentExecutionPosition;
 import io.agentscope.core.agent.Event;
 import io.agentscope.core.agent.EventSource;
+import io.agentscope.core.agent.ExecutionIdentity;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.agent.StreamOptions;
+import io.agentscope.core.journal.InvocationRecorder;
+import io.agentscope.core.journal.JournalExportSink;
+import io.agentscope.core.journal.ModelInvocation;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.ToolUseBlock;
-import io.agentscope.core.session.SessionExecution;
-import io.agentscope.core.session.SessionExportSink;
-import io.agentscope.core.session.SessionRecorder;
 import io.agentscope.harness.agent.HarnessAgent;
 import io.agentscope.harness.agent.middleware.SubagentEntry;
 import io.agentscope.harness.agent.tool.AgentSpawnTool;
@@ -255,28 +258,36 @@ public final class DefaultAgentManager {
                         : RuntimeContext.builder(parent)
                                 .sessionId(sessionId)
                                 .userId(userId)
+                                .threadId(null)
+                                .turnId(null)
+                                .runId(null)
                                 .build();
-        var recorder = SessionRecorder.from(parent);
-        child.put(SessionRecorder.CONTEXT_KEY, null);
-        child.put(SessionRecorder.TURN_ID_KEY, null);
-        child.put(SessionExportSink.CONTEXT_KEY, null);
+        var recorder = InvocationRecorder.from(parent);
+        child.put(InvocationRecorder.CONTEXT_KEY, null);
+        child.put(InvocationRecorder.PARENT_KEY, null);
+        child.put(JournalExportSink.CONTEXT_KEY, null);
         if (parent != null
-                && parent.get(SessionExportSink.CONTEXT_KEY) instanceof SessionExportSink sink)
-            child.put(SessionExportSink.CONTEXT_KEY, sink.forChild(sessionId));
-        child.put(SessionExecution.CONTEXT_KEY, null);
+                && parent.get(JournalExportSink.CONTEXT_KEY) instanceof JournalExportSink sink)
+            child.put(JournalExportSink.CONTEXT_KEY, sink.forChild(sessionId));
+        child.put(AgentExecutionHost.class, null);
+        child.put(ModelInvocation.class, null);
+        child.put(ExecutionIdentity.CONTEXT_KEY, null);
+        child.put(AgentExecutionPosition.class, null);
         child.put(ToolUseBlock.class, null);
         child.put(SubagentExecution.Invocation.class, null);
         child.setAgentState(null);
-        if (recorder != null)
-            child.put(
-                    SessionRecorder.PARENT_KEY,
-                    Map.of(
-                            "parentSessionId",
-                            parent.getSessionId(),
-                            "parentRunId",
-                            recorder.runId(),
-                            "parentTurnId",
-                            recorder.turnId()));
+        if (parent != null
+                && parent.get(ExecutionIdentity.CONTEXT_KEY)
+                        instanceof ExecutionIdentity identity) {
+            var correlation = new HashMap<String, Object>();
+            correlation.put("parentSessionId", identity.sessionId());
+            correlation.put("parentThreadId", identity.threadId());
+            correlation.put("parentRunId", identity.runId());
+            if (identity.turnId() != null) correlation.put("parentTurnId", identity.turnId());
+            String stepId = recorder == null ? null : recorder.stepId();
+            if (stepId != null) correlation.put("parentStepId", stepId);
+            child.put(InvocationRecorder.PARENT_KEY, Map.copyOf(correlation));
+        }
         return child;
     }
 

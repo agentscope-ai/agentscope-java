@@ -3,7 +3,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
 WORKDIR /app
 COPY requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
-COPY server.py execution_store.py ./
+COPY server.py health.py telemetry.py ./
 USER 65532:65532
 EXPOSE 8000
 ENTRYPOINT ["python", "/app/server.py"]

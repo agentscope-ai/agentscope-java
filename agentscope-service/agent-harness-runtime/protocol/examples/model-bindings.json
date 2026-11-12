@@ -1,0 +1,27 @@
+{
+  "responses": {
+    "provider": "managed",
+    "id": "custom-model",
+    "api": "openai-responses",
+    "baseUrl": "https://models.example.invalid/v1",
+    "credentialEnv": "MANAGED_MODEL_PRIMARY",
+    "contextWindow": 32000,
+    "outputLimit": 2048,
+    "requestTimeoutSeconds": 180,
+    "reasoning": true,
+    "parameters": {
+      "temperature": 0.2,
+      "topP": 1,
+      "parallelToolCalls": false,
+      "toolChoice": "auto",
+      "maxTokens": 512,
+      "reasoning": "low"
+    },
+    "cost": {
+      "input": 1,
+      "output": 2,
+      "cacheRead": 0.1,
+      "cacheWrite": 1
+    }
+  }
+}

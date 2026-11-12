@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # Copyright 2024-2026 the original author or authors.
 # Licensed under the Apache License, Version 2.0.
-"""Verify parent/child progress with one callback slot per depth and Brain replica.
+"""Verify parent/child progress with one callback slot per depth and HarnessRuntime replica.
 
 Requires a fresh replicas.py deployment with --callbacks 1.
 The model is deterministic; the Sandbox is a real local process, not ACS.
@@ -41,7 +41,7 @@ def run(state, seconds=30, continue_record=None):
         raise ValueError('Tool duration must be 20..90 seconds')
     output = state / f'depth-capacity-{time.time_ns()}.json'
     if continue_record is None:
-        record = {'passed': False, 'seconds': seconds, 'callback_capacity_per_depth_per_brain': 1,
+        record = {'passed': False, 'seconds': seconds, 'callback_capacity_per_depth_per_harness_runtime': 1,
                   'model': 'explicit deterministic model', 'sandbox': 'real local process, not ACS',
                   'transport': 'real RocketMQ / Redis / PostgreSQL', 'roots': []}
     else:
@@ -53,7 +53,7 @@ def run(state, seconds=30, continue_record=None):
         record['previous_error'] = record.pop('error', None)
         record.pop('traceback', None)
         seconds = record['seconds']
-    # Full Harness setup/finalization uses Hands too; the single-slot fixture queues that work.
+    # Full Harness setup/finalization uses Tool Worker too; the single-slot fixture queues that work.
     record['observation_budget_seconds'] = seconds * 5 + 600
 
     def save():
@@ -67,10 +67,10 @@ def run(state, seconds=30, continue_record=None):
             record.update(environment=environment['id'], agent=agent['id'], identity=identity)
             for index in range(5):
                 label = f'cap-{identity}-{index}'
-                sessionPortal = replicas.PORTS['portal-a' if index % 2 == 0 else 'portal-b']
-                session = replicas.request(sessionPortal, '/v1/sessions', {'agent': agent['id']}, uuid.uuid4().hex)
+                agentService = replicas.PORTS['portal-a' if index % 2 == 0 else 'portal-b']
+                session = replicas.request(agentService, '/v1/sessions', {'agent': agent['id']}, uuid.uuid4().hex)
                 base = '/v1/sessions/' + session['id']
-                turn = replicas.request(sessionPortal, base + '/turns',
+                turn = replicas.request(agentService, base + '/turns',
                     {'input': {'message': f'fixture:delegate:{seconds}:{label}'}}, uuid.uuid4().hex)
                 record['roots'].append({'session': session['id'], 'turn': turn['id'], 'label': label})
                 if index == 0:

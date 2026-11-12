@@ -1,0 +1,82 @@
+{
+  "ToolPublication": {
+    "protocolVersion": "0.1.0",
+    "command": {
+      "scope": {
+        "tenant": "tenant-a",
+        "namespace": "default",
+        "sessionId": "session-a"
+      },
+      "commandId": "execute_tool-a",
+      "kind": "execute",
+      "task": {
+        "id": "tool-a",
+        "turnId": "turn-a",
+        "toolCallId": "native-call-a",
+        "executionId": "tool-a",
+        "name": "execute",
+        "arguments": "{\"command\":\"echo hello\"}",
+        "checkpointSequence": 17,
+        "status": "ready",
+        "processHandle": null,
+        "result": null,
+        "workerToken": null
+      },
+      "configuration": null,
+      "submission": {
+        "epoch": 2,
+        "executionToken": "owner-a",
+        "batchId": "commit-a"
+      }
+    }
+  },
+  "ToolPublicationReceipt": {
+    "command": {
+      "scope": {
+        "tenant": "tenant-a",
+        "namespace": "default",
+        "sessionId": "session-a"
+      },
+      "commandId": "execute_tool-a",
+      "kind": "execute",
+      "task": {
+        "id": "tool-a",
+        "turnId": "turn-a",
+        "toolCallId": "native-call-a",
+        "executionId": "tool-a",
+        "name": "execute",
+        "arguments": "{\"command\":\"echo hello\"}",
+        "checkpointSequence": 17,
+        "status": "ready",
+        "processHandle": null,
+        "result": null,
+        "workerToken": null
+      },
+      "configuration": null,
+      "submission": {
+        "epoch": 2,
+        "executionToken": "owner-a",
+        "batchId": "commit-a"
+      }
+    },
+    "brokerId": "broker-a"
+  },
+  "ResumeDeferral": {
+    "resume": {
+      "scope": {
+        "tenant": "tenant-a",
+        "namespace": "default",
+        "sessionId": "session-a"
+      },
+      "resumeId": "resume-a",
+      "turnId": "turn-a",
+      "suspensionId": "suspension-a",
+      "suspensionEpoch": 2,
+      "publicationSequence": 1
+    },
+    "delayMillis": 1000
+  },
+  "ResumeDeferralReceipt": {
+    "outcome": "deferred"
+  }
+}

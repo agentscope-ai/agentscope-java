@@ -22,7 +22,7 @@ export NAMESPACE="${NAMESPACE:-default}"
 export TOKEN="${TOKEN:-}"
 export SESSION_API_KEY="${SESSION_API_KEY:-}"
 export RUN_ID="events-$(date +%s)-$$"
-export D=$(mktemp -d "${TMPDIR:-/tmp}/agentscope-service-events.XXXXXX")
+export D=$(mktemp -d "${TMPDIR:-/tmp}/managed-agents-events.XXXXXX")
 
 api() {
   local path="$1"
@@ -38,8 +38,8 @@ api() {
   fi
   curl --fail-with-body -sS "$BASE_URL$path" \
     "${auth[@]}" \
-    -H "X-AgentScope-Tenant: $TENANT" \
-    -H "X-AgentScope-Namespace: $NAMESPACE" \
+    -H "X-Managed-Agents-Tenant: $TENANT" \
+    -H "X-Managed-Agents-Namespace: $NAMESPACE" \
     -H 'Content-Type: application/json' \
     -H 'anthropic-version: 2023-06-01' \
     -H 'anthropic-beta: managed-agents-2026-04-01' \
@@ -96,7 +96,7 @@ EVENT_ID=$(jq -er '.data[0].id' "$D/message.json")
 printf 'Accepted Event: %s\n' "$EVENT_ID"
 ```
 
-HTTP 200 and an Event ID acknowledge durable acceptance. A null processed_at means processing has not finished. This is an ordinary text event without a agentscope_service intent; ordinary messages require an idle Session with no active/queued work.
+HTTP 200 and an Event ID acknowledge durable acceptance. A null processed_at means processing has not finished. This is an ordinary text event without a managed_agents intent; ordinary messages require an idle Session with no active/queued work.
 
 For an uncertain HTTP response, retry this cURL write with the same JSON file and `$RUN_ID-message-1`. Do not regenerate RUN_ID or change the key. A frozen receipt does not update with execution or replay old answers into a new stream; observe the events for current progress.
 
@@ -115,7 +115,7 @@ Limits are 1–50 Events and 1 MiB per request, but ordinary batches support one
 | session.error | Inspect the error; later idle alone does not establish success |
 | session.status_idle | Inspect stop_reason to understand why the interaction stopped |
 
-`stop_reason.type:end_turn` means work stopped; both normal completion and interruption can produce it. Assistant messages contain committed text, not token deltas in this release. The SSE connection stays open after idle; keep it for the next message.
+`stop_reason.type:end_turn` means work stopped; both normal completion and interruption can produce it. By default assistant messages contain complete committed text. Opt in with `event_deltas[]=agent.message` for live text previews; these are lossy and never persisted or replayed. Complete `agent.message` events replace previews. The SSE connection stays open after idle; keep it for the next message.
 
 Ctrl+C stops observation without cancelling work. A GET that still says idle immediately after submission does not prove the new message has finished; follow its processing and subsequent status events.
 
@@ -250,8 +250,9 @@ An Event ID can update from pending to processed. Dropping every repeated ID los
 | user.custom_tool_result / user.tool_result | Client external-result submission is not enabled |
 | budget_reached / Budget | Budget pause/resume APIs are not enabled |
 | system.message | Rejected by current validation; configure system instructions on the Agent |
-| Threads/Workflow, preview/deltas | Outside this Session compatibility subset |
+| Assistant text previews | Optional `event_deltas[]=agent.message`; ephemeral and best effort |
+| Threads/Workflow, thinking/tool previews | Outside this Session compatibility subset |
 
-Server tools execute in Hands, without the client-confirmation/external-result flow. Sessions freeze their Agent definition; configure a new version and create another Session when system instructions change. Platform Turn/Input and independent final output remain optional extensions; see [API layers](api-reference.en.md#api-layers).
+Server tools execute in Tool Worker, without the client-confirmation/external-result flow. Sessions freeze their Agent definition; configure a new version and create another Session when system instructions change. Platform Turn/Input and independent final output remain optional extensions; see [API layers](api-reference.en.md#api-layers).
 
-Actual contracts come from [Session validation/SSE](../service-session-portal/src/main/java/io/agentscope/builder/portal/session/ManagedSessionTurnsApi.java), [durable projection](../service-common/src/main/java/io/agentscope/builder/runtime/managed/ManagedSessionProtocol.java) and the [entry filter](../service-session-portal/src/main/java/io/agentscope/builder/portal/config/SessionApiErrors.java). This guide uses implemented upstream interaction patterns rather than claiming every upstream feature is supported.
+Actual contracts come from [Session validation/SSE](../agent-service/src/main/java/io/agentcore/managed/server/agentservice/session/ManagedSessionTurnsApi.java), [durable projection](../common/src/main/java/io/agentcore/managed/server/runtime/managed/ManagedSessionProtocol.java) and the [entry filter](../agent-service/src/main/java/io/agentcore/managed/server/agentservice/config/SessionApiErrors.java). This guide uses implemented upstream interaction patterns rather than claiming every upstream feature is supported.

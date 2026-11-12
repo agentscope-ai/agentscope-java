@@ -24,16 +24,16 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.core.agent.ThreadKey;
 import io.agentscope.core.event.AgentEventEmitter;
+import io.agentscope.core.journal.InMemoryThreadJournalStore;
+import io.agentscope.core.journal.InvocationRecorder;
 import io.agentscope.core.message.AssistantMessage;
 import io.agentscope.core.message.ToolExecutionDetails;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolResultState;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ExecutionConfig;
-import io.agentscope.core.session.InMemorySessionLogStore;
-import io.agentscope.core.session.SessionKey;
-import io.agentscope.core.session.SessionRecorder;
 import io.agentscope.core.state.AgentState;
 import io.agentscope.core.tool.AgentTool;
 import io.agentscope.core.tool.ToolCallParam;
@@ -56,9 +56,11 @@ class ActionObservationsTest {
                         .context(List.of(AssistantMessage.builder().content(use).build()))
                         .build();
         var context = RuntimeContext.builder().userId("u").sessionId("s").agentState(state).build();
-        var log = new InMemorySessionLogStore().open(new SessionKey("u", "a", "s"), context);
-        var recorder = new SessionRecorder(log, "turn");
-        context.put(SessionRecorder.CONTEXT_KEY, recorder);
+        var log =
+                new InMemoryThreadJournalStore()
+                        .open(new ThreadKey("u", "a", "s", "main"), context);
+        var recorder = new InvocationRecorder(log, "turn");
+        context.put(InvocationRecorder.CONTEXT_KEY, recorder);
         try {
             var param = ToolCallParam.builder().toolUseBlock(use).runtimeContext(context).build();
             ActionObservations.observe(param, () -> Mono.just(ToolResultBlock.suspended(use)))

@@ -5,7 +5,7 @@
 # You may obtain a copy of the License at
 #     https://www.apache.org/licenses/LICENSE-2.0
 
-"""Deploy isolated Portal / Brain / Hands processes and verify their real protocol.
+"""Deploy isolated Agent Service / HarnessRuntime / Tool Worker processes and verify their real protocol.
 
 The start action only deploys; separate actions run bounded acceptance checks.
 Local Sandbox mode is explicit; no ACS or model-provider credential is read from the user's setup.
@@ -31,7 +31,7 @@ import zipfile
 
 
 ROOT = Path(__file__).resolve().parents[3]
-SERVICE = ROOT / "agentscope-service"
+SERVICE = ROOT / "managed-agents"
 COMPOSE = [
     "docker", "compose", "-p", "managed-mq-redis", "-f",
     str(Path(__file__).with_name("compose.yaml")),
@@ -40,8 +40,8 @@ LITE_COMPOSE = [
     "docker", "compose", "-p", "managed-mq-redis-lite", "-f",
     str(Path(__file__).with_name("compose-lite.yaml")),
 ]
-PORTS = {"control": 19081, "portal-a": 19084, "portal-b": 19184,
-         "brain-a": 19082, "brain-b": 19182, "hands-a": 19085, "hands-b": 19185}
+PORTS = {"control": 19081, "agent-service-a": 19084, "agent-service-b": 19184,
+         "agent-harness-runtime-a": 19082, "agent-harness-runtime-b": 19182, "tool-worker-a": 19085, "tool-worker-b": 19185}
 
 
 def jar(module):
@@ -81,7 +81,7 @@ def signal_replica(state, name, operation):
     current = subprocess.run(["ps", "-p", str(pid), "-o", "command="],
                              capture_output=True, text=True)
     marker = f"--workspace-root={state / 'workspace'}" if name == "control" else f"-Dmanaged.replica.state={state}"
-    executable = str(SERVICE / "service-controlplane/bin/service-controlplane") if name == "control" else "java"
+    executable = str(SERVICE / "control-plane/bin/control-plane") if name == "control" else "java"
     if name == "mcp-proxy":
         marker, executable = f"--state={state}", "mcp-reply-proxy.py"
     if current.returncode != 0 or marker not in current.stdout or executable not in current.stdout:
@@ -120,19 +120,19 @@ def fixture_environment(state):
     manifest = json.loads((state / "manifest.json").read_text())
     _, endpoint = lite_fixture(manifest.get("mq_profile", "official"))
     return {"SPRING_PROFILES_ACTIVE": "jdbc",
-                "BUILDER_LOCAL_DEV": "true",
-                "BUILDER_WEBHOOK_ALLOW_LOOPBACK_HTTP": str(manifest.get("webhooks", False)).lower(),
-                "BUILDER_INTERNAL_TOKEN": "managed-replica-fixture-internal-token-2026",
-                "BUILDER_VAULT_MASTER_KEY": "managed-replica-fixture-vault-key-2026",
-                "BUILDER_JWT_SECRET": "managed-replica-fixture-jwt-secret-2026",
-                "BUILDER_CONTROL_URL": "http://127.0.0.1:19081",
-                "BUILDER_DATA_URL": "http://127.0.0.1:19082",
-                "BUILDER_SESSION_PORTAL_URL": "http://127.0.0.1:19084",
-                "BUILDER_WORKSPACE_ROOT": str(state / "workspace"),
+                "MANAGED_AGENTS_LOCAL_DEV": "true",
+                "MANAGED_AGENTS_WEBHOOK_ALLOW_LOOPBACK_HTTP": str(manifest.get("webhooks", False)).lower(),
+                "MANAGED_AGENTS_INTERNAL_TOKEN": "managed-replica-fixture-internal-token-2026",
+                "MANAGED_AGENTS_VAULT_MASTER_KEY": "managed-replica-fixture-vault-key-2026",
+                "MANAGED_AGENTS_JWT_SECRET": "managed-replica-fixture-jwt-secret-2026",
+                "MANAGED_AGENTS_CONTROL_URL": "http://127.0.0.1:19081",
+                "MANAGED_AGENTS_AGENT_HARNESS_RUNTIME_URL": "http://127.0.0.1:19082",
+                "MANAGED_AGENTS_AGENT_SERVICE_URL": "http://127.0.0.1:19084",
+                "MANAGED_AGENTS_WORKSPACE_ROOT": str(state / "workspace"),
                 "CONTROL_PLANE_WORKSPACE_ROOT": str(state / "workspace"),
                 "CONTROL_PLANE_ARTIFACT_ROOT": str(state / "artifacts"),
-                "BUILDER_MANAGED_REDIS_URI": "redis://127.0.0.1:16389",
-                "BUILDER_MANAGED_MQ_ENDPOINTS": endpoint}
+                "MANAGED_AGENTS_RUNTIME_REDIS_URI": "redis://127.0.0.1:16389",
+                "MANAGED_AGENTS_RUNTIME_MQ_ENDPOINTS": endpoint}
 
 
 def start(state, task_workers=False, mcp_reply_retry=False, concurrency=4, callbacks=64, mq_profile="official", webhooks=False):
@@ -148,13 +148,13 @@ def start(state, task_workers=False, mcp_reply_retry=False, concurrency=4, callb
             probe.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             probe.bind(("127.0.0.1", port))
     jars = {role: jar(module) for role, module in {
-        "portal": "service-session-portal", "brain": "service-dataplane",
-        "hands": "service-hands"}.items()}
-    control = SERVICE / "service-controlplane/bin/service-controlplane"
+        "agent-service": "agent-service", "agent-harness-runtime": "agent-harness-runtime",
+        "tool-worker": "tool-worker"}.items()}
+    control = SERVICE / "control-plane/bin/control-plane"
     if not control.is_file():
         raise RuntimeError("Build the control-plane binary first")
-    model_classes = SERVICE / "service-dataplane/target/test-classes"
-    if not (model_classes / "io/agentscope/builder/replica/ManagedReplicaModel.class").is_file():
+    model_classes = SERVICE / "agent-harness-runtime/java/brain-agentscope/target/test-classes"
+    if not (model_classes / "io/agentcore/managed/server/replica/ManagedReplicaModel.class").is_file():
         raise RuntimeError("Build dataplane test classes for the explicit deterministic model")
     state.mkdir(parents=True)
     artifacts = {}
@@ -167,7 +167,7 @@ def start(state, task_workers=False, mcp_reply_retry=False, concurrency=4, callb
         jars[role] = deployed
     model_jar = state / "deterministic-model-fixture.jar"
     with zipfile.ZipFile(model_jar, "w") as archive:
-        for value in (model_classes / "io/agentscope/builder/replica").glob("ManagedReplicaModel*.class"):
+        for value in (model_classes / "io/agentcore/managed/server/replica").glob("ManagedReplicaModel*.class"):
             if value.name == "ManagedReplicaModel.class" or value.name.startswith("ManagedReplicaModel$"):
                 archive.write(value, str(value.relative_to(model_classes)))
     database = "ma_replicas_" + uuid.uuid4().hex[:12]
@@ -178,7 +178,7 @@ def start(state, task_workers=False, mcp_reply_retry=False, concurrency=4, callb
     resume_group = f"ma_replicas_resume_{suffix}"
     execute_topic, execute_group = f"ma_replicas_execute_{suffix}", f"ma_replicas_executors_{suffix}"
     control_topic, control_group = f"ma_replicas_control_{suffix}", f"ma_replicas_controllers_{suffix}"
-    brain_group = f"ma_replicas_brain_{suffix}"
+    harness_runtime_group = f"ma_replicas_brain_{suffix}"
     manifest = {"state": str(state), "database": database, "processes": {}, "artifacts": artifacts, "concurrency": concurrency, "turn_callbacks": callbacks, "task_workers": task_workers, "mcp_reply_retry": mcp_reply_retry, "webhooks": webhooks,
                 "ports": PORTS, "model": "deterministic test-class fixture", "sandbox": "local process",
                 "mq_transport": "LitePush wildcard/FIFO, one physical queue per parent",
@@ -186,7 +186,7 @@ def start(state, task_workers=False, mcp_reply_retry=False, concurrency=4, callb
                 "mq_test_only_derivative": mq_profile == "min-offset",
                 "mq_version": "5.5.1-min-offset (test derivative)" if mq_profile == "min-offset" else "5.5.1",
                 "mq": {"executes": execute_topic, "execute_group": execute_group, "controls": control_topic, "control_group": control_group, "turns": turns_topic, "tools": tool_topic, "tool_group": tool_group, "resumes": resumes_topic, "resume_group": resume_group,
-                       "brain_group": brain_group}}
+                       "harness_runtime_group": harness_runtime_group}}
     manifest_path = state / "manifest.json"
 
     def save():
@@ -201,64 +201,64 @@ def start(state, task_workers=False, mcp_reply_retry=False, concurrency=4, callb
     # Only local fixture values are retained here. Clear provider credentials
     # inherited from a shell; this fixture must never invoke a real model.
     env = {k: v for k, v in os.environ.items()
-           if not k.startswith(("BUILDER_", "CLAW_", "CONTROL_PLANE_", "SPRING_"))
+           if not k.startswith(("MANAGED_AGENTS_", "CLAW_", "CONTROL_PLANE_", "SPRING_"))
            and k not in {"DASHSCOPE_API_KEY", "E2B_API_KEY", "OPENAI_API_KEY", "ANTHROPIC_API_KEY",
                          "GOOGLE_API_KEY", "GEMINI_API_KEY", "JAVA_TOOL_OPTIONS", "JDK_JAVA_OPTIONS"}}
     env.update(fixture_environment(state))
     run([str(control), "--enable-kubernetes=false", "--storage-driver=postgres",
          f"--storage-dsn={dsn}&search_path=rt", f"--product-dsn={dsn}", "--migrate-only"],
         state / "schema-control.log", env=env)
-    for role, schema, component in [("portal", "portal", "portal"), ("brain", "dp", "dataplane"),
-                                    ("portal", "ma", "managed")]:
+    for role, schema, component in [("agent-service", "portal", "agent-service"), ("agent-harness-runtime", "dp", "agent-harness-runtime"),
+                                    ("agent-service", "ma", "runtime")]:
         run(["java", "-XX:ActiveProcessorCount=2",
-             "-Dloader.main=io.agentscope.builder.web.persistence.ServiceSchemaMain",
+             "-Dloader.main=io.agentcore.managed.server.web.persistence.ServiceSchemaMain",
              "-cp", str(jars[role]), "org.springframework.boot.loader.launch.PropertiesLauncher",
              f"--component={component}", f"--schema={schema}", f"--url={jdbc}",
              "--username=managed", "--password=managed-local-test"],
             state / f"schema-{component}.log", env=env)
-    roles = {name: f"ma_{name}_{suffix}" for name in ["control", "portal", "data", "hands"]}
+    roles = {name: f"ma_{name.replace(chr(45), chr(95))}_{suffix}" for name in ["control", "agent-service", "data", "tool-worker"]}
     manifest["database_roles"] = roles
     save()
     grants = COMPOSE + ["exec", "-T", "-e", "PGHOST=127.0.0.1", "-e", f"PGDATABASE={database}",
                        "-e", "PGUSER=managed", "-e", "PGPASSWORD=managed-local-test"]
-    for name, prefix in [("control", "CONTROL"), ("portal", "PORTAL"),
-                         ("data", "DATA"), ("hands", "HANDS")]:
+    for name, prefix in [("control", "CONTROL"), ("agent-service", "AGENT_SERVICE"),
+                         ("data", "AGENT_HARNESS_RUNTIME"), ("tool-worker", "TOOL_WORKER")]:
         grants += ["-e", f"{prefix}_DB_USER={roles[name]}", "-e", f"{prefix}_DB_PASSWORD=managed-local-test"]
     run(grants + ["postgres", "sh", "-s"], state / "schema-grants.log",
         input=(SERVICE / "deploy/postgres-roles.sh").read_bytes())
-    bindings = [(brain_group, turns_topic), (tool_group, tool_topic), (resume_group, resumes_topic), (execute_group, execute_topic), (control_group, control_topic)]
+    bindings = [(harness_runtime_group, turns_topic), (tool_group, tool_topic), (resume_group, resumes_topic), (execute_group, execute_topic), (control_group, control_topic)]
     manifest["mq"]["physical_bindings"] = bindings
     save()
     mq_environment = {
         "ROCKETMQ_HOME": "/home/rocketmq/rocketmq-5.5.1",
         "MANAGED_MQ_NAMESRV": "namesrv:9876", "MANAGED_MQ_CLUSTER": "ManagedLiteTest",
-        "MANAGED_MQ_QUEUES": "1", "BUILDER_MANAGED_MQ_TURN_TOPIC": turns_topic,
-        "BUILDER_MANAGED_MQ_TOOL_EVENT_TOPIC": tool_topic,
-        "BUILDER_MANAGED_MQ_TOOL_EXECUTE_TOPIC": execute_topic, "BUILDER_MANAGED_MQ_TOOL_EXECUTE_GROUP": execute_group,
-        "BUILDER_MANAGED_MQ_TOOL_CONTROL_TOPIC": control_topic, "BUILDER_MANAGED_MQ_TOOL_CONTROL_GROUP": control_group,
-        "BUILDER_MANAGED_MQ_RESUME_TOPIC": resumes_topic, "BUILDER_MANAGED_MQ_BRAIN_GROUP": brain_group,
-        "BUILDER_MANAGED_MQ_TOOL_EVENTS_GROUP": tool_group,
-        "BUILDER_MANAGED_MQ_RESUME_GROUP": resume_group,
+        "MANAGED_MQ_QUEUES": "1", "MANAGED_AGENTS_RUNTIME_MQ_TURN_TOPIC": turns_topic,
+        "MANAGED_AGENTS_RUNTIME_MQ_TOOL_EVENT_TOPIC": tool_topic,
+        "MANAGED_AGENTS_RUNTIME_MQ_TOOL_EXECUTE_TOPIC": execute_topic, "MANAGED_AGENTS_RUNTIME_MQ_TOOL_EXECUTE_GROUP": execute_group,
+        "MANAGED_AGENTS_RUNTIME_MQ_TOOL_CONTROL_TOPIC": control_topic, "MANAGED_AGENTS_RUNTIME_MQ_TOOL_CONTROL_GROUP": control_group,
+        "MANAGED_AGENTS_RUNTIME_MQ_RESUME_TOPIC": resumes_topic, "MANAGED_AGENTS_RUNTIME_MQ_HARNESS_RUNTIME_GROUP": harness_runtime_group,
+        "MANAGED_AGENTS_RUNTIME_MQ_TOOL_EVENTS_GROUP": tool_group,
+        "MANAGED_AGENTS_RUNTIME_MQ_RESUME_GROUP": resume_group,
     }
     mq_initialize = mq_compose + ["exec", "-T"]
     for key, value in mq_environment.items():
         mq_initialize += ["-e", key + "=" + value]
     run(mq_initialize + ["broker", "sh", "-s"], state / "mq-admin.log",
         input=(SERVICE / "deploy/managed-mq-init.sh").read_bytes())
-    common = [f"--builder.managed.mq.turn-topic={turns_topic}",
-              f"--builder.managed.mq.tool-execute-topic={execute_topic}", f"--builder.managed.mq.tool-execute-group={execute_group}",
-              f"--builder.managed.mq.tool-control-topic={control_topic}", f"--builder.managed.mq.tool-control-group={control_group}",
-              f"--builder.managed.mq.tool-event-topic={tool_topic}",
-              f"--builder.managed.mq.tool-events-group={tool_group}",
-              f"--builder.managed.mq.resume-topic={resumes_topic}",
-              f"--builder.managed.mq.resume-group={resume_group}",
-              f"--builder.managed.mq.brain-group={brain_group}",
+    common = [f"--managed-agents.runtime.mq.turn-topic={turns_topic}",
+              f"--managed-agents.runtime.mq.tool-execute-topic={execute_topic}", f"--managed-agents.runtime.mq.tool-execute-group={execute_group}",
+              f"--managed-agents.runtime.mq.tool-control-topic={control_topic}", f"--managed-agents.runtime.mq.tool-control-group={control_group}",
+              f"--managed-agents.runtime.mq.tool-event-topic={tool_topic}",
+              f"--managed-agents.runtime.mq.tool-events-group={tool_group}",
+              f"--managed-agents.runtime.mq.resume-topic={resumes_topic}",
+              f"--managed-agents.runtime.mq.resume-group={resume_group}",
+              f"--managed-agents.runtime.mq.harness-runtime-group={harness_runtime_group}",
               "--spring.datasource.hikari.maximum-pool-size=6"]
     for name, port in PORTS.items():
         child_env = dict(env)
         if name == "control":
             business_dsn = dsn.replace("postgres://managed:", f"postgres://{roles['control']}:")
-            command = [str(control), "--enable-kubernetes=false", "--enable-asdp=false",
+            command = [str(control), "--enable-kubernetes=false", "--enable-runtime-protocol=false",
                        "--enable-runtime-host=false", f"--enable-runtime-workers={str(task_workers).lower()}",
                        "--schema-mode=validate",
                        "--storage-driver=postgres", f"--storage-dsn={business_dsn}&search_path=rt",
@@ -267,32 +267,32 @@ def start(state, task_workers=False, mcp_reply_retry=False, concurrency=4, callb
                        "--metrics-bind-address=127.0.0.1:19282", f"--workspace-root={state / 'workspace'}"]
         else:
             role = name.split("-")[0]
-            schema = "portal" if role == "portal" else "dp" if role == "brain" else "ma"
-            database_user = roles["data" if role == "brain" else role]
+            schema = "portal" if role == "agent-service" else "dp" if role == "agent-harness-runtime" else "ma"
+            database_user = roles["data" if role == "agent-harness-runtime" else role]
             command = ["java", "-XX:ActiveProcessorCount=2", "-Xmx384m",
                        f"-Dmanaged.replica.state={state}"]
-            if role == "brain":
+            if role == "agent-harness-runtime":
                 command += [f"-Dloader.path={model_jar}",
-                            "-Dloader.main=io.agentscope.builder.replica.ManagedReplicaModel",
+                            "-Dloader.main=io.agentcore.managed.server.replica.ManagedReplicaModel",
                             "-cp", str(jars[role]), "org.springframework.boot.loader.launch.PropertiesLauncher"]
             else:
                 command += ["-jar", str(jars[role])]
-            if role == "hands":
+            if role == "tool-worker":
                 command.append("--platform-service")
             command += common + [f"--server.port={port}", "--server.address=127.0.0.1",
                                  f"--spring.datasource.url={jdbc}?currentSchema={schema}",
                                  f"--spring.datasource.username={database_user}",
                                  "--spring.datasource.password=managed-local-test",
-                                 f"--builder.instance-id={name}"]
-            if role == "brain":
-                command += [f"--builder.managed.concurrency={concurrency}", f"--builder.managed.resume-concurrency={concurrency}",
-                            f"--builder.managed.turn-callbacks={callbacks}"]
+                                 f"--managed-agents.instance-id={name}"]
+            if role == "agent-harness-runtime":
+                command += [f"--managed-agents.runtime.concurrency={concurrency}", f"--managed-agents.runtime.resume-concurrency={concurrency}",
+                            f"--managed-agents.runtime.turn-callbacks={callbacks}"]
                 if mcp_reply_retry:
-                    command += ["--builder.control-plane-url=http://127.0.0.1:19381"]
-            if role == "hands":
-                command += ["--builder.managed.hands.local-test-mode=true",
-                            f"--builder.managed.hands.local-directory={state / 'sandbox'}",
-                            f"--builder.managed.tool-concurrency={concurrency}"]
+                    command += ["--managed-agents.control-plane-url=http://127.0.0.1:19381"]
+            if role == "tool-worker":
+                command += ["--managed-agents.runtime.tool-worker.local-test-mode=true",
+                            f"--managed-agents.runtime.tool-worker.local-directory={state / 'sandbox'}",
+                            f"--managed-agents.runtime.tool-concurrency={concurrency}"]
         log = state / f"{name}.log"
         with log.open("ab") as output:
             process = subprocess.Popen(command, cwd=ROOT, env=child_env, stdin=subprocess.DEVNULL,
@@ -440,14 +440,14 @@ def checkpoint_evidence(state, session_id):
 def smoke(state, seconds):
     manifest = json.loads((state / "manifest.json").read_text())
     environment, agent, identity = fixture_agent()
-    session = request(PORTS["portal-a"], "/v1/sessions", {"agent": agent["id"]}, uuid.uuid4().hex)
+    session = request(PORTS["agent-service-a"], "/v1/sessions", {"agent": agent["id"]}, uuid.uuid4().hex)
     session_id = session["id"]
     base = f"/v1/sessions/{session_id}"
     label = "first-" + identity
     next_label = "second-" + identity
-    first = request(PORTS["portal-a"], base + "/turns",
+    first = request(PORTS["agent-service-a"], base + "/turns",
                     {"input": {"message": f"fixture:execute:{seconds}:{label}"}}, uuid.uuid4().hex)
-    second = request(PORTS["portal-b"], base + "/turns",
+    second = request(PORTS["agent-service-b"], base + "/turns",
                      {"input": {"message": "fixture:echo:" + next_label}}, uuid.uuid4().hex)
     run_path = state / f"smoke-{int(time.time())}.json"
     record = {"environment": environment["id"], "agent": agent["id"], "session": session_id,
@@ -458,8 +458,8 @@ def smoke(state, seconds):
     previous = None
     terminal = {"completed", "failed", "cancelled"}
     while time.monotonic() < deadline:
-        first = request(PORTS["portal-b"], base + "/turns/" + first["id"])
-        second = request(PORTS["portal-a"], base + "/turns/" + second["id"])
+        first = request(PORTS["agent-service-b"], base + "/turns/" + first["id"])
+        second = request(PORTS["agent-service-a"], base + "/turns/" + second["id"])
         statuses = (first["status"], second["status"])
         if statuses != previous:
             print(f"TURNS {statuses}", flush=True)
@@ -467,7 +467,7 @@ def smoke(state, seconds):
         if first["status"] not in terminal and second["status"] not in {"accepted", "preparing"}:
             # The first Turn can finish between these two HTTP reads. The
             # durable event order below is the authoritative ordering check.
-            first = request(PORTS["portal-b"], base + "/turns/" + first["id"])
+            first = request(PORTS["agent-service-b"], base + "/turns/" + first["id"])
             if first["status"] not in terminal:
                 raise AssertionError("Second Turn advanced while the first Turn had no terminal receipt")
         if all(status in terminal for status in statuses):
@@ -506,11 +506,11 @@ def verify_smoke(state, run_path):
     session_id, seconds, label = record["session"], record["seconds"], record["label"]
     next_label = "second-" + label.removeprefix("first-")
     base = f"/v1/sessions/{session_id}"
-    first, second = [request(PORTS["portal-b"], base + "/turns/" + turn) for turn in record["turns"]]
+    first, second = [request(PORTS["agent-service-b"], base + "/turns/" + turn) for turn in record["turns"]]
     statuses = (first["status"], second["status"])
     if statuses != ("completed", "completed"):
         raise AssertionError(f"Smoke audit requires two completed Turns: {statuses}")
-    events = request(PORTS["portal-b"], base + "/events?limit=100")
+    events = request(PORTS["agent-service-b"], base + "/events?limit=100")
     if events["has_more"]:
         raise AssertionError("Fixture event history exceeds its bound; ordering cannot be inferred")
     lifecycle = [(event["type"], event["data"].get("turn_id"))
@@ -519,7 +519,7 @@ def verify_smoke(state, run_path):
     if seconds > 5 and cycles[first["id"]] < 1:
         raise AssertionError("Long business tool never durably suspended")
     encoded = json.dumps(events)
-    if "brain-confirmed-hands-" + label not in encoded or "brain-" + next_label not in encoded:
+    if "harness-runtime-confirmed-tool-worker-" + label not in encoded or "harness-runtime-" + next_label not in encoded:
         raise AssertionError("Public events do not contain both confirmed model outputs")
     side_effects = list((state / "sandbox").glob("*/side-effects.txt"))
     matching = [path for path in side_effects if "start-" + label in path.read_text()]
@@ -571,17 +571,17 @@ def verify_smoke(state, run_path):
                    "checkpoints": checkpoints,
                    "side_effects": str(matching[0]), "database": manifest["database"]})
     run_path.write_text(json.dumps(record, indent=2) + "\n")
-    print(f"PASSED actual two-Portal / two-Brain / two-Hands process smoke: {run_path}", flush=True)
+    print(f"PASSED actual two-Agent Service / two-HarnessRuntime / two-Tool Worker process smoke: {run_path}", flush=True)
 
 
 def parallel(state, seconds):
     environment, agent, identity = fixture_agent()
-    long_session = request(PORTS["portal-a"], "/v1/sessions", {"agent": agent["id"]}, uuid.uuid4().hex)
-    quick_session = request(PORTS["portal-b"], "/v1/sessions", {"agent": agent["id"]}, uuid.uuid4().hex)
+    long_session = request(PORTS["agent-service-a"], "/v1/sessions", {"agent": agent["id"]}, uuid.uuid4().hex)
+    quick_session = request(PORTS["agent-service-b"], "/v1/sessions", {"agent": agent["id"]}, uuid.uuid4().hex)
     long_base = f"/v1/sessions/{long_session['id']}"
     quick_base = f"/v1/sessions/{quick_session['id']}"
     label = "parallel-" + identity
-    first = request(PORTS["portal-a"], long_base + "/turns",
+    first = request(PORTS["agent-service-a"], long_base + "/turns",
                     {"input": {"message": f"fixture:execute:{seconds}:{label}"}}, uuid.uuid4().hex)
     record = {"session": long_session["id"], "parallel_session": quick_session["id"],
               "first_turn": first["id"], "seconds": seconds, "passed": False,
@@ -596,17 +596,17 @@ def parallel(state, seconds):
         if started is None:
             time.sleep(0.5)
     if started is None:
-        raise AssertionError("Long tool did not start in the real Hands process")
+        raise AssertionError("Long tool did not start in the real Tool Worker process")
     print("PARALLEL long tool started", flush=True)
-    second = request(PORTS["portal-b"], quick_base + "/turns",
+    second = request(PORTS["agent-service-b"], quick_base + "/turns",
                      {"input": {"message": "fixture:echo:" + label}}, uuid.uuid4().hex)
     deadline = time.monotonic() + 45
     while time.monotonic() < deadline:
-        second = request(PORTS["portal-a"], quick_base + "/turns/" + second["id"])
+        second = request(PORTS["agent-service-a"], quick_base + "/turns/" + second["id"])
         if second["status"] == "completed":
             break
         time.sleep(0.5)
-    first_status = request(PORTS["portal-b"], long_base + "/turns/" + first["id"])["status"]
+    first_status = request(PORTS["agent-service-b"], long_base + "/turns/" + first["id"])["status"]
     if second["status"] != "completed" or first_status not in {"running", "waiting_tool"}:
         raise AssertionError(f"Parallel isolation failed: long={first_status}, quick={second['status']}")
     if started.read_text().splitlines() != ["start-" + label]:
@@ -614,12 +614,12 @@ def parallel(state, seconds):
     print("PARALLEL quick Turn completed while long tool remained running", flush=True)
     deadline = time.monotonic() + seconds + 120
     while time.monotonic() < deadline:
-        first = request(PORTS["portal-b"], long_base + "/turns/" + first["id"])
+        first = request(PORTS["agent-service-b"], long_base + "/turns/" + first["id"])
         if first["status"] in {"completed", "failed", "cancelled"}:
             break
         time.sleep(1)
-    events = request(PORTS["portal-a"], long_base + "/events?limit=100")
-    if first["status"] != "completed" or "brain-confirmed-hands-" + label not in json.dumps(events):
+    events = request(PORTS["agent-service-a"], long_base + "/events?limit=100")
+    if first["status"] != "completed" or "harness-runtime-confirmed-tool-worker-" + label not in json.dumps(events):
         raise AssertionError("Long Turn did not continue after its tool result")
     if started.read_text().splitlines() != ["start-" + label, "done-" + label]:
         raise AssertionError("Long tool side effects were duplicated")
@@ -632,7 +632,7 @@ def parallel(state, seconds):
 def wait_turn(base, turn, statuses, timeout=120):
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
-        value = request(PORTS["portal-b"], base + "/turns/" + turn)
+        value = request(PORTS["agent-service-b"], base + "/turns/" + turn)
         if value["status"] in statuses:
             return value
         if value["status"] in {"failed", "cancelled", "completed"}:
@@ -694,76 +694,76 @@ class EventSubscription:
 
 def controls(state):
     _, agent, identity = fixture_agent()
-    session = request(PORTS["portal-a"], "/v1/sessions", {"agent": agent["id"]}, uuid.uuid4().hex)
+    session = request(PORTS["agent-service-a"], "/v1/sessions", {"agent": agent["id"]}, uuid.uuid4().hex)
     base = f"/v1/sessions/{session['id']}"
     label = "controls-" + identity
-    first = request(PORTS["portal-a"], base + "/turns",
+    first = request(PORTS["agent-service-a"], base + "/turns",
                     {"input": {"message": f"fixture:execute:30:{label}"}}, uuid.uuid4().hex)
-    second = request(PORTS["portal-b"], base + "/turns",
+    second = request(PORTS["agent-service-b"], base + "/turns",
                      {"input": {"message": "fixture:echo:" + label}}, uuid.uuid4().hex)
     wait_turn(base, first["id"], {"waiting_tool"})
-    prefix = EventSubscription(PORTS["portal-a"], base, count=3)
-    complete = EventSubscription(PORTS["portal-b"], base, terminal_turn=second["id"])
+    prefix = EventSubscription(PORTS["agent-service-a"], base, count=3)
+    complete = EventSubscription(PORTS["agent-service-b"], base, terminal_turn=second["id"])
     first_events = prefix.result()
     if not complete.ready.wait(15) or complete.failure:
         raise AssertionError(f"Live subscriber failed: {complete.failure}")
     inputs = []
-    for portal, kind in [("portal-a", "inject"), ("portal-b", "steer")]:
+    for agentService, kind in [("agent-service-a", "inject"), ("agent-service-b", "steer")]:
         body = {"type": kind, "payload": {"message": f"control:{kind}:{identity}"}}
         key = uuid.uuid4().hex
-        value = request(PORTS[portal], base + f"/turns/{first['id']}/inputs", body, key)
-        duplicate = request(PORTS["portal-a"], base + f"/turns/{first['id']}/inputs", body, key)
+        value = request(PORTS[agentService], base + f"/turns/{first['id']}/inputs", body, key)
+        duplicate = request(PORTS["agent-service-a"], base + f"/turns/{first['id']}/inputs", body, key)
         if value["id"] != duplicate["id"] or value["sequence"] != duplicate["sequence"]:
-            raise AssertionError("Cross-Portal input retry created another command")
+            raise AssertionError("Cross-Agent Service input retry created another command")
         inputs.append(value)
-    print("CONTROLS accepted inject / steer with cross-Portal idempotent retries", flush=True)
+    print("CONTROLS accepted inject / steer with cross-Agent Service idempotent retries", flush=True)
     wait_turn(base, second["id"], {"completed"})
     observed = complete.result()
-    resumed = EventSubscription(PORTS["portal-b"], base, terminal_turn=second["id"],
+    resumed = EventSubscription(PORTS["agent-service-b"], base, terminal_turn=second["id"],
                                 after=first_events[-1]["cursor"]).result()
-    durable = request(PORTS["portal-a"], base + "/events?limit=256")
+    durable = request(PORTS["agent-service-a"], base + "/events?limit=256")
     if durable["has_more"] or observed != durable["data"] or first_events + resumed != durable["data"]:
-        raise AssertionError("SSE live / cross-Portal cursor replay differs from durable history")
-    receipts = request(PORTS["portal-b"], base + f"/turns/{first['id']}/inputs?limit=100")["data"]
+        raise AssertionError("SSE live / cross-Agent Service cursor replay differs from durable history")
+    receipts = request(PORTS["agent-service-b"], base + f"/turns/{first['id']}/inputs?limit=100")["data"]
     if [(v["id"], v["sequence"], v["status"]) for v in receipts] != [
             (v["id"], v["sequence"], "applied") for v in inputs]:
         raise AssertionError(f"Runtime inputs were not applied exactly once in order: {receipts}")
     output = json.dumps(durable)
     expected = f"control:inject:{identity}|control:steer:{identity}"
-    if "brain-confirmed-hands-" + label not in output or expected not in output:
-        raise AssertionError("Brain did not observe the ordered controls and confirmed tool result")
+    if "harness-runtime-confirmed-tool-worker-" + label not in output or expected not in output:
+        raise AssertionError("HarnessRuntime did not observe the ordered controls and confirmed tool result")
     path = state / f"controls-{int(time.time())}.json"
     path.write_text(json.dumps({"passed": True, "session": session["id"], "turns": [first["id"], second["id"]],
                                 "inputs": receipts, "events": durable, "sse_subscriber_events": len(observed),
                                 "reconnect_prefix": len(first_events), "reconnect_suffix": len(resumed)}, indent=2) + "\n")
-    print(f"PASSED actual inputs, two SSE subscribers and cross-Portal reconnect: {path}", flush=True)
+    print(f"PASSED actual inputs, two SSE subscribers and cross-Agent Service reconnect: {path}", flush=True)
 
 
 def cancellation(state):
     _, agent, identity = fixture_agent()
-    session = request(PORTS["portal-a"], "/v1/sessions", {"agent": agent["id"]}, uuid.uuid4().hex)
+    session = request(PORTS["agent-service-a"], "/v1/sessions", {"agent": agent["id"]}, uuid.uuid4().hex)
     base = f"/v1/sessions/{session['id']}"
     label = "cancel-" + identity
-    first = request(PORTS["portal-a"], base + "/turns",
+    first = request(PORTS["agent-service-a"], base + "/turns",
                     {"input": {"message": f"fixture:execute:60:{label}"}}, uuid.uuid4().hex)
-    second = request(PORTS["portal-b"], base + "/turns",
+    second = request(PORTS["agent-service-b"], base + "/turns",
                      {"input": {"message": "fixture:echo:" + label}}, uuid.uuid4().hex)
     wait_turn(base, first["id"], {"waiting_tool"})
     body, key = {"type": "cancel", "payload": {}}, uuid.uuid4().hex
-    accepted = request(PORTS["portal-b"], base + f"/turns/{first['id']}/inputs", body, key)
-    duplicate = request(PORTS["portal-a"], base + f"/turns/{first['id']}/inputs", body, key)
+    accepted = request(PORTS["agent-service-b"], base + f"/turns/{first['id']}/inputs", body, key)
+    duplicate = request(PORTS["agent-service-a"], base + f"/turns/{first['id']}/inputs", body, key)
     if accepted["id"] != duplicate["id"]:
         raise AssertionError("Cancel retry was not idempotent")
     wait_turn(base, first["id"], {"cancelled"})
     wait_turn(base, second["id"], {"completed"})
-    receipt = request(PORTS["portal-b"], base + f"/turns/{first['id']}/inputs/{accepted['id']}")
+    receipt = request(PORTS["agent-service-b"], base + f"/turns/{first['id']}/inputs/{accepted['id']}")
     if receipt["status"] != "applied":
         raise AssertionError("Cancellation was not durably applied")
     matching = [p for p in (state / "sandbox").glob("*/side-effects.txt") if "start-" + label in p.read_text()]
     if len(matching) != 1 or matching[0].read_text().splitlines() != ["start-" + label]:
         raise AssertionError("Cancelled process completed or executed more than once")
-    events = request(PORTS["portal-a"], base + "/events?limit=256")
-    if events["has_more"] or "brain-" + label not in json.dumps(events):
+    events = request(PORTS["agent-service-a"], base + "/events?limit=256")
+    if events["has_more"] or "harness-runtime-" + label not in json.dumps(events):
         raise AssertionError("Queued Turn did not advance after cancellation")
     path = state / f"cancellation-{int(time.time())}.json"
     path.write_text(json.dumps({"passed": True, "session": session["id"], "turns": [first["id"], second["id"]],
@@ -776,7 +776,7 @@ def restart_replica(state, name):
     manifest = json.loads(manifest_path.read_text())
     entry = manifest["processes"][name]
     environment = {key: value for key, value in os.environ.items()
-                   if not key.startswith(("BUILDER_", "CLAW_", "CONTROL_PLANE_", "SPRING_"))
+                   if not key.startswith(("MANAGED_AGENTS_", "CLAW_", "CONTROL_PLANE_", "SPRING_"))
                    and key not in {"DASHSCOPE_API_KEY", "E2B_API_KEY", "OPENAI_API_KEY", "ANTHROPIC_API_KEY",
                                    "GOOGLE_API_KEY", "GEMINI_API_KEY", "JAVA_TOOL_OPTIONS", "JDK_JAVA_OPTIONS"}}
     environment.update(fixture_environment(state))
@@ -792,7 +792,7 @@ def restart_replica(state, name):
 
 def execution_owners(state, turns):
     result = {}
-    for name in ["brain-a", "brain-b"]:
+    for name in ["agent-harness-runtime-a", "agent-harness-runtime-b"]:
         path = state / (name + ".log")
         for line in path.read_text().splitlines():
             if "managed_runtime " not in line:
@@ -806,13 +806,13 @@ def execution_owners(state, turns):
     return result
 
 
-def hands_restart(state):
+def tool_worker_restart(state):
     _, agent, identity = fixture_agent()
-    session = request(PORTS["portal-a"], "/v1/sessions", {"agent": agent["id"]}, uuid.uuid4().hex)
-    base, label = f"/v1/sessions/{session['id']}", "hands-restart-" + identity
-    first = request(PORTS["portal-a"], base + "/turns",
+    session = request(PORTS["agent-service-a"], "/v1/sessions", {"agent": agent["id"]}, uuid.uuid4().hex)
+    base, label = f"/v1/sessions/{session['id']}", "tool-worker-restart-" + identity
+    first = request(PORTS["agent-service-a"], base + "/turns",
                     {"input": {"message": f"fixture:execute:120:{label}"}}, uuid.uuid4().hex)
-    second = request(PORTS["portal-b"], base + "/turns",
+    second = request(PORTS["agent-service-b"], base + "/turns",
                      {"input": {"message": "fixture:echo:" + label}}, uuid.uuid4().hex)
     wait_turn(base, first["id"], {"waiting_tool"})
     assert fact(state, "SELECT execution_token IS NULL FROM ma.turn WHERE turn_id=:'turn';",
@@ -820,9 +820,9 @@ def hands_restart(state):
     before = fact(state, "SELECT task_id,execution_id,process_handle FROM ma.tool_task WHERE native_tool_call_id=:'call';",
                   {"call": "replica-execute-" + label})
     if not before or not before.rsplit("|", 1)[-1]:
-        raise AssertionError("Tool has no persisted process handle before Hands restart")
+        raise AssertionError("Tool has no persisted process handle before Tool Worker restart")
     manifest = json.loads((state / "manifest.json").read_text())
-    old_pids = {name: manifest["processes"][name]["pid"] for name in ["hands-a", "hands-b"]}
+    old_pids = {name: manifest["processes"][name]["pid"] for name in ["tool-worker-a", "tool-worker-b"]}
     for name in old_pids:
         signal_replica(state, name, signal.SIGKILL)
     time.sleep(1)
@@ -832,27 +832,27 @@ def hands_restart(state):
     after = fact(state, "SELECT task_id,execution_id,process_handle FROM ma.tool_task WHERE native_tool_call_id=:'call';",
                  {"call": "replica-execute-" + label})
     if before != after:
-        raise AssertionError(f"Replacement Hands changed the original tool execution: {before} -> {after}")
+        raise AssertionError(f"Replacement Tool Worker changed the original tool execution: {before} -> {after}")
     matching = [p for p in (state / "sandbox").glob("*/side-effects.txt") if "start-" + label in p.read_text()]
     if len(matching) != 1 or matching[0].read_text().splitlines() != ["start-" + label, "done-" + label]:
-        raise AssertionError("Replacement Hands repeated or lost the subprocess")
-    events = request(PORTS["portal-a"], base + "/events?limit=256")
-    if events["has_more"] or "brain-confirmed-hands-" + label not in json.dumps(events):
-        raise AssertionError("Brain did not recover the original confirmed tool outcome")
-    path = state / f"hands-restart-{int(time.time())}.json"
+        raise AssertionError("Replacement Tool Worker repeated or lost the subprocess")
+    events = request(PORTS["agent-service-a"], base + "/events?limit=256")
+    if events["has_more"] or "harness-runtime-confirmed-tool-worker-" + label not in json.dumps(events):
+        raise AssertionError("HarnessRuntime did not recover the original confirmed tool outcome")
+    path = state / f"tool-worker-restart-{int(time.time())}.json"
     path.write_text(json.dumps({"passed": True, "session": session["id"], "turns": [first["id"], second["id"]],
                                 "original_tool": before, "recovered_tool": after, "old_pids": old_pids,
                                 "new_pids": new_pids, "events": events, "side_effects": str(matching[0])}, indent=2) + "\n")
-    print(f"PASSED both Hands replacements query the original execution without rerunning: {path}", flush=True)
+    print(f"PASSED both Tool Worker replacements query the original execution without rerunning: {path}", flush=True)
 
 
 def redis_restart(state):
     _, agent, identity = fixture_agent()
-    session = request(PORTS["portal-a"], "/v1/sessions", {"agent": agent["id"]}, uuid.uuid4().hex)
+    session = request(PORTS["agent-service-a"], "/v1/sessions", {"agent": agent["id"]}, uuid.uuid4().hex)
     base, label = f"/v1/sessions/{session['id']}", "redis-restart-" + identity
-    first = request(PORTS["portal-a"], base + "/turns",
+    first = request(PORTS["agent-service-a"], base + "/turns",
                     {"input": {"message": f"fixture:execute:90:{label}"}}, uuid.uuid4().hex)
-    second = request(PORTS["portal-b"], base + "/turns",
+    second = request(PORTS["agent-service-b"], base + "/turns",
                      {"input": {"message": "fixture:echo:" + label}}, uuid.uuid4().hex)
     wait_turn(base, first["id"], {"waiting_tool"})
     log = state / "redis-restart-infrastructure.log"
@@ -860,8 +860,8 @@ def redis_restart(state):
     try:
         # Stop only this task's named Compose service. Redis data and every other stack are retained.
         run(COMPOSE + ["stop", "redis"], log)
-        print("REDIS fixture stopped; accepting steer through persistent Portal admission", flush=True)
-        accepted = request(PORTS["portal-b"], base + f"/turns/{first['id']}/inputs",
+        print("REDIS fixture stopped; accepting steer through persistent Agent Service admission", flush=True)
+        accepted = request(PORTS["agent-service-b"], base + f"/turns/{first['id']}/inputs",
                            {"type": "steer", "payload": {"message": "control:steer:" + identity}}, uuid.uuid4().hex)
         if accepted["status"] != "accepted" or accepted["delivery_status"] == "delivered":
             raise AssertionError(f"Offline admission did not retain a pending input: {accepted}")
@@ -869,16 +869,16 @@ def redis_restart(state):
         run(COMPOSE + ["up", "-d", "--wait", "redis"], log)
     print("REDIS fixture restarted; waiting for durable input refill and original tool result", flush=True)
     wait_turn(base, second["id"], {"completed"}, timeout=210)
-    receipt = request(PORTS["portal-a"], base + f"/turns/{first['id']}/inputs/{accepted['id']}")
+    receipt = request(PORTS["agent-service-a"], base + f"/turns/{first['id']}/inputs/{accepted['id']}")
     if receipt["status"] != "applied":
         raise AssertionError(f"Offline input was not recovered: {receipt}")
     matching = [p for p in (state / "sandbox").glob("*/side-effects.txt") if "start-" + label in p.read_text()]
     if len(matching) != 1 or matching[0].read_text().splitlines() != ["start-" + label, "done-" + label]:
         raise AssertionError("Redis outage repeated or lost the original tool process")
-    events = request(PORTS["portal-b"], base + "/events?limit=256")
+    events = request(PORTS["agent-service-b"], base + "/events?limit=256")
     encoded = json.dumps(events)
-    if events["has_more"] or "brain-confirmed-hands-" + label not in encoded or "control:steer:" + identity not in encoded:
-        raise AssertionError("Recovered Brain did not observe tool and durable input")
+    if events["has_more"] or "harness-runtime-confirmed-tool-worker-" + label not in encoded or "control:steer:" + identity not in encoded:
+        raise AssertionError("Recovered HarnessRuntime did not observe tool and durable input")
     path = state / f"redis-restart-{int(time.time())}.json"
     path.write_text(json.dumps({"passed": True, "session": session["id"], "turns": [first["id"], second["id"]],
                                 "offline_input": accepted, "recovered_input": receipt,
@@ -888,17 +888,17 @@ def redis_restart(state):
 
 def takeover(state, seconds):
     environment, agent, identity = fixture_agent()
-    session = request(PORTS["portal-a"], "/v1/sessions", {"agent": agent["id"]}, uuid.uuid4().hex)
+    session = request(PORTS["agent-service-a"], "/v1/sessions", {"agent": agent["id"]}, uuid.uuid4().hex)
     base = f"/v1/sessions/{session['id']}"
     # Initialize this fixture workspace before measuring the lease-loss window. Cold-start
     # RPCs are covered by smoke; this check must pause while the requested long tool runs.
-    warmup = request(PORTS["portal-a"], base + "/turns",
+    warmup = request(PORTS["agent-service-a"], base + "/turns",
                      {"input": {"message": "fixture:echo:warmup-" + identity}}, uuid.uuid4().hex)
     wait_turn(base, warmup["id"], {"completed"})
     label = "takeover-" + identity
-    first = request(PORTS["portal-a"], base + "/turns",
+    first = request(PORTS["agent-service-a"], base + "/turns",
                     {"input": {"message": f"fixture:execute:{seconds}:{label}"}}, uuid.uuid4().hex)
-    second = request(PORTS["portal-b"], base + "/turns",
+    second = request(PORTS["agent-service-b"], base + "/turns",
                      {"input": {"message": "fixture:echo:next-" + label}}, uuid.uuid4().hex)
     output = state / f"takeover-{int(time.time())}.json"
     record = {"session": session["id"], "turns": [first["id"], second["id"]],
@@ -914,10 +914,10 @@ def takeover(state, seconds):
             time.sleep(0.5)
     if started is None:
         raise AssertionError("Takeover tool never started")
-    owners = [name for name in ("brain-a", "brain-b")
+    owners = [name for name in ("agent-harness-runtime-a", "agent-harness-runtime-b")
               if "replica-execute-" + label in (state / f"{name}.log").read_text()]
     if len(owners) != 1:
-        raise AssertionError(f"Could not identify exactly one initial Brain: {owners}")
+        raise AssertionError(f"Could not identify exactly one initial HarnessRuntime: {owners}")
     owner = owners[0]
     query = "SELECT execution_epoch FROM ma.turn WHERE turn_id=:'turn';"
     before = int(fact(state, query, {"turn": first["id"]}))
@@ -934,15 +934,15 @@ def takeover(state, seconds):
                 break
             time.sleep(2)
         if after <= before:
-            raise AssertionError("Another Brain did not take over after lease expiry")
+            raise AssertionError("Another HarnessRuntime did not take over after lease expiry")
         if started.read_text().splitlines() != ["start-" + label]:
             raise AssertionError("Tool finished before takeover; concurrent stale execution is unproven")
         print(f"TAKEOVER new epoch={after}; resuming stale {owner}", flush=True)
         signal_replica(state, owner, signal.SIGCONT)
         deadline = time.monotonic() + seconds + 120
         while time.monotonic() < deadline:
-            first = request(PORTS["portal-b"], base + "/turns/" + first["id"])
-            second = request(PORTS["portal-a"], base + "/turns/" + second["id"])
+            first = request(PORTS["agent-service-b"], base + "/turns/" + first["id"])
+            second = request(PORTS["agent-service-a"], base + "/turns/" + second["id"])
             if first["status"] == second["status"] == "completed":
                 break
             if first["status"] in {"failed", "cancelled"}:
@@ -954,8 +954,8 @@ def takeover(state, seconds):
                          {"call": "replica-execute-" + label}))
         if tasks != 1 or started.read_text().splitlines() != ["start-" + label, "done-" + label]:
             raise AssertionError("Takeover created another tool execution or duplicate side effects")
-        events = request(PORTS["portal-b"], base + "/events?limit=100")
-        if events["has_more"] or "brain-confirmed-hands-" + label not in json.dumps(events):
+        events = request(PORTS["agent-service-b"], base + "/events?limit=100")
+        if events["has_more"] or "harness-runtime-confirmed-tool-worker-" + label not in json.dumps(events):
             raise AssertionError("Recovery public event result is missing or incomplete")
         epochs = json.loads(fact(state,
             "SELECT COALESCE(json_agg(json_build_object('sequence', e.sequence, 'epoch', "
@@ -975,14 +975,14 @@ def takeover(state, seconds):
         record.update({"passed": True, "takeover_epoch": after, "tool_tasks": tasks,
                        "events": events, "side_effects": str(started), "committed_checkpoint_epochs": epochs})
         output.write_text(json.dumps(record, indent=2) + "\n")
-        print(f"PASSED paused Brain takeover, stale resume and one tool execution: {output}", flush=True)
+        print(f"PASSED paused HarnessRuntime takeover, stale resume and one tool execution: {output}", flush=True)
     finally:
         signal_replica(state, owner, signal.SIGCONT)
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("action", choices=["start", "stop", "status", "smoke", "parallel", "takeover", "controls", "cancellation", "hands-restart", "redis-restart"])
+    parser.add_argument("action", choices=["start", "stop", "status", "smoke", "parallel", "takeover", "controls", "cancellation", "toolWorker-restart", "redis-restart"])
     parser.add_argument("--state", type=Path, required=True)
     parser.add_argument("--seconds", type=int, default=3)
     parser.add_argument("--mq-profile", choices=["official", "min-offset"], default="official",
@@ -991,7 +991,7 @@ def main():
     parser.add_argument("--task-workers", action="store_true", help="Enable actual AgentTask Outbox/observer workers in this owned fixture")
     parser.add_argument("--mcp-reply-retry", action="store_true", help="Explicitly discard and retry committed MCP completion replies")
     parser.add_argument("--webhooks", action="store_true", help="Explicitly allow loopback HTTP webhook receivers in this owned fixture")
-    parser.add_argument("--concurrency", type=int, default=4, help="Per-replica active Harness / physical Hands tool capacity (1..16)")
+    parser.add_argument("--concurrency", type=int, default=4, help="Per-replica active Harness / physical Tool Worker tool capacity (1..16)")
     args = parser.parse_args()
     state = args.state.resolve()
     if args.action == "start":
@@ -1016,8 +1016,8 @@ def main():
         controls(state)
     elif args.action == "cancellation":
         cancellation(state)
-    elif args.action == "hands-restart":
-        hands_restart(state)
+    elif args.action == "toolWorker-restart":
+        tool_worker_restart(state)
     elif args.action == "redis-restart":
         redis_restart(state)
     else:

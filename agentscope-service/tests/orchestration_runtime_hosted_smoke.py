@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Public Hosted Job with real Portal/Go/PostgreSQL/Host and a fake Codex CLI.
+"""Public Hosted Job with real Agent Service/Go/PostgreSQL/Host and a fake Codex CLI.
 
 The local configuration source is a fixture. No provider/model is called.
 """

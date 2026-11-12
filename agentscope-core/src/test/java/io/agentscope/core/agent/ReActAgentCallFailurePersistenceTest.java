@@ -63,7 +63,13 @@ class ReActAgentCallFailurePersistenceTest {
 
         assertSame(modelFailure, thrown);
         AgentState persisted =
-                store.get("u1", "session-1", "agent_state", AgentState.class).orElseThrow();
+                store.get(
+                                "u1",
+                                "session-1",
+                                new ThreadKey(null, "asst", "unused-bucket", "main")
+                                        .stateEntry("agent_state"),
+                                AgentState.class)
+                        .orElseThrow();
         assertEquals(List.of("original question"), textContents(persisted.getContext()));
         assertEquals(
                 List.of(MsgRole.USER), persisted.getContext().stream().map(Msg::getRole).toList());
@@ -185,7 +191,12 @@ class ReActAgentCallFailurePersistenceTest {
                                 .block());
 
         AgentState persisted =
-                store.get(null, agent.getDefaultSessionId(), "agent_state", AgentState.class)
+                store.get(
+                                null,
+                                agent.getDefaultSessionId(),
+                                new ThreadKey(null, "asst", "unused-bucket", "main")
+                                        .stateEntry("agent_state"),
+                                AgentState.class)
                         .orElseThrow();
         assertTrue(textContents(persisted.getContext()).contains("structured question"));
         assertFalse(textContents(persisted.getContext()).contains("incomplete answer"));
@@ -202,7 +213,12 @@ class ReActAgentCallFailurePersistenceTest {
                 "an empty model response should complete without a result message");
 
         AgentState persisted =
-                store.get(null, agent.getDefaultSessionId(), "agent_state", AgentState.class)
+                store.get(
+                                null,
+                                agent.getDefaultSessionId(),
+                                new ThreadKey(null, "asst", "unused-bucket", "main")
+                                        .stateEntry("agent_state"),
+                                AgentState.class)
                         .orElseThrow();
         assertEquals(List.of("empty response request"), textContents(persisted.getContext()));
         assertEquals(
@@ -220,7 +236,12 @@ class ReActAgentCallFailurePersistenceTest {
                         .block());
 
         AgentState persisted =
-                store.get(null, agent.getDefaultSessionId(), "agent_state", AgentState.class)
+                store.get(
+                                null,
+                                agent.getDefaultSessionId(),
+                                new ThreadKey(null, "asst", "unused-bucket", "main")
+                                        .stateEntry("agent_state"),
+                                AgentState.class)
                         .orElseThrow();
         assertEquals(List.of("empty fallback request"), textContents(persisted.getContext()));
     }
@@ -236,7 +257,12 @@ class ReActAgentCallFailurePersistenceTest {
                         .block());
 
         AgentState persisted =
-                store.get(null, agent.getDefaultSessionId(), "agent_state", AgentState.class)
+                store.get(
+                                null,
+                                agent.getDefaultSessionId(),
+                                new ThreadKey(null, "asst", "unused-bucket", "main")
+                                        .stateEntry("agent_state"),
+                                AgentState.class)
                         .orElseThrow();
         assertEquals(List.of("empty native request"), textContents(persisted.getContext()));
     }

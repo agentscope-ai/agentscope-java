@@ -1,8 +1,8 @@
-# AgentScope Service API Reference
+# Managed Agents API Reference
 
 [中文](api-reference.md) · [API quickstart](api-quickstart.en.md) · [Events and streaming](events-and-streaming.en.md) · [Project overview](../../README.md)
 
-This reference describes the current repository implementation of the public Managed Session protocol and the control-plane API catalog. The Session protocol revision is `agentscope-service-2026-10-19-draft3`. Query the running deployment's capabilities before integration; a source declaration does not guarantee a deployed endpoint or a supported feature.
+This reference describes the current repository implementation of the public Managed Session protocol and the control-plane API catalog. The Session protocol revision is `managed-agents-2026-10-19-draft3`. Query the running deployment's capabilities before integration; a source declaration does not guarantee a deployed endpoint or a supported feature.
 
 ## Contents
 
@@ -30,7 +30,7 @@ The quickstart follows the conversation pattern in the [Claude quickstart](https
 | --- | --- | --- |
 | Session/Events compatibility subset | Session create/get, Events send/list/stream, ordinary text and interrupt | Main conversation flow; no Turn ID, platform intent or response-selection header required |
 | Platform management | Agent, Environment, Application, Namespace and other resources | This project's `/api/v1/...` and `/api/...`; no Claude-style `/v1/agents` or `/v1/environments` aliases currently exist |
-| Platform execution extensions | `/capabilities`, `/turns/**`, targeted steer/inject/cancel, explicit `new_turn`, independent final output | Use when needed; `AgentScope-Extensions: turn-inputs-v1` selects platform events/linkage |
+| Platform execution extensions | `/capabilities`, `/turns/**`, targeted steer/inject/cancel, explicit `new_turn`, independent final output | Use when needed; `Managed-Agents-Extensions: turn-inputs-v1` selects platform events/linkage |
 
 `/turns/{turn_id}/output` is this project's independent result-read extension, not a required step in a Claude Session/Events quickstart. Ordinary `user.message` requires an idle Session in this subset; explicit queueing and targeted inputs use platform extensions. The first release does not implement every upstream Agent, Environment, lifecycle, tool-confirmation, workflow, budget or delta capability.
 
@@ -43,11 +43,11 @@ Use the public Gateway URL as the base URL, for example `http://localhost:18080`
 | --- | --- |
 | `Authorization: Bearer <jwt>` | User JWT; use for management and authorized Sessions |
 | `X-API-Key: <key>` | Application credential for granted Session targets/scopes |
-| `X-AgentScope-Tenant` | Tenant selector, default examples use default |
-| `X-AgentScope-Namespace` | Namespace selector; subject to membership and resource grants |
+| `X-Managed-Agents-Tenant` | Tenant selector, default examples use default |
+| `X-Managed-Agents-Namespace` | Namespace selector; subject to membership and resource grants |
 | `Content-Type: application/json` | JSON request bodies |
 | `Idempotency-Key` | Recommended for Session creation and all event writes; required for explicit intents; 1–256 characters |
-| `AgentScope-Extensions: turn-inputs-v1` | Select platform Turn/Input metadata and events in responses |
+| `Managed-Agents-Extensions: turn-inputs-v1` | Select platform Turn/Input metadata and events in responses |
 | `anthropic-version: 2023-06-01` | Optional recognized compatibility header; other values are rejected |
 | `anthropic-beta: managed-agents-2026-04-01` | Optional recognized compatibility header; not a capability grant |
 
@@ -56,7 +56,7 @@ Use the public Gateway URL as the base URL, for example `http://localhost:18080`
 
 Scope headers select context; they do not grant access. Session creation requires invoke permission on the selected Agent and access to selected resources. Event reads, Turn/Input queries and final output require read permission. Message writes require invoke; cancel/interrupt requires cancel. Every retry rechecks the caller. SSE read permissions are periodically rechecked.
 
-`BUILDER_LOCAL_DEV=true` uses an explicit development identity. An empty credential is valid only when that mode is enabled by the deployment. Internal service tokens, Environment worker keys and Task tokens have separate trust boundaries and are not substitutes for a caller credential.
+`MANAGED_AGENTS_LOCAL_DEV=true` uses an explicit development identity. An empty credential is valid only when that mode is enabled by the deployment. Internal service tokens, Environment worker keys and Task tokens have separate trust boundaries and are not substitutes for a caller credential.
 
 Compatibility headers are optional. Unsupported versions, beta values, `anthropic-workspace-id`, duplicate selection headers and unknown extension values return 400. These headers do not change the platform product name or promise full compatibility with another service.
 
@@ -114,7 +114,7 @@ This list includes entry-filter restrictions, not just Controller declarations. 
 
 Only these four top-level fields are accepted. In particular, do not send `resources`, `memory_store_ids`, `agent_overrides`, or an inline Agent definition. Bind configuration to the Agent through management APIs. Send a stable `Idempotency-Key` for retries; when omitted the server generates a key, so the client cannot reliably replay that request by its own identity.
 
-The response is a direct Session resource with `type:"session"`, `id`, frozen `agent` reference, `environment_id`, `title`, `metadata`, `status`, creation/update timestamps and measured `usage` where available. The selected Agent version is frozen for the Session. With `turn-inputs-v1`, `agentscope_service` also carries runtime kind, lifecycle/configuration revisions and execution authority. Empty `resources`, `stats`, or a null `budget` are placeholders, not feature availability.
+The response is a direct Session resource with `type:"session"`, `id`, frozen `agent` reference, `environment_id`, `title`, `metadata`, `status`, creation/update timestamps and measured `usage` where available. The selected Agent version is frozen for the Session. With `turn-inputs-v1`, `managed_agents` also carries runtime kind, lifecycle/configuration revisions and execution authority. Empty `resources`, `stats`, or a null `budget` are placeholders, not feature availability.
 
 A Session uses the platform service account for execution while retaining the original caller's authorization. It does not accept arbitrary execution identities. The first protocol release rejects nonempty Skills/multiagent configurations, client-side tool confirmation/external results, unsupported tool names and stdio MCP. HTTP MCP requires a matching named toolset and a non-interactive enabled-tool policy.
 
@@ -140,7 +140,7 @@ Returns `session_id`, `runtime_kind`, `protocol_revision`, `compatibility`, `ext
 }
 ```
 
-This is the ordinary compatibility request for an idle Session. To use the platform queueing extension, add `"agentscope_service":{"intent":"new_turn"}` to the Event and supply an idempotency key. The interaction table below distinguishes ordinary input from explicit platform intents.
+This is the ordinary compatibility request for an idle Session. To use the platform queueing extension, add `"managed_agents":{"intent":"new_turn"}` to the Event and supply an idempotency key. The interaction table below distinguishes ordinary input from explicit platform intents.
 
 
 The request has exactly one top-level field, `events`, with **1–50 objects**, and a maximum serialized/request-body size of **1 MiB**. A `user.message` contains a nonempty `content` array of `{type:"text",text:"..."}` blocks. Each text must be nonempty; images, file blocks, tool results and additional block fields are not accepted. A `user.interrupt` has no content field.
@@ -163,7 +163,7 @@ Examples of input injection and explicit cancellation:
   "events": [{
     "type": "user.message",
     "content": [{"type": "text", "text": "Also include the confirmed completion time."}],
-    "agentscope_service": {"intent": "inject", "turn_id": "<turn_id>"}
+    "managed_agents": {"intent": "inject", "turn_id": "<turn_id>"}
   }]
 }
 ```
@@ -172,7 +172,7 @@ Examples of input injection and explicit cancellation:
 {
   "events": [{
     "type": "user.interrupt",
-    "agentscope_service": {"intent": "cancel", "turn_id": "<turn_id>"}
+    "managed_agents": {"intent": "cancel", "turn_id": "<turn_id>"}
   }]
 }
 ```
@@ -182,7 +182,7 @@ Use a distinct stable `Idempotency-Key` for each operation. A cancel receipt ack
 
 ### Acceptance receipt and idempotency
 
-The following illustrates platform acceptance fields selected by `turn-inputs-v1` or an explicit intent; an ordinary receipt omits `agentscope_service`:
+The following illustrates platform acceptance fields selected by `turn-inputs-v1` or an explicit intent; an ordinary receipt omits `managed_agents`:
 
 ```json
 {
@@ -191,7 +191,7 @@ The following illustrates platform acceptance fields selected by `turn-inputs-v1
     "type": "user.message",
     "content": [{"type": "text", "text": "Summarize the incident."}],
     "processed_at": null,
-    "agentscope_service": {
+    "managed_agents": {
       "schema_version": 1,
       "session_id": "<session_id>",
       "event_id": "<event_id>",
@@ -264,7 +264,7 @@ Accepts `limit` (default 100, 1–256) and `after` (this output collection's `ne
     "type": "agent.message",
     "processed_at": "2026-10-19T12:00:10Z",
     "content": [{"type": "text", "text": "Here is the summary."}],
-    "agentscope_service": {"schema_version": 1, "session_id": "<session_id>", "turn_id": "<turn_id>", "item_id": "<item_id>"}
+    "managed_agents": {"schema_version": 1, "session_id": "<session_id>", "turn_id": "<turn_id>", "item_id": "<item_id>"}
   }],
   "next_cursor": null,
   "has_more": false
@@ -298,7 +298,7 @@ An input Event initially has `processed_at:null`. When processed, its identity s
 
 Returns `text/event-stream`, with `event: <type>` and JSON `data: ...`. It captures a boundary at connection and emits **future processed events** only, plus comment heartbeats. It does not return pending acceptance records or replay old history. A completed Turn does not close the Session stream.
 
-No `Last-Event-ID`, `after`, preview, deltas or durable resume is supported. The only optional query is `beta=true`. Open/buffer a stream, fetch history, and merge Events to recover your view. Disconnecting or pressing Ctrl+C does not cancel work. For a final answer without streaming, poll the Turn and read `/output`.
+`Last-Event-ID`, `after` and durable resume remain unsupported. Optional `beta=true` is accepted; `event_deltas[]=agent.message` opts into live assistant-text previews via `event_start`/`event_delta`. Thinking and tool previews are unsupported. Deltas have no own SSE ID, persistence or replay; a complete `agent.message` replaces provisional text. Slow readers or gaps may stop a preview. Open/buffer a fresh stream and merge history after reconnecting; preview eligibility begins at the next model start, never midway through a call. Disconnecting or pressing Ctrl+C does not cancel work. For results without streaming, poll the Turn and read `/output`.
 
 ### Event families
 
@@ -311,10 +311,10 @@ No `Last-Event-ID`, `after`, preview, deltas or durable resume is supported. The
 | `span.model_request_start`, `span.model_request_end` | Correlated model request spans; end usage is emitted only when all required counts are measured |
 | `session.status_running`, `session.status_idle` | Current implementation's conversation state boundaries |
 | `session.error` | Public error information for failed execution |
-| `agentscope_service.turn.*` | Platform Turn status and terminal output links; selected by `turn-inputs-v1` |
-| `agentscope_service.input.*` | Platform input admission/application/rejection notifications; selected by `turn-inputs-v1` |
+| `managed_agents.turn.*` | Platform Turn status and terminal output links; selected by `turn-inputs-v1` |
+| `managed_agents.input.*` | Platform input admission/application/rejection notifications; selected by `turn-inputs-v1` |
 
-Event JSON includes `id`, `type`, `processed_at` and type-specific content. Tool results include content and `is_error`; preserve tool-use/result correlation. The `agentscope_service` object carries Session/Turn/Input context when selected. Standard input and output Events are not native runtime journal envelopes. Private reasoning, credentials and raw checkpoints are not public events. No client approval or client-submitted tool-result event is enabled.
+Event JSON includes `id`, `type`, `processed_at` and type-specific content. Tool results include content and `is_error`; preserve tool-use/result correlation. The `managed_agents` object carries Session/Turn/Input context when selected. Standard input and output Events are not native runtime journal envelopes. Private reasoning, credentials and raw checkpoints are not public events. No client approval or client-submitted tool-result event is enabled.
 
 <a id="pagination"></a>
 ## Pagination
@@ -411,7 +411,7 @@ A successful runnable creation returns `{agent,binding,policy,definition}`; retr
 
 `GET /api/v1/agents/{agent_id}/definition` returns its portable definition. `PATCH .../definition` takes definition fields, requires `name` and the current positive `version`, and creates the next definition version. `GET .../versions` and `GET .../versions/{version}` expose version history. Existing Sessions keep their frozen definition. Catalog `PATCH /api/v1/agents/{agent_id}` and binding edits also require their respective current `version`; use GET before updating.
 
-Definition fields are documented in [ManagedDefinitionInput](../service-controlplane/internal/product/managed_definition.go); catalog creation and updates are in [agent_catalog_handler.go](../service-controlplane/internal/httpapi/agent_catalog_handler.go). A field supported by the configuration store is not automatically supported by the first public Session release.
+Definition fields are documented in [ManagedDefinitionInput](../control-plane/internal/product/managed_definition.go); catalog creation and updates are in [agent_catalog_handler.go](../control-plane/internal/httpapi/agent_catalog_handler.go). A field supported by the configuration store is not automatically supported by the first public Session release.
 
 ### Environments
 
@@ -421,7 +421,7 @@ Definition fields are documented in [ManagedDefinitionInput](../service-controlp
 {"name":"Local API Environment","type":"local","config":{}}
 ```
 
-Local environments require deployment policy allowing local execution. `cloud`, `self_hosted` and `remote` have provider-specific configuration; `sandbox` normalizes to `cloud`. Use the [Environment handler](../service-controlplane/internal/product/handlers_env.go) and [deployment guide](../deploy/README.md) for endpoint/domain/template/credential constraints instead of changing only the type in this example. Creating an Environment does not itself provision a Worker or prove provider connectivity.
+Local environments require deployment policy allowing local execution. `cloud`, `self_hosted` and `remote` have provider-specific configuration; `sandbox` normalizes to `cloud`. Use the [Environment handler](../control-plane/internal/product/handlers_env.go) and [deployment guide](../deploy/README.md) for endpoint/domain/template/credential constraints instead of changing only the type in this example. Creating an Environment does not itself provision a Worker or prove provider connectivity.
 
 ### Applications and credentials
 
@@ -446,7 +446,7 @@ Create an Application with `POST /api/v1/applications` using the first example, 
 
 Responses are `{application:...}` and `{credential:...,apiKey:"..."}` respectively. Save `apiKey` at creation; later list responses omit the plaintext key. Target grants identify the Agent/resource without a version; select the version at Session creation. The Application owner manages credentials, optional `expiresAt` must be in the future, and each supported scope/target is validated. `DELETE .../credentials/{credential_id}` revokes it. Use `X-API-Key` for Session requests and keep human-management JWTs separate.
 
-Application members and limits do not automatically isolate individual business end users. Your integration must choose the appropriate Application/Session ownership and resource grants. See [application schema](../service-controlplane/internal/controlplane/model/application.go) and [credential handler](../service-controlplane/internal/httpapi/service_session_auth.go).
+Application members and limits do not automatically isolate individual business end users. Your integration must choose the appropriate Application/Session ownership and resource grants. See [application schema](../control-plane/internal/controlplane/model/application.go) and [credential handler](../control-plane/internal/httpapi/service_session_auth.go).
 
 ### HTTP MCP configuration
 
@@ -466,7 +466,7 @@ A URL server and its named toolset must match. For example, the following is a d
 }
 ```
 
-Brain directly discovers and pins MCP descriptors before inference; actual MCP calls execute asynchronously in Hands. A configured URL is not evidence that its catalog or credentials are valid; validate with the actual deployment. Supported native tool configuration names in this protocol are `bash`, `read`, `write`, `edit`, `glob`, `grep`, `web_fetch`, and `web_search`. Enabled tools require `always_allow` in this release; a disabled tool may retain another policy. This is a configuration constraint, not a recommendation to enable every tool for every Agent.
+Agent Harness Runtime directly discovers and pins MCP descriptors before inference; actual MCP calls execute asynchronously in Tool Worker. A configured URL is not evidence that its catalog or credentials are valid; validate with the actual deployment. Supported native tool configuration names in this protocol are `bash`, `read`, `write`, `edit`, `glob`, `grep`, `web_fetch`, and `web_search`. Enabled tools require `always_allow` in this release; a disabled tool may retain another policy. This is a configuration constraint, not a recommendation to enable every tool for every Agent.
 
 ### Resource request fields
 
@@ -480,18 +480,18 @@ These are request-body field guides, not complete nested schemas. For optional f
 | `POST /api/vaults/{id}/credentials` | `type`, `label`, `target`, `secret`; store actual secrets through the authorized API |
 | `POST /api/channels` / `PUT /api/channels/{id}` | `channelId`, `type`, `dmScope`, `defaultAgentId`, `disabled`, `properties`, `bindings`; provider settings and identity policy apply |
 | `POST /api/deployments` | `name`, `agentId`, `agentVersion`, `environmentId`, `triggerType`, `cronExpression`; scheduled and provider triggers have separate validation |
-| `POST /api/v1/orchestration-definitions` | OrchestrationDefinition schema; see [definition model](../service-controlplane/internal/controlplane/model/orchestration.go) and the handler for validation/publish/run boundaries |
+| `POST /api/v1/orchestration-definitions` | OrchestrationDefinition schema; see [definition model](../control-plane/internal/controlplane/model/orchestration.go) and the handler for validation/publish/run boundaries |
 | `POST/PATCH /api/v1/automations[/{id}]` | `name`, `description`, `enabled`, `execution`, `triggers`, or supported `triggerType/triggerConfig/actionType/actionConfig`; updates use `expectedVersion` |
 
 ### Other resource families
 
 | Family | Purpose / request schema source |
 | --- | --- |
-| Namespace / resource access | Membership, groups, grants, requests, audit: [access](../service-controlplane/internal/httpapi/access_management.go), [resource access](../service-controlplane/internal/httpapi/resource_groups.go) |
-| Workspace / Skills / tool catalog | Definition files, published revisions and tool configuration: [workspaces](../service-controlplane/internal/product/handlers_workspaces.go), [Agent workspace](../service-controlplane/internal/product/handlers_workspace.go) |
-| Memory stores | Store creation and path-based memory access: [handler](../service-controlplane/internal/product/handlers_memory.go) |
-| Vault / OAuth | Credentials and connection/authorization flows: [Vault](../service-controlplane/internal/product/handlers_vault.go), [OAuth](../service-controlplane/internal/product/oauth_connector.go) |
-| Channels / Deployments | Provider bindings, delivery activity, scheduled triggers: [Channels](../service-controlplane/internal/product/handlers_channels.go), [Deployments](../service-controlplane/internal/product/handlers_deploy.go) |
+| Namespace / resource access | Membership, groups, grants, requests, audit: [access](../control-plane/internal/httpapi/access_management.go), [resource access](../control-plane/internal/httpapi/resource_groups.go) |
+| Workspace / Skills / tool catalog | Definition files, published revisions and tool configuration: [workspaces](../control-plane/internal/product/handlers_workspaces.go), [Agent workspace](../control-plane/internal/product/handlers_workspace.go) |
+| Memory stores | Store creation and path-based memory access: [handler](../control-plane/internal/product/handlers_memory.go) |
+| Vault / OAuth | Credentials and connection/authorization flows: [Vault](../control-plane/internal/product/handlers_vault.go), [OAuth](../control-plane/internal/product/oauth_connector.go) |
+| Channels / Deployments | Provider bindings, delivery activity, scheduled triggers: [Channels](../control-plane/internal/product/handlers_channels.go), [Deployments](../control-plane/internal/product/handlers_deploy.go) |
 | Teams / Issues / AgentTasks | Collaboration, assignments, comments, decisions and execution attempts: route-handler links below |
 | Workflow definitions / runs | Validate/publish definitions; start, inspect, signal and control runs: route-handler links below |
 | Runtime profiles / pools / hosts | Hosted capacity and configuration; machine lifecycle is a separate protocol |
@@ -505,437 +505,437 @@ The catalog below resolves paths from current registration code for a store-back
 
 | Method | Path | Handler / contract source |
 | --- | --- | --- |
-| `GET` | `/api/admin/access-audit` | [accountAudit](../service-controlplane/internal/product/account_management.go#L233) |
-| `GET` | `/api/admin/integrations/github` | [githubAppGet](../service-controlplane/internal/product/oauth_github.go#L80) |
-| `PUT` | `/api/admin/integrations/github` | [githubAppSave](../service-controlplane/internal/product/oauth_github.go#L98) |
-| `GET` | `/api/admin/users` | [adminListUsers](../service-controlplane/internal/product/handlers_admin.go#L51) |
-| `POST` | `/api/admin/users` | [adminCreateUser](../service-controlplane/internal/product/handlers_admin.go#L63) |
-| `DELETE` | `/api/admin/users/{id}` | [adminDeleteUser](../service-controlplane/internal/product/handlers_admin.go#L206) |
-| `PATCH` | `/api/admin/users/{id}/password` | [adminResetPassword](../service-controlplane/internal/product/handlers_admin.go#L144) |
-| `PATCH` | `/api/admin/users/{id}/roles` | [adminUpdateRoles](../service-controlplane/internal/product/handlers_admin.go#L190) |
-| `PATCH` | `/api/admin/users/{id}/status` | [adminAccountStatus](../service-controlplane/internal/product/account_management.go#L123) |
-| `GET` | `/api/auth/dev-session` | [localDevSession](../service-controlplane/internal/product/local_dev.go#L39) |
-| `POST` | `/api/auth/login` | [login](../service-controlplane/internal/product/handlers_auth.go#L37) |
-| `POST` | `/api/auth/logout` | [logoutAccount](../service-controlplane/internal/product/account_management.go#L333) |
-| `GET` | `/api/auth/me` | [me](../service-controlplane/internal/product/handlers_auth.go#L83) |
-| `GET` | `/api/oauth/mcp/callback/{connectionId}` | [oauthCallback](../service-controlplane/internal/product/oauth_callback.go#L60) |
-| `GET` | `/api/oauth/providers/github` | [githubProviderStatus](../service-controlplane/internal/product/oauth_github.go#L70) |
-| `POST` | `/api/user/change-password` | [changePassword](../service-controlplane/internal/product/handlers_auth.go#L101) |
-| `DELETE` | `/api/user/channel-connections` | [removeMyChannelIdentity](../service-controlplane/internal/product/account_connections.go#L71) |
-| `GET` | `/api/user/channel-connections` | [myChannelConnections](../service-controlplane/internal/product/account_connections.go#L27) |
-| `DELETE` | `/api/user/channel-subscriptions/{subscriptionId}` | [unsubscribeMyChannel](../service-controlplane/internal/product/account_connections.go#L88) |
-| `GET` | `/api/user/login-sessions` | [listLoginSessions](../service-controlplane/internal/product/account_management.go#L278) |
-| `POST` | `/api/user/login-sessions/revoke-others` | [revokeOtherLoginSessions](../service-controlplane/internal/product/account_management.go#L313) |
-| `DELETE` | `/api/user/login-sessions/{sessionId}` | [revokeLoginSession](../service-controlplane/internal/product/account_management.go#L301) |
-| `GET` | `/api/user/profile` | [profile](../service-controlplane/internal/product/handlers_auth.go#L94) |
-| `PUT` | `/api/user/profile` | [updateProfile](../service-controlplane/internal/product/account_management.go#L262) |
+| `GET` | `/api/admin/access-audit` | [accountAudit](../control-plane/internal/product/account_management.go#L233) |
+| `GET` | `/api/admin/integrations/github` | [githubAppGet](../control-plane/internal/product/oauth_github.go#L80) |
+| `PUT` | `/api/admin/integrations/github` | [githubAppSave](../control-plane/internal/product/oauth_github.go#L98) |
+| `GET` | `/api/admin/users` | [adminListUsers](../control-plane/internal/product/handlers_admin.go#L51) |
+| `POST` | `/api/admin/users` | [adminCreateUser](../control-plane/internal/product/handlers_admin.go#L63) |
+| `DELETE` | `/api/admin/users/{id}` | [adminDeleteUser](../control-plane/internal/product/handlers_admin.go#L206) |
+| `PATCH` | `/api/admin/users/{id}/password` | [adminResetPassword](../control-plane/internal/product/handlers_admin.go#L144) |
+| `PATCH` | `/api/admin/users/{id}/roles` | [adminUpdateRoles](../control-plane/internal/product/handlers_admin.go#L190) |
+| `PATCH` | `/api/admin/users/{id}/status` | [adminAccountStatus](../control-plane/internal/product/account_management.go#L123) |
+| `GET` | `/api/auth/dev-session` | [localDevSession](../control-plane/internal/product/local_dev.go#L39) |
+| `POST` | `/api/auth/login` | [login](../control-plane/internal/product/handlers_auth.go#L37) |
+| `POST` | `/api/auth/logout` | [logoutAccount](../control-plane/internal/product/account_management.go#L333) |
+| `GET` | `/api/auth/me` | [me](../control-plane/internal/product/handlers_auth.go#L83) |
+| `GET` | `/api/oauth/mcp/callback/{connectionId}` | [oauthCallback](../control-plane/internal/product/oauth_callback.go#L60) |
+| `GET` | `/api/oauth/providers/github` | [githubProviderStatus](../control-plane/internal/product/oauth_github.go#L70) |
+| `POST` | `/api/user/change-password` | [changePassword](../control-plane/internal/product/handlers_auth.go#L101) |
+| `DELETE` | `/api/user/channel-connections` | [removeMyChannelIdentity](../control-plane/internal/product/account_connections.go#L71) |
+| `GET` | `/api/user/channel-connections` | [myChannelConnections](../control-plane/internal/product/account_connections.go#L27) |
+| `DELETE` | `/api/user/channel-subscriptions/{subscriptionId}` | [unsubscribeMyChannel](../control-plane/internal/product/account_connections.go#L88) |
+| `GET` | `/api/user/login-sessions` | [listLoginSessions](../control-plane/internal/product/account_management.go#L278) |
+| `POST` | `/api/user/login-sessions/revoke-others` | [revokeOtherLoginSessions](../control-plane/internal/product/account_management.go#L313) |
+| `DELETE` | `/api/user/login-sessions/{sessionId}` | [revokeLoginSession](../control-plane/internal/product/account_management.go#L301) |
+| `GET` | `/api/user/profile` | [profile](../control-plane/internal/product/handlers_auth.go#L94) |
+| `PUT` | `/api/user/profile` | [updateProfile](../control-plane/internal/product/account_management.go#L262) |
 
 ### Namespace, access and preferences
 
 | Method | Path | Handler / contract source |
 | --- | --- | --- |
-| `GET` | `/api/v1/access/accounts` | [platformAccountDirectory](../service-controlplane/internal/httpapi/access_management.go#L120) |
-| `GET` | `/api/v1/access/audit` | [namespaceAudit](../service-controlplane/internal/httpapi/access_management.go#L205) |
-| `GET` | `/api/v1/access/users/{accountId}/namespaces` | [accountNamespaces](../service-controlplane/internal/httpapi/access_management.go#L186) |
-| `POST` | `/api/v1/entity-identities:resolve` | [resolveEntityIdentities](../service-controlplane/internal/httpapi/entity_identity_handler.go#L100) |
-| `GET` | `/api/v1/me/namespaces` | [listMyNamespaces](../service-controlplane/internal/httpapi/namespace_access.go#L417) |
-| `GET` | `/api/v1/me/navigation` | [navigationAccess](../service-controlplane/internal/httpapi/workspace_rbac.go#L187) |
-| `GET` | `/api/v1/me/preferences` | [getMyPreferences](../service-controlplane/internal/httpapi/access_management.go#L259) |
-| `PUT` | `/api/v1/me/preferences` | [updateMyPreferences](../service-controlplane/internal/httpapi/access_management.go#L271) |
-| `GET` | `/api/v1/me/scope` | [getCurrentScope](../service-controlplane/internal/httpapi/scope_handler.go#L74) |
-| `GET` | `/api/v1/namespaces` | [listManagedNamespaces](../service-controlplane/internal/httpapi/access_management.go#L57) |
-| `POST` | `/api/v1/namespaces` | [createNamespace](../service-controlplane/internal/httpapi/namespace_access.go#L446) |
-| `GET` | `/api/v1/namespaces/{namespaceName}` | [getNamespaceAccess](../service-controlplane/internal/httpapi/namespace_access.go#L505) |
-| `PUT` | `/api/v1/namespaces/{namespaceName}` | [updateNamespaceAccess](../service-controlplane/internal/httpapi/namespace_access.go#L511) |
-| `GET` | `/api/v1/namespaces/{namespaceName}/accounts` | [namespaceAccountDirectory](../service-controlplane/internal/httpapi/access_management.go#L125) |
-| `GET` | `/api/v1/namespaces/{namespaceName}/audit` | [namespaceAudit](../service-controlplane/internal/httpapi/access_management.go#L205) |
-| `GET` | `/api/v1/namespaces/{namespaceName}/groups` | [listAccessGroups](../service-controlplane/internal/httpapi/resource_groups.go#L41) |
-| `PUT` | `/api/v1/namespaces/{namespaceName}/groups` | [updateAccessGroups](../service-controlplane/internal/httpapi/resource_groups.go#L88) |
-| `POST` | `/api/v1/namespaces/{namespaceName}/import-template` | [importWorkflowTemplate](../service-controlplane/internal/httpapi/resource_templates.go#L81) |
-| `GET` | `/api/v1/namespaces/{namespaceName}/requests` | [listAccessRequests](../service-controlplane/internal/httpapi/resource_groups.go#L140) |
-| `POST` | `/api/v1/namespaces/{namespaceName}/requests` | [createAccessRequest](../service-controlplane/internal/httpapi/resource_groups.go#L155) |
-| `POST` | `/api/v1/namespaces/{namespaceName}/requests/{requestId}/review` | [reviewAccessRequest](../service-controlplane/internal/httpapi/resource_groups.go#L198) |
-| `GET` | `/api/v1/namespaces/{namespaceName}/resources` | [listNamespaceResources](../service-controlplane/internal/httpapi/resource_access.go#L223) |
-| `GET` | `/api/v1/namespaces/{namespaceName}/resources/{kind}/{resourceId}/access` | [getResourceAccess](../service-controlplane/internal/httpapi/resource_access.go#L254) |
-| `PUT` | `/api/v1/namespaces/{namespaceName}/resources/{kind}/{resourceId}/access` | [updateResourceAccess](../service-controlplane/internal/httpapi/resource_access.go#L307) |
-| `GET` | `/api/v1/namespaces/{namespaceName}/shared-templates` | [sharedWorkflowTemplates](../service-controlplane/internal/httpapi/resource_templates.go#L30) |
-| `POST` | `/api/v1/namespaces/{namespaceName}/transfer` | [transferNamespace](../service-controlplane/internal/httpapi/access_management.go#L228) |
+| `GET` | `/api/v1/access/accounts` | [platformAccountDirectory](../control-plane/internal/httpapi/access_management.go#L120) |
+| `GET` | `/api/v1/access/audit` | [namespaceAudit](../control-plane/internal/httpapi/access_management.go#L205) |
+| `GET` | `/api/v1/access/users/{accountId}/namespaces` | [accountNamespaces](../control-plane/internal/httpapi/access_management.go#L186) |
+| `POST` | `/api/v1/entity-identities:resolve` | [resolveEntityIdentities](../control-plane/internal/httpapi/entity_identity_handler.go#L100) |
+| `GET` | `/api/v1/me/namespaces` | [listMyNamespaces](../control-plane/internal/httpapi/namespace_access.go#L417) |
+| `GET` | `/api/v1/me/navigation` | [navigationAccess](../control-plane/internal/httpapi/workspace_rbac.go#L187) |
+| `GET` | `/api/v1/me/preferences` | [getMyPreferences](../control-plane/internal/httpapi/access_management.go#L259) |
+| `PUT` | `/api/v1/me/preferences` | [updateMyPreferences](../control-plane/internal/httpapi/access_management.go#L271) |
+| `GET` | `/api/v1/me/scope` | [getCurrentScope](../control-plane/internal/httpapi/scope_handler.go#L74) |
+| `GET` | `/api/v1/namespaces` | [listManagedNamespaces](../control-plane/internal/httpapi/access_management.go#L57) |
+| `POST` | `/api/v1/namespaces` | [createNamespace](../control-plane/internal/httpapi/namespace_access.go#L446) |
+| `GET` | `/api/v1/namespaces/{namespaceName}` | [getNamespaceAccess](../control-plane/internal/httpapi/namespace_access.go#L505) |
+| `PUT` | `/api/v1/namespaces/{namespaceName}` | [updateNamespaceAccess](../control-plane/internal/httpapi/namespace_access.go#L511) |
+| `GET` | `/api/v1/namespaces/{namespaceName}/accounts` | [namespaceAccountDirectory](../control-plane/internal/httpapi/access_management.go#L125) |
+| `GET` | `/api/v1/namespaces/{namespaceName}/audit` | [namespaceAudit](../control-plane/internal/httpapi/access_management.go#L205) |
+| `GET` | `/api/v1/namespaces/{namespaceName}/groups` | [listAccessGroups](../control-plane/internal/httpapi/resource_groups.go#L41) |
+| `PUT` | `/api/v1/namespaces/{namespaceName}/groups` | [updateAccessGroups](../control-plane/internal/httpapi/resource_groups.go#L88) |
+| `POST` | `/api/v1/namespaces/{namespaceName}/import-template` | [importWorkflowTemplate](../control-plane/internal/httpapi/resource_templates.go#L81) |
+| `GET` | `/api/v1/namespaces/{namespaceName}/requests` | [listAccessRequests](../control-plane/internal/httpapi/resource_groups.go#L140) |
+| `POST` | `/api/v1/namespaces/{namespaceName}/requests` | [createAccessRequest](../control-plane/internal/httpapi/resource_groups.go#L155) |
+| `POST` | `/api/v1/namespaces/{namespaceName}/requests/{requestId}/review` | [reviewAccessRequest](../control-plane/internal/httpapi/resource_groups.go#L198) |
+| `GET` | `/api/v1/namespaces/{namespaceName}/resources` | [listNamespaceResources](../control-plane/internal/httpapi/resource_access.go#L223) |
+| `GET` | `/api/v1/namespaces/{namespaceName}/resources/{kind}/{resourceId}/access` | [getResourceAccess](../control-plane/internal/httpapi/resource_access.go#L254) |
+| `PUT` | `/api/v1/namespaces/{namespaceName}/resources/{kind}/{resourceId}/access` | [updateResourceAccess](../control-plane/internal/httpapi/resource_access.go#L307) |
+| `GET` | `/api/v1/namespaces/{namespaceName}/shared-templates` | [sharedWorkflowTemplates](../control-plane/internal/httpapi/resource_templates.go#L30) |
+| `POST` | `/api/v1/namespaces/{namespaceName}/transfer` | [transferNamespace](../control-plane/internal/httpapi/access_management.go#L228) |
 
 ### Applications and credentials
 
 | Method | Path | Handler / contract source |
 | --- | --- | --- |
-| `GET` | `/api/v1/applications` | [listApplications](../service-controlplane/internal/httpapi/application_handler.go#L94) |
-| `POST` | `/api/v1/applications` | [createApplication](../service-controlplane/internal/httpapi/application_handler.go#L67) |
-| `GET` | `/api/v1/applications/{applicationId}` | [getApplication](../service-controlplane/internal/httpapi/application_handler.go#L115) |
-| `PATCH` | `/api/v1/applications/{applicationId}` | [patchApplication](../service-controlplane/internal/httpapi/application_handler.go#L131) |
-| `GET` | `/api/v1/applications/{applicationId}/credentials` | [listSessionCredentials](../service-controlplane/internal/httpapi/service_session_auth.go#L115) |
-| `POST` | `/api/v1/applications/{applicationId}/credentials` | [createSessionCredential](../service-controlplane/internal/httpapi/service_session_auth.go#L52) |
-| `DELETE` | `/api/v1/applications/{applicationId}/credentials/{credentialId}` | [revokeSessionCredential](../service-controlplane/internal/httpapi/service_session_auth.go#L149) |
+| `GET` | `/api/v1/applications` | [listApplications](../control-plane/internal/httpapi/application_handler.go#L94) |
+| `POST` | `/api/v1/applications` | [createApplication](../control-plane/internal/httpapi/application_handler.go#L67) |
+| `GET` | `/api/v1/applications/{applicationId}` | [getApplication](../control-plane/internal/httpapi/application_handler.go#L115) |
+| `PATCH` | `/api/v1/applications/{applicationId}` | [patchApplication](../control-plane/internal/httpapi/application_handler.go#L131) |
+| `GET` | `/api/v1/applications/{applicationId}/credentials` | [listSessionCredentials](../control-plane/internal/httpapi/service_session_auth.go#L115) |
+| `POST` | `/api/v1/applications/{applicationId}/credentials` | [createSessionCredential](../control-plane/internal/httpapi/service_session_auth.go#L52) |
+| `DELETE` | `/api/v1/applications/{applicationId}/credentials/{credentialId}` | [revokeSessionCredential](../control-plane/internal/httpapi/service_session_auth.go#L149) |
 
 ### Agent catalog, definitions and runtime policies
 
 | Method | Path | Handler / contract source |
 | --- | --- | --- |
-| `POST` | `/api/v1/agent-registrations/{agentId}/credentials/rotate` | [rotateAgentRegistrationCredential](../service-controlplane/internal/httpapi/agent_catalog_handler.go#L1145) |
-| `DELETE` | `/api/v1/agent-registrations/{agentId}/credentials/{credentialId}` | [revokeAgentRegistrationCredential](../service-controlplane/internal/httpapi/agent_catalog_handler.go#L1172) |
-| `GET` | `/api/v1/agent-runtime-policies/{agentId}` | [getAgentRuntimePolicy](../service-controlplane/internal/httpapi/orchestration_handler.go#L412) |
-| `PUT` | `/api/v1/agent-runtime-policies/{agentId}` | [putAgentRuntimePolicy](../service-controlplane/internal/httpapi/orchestration_handler.go#L429) |
-| `GET` | `/api/v1/agents` | [listCatalogAgents](../service-controlplane/internal/httpapi/agent_catalog_handler.go#L168) |
-| `POST` | `/api/v1/agents` | [createCatalogAgent](../service-controlplane/internal/httpapi/agent_catalog_handler.go#L445) |
-| `GET` | `/api/v1/agents/runtime-options` | [listAgentRuntimeOptions](../service-controlplane/internal/httpapi/agent_catalog_handler.go#L223) |
-| `GET` | `/api/v1/agents/{agentId}` | [getCatalogAgent](../service-controlplane/internal/httpapi/agent_catalog_handler.go#L702) |
-| `PATCH` | `/api/v1/agents/{agentId}` | [patchCatalogAgent](../service-controlplane/internal/httpapi/agent_catalog_handler.go#L732) |
-| `GET` | `/api/v1/agents/{agentId}/bindings` | [listAgentBindings](../service-controlplane/internal/httpapi/agent_catalog_handler.go#L783) |
-| `POST` | `/api/v1/agents/{agentId}/bindings` | [createAgentBinding](../service-controlplane/internal/httpapi/agent_catalog_handler.go#L796) |
-| `PATCH` | `/api/v1/agents/{agentId}/bindings/{bindingId}` | [patchAgentBinding](../service-controlplane/internal/httpapi/agent_catalog_handler.go#L820) |
-| `GET` | `/api/v1/agents/{agentId}/definition` | [getManagedAgentDefinition](../service-controlplane/internal/httpapi/agent_catalog_handler.go#L576) |
-| `PATCH` | `/api/v1/agents/{agentId}/definition` | [patchManagedAgentDefinition](../service-controlplane/internal/httpapi/agent_catalog_handler.go#L655) |
-| `POST` | `/api/v1/agents/{agentId}/definition` | [initializePortableDefinition](../service-controlplane/internal/httpapi/workspace_definition.go#L34) |
-| `GET` | `/api/v1/agents/{agentId}/hosted-settings` | [getHostedAgentSettings](../service-controlplane/internal/httpapi/agent_catalog_handler.go#L909) |
-| `PATCH` | `/api/v1/agents/{agentId}/hosted-settings` | [patchHostedAgentSettings](../service-controlplane/internal/httpapi/agent_catalog_handler.go#L1035) |
-| `GET` | `/api/v1/agents/{agentId}/instances` | [listCatalogAgentInstances](../service-controlplane/internal/httpapi/agent_catalog_handler.go#L1127) |
-| `GET` | `/api/v1/agents/{agentId}/overview` | [getAgentDetailOverview](../service-controlplane/internal/httpapi/agent_detail_handler.go#L93) |
-| `GET` | `/api/v1/agents/{agentId}/runtime-inventory` | [getAgentRuntimeInventory](../service-controlplane/internal/httpapi/agent_detail_handler.go#L371) |
-| `GET` | `/api/v1/agents/{agentId}/versions` | [listManagedAgentVersions](../service-controlplane/internal/httpapi/agent_catalog_handler.go#L602) |
-| `GET` | `/api/v1/agents/{agentId}/versions/{version}` | [getManagedAgentVersion](../service-controlplane/internal/httpapi/agent_catalog_handler.go#L624) |
-| `GET` | `/api/v1/agents/{agentId}/workspace-capabilities` | [agentWorkspaceCapabilities](../service-controlplane/internal/httpapi/workspace_definition.go#L56) |
+| `POST` | `/api/v1/agent-registrations/{agentId}/credentials/rotate` | [rotateAgentRegistrationCredential](../control-plane/internal/httpapi/agent_catalog_handler.go#L1145) |
+| `DELETE` | `/api/v1/agent-registrations/{agentId}/credentials/{credentialId}` | [revokeAgentRegistrationCredential](../control-plane/internal/httpapi/agent_catalog_handler.go#L1172) |
+| `GET` | `/api/v1/agent-runtime-policies/{agentId}` | [getAgentRuntimePolicy](../control-plane/internal/httpapi/orchestration_handler.go#L412) |
+| `PUT` | `/api/v1/agent-runtime-policies/{agentId}` | [putAgentRuntimePolicy](../control-plane/internal/httpapi/orchestration_handler.go#L429) |
+| `GET` | `/api/v1/agents` | [listCatalogAgents](../control-plane/internal/httpapi/agent_catalog_handler.go#L168) |
+| `POST` | `/api/v1/agents` | [createCatalogAgent](../control-plane/internal/httpapi/agent_catalog_handler.go#L445) |
+| `GET` | `/api/v1/agents/runtime-options` | [listAgentRuntimeOptions](../control-plane/internal/httpapi/agent_catalog_handler.go#L223) |
+| `GET` | `/api/v1/agents/{agentId}` | [getCatalogAgent](../control-plane/internal/httpapi/agent_catalog_handler.go#L702) |
+| `PATCH` | `/api/v1/agents/{agentId}` | [patchCatalogAgent](../control-plane/internal/httpapi/agent_catalog_handler.go#L732) |
+| `GET` | `/api/v1/agents/{agentId}/bindings` | [listAgentBindings](../control-plane/internal/httpapi/agent_catalog_handler.go#L783) |
+| `POST` | `/api/v1/agents/{agentId}/bindings` | [createAgentBinding](../control-plane/internal/httpapi/agent_catalog_handler.go#L796) |
+| `PATCH` | `/api/v1/agents/{agentId}/bindings/{bindingId}` | [patchAgentBinding](../control-plane/internal/httpapi/agent_catalog_handler.go#L820) |
+| `GET` | `/api/v1/agents/{agentId}/definition` | [getManagedAgentDefinition](../control-plane/internal/httpapi/agent_catalog_handler.go#L576) |
+| `PATCH` | `/api/v1/agents/{agentId}/definition` | [patchManagedAgentDefinition](../control-plane/internal/httpapi/agent_catalog_handler.go#L655) |
+| `POST` | `/api/v1/agents/{agentId}/definition` | [initializePortableDefinition](../control-plane/internal/httpapi/workspace_definition.go#L34) |
+| `GET` | `/api/v1/agents/{agentId}/hosted-settings` | [getHostedAgentSettings](../control-plane/internal/httpapi/agent_catalog_handler.go#L909) |
+| `PATCH` | `/api/v1/agents/{agentId}/hosted-settings` | [patchHostedAgentSettings](../control-plane/internal/httpapi/agent_catalog_handler.go#L1035) |
+| `GET` | `/api/v1/agents/{agentId}/instances` | [listCatalogAgentInstances](../control-plane/internal/httpapi/agent_catalog_handler.go#L1127) |
+| `GET` | `/api/v1/agents/{agentId}/overview` | [getAgentDetailOverview](../control-plane/internal/httpapi/agent_detail_handler.go#L93) |
+| `GET` | `/api/v1/agents/{agentId}/runtime-inventory` | [getAgentRuntimeInventory](../control-plane/internal/httpapi/agent_detail_handler.go#L371) |
+| `GET` | `/api/v1/agents/{agentId}/versions` | [listManagedAgentVersions](../control-plane/internal/httpapi/agent_catalog_handler.go#L602) |
+| `GET` | `/api/v1/agents/{agentId}/versions/{version}` | [getManagedAgentVersion](../control-plane/internal/httpapi/agent_catalog_handler.go#L624) |
+| `GET` | `/api/v1/agents/{agentId}/workspace-capabilities` | [agentWorkspaceCapabilities](../control-plane/internal/httpapi/workspace_definition.go#L56) |
 
 ### Workspaces, Skills, tools and marketplaces
 
 | Method | Path | Handler / contract source |
 | --- | --- | --- |
-| `GET` | `/api/agents/{id}/bindings` | [listAgentBindings](../service-controlplane/internal/product/handlers_channels.go#L576) |
-| `POST` | `/api/agents/{id}/bindings` | [addAgentBinding](../service-controlplane/internal/product/handlers_channels.go#L721) |
-| `PUT` | `/api/agents/{id}/bindings` | [replaceAgentBindings](../service-controlplane/internal/product/handlers_channels.go#L643) |
-| `DELETE` | `/api/agents/{id}/bindings/{index}` | [deleteAgentBinding](../service-controlplane/internal/product/handlers_channels.go#L836) |
-| `PUT` | `/api/agents/{id}/bindings/{index}` | [updateAgentBinding](../service-controlplane/internal/product/handlers_channels.go#L778) |
-| `POST` | `/api/agents/{id}/channels/{channelId}/default` | [setChannelDefault](../service-controlplane/internal/product/handlers_channels.go#L458) |
-| `GET` | `/api/agents/{id}/presences` | [listAgentPresences](../service-controlplane/internal/product/handlers_presences.go#L75) |
-| `POST` | `/api/agents/{id}/presences` | [createAgentPresence](../service-controlplane/internal/product/handlers_presences.go#L102) |
-| `DELETE` | `/api/agents/{id}/presences/{channelId}` | [deleteAgentPresence](../service-controlplane/internal/product/handlers_presences.go#L221) |
-| `GET` | `/api/agents/{id}/presences/{channelId}` | [getAgentPresence](../service-controlplane/internal/product/handlers_presences.go#L241) |
-| `PUT` | `/api/agents/{id}/presences/{channelId}` | [updateAgentPresence](../service-controlplane/internal/product/handlers_presences.go#L156) |
-| `GET` | `/api/agents/{id}/shares` | [listShares](../service-controlplane/internal/product/handlers_agent_extras.go#L539) |
-| `POST` | `/api/agents/{id}/shares` | [addShare](../service-controlplane/internal/product/handlers_agent_extras.go#L573) |
-| `DELETE` | `/api/agents/{id}/shares/{granteeType}/{granteeId}` | [revokeShare](../service-controlplane/internal/product/handlers_agent_extras.go#L607) |
-| `GET` | `/api/agents/{id}/skills/workspace` | [listWorkspaceSkills](../service-controlplane/internal/product/handlers_agent_extras.go#L114) |
-| `POST` | `/api/agents/{id}/skills/workspace/marketplace-install` | [marketplaceInstallSkill](../service-controlplane/internal/product/handlers_agent_extras.go#L300) |
-| `DELETE` | `/api/agents/{id}/skills/workspace/{name}` | [deleteWorkspaceSkill](../service-controlplane/internal/product/handlers_agent_extras.go#L277) |
-| `GET` | `/api/agents/{id}/skills/workspace/{name}` | [getWorkspaceSkill](../service-controlplane/internal/product/handlers_agent_extras.go#L168) |
-| `PUT` | `/api/agents/{id}/skills/workspace/{name}` | [putWorkspaceSkill](../service-controlplane/internal/product/handlers_agent_extras.go#L234) |
-| `GET` | `/api/agents/{id}/tools/active` | [toolsActive](../service-controlplane/internal/product/handlers_agent_extras.go#L342) |
-| `GET` | `/api/agents/{id}/tools/catalog/builtins` | [toolsBuiltinCatalog](../service-controlplane/internal/product/handlers_agent_extras.go#L326) |
-| `GET` | `/api/agents/{id}/tools/catalog/mcp-servers` | [toolsMcpCatalog](../service-controlplane/internal/product/handlers_agent_extras.go#L334) |
-| `GET` | `/api/agents/{id}/workspace` | [workspaceSummary](../service-controlplane/internal/product/handlers_workspace.go#L102) |
-| `DELETE` | `/api/agents/{id}/workspace/file` | [workspaceDeleteFile](../service-controlplane/internal/product/handlers_workspace.go#L403) |
-| `GET` | `/api/agents/{id}/workspace/file` | [workspaceReadFile](../service-controlplane/internal/product/handlers_workspace.go#L265) |
-| `POST` | `/api/agents/{id}/workspace/file` | [workspaceCreateFile](../service-controlplane/internal/product/handlers_workspace.go#L334) |
-| `PUT` | `/api/agents/{id}/workspace/file` | [workspaceWriteFile](../service-controlplane/internal/product/handlers_workspace.go#L297) |
-| `POST` | `/api/agents/{id}/workspace/file/move` | [workspaceMoveFile](../service-controlplane/internal/product/handlers_workspace.go#L367) |
-| `GET` | `/api/agents/{id}/workspace/files` | [workspaceFiles](../service-controlplane/internal/product/handlers_workspace.go#L202) |
-| `GET` | `/api/agents/{id}/workspace/subagents` | [listSubagents](../service-controlplane/internal/product/handlers_workspace.go#L462) |
-| `POST` | `/api/agents/{id}/workspace/subagents/from-agent` | [subagentFromAgent](../service-controlplane/internal/product/handlers_workspace.go#L559) |
-| `DELETE` | `/api/agents/{id}/workspace/subagents/{name}` | [deleteSubagent](../service-controlplane/internal/product/handlers_workspace.go#L597) |
-| `PUT` | `/api/agents/{id}/workspace/subagents/{name}` | [upsertSubagent](../service-controlplane/internal/product/handlers_workspace.go#L515) |
-| `POST` | `/api/agents/{id}/workspace/upload` | [workspaceUpload](../service-controlplane/internal/product/handlers_workspace.go#L422) |
-| `GET` | `/api/marketplaces` | [listMarketplaces](../service-controlplane/internal/product/handlers_marketplaces.go#L78) |
-| `POST` | `/api/marketplaces` | [createMarketplace](../service-controlplane/internal/product/handlers_marketplaces.go#L101) |
-| `DELETE` | `/api/marketplaces/{id}` | [deleteMarketplace](../service-controlplane/internal/product/handlers_marketplaces.go#L140) |
-| `GET` | `/api/marketplaces/{id}` | [getMarketplace](../service-controlplane/internal/product/handlers_marketplaces.go#L131) |
-| `GET` | `/api/marketplaces/{id}/skills` | [browseMarketplaceSkills](../service-controlplane/internal/product/handlers_marketplaces.go#L152) |
-| `GET` | `/api/toolsets/builtin` | [platformBuiltinCatalog](../service-controlplane/internal/product/handlers_workspaces.go#L360) |
-| `GET` | `/api/toolsets/mcp-catalog` | [platformMcpCatalog](../service-controlplane/internal/product/handlers_workspaces.go#L364) |
-| `GET` | `/api/workspaces` | [listWorkspaces](../service-controlplane/internal/product/handlers_workspaces.go#L157) |
-| `POST` | `/api/workspaces` | [createWorkspace](../service-controlplane/internal/product/handlers_workspaces.go#L198) |
-| `DELETE` | `/api/workspaces/{id}` | [deleteWorkspace](../service-controlplane/internal/product/handlers_workspaces.go#L336) |
-| `GET` | `/api/workspaces/{id}` | [getWorkspace](../service-controlplane/internal/product/handlers_workspaces.go#L251) |
-| `PATCH` | `/api/workspaces/{id}` | [patchWorkspace](../service-controlplane/internal/product/handlers_workspaces.go#L280) |
-| `GET` | `/api/workspaces/{id}/agents` | [wsLinkedAgents](../service-controlplane/internal/product/workspace_publication.go#L198) |
-| `DELETE` | `/api/workspaces/{id}/file` | [wsDeleteFile](../service-controlplane/internal/product/handlers_workspaces.go#L424) |
-| `GET` | `/api/workspaces/{id}/file` | [wsReadFile](../service-controlplane/internal/product/handlers_workspaces.go#L383) |
-| `PUT` | `/api/workspaces/{id}/file` | [wsWriteFile](../service-controlplane/internal/product/handlers_workspaces.go#L399) |
-| `GET` | `/api/workspaces/{id}/files` | [wsFiles](../service-controlplane/internal/product/handlers_workspaces.go#L368) |
-| `POST` | `/api/workspaces/{id}/publish` | [wsPublish](../service-controlplane/internal/product/workspace_publication.go#L158) |
-| `GET` | `/api/workspaces/{id}/revisions` | [wsRevisions](../service-controlplane/internal/product/workspace_publication.go#L166) |
-| `GET` | `/api/workspaces/{id}/skills` | [wsListSkills](../service-controlplane/internal/product/handlers_workspaces.go#L517) |
-| `POST` | `/api/workspaces/{id}/skills/marketplace-install` | [wsMarketplaceInstall](../service-controlplane/internal/product/handlers_marketplaces.go#L167) |
-| `DELETE` | `/api/workspaces/{id}/skills/{name}` | [wsDeleteSkill](../service-controlplane/internal/product/handlers_workspaces.go#L613) |
-| `GET` | `/api/workspaces/{id}/skills/{name}` | [wsGetSkill](../service-controlplane/internal/product/handlers_workspaces.go#L482) |
-| `PUT` | `/api/workspaces/{id}/skills/{name}` | [wsPutSkill](../service-controlplane/internal/product/handlers_workspaces.go#L553) |
-| `GET` | `/api/workspaces/{id}/subagents` | [wsListSubagents](../service-controlplane/internal/product/handlers_workspaces.go#L759) |
-| `DELETE` | `/api/workspaces/{id}/subagents/{name}` | [wsDeleteSubagent](../service-controlplane/internal/product/handlers_workspaces.go#L817) |
-| `PUT` | `/api/workspaces/{id}/subagents/{name}` | [wsUpsertSubagent](../service-controlplane/internal/product/handlers_workspaces.go#L780) |
-| `GET` | `/api/workspaces/{id}/tools` | [wsGetTools](../service-controlplane/internal/product/handlers_workspaces.go#L438) |
-| `PUT` | `/api/workspaces/{id}/tools` | [wsPutTools](../service-controlplane/internal/product/handlers_workspaces.go#L451) |
+| `GET` | `/api/agents/{id}/bindings` | [listAgentBindings](../control-plane/internal/product/handlers_channels.go#L576) |
+| `POST` | `/api/agents/{id}/bindings` | [addAgentBinding](../control-plane/internal/product/handlers_channels.go#L721) |
+| `PUT` | `/api/agents/{id}/bindings` | [replaceAgentBindings](../control-plane/internal/product/handlers_channels.go#L643) |
+| `DELETE` | `/api/agents/{id}/bindings/{index}` | [deleteAgentBinding](../control-plane/internal/product/handlers_channels.go#L836) |
+| `PUT` | `/api/agents/{id}/bindings/{index}` | [updateAgentBinding](../control-plane/internal/product/handlers_channels.go#L778) |
+| `POST` | `/api/agents/{id}/channels/{channelId}/default` | [setChannelDefault](../control-plane/internal/product/handlers_channels.go#L458) |
+| `GET` | `/api/agents/{id}/presences` | [listAgentPresences](../control-plane/internal/product/handlers_presences.go#L75) |
+| `POST` | `/api/agents/{id}/presences` | [createAgentPresence](../control-plane/internal/product/handlers_presences.go#L102) |
+| `DELETE` | `/api/agents/{id}/presences/{channelId}` | [deleteAgentPresence](../control-plane/internal/product/handlers_presences.go#L221) |
+| `GET` | `/api/agents/{id}/presences/{channelId}` | [getAgentPresence](../control-plane/internal/product/handlers_presences.go#L241) |
+| `PUT` | `/api/agents/{id}/presences/{channelId}` | [updateAgentPresence](../control-plane/internal/product/handlers_presences.go#L156) |
+| `GET` | `/api/agents/{id}/shares` | [listShares](../control-plane/internal/product/handlers_agent_extras.go#L539) |
+| `POST` | `/api/agents/{id}/shares` | [addShare](../control-plane/internal/product/handlers_agent_extras.go#L573) |
+| `DELETE` | `/api/agents/{id}/shares/{granteeType}/{granteeId}` | [revokeShare](../control-plane/internal/product/handlers_agent_extras.go#L607) |
+| `GET` | `/api/agents/{id}/skills/workspace` | [listWorkspaceSkills](../control-plane/internal/product/handlers_agent_extras.go#L114) |
+| `POST` | `/api/agents/{id}/skills/workspace/marketplace-install` | [marketplaceInstallSkill](../control-plane/internal/product/handlers_agent_extras.go#L300) |
+| `DELETE` | `/api/agents/{id}/skills/workspace/{name}` | [deleteWorkspaceSkill](../control-plane/internal/product/handlers_agent_extras.go#L277) |
+| `GET` | `/api/agents/{id}/skills/workspace/{name}` | [getWorkspaceSkill](../control-plane/internal/product/handlers_agent_extras.go#L168) |
+| `PUT` | `/api/agents/{id}/skills/workspace/{name}` | [putWorkspaceSkill](../control-plane/internal/product/handlers_agent_extras.go#L234) |
+| `GET` | `/api/agents/{id}/tools/active` | [toolsActive](../control-plane/internal/product/handlers_agent_extras.go#L342) |
+| `GET` | `/api/agents/{id}/tools/catalog/builtins` | [toolsBuiltinCatalog](../control-plane/internal/product/handlers_agent_extras.go#L326) |
+| `GET` | `/api/agents/{id}/tools/catalog/mcp-servers` | [toolsMcpCatalog](../control-plane/internal/product/handlers_agent_extras.go#L334) |
+| `GET` | `/api/agents/{id}/workspace` | [workspaceSummary](../control-plane/internal/product/handlers_workspace.go#L102) |
+| `DELETE` | `/api/agents/{id}/workspace/file` | [workspaceDeleteFile](../control-plane/internal/product/handlers_workspace.go#L403) |
+| `GET` | `/api/agents/{id}/workspace/file` | [workspaceReadFile](../control-plane/internal/product/handlers_workspace.go#L265) |
+| `POST` | `/api/agents/{id}/workspace/file` | [workspaceCreateFile](../control-plane/internal/product/handlers_workspace.go#L334) |
+| `PUT` | `/api/agents/{id}/workspace/file` | [workspaceWriteFile](../control-plane/internal/product/handlers_workspace.go#L297) |
+| `POST` | `/api/agents/{id}/workspace/file/move` | [workspaceMoveFile](../control-plane/internal/product/handlers_workspace.go#L367) |
+| `GET` | `/api/agents/{id}/workspace/files` | [workspaceFiles](../control-plane/internal/product/handlers_workspace.go#L202) |
+| `GET` | `/api/agents/{id}/workspace/subagents` | [listSubagents](../control-plane/internal/product/handlers_workspace.go#L462) |
+| `POST` | `/api/agents/{id}/workspace/subagents/from-agent` | [subagentFromAgent](../control-plane/internal/product/handlers_workspace.go#L559) |
+| `DELETE` | `/api/agents/{id}/workspace/subagents/{name}` | [deleteSubagent](../control-plane/internal/product/handlers_workspace.go#L597) |
+| `PUT` | `/api/agents/{id}/workspace/subagents/{name}` | [upsertSubagent](../control-plane/internal/product/handlers_workspace.go#L515) |
+| `POST` | `/api/agents/{id}/workspace/upload` | [workspaceUpload](../control-plane/internal/product/handlers_workspace.go#L422) |
+| `GET` | `/api/marketplaces` | [listMarketplaces](../control-plane/internal/product/handlers_marketplaces.go#L78) |
+| `POST` | `/api/marketplaces` | [createMarketplace](../control-plane/internal/product/handlers_marketplaces.go#L101) |
+| `DELETE` | `/api/marketplaces/{id}` | [deleteMarketplace](../control-plane/internal/product/handlers_marketplaces.go#L140) |
+| `GET` | `/api/marketplaces/{id}` | [getMarketplace](../control-plane/internal/product/handlers_marketplaces.go#L131) |
+| `GET` | `/api/marketplaces/{id}/skills` | [browseMarketplaceSkills](../control-plane/internal/product/handlers_marketplaces.go#L152) |
+| `GET` | `/api/toolsets/builtin` | [platformBuiltinCatalog](../control-plane/internal/product/handlers_workspaces.go#L360) |
+| `GET` | `/api/toolsets/mcp-catalog` | [platformMcpCatalog](../control-plane/internal/product/handlers_workspaces.go#L364) |
+| `GET` | `/api/workspaces` | [listWorkspaces](../control-plane/internal/product/handlers_workspaces.go#L157) |
+| `POST` | `/api/workspaces` | [createWorkspace](../control-plane/internal/product/handlers_workspaces.go#L198) |
+| `DELETE` | `/api/workspaces/{id}` | [deleteWorkspace](../control-plane/internal/product/handlers_workspaces.go#L336) |
+| `GET` | `/api/workspaces/{id}` | [getWorkspace](../control-plane/internal/product/handlers_workspaces.go#L251) |
+| `PATCH` | `/api/workspaces/{id}` | [patchWorkspace](../control-plane/internal/product/handlers_workspaces.go#L280) |
+| `GET` | `/api/workspaces/{id}/agents` | [wsLinkedAgents](../control-plane/internal/product/workspace_publication.go#L198) |
+| `DELETE` | `/api/workspaces/{id}/file` | [wsDeleteFile](../control-plane/internal/product/handlers_workspaces.go#L424) |
+| `GET` | `/api/workspaces/{id}/file` | [wsReadFile](../control-plane/internal/product/handlers_workspaces.go#L383) |
+| `PUT` | `/api/workspaces/{id}/file` | [wsWriteFile](../control-plane/internal/product/handlers_workspaces.go#L399) |
+| `GET` | `/api/workspaces/{id}/files` | [wsFiles](../control-plane/internal/product/handlers_workspaces.go#L368) |
+| `POST` | `/api/workspaces/{id}/publish` | [wsPublish](../control-plane/internal/product/workspace_publication.go#L158) |
+| `GET` | `/api/workspaces/{id}/revisions` | [wsRevisions](../control-plane/internal/product/workspace_publication.go#L166) |
+| `GET` | `/api/workspaces/{id}/skills` | [wsListSkills](../control-plane/internal/product/handlers_workspaces.go#L517) |
+| `POST` | `/api/workspaces/{id}/skills/marketplace-install` | [wsMarketplaceInstall](../control-plane/internal/product/handlers_marketplaces.go#L167) |
+| `DELETE` | `/api/workspaces/{id}/skills/{name}` | [wsDeleteSkill](../control-plane/internal/product/handlers_workspaces.go#L613) |
+| `GET` | `/api/workspaces/{id}/skills/{name}` | [wsGetSkill](../control-plane/internal/product/handlers_workspaces.go#L482) |
+| `PUT` | `/api/workspaces/{id}/skills/{name}` | [wsPutSkill](../control-plane/internal/product/handlers_workspaces.go#L553) |
+| `GET` | `/api/workspaces/{id}/subagents` | [wsListSubagents](../control-plane/internal/product/handlers_workspaces.go#L759) |
+| `DELETE` | `/api/workspaces/{id}/subagents/{name}` | [wsDeleteSubagent](../control-plane/internal/product/handlers_workspaces.go#L817) |
+| `PUT` | `/api/workspaces/{id}/subagents/{name}` | [wsUpsertSubagent](../control-plane/internal/product/handlers_workspaces.go#L780) |
+| `GET` | `/api/workspaces/{id}/tools` | [wsGetTools](../control-plane/internal/product/handlers_workspaces.go#L438) |
+| `PUT` | `/api/workspaces/{id}/tools` | [wsPutTools](../control-plane/internal/product/handlers_workspaces.go#L451) |
 
 ### Environments
 
 | Method | Path | Handler / contract source |
 | --- | --- | --- |
-| `GET` | `/api/environments` | [listEnvironments](../service-controlplane/internal/product/handlers_env.go#L82) |
-| `POST` | `/api/environments` | [createEnvironment](../service-controlplane/internal/product/handlers_env.go#L118) |
-| `DELETE` | `/api/environments/{id}` | [deleteEnvironment](../service-controlplane/internal/product/handlers_env.go#L221) |
-| `GET` | `/api/environments/{id}` | [getEnvironment](../service-controlplane/internal/product/handlers_env.go#L157) |
-| `PATCH` | `/api/environments/{id}` | [updateEnvironment](../service-controlplane/internal/product/handlers_env.go#L172) |
-| `POST` | `/api/environments/{id}/archive` | [archiveEnvironment](../service-controlplane/internal/product/handlers_env.go#L236) |
-| `POST` | `/api/environments/{id}/rotate-key` | [rotateEnvironmentKey](../service-controlplane/internal/product/handlers_env.go#L255) |
+| `GET` | `/api/environments` | [listEnvironments](../control-plane/internal/product/handlers_env.go#L82) |
+| `POST` | `/api/environments` | [createEnvironment](../control-plane/internal/product/handlers_env.go#L118) |
+| `DELETE` | `/api/environments/{id}` | [deleteEnvironment](../control-plane/internal/product/handlers_env.go#L221) |
+| `GET` | `/api/environments/{id}` | [getEnvironment](../control-plane/internal/product/handlers_env.go#L157) |
+| `PATCH` | `/api/environments/{id}` | [updateEnvironment](../control-plane/internal/product/handlers_env.go#L172) |
+| `POST` | `/api/environments/{id}/archive` | [archiveEnvironment](../control-plane/internal/product/handlers_env.go#L236) |
+| `POST` | `/api/environments/{id}/rotate-key` | [rotateEnvironmentKey](../control-plane/internal/product/handlers_env.go#L255) |
 
 ### Memory stores
 
 | Method | Path | Handler / contract source |
 | --- | --- | --- |
-| `GET` | `/api/memory-stores` | [listMemoryStores](../service-controlplane/internal/product/handlers_memory.go#L64) |
-| `POST` | `/api/memory-stores` | [createMemoryStore](../service-controlplane/internal/product/handlers_memory.go#L110) |
-| `DELETE` | `/api/memory-stores/{id}` | [deleteMemoryStore](../service-controlplane/internal/product/handlers_memory.go#L224) |
-| `GET` | `/api/memory-stores/{id}` | [getMemoryStore](../service-controlplane/internal/product/handlers_memory.go#L132) |
-| `POST` | `/api/memory-stores/{id}/archive` | [archiveMemoryStore](../service-controlplane/internal/product/handlers_memory.go#L161) |
-| `GET` | `/api/memory-stores/{id}/memories` | [listMemories](../service-controlplane/internal/product/handlers_memory.go#L248) |
-| `DELETE` | `/api/memory-stores/{id}/memories/*path` | [deleteMemory](../service-controlplane/internal/product/handlers_memory.go#L382) |
-| `GET` | `/api/memory-stores/{id}/memories/*path` | [readMemory](../service-controlplane/internal/product/handlers_memory.go#L46) |
-| `PUT` | `/api/memory-stores/{id}/memories/*path` | [putMemory](../service-controlplane/internal/product/handlers_memory.go#L315) |
-| `POST` | `/api/memory-stores/{id}/redact` | [redactMemory](../service-controlplane/internal/product/handlers_memory.go#L181) |
+| `GET` | `/api/memory-stores` | [listMemoryStores](../control-plane/internal/product/handlers_memory.go#L64) |
+| `POST` | `/api/memory-stores` | [createMemoryStore](../control-plane/internal/product/handlers_memory.go#L110) |
+| `DELETE` | `/api/memory-stores/{id}` | [deleteMemoryStore](../control-plane/internal/product/handlers_memory.go#L224) |
+| `GET` | `/api/memory-stores/{id}` | [getMemoryStore](../control-plane/internal/product/handlers_memory.go#L132) |
+| `POST` | `/api/memory-stores/{id}/archive` | [archiveMemoryStore](../control-plane/internal/product/handlers_memory.go#L161) |
+| `GET` | `/api/memory-stores/{id}/memories` | [listMemories](../control-plane/internal/product/handlers_memory.go#L248) |
+| `DELETE` | `/api/memory-stores/{id}/memories/*path` | [deleteMemory](../control-plane/internal/product/handlers_memory.go#L382) |
+| `GET` | `/api/memory-stores/{id}/memories/*path` | [readMemory](../control-plane/internal/product/handlers_memory.go#L46) |
+| `PUT` | `/api/memory-stores/{id}/memories/*path` | [putMemory](../control-plane/internal/product/handlers_memory.go#L315) |
+| `POST` | `/api/memory-stores/{id}/redact` | [redactMemory](../control-plane/internal/product/handlers_memory.go#L181) |
 
 ### Vault and OAuth connections
 
 | Method | Path | Handler / contract source |
 | --- | --- | --- |
-| `GET` | `/api/vaults` | [listVaults](../service-controlplane/internal/product/handlers_vault.go#L65) |
-| `POST` | `/api/vaults` | [createVault](../service-controlplane/internal/product/handlers_vault.go#L107) |
-| `DELETE` | `/api/vaults/{id}` | [deleteVault](../service-controlplane/internal/product/handlers_vault.go#L217) |
-| `GET` | `/api/vaults/{id}` | [getVault](../service-controlplane/internal/product/handlers_vault.go#L129) |
-| `PATCH` | `/api/vaults/{id}` | [updateVault](../service-controlplane/internal/product/handlers_vault.go#L157) |
-| `POST` | `/api/vaults/{id}/archive` | [archiveVault](../service-controlplane/internal/product/handlers_vault.go#L198) |
-| `GET` | `/api/vaults/{id}/credentials` | [listCredentials](../service-controlplane/internal/product/handlers_vault.go#L241) |
-| `POST` | `/api/vaults/{id}/credentials` | [addCredential](../service-controlplane/internal/product/handlers_vault.go#L270) |
-| `DELETE` | `/api/vaults/{id}/credentials/{cid}` | [deleteCredential](../service-controlplane/internal/product/handlers_vault.go#L402) |
-| `PATCH` | `/api/vaults/{id}/credentials/{cid}` | [updateCredential](../service-controlplane/internal/product/handlers_vault.go#L300) |
-| `POST` | `/api/vaults/{id}/credentials/{cid}/validate` | [validateCredential](../service-controlplane/internal/product/handlers_vault.go#L357) |
-| `GET` | `/api/vaults/{id}/oauth-connections` | [listOAuthConnections](../service-controlplane/internal/product/oauth_connector.go#L207) |
-| `POST` | `/api/vaults/{id}/oauth-connections` | [createOAuthConnection](../service-controlplane/internal/product/oauth_connector.go#L245) |
-| `PATCH` | `/api/vaults/{id}/oauth-connections/{connectionId}` | [updateOAuthConnection](../service-controlplane/internal/product/oauth_connector.go#L293) |
-| `POST` | `/api/vaults/{id}/oauth-connections/{connectionId}/authorize` | [startOAuth](../service-controlplane/internal/product/oauth_connector.go#L388) |
-| `POST` | `/api/vaults/{id}/oauth-connections/{connectionId}/disconnect` | [disconnectOAuth](../service-controlplane/internal/product/oauth_connector.go#L353) |
-| `GET` | `/api/vaults/{id}/oauth-connections/{connectionId}/flows/{flowId}` | [oauthFlowStatus](../service-controlplane/internal/product/oauth_callback.go#L146) |
-| `POST` | `/api/vaults/{id}/oauth-connections/{connectionId}/flows/{flowId}/cancel` | [cancelOAuth](../service-controlplane/internal/product/oauth_callback.go#L155) |
-| `POST` | `/api/vaults/{id}/oauth-connections/{connectionId}/flows/{flowId}/complete` | [completeOAuth](../service-controlplane/internal/product/oauth_callback.go#L168) |
-| `POST` | `/api/vaults/{id}/oauth-connections/{connectionId}/verify` | [verifyGitHubConnection](../service-controlplane/internal/product/oauth_github_verify.go#L42) |
+| `GET` | `/api/vaults` | [listVaults](../control-plane/internal/product/handlers_vault.go#L65) |
+| `POST` | `/api/vaults` | [createVault](../control-plane/internal/product/handlers_vault.go#L107) |
+| `DELETE` | `/api/vaults/{id}` | [deleteVault](../control-plane/internal/product/handlers_vault.go#L217) |
+| `GET` | `/api/vaults/{id}` | [getVault](../control-plane/internal/product/handlers_vault.go#L129) |
+| `PATCH` | `/api/vaults/{id}` | [updateVault](../control-plane/internal/product/handlers_vault.go#L157) |
+| `POST` | `/api/vaults/{id}/archive` | [archiveVault](../control-plane/internal/product/handlers_vault.go#L198) |
+| `GET` | `/api/vaults/{id}/credentials` | [listCredentials](../control-plane/internal/product/handlers_vault.go#L241) |
+| `POST` | `/api/vaults/{id}/credentials` | [addCredential](../control-plane/internal/product/handlers_vault.go#L270) |
+| `DELETE` | `/api/vaults/{id}/credentials/{cid}` | [deleteCredential](../control-plane/internal/product/handlers_vault.go#L402) |
+| `PATCH` | `/api/vaults/{id}/credentials/{cid}` | [updateCredential](../control-plane/internal/product/handlers_vault.go#L300) |
+| `POST` | `/api/vaults/{id}/credentials/{cid}/validate` | [validateCredential](../control-plane/internal/product/handlers_vault.go#L357) |
+| `GET` | `/api/vaults/{id}/oauth-connections` | [listOAuthConnections](../control-plane/internal/product/oauth_connector.go#L207) |
+| `POST` | `/api/vaults/{id}/oauth-connections` | [createOAuthConnection](../control-plane/internal/product/oauth_connector.go#L245) |
+| `PATCH` | `/api/vaults/{id}/oauth-connections/{connectionId}` | [updateOAuthConnection](../control-plane/internal/product/oauth_connector.go#L293) |
+| `POST` | `/api/vaults/{id}/oauth-connections/{connectionId}/authorize` | [startOAuth](../control-plane/internal/product/oauth_connector.go#L388) |
+| `POST` | `/api/vaults/{id}/oauth-connections/{connectionId}/disconnect` | [disconnectOAuth](../control-plane/internal/product/oauth_connector.go#L353) |
+| `GET` | `/api/vaults/{id}/oauth-connections/{connectionId}/flows/{flowId}` | [oauthFlowStatus](../control-plane/internal/product/oauth_callback.go#L146) |
+| `POST` | `/api/vaults/{id}/oauth-connections/{connectionId}/flows/{flowId}/cancel` | [cancelOAuth](../control-plane/internal/product/oauth_callback.go#L155) |
+| `POST` | `/api/vaults/{id}/oauth-connections/{connectionId}/flows/{flowId}/complete` | [completeOAuth](../control-plane/internal/product/oauth_callback.go#L168) |
+| `POST` | `/api/vaults/{id}/oauth-connections/{connectionId}/verify` | [verifyGitHubConnection](../control-plane/internal/product/oauth_github_verify.go#L42) |
 
 ### Channels, Deployments and work sources
 
 | Method | Path | Handler / contract source |
 | --- | --- | --- |
-| `GET` | `/api/channels` | [listChannels](../service-controlplane/internal/product/handlers_channels.go#L176) |
-| `POST` | `/api/channels` | [createChannel](../service-controlplane/internal/product/handlers_channels.go#L262) |
-| `GET` | `/api/channels/types` | [listChannelTypes](../service-controlplane/internal/product/handlers_channels.go#L212) |
-| `DELETE` | `/api/channels/{channelId}` | [deleteChannel](../service-controlplane/internal/product/handlers_channels.go#L415) |
-| `GET` | `/api/channels/{channelId}` | [getChannel](../service-controlplane/internal/product/handlers_channels.go#L216) |
-| `PUT` | `/api/channels/{channelId}` | [updateChannel](../service-controlplane/internal/product/handlers_channels.go#L339) |
-| `GET` | `/api/channels/{channelId}/activity` | [channelWorkActivity](../service-controlplane/internal/product/channel_work_api.go#L383) |
-| `GET` | `/api/channels/{channelId}/collaboration` | [channelWorkConfig](../service-controlplane/internal/product/channel_work_api.go#L83) |
-| `PUT` | `/api/channels/{channelId}/collaboration` | [putChannelWorkConfig](../service-controlplane/internal/product/channel_work_api.go#L95) |
-| `POST` | `/api/channels/{channelId}/deliveries/{deliveryId}/retry` | [retryChannelDelivery](../service-controlplane/internal/product/channel_work_api.go#L462) |
-| `POST` | `/api/channels/{channelId}/disable` | [disableChannel](../service-controlplane/internal/product/handlers_channels.go#L437) |
-| `POST` | `/api/channels/{channelId}/enable` | [enableChannel](../service-controlplane/internal/product/handlers_channels.go#L433) |
-| `DELETE` | `/api/channels/{channelId}/identity` | [deleteChannelIdentity](../service-controlplane/internal/product/channel_work_api.go#L232) |
-| `DELETE` | `/api/channels/{channelId}/links/{linkId}` | [unsubscribeChannelWork](../service-controlplane/internal/product/channel_work_api.go#L483) |
-| `POST` | `/api/channels/{channelId}/messages/{messageId}/retry` | [retryChannelIntake](../service-controlplane/internal/product/channel_work_api.go#L547) |
-| `POST` | `/api/channels/{channelId}/pairing` | [createChannelPairing](../service-controlplane/internal/product/channel_work_api.go#L209) |
-| `GET` | `/api/deployments` | [listDeployments](../service-controlplane/internal/product/handlers_deploy.go#L122) |
-| `POST` | `/api/deployments` | [createDeployment](../service-controlplane/internal/product/handlers_deploy.go#L157) |
-| `POST` | `/api/deployments/webhook/{token}` | [triggerDeploymentWebhook](../service-controlplane/internal/product/handlers_deploy.go#L343) |
-| `DELETE` | `/api/deployments/{id}` | [deleteDeployment](../service-controlplane/internal/product/handlers_deploy.go#L273) |
-| `GET` | `/api/deployments/{id}` | [getDeployment](../service-controlplane/internal/product/handlers_deploy.go#L197) |
-| `PATCH` | `/api/deployments/{id}` | [updateDeployment](../service-controlplane/internal/product/handlers_deploy.go#L206) |
-| `POST` | `/api/deployments/{id}/archive` | [archiveDeployment](../service-controlplane/internal/product/handlers_deploy.go#L254) |
-| `POST` | `/api/deployments/{id}/pause` | [pauseDeployment](../service-controlplane/internal/product/handlers_deploy.go#L306) |
-| `POST` | `/api/deployments/{id}/run` | [runDeployment](../service-controlplane/internal/product/handlers_deploy.go#L288) |
-| `POST` | `/api/deployments/{id}/unpause` | [unpauseDeployment](../service-controlplane/internal/product/handlers_deploy.go#L307) |
-| `GET` | `/api/v1/work-sources` | [listWorkSources](../service-controlplane/internal/httpapi/work_source_handler.go#L61) |
-| `POST` | `/api/v1/work-sources` | [createWorkSource](../service-controlplane/internal/httpapi/work_source_handler.go#L37) |
-| `POST` | `/api/v1/work-sources/comment-outbox/flush` | [flushWorkSourceCommentOutbox](../service-controlplane/internal/httpapi/work_source_handler.go#L173) |
-| `GET` | `/api/v1/work-sources/{workSourceId}` | [getWorkSource](../service-controlplane/internal/httpapi/work_source_handler.go#L79) |
-| `PATCH` | `/api/v1/work-sources/{workSourceId}` | [patchWorkSource](../service-controlplane/internal/httpapi/work_source_handler.go#L91) |
-| `POST` | `/api/v1/work-sources/{workSourceId}/reconcile` | [reconcileWorkSource](../service-controlplane/internal/httpapi/work_source_handler.go#L190) |
-| `POST` | `/api/v1/work-sources/{workSourceId}/webhooks/github` | [githubWorkSourceWebhook](../service-controlplane/internal/httpapi/work_source_handler.go#L216) |
-| `POST` | `/hooks/v1/automations/{automationId}/{triggerId}` | [automationWebhook](../service-controlplane/internal/httpapi/automation_handler.go#L492) |
+| `GET` | `/api/channels` | [listChannels](../control-plane/internal/product/handlers_channels.go#L176) |
+| `POST` | `/api/channels` | [createChannel](../control-plane/internal/product/handlers_channels.go#L262) |
+| `GET` | `/api/channels/types` | [listChannelTypes](../control-plane/internal/product/handlers_channels.go#L212) |
+| `DELETE` | `/api/channels/{channelId}` | [deleteChannel](../control-plane/internal/product/handlers_channels.go#L415) |
+| `GET` | `/api/channels/{channelId}` | [getChannel](../control-plane/internal/product/handlers_channels.go#L216) |
+| `PUT` | `/api/channels/{channelId}` | [updateChannel](../control-plane/internal/product/handlers_channels.go#L339) |
+| `GET` | `/api/channels/{channelId}/activity` | [channelWorkActivity](../control-plane/internal/product/channel_work_api.go#L383) |
+| `GET` | `/api/channels/{channelId}/collaboration` | [channelWorkConfig](../control-plane/internal/product/channel_work_api.go#L83) |
+| `PUT` | `/api/channels/{channelId}/collaboration` | [putChannelWorkConfig](../control-plane/internal/product/channel_work_api.go#L95) |
+| `POST` | `/api/channels/{channelId}/deliveries/{deliveryId}/retry` | [retryChannelDelivery](../control-plane/internal/product/channel_work_api.go#L462) |
+| `POST` | `/api/channels/{channelId}/disable` | [disableChannel](../control-plane/internal/product/handlers_channels.go#L437) |
+| `POST` | `/api/channels/{channelId}/enable` | [enableChannel](../control-plane/internal/product/handlers_channels.go#L433) |
+| `DELETE` | `/api/channels/{channelId}/identity` | [deleteChannelIdentity](../control-plane/internal/product/channel_work_api.go#L232) |
+| `DELETE` | `/api/channels/{channelId}/links/{linkId}` | [unsubscribeChannelWork](../control-plane/internal/product/channel_work_api.go#L483) |
+| `POST` | `/api/channels/{channelId}/messages/{messageId}/retry` | [retryChannelIntake](../control-plane/internal/product/channel_work_api.go#L547) |
+| `POST` | `/api/channels/{channelId}/pairing` | [createChannelPairing](../control-plane/internal/product/channel_work_api.go#L209) |
+| `GET` | `/api/deployments` | [listDeployments](../control-plane/internal/product/handlers_deploy.go#L122) |
+| `POST` | `/api/deployments` | [createDeployment](../control-plane/internal/product/handlers_deploy.go#L157) |
+| `POST` | `/api/deployments/webhook/{token}` | [triggerDeploymentWebhook](../control-plane/internal/product/handlers_deploy.go#L343) |
+| `DELETE` | `/api/deployments/{id}` | [deleteDeployment](../control-plane/internal/product/handlers_deploy.go#L273) |
+| `GET` | `/api/deployments/{id}` | [getDeployment](../control-plane/internal/product/handlers_deploy.go#L197) |
+| `PATCH` | `/api/deployments/{id}` | [updateDeployment](../control-plane/internal/product/handlers_deploy.go#L206) |
+| `POST` | `/api/deployments/{id}/archive` | [archiveDeployment](../control-plane/internal/product/handlers_deploy.go#L254) |
+| `POST` | `/api/deployments/{id}/pause` | [pauseDeployment](../control-plane/internal/product/handlers_deploy.go#L306) |
+| `POST` | `/api/deployments/{id}/run` | [runDeployment](../control-plane/internal/product/handlers_deploy.go#L288) |
+| `POST` | `/api/deployments/{id}/unpause` | [unpauseDeployment](../control-plane/internal/product/handlers_deploy.go#L307) |
+| `GET` | `/api/v1/work-sources` | [listWorkSources](../control-plane/internal/httpapi/work_source_handler.go#L61) |
+| `POST` | `/api/v1/work-sources` | [createWorkSource](../control-plane/internal/httpapi/work_source_handler.go#L37) |
+| `POST` | `/api/v1/work-sources/comment-outbox/flush` | [flushWorkSourceCommentOutbox](../control-plane/internal/httpapi/work_source_handler.go#L173) |
+| `GET` | `/api/v1/work-sources/{workSourceId}` | [getWorkSource](../control-plane/internal/httpapi/work_source_handler.go#L79) |
+| `PATCH` | `/api/v1/work-sources/{workSourceId}` | [patchWorkSource](../control-plane/internal/httpapi/work_source_handler.go#L91) |
+| `POST` | `/api/v1/work-sources/{workSourceId}/reconcile` | [reconcileWorkSource](../control-plane/internal/httpapi/work_source_handler.go#L190) |
+| `POST` | `/api/v1/work-sources/{workSourceId}/webhooks/github` | [githubWorkSourceWebhook](../control-plane/internal/httpapi/work_source_handler.go#L216) |
+| `POST` | `/hooks/v1/automations/{automationId}/{triggerId}` | [automationWebhook](../control-plane/internal/httpapi/automation_handler.go#L492) |
 
 ### Teams, Issues, tasks, artifacts and approvals
 
 | Method | Path | Handler / contract source |
 | --- | --- | --- |
-| `GET` | `/api/v1/agent-tasks` | [listAgentTasks](../service-controlplane/internal/httpapi/collaboration_handler.go#L1079) |
-| `GET` | `/api/v1/agent-tasks/{taskId}` | [getAgentTask](../service-controlplane/internal/httpapi/collaboration_handler.go#L1109) |
-| `POST` | `/api/v1/agent-tasks/{taskId}/cancel` | [cancelAgentTask](../service-controlplane/internal/httpapi/collaboration_handler.go#L1380) |
-| `POST` | `/api/v1/agent-tasks/{taskId}/dispatch` | [dispatchAgentTask](../service-controlplane/internal/httpapi/collaboration_handler.go#L1222) |
-| `POST` | `/api/v1/agent-tasks/{taskId}/inputs/replay` | [replayAgentTaskInputs](../service-controlplane/internal/httpapi/collaboration_handler.go#L1295) |
-| `POST` | `/api/v1/agent-tasks/{taskId}/retry` | [retryAgentTask](../service-controlplane/internal/httpapi/collaboration_handler.go#L1390) |
-| `GET` | `/api/v1/approvals` | [listApprovals](../service-controlplane/internal/httpapi/collaboration_handler.go#L2161) |
-| `POST` | `/api/v1/approvals` | [createApproval](../service-controlplane/internal/httpapi/collaboration_handler.go#L2105) |
-| `GET` | `/api/v1/approvals/{approvalId}` | [getApproval](../service-controlplane/internal/httpapi/collaboration_handler.go#L2183) |
-| `POST` | `/api/v1/approvals/{approvalId}/decide` | [decideApproval](../service-controlplane/internal/httpapi/collaboration_handler.go#L2203) |
-| `POST` | `/api/v1/artifacts/uploads` | [uploadArtifact](../service-controlplane/internal/httpapi/collaboration_handler.go#L1838) |
-| `GET` | `/api/v1/artifacts/{artifactId}` | [getArtifact](../service-controlplane/internal/httpapi/collaboration_handler.go#L1998) |
-| `POST` | `/api/v1/artifacts/{artifactId}/complete` | [completeArtifact](../service-controlplane/internal/httpapi/collaboration_handler.go#L2015) |
-| `POST` | `/api/v1/artifacts/{artifactId}/download` | [downloadArtifact](../service-controlplane/internal/httpapi/collaboration_handler.go#L2045) |
-| `GET` | `/api/v1/chat-agents` | [listChatAgents](../service-controlplane/internal/httpapi/chat_handler.go#L89) |
-| `GET` | `/api/v1/chats` | [listChats](../service-controlplane/internal/httpapi/chat_handler.go#L72) |
-| `POST` | `/api/v1/chats` | [createChat](../service-controlplane/internal/httpapi/chat_handler.go#L107) |
-| `DELETE` | `/api/v1/chats/{chatId}` | [deleteChat](../service-controlplane/internal/httpapi/chat_handler.go#L246) |
-| `GET` | `/api/v1/chats/{chatId}` | [getChat](../service-controlplane/internal/httpapi/chat_handler.go#L156) |
-| `PATCH` | `/api/v1/chats/{chatId}` | [patchChat](../service-controlplane/internal/httpapi/chat_handler.go#L163) |
-| `POST` | `/api/v1/chats/{chatId}/turns` | [sendChatTurn](../service-controlplane/internal/httpapi/chat_handler.go#L197) |
-| `GET` | `/api/v1/events` | [collaborationEventStream](../service-controlplane/internal/httpapi/collaboration_handler.go#L47) |
-| `GET` | `/api/v1/execution-attempts` | [listExecutionAttempts](../service-controlplane/internal/httpapi/orchestration_handler.go#L501) |
-| `GET` | `/api/v1/execution-attempts/{attemptId}` | [getExecutionAttempt](../service-controlplane/internal/httpapi/orchestration_handler.go#L518) |
-| `GET` | `/api/v1/inbox` | [listInbox](../service-controlplane/internal/httpapi/inbox_handler.go#L56) |
-| `GET` | `/api/v1/inbox/summary` | [inboxSummary](../service-controlplane/internal/httpapi/inbox_handler.go#L77) |
-| `GET` | `/api/v1/inbox/{inboxId}` | [getInbox](../service-controlplane/internal/httpapi/inbox_handler.go#L118) |
-| `POST` | `/api/v1/inbox/{inboxId}/archive` | [archiveInbox](../service-controlplane/internal/httpapi/inbox_handler.go#L139) |
-| `POST` | `/api/v1/inbox/{inboxId}/read` | [readInbox](../service-controlplane/internal/httpapi/inbox_handler.go#L125) |
-| `GET` | `/api/v1/issues` | [listIssues](../service-controlplane/internal/httpapi/collaboration_handler.go#L237) |
-| `POST` | `/api/v1/issues` | [createIssue](../service-controlplane/internal/httpapi/collaboration_handler.go#L135) |
-| `GET` | `/api/v1/issues/{issueId}` | [getIssue](../service-controlplane/internal/httpapi/collaboration_handler.go#L288) |
-| `PATCH` | `/api/v1/issues/{issueId}` | [updateIssue](../service-controlplane/internal/httpapi/collaboration_handler.go#L301) |
-| `POST` | `/api/v1/issues/{issueId}/accept` | [acceptIssue](../service-controlplane/internal/httpapi/collaboration_handler.go#L443) |
-| `PUT` | `/api/v1/issues/{issueId}/access` | [updateIssueAccess](../service-controlplane/internal/httpapi/namespace_access.go#L564) |
-| `GET` | `/api/v1/issues/{issueId}/activity` | [listIssueActivities](../service-controlplane/internal/httpapi/collaboration_handler.go#L980) |
-| `POST` | `/api/v1/issues/{issueId}/archive` | [archiveIssue](../service-controlplane/internal/httpapi/collaboration_handler.go#L509) |
-| `GET` | `/api/v1/issues/{issueId}/artifacts` | [listIssueArtifacts](../service-controlplane/internal/httpapi/collaboration_handler.go#L994) |
-| `POST` | `/api/v1/issues/{issueId}/assign` | [assignIssue](../service-controlplane/internal/httpapi/collaboration_handler.go#L694) |
-| `POST` | `/api/v1/issues/{issueId}/children` | [createChildIssue](../service-controlplane/internal/httpapi/collaboration_handler.go#L381) |
-| `GET` | `/api/v1/issues/{issueId}/comments` | [listIssueComments](../service-controlplane/internal/httpapi/collaboration_handler.go#L774) |
-| `POST` | `/api/v1/issues/{issueId}/comments` | [addIssueComment](../service-controlplane/internal/httpapi/collaboration_handler.go#L745) |
-| `POST` | `/api/v1/issues/{issueId}/comments/preview-routing` | [previewIssueCommentRouting](../service-controlplane/internal/httpapi/collaboration_handler.go#L961) |
-| `DELETE` | `/api/v1/issues/{issueId}/comments/{commentId}` | [deleteIssueComment](../service-controlplane/internal/httpapi/collaboration_handler.go#L908) |
-| `PATCH` | `/api/v1/issues/{issueId}/comments/{commentId}` | [updateIssueComment](../service-controlplane/internal/httpapi/collaboration_handler.go#L873) |
-| `POST` | `/api/v1/issues/{issueId}/comments/{commentId}/resolve` | [resolveIssueComment](../service-controlplane/internal/httpapi/collaboration_handler.go#L935) |
-| `GET` | `/api/v1/issues/{issueId}/export` | [exportIssue](../service-controlplane/internal/httpapi/collaboration_handler.go#L544) |
-| `POST` | `/api/v1/issues/{issueId}/reject` | [rejectIssue](../service-controlplane/internal/httpapi/collaboration_handler.go#L447) |
-| `POST` | `/api/v1/issues/{issueId}/reopen` | [reopenIssue](../service-controlplane/internal/httpapi/collaboration_handler.go#L451) |
-| `GET` | `/api/v1/issues/{issueId}/subscribers` | [listIssueSubscribers](../service-controlplane/internal/httpapi/collaboration_handler.go#L1048) |
-| `POST` | `/api/v1/issues/{issueId}/subscribers` | [subscribeIssue](../service-controlplane/internal/httpapi/collaboration_handler.go#L1013) |
-| `DELETE` | `/api/v1/issues/{issueId}/subscribers/{subscriberType}/{subscriberRef}` | [unsubscribeIssue](../service-controlplane/internal/httpapi/collaboration_handler.go#L1061) |
-| `GET` | `/api/v1/issues/{issueId}/summary` | [getIssueSummary](../service-controlplane/internal/httpapi/collaboration_handler.go#L526) |
-| `POST` | `/api/v1/issues/{issueId}/team-proposals` | [createTeamProposal](../service-controlplane/internal/httpapi/team_composer_handler.go#L69) |
-| `POST` | `/api/v1/issues/{issueId}/team-proposals/{proposalId}/confirm` | [confirmTeamProposal](../service-controlplane/internal/httpapi/team_composer_handler.go#L178) |
-| `POST` | `/api/v1/issues/{issueId}/transition` | [transitionIssue](../service-controlplane/internal/httpapi/collaboration_handler.go#L410) |
-| `GET` | `/api/v1/teams` | [listCollaborationTeams](../service-controlplane/internal/httpapi/collaboration_handler.go#L1629) |
-| `POST` | `/api/v1/teams` | [createCollaborationTeam](../service-controlplane/internal/httpapi/collaboration_handler.go#L1555) |
-| `POST` | `/api/v1/teams/from-proposal/{proposalId}` | [saveTeamProposalAsTeam](../service-controlplane/internal/httpapi/team_composer_handler.go#L264) |
-| `GET` | `/api/v1/teams/{teamId}` | [getCollaborationTeam](../service-controlplane/internal/httpapi/collaboration_handler.go#L1654) |
-| `PATCH` | `/api/v1/teams/{teamId}` | [updateCollaborationTeam](../service-controlplane/internal/httpapi/collaboration_handler.go#L1668) |
-| `POST` | `/api/v1/teams/{teamId}/members` | [addCollaborationTeamMember](../service-controlplane/internal/httpapi/collaboration_handler.go#L1731) |
-| `DELETE` | `/api/v1/teams/{teamId}/members/{memberId}` | [removeCollaborationTeamMember](../service-controlplane/internal/httpapi/collaboration_handler.go#L1822) |
-| `PATCH` | `/api/v1/teams/{teamId}/members/{memberId}` | [updateCollaborationTeamMember](../service-controlplane/internal/httpapi/collaboration_handler.go#L1771) |
-| `GET` | `/api/v1/teams/{teamId}/overview` | [getCollaborationTeamOverview](../service-controlplane/internal/httpapi/team_detail_handler.go#L59) |
+| `GET` | `/api/v1/agent-tasks` | [listAgentTasks](../control-plane/internal/httpapi/collaboration_handler.go#L1079) |
+| `GET` | `/api/v1/agent-tasks/{taskId}` | [getAgentTask](../control-plane/internal/httpapi/collaboration_handler.go#L1109) |
+| `POST` | `/api/v1/agent-tasks/{taskId}/cancel` | [cancelAgentTask](../control-plane/internal/httpapi/collaboration_handler.go#L1380) |
+| `POST` | `/api/v1/agent-tasks/{taskId}/dispatch` | [dispatchAgentTask](../control-plane/internal/httpapi/collaboration_handler.go#L1222) |
+| `POST` | `/api/v1/agent-tasks/{taskId}/inputs/replay` | [replayAgentTaskInputs](../control-plane/internal/httpapi/collaboration_handler.go#L1295) |
+| `POST` | `/api/v1/agent-tasks/{taskId}/retry` | [retryAgentTask](../control-plane/internal/httpapi/collaboration_handler.go#L1390) |
+| `GET` | `/api/v1/approvals` | [listApprovals](../control-plane/internal/httpapi/collaboration_handler.go#L2161) |
+| `POST` | `/api/v1/approvals` | [createApproval](../control-plane/internal/httpapi/collaboration_handler.go#L2105) |
+| `GET` | `/api/v1/approvals/{approvalId}` | [getApproval](../control-plane/internal/httpapi/collaboration_handler.go#L2183) |
+| `POST` | `/api/v1/approvals/{approvalId}/decide` | [decideApproval](../control-plane/internal/httpapi/collaboration_handler.go#L2203) |
+| `POST` | `/api/v1/artifacts/uploads` | [uploadArtifact](../control-plane/internal/httpapi/collaboration_handler.go#L1838) |
+| `GET` | `/api/v1/artifacts/{artifactId}` | [getArtifact](../control-plane/internal/httpapi/collaboration_handler.go#L1998) |
+| `POST` | `/api/v1/artifacts/{artifactId}/complete` | [completeArtifact](../control-plane/internal/httpapi/collaboration_handler.go#L2015) |
+| `POST` | `/api/v1/artifacts/{artifactId}/download` | [downloadArtifact](../control-plane/internal/httpapi/collaboration_handler.go#L2045) |
+| `GET` | `/api/v1/chat-agents` | [listChatAgents](../control-plane/internal/httpapi/chat_handler.go#L89) |
+| `GET` | `/api/v1/chats` | [listChats](../control-plane/internal/httpapi/chat_handler.go#L72) |
+| `POST` | `/api/v1/chats` | [createChat](../control-plane/internal/httpapi/chat_handler.go#L107) |
+| `DELETE` | `/api/v1/chats/{chatId}` | [deleteChat](../control-plane/internal/httpapi/chat_handler.go#L246) |
+| `GET` | `/api/v1/chats/{chatId}` | [getChat](../control-plane/internal/httpapi/chat_handler.go#L156) |
+| `PATCH` | `/api/v1/chats/{chatId}` | [patchChat](../control-plane/internal/httpapi/chat_handler.go#L163) |
+| `POST` | `/api/v1/chats/{chatId}/turns` | [sendChatTurn](../control-plane/internal/httpapi/chat_handler.go#L197) |
+| `GET` | `/api/v1/events` | [collaborationEventStream](../control-plane/internal/httpapi/collaboration_handler.go#L47) |
+| `GET` | `/api/v1/execution-attempts` | [listExecutionAttempts](../control-plane/internal/httpapi/orchestration_handler.go#L501) |
+| `GET` | `/api/v1/execution-attempts/{attemptId}` | [getExecutionAttempt](../control-plane/internal/httpapi/orchestration_handler.go#L518) |
+| `GET` | `/api/v1/inbox` | [listInbox](../control-plane/internal/httpapi/inbox_handler.go#L56) |
+| `GET` | `/api/v1/inbox/summary` | [inboxSummary](../control-plane/internal/httpapi/inbox_handler.go#L77) |
+| `GET` | `/api/v1/inbox/{inboxId}` | [getInbox](../control-plane/internal/httpapi/inbox_handler.go#L118) |
+| `POST` | `/api/v1/inbox/{inboxId}/archive` | [archiveInbox](../control-plane/internal/httpapi/inbox_handler.go#L139) |
+| `POST` | `/api/v1/inbox/{inboxId}/read` | [readInbox](../control-plane/internal/httpapi/inbox_handler.go#L125) |
+| `GET` | `/api/v1/issues` | [listIssues](../control-plane/internal/httpapi/collaboration_handler.go#L237) |
+| `POST` | `/api/v1/issues` | [createIssue](../control-plane/internal/httpapi/collaboration_handler.go#L135) |
+| `GET` | `/api/v1/issues/{issueId}` | [getIssue](../control-plane/internal/httpapi/collaboration_handler.go#L288) |
+| `PATCH` | `/api/v1/issues/{issueId}` | [updateIssue](../control-plane/internal/httpapi/collaboration_handler.go#L301) |
+| `POST` | `/api/v1/issues/{issueId}/accept` | [acceptIssue](../control-plane/internal/httpapi/collaboration_handler.go#L443) |
+| `PUT` | `/api/v1/issues/{issueId}/access` | [updateIssueAccess](../control-plane/internal/httpapi/namespace_access.go#L564) |
+| `GET` | `/api/v1/issues/{issueId}/activity` | [listIssueActivities](../control-plane/internal/httpapi/collaboration_handler.go#L980) |
+| `POST` | `/api/v1/issues/{issueId}/archive` | [archiveIssue](../control-plane/internal/httpapi/collaboration_handler.go#L509) |
+| `GET` | `/api/v1/issues/{issueId}/artifacts` | [listIssueArtifacts](../control-plane/internal/httpapi/collaboration_handler.go#L994) |
+| `POST` | `/api/v1/issues/{issueId}/assign` | [assignIssue](../control-plane/internal/httpapi/collaboration_handler.go#L694) |
+| `POST` | `/api/v1/issues/{issueId}/children` | [createChildIssue](../control-plane/internal/httpapi/collaboration_handler.go#L381) |
+| `GET` | `/api/v1/issues/{issueId}/comments` | [listIssueComments](../control-plane/internal/httpapi/collaboration_handler.go#L774) |
+| `POST` | `/api/v1/issues/{issueId}/comments` | [addIssueComment](../control-plane/internal/httpapi/collaboration_handler.go#L745) |
+| `POST` | `/api/v1/issues/{issueId}/comments/preview-routing` | [previewIssueCommentRouting](../control-plane/internal/httpapi/collaboration_handler.go#L961) |
+| `DELETE` | `/api/v1/issues/{issueId}/comments/{commentId}` | [deleteIssueComment](../control-plane/internal/httpapi/collaboration_handler.go#L908) |
+| `PATCH` | `/api/v1/issues/{issueId}/comments/{commentId}` | [updateIssueComment](../control-plane/internal/httpapi/collaboration_handler.go#L873) |
+| `POST` | `/api/v1/issues/{issueId}/comments/{commentId}/resolve` | [resolveIssueComment](../control-plane/internal/httpapi/collaboration_handler.go#L935) |
+| `GET` | `/api/v1/issues/{issueId}/export` | [exportIssue](../control-plane/internal/httpapi/collaboration_handler.go#L544) |
+| `POST` | `/api/v1/issues/{issueId}/reject` | [rejectIssue](../control-plane/internal/httpapi/collaboration_handler.go#L447) |
+| `POST` | `/api/v1/issues/{issueId}/reopen` | [reopenIssue](../control-plane/internal/httpapi/collaboration_handler.go#L451) |
+| `GET` | `/api/v1/issues/{issueId}/subscribers` | [listIssueSubscribers](../control-plane/internal/httpapi/collaboration_handler.go#L1048) |
+| `POST` | `/api/v1/issues/{issueId}/subscribers` | [subscribeIssue](../control-plane/internal/httpapi/collaboration_handler.go#L1013) |
+| `DELETE` | `/api/v1/issues/{issueId}/subscribers/{subscriberType}/{subscriberRef}` | [unsubscribeIssue](../control-plane/internal/httpapi/collaboration_handler.go#L1061) |
+| `GET` | `/api/v1/issues/{issueId}/summary` | [getIssueSummary](../control-plane/internal/httpapi/collaboration_handler.go#L526) |
+| `POST` | `/api/v1/issues/{issueId}/team-proposals` | [createTeamProposal](../control-plane/internal/httpapi/team_composer_handler.go#L69) |
+| `POST` | `/api/v1/issues/{issueId}/team-proposals/{proposalId}/confirm` | [confirmTeamProposal](../control-plane/internal/httpapi/team_composer_handler.go#L178) |
+| `POST` | `/api/v1/issues/{issueId}/transition` | [transitionIssue](../control-plane/internal/httpapi/collaboration_handler.go#L410) |
+| `GET` | `/api/v1/teams` | [listCollaborationTeams](../control-plane/internal/httpapi/collaboration_handler.go#L1629) |
+| `POST` | `/api/v1/teams` | [createCollaborationTeam](../control-plane/internal/httpapi/collaboration_handler.go#L1555) |
+| `POST` | `/api/v1/teams/from-proposal/{proposalId}` | [saveTeamProposalAsTeam](../control-plane/internal/httpapi/team_composer_handler.go#L264) |
+| `GET` | `/api/v1/teams/{teamId}` | [getCollaborationTeam](../control-plane/internal/httpapi/collaboration_handler.go#L1654) |
+| `PATCH` | `/api/v1/teams/{teamId}` | [updateCollaborationTeam](../control-plane/internal/httpapi/collaboration_handler.go#L1668) |
+| `POST` | `/api/v1/teams/{teamId}/members` | [addCollaborationTeamMember](../control-plane/internal/httpapi/collaboration_handler.go#L1731) |
+| `DELETE` | `/api/v1/teams/{teamId}/members/{memberId}` | [removeCollaborationTeamMember](../control-plane/internal/httpapi/collaboration_handler.go#L1822) |
+| `PATCH` | `/api/v1/teams/{teamId}/members/{memberId}` | [updateCollaborationTeamMember](../control-plane/internal/httpapi/collaboration_handler.go#L1771) |
+| `GET` | `/api/v1/teams/{teamId}/overview` | [getCollaborationTeamOverview](../control-plane/internal/httpapi/team_detail_handler.go#L59) |
 
 ### Workflow and Automation
 
 | Method | Path | Handler / contract source |
 | --- | --- | --- |
-| `GET` | `/api/v1/automations` | [listAutomations](../service-controlplane/internal/httpapi/automation_handler.go#L146) |
-| `POST` | `/api/v1/automations` | [createAutomation](../service-controlplane/internal/httpapi/automation_handler.go#L122) |
-| `POST` | `/api/v1/automations/schedule-preview` | [previewAutomationSchedule](../service-controlplane/internal/httpapi/automation_handler.go#L373) |
-| `DELETE` | `/api/v1/automations/{automationId}` | [archiveAutomation](../service-controlplane/internal/httpapi/automation_handler.go#L212) |
-| `GET` | `/api/v1/automations/{automationId}` | [getAutomation](../service-controlplane/internal/httpapi/automation_handler.go#L171) |
-| `PATCH` | `/api/v1/automations/{automationId}` | [updateAutomation](../service-controlplane/internal/httpapi/automation_handler.go#L184) |
-| `GET` | `/api/v1/automations/{automationId}/deliveries` | [listAutomationDeliveries](../service-controlplane/internal/httpapi/automation_handler.go#L424) |
-| `POST` | `/api/v1/automations/{automationId}/deliveries/{deliveryId}/replay` | [replayAutomationDelivery](../service-controlplane/internal/httpapi/automation_handler.go#L437) |
-| `POST` | `/api/v1/automations/{automationId}/rotate-secret` | [rotateAutomationSecret](../service-controlplane/internal/httpapi/automation_handler.go#L389) |
-| `GET` | `/api/v1/automations/{automationId}/runs` | [listAutomationRuns](../service-controlplane/internal/httpapi/automation_handler.go#L276) |
-| `GET` | `/api/v1/automations/{automationId}/runs/{automationRunId}` | [getAutomationRun](../service-controlplane/internal/httpapi/automation_handler.go#L312) |
-| `POST` | `/api/v1/automations/{automationId}/runs/{automationRunId}/cancel` | [cancelAutomationRun](../service-controlplane/internal/httpapi/automation_handler.go#L345) |
-| `POST` | `/api/v1/automations/{automationId}/runs/{automationRunId}/rerun` | [rerunAutomationRun](../service-controlplane/internal/httpapi/automation_handler.go#L357) |
-| `POST` | `/api/v1/automations/{automationId}/trigger` | [triggerAutomation](../service-controlplane/internal/httpapi/automation_handler.go#L251) |
-| `GET` | `/api/v1/orchestration-definitions` | [listOrchestrationDefinitions](../service-controlplane/internal/httpapi/orchestration_handler.go#L65) |
-| `POST` | `/api/v1/orchestration-definitions` | [createOrchestrationDefinition](../service-controlplane/internal/httpapi/orchestration_handler.go#L43) |
-| `GET` | `/api/v1/orchestration-definitions/{definitionId}` | [getOrchestrationDefinition](../service-controlplane/internal/httpapi/orchestration_handler.go#L90) |
-| `PATCH` | `/api/v1/orchestration-definitions/{definitionId}` | [patchOrchestrationDefinition](../service-controlplane/internal/httpapi/orchestration_handler.go#L102) |
-| `POST` | `/api/v1/orchestration-definitions/{definitionId}/publish` | [publishOrchestrationDefinition](../service-controlplane/internal/httpapi/orchestration_handler.go#L184) |
-| `GET` | `/api/v1/orchestration-definitions/{definitionId}/revisions` | [listOrchestrationRevisions](../service-controlplane/internal/httpapi/orchestration_handler.go#L205) |
-| `POST` | `/api/v1/orchestration-definitions/{definitionId}/runs` | [startOrchestrationRun](../service-controlplane/internal/httpapi/orchestration_handler.go#L217) |
-| `POST` | `/api/v1/orchestration-definitions/{definitionId}/validate` | [validateOrchestrationDefinition](../service-controlplane/internal/httpapi/orchestration_handler.go#L160) |
-| `GET` | `/api/v1/orchestration-runs` | [listOrchestrationRuns](../service-controlplane/internal/httpapi/orchestration_handler.go#L268) |
-| `GET` | `/api/v1/orchestration-runs/{runId}` | [getOrchestrationRun](../service-controlplane/internal/httpapi/orchestration_handler.go#L297) |
-| `POST` | `/api/v1/orchestration-runs/{runId}/cancel` | [cancelOrchestrationRun](../service-controlplane/internal/httpapi/orchestration_handler.go#L341) |
-| `GET` | `/api/v1/orchestration-runs/{runId}/events` | [listOrchestrationEvents](../service-controlplane/internal/httpapi/orchestration_handler.go#L322) |
-| `GET` | `/api/v1/orchestration-runs/{runId}/graph` | [getOrchestrationGraph](../service-controlplane/internal/httpapi/orchestration_handler.go#L309) |
-| `POST` | `/api/v1/orchestration-runs/{runId}/pause` | [pauseOrchestrationRun](../service-controlplane/internal/httpapi/orchestration_handler.go#L335) |
-| `POST` | `/api/v1/orchestration-runs/{runId}/rerun` | [rerunOrchestrationRun](../service-controlplane/internal/httpapi/orchestration_handler.go#L344) |
-| `POST` | `/api/v1/orchestration-runs/{runId}/resume` | [resumeOrchestrationRun](../service-controlplane/internal/httpapi/orchestration_handler.go#L338) |
-| `POST` | `/api/v1/orchestration-runs/{runId}/signals/{name}` | [signalOrchestrationRun](../service-controlplane/internal/httpapi/orchestration_handler.go#L377) |
+| `GET` | `/api/v1/automations` | [listAutomations](../control-plane/internal/httpapi/automation_handler.go#L146) |
+| `POST` | `/api/v1/automations` | [createAutomation](../control-plane/internal/httpapi/automation_handler.go#L122) |
+| `POST` | `/api/v1/automations/schedule-preview` | [previewAutomationSchedule](../control-plane/internal/httpapi/automation_handler.go#L373) |
+| `DELETE` | `/api/v1/automations/{automationId}` | [archiveAutomation](../control-plane/internal/httpapi/automation_handler.go#L212) |
+| `GET` | `/api/v1/automations/{automationId}` | [getAutomation](../control-plane/internal/httpapi/automation_handler.go#L171) |
+| `PATCH` | `/api/v1/automations/{automationId}` | [updateAutomation](../control-plane/internal/httpapi/automation_handler.go#L184) |
+| `GET` | `/api/v1/automations/{automationId}/deliveries` | [listAutomationDeliveries](../control-plane/internal/httpapi/automation_handler.go#L424) |
+| `POST` | `/api/v1/automations/{automationId}/deliveries/{deliveryId}/replay` | [replayAutomationDelivery](../control-plane/internal/httpapi/automation_handler.go#L437) |
+| `POST` | `/api/v1/automations/{automationId}/rotate-secret` | [rotateAutomationSecret](../control-plane/internal/httpapi/automation_handler.go#L389) |
+| `GET` | `/api/v1/automations/{automationId}/runs` | [listAutomationRuns](../control-plane/internal/httpapi/automation_handler.go#L276) |
+| `GET` | `/api/v1/automations/{automationId}/runs/{automationRunId}` | [getAutomationRun](../control-plane/internal/httpapi/automation_handler.go#L312) |
+| `POST` | `/api/v1/automations/{automationId}/runs/{automationRunId}/cancel` | [cancelAutomationRun](../control-plane/internal/httpapi/automation_handler.go#L345) |
+| `POST` | `/api/v1/automations/{automationId}/runs/{automationRunId}/rerun` | [rerunAutomationRun](../control-plane/internal/httpapi/automation_handler.go#L357) |
+| `POST` | `/api/v1/automations/{automationId}/trigger` | [triggerAutomation](../control-plane/internal/httpapi/automation_handler.go#L251) |
+| `GET` | `/api/v1/orchestration-definitions` | [listOrchestrationDefinitions](../control-plane/internal/httpapi/orchestration_handler.go#L65) |
+| `POST` | `/api/v1/orchestration-definitions` | [createOrchestrationDefinition](../control-plane/internal/httpapi/orchestration_handler.go#L43) |
+| `GET` | `/api/v1/orchestration-definitions/{definitionId}` | [getOrchestrationDefinition](../control-plane/internal/httpapi/orchestration_handler.go#L90) |
+| `PATCH` | `/api/v1/orchestration-definitions/{definitionId}` | [patchOrchestrationDefinition](../control-plane/internal/httpapi/orchestration_handler.go#L102) |
+| `POST` | `/api/v1/orchestration-definitions/{definitionId}/publish` | [publishOrchestrationDefinition](../control-plane/internal/httpapi/orchestration_handler.go#L184) |
+| `GET` | `/api/v1/orchestration-definitions/{definitionId}/revisions` | [listOrchestrationRevisions](../control-plane/internal/httpapi/orchestration_handler.go#L205) |
+| `POST` | `/api/v1/orchestration-definitions/{definitionId}/runs` | [startOrchestrationRun](../control-plane/internal/httpapi/orchestration_handler.go#L217) |
+| `POST` | `/api/v1/orchestration-definitions/{definitionId}/validate` | [validateOrchestrationDefinition](../control-plane/internal/httpapi/orchestration_handler.go#L160) |
+| `GET` | `/api/v1/orchestration-runs` | [listOrchestrationRuns](../control-plane/internal/httpapi/orchestration_handler.go#L268) |
+| `GET` | `/api/v1/orchestration-runs/{runId}` | [getOrchestrationRun](../control-plane/internal/httpapi/orchestration_handler.go#L297) |
+| `POST` | `/api/v1/orchestration-runs/{runId}/cancel` | [cancelOrchestrationRun](../control-plane/internal/httpapi/orchestration_handler.go#L341) |
+| `GET` | `/api/v1/orchestration-runs/{runId}/events` | [listOrchestrationEvents](../control-plane/internal/httpapi/orchestration_handler.go#L322) |
+| `GET` | `/api/v1/orchestration-runs/{runId}/graph` | [getOrchestrationGraph](../control-plane/internal/httpapi/orchestration_handler.go#L309) |
+| `POST` | `/api/v1/orchestration-runs/{runId}/pause` | [pauseOrchestrationRun](../control-plane/internal/httpapi/orchestration_handler.go#L335) |
+| `POST` | `/api/v1/orchestration-runs/{runId}/rerun` | [rerunOrchestrationRun](../control-plane/internal/httpapi/orchestration_handler.go#L344) |
+| `POST` | `/api/v1/orchestration-runs/{runId}/resume` | [resumeOrchestrationRun](../control-plane/internal/httpapi/orchestration_handler.go#L338) |
+| `POST` | `/api/v1/orchestration-runs/{runId}/signals/{name}` | [signalOrchestrationRun](../control-plane/internal/httpapi/orchestration_handler.go#L377) |
 
 ### Runtime profiles, pools and hosts
 
 | Method | Path | Handler / contract source |
 | --- | --- | --- |
-| `GET` | `/api/v1/agent-instances` | [listAgentInstances](../service-controlplane/internal/httpapi/runtime_registry_handler.go#L27) |
-| `GET` | `/api/v1/agent-instances/{instanceId}` | [getAgentInstance](../service-controlplane/internal/httpapi/runtime_registry_handler.go#L46) |
-| `POST` | `/api/v1/runtime-bindings/{bindingId}/disable` | [disableRuntimeBinding](../service-controlplane/internal/httpapi/taskplane_handler.go#L403) |
-| `POST` | `/api/v1/runtime-bindings/{bindingId}/enable` | [enableRuntimeBinding](../service-controlplane/internal/httpapi/taskplane_handler.go#L404) |
-| `POST` | `/api/v1/runtime-host-enrollment-tokens` | [createRuntimeHostEnrollmentToken](../service-controlplane/internal/httpapi/taskplane_handler.go#L92) |
-| `POST` | `/api/v1/runtime-host-enrollments` | [createRuntimeHostEnrollment](../service-controlplane/internal/httpapi/taskplane_handler.go#L52) |
-| `GET` | `/api/v1/runtime-hosts` | [listRuntimeHosts](../service-controlplane/internal/httpapi/taskplane_handler.go#L329) |
-| `GET` | `/api/v1/runtime-hosts/{hostId}` | [getRuntimeHost](../service-controlplane/internal/httpapi/taskplane_handler.go#L339) |
-| `PATCH` | `/api/v1/runtime-hosts/{hostId}/capacity` | [updateRuntimeHostCapacity](../service-controlplane/internal/httpapi/taskplane_handler.go#L352) |
-| `POST` | `/api/v1/runtime-hosts/{hostId}/drain` | [drainRuntimeHost](../service-controlplane/internal/httpapi/taskplane_handler.go#L378) |
-| `POST` | `/api/v1/runtime-hosts/{hostId}/resume` | [resumeRuntimeHost](../service-controlplane/internal/httpapi/taskplane_handler.go#L381) |
-| `GET` | `/api/v1/runtime-pools` | [listRuntimePools](../service-controlplane/internal/httpapi/runtime_registry_handler.go#L148) |
-| `POST` | `/api/v1/runtime-pools` | [upsertRuntimePool](../service-controlplane/internal/httpapi/runtime_registry_handler.go#L122) |
-| `GET` | `/api/v1/runtime-pools/{name}` | [getRuntimePool](../service-controlplane/internal/httpapi/runtime_registry_handler.go#L157) |
-| `PUT` | `/api/v1/runtime-pools/{name}` | [upsertRuntimePool](../service-controlplane/internal/httpapi/runtime_registry_handler.go#L122) |
-| `GET` | `/api/v1/runtime-profiles` | [listRuntimeProfiles](../service-controlplane/internal/httpapi/runtime_registry_handler.go#L95) |
-| `POST` | `/api/v1/runtime-profiles` | [upsertRuntimeProfile](../service-controlplane/internal/httpapi/runtime_registry_handler.go#L69) |
-| `GET` | `/api/v1/runtime-profiles/{name}` | [getRuntimeProfile](../service-controlplane/internal/httpapi/runtime_registry_handler.go#L104) |
-| `PUT` | `/api/v1/runtime-profiles/{name}` | [upsertRuntimeProfile](../service-controlplane/internal/httpapi/runtime_registry_handler.go#L69) |
+| `GET` | `/api/v1/agent-instances` | [listAgentInstances](../control-plane/internal/httpapi/runtime_registry_handler.go#L27) |
+| `GET` | `/api/v1/agent-instances/{instanceId}` | [getAgentInstance](../control-plane/internal/httpapi/runtime_registry_handler.go#L46) |
+| `POST` | `/api/v1/runtime-bindings/{bindingId}/disable` | [disableRuntimeBinding](../control-plane/internal/httpapi/taskplane_handler.go#L403) |
+| `POST` | `/api/v1/runtime-bindings/{bindingId}/enable` | [enableRuntimeBinding](../control-plane/internal/httpapi/taskplane_handler.go#L404) |
+| `POST` | `/api/v1/runtime-host-enrollment-tokens` | [createRuntimeHostEnrollmentToken](../control-plane/internal/httpapi/taskplane_handler.go#L92) |
+| `POST` | `/api/v1/runtime-host-enrollments` | [createRuntimeHostEnrollment](../control-plane/internal/httpapi/taskplane_handler.go#L52) |
+| `GET` | `/api/v1/runtime-hosts` | [listRuntimeHosts](../control-plane/internal/httpapi/taskplane_handler.go#L329) |
+| `GET` | `/api/v1/runtime-hosts/{hostId}` | [getRuntimeHost](../control-plane/internal/httpapi/taskplane_handler.go#L339) |
+| `PATCH` | `/api/v1/runtime-hosts/{hostId}/capacity` | [updateRuntimeHostCapacity](../control-plane/internal/httpapi/taskplane_handler.go#L352) |
+| `POST` | `/api/v1/runtime-hosts/{hostId}/drain` | [drainRuntimeHost](../control-plane/internal/httpapi/taskplane_handler.go#L378) |
+| `POST` | `/api/v1/runtime-hosts/{hostId}/resume` | [resumeRuntimeHost](../control-plane/internal/httpapi/taskplane_handler.go#L381) |
+| `GET` | `/api/v1/runtime-pools` | [listRuntimePools](../control-plane/internal/httpapi/runtime_registry_handler.go#L148) |
+| `POST` | `/api/v1/runtime-pools` | [upsertRuntimePool](../control-plane/internal/httpapi/runtime_registry_handler.go#L122) |
+| `GET` | `/api/v1/runtime-pools/{name}` | [getRuntimePool](../control-plane/internal/httpapi/runtime_registry_handler.go#L157) |
+| `PUT` | `/api/v1/runtime-pools/{name}` | [upsertRuntimePool](../control-plane/internal/httpapi/runtime_registry_handler.go#L122) |
+| `GET` | `/api/v1/runtime-profiles` | [listRuntimeProfiles](../control-plane/internal/httpapi/runtime_registry_handler.go#L95) |
+| `POST` | `/api/v1/runtime-profiles` | [upsertRuntimeProfile](../control-plane/internal/httpapi/runtime_registry_handler.go#L69) |
+| `GET` | `/api/v1/runtime-profiles/{name}` | [getRuntimeProfile](../control-plane/internal/httpapi/runtime_registry_handler.go#L104) |
+| `PUT` | `/api/v1/runtime-profiles/{name}` | [upsertRuntimeProfile](../control-plane/internal/httpapi/runtime_registry_handler.go#L69) |
 
 ### Platform files
 
 | Method | Path | Handler / contract source |
 | --- | --- | --- |
-| `GET` | `/api/files` | [listFiles](../service-controlplane/internal/product/handlers_files.go#L70) |
-| `POST` | `/api/files` | [createFile](../service-controlplane/internal/product/handlers_files.go#L92) |
-| `DELETE` | `/api/files/{id}` | [deleteFile](../service-controlplane/internal/product/handlers_files.go#L160) |
-| `GET` | `/api/files/{id}` | [getFile](../service-controlplane/internal/product/handlers_files.go#L140) |
-| `GET` | `/api/files/{id}/content` | [getFileContent](../service-controlplane/internal/product/handlers_files.go#L149) |
+| `GET` | `/api/files` | [listFiles](../control-plane/internal/product/handlers_files.go#L70) |
+| `POST` | `/api/files` | [createFile](../control-plane/internal/product/handlers_files.go#L92) |
+| `DELETE` | `/api/files/{id}` | [deleteFile](../control-plane/internal/product/handlers_files.go#L160) |
+| `GET` | `/api/files/{id}` | [getFile](../control-plane/internal/product/handlers_files.go#L140) |
+| `GET` | `/api/files/{id}/content` | [getFileContent](../control-plane/internal/product/handlers_files.go#L149) |
 
 ### Optional Kubernetes resources
 
 | Method | Path | Handler / contract source |
 | --- | --- | --- |
-| `GET` | `/api/v1/mcpservers` | [listMCPServers](../service-controlplane/internal/httpapi/mcpserver_handler.go#L61) (Kubernetes client) |
-| `POST` | `/api/v1/mcpservers` | [createMCPServer](../service-controlplane/internal/httpapi/mcpserver_handler.go#L29) (Kubernetes client) |
-| `DELETE` | `/api/v1/mcpservers/{name}` | [deleteMCPServer](../service-controlplane/internal/httpapi/mcpserver_handler.go#L150) (Kubernetes client) |
-| `GET` | `/api/v1/mcpservers/{name}` | [getMCPServer](../service-controlplane/internal/httpapi/mcpserver_handler.go#L98) (Kubernetes client) |
-| `PATCH` | `/api/v1/mcpservers/{name}` | [patchMCPServer](../service-controlplane/internal/httpapi/mcpserver_handler.go#L115) (Kubernetes client) |
-| `GET` | `/api/v1/mcpservers/{name}/tools` | [listMCPTools](../service-controlplane/internal/httpapi/mcpserver_handler.go#L172) (Kubernetes client) |
-| `GET` | `/api/v1/modelconfigs` | [listModelConfigs](../service-controlplane/internal/httpapi/modelconfig_handler.go#L64) (Kubernetes client) |
-| `POST` | `/api/v1/modelconfigs` | [createModelConfig](../service-controlplane/internal/httpapi/modelconfig_handler.go#L29) (Kubernetes client) |
-| `DELETE` | `/api/v1/modelconfigs/{name}` | [deleteModelConfig](../service-controlplane/internal/httpapi/modelconfig_handler.go#L156) (Kubernetes client) |
-| `GET` | `/api/v1/modelconfigs/{name}` | [getModelConfig](../service-controlplane/internal/httpapi/modelconfig_handler.go#L101) (Kubernetes client) |
-| `PATCH` | `/api/v1/modelconfigs/{name}` | [patchModelConfig](../service-controlplane/internal/httpapi/modelconfig_handler.go#L118) (Kubernetes client) |
-| `GET` | `/api/v1/sandboxes` | [listSandboxes](../service-controlplane/internal/httpapi/sandbox_handler.go#L78) (experimental + Kubernetes) |
-| `POST` | `/api/v1/sandboxes` | [createSandbox](../service-controlplane/internal/httpapi/sandbox_handler.go#L29) (experimental + Kubernetes) |
-| `DELETE` | `/api/v1/sandboxes/{name}` | [deleteSandbox](../service-controlplane/internal/httpapi/sandbox_handler.go#L111) (experimental + Kubernetes) |
-| `GET` | `/api/v1/sandboxes/{name}` | [getSandbox](../service-controlplane/internal/httpapi/sandbox_handler.go#L94) (experimental + Kubernetes) |
+| `GET` | `/api/v1/mcpservers` | [listMCPServers](../control-plane/internal/httpapi/mcpserver_handler.go#L61) (Kubernetes client) |
+| `POST` | `/api/v1/mcpservers` | [createMCPServer](../control-plane/internal/httpapi/mcpserver_handler.go#L29) (Kubernetes client) |
+| `DELETE` | `/api/v1/mcpservers/{name}` | [deleteMCPServer](../control-plane/internal/httpapi/mcpserver_handler.go#L150) (Kubernetes client) |
+| `GET` | `/api/v1/mcpservers/{name}` | [getMCPServer](../control-plane/internal/httpapi/mcpserver_handler.go#L98) (Kubernetes client) |
+| `PATCH` | `/api/v1/mcpservers/{name}` | [patchMCPServer](../control-plane/internal/httpapi/mcpserver_handler.go#L115) (Kubernetes client) |
+| `GET` | `/api/v1/mcpservers/{name}/tools` | [listMCPTools](../control-plane/internal/httpapi/mcpserver_handler.go#L172) (Kubernetes client) |
+| `GET` | `/api/v1/modelconfigs` | [listModelConfigs](../control-plane/internal/httpapi/modelconfig_handler.go#L64) (Kubernetes client) |
+| `POST` | `/api/v1/modelconfigs` | [createModelConfig](../control-plane/internal/httpapi/modelconfig_handler.go#L29) (Kubernetes client) |
+| `DELETE` | `/api/v1/modelconfigs/{name}` | [deleteModelConfig](../control-plane/internal/httpapi/modelconfig_handler.go#L156) (Kubernetes client) |
+| `GET` | `/api/v1/modelconfigs/{name}` | [getModelConfig](../control-plane/internal/httpapi/modelconfig_handler.go#L101) (Kubernetes client) |
+| `PATCH` | `/api/v1/modelconfigs/{name}` | [patchModelConfig](../control-plane/internal/httpapi/modelconfig_handler.go#L118) (Kubernetes client) |
+| `GET` | `/api/v1/sandboxes` | [listSandboxes](../control-plane/internal/httpapi/sandbox_handler.go#L78) (experimental + Kubernetes) |
+| `POST` | `/api/v1/sandboxes` | [createSandbox](../control-plane/internal/httpapi/sandbox_handler.go#L29) (experimental + Kubernetes) |
+| `DELETE` | `/api/v1/sandboxes/{name}` | [deleteSandbox](../control-plane/internal/httpapi/sandbox_handler.go#L111) (experimental + Kubernetes) |
+| `GET` | `/api/v1/sandboxes/{name}` | [getSandbox](../control-plane/internal/httpapi/sandbox_handler.go#L94) (experimental + Kubernetes) |
 
 ### Health, version, fleet and operations
 
 | Method | Path | Handler / contract source |
 | --- | --- | --- |
-| `GET` | `/api/v1/metrics/agents` | [queryAgentMetrics](../service-controlplane/internal/httpapi/overview_handler.go#L216) |
-| `GET` | `/api/v1/metrics/tokens` | [queryTokenMetrics](../service-controlplane/internal/httpapi/overview_handler.go#L162) |
-| `GET` | `/actuator/health` | [healthz](../service-controlplane/internal/httpapi/server.go#L1230) |
-| `GET` | `/api/v1/commands` | [listRecentCommands](../service-controlplane/internal/httpapi/session_handler.go#L898) |
-| `GET` | `/api/v1/dataplanes` | [listDataPlanes](../service-controlplane/internal/httpapi/dataplane_handler.go#L99) |
-| `GET` | `/api/v1/dead-letters` | [listOutboxDeadLetters](../service-controlplane/internal/httpapi/taskplane_handler.go#L425) |
-| `POST` | `/api/v1/dead-letters/{eventId}/replay` | [replayOutboxDeadLetter](../service-controlplane/internal/httpapi/taskplane_handler.go#L443) |
-| `GET` | `/api/v1/overview` | [fleetOverview](../service-controlplane/internal/httpapi/overview_handler.go#L287) |
-| `GET` | `/api/v1/overview/timeseries` | [overviewTimeseries](../service-controlplane/internal/httpapi/overview_handler.go#L437) |
-| `GET` | `/api/v1/version` | [version](../service-controlplane/internal/httpapi/server.go#L1244) |
-| `GET` | `/healthz` | [healthz](../service-controlplane/internal/httpapi/server.go#L1230) |
-| `GET` | `/readyz` | [readyz](../service-controlplane/internal/httpapi/server.go#L1234) |
+| `GET` | `/api/v1/metrics/agents` | [queryAgentMetrics](../control-plane/internal/httpapi/overview_handler.go#L216) |
+| `GET` | `/api/v1/metrics/tokens` | [queryTokenMetrics](../control-plane/internal/httpapi/overview_handler.go#L162) |
+| `GET` | `/actuator/health` | [healthz](../control-plane/internal/httpapi/server.go#L1230) |
+| `GET` | `/api/v1/commands` | [listRecentCommands](../control-plane/internal/httpapi/session_handler.go#L898) |
+| `GET` | `/api/v1/dataplanes` | [listDataPlanes](../control-plane/internal/httpapi/dataplane_handler.go#L99) |
+| `GET` | `/api/v1/dead-letters` | [listOutboxDeadLetters](../control-plane/internal/httpapi/taskplane_handler.go#L425) |
+| `POST` | `/api/v1/dead-letters/{eventId}/replay` | [replayOutboxDeadLetter](../control-plane/internal/httpapi/taskplane_handler.go#L443) |
+| `GET` | `/api/v1/overview` | [fleetOverview](../control-plane/internal/httpapi/overview_handler.go#L287) |
+| `GET` | `/api/v1/overview/timeseries` | [overviewTimeseries](../control-plane/internal/httpapi/overview_handler.go#L437) |
+| `GET` | `/api/v1/version` | [version](../control-plane/internal/httpapi/server.go#L1244) |
+| `GET` | `/healthz` | [healthz](../control-plane/internal/httpapi/server.go#L1230) |
+| `GET` | `/readyz` | [readyz](../control-plane/internal/httpapi/server.go#L1234) |
 
 <a id="boundaries"></a>
 ## Machine protocols, compatibility, and unsupported features
@@ -946,88 +946,88 @@ These endpoints serve registration clients, Runtime Hosts or Agents with executi
 
 | Method | Path | Handler / contract source |
 | --- | --- | --- |
-| `POST` | `/api/v1/agent-registrations` | [registerExternalAgent](../service-controlplane/internal/httpapi/agent_catalog_handler.go#L107) |
-| `POST` | `/api/v1/agent-runtime/exchange` | [registration](../service-controlplane/internal/httpapi/server.go#L444) |
-| `POST` | `/api/v1/agent-tasks/{taskId}/ack` | [acknowledgeAgentTask](../service-controlplane/internal/httpapi/collaboration_handler.go#L1251) |
-| `POST` | `/api/v1/agent-tasks/{taskId}/children` | [createAgentTaskChildIssue](../service-controlplane/internal/httpapi/collaboration_handler.go#L1434) |
-| `POST` | `/api/v1/agent-tasks/{taskId}/complete` | [completeAgentTask](../service-controlplane/internal/httpapi/collaboration_handler.go#L1456) |
-| `GET` | `/api/v1/agent-tasks/{taskId}/context` | [getAgentTaskContext](../service-controlplane/internal/httpapi/collaboration_handler.go#L1134) |
-| `POST` | `/api/v1/agent-tasks/{taskId}/fail` | [failAgentTask](../service-controlplane/internal/httpapi/collaboration_handler.go#L1356) |
-| `POST` | `/api/v1/agent-tasks/{taskId}/inputs/delivery-failed` | [failAgentTaskInputDelivery](../service-controlplane/internal/httpapi/collaboration_handler.go#L1272) |
-| `POST` | `/api/v1/agent-tasks/{taskId}/progress` | [progressAgentTask](../service-controlplane/internal/httpapi/collaboration_handler.go#L1325) |
-| `POST` | `/api/v1/agent-tasks/{taskId}/respond` | [respondAgentTask](../service-controlplane/internal/httpapi/collaboration_handler.go#L1404) |
-| `GET` | `/api/v1/agent-tasks/{taskId}/run` | [getTaskRun](../service-controlplane/internal/httpapi/orchestration_handler.go#L575) |
-| `GET` | `/api/v1/agent-tasks/{taskId}/run/artifacts` | [getTaskRunArtifacts](../service-controlplane/internal/httpapi/orchestration_handler.go#L690) |
-| `GET` | `/api/v1/agent-tasks/{taskId}/run/graph` | [getTaskRunGraph](../service-controlplane/internal/httpapi/orchestration_handler.go#L588) |
-| `POST` | `/api/v1/agent-tasks/{taskId}/run/node/complete` | [completeTaskRunNode](../service-controlplane/internal/httpapi/orchestration_handler.go#L601) |
-| `POST` | `/api/v1/agent-tasks/{taskId}/run/node/fail` | [failTaskRunNode](../service-controlplane/internal/httpapi/orchestration_handler.go#L621) |
-| `POST` | `/api/v1/agent-tasks/{taskId}/run/replan` | [replanTaskRun](../service-controlplane/internal/httpapi/orchestration_handler.go#L642) |
-| `POST` | `/api/v1/agent-tasks/{taskId}/run/signals/{name}` | [signalTaskRun](../service-controlplane/internal/httpapi/orchestration_handler.go#L660) |
-| `POST` | `/api/v1/agent-tasks/{taskId}/runtime-approvals` | [requestRuntimeToolApproval](../service-controlplane/internal/httpapi/managed_tool_approval.go#L82) |
-| `POST` | `/api/v1/agent-tasks/{taskId}/runtime-approvals/{approvalId}/ack` | [acknowledgeRuntimeToolApprovalDecision](../service-controlplane/internal/httpapi/managed_tool_approval.go#L221) |
-| `GET` | `/api/v1/agent-tasks/{taskId}/runtime-approvals/{approvalId}/decision` | [getRuntimeToolApprovalDecision](../service-controlplane/internal/httpapi/managed_tool_approval.go#L179) |
-| `POST` | `/api/v1/agent-tasks/{taskId}/start` | [startAgentTask](../service-controlplane/internal/httpapi/collaboration_handler.go#L1315) |
-| `POST` | `/api/v1/agent-tasks/{taskId}/workspace-application` | [reportWorkspaceApplication](../service-controlplane/internal/httpapi/workspace_definition.go#L151) |
-| `POST` | `/api/v1/runtime-host-enrollments/exchange` | [exchangeRuntimeHostEnrollment](../service-controlplane/internal/httpapi/taskplane_handler.go#L126) |
-| `POST` | `/api/v1/runtime-hosts/register` | [registerRuntimeHost](../service-controlplane/internal/httpapi/taskplane_handler.go#L293) |
-| `POST` | `/api/v1/runtime-hosts/{hostId}/credentials` | [refreshRuntimeHostCredential](../service-controlplane/internal/httpapi/runtime_host_credentials.go#L28) |
-| `POST` | `/api/v1/runtime-hosts/{hostId}/execution-attempts/claim` | [claimExecutionAttempt](../service-controlplane/internal/httpapi/taskplane_handler.go#L511) |
-| `POST` | `/api/v1/runtime-hosts/{hostId}/execution-attempts/{attemptId}/cancelled` | [cancelledExecutionAttempt](../service-controlplane/internal/httpapi/taskplane_handler.go#L848) |
-| `POST` | `/api/v1/runtime-hosts/{hostId}/execution-attempts/{attemptId}/checkpoint` | [checkpointExecutionAttempt](../service-controlplane/internal/httpapi/taskplane_handler.go#L722) |
-| `POST` | `/api/v1/runtime-hosts/{hostId}/execution-attempts/{attemptId}/complete` | [completeExecutionAttempt](../service-controlplane/internal/httpapi/taskplane_handler.go#L699) |
-| `POST` | `/api/v1/runtime-hosts/{hostId}/execution-attempts/{attemptId}/credentials` | [refreshExecutionCredentials](../service-controlplane/internal/httpapi/runtime_host_credentials.go#L71) |
-| `POST` | `/api/v1/runtime-hosts/{hostId}/execution-attempts/{attemptId}/events` | [appendExecutionAttemptEvent](../service-controlplane/internal/httpapi/taskplane_handler.go#L745) |
-| `POST` | `/api/v1/runtime-hosts/{hostId}/execution-attempts/{attemptId}/fail` | [failExecutionAttempt](../service-controlplane/internal/httpapi/taskplane_handler.go#L824) |
-| `POST` | `/api/v1/runtime-hosts/{hostId}/execution-attempts/{attemptId}/observe` | [observeExecutionAttempt](../service-controlplane/internal/httpapi/taskplane_handler.go#L663) |
-| `POST` | `/api/v1/runtime-hosts/{hostId}/execution-attempts/{attemptId}/physical-stop` | [confirmExecutionPhysicalStop](../service-controlplane/internal/httpapi/portal_native_stop.go#L46) |
-| `POST` | `/api/v1/runtime-hosts/{hostId}/execution-attempts/{attemptId}/preparing` | [prepareExecutionAttempt](../service-controlplane/internal/httpapi/taskplane_handler.go#L650) |
-| `POST` | `/api/v1/runtime-hosts/{hostId}/execution-attempts/{attemptId}/renew` | [renewExecutionAttempt](../service-controlplane/internal/httpapi/taskplane_handler.go#L620) |
-| `POST` | `/api/v1/runtime-hosts/{hostId}/execution-attempts/{attemptId}/running` | [startExecutionAttempt](../service-controlplane/internal/httpapi/taskplane_handler.go#L680) |
-| `POST` | `/api/v1/runtime-hosts/{hostId}/heartbeat` | [heartbeatRuntimeHost](../service-controlplane/internal/httpapi/taskplane_handler.go#L460) |
-| `POST` | `/api/v1/runtime-hosts/{hostId}/state` | [setRuntimeHostState](../service-controlplane/internal/httpapi/taskplane_handler.go#L482) |
-| `GET` | `/mcp/collaboration` | [registration](../service-controlplane/internal/httpapi/server.go#L643) |
-| `POST` | `/mcp/collaboration` | [collaborationMCP](../service-controlplane/internal/httpapi/collaboration_mcp.go#L170) |
+| `POST` | `/api/v1/agent-registrations` | [registerExternalAgent](../control-plane/internal/httpapi/agent_catalog_handler.go#L107) |
+| `POST` | `/api/v1/agent-runtime/exchange` | [registration](../control-plane/internal/httpapi/server.go#L444) |
+| `POST` | `/api/v1/agent-tasks/{taskId}/ack` | [acknowledgeAgentTask](../control-plane/internal/httpapi/collaboration_handler.go#L1251) |
+| `POST` | `/api/v1/agent-tasks/{taskId}/children` | [createAgentTaskChildIssue](../control-plane/internal/httpapi/collaboration_handler.go#L1434) |
+| `POST` | `/api/v1/agent-tasks/{taskId}/complete` | [completeAgentTask](../control-plane/internal/httpapi/collaboration_handler.go#L1456) |
+| `GET` | `/api/v1/agent-tasks/{taskId}/context` | [getAgentTaskContext](../control-plane/internal/httpapi/collaboration_handler.go#L1134) |
+| `POST` | `/api/v1/agent-tasks/{taskId}/fail` | [failAgentTask](../control-plane/internal/httpapi/collaboration_handler.go#L1356) |
+| `POST` | `/api/v1/agent-tasks/{taskId}/inputs/delivery-failed` | [failAgentTaskInputDelivery](../control-plane/internal/httpapi/collaboration_handler.go#L1272) |
+| `POST` | `/api/v1/agent-tasks/{taskId}/progress` | [progressAgentTask](../control-plane/internal/httpapi/collaboration_handler.go#L1325) |
+| `POST` | `/api/v1/agent-tasks/{taskId}/respond` | [respondAgentTask](../control-plane/internal/httpapi/collaboration_handler.go#L1404) |
+| `GET` | `/api/v1/agent-tasks/{taskId}/run` | [getTaskRun](../control-plane/internal/httpapi/orchestration_handler.go#L575) |
+| `GET` | `/api/v1/agent-tasks/{taskId}/run/artifacts` | [getTaskRunArtifacts](../control-plane/internal/httpapi/orchestration_handler.go#L690) |
+| `GET` | `/api/v1/agent-tasks/{taskId}/run/graph` | [getTaskRunGraph](../control-plane/internal/httpapi/orchestration_handler.go#L588) |
+| `POST` | `/api/v1/agent-tasks/{taskId}/run/node/complete` | [completeTaskRunNode](../control-plane/internal/httpapi/orchestration_handler.go#L601) |
+| `POST` | `/api/v1/agent-tasks/{taskId}/run/node/fail` | [failTaskRunNode](../control-plane/internal/httpapi/orchestration_handler.go#L621) |
+| `POST` | `/api/v1/agent-tasks/{taskId}/run/replan` | [replanTaskRun](../control-plane/internal/httpapi/orchestration_handler.go#L642) |
+| `POST` | `/api/v1/agent-tasks/{taskId}/run/signals/{name}` | [signalTaskRun](../control-plane/internal/httpapi/orchestration_handler.go#L660) |
+| `POST` | `/api/v1/agent-tasks/{taskId}/runtime-approvals` | [requestRuntimeToolApproval](../control-plane/internal/httpapi/managed_tool_approval.go#L82) |
+| `POST` | `/api/v1/agent-tasks/{taskId}/runtime-approvals/{approvalId}/ack` | [acknowledgeRuntimeToolApprovalDecision](../control-plane/internal/httpapi/managed_tool_approval.go#L221) |
+| `GET` | `/api/v1/agent-tasks/{taskId}/runtime-approvals/{approvalId}/decision` | [getRuntimeToolApprovalDecision](../control-plane/internal/httpapi/managed_tool_approval.go#L179) |
+| `POST` | `/api/v1/agent-tasks/{taskId}/start` | [startAgentTask](../control-plane/internal/httpapi/collaboration_handler.go#L1315) |
+| `POST` | `/api/v1/agent-tasks/{taskId}/workspace-application` | [reportWorkspaceApplication](../control-plane/internal/httpapi/workspace_definition.go#L151) |
+| `POST` | `/api/v1/runtime-host-enrollments/exchange` | [exchangeRuntimeHostEnrollment](../control-plane/internal/httpapi/taskplane_handler.go#L126) |
+| `POST` | `/api/v1/runtime-hosts/register` | [registerRuntimeHost](../control-plane/internal/httpapi/taskplane_handler.go#L293) |
+| `POST` | `/api/v1/runtime-hosts/{hostId}/credentials` | [refreshRuntimeHostCredential](../control-plane/internal/httpapi/runtime_host_credentials.go#L28) |
+| `POST` | `/api/v1/runtime-hosts/{hostId}/execution-attempts/claim` | [claimExecutionAttempt](../control-plane/internal/httpapi/taskplane_handler.go#L511) |
+| `POST` | `/api/v1/runtime-hosts/{hostId}/execution-attempts/{attemptId}/cancelled` | [cancelledExecutionAttempt](../control-plane/internal/httpapi/taskplane_handler.go#L848) |
+| `POST` | `/api/v1/runtime-hosts/{hostId}/execution-attempts/{attemptId}/checkpoint` | [checkpointExecutionAttempt](../control-plane/internal/httpapi/taskplane_handler.go#L722) |
+| `POST` | `/api/v1/runtime-hosts/{hostId}/execution-attempts/{attemptId}/complete` | [completeExecutionAttempt](../control-plane/internal/httpapi/taskplane_handler.go#L699) |
+| `POST` | `/api/v1/runtime-hosts/{hostId}/execution-attempts/{attemptId}/credentials` | [refreshExecutionCredentials](../control-plane/internal/httpapi/runtime_host_credentials.go#L71) |
+| `POST` | `/api/v1/runtime-hosts/{hostId}/execution-attempts/{attemptId}/events` | [appendExecutionAttemptEvent](../control-plane/internal/httpapi/taskplane_handler.go#L745) |
+| `POST` | `/api/v1/runtime-hosts/{hostId}/execution-attempts/{attemptId}/fail` | [failExecutionAttempt](../control-plane/internal/httpapi/taskplane_handler.go#L824) |
+| `POST` | `/api/v1/runtime-hosts/{hostId}/execution-attempts/{attemptId}/observe` | [observeExecutionAttempt](../control-plane/internal/httpapi/taskplane_handler.go#L663) |
+| `POST` | `/api/v1/runtime-hosts/{hostId}/execution-attempts/{attemptId}/physical-stop` | [confirmExecutionPhysicalStop](../control-plane/internal/httpapi/agent_service_native_stop.go#L46) |
+| `POST` | `/api/v1/runtime-hosts/{hostId}/execution-attempts/{attemptId}/preparing` | [prepareExecutionAttempt](../control-plane/internal/httpapi/taskplane_handler.go#L650) |
+| `POST` | `/api/v1/runtime-hosts/{hostId}/execution-attempts/{attemptId}/renew` | [renewExecutionAttempt](../control-plane/internal/httpapi/taskplane_handler.go#L620) |
+| `POST` | `/api/v1/runtime-hosts/{hostId}/execution-attempts/{attemptId}/running` | [startExecutionAttempt](../control-plane/internal/httpapi/taskplane_handler.go#L680) |
+| `POST` | `/api/v1/runtime-hosts/{hostId}/heartbeat` | [heartbeatRuntimeHost](../control-plane/internal/httpapi/taskplane_handler.go#L460) |
+| `POST` | `/api/v1/runtime-hosts/{hostId}/state` | [setRuntimeHostState](../control-plane/internal/httpapi/taskplane_handler.go#L482) |
+| `GET` | `/mcp/collaboration` | [registration](../control-plane/internal/httpapi/server.go#L643) |
+| `POST` | `/mcp/collaboration` | [collaborationMCP](../control-plane/internal/httpapi/collaboration_mcp.go#L170) |
 
-The Hands machine entry is `/v1/handss/environments/{environment_id}/tool-tasks/**`; the older `/api/environments/{environment_id}/tool-tasks/**` is forwarded through Session Portal. See [ManagedWorkerProtocol](../service-common/src/main/java/io/agentscope/builder/runtime/managed/ManagedWorkerProtocol.java) and the [Worker HTTP handler](../service-hands/src/main/java/io/agentscope/builder/hands/ManagedWorkerController.java) for claim/renew/output/result contracts. These are not client tool-result submission APIs.
+The Tool Worker machine entry is `/v1/tool-workers/environments/{environment_id}/tool-tasks/**`; the older `/api/environments/{environment_id}/tool-tasks/**` is forwarded through Agent Service. See [ManagedWorkerProtocol](../tool-worker/src/main/java/io/agentcore/managed/server/runtime/managed/ManagedWorkerProtocol.java) and the [Worker HTTP handler](../tool-worker/src/main/java/io/agentcore/managed/server/toolworker/ManagedWorkerController.java) for claim/renew/output/result contracts. These are not client tool-result submission APIs.
 
-Provider callbacks use provider-specific signatures/protocol credentials: `POST /api/channels/{dingtalk|feishu|wecom}/{channel_id}/callback`, `POST /api/channels/{github|gitlab}/{channel_id}/webhook`, and GET callback for WeCom. They mount when the integrated scheduler is configured; see [transport registration](../service-controlplane/internal/product/scheduler_runtime.go). Automation webhook: `POST /hooks/v1/automations/{automation_id}/{trigger_id}`; work-source GitHub webhook: `POST /api/v1/work-sources/{work_source_id}/webhooks/github`.
+Provider callbacks use provider-specific signatures/protocol credentials: `POST /api/channels/{dingtalk|feishu|wecom}/{channel_id}/callback`, `POST /api/channels/{github|gitlab}/{channel_id}/webhook`, and GET callback for WeCom. They mount when the integrated scheduler is configured; see [transport registration](../control-plane/internal/product/scheduler_runtime.go). Automation webhook: `POST /hooks/v1/automations/{automation_id}/{trigger_id}`; work-source GitHub webhook: `POST /api/v1/work-sources/{work_source_id}/webhooks/github`.
 
 ### Compatibility and private boundaries
 
-`/api/v1/agent-sessions/**`, `/api/sessions/**`, `/api/v1/sessions/**` and native runtime paths have separate/older contracts; they are not aliases for `/v1/sessions`. New Managed Session writes use `/v1/sessions/{id}/events`, not old `POST .../turns`, `user-message`, `steer` or `inputs` paths. Gateway routes the old public Session prefix to Session Portal; actual availability depends on backend, authorization and migration state, not similarly named control-plane declarations.
+`/api/v1/agent-sessions/**`, `/api/sessions/**`, `/api/v1/sessions/**` and native runtime paths have separate/older contracts; they are not aliases for `/v1/sessions`. New Managed Session writes use `/v1/sessions/{id}/events`, not old `POST .../turns`, `user-message`, `steer` or `inputs` paths. Gateway routes the old public Session prefix to Agent Service; actual availability depends on backend, authorization and migration state, not similarly named control-plane declarations.
 
 The following older administration paths are for locating existing integrations, not the quickstart contract:
 
 | Method | Path | Handler / contract source |
 | --- | --- | --- |
-| `GET` | `/api/sessions` | [listSessions](../service-controlplane/internal/product/handlers_sessions.go#L312) |
-| `POST` | `/api/sessions` | [createSession](../service-controlplane/internal/product/handlers_sessions.go#L183) |
-| `DELETE` | `/api/sessions/{id}` | [deleteSession](../service-controlplane/internal/product/handlers_sessions.go#L526) |
-| `GET` | `/api/sessions/{id}` | [getSession](../service-controlplane/internal/product/handlers_sessions.go#L359) |
-| `PATCH` | `/api/sessions/{id}` | [updateSession](../service-controlplane/internal/product/handlers_sessions.go#L368) |
-| `POST` | `/api/sessions/{id}/archive` | [archiveSession](../service-controlplane/internal/product/handlers_sessions.go#L488) |
-| `POST` | `/api/sessions/{id}/restore` | [restoreSession](../service-controlplane/internal/product/handlers_sessions.go#L507) |
-| `GET` | `/api/v1/sessions` | [listSessions](../service-controlplane/internal/httpapi/overview_handler.go#L46) |
-| `DELETE` | `/api/v1/sessions/{sessionId}` | [deleteSession](../service-controlplane/internal/httpapi/session_handler.go#L1012) |
-| `GET` | `/api/v1/sessions/{sessionId}` | [getSession](../service-controlplane/internal/httpapi/overview_handler.go#L87) |
-| `POST` | `/api/v1/sessions/{sessionId}/abort` | [abortSession](../service-controlplane/internal/httpapi/session_handler.go#L496) |
-| `POST` | `/api/v1/sessions/{sessionId}/archive` | [archiveSession](../service-controlplane/internal/httpapi/session_handler.go#L502) |
-| `GET` | `/api/v1/sessions/{sessionId}/commands` | [listSessionCommands](../service-controlplane/internal/httpapi/session_handler.go#L881) |
-| `POST` | `/api/v1/sessions/{sessionId}/compress` | [compressSession](../service-controlplane/internal/httpapi/session_handler.go#L486) |
-| `GET` | `/api/v1/sessions/{sessionId}/context` | [getSessionContext](../service-controlplane/internal/httpapi/session_handler.go#L83) |
-| `GET` | `/api/v1/sessions/{sessionId}/events` | [getSessionEvents](../service-controlplane/internal/httpapi/session_handler.go#L331) |
-| `GET` | `/api/v1/sessions/{sessionId}/events/stream` | [streamSessionEvents](../service-controlplane/internal/httpapi/session_handler.go#L399) |
-| `GET` | `/api/v1/sessions/{sessionId}/messages` | [getSessionMessages](../service-controlplane/internal/httpapi/session_handler.go#L136) |
-| `POST` | `/api/v1/sessions/{sessionId}/plan-mode` | [postSessionPlanMode](../service-controlplane/internal/httpapi/session_handler.go#L747) |
-| `POST` | `/api/v1/sessions/{sessionId}/restore` | [restoreSession](../service-controlplane/internal/httpapi/session_handler.go#L536) |
-| `GET` | `/api/v1/sessions/{sessionId}/subagent-tasks` | [getSessionSubagentTasks](../service-controlplane/internal/httpapi/session_handler.go#L701) |
-| `DELETE` | `/api/v1/sessions/{sessionId}/subagent-tasks/{taskId}` | [cancelSessionSubagentTask](../service-controlplane/internal/httpapi/session_handler.go#L722) |
-| `GET` | `/api/v1/sessions/{sessionId}/tasks` | [getSessionTasks](../service-controlplane/internal/httpapi/session_handler.go#L655) |
-| `POST` | `/api/v1/sessions/{sessionId}/terminate` | [terminateSession](../service-controlplane/internal/httpapi/session_handler.go#L491) |
-| `GET` | `/api/v1/sessions/{sessionId}/turns` | [listSessionTurns](../service-controlplane/internal/httpapi/session_handler.go#L469) |
-| `POST` | `/api/v1/sessions/{sessionId}/user-message` | [postSessionUserMessage](../service-controlplane/internal/httpapi/session_handler.go#L775) |
+| `GET` | `/api/sessions` | [listSessions](../control-plane/internal/product/handlers_sessions.go#L312) |
+| `POST` | `/api/sessions` | [createSession](../control-plane/internal/product/handlers_sessions.go#L183) |
+| `DELETE` | `/api/sessions/{id}` | [deleteSession](../control-plane/internal/product/handlers_sessions.go#L526) |
+| `GET` | `/api/sessions/{id}` | [getSession](../control-plane/internal/product/handlers_sessions.go#L359) |
+| `PATCH` | `/api/sessions/{id}` | [updateSession](../control-plane/internal/product/handlers_sessions.go#L368) |
+| `POST` | `/api/sessions/{id}/archive` | [archiveSession](../control-plane/internal/product/handlers_sessions.go#L488) |
+| `POST` | `/api/sessions/{id}/restore` | [restoreSession](../control-plane/internal/product/handlers_sessions.go#L507) |
+| `GET` | `/api/v1/sessions` | [listSessions](../control-plane/internal/httpapi/overview_handler.go#L46) |
+| `DELETE` | `/api/v1/sessions/{sessionId}` | [deleteSession](../control-plane/internal/httpapi/session_handler.go#L1012) |
+| `GET` | `/api/v1/sessions/{sessionId}` | [getSession](../control-plane/internal/httpapi/overview_handler.go#L87) |
+| `POST` | `/api/v1/sessions/{sessionId}/abort` | [abortSession](../control-plane/internal/httpapi/session_handler.go#L496) |
+| `POST` | `/api/v1/sessions/{sessionId}/archive` | [archiveSession](../control-plane/internal/httpapi/session_handler.go#L502) |
+| `GET` | `/api/v1/sessions/{sessionId}/commands` | [listSessionCommands](../control-plane/internal/httpapi/session_handler.go#L881) |
+| `POST` | `/api/v1/sessions/{sessionId}/compress` | [compressSession](../control-plane/internal/httpapi/session_handler.go#L486) |
+| `GET` | `/api/v1/sessions/{sessionId}/context` | [getSessionContext](../control-plane/internal/httpapi/session_handler.go#L83) |
+| `GET` | `/api/v1/sessions/{sessionId}/events` | [getSessionEvents](../control-plane/internal/httpapi/session_handler.go#L331) |
+| `GET` | `/api/v1/sessions/{sessionId}/events/stream` | [streamSessionEvents](../control-plane/internal/httpapi/session_handler.go#L399) |
+| `GET` | `/api/v1/sessions/{sessionId}/messages` | [getSessionMessages](../control-plane/internal/httpapi/session_handler.go#L136) |
+| `POST` | `/api/v1/sessions/{sessionId}/plan-mode` | [postSessionPlanMode](../control-plane/internal/httpapi/session_handler.go#L747) |
+| `POST` | `/api/v1/sessions/{sessionId}/restore` | [restoreSession](../control-plane/internal/httpapi/session_handler.go#L536) |
+| `GET` | `/api/v1/sessions/{sessionId}/subagent-tasks` | [getSessionSubagentTasks](../control-plane/internal/httpapi/session_handler.go#L701) |
+| `DELETE` | `/api/v1/sessions/{sessionId}/subagent-tasks/{taskId}` | [cancelSessionSubagentTask](../control-plane/internal/httpapi/session_handler.go#L722) |
+| `GET` | `/api/v1/sessions/{sessionId}/tasks` | [getSessionTasks](../control-plane/internal/httpapi/session_handler.go#L655) |
+| `POST` | `/api/v1/sessions/{sessionId}/terminate` | [terminateSession](../control-plane/internal/httpapi/session_handler.go#L491) |
+| `GET` | `/api/v1/sessions/{sessionId}/turns` | [listSessionTurns](../control-plane/internal/httpapi/session_handler.go#L469) |
+| `POST` | `/api/v1/sessions/{sessionId}/user-message` | [postSessionUserMessage](../control-plane/internal/httpapi/session_handler.go#L775) |
 
-`/api/internal/**` returns 404 at the public Gateway; components still authenticate service-to-service calls independently. Feature-gated `/api/v1/dp/**` is an older internal coordination protocol, not a user API. Older dataplane/Worker observation paths are outside the recommended integration surface. Historical declarations are in the [ownership inventory](session-portal-api-inventory.md), [Java CSV](session-portal-java-routes.csv) and [Go CSV](session-portal-go-route-declarations.csv); those inventories do not replace current entry/capability checks.
+`/api/internal/**` returns 404 at the public Gateway; components still authenticate service-to-service calls independently. Feature-gated `/api/v1/dp/**` is an older internal coordination protocol, not a user API. Older dataplane/Worker observation paths are outside the recommended integration surface. Historical declarations are in the [ownership inventory](agent-service-api-inventory.md), [Java CSV](agent-service-java-routes.csv) and [Go CSV](agent-service-go-route-declarations.csv); those inventories do not replace current entry/capability checks.
 
 ### Not supported by the current Session protocol
 
@@ -1043,12 +1043,12 @@ Managing a related control-plane resource does not enable these Session APIs. A 
 
 When changing routes, verify registration, Gateway, security filters, handlers and capabilities together. Keep English/Chinese references and quickstarts aligned when public contracts change. The following sources define the current protocol:
 
-- [Session controller](../service-session-portal/src/main/java/io/agentscope/builder/portal/api/SessionApiController.java)
-- [Session entry filter and errors](../service-session-portal/src/main/java/io/agentscope/builder/portal/config/SessionApiErrors.java)
-- [Session creation and representation](../service-session-portal/src/main/java/io/agentscope/builder/portal/session/SessionApi.java)
-- [Event validation, reads and SSE](../service-session-portal/src/main/java/io/agentscope/builder/portal/session/ManagedSessionTurnsApi.java)
-- [Durable protocol and projection](../service-common/src/main/java/io/agentscope/builder/runtime/managed/ManagedSessionProtocol.java)
-- [Go route registration](../service-controlplane/internal/httpapi/server.go)
-- [Product registration](../service-controlplane/internal/product/server.go)
-- [Gateway](../service-gateway/src/main/resources/application.yml)
+- [Session controller](../agent-service/src/main/java/io/agentcore/managed/server/agentservice/api/SessionApiController.java)
+- [Session entry filter and errors](../agent-service/src/main/java/io/agentcore/managed/server/agentservice/config/SessionApiErrors.java)
+- [Session creation and representation](../agent-service/src/main/java/io/agentcore/managed/server/agentservice/session/SessionApi.java)
+- [Event validation, reads and SSE](../agent-service/src/main/java/io/agentcore/managed/server/agentservice/session/ManagedSessionTurnsApi.java)
+- [Durable protocol and projection](../common/src/main/java/io/agentcore/managed/server/runtime/managed/ManagedSessionProtocol.java)
+- [Go route registration](../control-plane/internal/httpapi/server.go)
+- [Product registration](../control-plane/internal/product/server.go)
+- [Gateway](../gateway/src/main/resources/application.yml)
 - [Protocol verification](../tests/session-protocol/README.md)

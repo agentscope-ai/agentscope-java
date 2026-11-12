@@ -1,26 +1,26 @@
-# AgentScope Service Claude 兼容会话 API 设计方案
+# Managed Agents Claude 兼容会话 API 设计方案
 
-状态：已确认设计，首批实施。版本：Draft 3（中立命名版）。日期：2026 年 10 月 19 日。
+状态：已确认设计，首批实施。版本：Draft 3（中立命名版）。日期：2026 年 10 月 19 日；2026 年 10 月 23 日补充在线文本 delta。
 
-本方案采用统一的 Session Event 写入入口，通过事件消息体中的 `agentscope_service` 扩展表达新请求、轮内调整、上下文补充和定向取消；Turn 与 Input 作为可独立查询的执行资源。Claude 标准调用不必理解扩展，使用扩展的调用者可以得到明确的请求归属、持久受理和应用结果。
+本方案采用统一的 Session Event 写入入口，通过事件消息体中的 `managed_agents` 扩展表达新请求、轮内调整、上下文补充和定向取消；Turn 与 Input 作为可独立查询的执行资源。Claude 标准调用不必理解扩展，使用扩展的调用者可以得到明确的请求归属、持久受理和应用结果。
 
-方案适用于原生 Managed 执行，目标是明确列出的 Claude Sessions API 兼容子集及 AgentScope Service 扩展，不承诺整个 Claude 平台、全部 AgentScope Service 功能或任意版本 SDK 已经兼容。本项目按本方案实施首批协议；兼容声明以实际 schema、固定 SDK 和行为验收为准。部署由独立发布步骤执行。
+方案适用于原生 Managed 执行，目标是明确列出的 Claude Sessions API 兼容子集及 Managed Agents 扩展，不承诺整个 Claude 平台、全部 Managed Agents 功能或任意版本 SDK 已经兼容。本项目按本方案实施首批协议；兼容声明以实际 schema、固定 SDK 和行为验收为准。部署由独立发布步骤执行。
 
 ## 设计前提
 
-AgentScope Service 尚未正式发布，自身现有 API 不承担向后兼容义务。实现时可以直接调整路径、请求响应、事件、错误及 SDK 类型，服务端、平台 SDK 和前端按同一目标协议更新。不为兼容开发中的接口增加独立兼容入口、双协议适配、旧写入口、长期并存或历史客户端回退。
+Managed Agents 尚未正式发布，自身现有 API 不承担向后兼容义务。实现时可以直接调整路径、请求响应、事件、错误及 SDK 类型，服务端、平台 SDK 和前端按同一目标协议更新。不为兼容开发中的接口增加独立兼容入口、双协议适配、旧写入口、长期并存或历史客户端回退。
 
 兼容承诺针对已声明支持的 Claude API 与客户端行为。幂等、权限、取消、持久受理及执行恢复属于运行正确性要求，不能因接口尚未发布而放松；但这些要求不意味着必须保存现有 HTTP schema 或提供跨版本无损数据迁移。
 
 ## 设计结论
 
-1. 新协议的交互写入口统一为 `POST /v1/sessions/{session_id}/events`。业务意图放在单个事件的 `agentscope_service` 对象中，不放进 Header，也不从自然语言猜测。
+1. 新协议的交互写入口统一为 `POST /v1/sessions/{session_id}/events`。业务意图放在单个事件的 `managed_agents` 对象中，不放进 Header，也不从自然语言猜测。
 2. `new_turn` 创建独立请求；`steer/inject` 必须指向已存在且输入开放的 Turn。目标失效时拒绝，不能静默创建新 Turn。
-3. 保留 Claude 的 `type/content`、`events/data` 和按类型展开的 Event 对象。扩展信息集中在 `agentscope_service` 命名空间，禁止复用标准字段承载不同含义。
+3. 保留 Claude 的 `type/content`、`events/data` 和按类型展开的 Event 对象。扩展信息集中在 `managed_agents` 命名空间，禁止复用标准字段承载不同含义。
 4. HTTP 成功表示持久受理；Input `applied` 表示已应用；Turn 终态表示执行结果。三者不能互相替代。
 5. 首批提供 Claude 历史、普通 SSE 和独立 Turn 结果查询。可靠续传与一致性快照属于后续独立观察能力，不改变 Claude 历史接口的集合与过滤语义，也不作为结果读取的前置条件。
 6. 对外统一使用根路径 /v1/sessions 下的目标协议，直接替换开发中的 Service API；不设置额外兼容前缀或两套平行执行入口。
-7. 适配、授权与受理归 Session Portal；执行与结果提交继续使用现有 Brain、Hands、checkpoint 和自动 Resume。Brain 不反向依赖 Session Portal。
+7. 适配、授权与受理归 Agent Service；执行与结果提交继续使用现有 Agent Harness Runtime、Tool Worker、checkpoint 和自动 Resume。Agent Harness Runtime 不反向依赖 Agent Service。
 8. 重试先通过当前身份与资源可见性检查，再查幂等记录；仅未命中的新操作进行状态、额度和目标准入校验。受理事实及回执在同一事务内冻结，输出 Header 不改变业务幂等身份。
 
 ## 协议范围和兼容承诺
@@ -31,7 +31,7 @@ AgentScope Service 尚未正式发布，自身现有 API 不承担向后兼容�
 | --- | --- | --- |
 | 格式兼容候选 | 已按官方 schema 设计，尚未完成客户端与行为验证 | Claude 风格 API 设计，不宣称可直接替换 |
 | 已验证子集兼容 | 指定字段、事件类型、状态条件和固定 SDK 版本通过验收 | 列出已验证子集与不支持项 |
-| 扩展能力 | Claude 标准之外的行为，具有独立版本和验收 | AgentScope Service Turn Input 扩展 |
+| 扩展能力 | Claude 标准之外的行为，具有独立版本和验收 | Managed Agents Turn Input 扩展 |
 
 兼容基线为 `anthropic-version: 2023-06-01`、`anthropic-beta: managed-agents-2026-04-01`，以及本方案日期可见的 Sessions 文档。实现时必须保存 schema 快照、官方 SDK 精确版本和测试结果；后续版本单独验收，不自动扩展兼容声明。
 
@@ -48,16 +48,16 @@ AgentScope Service 尚未正式发布，自身现有 API 不承担向后兼容�
 | `GET /v1/sessions` | 不属于首批承诺 | 分页、排序及过滤单独验收后开启 |
 | `POST /v1/sessions/{s}/events` | 已验证的普通 user.message、无 thread 的 user.interrupt；显式 new_turn、steer/inject、定向 cancel | 工具确认、外部结果、system.message、define_outcome、线程 interrupt 后续逐项开启 |
 | `GET /v1/sessions/{s}/events` | `page/limit/order/types[]` 和时间过滤，返回 `data/next_page` | 按 Claude 分页与过滤语义实现 |
-| `GET /v1/sessions/{s}/events/stream` | 普通公开事件，建连后的实时流 | event_deltas 在预览格式与收敛语义通过验收后开启 |
+| `GET /v1/sessions/{s}/events/stream` | 普通公开事件，建连后的实时流 | `event_deltas[]=agent.message` 提供尽力在线文本预览 |
 | `GET /v1/sessions/{s}/turns/...` | Turn/Input 查询及独立 `/output` 结果分页 | 不依赖 durable 或 snapshot |
 | `POST /v1/sessions/{s}` | 不属于首批承诺 | title/metadata 先按 Claude 合并规则验收；agent、budget、vault 更新后续开启 |
 | `POST /v1/sessions/{s}/archive`、`DELETE /v1/sessions/{s}` | 不属于首批承诺 | Claude 前置状态、幂等和删除可见性验收后开启 |
-| durable delivery、snapshot、event_deltas | 不属于首批承诺 | 作为独立观察能力交付，不阻塞交互、查询和结果读取 |
+| durable delivery、snapshot | 暂未启用 | 作为独立观察能力交付，不阻塞交互、查询和结果读取 |
 | Resources、Threads API | 不属于首批承诺 | 公开 ID、作用域、状态和事件转发均通过专项验收后开启 |
-| Agents、Environments 管理 API | 不属于本方案兼容承诺 | 初期通过现有 AgentScope Service 管理入口准备资源 |
+| Agents、Environments 管理 API | 不属于本方案兼容承诺 | 初期通过现有 Managed Agents 管理入口准备资源 |
 | Workflow Runs、Outcome、Memory、Vault 管理、Files 全量协议 | 不属于首批承诺 | 不能用 本平台中名字相似的产品对象直接代替 |
 
-标准用户内容首批支持 `text`；`image` 按模型和来源能力开启。Claude 的 document/redacted 等块及 AgentScope Service 的 audio/video/data/file 不能只改名后透传。未知或不支持的块返回明确错误。文件功能是否可用由 Session capability 决定，与某次部署是否有 NAS 或 Sandbox 分开。
+标准用户内容首批支持 `text`；`image` 按模型和来源能力开启。Claude 的 document/redacted 等块及 Managed Agents 的 audio/video/data/file 不能只改名后透传。未知或不支持的块返回明确错误。文件功能是否可用由 Session capability 决定，与某次部署是否有 NAS 或 Sandbox 分开。
 
 Claude 的 Session 读取要求 Agent 快照、resources、stats、usage 等结构。投影必须从实际配置和计量数据构造，必填字段不能缺失，也不能为了通过 schema 而伪称执行主体是 Anthropic 管理的身份。不能忠实映射的 Agent 配置或执行身份应暂不进入“已验证子集”；schema 可解析不等于资源含义相同。
 
@@ -81,9 +81,9 @@ Claude 的 Session 读取要求 Agent 快照、resources、stats、usage 等结�
 | --- | --- |
 | Claude 兼容创建与交互 | `POST /v1/sessions`、`POST /v1/sessions/S/events` |
 | Claude 兼容历史与实时输出 | `GET /v1/sessions/S/events`、`GET /v1/sessions/S/events/stream` |
-| AgentScope Service 扩展资源读取 | `GET /v1/sessions/S/turns/T1`、`GET /v1/sessions/S/turns/T1/output` |
+| Managed Agents 扩展资源读取 | `GET /v1/sessions/S/turns/T1`、`GET /v1/sessions/S/turns/T1/output` |
 
-Gateway 将统一 /v1/sessions 路径交给 Session Portal。同一 Session 只有一套执行资源和公开协议；Header 仅选择已声明的输出扩展，不选择历史版本的 Service schema。响应内可访问 URL 根据外部 public base URL 生成，路径与上表一致。
+Gateway 将统一 /v1/sessions 路径交给 Agent Service。同一 Session 只有一套执行资源和公开协议；Header 仅选择已声明的输出扩展，不选择历史版本的 Service schema。响应内可访问 URL 根据外部 public base URL 生成，路径与上表一致。
 
 目标协议不提供 POST /turns 或 POST /turns/{t}/inputs，全部交互写入 events。现有调用方同步改为目标协议，不保留历史写入口或请求体别名。后续若增加便利写入口，作为新扩展明确设计，并复用同一受理过程。
 
@@ -94,15 +94,15 @@ Gateway 将统一 /v1/sessions 路径交给 Session Portal。同一 Session 只�
 | `x-api-key` | 使用本平台应用凭据，不是调用 Anthropic 账户的密钥 |
 | `Authorization: Bearer ...` | 允许平台用户令牌；与 x-api-key 同时出现时拒绝，避免身份歧义 |
 | `anthropic-version` | 首批仅接受 2023-06-01；其他版本验收后加入，不据此承诺其他 Claude API |
-| `anthropic-beta` | Claude 兼容调用携带 AgentScope Service Beta；未知 Beta 明确拒绝，不静默启用 |
+| `anthropic-beta` | Claude 兼容调用携带 Managed Agents Beta；未知 Beta 明确拒绝，不静默启用 |
 | `anthropic-workspace-id` | 仅通过已授权的 Workspace 到 Tenant/Namespace 绑定解析；不是任意命名空间选择器 |
-| `X-AgentScope-Tenant/Namespace` | 原生作用域选择；与 Workspace 绑定冲突时拒绝 |
+| `X-Managed-Agents-Tenant/Namespace` | 原生作用域选择；与 Workspace 绑定冲突时拒绝 |
 | `Idempotency-Key` | 见幂等章节；扩展事件要求稳定键 |
-| `AgentScope-Extensions` | 首批仅支持可选输出扩展 turn-inputs-v1；不参与业务幂等摘要 |
+| `Managed-Agents-Extensions` | 首批仅支持可选输出扩展 turn-inputs-v1；不参与业务幂等摘要 |
 | `Last-Event-ID` | 首批 Claude SSE 不提供可靠续传；后续独立 delivery 接口定义其支持规则 |
 | `request-id` | 每次 HTTP 尝试的响应关联号，包含重试尝试 |
 
-业务意图和目标 ID 只能放在消息体。Header 不接受“当前 Turn”“steer”等业务指令。单个事件出现合法的 agentscope_service 扩展时，POST 响应自动返回该事件的扩展回执；首版消息体语义固定为 turn-inputs-v1。Claude 既有 GET/SSE 接口增加输出字段或扩展事件时需要显式选择；专用 Turn/Input/output 读接口本身就是扩展资源，不要求该 Header。扩展版本未知时返回 400，不回退为普通用户消息。
+业务意图和目标 ID 只能放在消息体。Header 不接受“当前 Turn”“steer”等业务指令。单个事件出现合法的 managed_agents 扩展时，POST 响应自动返回该事件的扩展回执；首版消息体语义固定为 turn-inputs-v1。Claude 既有 GET/SSE 接口增加输出字段或扩展事件时需要显式选择；专用 Turn/Input/output 读接口本身就是扩展资源，不要求该 Header。扩展版本未知时返回 400，不回退为普通用户消息。
 
 SDK 可通过配置 base URL 使用兼容子集。高级调用是否可通过官方 SDK 的额外请求体机制传入，需要逐版本验证；不能因 Python/TypeScript 某一版本接受未知字段而推定所有 SDK 都接受。平台 SDK 应提供类型化封装。
 
@@ -118,9 +118,9 @@ SDK 可通过配置 base URL 使用兼容子集。高级调用是否可通过官
 | Thread | 独立 Agent 上下文；不等于 Turn |
 | Run/Attempt | 内部执行激活或重试记录；不代替 Turn ID |
 
-ID 全部作为不透明字符串处理，示例使用 evt_、turn_、input_ 前缀。工具 Event ID、原生 tool_call_id、Action ID 和 Hands task_id 必须分别保存；客户端不能根据前缀或字符串拼接相互推导。ID 形状由目标协议定义，不以兼容当前生成格式为前提。
+ID 全部作为不透明字符串处理，示例使用 evt_、turn_、input_ 前缀。工具 Event ID、原生 tool_call_id、Action ID 和 Tool Worker task_id 必须分别保存；客户端不能根据前缀或字符串拼接相互推导。ID 形状由目标协议定义，不以兼容当前生成格式为前提。
 
-一个 new_turn 事件创建一个 Turn；一个显式 steer/inject/cancel 事件创建一个 Input。一个工具确认或外部结果事件关联一个 reply Input。普通 Claude 消息的映射受前述兼容范围约束。持久 Event ID 是输入处理前就分配的身份，不能到 Brain 生成原生消息后再分配另一份输入事件。
+一个 new_turn 事件创建一个 Turn；一个显式 steer/inject/cancel 事件创建一个 Input。一个工具确认或外部结果事件关联一个 reply Input。普通 Claude 消息的映射受前述兼容范围约束。持久 Event ID 是输入处理前就分配的身份，不能到 Agent Harness Runtime 生成原生消息后再分配另一份输入事件。
 
 ## 创建和查询 Session
 
@@ -141,7 +141,7 @@ Idempotency-Key: session-001
 }
 ~~~
 
-首批 agent 接受 ID 或版本引用；其余创建字段按兼容矩阵和 capability 校验。资源 ID 必须属于本平台且可被调用者使用。不能将调用者提供的 metadata、agentscope_service 或 Header 用作内部 actor 身份。
+首批 agent 接受 ID 或版本引用；其余创建字段按兼容矩阵和 capability 校验。资源 ID 必须属于本平台且可被调用者使用。不能将调用者提供的 metadata、managed_agents 或 Header 用作内部 actor 身份。
 
 不带 initial_events 的 Session 返回空闲状态。若以后开启 initial_events，创建与初始输入的校验、持久保存和失败边界须满足独立契约，不能先返回创建成功后再默默丢弃初始事件。
 
@@ -185,7 +185,7 @@ Idempotency-Key: session-001
 
 execution_identity 的示例只适用于实际存在且通过兼容验证的 service-account 执行身份。模型配置的实际必填子字段以冻结 schema 为准；本示例不是对任意模型配置的放行。可选统计暂不可用时省略其子字段，不补零。未实现的 Outcome 功能不能接受创建请求，仅在无相关记录时返回空列表。
 
-启用 turn-inputs-v1 后增加 agentscope_service：
+启用 turn-inputs-v1 后增加 managed_agents：
 
 ~~~json
 {
@@ -198,7 +198,7 @@ execution_identity 的示例只适用于实际存在且通过兼容验证的 ser
 }
 ~~~
 
-这个对象位于 Session 响应的 `agentscope_service` 字段，不取代标准 `status`。Session 更新不属于首批；后续先开放 title/metadata，并统一按 Claude 基线实现 metadata 合并，不再提供另一套整体替换语义。
+这个对象位于 Session 响应的 `managed_agents` 字段，不取代标准 `status`。Session 更新不属于首批；后续先开放 title/metadata，并统一按 Claude 基线实现 metadata 合并，不再提供另一套整体替换语义。
 
 后续 Session 列表能力开启时返回 `data/next_page/prev_page`，默认 desc；公开 limit 默认 100、范围 1..256，这是本平台服务限制，不标称为 Claude 官方默认。page 绑定身份可见范围、协议版本、排序与过滤。过滤必须在完整结果集上应用，不能只过滤一页后错误报告分页结束。
 
@@ -212,7 +212,7 @@ execution_identity 的示例只适用于实际存在且通过兼容验证的 ser
     {
       "type": "user.message",
       "content": [{"type": "text", "text": "分析项目性能"}],
-      "agentscope_service": {
+      "managed_agents": {
         "intent": "new_turn"
       }
     }
@@ -227,11 +227,11 @@ execution_identity 的示例只适用于实际存在且通过兼容验证的 ser
 | events | 必填，非空数组，保留数组顺序 |
 | events[].type | Claude 输入事件类型；首批仅接受已公布类型 |
 | events[].content | 对用户消息为非空 content block 数组，不接受字符串快捷形式 |
-| events[].agentscope_service | 可选对象；出现时启用本事件的扩展语义 |
-| agentscope_service.intent | user.message 的扩展对象中必填，值为 new_turn、steer、inject；user.interrupt 的扩展对象中必填 cancel |
-| agentscope_service.turn_id | steer/inject/cancel 必填；不得填 current、latest 或空字符串 |
+| events[].managed_agents | 可选对象；出现时启用本事件的扩展语义 |
+| managed_agents.intent | user.message 的扩展对象中必填，值为 new_turn、steer、inject；user.interrupt 的扩展对象中必填 cancel |
+| managed_agents.turn_id | steer/inject/cancel 必填；不得填 current、latest 或空字符串 |
 
-role 由事件类型表达，不再增加可任意填写的 role。客户端不得发送 agent.*、session.*、span.*、agentscope_service.* 输出事件。标准字段与扩展字段都做白名单校验，空 agentscope_service 或未知扩展字段直接报错；后续工具答复的可选 turn_id 约束按工具章节单独定义。
+role 由事件类型表达，不再增加可任意填写的 role。客户端不得发送 agent.*、session.*、span.*、managed_agents.* 输出事件。标准字段与扩展字段都做白名单校验，空 managed_agents 或未知扩展字段直接报错；后续工具答复的可选 turn_id 约束按工具章节单独定义。
 
 new_turn 禁止带 turn_id；steer/inject 不允许 session_thread_id；定向 cancel 不允许同时指定 session_thread_id。首版不接受客户端自定义应用时机、优先级、强制执行或绕过权限参数，减少未定义组合。
 
@@ -242,7 +242,7 @@ new_turn 禁止带 turn_id；steer/inject 不允许 session_thread_id；定向 c
   "events": [{
     "type": "user.message",
     "content": [{"type": "text", "text": "另外生成招聘说明"}],
-    "agentscope_service": {"intent": "new_turn"}
+    "managed_agents": {"intent": "new_turn"}
   }]
 }
 ~~~
@@ -258,7 +258,7 @@ new_turn 永远创建独立 Turn，不修改现有 Turn。只要 Session 生命�
   "events": [{
     "type": "user.message",
     "content": [{"type": "text", "text": "优先检查数据库，先不要改缓存"}],
-    "agentscope_service": {"intent": "steer", "turn_id": "T1"}
+    "managed_agents": {"intent": "steer", "turn_id": "T1"}
   }]
 }
 ~~~
@@ -305,9 +305,9 @@ inject 使用相同格式，只将 intent 改为 inject。两者都不创建新 
 }
 ~~~
 
-Session Portal 通过公开工具 Event ID 解析真实 Session、Turn、Action 和工具调用，不信任客户端填写的物理任务 ID。确认映射为 allow/reason；外部结果映射为 content/is_error。若调用者可选填写 agentscope_service.turn_id，只作为一致性约束，必须与实际关联相同，不改变路由。
+Agent Service 通过公开工具 Event ID 解析真实 Session、Turn、Action 和工具调用，不信任客户端填写的物理任务 ID。确认映射为 allow/reason；外部结果映射为 content/is_error。若调用者可选填写 managed_agents.turn_id，只作为一致性约束，必须与实际关联相同，不改变路由。
 
-普通 Hands 工具由平台返回结果，客户端不能用 user.tool_result 接管。只有实际要求外部执行的待办可以接受外部结果；user.tool_result 还必须符合其 self_hosted 场景约束。失败工具结果保留 is_error，不自动等同于整个 Turn 失败。
+普通 Tool Worker 工具由平台返回结果，客户端不能用 user.tool_result 接管。只有实际要求外部执行的待办可以接受外部结果；user.tool_result 还必须符合其 self_hosted 场景约束。失败工具结果保留 is_error，不自动等同于整个 Turn 失败。
 
 审批检查 approve，外部结果检查 interact；两者不能用“统一事件入口”混成 invoke。答复 Input 应用后继续同一个 Turn；等待多个动作时可以分批答复，未齐备前不提前调用模型。
 
@@ -319,14 +319,14 @@ Session Portal 通过公开工具 Event ID 解析真实 Session、Turn、Action 
 {
   "events": [{
     "type": "user.interrupt",
-    "agentscope_service": {"intent": "cancel", "turn_id": "T1"}
+    "managed_agents": {"intent": "cancel", "turn_id": "T1"}
   }]
 }
 ~~~
 
-这是 AgentScope Service 的精确取消扩展，不是对 Claude user.interrupt 的重新定义。它固定取消 T1，不取消已排队 T2，不归档 Session，不回退外部副作用。T1 可处于排队、准备、执行或等待阶段；已终结目标的新取消请求返回 409 turn_terminal。原键重复取消返回原受理回执。
+这是 Managed Agents 的精确取消扩展，不是对 Claude user.interrupt 的重新定义。它固定取消 T1，不取消已排队 T2，不归档 Session，不回退外部副作用。T1 可处于排队、准备、执行或等待阶段；已终结目标的新取消请求返回 409 turn_terminal。原键重复取消返回原受理回执。
 
-不带 agentscope_service 的 user.interrupt 首批只接受无 session_thread_id 的单主线程场景，停止当前轮但不删除已排队请求。受理时持久固定目标，重试不能重新绑定到下一轮。开启线程能力后，指定 thread 针对相应线程，不指定时按已验证范围处理非归档线程；未开启的线程或 Workflow Run 语义返回 unsupported_capability。
+不带 managed_agents 的 user.interrupt 首批只接受无 session_thread_id 的单主线程场景，停止当前轮但不删除已排队请求。受理时持久固定目标，重试不能重新绑定到下一轮。开启线程能力后，指定 thread 针对相应线程，不指定时按已验证范围处理非归档线程；未开启的线程或 Workflow Run 语义返回 unsupported_capability。
 
 需要取消后改做新任务时，可在同一批次提交 interrupt 和后续 user.message/new_turn。后续工作不能在停止事实尚未结清时抢跑；标准中断路径必须先公开 idle/end_turn，再开始下一轮。已有排队 Turn 不因这个批次被静默删除。若要替换整个队列，客户端必须逐个取消，首批没有隐式 replace_all。
 
@@ -351,7 +351,7 @@ Session Portal 通过公开工具 Event ID 解析真实 Session、Turn、Action 
     "type": "user.message",
     "content": [{"type": "text", "text": "分析项目性能"}],
     "processed_at": null,
-    "agentscope_service": {
+    "managed_agents": {
       "schema_version": 1,
       "intent": "new_turn",
       "turn_id": "T1",
@@ -370,7 +370,7 @@ steer/inject 的扩展回执形式：
     "type": "user.message",
     "content": [{"type": "text", "text": "优先检查数据库"}],
     "processed_at": null,
-    "agentscope_service": {
+    "managed_agents": {
       "schema_version": 1,
       "intent": "steer",
       "turn_id": "T1",
@@ -480,7 +480,7 @@ Turn/Input 列表返回 data/next_cursor/has_more；默认 limit=100、范围 1.
 
 ## Session 状态和生命周期
 
-Claude Session 状态只输出 idle、running、rescheduling、terminated，不能把 waiting_tool、accepted 或 archived 填入标准 status。精确状态在 Turn 和 agentscope_service.lifecycle 中表达。
+Claude Session 状态只输出 idle、running、rescheduling、terminated，不能把 waiting_tool、accepted 或 archived 填入标准 status。精确状态在 Turn 和 managed_agents.lifecycle 中表达。
 
 | 实际情形 | Session 投影 |
 | --- | --- |
@@ -496,7 +496,7 @@ waiting_tool 不是 requires_action，不能要求用户填平台工具结果。
 
 archive/delete 统一遵循已验证的 Claude 空闲及未结清动作检查；有活跃工作时返回基线要求的状态错误，提示先中断。实际内部清理可以异步，但对外前置条件和响应语义不能据此改变。
 
-删除成功的外部可见性与后台清理分开：只有删除契约允许的资源已经不可读、后续输入被拒绝时，才返回 session_deleted；后台安全清理不能借此宣称物理副作用回滚。首批不提供 restore；后续需要时作为 AgentScope Service 扩展设计，不伪称 Claude 已有 API。
+删除成功的外部可见性与后台清理分开：只有删除契约允许的资源已经不可读、后续输入被拒绝时，才返回 session_deleted；后台安全清理不能借此宣称物理副作用回滚。首批不提供 restore；后续需要时作为 Managed Agents 扩展设计，不伪称 Claude 已有 API。
 
 预算暂停、Workflow Run、子线程汇总涉及额外状态机，未通过专项验收时不开放。不能把“提高预算自动恢复”和“失败 Turn 显式 resume”混为一谈。
 
@@ -519,7 +519,7 @@ archive/delete 统一遵循已验证的 Claude 空闲及未结清动作检查；
 
 ~~~json
 {
-  "agentscope_service": {
+  "managed_agents": {
     "schema_version": 1,
     "session_id": "S",
     "turn_id": "T1",
@@ -536,27 +536,27 @@ archive/delete 统一遵循已验证的 Claude 空闲及未结清动作检查；
 
 | 类型 | 关键数据 |
 | --- | --- |
-| agentscope_service.turn.accepted | turn_id、input_event_ids、受理时间 |
-| agentscope_service.turn.preparing | turn_id、status |
-| agentscope_service.turn.running | turn_id、status；恢复时可再次出现 |
-| agentscope_service.turn.waiting_tool | turn_id、公开工具引用 |
-| agentscope_service.turn.requires_action | turn_id、待答复公开 Event ID |
-| agentscope_service.turn.completed | turn_id、output_event_ids、独立 output_url |
-| agentscope_service.turn.failed | turn_id、公开错误 |
-| agentscope_service.turn.cancelled | turn_id、取消处置结果 |
-| agentscope_service.input.accepted | input_id、turn_id、event_id、input_type |
-| agentscope_service.input.applied | input_id、turn_id、应用时间 |
-| agentscope_service.input.rejected | input_id、turn_id、rejection_reason |
-| agentscope_service.item.finalized | item_id、turn_id、最终输出引用 |
+| managed_agents.turn.accepted | turn_id、input_event_ids、受理时间 |
+| managed_agents.turn.preparing | turn_id、status |
+| managed_agents.turn.running | turn_id、status；恢复时可再次出现 |
+| managed_agents.turn.waiting_tool | turn_id、公开工具引用 |
+| managed_agents.turn.requires_action | turn_id、待答复公开 Event ID |
+| managed_agents.turn.completed | turn_id、output_event_ids、独立 output_url |
+| managed_agents.turn.failed | turn_id、公开错误 |
+| managed_agents.turn.cancelled | turn_id、取消处置结果 |
+| managed_agents.input.accepted | input_id、turn_id、event_id、input_type |
+| managed_agents.input.applied | input_id、turn_id、应用时间 |
+| managed_agents.input.rejected | input_id、turn_id、rejection_reason |
+| managed_agents.item.finalized | item_id、turn_id、最终输出引用 |
 
-扩展事件同样有自身的稳定 id、type、processed_at，业务内容放在 agentscope_service 对象：
+扩展事件同样有自身的稳定 id、type、processed_at，业务内容放在 managed_agents 对象：
 
 ~~~json
 {
   "id": "evt_input_applied_1",
-  "type": "agentscope_service.input.applied",
+  "type": "managed_agents.input.applied",
   "processed_at": "2026-10-19T07:01:35Z",
-  "agentscope_service": {
+  "managed_agents": {
     "schema_version": 1,
     "session_id": "S",
     "turn_id": "T1",
@@ -568,7 +568,7 @@ archive/delete 统一遵循已验证的 Claude 空闲及未结清动作检查；
 }
 ~~~
 
-data/agentscope_service 命名不得同时承载两套平行 payload。未启用扩展时，严格兼容流不发送未知 agentscope_service.* 类型，也不强迫官方 SDK 处理这些类型。
+data/managed_agents 命名不得同时承载两套平行 payload。未启用扩展时，严格兼容流不发送未知 managed_agents.* 类型，也不强迫官方 SDK 处理这些类型。
 
 ### 投影映射
 
@@ -589,7 +589,7 @@ data/agentscope_service 命名不得同时承载两套平行 payload。未启用
 
 首批维护公开逻辑 Event 及其处理投影，兼容历史包含已受理的 pending 用户事件。普通 SSE 只在处理边界投递该 user.message；accepted 扩展通知用独立 ID 引用它。内部可以复用现有已提交日志与投影索引，无须为首批另建完整的 durable delivery 产品协议。
 
-AgentScope-Extensions 仅增加所选扩展字段和通知类型，不移除标准历史中的 pending 输入，也不改变标准 types、排序或时间过滤。后续 delivery 若提供不同的可投递事实集合，使用独立接口和游标；不能通过 Header 将 GET /events 切换成另一套历史集合。
+Managed-Agents-Extensions 仅增加所选扩展字段和通知类型，不移除标准历史中的 pending 输入，也不改变标准 types、排序或时间过滤。后续 delivery 若提供不同的可投递事实集合，使用独立接口和游标；不能通过 Header 将 GET /events 切换成另一套历史集合。
 
 来源原始字节、checkpoint、内部 prompt、凭据、租约令牌与私有 thinking 不进入公开投影。内容先经过现有公开字段过滤，再进行 Claude 结构映射。
 
@@ -642,7 +642,7 @@ Claude 基线的具体 SSE 帧字段由固定 SDK 验收确定，不声明 Last-
 
 ### Preview delta
 
-event_deltas 不属于首批。后续开启时沿用 event_start/event_delta 和 content_delta 结构；agent.message 的完整事件覆盖临时累积，agent.thinking 仅在存在可靠信号时发送 start，不公开私有思考文本。Messages API 的 content_block_delta 不能直接充当 AgentScope Service preview。
+2026-10-23 修订：显式 `event_deltas[]=agent.message` 启用 event_start/event_delta 和 content_delta 结构；完整 agent.message 覆盖临时累积。仅支持公开助手文本，不支持 thinking 或工具预览。Messages API 的 content_block_delta 不能直接充当 Managed Agents preview。
 
 ~~~text
 event: event_start
@@ -654,7 +654,7 @@ data: {"type":"event_delta","event_id":"evt_answer_1","delta":{"type":"content_d
 
 Preview 不分配自身的 Event ID/processed_at/cursor，不进入兼容历史或 durable log，也不按被预览 Event ID 丢重所有片段。durable 流中的 preview 不设置 SSE id，只由已提交持久事实推进水位。重连不承诺重放丢失 preview，客户端靠完整事件或模型请求结束收敛。
 
-预览只从已授权、已过滤的公开输出构造；首版不为了降低延迟旁路 Brain 的提交边界。若现有已提交 chunk 的时机或结构不足以满足目标效果，关闭 event_deltas capability，不能假称已提供 token 实时预览。
+预览从模型响应适配器中的公开文本构造，只向模型开始时已鉴权、已选择的在线连接尽力发送，经 Redis 定向传输，不等待执行提交，也不进入可靠 MQ 或投影包。它不能授权工具或驱动恢复；连接缺口或慢消费停止预览，完整事件仍须经过执行提交与持久投影。
 
 ### 流结束和异常
 
@@ -662,7 +662,7 @@ Turn 结束不关闭 Session SSE。Session terminated/deleted 才形成相应终
 
 握手前错误返回正常 HTTP JSON。HTTP 200 已提交后的运输错误不能再伪装成 HTTP 409/503。首批通过断连和重新补历史恢复，不发送自定义运输错误类型。后续独立 delivery 流可以定义无 ID 的控制帧；它不进入持久历史，也不表示 Session/Turn 失败。
 
-运行失败使用已提交的 session.error 与相应 Turn 终态事实，不能把 Session Portal 连接错误记录成执行失败。后续 delivery 回放过大时返回/报告 event_replay_limit，要求先分页补齐；授权失效停止流，重连重新鉴权。
+运行失败使用已提交的 session.error 与相应 Turn 终态事实，不能把 Agent Service 连接错误记录成执行失败。后续 delivery 回放过大时返回/报告 event_replay_limit，要求先分页补齐；授权失效停止流，重连重新鉴权。
 
 ## Turn 最终结果和后续快照
 
@@ -731,7 +731,7 @@ data 只包含已提交的最终输出消息，按最终输出顺序排列；out
 | --- | --- |
 | 键长度 | 非空 1..256 字符 |
 | 标准兼容请求 | 可不带键；不承诺自动识别跨请求重试 |
-| 包含 agentscope_service 交互意图的请求 | 必须带键，缺失返回 400 idempotency_key_required |
+| 包含 managed_agents 交互意图的请求 | 必须带键，缺失返回 400 idempotency_key_required |
 | 新协议创建和生命周期操作 | 接受稳定键；平台 SDK 默认生成并在同一意图重试时复用 |
 | 作用域 | 平台 principal、Tenant、Namespace、Session（创建时为创建作用域）和逻辑操作 |
 | 内容校验 | 同键同规范请求返回原受理结果；异内容返回 409 idempotency_conflict |
@@ -760,7 +760,7 @@ data 只包含已提交的最终输出消息，按最终输出顺序排列；out
 
 新协议成功受理时，同事务保存 HTTP 状态、原始 data 顺序、Event/Turn/Input ID、受理时 processed_at 和回执状态；不在提交后重新读取状态拼装首次响应。同键同内容且输出选择相同时，首次响应和重试得到相同 HTTP 200 业务主体，即使后台已推进。变更合法输出选择只改变可选表示，不刷新冻结状态；request-id Header 属于本次尝试。当前状态通过 REST 查询。
 
-提交前的参数、权限、限流拒绝不占用成功键；相同合法请求在条件恢复后可以受理。已经提交但响应丢失、发布暂时失败或 Session Portal 重启时，原键必须找回原受理记录，不能创建第二份 Turn/Input。
+提交前的参数、权限、限流拒绝不占用成功键；相同合法请求在条件恢复后可以受理。已经提交但响应丢失、发布暂时失败或 Agent Service 重启时，原键必须找回原受理记录，不能创建第二份 Turn/Input。
 
 并发同键请求由持久唯一约束和事务协调：一个成功，其他读取同一原结果；协调超时可返回可重试的 request_in_progress，但不能让两个请求同时越过受理门。事务结果不明时返回可重试错误并要求保留原键，不能把“未观察到结果”当作未提交。
 
@@ -823,7 +823,7 @@ code/details 是扩展请求或已选择扩展输出时提供的稳定信息；�
 
 混合批次逐项授权，拥有 invoke 不自动拥有 approve/cancel。原始调用者身份与目标 scope 随受理记录保存；后台投递不以内部凭据替换调用者。权限撤销、目标过期等后续失败必须有持久拒绝/处置记录；临时授权源不可用继续恢复，不捏造永久拒绝。
 
-SSE 定期复核 read，REST 每次重新授权。Body 中的 metadata、agentscope_service 和任何 Event ID 都不能改变租户、Namespace 或原始调用者。
+SSE 定期复核 read，REST 每次重新授权。Body 中的 metadata、managed_agents 和任何 Event ID 都不能改变租户、Namespace 或原始调用者。
 
 ## 能力发现和 SDK
 
@@ -833,7 +833,7 @@ capabilities 应同时回答协议支持和当前动作可用性，不能只返�
 {
   "session_id": "S",
   "protocol": "claude-managed-sessions",
-  "protocol_revision": "agentscope-service-2026-10-19-draft3",
+  "protocol_revision": "managed-agents-2026-10-19-draft3",
   "compatibility": {
     "baseline": "managed-agents-2026-04-01",
     "anthropic_version": "2023-06-01",
@@ -861,7 +861,7 @@ capabilities 应同时回答协议支持和当前动作可用性，不能只返�
     "session_list": false,
     "session_update": false,
     "session_lifecycle": false,
-    "event_deltas": false,
+    "event_deltas": true,
     "system_message": false,
     "outcomes": false,
     "threads": false,
@@ -900,7 +900,7 @@ Service 对外 API 直接采用本文定义的目标协议，交互统一写入 
 | 阶段 | 工作 | 完成条件 |
 | --- | --- | --- |
 | 协议冻结 | 确认统一路径、意图、状态、幂等与 Claude 子集；固定 schema 和 SDK 基线 | 本文首批契约一致，待验证项有明确范围 |
-| 统一实现 | 调整 Session Portal/Gateway、受理与投影，平台 SDK、前端及测试同步更新 | 所有调用方使用目标请求响应，无历史协议分支 |
+| 统一实现 | 调整 Agent Service/Gateway、受理与投影，平台 SDK、前端及测试同步更新 | 所有调用方使用目标请求响应，无历史协议分支 |
 | 首批验收 | 文本交互、中断边界、Turn/Input/output、历史和普通 SSE | Claude 子集、幂等、授权、排队、边界应用及结果读取验收通过 |
 | 扩大兼容范围 | 工具答复、Session 列表/更新/生命周期、image 等逐项上线 | 各自状态、权限及 schema 验收通过，不反向成为首批门槛 |
 | 可靠观察 | 独立 delivery、snapshot、恢复位置及可选 preview | 单独冻结协议并通过恢复验收，不改变 Claude 历史接口 |
@@ -910,9 +910,9 @@ Service 对外 API 直接采用本文定义的目标协议，交互统一写入 
 | 组件 | 本方案要求 |
 | --- | --- |
 | Gateway | 统一 /v1/sessions 路由、公共 Header 保留及内部 Header 清理；不解析消息决定 Turn 归属 |
-| Session Portal | schema 校验、原始身份授权、扩展归一、原子受理、幂等响应、查询与公开投影 |
-| Brain | 消费原有 Turn/Input、边界应用、原生提交和自动恢复；不理解公共 HTTP Header |
-| Hands | 真实工具结果及事件 Outbox；Runtime 汇合结果并可靠发布 Resume，不因公开协议变更重复工具 |
+| Agent Service | schema 校验、原始身份授权、扩展归一、原子受理、幂等响应、查询与公开投影 |
+| Agent Harness Runtime | 消费原有 Turn/Input、边界应用、原生提交和自动恢复；不理解公共 HTTP Header |
+| Tool Worker | 真实工具结果及事件 Outbox；Runtime 汇合结果并可靠发布 Resume，不因公开协议变更重复工具 |
 | Control Plane | 资源和作用域授权、管理接口；不作为事件字段适配后的第二个执行器 |
 
 适配器归一到 new_turn、steer、inject、reply、cancel 等现有执行语义。需要补充的请求回执、公开 ID 关联和投影索引属于协议持久化，不是重写分布式执行协议。
@@ -944,7 +944,7 @@ Service 对外 API 直接采用本文定义的目标协议，交互统一写入 
 | T08 | 首批 | cancel 与 completed 竞争 | 原终态不回退，回执说明真实处置 |
 | R01 | 首批 | durable=false、未打开 SSE、无 snapshot | Turn 成功后可独立读取全部最终输出及正确 Event ID |
 | R02 | 首批 | 输出未提交、失败无输出、结果多页 | 空结果不冒充完成；终态可停止等待；分页集合稳定，不夹入部分输出 |
-| I01 | 首批 | HTTP 超时、提交后断连和 Session Portal 重启 | 原键找回原操作及冻结回执，无第二份执行 |
+| I01 | 首批 | HTTP 超时、提交后断连和 Agent Service 重启 | 原键找回原操作及冻结回执，无第二份执行 |
 | I02 | 首批 | 同键异内容或目标、并发同键且原操作快速终结 | 单一受理或明确冲突；竞争方先协调请求键，不按目标终态误拒绝，不重复占用额度 |
 | I03 | 首批 | 新批次一项格式/权限/额度失败 | 整批未受理，无部分工具执行 |
 | I04 | 首批 | 批次受理后发布/执行失败 | 已受理记录保留并恢复，不回滚已发生的外部副作用 |
@@ -953,7 +953,7 @@ Service 对外 API 直接采用本文定义的目标协议，交互统一写入 
 | I07 | 后续 | 归档或删除后的原键重试 | 归档仍按当前可见性重放；删除普通输入 404，删除命令可按授权重放 |
 | E01 | 首批 | user 输入受理再应用、item 完成再 finalized | 不重复完整消息，Event ID 稳定 |
 | E02 | 首批 | 同一已提交事实重复投递或再次投影 | 公开 Event ID 稳定，只生成一份投影，不重新执行工作 |
-| S01 | 后续 | 独立 delivery 跨 Session Portal 断线恢复 | 相同位置恢复正确，应用后才推进水位，不改 Claude GET /events |
+| S01 | 后续 | 独立 delivery 跨 Agent Service 断线恢复 | 相同位置恢复正确，应用后才推进水位，不改 Claude GET /events |
 | S02 | 首批 | 普通 SSE 开流与历史补齐竞争 | 无订阅空窗，重复可通过 Event ID 收敛 |
 | S03 | 后续 | snapshot 多页及过期 | 固定上界恢复完整，过期可重建；不影响独立 /output |
 | S04 | 后续 | preview 与完整消息、模型中断 | 预览不入历史、不推进 cursor，完整事件或 span end 收敛 |
@@ -971,7 +971,7 @@ Service 对外 API 直接采用本文定义的目标协议，交互统一写入 
 2. 未验证的普通消息并发/批次组合不开放，不以候选调度冒充兼容；显式 new_turn 的独立排队语义固定。扩展批次原子受理与标准批次基线分别验收。
 3. 幂等先查原记录再校验新操作的易变准入，回执在事务内冻结；合法输出选择不改变业务身份。
 4. durable、snapshot、preview、工具答复及 Session 管理扩展不是首批前置。后续能力逐项开放，不提供任意 priority、抢占长工具或隐式 replace_all。
-5. AgentScope Service 自身 API 可直接重构；服务端、SDK、前端和文档统一更新，不设置历史 API 共存期、客户端迁移窗口或开发数据全量回填门槛。
+5. Managed Agents 自身 API 可直接重构；服务端、SDK、前端和文档统一更新，不设置历史 API 共存期、客户端迁移窗口或开发数据全量回填门槛。
 
 发布前仍须冻结实际 Agent/执行身份映射、schema 快照和 SDK 精确版本，并通过所有首批验收项；这些验证决定对外可声明的精确兼容范围。
 
@@ -981,22 +981,22 @@ Service 对外 API 直接采用本文定义的目标协议，交互统一写入 
 
 | 依据 | 源码位置 |
 | --- | --- |
-| 原生公开路由、Turn/Input 写入及观察接口 | [SessionApiController.java](../service-session-portal/src/main/java/io/agentscope/builder/portal/api/SessionApiController.java) |
-| 持久 Turn 受理与发布失败补偿 | [ManagedSessionTurnsApi.java](../service-session-portal/src/main/java/io/agentscope/builder/portal/session/ManagedSessionTurnsApi.java) |
-| Input 类型、审批校验和权限映射 | [ManagedSessionTurnsApi.java](../service-session-portal/src/main/java/io/agentscope/builder/portal/session/ManagedSessionTurnsApi.java) |
-| 当前事件信封及 cursor | [ManagedSessionTurnsApi.java](../service-session-portal/src/main/java/io/agentscope/builder/portal/session/ManagedSessionTurnsApi.java) |
-| 当前原生 Session 状态简化投影 | [ManagedSessionTurnsApi.java](../service-session-portal/src/main/java/io/agentscope/builder/portal/session/ManagedSessionTurnsApi.java) |
-| 当前 metadata 替换与生命周期 | [SessionApi.java](../service-session-portal/src/main/java/io/agentscope/builder/portal/session/SessionApi.java)、[SessionApi.java](../service-session-portal/src/main/java/io/agentscope/builder/portal/session/SessionApi.java) |
-| Input 幂等、输入关闭及真实待办校验 | [ManagedAdmissionStore.java](../service-common/src/main/java/io/agentscope/builder/runtime/managed/ManagedAdmissionStore.java) |
-| admission_sequence 与执行顺序的区别 | [ManagedAdmissionStore.java](../service-common/src/main/java/io/agentscope/builder/runtime/managed/ManagedAdmissionStore.java) |
-| 现有 steer/inject 同在推理边界追加消息 | [ManagedRuntimeInputMiddleware.java](../service-common/src/main/java/io/agentscope/builder/runtime/managed/ManagedRuntimeInputMiddleware.java) |
-| 原生事件到公开事实，含 item.finalized | [CommittedSessionEventProjector.java](../service-common/src/main/java/io/agentscope/builder/web/managed/CommittedSessionEventProjector.java) |
-| 当前输入 message/input 二选一及 user role | [AgentSessionInput.java](../service-common/src/main/java/io/agentscope/builder/web/managed/AgentSessionInput.java) |
-| 当前错误信封与状态映射 | [SessionApiErrors.java](../service-session-portal/src/main/java/io/agentscope/builder/portal/config/SessionApiErrors.java) |
-| Gateway 向 Session Portal 路由 | [application.yml](../service-gateway/src/main/resources/application.yml) |
+| 原生公开路由、Turn/Input 写入及观察接口 | [SessionApiController.java](../agent-service/src/main/java/io/agentcore/managed/server/agentservice/api/SessionApiController.java) |
+| 持久 Turn 受理与发布失败补偿 | [ManagedSessionTurnsApi.java](../agent-service/src/main/java/io/agentcore/managed/server/agentservice/session/ManagedSessionTurnsApi.java) |
+| Input 类型、审批校验和权限映射 | [ManagedSessionTurnsApi.java](../agent-service/src/main/java/io/agentcore/managed/server/agentservice/session/ManagedSessionTurnsApi.java) |
+| 当前事件信封及 cursor | [ManagedSessionTurnsApi.java](../agent-service/src/main/java/io/agentcore/managed/server/agentservice/session/ManagedSessionTurnsApi.java) |
+| 当前原生 Session 状态简化投影 | [ManagedSessionTurnsApi.java](../agent-service/src/main/java/io/agentcore/managed/server/agentservice/session/ManagedSessionTurnsApi.java) |
+| 当前 metadata 替换与生命周期 | [SessionApi.java](../agent-service/src/main/java/io/agentcore/managed/server/agentservice/session/SessionApi.java)、[SessionApi.java](../agent-service/src/main/java/io/agentcore/managed/server/agentservice/session/SessionApi.java) |
+| Input 幂等、输入关闭及真实待办校验 | [ManagedAdmissionStore.java](../common/src/main/java/io/agentcore/managed/server/runtime/managed/ManagedAdmissionStore.java) |
+| admission_sequence 与执行顺序的区别 | [ManagedAdmissionStore.java](../common/src/main/java/io/agentcore/managed/server/runtime/managed/ManagedAdmissionStore.java) |
+| 现有 steer/inject 同在推理边界追加消息 | [ManagedRuntimeInputMiddleware.java](../agent-harness-runtime/java/adapter-agentscope/src/main/java/io/agentcore/managed/server/runtime/managed/ManagedRuntimeInputMiddleware.java) |
+| 原生事件到公开事实，含 item.finalized | [CommittedSessionEventProjector.java](../agent-harness-runtime/java/adapter-agentscope/src/main/java/io/agentcore/managed/server/web/managed/CommittedSessionEventProjector.java) |
+| 当前输入 message/input 二选一及 user role | [AgentSessionInput.java](../common/src/main/java/io/agentcore/managed/server/web/managed/AgentSessionInput.java) |
+| 当前错误信封与状态映射 | [SessionApiErrors.java](../agent-service/src/main/java/io/agentcore/managed/server/agentservice/config/SessionApiErrors.java) |
+| Gateway 向 Agent Service 路由 | [application.yml](../gateway/src/main/resources/application.yml) |
 | 当前手册中最终输出过滤与投影的差异 | [managed-api-cluster-walkthrough.md:134](managed-api-cluster-walkthrough.md) |
 | MCP 长工具真实挂起和同 Turn 自动恢复验收记录 | [managed-mcp-long-tool-cluster-walkthrough.md:155](managed-mcp-long-tool-cluster-walkthrough.md) |
-| 原生 Java/TypeScript/Python 客户端 | [ManagedSessionClient.java](../service-client/src/main/java/io/agentscope/service/client/ManagedSessionClient.java)、[managed-session-client.ts](../service-controlplane/sdk/dsh/src/managed-session-client.ts)、[managed.py](../service-controlplane/sdk/python/agentscope_service/managed.py) |
+| 原生 Java/TypeScript/Python 客户端 | [ManagedSessionClient.java](../java-client/src/main/java/io/agentcore/managed/client/ManagedSessionClient.java)、[managed-session-client.ts](../control-plane/sdk/dsh/src/managed-session-client.ts)、[managed.py](../control-plane/sdk/python/managed_agents/managed.py) |
 
 当前手册中的历史最终输出筛选使用 item.completed 加 final_output，而当前投影在 item.finalized 标记 final_output；本方案记录该差异，不在此次改动中修正文档或运行代码。
 
@@ -1018,11 +1018,11 @@ Service 对外 API 直接采用本文定义的目标协议，交互统一写入 
 | [Workflow runs](https://platform.claude.com/docs/en/managed-agents/workflow-runs) | Run 不等于 Turn，interrupt 不结束所有后台 Run |
 | [API errors](https://platform.claude.com/docs/en/api/errors) | 基础错误信封及 request-id |
 
-官方事实仅用于 Claude 兼容范围；agentscope_service 字段、独立查询、批次原子受理、可靠续传、幂等保留期与开发期实施步骤均为本平台设计。未通过上述验收前，不将该方案或示例视为已经上线的 API。
+官方事实仅用于 Claude 兼容范围；managed_agents 字段、独立查询、批次原子受理、可靠续传、幂等保留期与开发期实施步骤均为本平台设计。未通过上述验收前，不将该方案或示例视为已经上线的 API。
 
 ## 本项目首批实施记录
 
-- 自有字段为 `agentscope_service`，通知为 `agentscope_service.*`，输出选择为 `AgentScope-Extensions: turn-inputs-v1`。
+- 自有字段为 `managed_agents`，通知为 `managed_agents.*`，输出选择为 `Managed-Agents-Extensions: turn-inputs-v1`。
 - 固定 SDK：Python anthropic 1.15.0、TypeScript @anthropic-ai/sdk 0.135.0、Java com.anthropic:anthropic-java 2.73.0。完整验收记录见 `../tests/session-protocol/verification.md`；版本固定本身不构成兼容保证。
 - 接受官方 SDK 自动附带的 `beta=true` 传输查询参数，它不参与历史过滤或业务幂等。
 - 批次请求、输入关联、版本化公开投影和输出集合使用新增协议表；现有执行表、MQ 及二进制契约保留。

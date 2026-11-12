@@ -69,10 +69,10 @@ class Verification:
                             "sh", "mqadmin", *argv)
 
     def bootstrap(self):
-        if not self.args.namespace.startswith("agentscope-suspend-"):
+        if not self.args.namespace.startswith("managed-agents-suspend-"):
             raise ValueError("Refusing to test outside an isolated namespace")
         ns = json.loads(self.command(*self.base, "get", "namespace", self.args.namespace, "-o", "json"))
-        assert ns["metadata"]["labels"].get("purpose") == "agentscope-suspend-isolation"
+        assert ns["metadata"]["labels"].get("purpose") == "managed-agents-suspend-isolation"
         for app in ["mq-namesrv", "mq-broker", "mq-proxy", "probe-redis"]:
             self.wait(app + " ready", lambda app=app: self.ready("app=" + app), 420)
         for topic in ["suspend_turns", "suspend_resumes"]:

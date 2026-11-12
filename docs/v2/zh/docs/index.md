@@ -26,13 +26,13 @@ ReAct 的“推理、执行工具、观察结果”循环是 AgentScope Harness 
 
 处理代码修复、调研等多步骤任务时，可以启用 Todo 跟踪进度，结合 Plan Mode 先调查、写计划，经用户确认后再执行；独立工作可委派给子 Agent，同步等待或在后台完成。计划、待办和子任务各有状态，后续执行能够继续跟进未完成的工作。有明确验收标准时，应用还可以记录任务要求与实际验证结果，为下一步提供依据。
 
-Session Log 保存消息、工具调用与交互过程，checkpoint 保存继续工作所需的状态。需要后台执行、忙时排队、补充要求或中断续做时，使用 `AgentSession` 管理任务；前端则从日志补齐已有进度，再接收新增事件。详见[计划模式](/v2/zh/docs/harness/plan-mode)、[子 Agent](/v2/zh/docs/harness/subagent)和[会话操作与恢复](/v2/zh/docs/harness/session-log)。
+Thread 日志保存原生消息、工具与交互事实，checkpoint 保存继续调用所需状态。后台任务由 [Durable](/v2/zh/docs/harness/durable) 受理、排队和恢复，前端通过公共快照与事件观察任务。
 
 ### 管理上下文，控制模型能看到什么
 
 Harness 在每次请求模型前，重新组织稳定指令、对话历史、当前任务状态和参考材料。工作区提供项目规则、记忆、知识与 Skill，动态来源按轮次补充最新业务事实；应用可以配置内容来源、优先级和预算，让本轮输入围绕当前工作展开。记忆和外部材料作为参考资料，业务数据的读取权限仍由应用校验。
 
-随着任务变长，Harness 将过大的工具结果保存到文件，按预算选择材料，并通过结构化压缩保留目标、关键发现和下一步。模型使用精简后的工作上下文，完整执行历史仍保留在 Session Log 中；跨会话的信息则由长期记忆承接。详见[上下文管理](/v2/zh/docs/harness/context)、[工作区](/v2/zh/docs/harness/workspace)和[记忆](/v2/zh/docs/harness/memory)。
+随着任务变长，Harness 将过大的工具结果保存到文件，按预算选择材料，并通过结构化压缩保留目标、关键发现和下一步。模型使用精简后的工作上下文，完整执行历史仍保留在 Thread 日志 中；跨会话的信息则由长期记忆承接。详见[上下文管理](/v2/zh/docs/harness/context)、[工作区](/v2/zh/docs/harness/workspace)和[记忆](/v2/zh/docs/harness/memory)。
 
 ### 让工具受控、安全地执行
 
@@ -44,7 +44,7 @@ Java 工具和 MCP 将模型的行动请求连接到文件、代码与业务系�
 
 AgentScope 通过模型扩展接入不同供应商，你可以按任务选择模型，并配置重试与备用模型策略。统一的消息结构承载文本、图片、文件和工具结果；业务能力可以通过 Java 工具或 MCP 接入。需要动态上下文、模型调用策略、审计或工具检查时，可以通过 Middleware 介入执行环节。详见[模型](/v2/zh/docs/building-blocks/model)、[工具](/v2/zh/docs/building-blocks/tool)和[Middleware](/v2/zh/docs/building-blocks/middleware)。
 
-从本地开发走向多用户、多副本部署时，需要为用户和会话配置稳定身份，选择合适的工作区隔离范围，并使用各副本可访问的持久后端。Workspace 的 Filesystem 可以对接共享存储，Session Log 也支持替换后端；原生会话写入通过租约和写入隔离控制并发。沙箱生命周期与恢复策略则按所选执行后端配置。部署方式和存储选型见[上生产](/v2/zh/docs/others/going-to-production)。
+从本地开发走向多用户、多副本部署时，需要为用户和会话配置稳定身份，选择合适的工作区隔离范围，并使用各副本可访问的持久后端。Workspace 的 Filesystem 可以对接共享存储，Thread 日志 也支持替换后端；原生会话写入通过租约和写入隔离控制并发。沙箱生命周期与恢复策略则按所选执行后端配置。部署方式和存储选型见[上生产](/v2/zh/docs/others/going-to-production)。
 
 ## 通过 AgentScope Service 对外提供 API
 
@@ -64,7 +64,7 @@ AgentScope Service 当前为预览能力，正式版本尚未发布。使用 Jav
 | --- | --- |
 | 在 Java 应用中获得回复，或把 Agent 作为工作流节点 | 从[快速开始](/v2/zh/docs/quickstart)使用 `agent.call` |
 | 在当前请求中展示回答和工具执行进度 | 使用 `agent.streamEvents`，参考[消息与事件](/v2/zh/docs/building-blocks/message-and-event) |
-| 构建能后台执行、排队、交互和恢复的聊天应用 | 使用 `agent.session(ctx)` 获取 `AgentSession`，运行[可恢复聊天示例](/v2/zh/blogs/best-practices/session-chat) |
+| 构建能后台执行、排队、交互和恢复的聊天应用 | 通过 `runtime` 操作 Durable Session/Thread/Turn，运行[可恢复聊天示例](/v2/zh/blogs/best-practices/session-chat) |
 | 将 Agent 或团队能力作为 HTTP API 提供给其他应用 | 按[服务发布指南](/v2/zh/service/service-api)创建 Endpoint |
 
 从 1.x 升级请阅读 [V1 迁移指南](/v2/zh/docs/change-log)；各版本的具体变化见 [Release Notes](/v2/zh/docs/others/release-notes)。

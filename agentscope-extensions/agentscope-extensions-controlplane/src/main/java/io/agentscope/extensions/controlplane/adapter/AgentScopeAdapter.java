@@ -15,6 +15,7 @@
  */
 package io.agentscope.extensions.controlplane.adapter;
 
+import io.agentscope.durable.codec.agentscope.AgentScopeCheckpointCodec;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.ReActAgent;

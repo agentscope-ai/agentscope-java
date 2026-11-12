@@ -1,0 +1,98 @@
+server:
+  shutdown: graceful
+  port: ${MANAGED_AGENTS_AGENT_SERVICE_PORT:8084}
+spring:
+  lifecycle:
+    timeout-per-shutdown-phase: 20s
+  application:
+    name: managed-agents-agent-service
+  main:
+    web-application-type: reactive
+  datasource:
+    url: ${MANAGED_AGENTS_AGENT_SERVICE_DB_URL:jdbc:h2:mem:agent-service;DB_CLOSE_DELAY=-1}
+    username: ${MANAGED_AGENTS_AGENT_SERVICE_DB_USER:sa}
+    password: ${MANAGED_AGENTS_AGENT_SERVICE_DB_PASSWORD:}
+    hikari:
+      maximum-pool-size: ${MANAGED_AGENTS_AGENT_SERVICE_DB_POOL_SIZE:10}
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate
+  sql:
+    init:
+      mode: ${MANAGED_AGENTS_AGENT_SERVICE_SCHEMA_INIT:embedded}
+      schema-locations: classpath:schema.sql,classpath:managed-runtime-v2.sql,classpath:managed-subagents.sql,classpath:managed-tool-worker.sql,classpath:managed-session-protocol.sql,classpath:managed-turn-ack.sql,classpath:managed-mcp-batch.sql,classpath:managed-tool-publication-lease.sql,classpath:managed-tool-submission.sql,classpath:managed-application-usage.sql,classpath:managed-session-queue.sql,classpath:managed-session-store.sql,classpath:managed-resume-claims.sql,classpath:managed-tool-publication-order.sql,classpath:managed-resume-retries.sql,classpath:managed-worker-leases.sql,classpath:managed-harness-service.sql
+  http:
+    codecs:
+      max-in-memory-size: 90MB
+managed-agents:
+  brain:
+    http-enabled: ${MANAGED_AGENTS_BRAIN_HTTP_ENABLED:false}
+    callback-url: ${MANAGED_AGENTS_BRAIN_CALLBACK_URL:}
+  object-store:
+    cache-bytes: ${MANAGED_AGENTS_OBJECT_STORE_CACHE_BYTES:67108864}
+    cache-item-bytes: ${MANAGED_AGENTS_OBJECT_STORE_CACHE_ITEM_BYTES:262144}
+    state-cache-entries: ${MANAGED_AGENTS_OBJECT_STORE_STATE_CACHE_ENTRIES:16384}
+    max-requests: ${MANAGED_AGENTS_OBJECT_STORE_MAX_REQUESTS:32}
+    max-inflight-bytes: ${MANAGED_AGENTS_OBJECT_STORE_MAX_INFLIGHT_BYTES:268435456}
+    capacity-wait-ms: ${MANAGED_AGENTS_OBJECT_STORE_CAPACITY_WAIT_MS:5000}
+    provider: ${MANAGED_AGENTS_OBJECT_STORE_PROVIDER:filesystem}
+    backend-id: ${MANAGED_AGENTS_OBJECT_STORE_BACKEND_ID:runtime}
+    root: ${MANAGED_AGENTS_OBJECT_STORE_ROOT:}
+    endpoint: ${MANAGED_AGENTS_OBJECT_STORE_ENDPOINT:}
+    bucket: ${MANAGED_AGENTS_OBJECT_STORE_BUCKET:}
+    region: ${MANAGED_AGENTS_OBJECT_STORE_REGION:us-east-1}
+    access-key: ${MANAGED_AGENTS_OBJECT_STORE_ACCESS_KEY:}
+    secret-key: ${MANAGED_AGENTS_OBJECT_STORE_SECRET_KEY:}
+  projection:
+    object-max-requests: ${MANAGED_AGENTS_PROJECTION_OBJECT_MAX_REQUESTS:4}
+    object-max-inflight-bytes: ${MANAGED_AGENTS_PROJECTION_OBJECT_MAX_INFLIGHT_BYTES:134217728}
+    role: ${MANAGED_AGENTS_PROJECTION_ROLE:both}
+    concurrency: ${MANAGED_AGENTS_PROJECTION_CONCURRENCY:4}
+  runtime:
+    role: agent-service
+    pi:
+      provider: ${MANAGED_AGENTS_PI_PROVIDER:openai}
+      model-options: "${MANAGED_AGENTS_PI_MODEL_OPTIONS:{}}"
+    model-provider: ${MANAGED_AGENTS_MODEL_PROVIDER:${MANAGED_AGENTS_PI_PROVIDER:openai}}
+    model-options: "${MANAGED_AGENTS_MODEL_OPTIONS:${MANAGED_AGENTS_PI_MODEL_OPTIONS:{}}}"
+    model-bindings: "${MANAGED_AGENTS_MODEL_BINDINGS:{}}"
+    harness-type: ${MANAGED_AGENTS_HARNESS_TYPE:agentscope-java}
+  webhooks:
+    allowed-hosts: ${MANAGED_AGENTS_WEBHOOK_ALLOWED_HOSTS:}
+    allow-loopback-http: ${MANAGED_AGENTS_WEBHOOK_ALLOW_LOOPBACK_HTTP:false}
+  local-dev: ${MANAGED_AGENTS_LOCAL_DEV:false}
+  internal-token: ${MANAGED_AGENTS_INTERNAL_TOKEN:}
+  control-plane-url: ${MANAGED_AGENTS_CONTROL_URL:http://localhost:8081}
+  agent-harness-runtime-url: ${MANAGED_AGENTS_AGENT_HARNESS_RUNTIME_URL:http://localhost:8082}
+  orchestration-runtime-url: ${MANAGED_AGENTS_ORCHESTRATION_RUNTIME_URL:${MANAGED_AGENTS_CONTROL_URL:http://localhost:8081}}
+  agent-service:
+    file-transfer-slots: ${MANAGED_AGENTS_AGENT_SERVICE_FILE_TRANSFER_SLOTS:16}
+    runtime-host-slots: ${MANAGED_AGENTS_AGENT_SERVICE_RUNTIME_HOST_SLOTS:64}
+    runtime-host-control-slots: ${MANAGED_AGENTS_AGENT_SERVICE_RUNTIME_HOST_CONTROL_SLOTS:16}
+    policy-max-ttl-ms: ${MANAGED_AGENTS_AGENT_SERVICE_POLICY_MAX_TTL_MS:120000}
+    policy-refresh-slots: ${MANAGED_AGENTS_AGENT_SERVICE_POLICY_REFRESH_SLOTS:16}
+    policy-refresh-poll-ms: ${MANAGED_AGENTS_AGENT_SERVICE_POLICY_REFRESH_POLL_MS:1000}
+    policy-changes-poll-ms: ${MANAGED_AGENTS_AGENT_SERVICE_POLICY_CHANGES_POLL_MS:2000}
+    max-pending-inputs-per-session: ${MANAGED_AGENTS_AGENT_SERVICE_MAX_PENDING_INPUTS:128}
+    input-delivery-slots: ${MANAGED_AGENTS_AGENT_SERVICE_INPUT_DELIVERY_SLOTS:32}
+    interaction-delivery-poll-ms: ${MANAGED_AGENTS_AGENT_SERVICE_INTERACTION_DELIVERY_POLL_MS:1000}
+    snapshot-ttl-seconds: ${MANAGED_AGENTS_AGENT_SERVICE_SNAPSHOT_TTL_SECONDS:120}
+    max-snapshots-per-session: ${MANAGED_AGENTS_AGENT_SERVICE_MAX_SNAPSHOTS_PER_SESSION:16}
+    snapshot-cleanup-ms: ${MANAGED_AGENTS_AGENT_SERVICE_SNAPSHOT_CLEANUP_MS:1000}
+    max-sse-replay-events: ${MANAGED_AGENTS_AGENT_SERVICE_MAX_SSE_REPLAY_EVENTS:50000}
+    sse-slow-consumer-seconds: ${MANAGED_AGENTS_AGENT_SERVICE_SSE_SLOW_CONSUMER_SECONDS:30}
+    max-sse-connections: ${MANAGED_AGENTS_AGENT_SERVICE_MAX_SSE_CONNECTIONS:10000}
+    sse-recovery-ms: ${MANAGED_AGENTS_AGENT_SERVICE_SSE_RECOVERY_MS:15000}
+    sse-authorization-ms: ${MANAGED_AGENTS_AGENT_SERVICE_SSE_AUTHORIZATION_MS:15000}
+    max-queued-per-application: ${MANAGED_AGENTS_AGENT_SERVICE_MAX_QUEUED:1000}
+    max-queued-per-session: ${MANAGED_AGENTS_AGENT_SERVICE_MAX_SESSION_QUEUED:128}
+    requests-per-second: ${MANAGED_AGENTS_AGENT_SERVICE_REQUESTS_PER_SECOND:100}
+    lifecycle-poll-ms: ${MANAGED_AGENTS_AGENT_SERVICE_LIFECYCLE_POLL_MS:1000}
+    provisioning-poll-ms: ${MANAGED_AGENTS_AGENT_SERVICE_PROVISIONING_POLL_MS:1000}
+    turn-delivery-poll-ms: ${MANAGED_AGENTS_AGENT_SERVICE_TURN_DELIVERY_POLL_MS:1000}
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics

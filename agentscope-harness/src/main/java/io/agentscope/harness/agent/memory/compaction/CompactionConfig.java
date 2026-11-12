@@ -574,7 +574,7 @@ public class CompactionConfig {
             private int minimumTokens = 20_000;
             private int maxOutputChars = 2_000;
             private Set<String> excludedTools =
-                    Set.of("read_file", "memory_search", "memory_get", "session_search");
+                    Set.of("read_file", "memory_search", "memory_get", "thread_search");
 
             public PruneBuilder protectTokens(int protectTokens) {
                 this.protectTokens = protectTokens;

@@ -23,8 +23,8 @@ import uuid
 
 import replicas
 
-sys.path.insert(0, str(replicas.SERVICE / 'service-controlplane/sdk/python'))
-from agentscope_service import ServiceClient
+sys.path.insert(0, str(replicas.SERVICE / 'control-plane/sdk/python'))
+from managed_agents import ServiceClient
 
 TOKEN = 'managed-replica-fixture-internal-token-2026'
 
@@ -82,7 +82,7 @@ def run(state):
     def internal(path, value, port=19084):
         request = urllib.request.Request(f'http://127.0.0.1:{port}/api/internal/runtime/webhooks/{path}',
                                          json.dumps(value).encode(), {'Content-Type': 'application/json',
-                                         'X-Builder-Internal-Token': TOKEN})
+                                         'X-Managed-Agents-Internal-Token': TOKEN})
         with urllib.request.urlopen(request, timeout=10) as response:
             return json.load(response)
 
@@ -93,13 +93,13 @@ def run(state):
         def do_POST(self):
             try:
                 raw = read_body(self)
-                timestamp = self.headers['X-AgentScope-Timestamp']
+                timestamp = self.headers['X-Managed-Agents-Timestamp']
                 expected = 'v1=' + hmac.new(secret.encode(), timestamp.encode() + b'.' + raw, hashlib.sha256).hexdigest()
-                assert hmac.compare_digest(expected, self.headers['X-AgentScope-Signature'])
+                assert hmac.compare_digest(expected, self.headers['X-Managed-Agents-Signature'])
                 assert abs(time.time() - int(timestamp)) < 60
                 payload = json.loads(raw)
                 assert set(payload) == {'id', 'type', 'session_id', 'cursor', 'created_at', 'event_url'}
-                delivery = self.headers['X-AgentScope-Delivery']
+                delivery = self.headers['X-Managed-Agents-Delivery']
                 with lock:
                     if delivery not in record['receiver_side_effects']:
                         record['receiver_side_effects'].append(delivery)
@@ -132,9 +132,9 @@ def run(state):
                     dropped.set()
                     self.connection.shutdown(socket.SHUT_RDWR)
                     self.connection.close()
-                    return  # Receiver accepted, but no receipt reached Portal.
+                    return  # Receiver accepted, but no receipt reached Agent Service.
                 request = urllib.request.Request('http://127.0.0.1:19084' + self.path, raw,
-                    {'Content-Type': 'application/json', 'X-Builder-Internal-Token': TOKEN})
+                    {'Content-Type': 'application/json', 'X-Managed-Agents-Internal-Token': TOKEN})
                 try:
                     with urllib.request.urlopen(request, timeout=10) as response:
                         status, body = response.status, response.read()
@@ -158,10 +158,10 @@ def run(state):
 
     def start_worker(name, port):
         command = [str(state / 'webhook-worker-fixture'), '-test.run=^TestWebhookReplicaFixture$', '-test.timeout=0']
-        environment = {**os.environ, 'AGENTSCOPE_WEBHOOK_REPLICA_FIXTURE': '1',
-                       'BUILDER_SESSION_PORTAL_URL': f'http://127.0.0.1:{port}',
-                       'BUILDER_INTERNAL_TOKEN': TOKEN, 'BUILDER_WEBHOOK_SLOTS': '2',
-                       'BUILDER_WEBHOOK_ALLOW_LOOPBACK_HTTP': 'true'}
+        environment = {**os.environ, 'MANAGED_AGENTS_WEBHOOK_REPLICA_FIXTURE': '1',
+                       'MANAGED_AGENTS_AGENT_SERVICE_URL': f'http://127.0.0.1:{port}',
+                       'MANAGED_AGENTS_INTERNAL_TOKEN': TOKEN, 'MANAGED_AGENTS_WEBHOOK_SLOTS': '2',
+                       'MANAGED_AGENTS_WEBHOOK_ALLOW_LOOPBACK_HTTP': 'true'}
         log = state / (name + '.log')
         with log.open('ab') as stream:
             process = subprocess.Popen(command, cwd=replicas.ROOT, env=environment, stdout=stream, stderr=subprocess.STDOUT)
@@ -178,7 +178,7 @@ def run(state):
     save()
     try:
         subprocess.run(['go', 'test', '-c', '-o', str(state / 'webhook-worker-fixture'), './internal/product'],
-                       cwd=replicas.SERVICE / 'service-controlplane', check=True)
+                       cwd=replicas.SERVICE / 'control-plane', check=True)
         record['worker_binary_sha256'] = hashlib.sha256((state / 'webhook-worker-fixture').read_bytes()).hexdigest()
         server(Receiver, 19382)
         server(ReceiptDropProxy, 19383)

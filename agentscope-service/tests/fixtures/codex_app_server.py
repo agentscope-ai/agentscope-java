@@ -39,9 +39,9 @@ for line in sys.stdin:
     emit({'jsonrpc': '2.0', 'id': message['id'], 'result': result})
     if method != 'turn/start':
         continue
-    assert 'BUILDER_INTERNAL_TOKEN' not in os.environ
-    mcp = os.environ['AGENTSCOPE_CONTROL_PLANE'] + '/mcp/collaboration'
-    token = os.environ['AGENTSCOPE_TASK_TOKEN']
+    assert 'MANAGED_AGENTS_INTERNAL_TOKEN' not in os.environ
+    mcp = os.environ['MANAGED_AGENTS_CONTROL_PLANE'] + '/mcp/collaboration'
+    token = os.environ['MANAGED_AGENTS_TASK_TOKEN']
     def collaboration(identifier, rpc_method, rpc_params=None):
         body = {'jsonrpc': '2.0', 'id': identifier, 'method': rpc_method, 'params': rpc_params or {}}
         request = Request(mcp, data=json.dumps(body).encode(), method='POST',
@@ -57,11 +57,11 @@ for line in sys.stdin:
     task = collaboration(4, 'tools/call', {'name': 'task.get', 'arguments': {}})
     assert not task.get('isError'), task
     assert token.startswith('aslocal_'), 'Provider should use the attempt-local credential relay'
-    context_request = Request(os.environ['AGENTSCOPE_CONTROL_PLANE'] + '/api/v1/agent-tasks/' + os.environ['AGENTSCOPE_TASK_ID'] + '/context',
+    context_request = Request(os.environ['MANAGED_AGENTS_CONTROL_PLANE'] + '/api/v1/agent-tasks/' + os.environ['MANAGED_AGENTS_TASK_ID'] + '/context',
                               headers={'X-Agent-Task-Token': token})
     with urlopen(context_request, timeout=10) as response:
         context = json.loads(response.read())
-        assert context['task']['id'] == os.environ['AGENTSCOPE_TASK_ID'] and not context.get('taskToken'), context
+        assert context['task']['id'] == os.environ['MANAGED_AGENTS_TASK_ID'] and not context.get('taskToken'), context
     base = {'threadId': thread_id, 'turnId': turn_id}
     if os.environ.get('FAKE_CODEX_APPROVAL'):
         emit({'jsonrpc': '2.0', 'id': 400, 'method': 'item/commandExecution/requestApproval',

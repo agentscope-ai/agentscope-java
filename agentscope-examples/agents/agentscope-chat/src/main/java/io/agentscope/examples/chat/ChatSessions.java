@@ -15,76 +15,115 @@
  */
 package io.agentscope.examples.chat;
 
-import io.agentscope.core.agent.RuntimeContext;
-import io.agentscope.core.message.Msg;
-import io.agentscope.core.message.UserMessage;
 import io.agentscope.core.model.Model;
 import io.agentscope.core.model.ToolSchema;
-import io.agentscope.core.session.SessionEvent;
-import io.agentscope.core.session.SessionLog;
 import io.agentscope.core.tool.Toolkit;
+import io.agentscope.durable.DurableJson;
+import io.agentscope.durable.DurableMessages.Input;
+import io.agentscope.durable.DurableRuntime;
+import io.agentscope.durable.DurableSession;
+import io.agentscope.durable.DurableTurn;
+import io.agentscope.durable.DurableTypes.CommandReceipt;
+import io.agentscope.durable.DurableTypes.EventPage;
+import io.agentscope.durable.DurableTypes.RunPage;
+import io.agentscope.durable.DurableTypes.SessionKey;
+import io.agentscope.durable.DurableTypes.SessionView;
+import io.agentscope.durable.DurableTypes.Snapshot;
+import io.agentscope.durable.DurableTypes.TurnView;
+import io.agentscope.durable.SessionBackend;
+import io.agentscope.durable.agentscope.AgentScopeAdapter;
+import io.agentscope.extensions.durable.jdbc.LocalBackend;
 import io.agentscope.harness.agent.HarnessAgent;
-import io.agentscope.harness.agent.filesystem.local.LocalFilesystem;
-import io.agentscope.harness.agent.session.AgentSession;
-import io.agentscope.harness.agent.session.WorkspaceSessionLogStore;
 import java.nio.file.Path;
+import java.time.Duration;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
-/** One local process owns execution; HTTP/SSE subscribers only observe it. */
+/** Local application wiring. Business operations use the same Runtime API as remote hosts. */
 public final class ChatSessions implements AutoCloseable {
     private static final String USER = "local-user";
     private static final String AGENT = "session-chat";
-    private final HarnessAgent agent;
-    private final WorkspaceSessionLogStore store;
+    private final SessionBackend backend;
+    private final DurableRuntime runtime;
     private final String modelName;
 
     public ChatSessions(Path workspace, Model model) {
         modelName = model.getModelName();
-        store = new WorkspaceSessionLogStore(new LocalFilesystem(workspace.toAbsolutePath()));
-        var toolkit = new Toolkit();
-        if (model instanceof DemoChatModel demo)
-            toolkit.registerTool(new DemoTools(demo.toolDelay()));
-        toolkit.registerSchema(
-                ToolSchema.builder()
-                        .name("ask_user")
-                        .description(
-                                "Ask the user for a missing preference and wait for their answer.")
-                        .parameters(
-                                Map.of(
-                                        "type",
-                                        "object",
-                                        "properties",
-                                        Map.of("question", Map.of("type", "string")),
-                                        "required",
-                                        List.of("question")))
-                        .build());
-        agent =
-                HarnessAgent.builder()
-                        .name("Session Chat")
-                        .agentId(AGENT)
-                        .model(model)
-                        .sysPrompt(
-                                "You are a concise chat assistant. Use ask_user when a needed"
-                                        + " preference is missing.")
-                        .workspace(workspace.toAbsolutePath())
-                        .sessionLogStore(store)
-                        .toolkit(toolkit)
-                        .disableShellTool()
-                        .disableFilesystemTools()
-                        .disableWebTools()
-                        .disableSubagents()
-                        .disableDynamicSubagents()
-                        .disableDynamicSkills()
-                        .disableDefaultWorkspaceSkills()
-                        .disableMemoryTools()
-                        .disableMemoryHooks()
-                        .disableToolsConfig()
-                        .disableWorkspaceContext()
-                        .disableAtPathExpansion()
-                        .maxIters(8)
+        backend = LocalBackend.open(workspace.toAbsolutePath().resolve("durable"));
+        var adapter =
+                AgentScopeAdapter.forHarness(
+                        binding -> {
+                            var toolkit = new Toolkit();
+                            if (model instanceof DemoChatModel demo)
+                                toolkit.registerTool(new DemoTools(demo.toolDelay()));
+                            toolkit.registerSchema(
+                                    ToolSchema.builder()
+                                            .name("ask_user")
+                                            .description(
+                                                    "Ask the user for a missing preference and wait"
+                                                            + " for their answer.")
+                                            .parameters(
+                                                    Map.of(
+                                                            "type",
+                                                            "object",
+                                                            "properties",
+                                                            Map.of(
+                                                                    "question",
+                                                                    Map.of("type", "string")),
+                                                            "required",
+                                                            List.of("question")))
+                                            .build());
+                            Model invocationModel = model;
+                            if (model instanceof DemoChatModel demo) {
+                                // The offline fixture identifies the task from the public input
+                                // projection,
+                                // never by decoding native journal records or private message IDs.
+                                var snapshot = session(binding.context().getSessionId()).snapshot();
+                                for (var message : snapshot.projection().path("messages")) {
+                                    if (binding.context()
+                                                    .getTurnId()
+                                                    .equals(message.path("turnId").asText())
+                                            && "submit"
+                                                    .equals(message.path("inputKind").asText())) {
+                                        invocationModel =
+                                                demo.forTask(message.path("text").asText());
+                                        break;
+                                    }
+                                }
+                            }
+                            return HarnessAgent.builder()
+                                    .name("Session Chat")
+                                    .agentId(AGENT)
+                                    .model(invocationModel)
+                                    .sysPrompt(
+                                            "You are a concise chat assistant. Use ask_user when a"
+                                                    + " needed preference is missing.")
+                                    .workspace(workspace.toAbsolutePath())
+                                    .toolkit(toolkit)
+                                    .disableShellTool()
+                                    .disableFilesystemTools()
+                                    .disableWebTools()
+                                    .disableSubagents()
+                                    .disableDynamicSubagents()
+                                    .disableDynamicSkills()
+                                    .disableDefaultWorkspaceSkills()
+                                    .disableMemoryTools()
+                                    .disableMemoryHooks()
+                                    .disableToolsConfig()
+                                    .disableWorkspaceContext()
+                                    .disableAtPathExpansion()
+                                    .maxIters(8);
+                        },
+                        Map.of());
+        runtime =
+                DurableRuntime.builder()
+                        .backend(backend)
+                        // Recreating a session with another model is a conflicting definition.
+                        .harness(AGENT, "chat-v1:" + modelName, adapter)
+                        .pollInterval(Duration.ofMillis(50))
                         .build();
-        list().forEach(id -> session(id).start());
+        runtime.start();
     }
 
     public String modelName() {
@@ -97,68 +136,79 @@ public final class ChatSessions implements AutoCloseable {
         return value;
     }
 
-    private RuntimeContext context(String session) {
-        return RuntimeContext.builder().userId(USER).sessionId(id(session)).build();
+    public SessionView create(String sessionId) {
+        return runtime.createSession(new SessionKey(USER, id(sessionId)), AGENT).view();
     }
 
-    SessionLog log(String session) {
-        return session(session).log();
+    DurableSession session(String sessionId) {
+        return runtime.getSession(new SessionKey(USER, id(sessionId)));
     }
 
-    AgentSession session(String id) {
-        return agent.session(context(id));
+    DurableTurn turn(String sessionId, String turnId) {
+        return session(sessionId).getTurn(id(turnId));
     }
 
     public List<String> list() {
-        return store.list(RuntimeContext.builder().userId(USER).build()).stream()
-                .filter(key -> key.agentId().equals(AGENT))
-                .map(key -> key.sessionId())
-                .sorted()
-                .toList();
+        var ids = new ArrayList<String>();
+        String cursor = null;
+        do {
+            var page = runtime.listSessions(USER, cursor, 100);
+            page.items().forEach(value -> ids.add(value.key().sessionId()));
+            cursor = page.cursor();
+        } while (cursor != null);
+        return ids.stream().sorted().toList();
     }
 
-    public ChatHistory.Snapshot snapshot(String id) {
-        var session = session(id);
-        var head = session.log().head();
-        String active = head.leaseUntil() > System.currentTimeMillis() ? head.owner() : null;
-        return ChatHistory.snapshot(
-                id, session.log(), active, session.executionError(), session.tasks());
+    public Snapshot snapshot(String sessionId) {
+        return session(sessionId).snapshot();
     }
 
-    public AgentSession.Task submit(String session, String requestId, String text) {
+    public TurnView submit(String sessionId, String requestId, String text) {
         validateText(text);
-        return session(session).submit(id(requestId), text);
+        return session(sessionId).submit(id(requestId), text).status();
     }
 
-    public AgentSession.Task resume(String session, String turn) {
-        return session(session).resume(id(turn));
+    public CommandReceipt steer(String sessionId, String turnId, String requestId, String text) {
+        validateText(text);
+        return turn(sessionId, turnId).steer(id(requestId), text);
     }
 
-    public AgentSession.Task answer(String session, String request, String output) {
+    public CommandReceipt inject(String sessionId, String turnId, String requestId, String text) {
+        validateText(text);
+        return turn(sessionId, turnId).inject(id(requestId), Input.text(text));
+    }
+
+    public CommandReceipt pause(String sessionId, String turnId, String requestId) {
+        return turn(sessionId, turnId).pause(id(requestId));
+    }
+
+    public CommandReceipt resume(String sessionId, String turnId, String requestId, Long revision) {
+        if (revision == null) throw new IllegalArgumentException("expectedRevision is required");
+        return turn(sessionId, turnId).resume(id(requestId), revision);
+    }
+
+    public CommandReceipt cancel(String sessionId, String turnId, String requestId) {
+        return turn(sessionId, turnId).cancel(id(requestId));
+    }
+
+    public CommandReceipt answer(
+            String sessionId,
+            String turnId,
+            String requestId,
+            String interactionId,
+            String output) {
         validateText(output);
-        return session(session).respond(id(request), output);
+        return turn(sessionId, turnId)
+                .respond(id(requestId), interactionId, DurableJson.value(output));
     }
 
-    public AgentSession.InputReceipt steer(String session, String text) {
-        validateText(text);
-        return session(session).steer(List.of(supplement(text, "steer")));
+    public EventPage events(String sessionId, String cursor, int limit) {
+        if (limit < 1 || limit > 256) throw new IllegalArgumentException("Limit must be 1–256");
+        return session(sessionId).events(cursor, limit);
     }
 
-    public AgentSession.InputReceipt inject(String session, String text) {
-        validateText(text);
-        return session(session).inject(List.of(supplement(text, "inject")));
-    }
-
-    // The offline model uses this hint to distinguish demo commands from supplemental inputs.
-    private Msg supplement(String text, String kind) {
-        return UserMessage.builder()
-                .textContent(text)
-                .metadata(Map.of("chat_input_kind", kind))
-                .build();
-    }
-
-    public boolean interrupt(String session, String runId) {
-        return session(session).interrupt(runId);
+    public RunPage runs(String sessionId, String turnId, String cursor, int limit) {
+        return turn(sessionId, turnId).listRuns(cursor, limit);
     }
 
     private static void validateText(String text) {
@@ -166,16 +216,12 @@ public final class ChatSessions implements AutoCloseable {
             throw new IllegalArgumentException("Message must contain 1–8000 characters");
     }
 
-    List<SessionEvent> events(String session, long after, int limit) {
-        if (limit < 1 || limit > 256) throw new IllegalArgumentException("Limit must be 1–256");
-        SessionLog log = log(session);
-        if (after > log.head().seq())
-            throw new IllegalArgumentException("Cursor is ahead of history; reload the snapshot");
-        return log.readAfter(after, limit);
-    }
-
     @Override
     public void close() {
-        agent.close();
+        try {
+            runtime.close();
+        } finally {
+            backend.close();
+        }
     }
 }

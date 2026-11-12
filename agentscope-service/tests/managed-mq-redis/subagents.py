@@ -3,7 +3,7 @@
 # Licensed under the Apache License, Version 2.0.
 """Native parent/child acceptance on the owned real-MQ replica fixture.
 
-The model is the explicit ManagedReplicaModel test fixture and Hands launches
+The model is the explicit ManagedReplicaModel test fixture and Tool Worker launches
 real local subprocesses. This never claims ACS or external-model validation.
 """
 import argparse
@@ -48,9 +48,9 @@ def effects(state, label):
     return matches
 
 
-def replace_brains(state):
+def replace_harness_runtimes(state):
     manifest = json.loads((state / "manifest.json").read_text())
-    names = ["brain-a", "brain-b"]
+    names = ["harness-runtime-a", "harness-runtime-b"]
     before = {name: manifest["processes"][name]["pid"] for name in names}
     for name in names:
         replicas.signal_replica(state, name, signal.SIGKILL)
@@ -65,7 +65,7 @@ def replace_brains(state):
             break
         time.sleep(.1)
     if alive:
-        raise AssertionError(f"Original Brain processes still exist: {alive}")
+        raise AssertionError(f"Original HarnessRuntime processes still exist: {alive}")
     after = {name: replicas.restart_replica(state, name) for name in names}
     assert all(after[name] != before[name] for name in names), (before, after)
     return {"before": before, "after": after}
@@ -77,7 +77,7 @@ def run(state, seconds, send=False, replace=False, cancel=False):
         raise ValueError("Child fixture duration must be 12..120 seconds")
     output = state / f"subagents-{time.time_ns()}.json"
     record = {"passed": False, "seconds": seconds, "send": send,
-              "replace_brains": replace, "cancel": cancel,
+              "replace_harness_runtimes": replace, "cancel": cancel,
               "transport": "real RocketMQ/Redis/PostgreSQL", "model": "explicit deterministic test model",
               "sandbox": "real local subprocess, not ACS"}
 
@@ -117,7 +117,7 @@ def run(state, seconds, send=False, replace=False, cancel=False):
                 assert running_effect[0].read_text().splitlines() == ["start-child-one-" + label], running_effect
                 record["before_action"] = facts
                 if replace:
-                    record["replacement"] = replace_brains(state)
+                    record["replacement"] = replace_harness_runtimes(state)
                 if cancel:
                     record["cancellation"] = replicas.request(replicas.PORTS["portal-a"], base + f"/turns/{turn}/inputs",
                             {"type": "cancel", "payload": {}}, uuid.uuid4().hex)
@@ -156,7 +156,7 @@ def run(state, seconds, send=False, replace=False, cancel=False):
         live = subscription.result()
         assert [event["cursor"] for event in live] == [event["cursor"] for event in events["data"]], (live, events)
         if not cancel:
-            assert "brain-confirmed-children-" + label in json.dumps(events), events
+            assert "harness-runtime-confirmed-children-" + label in json.dumps(events), events
         else:
             receipt = replicas.request(replicas.PORTS["portal-b"], base + f"/turns/{turn}/inputs/{record['cancellation']['id']}")
             assert receipt["status"] == "applied", receipt
@@ -175,7 +175,7 @@ if __name__ == "__main__":
     parser.add_argument("--state", type=Path, required=True)
     parser.add_argument("--seconds", type=int, default=30)
     parser.add_argument("--send", action="store_true")
-    parser.add_argument("--replace-brains", action="store_true")
+    parser.add_argument("--replace-harness-runtimes", action="store_true")
     parser.add_argument("--cancel", action="store_true")
     args = parser.parse_args()
-    run(args.state, args.seconds, args.send, args.replace_brains, args.cancel)
+    run(args.state, args.seconds, args.send, args.replace_harness_runtimes, args.cancel)

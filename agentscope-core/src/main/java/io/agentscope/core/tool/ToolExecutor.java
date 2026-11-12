@@ -17,13 +17,13 @@ package io.agentscope.core.tool;
 
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.core.journal.InvocationRecorder;
+import io.agentscope.core.journal.JournalException;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ExecutionConfig;
 import io.agentscope.core.observation.ActionObservationException;
 import io.agentscope.core.observation.ActionObservations;
-import io.agentscope.core.session.SessionLogException;
-import io.agentscope.core.session.SessionRecorder;
 import io.agentscope.core.shutdown.GracefulShutdownManager;
 import io.agentscope.core.tracing.TracerRegistry;
 import io.agentscope.core.util.ExceptionUtils;
@@ -279,8 +279,8 @@ class ToolExecutor {
                 new DefaultToolEmitter(
                         toolCall,
                         (use, chunk) -> {
-                            SessionRecorder recorder =
-                                    SessionRecorder.from(param.getRuntimeContext());
+                            InvocationRecorder recorder =
+                                    InvocationRecorder.from(param.getRuntimeContext());
                             if (recorder != null)
                                 recorder.append(
                                         "tool/chunk",
@@ -323,9 +323,10 @@ class ToolExecutor {
                         .agent(param.getAgent())
                         .runtimeContext(runtimeContext)
                         .emitter(toolEmitter)
+                        .propagateErrors(param.isPropagateErrors())
                         .build();
 
-        SessionRecorder recorder = SessionRecorder.from(runtimeContext);
+        InvocationRecorder recorder = InvocationRecorder.from(runtimeContext);
         Mono<Void> dispatch =
                 recorder == null
                         ? Mono.empty()
@@ -368,8 +369,9 @@ class ToolExecutor {
                         })
                 .onErrorResume(
                         e -> {
-                            if (ActionObservationException.causedBy(e)
-                                    || SessionLogException.causedBy(e)) return Mono.error(e);
+                            if (param.isPropagateErrors()
+                                    || ActionObservationException.causedBy(e)
+                                    || JournalException.causedBy(e)) return Mono.error(e);
                             String errorMsg =
                                     e.getMessage() != null
                                             ? e.getMessage()
@@ -378,10 +380,12 @@ class ToolExecutor {
                                     ToolResultBlock.error("Tool execution failed: " + errorMsg));
                         })
                 .switchIfEmpty(
-                        Mono.just(
-                                ToolResultBlock.error(
-                                        "Tool execution failed: Tool completed without returning a"
-                                                + " result")));
+                        param.isPropagateErrors()
+                                ? Mono.empty()
+                                : Mono.just(
+                                        ToolResultBlock.error(
+                                                "Tool execution failed: Tool completed without"
+                                                        + " returning a result")));
     }
 
     /**
@@ -560,7 +564,7 @@ class ToolExecutor {
                 .onErrorResume(
                         e -> {
                             if (ActionObservationException.causedBy(e)
-                                    || SessionLogException.causedBy(e)) return Mono.error(e);
+                                    || JournalException.causedBy(e)) return Mono.error(e);
                             logger.warn("Tool call failed: {}", toolCall.getName(), e);
                             String errorMsg = ExceptionUtils.getErrorMessage(e);
                             return Mono.just(
@@ -615,7 +619,7 @@ class ToolExecutor {
                         .filter(
                                 error ->
                                         !ActionObservationException.causedBy(error)
-                                                && !SessionLogException.causedBy(error)
+                                                && !JournalException.causedBy(error)
                                                 && retryOn.test(error))
                         .doBeforeRetry(
                                 signal ->

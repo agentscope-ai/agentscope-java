@@ -18,8 +18,8 @@ def event(identity, kind, at, **fields):
 def test_standard_idle_precedes_optional_cancellation_notice(idle_at, cancel_at):
     events = [event("interrupt", "user.interrupt", "01.000"),
               event("idle", "session.status_idle", idle_at, stop_reason={"type": "end_turn"}),
-              event("cancel", "agentscope_service.turn.cancelled", cancel_at),
-              event("run", "agentscope_service.turn.running", "02.000", agentscope_service={"turn_id": "next"})]
+              event("cancel", "managed_agents.turn.cancelled", cancel_at),
+              event("run", "managed_agents.turn.running", "02.000", managed_agents={"turn_id": "next"})]
     assert module.has_idle_boundary(events, "interrupt", "next")
 
 
@@ -27,5 +27,5 @@ def test_standard_idle_precedes_optional_cancellation_notice(idle_at, cancel_at)
 def test_rejects_idle_outside_the_actual_interrupt_boundary(idle_at, reason):
     events = [event("interrupt", "user.interrupt", "01.000"),
               event("idle", "session.status_idle", idle_at, stop_reason={"type": reason}),
-              event("run", "agentscope_service.turn.running", "02.000", agentscope_service={"turn_id": "next"})]
+              event("run", "managed_agents.turn.running", "02.000", managed_agents={"turn_id": "next"})]
     assert not module.has_idle_boundary(events, "interrupt", "next")

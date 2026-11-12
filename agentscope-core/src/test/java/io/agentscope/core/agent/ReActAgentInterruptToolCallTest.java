@@ -246,7 +246,12 @@ class ReActAgentInterruptToolCallTest {
                         + " before reconciliation");
 
         AgentState persisted =
-                store.get(null, agent.getDefaultSessionId(), "agent_state", AgentState.class)
+                store.get(
+                                null,
+                                agent.getDefaultSessionId(),
+                                new ThreadKey(null, "asst", "unused-bucket", "main")
+                                        .stateEntry("agent_state"),
+                                AgentState.class)
                         .orElseThrow();
         List<ToolUseBlock> toolUses =
                 persisted.getContext().stream()

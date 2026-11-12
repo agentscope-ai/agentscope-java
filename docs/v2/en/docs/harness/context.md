@@ -49,7 +49,7 @@ try (HarnessAgent agent = agentBuilder.build()) {
 }
 ```
 
-All later snippets configure this same `agentBuilder` before it is shared. Request handlers should only call `build()`, with request data carried in a fresh `RuntimeContext`. For reactive handlers, use `Mono.using` or `Flux.using` to close after execution. Background `AgentSession` execution has a longer-lived owner; see [Instance lifecycle](/v2/en/docs/building-blocks/agent#instance-lifecycle) and [Session operations](/v2/en/docs/harness/session-log).
+Configure the shared builder before the first build; carry request data in a fresh RuntimeContext. Close direct-call Agents after execution. Background persistent tasks use [Durable](/v2/en/docs/harness/durable), whose Runtime owns execution-host lifetime.
 
 ## Prepare useful input for each reasoning step
 
@@ -195,7 +195,7 @@ agentBuilder.toolResultEviction(ToolResultEvictionConfig.builder()
         .build());
 ```
 
-These are the defaults: results exceeding 80,000 characters are eligible, and the first and last 2,000 characters remain as previews. `read_file`, `write_file`, `edit_file`, `memory_search`, `memory_get`, and `session_search` are excluded by default. Shell `execute`, search, and list outputs remain eligible. Prefer paginated tools and targeted reads so the next step can use the relevant portion without loading the entire file again.
+These are the defaults: results exceeding 80,000 characters are eligible, and the first and last 2,000 characters remain as previews. `read_file`, `write_file`, `edit_file`, `memory_search`, `memory_get`, and `thread_search` are excluded by default. Shell `execute`, search, and list outputs remain eligible. Prefer paginated tools and targeted reads so the next step can use the relevant portion without loading the entire file again.
 
 <span id="1-conversation-summarization-compactionmiddleware" />
 <span id="4-pre-summary-argument-truncation-optional" />
@@ -240,11 +240,11 @@ The estimator cannot exactly predict every provider's token accounting. When nat
 
 Once validation succeeds, Harness commits the candidate working-history changes and sends the model request. If the model calls a tool, the ReAct loop handles permissions and execution, records the result, and returns to context preparation. Business sources and task projections are refreshed; the call's workspace material is reused. If the model replies, the call ends.
 
-Working context and durable history serve different purposes. Native Session Log records committed conversation and execution facts; checkpoints retain the working state used for continuation. Compaction does not rewrite that full conversation history. With the session capability enabled, the Agent can inspect earlier evidence through:
+Working context and durable history serve different purposes. Native Thread journal records committed conversation and execution facts; checkpoints retain the working state used for continuation. Compaction does not rewrite that full conversation history. With the session capability enabled, the Agent can inspect earlier evidence through:
 
-- `session_list agentId="..."` — find prior sessions.
-- `session_history agentId="..." sessionId="..." lastN=20` — read recent messages.
-- `session_search query="..." agentId="..."` — search conversation history.
+- `thread_list agentId="..."` — find prior sessions.
+- `thread_history agentId="..." sessionId="..." lastN=20` — read recent messages.
+- `thread_search query="..." agentId="..."` — search conversation history.
 
 Use stable agent/user/session identity and the same storage backend on the next call to restore committed state. Persistence details differ between native logging and legacy state-store mode; see [Context & AgentState](/v2/en/docs/building-blocks/context) and [Session operations, events and recovery](/v2/en/docs/harness/session-log).
 
@@ -370,7 +370,7 @@ try (HarnessAgent agent = agentBuilder.build()) {
 
 `context_build` reports both successful and failed preparation, before a provider request. The type check above applies to live, in-process SDK events. After JSON storage or transport, read `context_manifest` as a JSON object.
 
-The default native Session Log stores this as `context/build`. Decode the record's payload with `SessionEvent.data()` and read its `event.value.context_manifest` object. Use `session.log()` or `agent.sessionLog(ctx)` to inspect a past session and correlate the record with its session, turn, and run. See [Session operations, events, and recovery](/v2/en/docs/harness/session-log) for log access. A Manifest cannot replay full prompts or restore a session. Source IDs can contain filenames, so apply your application's access controls when exporting diagnostic records.
+The default native Thread journal stores this as `context/build`. Decode the record's payload with `SessionEvent.data()` and read its `event.value.context_manifest` object. Use `agent.threadJournal(ctx)` to inspect a past session and correlate the record with its session, turn, and run. See [Session operations, events, and recovery](/v2/en/docs/harness/session-log) for log access. A Manifest cannot replay full prompts or restore a session. Source IDs can contain filenames, so apply your application's access controls when exporting diagnostic records.
 
 <span id="related-pages" />
 

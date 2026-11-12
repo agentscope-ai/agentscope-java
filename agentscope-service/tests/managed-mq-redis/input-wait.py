@@ -105,7 +105,7 @@ def run(state, scenario, seconds, continue_record=None):
             record['waiting'] = initial
             save()
             if scenario in {'confirmation', 'external', 'external-error'}:
-                record['old_brain_pids'] = tool_source.kill(state, ['brain-a', 'brain-b'])
+                record['old_brain_pids'] = tool_source.kill(state, ['harness-runtime-a', 'harness-runtime-b'])
                 body = {'type': 'reply', 'action_id': initial['action'], 'payload':
                         {'content': [{'type': 'text', 'text': 'external-' + label}], 'is_error': scenario == 'external-error'}
                         if external else {'allow': True}}
@@ -130,7 +130,7 @@ def run(state, scenario, seconds, continue_record=None):
                 assert resumes == {'count': 1, 'suspensions': 1}, resumes
                 record['resume_while_brain_absent'] = resumes
                 record['new_brain_pids'] = {name: replicas.restart_replica(state, name)
-                                           for name in ['brain-a', 'brain-b']}
+                                           for name in ['harness-runtime-a', 'harness-runtime-b']}
                 save()
             terminal = 'cancelled' if scenario == 'cancel' else 'completed'
             replicas.wait_turn(base, first['id'], {terminal}, timeout=600)
@@ -144,9 +144,9 @@ def run(state, scenario, seconds, continue_record=None):
             if scenario == 'confirmation':
                 matching = [path for path in (state / 'sandbox').glob('*/side-effects.txt') if label in path.read_text()]
                 assert len(matching) == 1 and matching[0].read_text().splitlines() == ['start-' + label, 'done-' + label], matching
-                assert 'brain-confirmed-hands-' + label in json.dumps(history), history
+                assert 'harness-runtime-confirmed-tool-worker-' + label in json.dumps(history), history
             elif external:
-                assert f'brain-confirmed-{scenario}-' + label in json.dumps(history), history
+                assert f'harness-runtime-confirmed-{scenario}-' + label in json.dumps(history), history
                 assert 'external-' + label in json.dumps(history), history
                 tools = [event['data'] for event in history if event['type'] == 'tool.completed'
                          and event['data'].get('tool_call_id') == 'replica-external-' + label]

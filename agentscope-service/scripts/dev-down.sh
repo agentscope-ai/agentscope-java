@@ -5,28 +5,30 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-RUN_DIR="${BUILDER_RUN_DIR:-$ROOT/.dev-stack}"
+RUN_DIR="${MANAGED_AGENTS_RUN_DIR:-$ROOT/.dev-stack}"
 PID_DIR="$RUN_DIR/pids"
-PG_CONTAINER="${BUILDER_PG_CONTAINER:-agentscope-dev-pg}"
+PG_CONTAINER="${MANAGED_AGENTS_PG_CONTAINER:-managed-agents-dev-pg}"
 
-GATEWAY_PORT="${BUILDER_GATEWAY_PORT:-18080}"
-CONTROL_PORT="${BUILDER_CONTROL_PORT:-8081}"
-DATA_PORT="${BUILDER_DATA_PORT:-8082}"
-PORTAL_PORT="${BUILDER_PORTAL_PORT:-8084}"
-HANDS_PORT="${BUILDER_HANDS_PORT:-8085}"
+GATEWAY_PORT="${MANAGED_AGENTS_GATEWAY_PORT:-18080}"
+CONTROL_PORT="${MANAGED_AGENTS_CONTROL_PORT:-8081}"
+AGENT_HARNESS_RUNTIME_PORT="${MANAGED_AGENTS_AGENT_HARNESS_RUNTIME_PORT:-8082}"
+SCHED_PORT="${MANAGED_AGENTS_SCHEDULER_PORT:-8083}"
+AGENT_SERVICE_PORT="${MANAGED_AGENTS_AGENT_SERVICE_PORT:-8084}"
+RUNTIME_PORT="${MANAGED_AGENTS_ORCHESTRATION_RUNTIME_PORT:-8086}"
+TOOL_WORKER_PORT="${MANAGED_AGENTS_TOOL_WORKER_PORT:-8085}"
 
 managed_plane_name() {
     local pid="$1" command
     command="$(ps -p "$pid" -o command= 2>/dev/null || true)"
     [ -n "$command" ] || return 1
     case "$command" in
-        *"$ROOT/service-controlplane/bin/service-controlplane"*) echo control ;;
-        *"$ROOT/service-controlplane/bin/agentscope-orchestration-runtime"*) echo orchestration ;;
-        *"$ROOT/service-session-portal/target/service-session-portal-"*.jar*) echo portal ;;
-        *"$ROOT/service-hands/target/service-hands-"*.jar*) echo hands ;;
-        *"$ROOT/service-dataplane/target/service-dataplane-"*.jar*) echo data ;;
+        *"$ROOT/control-plane/bin/control-plane"*) echo control ;;
+        *"$ROOT/control-plane/bin/managed-agents-orchestration-runtime"*) echo orchestration ;;
+        *"$ROOT/agent-service/target/managed-agents-agent-service-"*.jar*) echo agent-service ;;
+        *"$ROOT/tool-worker/target/managed-agents-tool-worker-"*.jar*) echo tool-worker ;;
+        *"$ROOT/agent-harness-runtime/java/brain-agentscope/target/managed-agents-agent-harness-runtime-"*.jar*) echo agent-harness-runtime ;;
         *"$ROOT/service-scheduler/target/service-scheduler-"*.jar*) echo scheduler ;;
-        *"$ROOT/service-gateway/target/service-gateway-"*.jar*) echo gateway ;;
+        *"$ROOT/gateway/target/managed-agents-gateway-"*.jar*) echo gateway ;;
         *) return 1 ;;
     esac
 }
@@ -43,7 +45,7 @@ kill_pid() {
     [ -n "$pid" ] || return 0
     if kill -0 "$pid" 2>/dev/null; then
         if ! actual_name="$(managed_plane_name "$pid")"; then
-            echo "  * refusing to stop ${name}; PID is not an AgentScope Service plane ($(describe_pid "$pid"))" >&2
+            echo "  * refusing to stop ${name}; PID is not an Managed Agents plane ($(describe_pid "$pid"))" >&2
             return 1
         fi
         if [[ "$name" != port:* ]] && [ "$name" != "$actual_name" ]; then
@@ -96,13 +98,13 @@ if [ -d "$PID_DIR" ]; then
     done
 fi
 
-# Stop only identifiable AgentScope orphans. A Docker-published port is owned by
+# Stop only identifiable Managed Agents orphans. A Docker-published port is owned by
 # com.docker.backend on macOS; killing an arbitrary listener would stop Docker.
-for port in "$GATEWAY_PORT" "$CONTROL_PORT" "$DATA_PORT" "$PORTAL_PORT" "$HANDS_PORT"; do
+for port in "$GATEWAY_PORT" "$CONTROL_PORT" "$AGENT_HARNESS_RUNTIME_PORT" "$SCHED_PORT" "$AGENT_SERVICE_PORT" "$RUNTIME_PORT" "$TOOL_WORKER_PORT"; do
     free_port "$port"
 done
 
-if [ "${BUILDER_STOP_PG:-0}" = "1" ] && command -v docker >/dev/null 2>&1; then
+if [ "${MANAGED_AGENTS_STOP_PG:-0}" = "1" ] && command -v docker >/dev/null 2>&1; then
     if docker ps --format '{{.Names}}' | grep -qx "$PG_CONTAINER"; then
         docker stop "$PG_CONTAINER" >/dev/null
         echo "  OK Postgres container ${PG_CONTAINER} stopped"

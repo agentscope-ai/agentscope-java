@@ -3,21 +3,24 @@
 [English](managed-mcp-long-tool-cluster-walkthrough.en.md)
 
 本文使用 Draft 3 新协议；先检查下方协议版本，再执行测试。
+当前复查和升级入口见 [Draft 3 审计记录](../tests/session-protocol/draft3-audit.md)，
+实际发布、镜像摘要和集群验收结果位于 `release/dist/deploy-draft3-audit/`。
+旧版本记录 `release/dist/deploy-agencore-ma/mcp-long-tool/acceptance/report.json` 仅供历史对照。
 
 ## 准备
 
-示例隔离命名空间为 `agentscope-test`，镜像仓库由部署者指定。
-HTTP MCP 服务为 `agentscope-service-long-tool-mcp`，工具为 `longwait__long_wait`；
+已有集群隔离命名空间为 `agencore-ma`，镜像仓库命名空间为 `agentcore`。
+HTTP MCP 服务为 `managed-agents-long-tool-mcp`，工具为 `longwait__long_wait`；
 它执行真实等待，不依赖 Sandbox、Environment Worker 或 NAS。
 
 升级后打开测试终端：
 
 ```bash
-bash agentscope-service/scripts/cluster-api-shell.sh --long-tool
+bash managed-agents/scripts/cluster-api-shell.sh --long-tool
 api "/v1/sessions/$SESSION_ID/capabilities" | jq '{protocol_revision,extensions,features}'
 ```
 
-必须看到 `agentscope-service-2026-10-19-draft3`，才继续。脚本选中手动测试 Session；
+必须看到 `managed-agents-2026-10-19-draft3`，才继续。脚本选中手动测试 Session；
 自动验收必须另建 Session，避免消耗为用户准备的空会话。
 
 ## 提交 T1 与 T2
@@ -25,13 +28,13 @@ api "/v1/sessions/$SESSION_ID/capabilities" | jq '{protocol_revision,extensions,
 ```bash
 submit_turn() {
   local key="$1" text="$2"
-  jq -n --arg text "$text" '{events:[{type:"user.message",content:[{type:"text",text:$text}],agentscope_service:{intent:"new_turn"}}]}' \
+  jq -n --arg text "$text" '{events:[{type:"user.message",content:[{type:"text",text:$text}],managed_agents:{intent:"new_turn"}}]}' \
     | api "/v1/sessions/$SESSION_ID/events" -X POST -H "Idempotency-Key: $key" --data-binary @-
 }
 submit_turn "$RUN_ID-t1" "只调用一次 longwait__long_wait，marker=$RUN_ID，seconds=90。等待真实结果并报告 marker、call_id、started_at、finished_at。不要重复调用或伪造结果。" > "$D/t1.json"
-TURN1=$(jq -er '.data[0].agentscope_service.turn_id' "$D/t1.json")
+TURN1=$(jq -er '.data[0].managed_agents.turn_id' "$D/t1.json")
 submit_turn "$RUN_ID-t2" "这是排队的 T2，不调用工具，只从前一轮真实结果报告 call_id 和 finished_at。" > "$D/t2.json"
-TURN2=$(jq -er '.data[0].agentscope_service.turn_id' "$D/t2.json")
+TURN2=$(jq -er '.data[0].managed_agents.turn_id' "$D/t2.json")
 save_state
 api "/v1/sessions/$SESSION_ID/turns/$TURN1" | jq .
 api "/v1/sessions/$SESSION_ID/turns/$TURN2" | jq .
@@ -46,9 +49,9 @@ T1 未结清时，T2 保持 accepted；T1 完成后 T2 才运行。HTTP 200 只�
 T1 为 waiting_tool 时执行：
 
 ```bash
-jq -n --arg turn "$TURN1" '{events:[{type:"user.message",content:[{type:"text",text:"最终回答也注明工具真实完成后才继续。"}],agentscope_service:{intent:"inject",turn_id:$turn}}]}' \
+jq -n --arg turn "$TURN1" '{events:[{type:"user.message",content:[{type:"text",text:"最终回答也注明工具真实完成后才继续。"}],managed_agents:{intent:"inject",turn_id:$turn}}]}' \
   | api "/v1/sessions/$SESSION_ID/events" -X POST -H "Idempotency-Key: $RUN_ID-inject" --data-binary @- > "$D/input.json"
-INPUT=$(jq -er '.data[0].agentscope_service.input_id' "$D/input.json")
+INPUT=$(jq -er '.data[0].managed_agents.input_id' "$D/input.json")
 api "/v1/sessions/$SESSION_ID/turns/$TURN1/inputs/$INPUT" | jq .
 ```
 
@@ -72,9 +75,10 @@ api "/v1/sessions/$SESSION_ID/turns/$TURN2/output?limit=100" | jq .
 
 历史用 `page/next_page`；最终输出用 `after/next_cursor`，两者不能混用。结果读取不依赖
 SSE 或 snapshot。比较两轮输出的真实 call_id 和时间，再检查工具日志只出现一次物理调用。
-工具事件使用 agent.mcp_tool_use/result，Turn/Input 通知使用 agentscope_service.*。
+工具事件使用 agent.mcp_tool_use/result，Turn/Input 通知使用 managed_agents.*。
 
-自动验收脚本为 `agentscope-service/tests/http-mcp-long-tool/verify_session.py`。
+自动验收脚本为 `managed-agents/tests/http-mcp-long-tool/verify_session.py`。
 它先核对协议版本，再执行新事件协议、独立输出查询和物理日志验证。
-请在自行部署的隔离集群执行。此次回迁执行的是本地夹具测试，集群故障切换验收需在部署后另行完成。
-详细范围与结果见[回迁验证记录](master-sync-20261021.md)。
+2026-10-19 已在双副本集群执行基线与 Pod 故障测试，详见[双副本恢复验收](../tests/http-mcp-long-tool/dual-replica-recovery.md)。
+首次测试发现 Tool Worker 在途结果恢复缺口。补齐恢复扩展后的[新版本验收](../tests/http-mcp-long-tool/recovery-v1-acceptance.md)
+已验证 Worker/Runtime 重启、原结果查询、Suspend/Resume 和 T2 顺序均通过。

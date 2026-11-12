@@ -1,0 +1,118 @@
+{
+  "version": 1,
+  "mode": "common-budgets-native-context",
+  "nativeIterationGuard": 1000,
+  "ordering": "task-repeat-rotating-targets",
+  "simulator": {
+    "model": "qwen-plus",
+    "temperature": 0,
+    "timeoutSeconds": 90
+  },
+  "sampling": {
+    "smokeRepeats": 1,
+    "formalRepeats": 1,
+    "retryPolicy": "first-attempt-primary-reviewed-failure-only-at-most-one-retry"
+  },
+  "gateway": {
+    "required": true,
+    "modelTimeoutSeconds": 180,
+    "toolTimeoutSeconds": 90,
+    "maxContextBytes": null,
+    "maxToolResultBytes": 65536,
+    "request": {
+      "model": "qwen3.8-max",
+      "temperature": 0.2,
+      "top_p": 1,
+      "tool_choice": "auto",
+      "parallel_tool_calls": false,
+      "max_output_tokens": 8192,
+      "reasoning": {
+        "effort": "low"
+      },
+      "store": false,
+      "stream": true
+    },
+    "allowNativeAuxiliaryRequests": true
+  },
+  "deployment": {
+    "toolSurface": "mcp-only",
+    "replicas": 2,
+    "podQosClass": "Guaranteed",
+    "initResources": {
+      "cpu": "100m",
+      "memory": "128Mi"
+    },
+    "admissionPodLabels": {
+      "alibabacloud.com/compute-class": "general-purpose",
+      "alibabacloud.com/compute-qos": "default"
+    },
+    "admissionResourceDefaults": {
+      "requests": {
+        "ephemeral-storage": "30Gi"
+      }
+    },
+    "resources": {
+      "agent-harness-runtime": {
+        "cpu": "4",
+        "memory": "8Gi"
+      },
+      "agent-service": {
+        "cpu": "4",
+        "memory": "8Gi"
+      },
+      "tool-worker": {
+        "cpu": "4",
+        "memory": "8Gi"
+      },
+      "gateway": {
+        "cpu": "2",
+        "memory": "4Gi"
+      },
+      "control-plane": {
+        "cpu": "2",
+        "memory": "4Gi"
+      }
+    },
+    "toolConcurrency": 64,
+    "projectionConcurrency": 8,
+    "runtimeConcurrency": 4,
+    "toolControlConcurrency": 32
+  },
+  "benchmarks": {
+    "tau": {
+      "caseTimeoutSeconds": 900,
+      "turnTimeoutSeconds": 300,
+      "maxModelCalls": 60,
+      "maxTotalTokens": 8000000,
+      "maxToolCalls": 30,
+      "maxRecoveryAttempts": 2,
+      "maxActions": 30
+    },
+    "appworld": {
+      "caseTimeoutSeconds": 1800,
+      "turnTimeoutSeconds": 1800,
+      "maxModelCalls": 120,
+      "maxTotalTokens": 16000000,
+      "maxToolCalls": 120,
+      "maxRecoveryAttempts": 2
+    },
+    "terminal": {
+      "caseTimeoutSeconds": 900,
+      "turnTimeoutSeconds": 900,
+      "maxModelCalls": 200,
+      "maxToolCalls": 400,
+      "maxTotalTokens": 32000000,
+      "maxRecoveryAttempts": 2,
+      "timeoutPolicy": "use official per-task agent timeout for Session budget; use official verifier timeout separately"
+    }
+  },
+  "allowedNativeDifferences": [
+    "native system instructions preserving the complete business policy",
+    "reversible protocol-specific tool name mapping",
+    "native context compaction and history pruning, with auxiliary calls charged to the common budget"
+  ],
+  "limitations": [
+    "Provider model aliases are mutable; returned names are evidence, not pinned snapshots.",
+    "Native compaction algorithms, thresholds and retained history differ; compare this mode separately from the short-context baseline."
+  ]
+}

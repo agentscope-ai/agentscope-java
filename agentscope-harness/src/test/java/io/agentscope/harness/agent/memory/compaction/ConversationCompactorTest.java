@@ -24,6 +24,9 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.core.agent.ThreadKey;
+import io.agentscope.core.journal.InMemoryThreadJournalStore;
+import io.agentscope.core.journal.InvocationRecorder;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
@@ -31,9 +34,6 @@ import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.Model;
 import io.agentscope.core.model.ToolSchema;
-import io.agentscope.core.session.InMemorySessionLogStore;
-import io.agentscope.core.session.SessionKey;
-import io.agentscope.core.session.SessionRecorder;
 import io.agentscope.harness.agent.memory.MemoryFlushManager;
 import java.util.ArrayList;
 import java.util.List;
@@ -170,12 +170,12 @@ class ConversationCompactorTest {
     /** Verifies that the durable compaction end event contains before and after metrics. */
     @Test
     void compactIfNeeded_recordsCompactionMetrics() {
-        InMemorySessionLogStore store = new InMemorySessionLogStore();
+        InMemoryThreadJournalStore store = new InMemoryThreadJournalStore();
         RuntimeContext runtimeContext =
                 RuntimeContext.builder().userId("user").sessionId("session").build();
-        var log = store.open(new SessionKey("user", "agent-id", "session"), runtimeContext);
-        SessionRecorder recorder = new SessionRecorder(log, "turn");
-        runtimeContext.put(SessionRecorder.CONTEXT_KEY, recorder);
+        var log = store.open(new ThreadKey("user", "agent-id", "session", "main"), runtimeContext);
+        InvocationRecorder recorder = new InvocationRecorder(log, "turn");
+        runtimeContext.put(InvocationRecorder.CONTEXT_KEY, recorder);
 
         List<Msg> input = compactableMessages();
         MemoryFlushManager flushManager = new MemoryFlushManager(null, null);
@@ -207,12 +207,15 @@ class ConversationCompactorTest {
     /** Verifies that failed compaction records only metrics known before execution. */
     @Test
     void compactIfNeeded_failedEventOmitsAfterMetrics() {
-        InMemorySessionLogStore store = new InMemorySessionLogStore();
+        InMemoryThreadJournalStore store = new InMemoryThreadJournalStore();
         RuntimeContext runtimeContext =
                 RuntimeContext.builder().userId("user").sessionId("session").build();
-        var log = store.open(new SessionKey("user", "agent-id", "failed-session"), runtimeContext);
-        SessionRecorder recorder = new SessionRecorder(log, "turn");
-        runtimeContext.put(SessionRecorder.CONTEXT_KEY, recorder);
+        var log =
+                store.open(
+                        new ThreadKey("user", "agent-id", "failed-session", "main"),
+                        runtimeContext);
+        InvocationRecorder recorder = new InvocationRecorder(log, "turn");
+        runtimeContext.put(InvocationRecorder.CONTEXT_KEY, recorder);
         Model failingModel =
                 new Model() {
                     @Override

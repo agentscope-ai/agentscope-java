@@ -1,0 +1,28 @@
+# Combine with managed-agents/deploy/compose.yaml. Inject credentials through deployment secrets.
+services:
+  agent-service:
+    environment:
+      MANAGED_AGENTS_BRAIN_HTTP_ENABLED: "false"
+      MANAGED_AGENTS_BRAIN_CALLBACK_URL: ""
+      MANAGED_AGENTS_HARNESS_TYPE: codex
+      MANAGED_AGENTS_MODEL_PROVIDER: ${CODEX_MODEL_PROVIDER:-openai}
+      MANAGED_AGENTS_MODEL_BINDINGS: ${MANAGED_AGENTS_MODEL_BINDINGS:-}
+      MANAGED_AGENTS_MODEL_OPTIONS: ${MANAGED_AGENTS_MODEL_OPTIONS:-${MANAGED_AGENTS_PI_MODEL_OPTIONS:-}}
+      MANAGED_AGENTS_RUNTIME_SESSION_QUEUE_ENABLED: "true"
+  agent-harness-runtime:
+    image: ${IMAGE_REPOSITORY}/managed-agents-brain-codex:${SERVICE_VERSION}
+    environment: !override
+      SESSION_SERVICE_URL: http://agent-service:8084/internal/session-service/v0
+      MANAGED_AGENTS_INTERNAL_TOKEN: ${MANAGED_AGENTS_INTERNAL_TOKEN}
+      CODEX_MODEL_BASE_URL: ${CODEX_MODEL_BASE_URL:-https://api.openai.com/v1}
+      CODEX_MODEL_PROVIDER: ${CODEX_MODEL_PROVIDER:-openai}
+      CODEX_MODEL_API_KEY: ${CODEX_MODEL_API_KEY:-}
+      BRAIN_CONCURRENCY: ${BRAIN_CONCURRENCY:-4}
+      BRAIN_INLINE_WAIT_MS: ${BRAIN_INLINE_WAIT_MS:-1000}
+    volumes: !override []
+    stop_grace_period: 20s
+    healthcheck: !override
+      test: [CMD, /usr/local/bin/managed-brain-codex, --health-check]
+      interval: 15s
+      timeout: 3s
+      retries: 3

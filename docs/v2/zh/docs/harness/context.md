@@ -53,7 +53,7 @@ try (HarnessAgent agent = builder.build()) {
 }
 ```
 
-后续示例都是对这个 `builder` 的配置，应在应用启动时、第一次 `build()` 之前完成。上下文管理不要求使用 `AgentSession`；需要任务在页面关闭后继续执行、运行中补充要求或中断后续做时，再参考[会话操作、事件与恢复](/v2/zh/docs/harness/session-log)。
+后续示例均在应用启动、第一次 build 之前配置 builder。上下文管理可用于普通直接调用；后台排队、运行中补充要求和暂停恢复使用 [Durable](/v2/zh/docs/harness/durable)。
 
 <span id="材料与稳定指令" />
 
@@ -201,7 +201,7 @@ builder.toolResultEviction(ToolResultEvictionConfig.builder()
         .build());
 ```
 
-`read_file`、`write_file`、`edit_file`、`memory_search`、`memory_get` 和 `session_search` 默认不参与这种卸载。`execute` 等工具仍可卸载；读取工具本身应合理分页，避免一次读回全部内容又占满窗口。
+`read_file`、`write_file`、`edit_file`、`memory_search`、`memory_get` 和 `thread_search` 默认不参与这种卸载。`execute` 等工具仍可卸载；读取工具本身应合理分页，避免一次读回全部内容又占满窗口。
 
 <span id="配置预算与观测" />
 
@@ -251,7 +251,7 @@ builder.compaction(CompactionConfig.builder()
 
 <Accordion title="进一步减少旧工具参数和结果的开销">
 
-默认的工具结果裁剪会保护最近约 40,000 token 的工具输出；更早的可裁剪内容累计达到约 20,000 token 时，将旧结果缩为预览。这与单个大结果写入文件是两种处理：裁剪不会为每条旧结果额外生成可回读文件，需要完整事实时应查询 Session Log。
+默认的工具结果裁剪会保护最近约 40,000 token 的工具输出；更早的可裁剪内容累计达到约 20,000 token 时，将旧结果缩为预览。这与单个大结果写入文件是两种处理：裁剪不会为每条旧结果额外生成可回读文件，需要完整事实时应查询 Thread 日志。
 
 对于 `write_file` 等参数很长的工具，还可以在摘要前开启参数截断：
 
@@ -276,7 +276,7 @@ builder.compaction(CompactionConfig.builder()
 
 发送前，Harness 会检查最终预算以及工具调用与结果的配对。检查通过、准备期间状态也没有发生冲突，才会采用压缩后的工作历史并发出请求。如果 System、必需材料或其他内容仍然放不下，会抛出 `ContextBudgetExceededException`，此时需要缩小材料、工具定义或调整预算。
 
-估算通过后，供应商仍可能报告上下文溢出。压缩未禁用时，默认原生 Session Log 模式会尝试强制压缩，并在**同一次执行中重新发起这一轮推理一次**；它不会因此重新提交用户任务，也不会把之前已经完成的工具从头再执行。如果无法进一步压缩或重试仍失败，错误会返回给调用方。
+估算通过后，供应商仍可能报告上下文溢出。压缩未禁用时，默认原生 Thread 日志 模式会尝试强制压缩，并在**同一次执行中重新发起这一轮推理一次**；它不会因此重新提交用户任务，也不会把之前已经完成的工具从头再执行。如果无法进一步压缩或重试仍失败，错误会返回给调用方。
 
 <span id="什么时候刷新" />
 
@@ -303,7 +303,7 @@ builder.compaction(CompactionConfig.builder()
 
 长期记忆用于“以后还值得记住”。默认摘要前会尝试从待压缩部分提取长期事实到 Memory，供后续会话使用。摘要和记忆提取都可能遗漏细节，不能代替完整记录，具体配置见[记忆](/v2/zh/docs/harness/memory)。
 
-完整执行历史用于“回看当时发生了什么”。默认原生 Session Log 保存消息与执行事实，压缩只改变模型继续工作的上下文，不会删除这些已提交记录。需要精确回看一段输出时，Agent 可以在工具已启用且权限允许的情况下使用 `session_history`、`session_search`，也可以通过 `session_list` 查找历史会话。应用展示历史、恢复页面或从 checkpoint 继续时，应使用[会话日志 API](/v2/zh/docs/harness/session-log)，而不是把摘要当成完整聊天记录。
+完整执行历史用于“回看当时发生了什么”。默认原生 Thread 日志保存消息与执行事实，压缩只改变模型继续工作的上下文，不会删除这些已提交记录。需要精确回看一段输出时，Agent 可以在工具已启用且权限允许的情况下使用 `thread_history`、`thread_search`，也可以通过 `thread_list` 查找历史会话。应用展示历史、恢复页面或从 checkpoint 继续时，应使用[会话日志 API](/v2/zh/docs/harness/session-log)，而不是把摘要当成完整聊天记录。
 
 <span id="当前边界与排查" />
 
@@ -387,7 +387,7 @@ try (HarnessAgent agent = builder.build()) {
 
 `context_build` 在上下文准备成功或失败时都会发出，先于实际模型请求。上面的类型判断适用于 SDK 进程内的实时事件；事件经过 JSON 存储或传输后，应按 JSON 对象读取 `context_manifest`。
 
-默认原生 Session Log 会把它保存为 `context/build`。通过 `SessionEvent.data()` 解码记录载荷后，清单位于其中的 `event.value.context_manifest`。需要事后排查某个会话时，通过 `session.log()` 或 `agent.sessionLog(ctx)` 读取记录，并结合日志中的会话、turn 和 run 信息定位，具体见[会话操作、事件与恢复](/v2/zh/docs/harness/session-log)。Manifest 只保存元数据，不能用来重放完整提示词或恢复会话；来源 ID 也可能包含文件名，导出诊断记录时应按业务需要控制访问范围。
+默认原生 Thread 日志 会把它保存为 `context/build`。通过 `SessionEvent.data()` 解码记录载荷后，清单位于其中的 `event.value.context_manifest`。需要事后排查某个会话时，通过 `agent.threadJournal(ctx)` 读取记录，并结合日志中的会话、turn 和 run 信息定位，具体见[会话操作、事件与恢复](/v2/zh/docs/harness/session-log)。Manifest 只保存元数据，不能用来重放完整提示词或恢复会话；来源 ID 也可能包含文件名，导出诊断记录时应按业务需要控制访问范围。
 
 如果可选材料的默认取舍顺序不适合业务，可以进一步配置 `contextSelectionPolicy`；它只决定可省略材料的顺序，不能移除 System 或 `required` 内容。通常先精简来源返回值、减少无关工具 Schema，再调整这类策略，会更容易理解和维护。
 

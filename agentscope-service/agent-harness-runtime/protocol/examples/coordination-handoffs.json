@@ -1,0 +1,162 @@
+{
+  "register": {
+    "protocolVersion": "0.1.0",
+    "operation": "process-register",
+    "data": {
+      "process": {
+        "incarnation": "brain-start-1",
+        "role": "agent-harness-runtime",
+        "instance": "brain-replica-1"
+      },
+      "ttlMillis": 30000
+    }
+  },
+  "claim": {
+    "protocolVersion": "0.1.0",
+    "operation": "turn-claim",
+    "data": {
+      "scope": {
+        "tenant": "tenant-a",
+        "namespace": "project-a",
+        "sessionId": "session-1"
+      },
+      "turnId": "turn-1",
+      "publicationSequence": 1,
+      "token": "execution-guard-1",
+      "process": {
+        "incarnation": "brain-start-1",
+        "role": "agent-harness-runtime",
+        "instance": "brain-replica-1"
+      }
+    }
+  },
+  "renew": {
+    "protocolVersion": "0.1.0",
+    "operation": "process-renew",
+    "data": {
+      "process": {
+        "incarnation": "brain-start-1",
+        "role": "agent-harness-runtime",
+        "instance": "brain-replica-1"
+      },
+      "ttlMillis": 30000
+    }
+  },
+  "closeInputs": {
+    "protocolVersion": "0.1.0",
+    "operation": "input-close",
+    "data": {
+      "scope": {
+        "tenant": "tenant-a",
+        "namespace": "project-a",
+        "sessionId": "session-1"
+      },
+      "turnId": "turn-1",
+      "epoch": 1,
+      "process": {
+        "incarnation": "brain-start-1",
+        "role": "agent-harness-runtime",
+        "instance": "brain-replica-1"
+      }
+    }
+  },
+  "capture": {
+    "protocolVersion": "0.1.0",
+    "operation": "ack-capture",
+    "data": {
+      "topic": "turns",
+      "group": "brain",
+      "command": {
+        "scope": {
+          "tenant": "tenant-a",
+          "namespace": "project-a",
+          "sessionId": "session-1"
+        },
+        "turnId": "turn-1",
+        "publicationSequence": 1
+      },
+      "receipt": {
+        "messageId": "message-1",
+        "topic": "turns",
+        "liteTopic": "scope-hash-example",
+        "handle": "private-example-capability",
+        "queue": "private-example-queue",
+        "offset": 0,
+        "bornAt": 1,
+        "attempt": 1
+      },
+      "delayMillis": 60000
+    }
+  },
+  "ackClaim": {
+    "protocolVersion": "0.1.0",
+    "operation": "ack-claim",
+    "data": {
+      "topic": "turns",
+      "group": "brain",
+      "limit": 32
+    }
+  },
+  "ackComplete": {
+    "protocolVersion": "0.1.0",
+    "operation": "ack-complete",
+    "data": {
+      "topic": "turns",
+      "group": "brain",
+      "receiptId": "receipt-fingerprint-1"
+    }
+  },
+  "parent": {
+    "protocolVersion": "0.1.0",
+    "operation": "child-parent",
+    "data": {
+      "scope": {
+        "tenant": "tenant-a",
+        "namespace": "project-a",
+        "sessionId": "session-1"
+      }
+    }
+  },
+  "ready": {
+    "protocolVersion": "0.1.0",
+    "operation": "queue-validate",
+    "data": {
+      "ready": {
+        "schema_version": 1,
+        "scope": {
+          "tenant": "tenant-a",
+          "namespace": "project-a",
+          "sessionId": "session-1"
+        },
+        "scheduler_mode": "db_queue_v1",
+        "scheduler_generation": 1,
+        "requested_generation": 1,
+        "notification_id": "ready-1"
+      }
+    }
+  },
+  "mcp": {
+    "protocolVersion": "0.1.0",
+    "operation": "mcp-lookup",
+    "data": {
+      "scope": {
+        "tenant": "tenant-a",
+        "namespace": "project-a",
+        "sessionId": "session-1"
+      },
+      "turnId": "turn-1",
+      "catalogId": "catalog_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "requiredServers": [
+        "workspace"
+      ]
+    }
+  },
+  "claimReceipt": {
+    "protocolVersion": "0.1.0",
+    "result": 1
+  },
+  "noParent": {
+    "protocolVersion": "0.1.0",
+    "result": null
+  }
+}

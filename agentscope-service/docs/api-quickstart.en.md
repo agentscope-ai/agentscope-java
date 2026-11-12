@@ -14,13 +14,13 @@ POST /v1/sessions/{session_id}/events
 GET  /v1/sessions/{session_id}/events
 ```
 
-Agent/Environment provisioning remains this project's control-plane API. `POST /api/v1/agents` below is a platform setup step; it is not a Claude-compatible `/v1/agents` endpoint. Turn/Input queries, final-output queries, `agentscope_service` intents and capability discovery are optional platform extensions documented in the [reference](api-reference.en.md#api-layers).
+Agent/Environment provisioning remains this project's control-plane API. `POST /api/v1/agents` below is a platform setup step; it is not a Claude-compatible `/v1/agents` endpoint. Turn/Input queries, final-output queries, `managed_agents` intents and capability discovery are optional platform extensions documented in the [reference](api-reference.en.md#api-layers).
 
 ## Before you start
 
-Use a current deployment with schema migrations applied, Runtime and Hands running, and a valid server-side model configuration. Follow the [deployment guide](../deploy/README.md) to prepare PostgreSQL, Redis and MQ. This example disables tools and does not request files or Sandbox operations.
+Use a current deployment with schema migrations applied, Runtime and Tool Worker running, and a valid server-side model configuration. Follow the [deployment guide](../deploy/README.md) to prepare PostgreSQL, Redis and MQ. This example disables tools and does not request files or Sandbox operations.
 
-- **Local development:** enable `BUILDER_LOCAL_DEV=true`, use `http://localhost:18080`, leave `TOKEN` empty, and allow the default local Environment.
+- **Local development:** enable `MANAGED_AGENTS_LOCAL_DEV=true`, use `http://localhost:18080`, leave `TOKEN` empty, and allow the default local Environment.
 - **Authenticated deployment:** set the public URL, a user JWT in `TOKEN`, your `TENANT`/`NAMESPACE`, and an authorized runnable `ENVIRONMENT_ID`. Login uses `POST /api/auth/login`; Agent creation requires a management identity and resource permissions.
 
 The cURL walkthrough uses the same JWT for management and Session calls. An Application key can instead authenticate Session APIs with `X-API-Key`; it cannot replace the management identity used to create the Agent. The SDK example below supports either mode. Credentials here belong to this deployment, not to Anthropic or the model provider.
@@ -40,7 +40,7 @@ export NAMESPACE="${NAMESPACE:-default}"
 export TOKEN="${TOKEN:-}"
 export ENVIRONMENT_ID="${ENVIRONMENT_ID:-}"
 export RUN_ID="quickstart-$(date +%s)-$$"
-export D=$(mktemp -d "${TMPDIR:-/tmp}/agentscope-service-api.XXXXXX")
+export D=$(mktemp -d "${TMPDIR:-/tmp}/managed-agents-api.XXXXXX")
 
 api() {
   local path="$1"
@@ -51,8 +51,8 @@ api() {
   fi
   curl --fail-with-body -sS "$BASE_URL$path" \
     "${auth[@]}" \
-    -H "X-AgentScope-Tenant: $TENANT" \
-    -H "X-AgentScope-Namespace: $NAMESPACE" \
+    -H "X-Managed-Agents-Tenant: $TENANT" \
+    -H "X-Managed-Agents-Namespace: $NAMESPACE" \
     -H 'Content-Type: application/json' \
     -H 'anthropic-version: 2023-06-01' \
     -H 'anthropic-beta: managed-agents-2026-04-01' \
@@ -236,8 +236,8 @@ with Anthropic(
     default_headers={
         "X-Api-Key": omit if token else api_key,
         "Authorization": f"Bearer {token}" if token else omit,
-        "X-AgentScope-Tenant": os.environ.get("TENANT", "default"),
-        "X-AgentScope-Namespace": os.environ.get("NAMESPACE", "default"),
+        "X-Managed-Agents-Tenant": os.environ.get("TENANT", "default"),
+        "X-Managed-Agents-Namespace": os.environ.get("NAMESPACE", "default"),
     },
 ) as client:
     request_key = os.environ["RUN_ID"] + "-sdk"

@@ -12,46 +12,73 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-name: agentscope-service
+name: managed-agents
 
 x-runtime-env: &runtime-env
-  BUILDER_USER_FILES_ENABLED: ${BUILDER_USER_FILES_ENABLED:-true}
-  BUILDER_LOCAL_DEV: ${BUILDER_LOCAL_DEV:-false}
-  BUILDER_SESSION_TRACE_ENABLED: ${BUILDER_SESSION_TRACE_ENABLED:-false}
+  MANAGED_AGENTS_USER_FILES_ENABLED: ${MANAGED_AGENTS_USER_FILES_ENABLED:-true}
+  MANAGED_AGENTS_LOCAL_DEV: ${MANAGED_AGENTS_LOCAL_DEV:-false}
+  MANAGED_AGENTS_SESSION_TRACE_ENABLED: ${MANAGED_AGENTS_SESSION_TRACE_ENABLED:-false}
   SPRING_PROFILES_ACTIVE: jdbc
-  BUILDER_SEED_USERS: "false"
-  BUILDER_JPA_DDL_AUTO: validate
-  BUILDER_SCHEMA_INIT: "false"
-  BUILDER_JWT_SECRET: ${BUILDER_JWT_SECRET:?Required}
-  BUILDER_INTERNAL_TOKEN: ${BUILDER_INTERNAL_TOKEN:?Required}
-  BUILDER_VAULT_MASTER_KEY: ${BUILDER_VAULT_MASTER_KEY:?Required}
-  BUILDER_CONTROL_URL: http://control:8081
-  BUILDER_DATA_URL: http://data:8082
-  BUILDER_WEBHOOK_ALLOWED_HOSTS: ${BUILDER_WEBHOOK_ALLOWED_HOSTS:-}
-  BUILDER_WEBHOOK_SLOTS: ${BUILDER_WEBHOOK_SLOTS:-8}
-  BUILDER_SESSION_PORTAL_URL: http://portal:8084
-  BUILDER_HANDS_URL: http://hands:8085
-  BUILDER_MANAGED_REDIS_URI: ${BUILDER_MANAGED_REDIS_URI:?Set reachable Redis URI}
-  BUILDER_MANAGED_MQ_ENDPOINTS: ${BUILDER_MANAGED_MQ_ENDPOINTS:?Set RocketMQ 5.5.1 Cluster Proxy endpoints}
-  BUILDER_MANAGED_MQ_TURN_TOPIC: ${BUILDER_MANAGED_MQ_TURN_TOPIC:-ma_turns_v3}
-  BUILDER_MANAGED_MQ_TOOL_EVENT_TOPIC: ${BUILDER_MANAGED_MQ_TOOL_EVENT_TOPIC:-ma_tool_events_v3}
-  BUILDER_MANAGED_MQ_TOOL_EXECUTE_TOPIC: ${BUILDER_MANAGED_MQ_TOOL_EXECUTE_TOPIC:-ma_tool_execute_v1}
-  BUILDER_MANAGED_MQ_TOOL_CONTROL_TOPIC: ${BUILDER_MANAGED_MQ_TOOL_CONTROL_TOPIC:-ma_tool_control_v1}
-  BUILDER_MANAGED_MQ_TOOL_EXECUTE_GROUP: ${BUILDER_MANAGED_MQ_TOOL_EXECUTE_GROUP:-ma_hands_execute_v1}
-  BUILDER_MANAGED_MQ_TOOL_CONTROL_GROUP: ${BUILDER_MANAGED_MQ_TOOL_CONTROL_GROUP:-ma_hands_control_v1}
-  BUILDER_MANAGED_MQ_RESUME_TOPIC: ${BUILDER_MANAGED_MQ_RESUME_TOPIC:-ma_turn_resumes_v3}
-  BUILDER_MANAGED_MQ_BRAIN_GROUP: ${BUILDER_MANAGED_MQ_BRAIN_GROUP:-ma_brain_v3}
-  BUILDER_MANAGED_MQ_RESUME_GROUP: ${BUILDER_MANAGED_MQ_RESUME_GROUP:-ma_brain_resumes_v3}
-  BUILDER_MANAGED_MQ_TOOL_EVENTS_GROUP: ${BUILDER_MANAGED_MQ_TOOL_EVENTS_GROUP:-ma_brain_tool_events_v3}
-  BUILDER_MANAGED_MQ_CACHE_MESSAGES: ${BUILDER_MANAGED_MQ_CACHE_MESSAGES:-512}
-  BUILDER_MANAGED_MQ_CACHE_BYTES: ${BUILDER_MANAGED_MQ_CACHE_BYTES:-33554432}
-  BUILDER_MANAGED_MQ_SSL: ${BUILDER_MANAGED_MQ_SSL:-false}
-  BUILDER_MANAGED_MQ_ACCESS_KEY: ${BUILDER_MANAGED_MQ_ACCESS_KEY:-}
-  BUILDER_MANAGED_MQ_SECRET_KEY: ${BUILDER_MANAGED_MQ_SECRET_KEY:-}
-  BUILDER_WORKSPACE_ROOT: /data/workspaces
-  BUILDER_E2B_API_KEY: ${BUILDER_E2B_API_KEY:-}
+  MANAGED_AGENTS_SEED_USERS: "false"
+  MANAGED_AGENTS_JPA_DDL_AUTO: validate
+  MANAGED_AGENTS_SCHEMA_INIT: "false"
+  MANAGED_AGENTS_JWT_SECRET: ${MANAGED_AGENTS_JWT_SECRET:?Required}
+  MANAGED_AGENTS_INTERNAL_TOKEN: ${MANAGED_AGENTS_INTERNAL_TOKEN:?Required}
+  MANAGED_AGENTS_VAULT_MASTER_KEY: ${MANAGED_AGENTS_VAULT_MASTER_KEY:?Required}
+  MANAGED_AGENTS_CONTROL_URL: http://control-plane:8081
+  MANAGED_AGENTS_AGENT_HARNESS_RUNTIME_URL: http://agent-harness-runtime:8082
+  MANAGED_AGENTS_WEBHOOK_ALLOWED_HOSTS: ${MANAGED_AGENTS_WEBHOOK_ALLOWED_HOSTS:-}
+  MANAGED_AGENTS_WEBHOOK_SLOTS: ${MANAGED_AGENTS_WEBHOOK_SLOTS:-8}
+  MANAGED_AGENTS_AGENT_SERVICE_URL: http://agent-service:8084
+  MANAGED_AGENTS_SESSION_SERVICE_URL: http://agent-service:8084/internal/session-service/v0
+  MANAGED_AGENTS_TOOL_WORKER_URL: http://tool-worker:8085
+  MANAGED_AGENTS_OBJECT_STORE_PROVIDER: ${MANAGED_AGENTS_OBJECT_STORE_PROVIDER:-filesystem}
+  MANAGED_AGENTS_OBJECT_STORE_BACKEND_ID: ${MANAGED_AGENTS_OBJECT_STORE_BACKEND_ID:-runtime}
+  MANAGED_AGENTS_OBJECT_STORE_ROOT: /data/runtime-objects
+  MANAGED_AGENTS_OBJECT_STORE_ENDPOINT: ${MANAGED_AGENTS_OBJECT_STORE_ENDPOINT:-}
+  MANAGED_AGENTS_OBJECT_STORE_BUCKET: ${MANAGED_AGENTS_OBJECT_STORE_BUCKET:-}
+  MANAGED_AGENTS_OBJECT_STORE_REGION: ${MANAGED_AGENTS_OBJECT_STORE_REGION:-us-east-1}
+  MANAGED_AGENTS_OBJECT_STORE_ACCESS_KEY: ${MANAGED_AGENTS_OBJECT_STORE_ACCESS_KEY:-}
+  MANAGED_AGENTS_OBJECT_STORE_SECRET_KEY: ${MANAGED_AGENTS_OBJECT_STORE_SECRET_KEY:-}
+  MANAGED_AGENTS_RUNTIME_MQ_PROJECTION_TOPIC: ${MANAGED_AGENTS_RUNTIME_MQ_PROJECTION_TOPIC:-ma_session_projections_v3}
+  MANAGED_AGENTS_RUNTIME_MQ_PROJECTION_GROUP: ${MANAGED_AGENTS_RUNTIME_MQ_PROJECTION_GROUP:-ma_session_projections_v3}
+  MANAGED_AGENTS_RUNTIME_REDIS_URI: ${MANAGED_AGENTS_RUNTIME_REDIS_URI:?Set reachable Redis URI}
+  MANAGED_AGENTS_RUNTIME_MQ_ENDPOINTS: ${MANAGED_AGENTS_RUNTIME_MQ_ENDPOINTS:?Set RocketMQ 5.5.1 Cluster Proxy endpoints}
+  MANAGED_AGENTS_RUNTIME_SESSION_QUEUE_ENABLED: ${MANAGED_AGENTS_RUNTIME_SESSION_QUEUE_ENABLED:-false}
+  MANAGED_AGENTS_RUNTIME_MQ_SESSION_READY_TOPIC: ${MANAGED_AGENTS_RUNTIME_MQ_SESSION_READY_TOPIC:-ma_session_ready_v1}
+  MANAGED_AGENTS_RUNTIME_MQ_SESSION_READY_GROUP: ${MANAGED_AGENTS_RUNTIME_MQ_SESSION_READY_GROUP:-ma_session_ready_v1}
+  MANAGED_AGENTS_RUNTIME_MQ_TURN_TOPIC: ${MANAGED_AGENTS_RUNTIME_MQ_TURN_TOPIC:-ma_turns_v3}
+  MANAGED_AGENTS_RUNTIME_MQ_TOOL_EVENT_TOPIC: ${MANAGED_AGENTS_RUNTIME_MQ_TOOL_EVENT_TOPIC:-ma_tool_events_v3}
+  MANAGED_AGENTS_RUNTIME_MQ_TOOL_EXECUTE_TOPIC: ${MANAGED_AGENTS_RUNTIME_MQ_TOOL_EXECUTE_TOPIC:-ma_tool_execute_v1}
+  MANAGED_AGENTS_RUNTIME_MQ_TOOL_CONTROL_TOPIC: ${MANAGED_AGENTS_RUNTIME_MQ_TOOL_CONTROL_TOPIC:-ma_tool_control_v1}
+  MANAGED_AGENTS_RUNTIME_MQ_TOOL_EXECUTE_GROUP: ${MANAGED_AGENTS_RUNTIME_MQ_TOOL_EXECUTE_GROUP:-ma_hands_execute_v1}
+  MANAGED_AGENTS_RUNTIME_MQ_TOOL_CONTROL_GROUP: ${MANAGED_AGENTS_RUNTIME_MQ_TOOL_CONTROL_GROUP:-ma_hands_control_v1}
+  MANAGED_AGENTS_RUNTIME_MQ_RESUME_TOPIC: ${MANAGED_AGENTS_RUNTIME_MQ_RESUME_TOPIC:-ma_turn_resumes_v3}
+  MANAGED_AGENTS_RUNTIME_MQ_HARNESS_RUNTIME_GROUP: ${MANAGED_AGENTS_RUNTIME_MQ_HARNESS_RUNTIME_GROUP:-ma_brain_v3}
+  MANAGED_AGENTS_RUNTIME_MQ_RESUME_GROUP: ${MANAGED_AGENTS_RUNTIME_MQ_RESUME_GROUP:-ma_brain_resumes_v3}
+  MANAGED_AGENTS_RUNTIME_MQ_TOOL_EVENTS_GROUP: ${MANAGED_AGENTS_RUNTIME_MQ_TOOL_EVENTS_GROUP:-ma_brain_tool_events_v3}
+  MANAGED_AGENTS_RUNTIME_MQ_CACHE_MESSAGES: ${MANAGED_AGENTS_RUNTIME_MQ_CACHE_MESSAGES:-512}
+  MANAGED_AGENTS_RUNTIME_MQ_CACHE_BYTES: ${MANAGED_AGENTS_RUNTIME_MQ_CACHE_BYTES:-33554432}
+  MANAGED_AGENTS_RUNTIME_MQ_SSL: ${MANAGED_AGENTS_RUNTIME_MQ_SSL:-false}
+  MANAGED_AGENTS_WORKSPACE_ROOT: /data/workspaces
+  MANAGED_AGENTS_E2B_API_KEY: ${MANAGED_AGENTS_E2B_API_KEY:-}
   DASHSCOPE_API_KEY: ${DASHSCOPE_API_KEY:-}
   MANAGEMENT_ENDPOINT_HEALTH_SHOW_DETAILS: never
+
+x-query-env: &query-env
+  # Dedicated query backend is required by projection schema 3.
+  MANAGED_AGENTS_QUERY_STORE_ENABLED: "true"
+  MANAGED_AGENTS_QUERY_STORE_PROVIDER: ${MANAGED_AGENTS_QUERY_STORE_PROVIDER:-postgres}
+  MANAGED_AGENTS_QUERY_STORE_JDBC_URL: ${MANAGED_AGENTS_QUERY_STORE_JDBC_URL:-}
+  MANAGED_AGENTS_QUERY_STORE_USER: ${MANAGED_AGENTS_QUERY_STORE_USER:-}
+  MANAGED_AGENTS_QUERY_STORE_PASSWORD: ${MANAGED_AGENTS_QUERY_STORE_PASSWORD:-}
+  MANAGED_AGENTS_QUERY_STORE_ENDPOINT: ${MANAGED_AGENTS_QUERY_STORE_ENDPOINT:-}
+  MANAGED_AGENTS_QUERY_STORE_INSTANCE: ${MANAGED_AGENTS_QUERY_STORE_INSTANCE:-}
+  MANAGED_AGENTS_QUERY_STORE_ACCESS_KEY: ${MANAGED_AGENTS_QUERY_STORE_ACCESS_KEY:-}
+  MANAGED_AGENTS_QUERY_STORE_SECRET_KEY: ${MANAGED_AGENTS_QUERY_STORE_SECRET_KEY:-}
+  MANAGED_AGENTS_QUERY_STORE_TABLE_PREFIX: ${MANAGED_AGENTS_QUERY_STORE_TABLE_PREFIX:-Ma}
+  MANAGED_AGENTS_QUERY_STORE_SIGNING_KEY: ${MANAGED_AGENTS_QUERY_STORE_SIGNING_KEY:?Set at least 32 characters}
+  MANAGED_AGENTS_QUERY_STORE_BUILD: ${MANAGED_AGENTS_QUERY_STORE_BUILD:-v3}
 
 x-java-health: &java-health
   test: [CMD-SHELL, 'curl -fsS http://localhost:$${SERVER_PORT}/actuator/health >/dev/null']
@@ -65,53 +92,58 @@ services:
     image: postgres:17
     restart: unless-stopped
     environment:
-      POSTGRES_DB: ${POSTGRES_DB:-agentscope}
-      POSTGRES_USER: agentscope
+      POSTGRES_DB: ${POSTGRES_DB:-managed_agents}
+      POSTGRES_USER: managed_agents
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Required}
     volumes:
       - postgres:/var/lib/postgresql/data
       - ./postgres-init.sql:/docker-entrypoint-initdb.d/01-schemas.sql:ro
     healthcheck:
-      test: [CMD-SHELL, 'pg_isready -U agentscope -d "$${POSTGRES_DB}"']
+      test: [CMD-SHELL, 'pg_isready -U managed_agents -d "$${POSTGRES_DB}"']
       interval: 5s
       timeout: 5s
       retries: 30
+  schema-query:
+    image: ${IMAGE_REPOSITORY}/managed-agents-agent-service:${SERVICE_VERSION}
+    entrypoint: [java, -Dloader.main=io.agentcore.managed.server.runtime.managed.ManagedQueryStoreMain, -cp, /app.jar, org.springframework.boot.loader.launch.PropertiesLauncher]
+    command: [initialize]
+    environment: *query-env
   schema-control:
-    image: ${IMAGE_REPOSITORY:?Set image repository}/as-controlplane:${SERVICE_VERSION:?Set release version}
+    image: ${IMAGE_REPOSITORY:?Set image repository}/managed-agents-control-plane:${SERVICE_VERSION:?Set release version}
     command: [--storage-driver=postgres, --migrate-only]
     environment:
-      CONTROL_PLANE_PRODUCT_DSN: postgres://agentscope:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-agentscope}?sslmode=disable
-      CONTROL_PLANE_STORAGE_DSN: postgres://agentscope:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-agentscope}?sslmode=disable&search_path=rt
+      CONTROL_PLANE_PRODUCT_DSN: postgres://managed_agents:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-managed_agents}?sslmode=disable
+      CONTROL_PLANE_STORAGE_DSN: postgres://managed_agents:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-managed_agents}?sslmode=disable&search_path=rt
     depends_on:
       db: {condition: service_healthy}
-  schema-portal:
-    image: ${IMAGE_REPOSITORY}/as-session-portal:${SERVICE_VERSION}
-    entrypoint: [java, -Dloader.main=io.agentscope.builder.web.persistence.ServiceSchemaMain, -cp, /app.jar, org.springframework.boot.loader.launch.PropertiesLauncher]
-    command: [--component=portal]
+  schema-agent-service:
+    image: ${IMAGE_REPOSITORY}/managed-agents-agent-service:${SERVICE_VERSION}
+    entrypoint: [java, -Dloader.main=io.agentcore.managed.server.web.persistence.ServiceSchemaMain, -cp, /app.jar, org.springframework.boot.loader.launch.PropertiesLauncher]
+    command: [--component=agent-service]
     environment:
-      BUILDER_PORTAL_DB_URL: jdbc:postgresql://db:5432/${POSTGRES_DB:-agentscope}?currentSchema=portal
-      BUILDER_PORTAL_DB_USER: agentscope
-      BUILDER_PORTAL_DB_PASSWORD: ${POSTGRES_PASSWORD}
+      MANAGED_AGENTS_AGENT_SERVICE_DB_URL: jdbc:postgresql://db:5432/${POSTGRES_DB:-managed_agents}?currentSchema=portal
+      MANAGED_AGENTS_AGENT_SERVICE_DB_USER: managed_agents
+      MANAGED_AGENTS_AGENT_SERVICE_DB_PASSWORD: ${POSTGRES_PASSWORD}
     depends_on:
       db: {condition: service_healthy}
   schema-data:
-    image: ${IMAGE_REPOSITORY}/as-dataplane:${SERVICE_VERSION}
-    entrypoint: [java, -Dloader.main=io.agentscope.builder.web.persistence.ServiceSchemaMain, -cp, /app.jar, org.springframework.boot.loader.launch.PropertiesLauncher]
-    command: [--component=dataplane]
+    image: ${IMAGE_REPOSITORY}/managed-agents-agent-harness-runtime:${SERVICE_VERSION}
+    entrypoint: [java, -Dloader.main=io.agentcore.managed.server.web.persistence.ServiceSchemaMain, -cp, /app.jar, org.springframework.boot.loader.launch.PropertiesLauncher]
+    command: [--component=agent-harness-runtime]
     environment:
-      BUILDER_DB_URL: jdbc:postgresql://db:5432/${POSTGRES_DB:-agentscope}?currentSchema=dp
-      BUILDER_DB_USER: agentscope
-      BUILDER_DB_PASSWORD: ${POSTGRES_PASSWORD}
+      MANAGED_AGENTS_AGENT_HARNESS_RUNTIME_DB_URL: jdbc:postgresql://db:5432/${POSTGRES_DB:-managed_agents}?currentSchema=dp
+      MANAGED_AGENTS_AGENT_HARNESS_RUNTIME_DB_USER: managed_agents
+      MANAGED_AGENTS_AGENT_HARNESS_RUNTIME_DB_PASSWORD: ${POSTGRES_PASSWORD}
     depends_on:
       db: {condition: service_healthy}
-  schema-managed:
-    image: ${IMAGE_REPOSITORY}/as-session-portal:${SERVICE_VERSION}
-    entrypoint: [java, -Dloader.main=io.agentscope.builder.web.persistence.ServiceSchemaMain, -cp, /app.jar, org.springframework.boot.loader.launch.PropertiesLauncher]
-    command: [--component=managed]
+  schema-runtime:
+    image: ${IMAGE_REPOSITORY}/managed-agents-agent-service:${SERVICE_VERSION}
+    entrypoint: [java, -Dloader.main=io.agentcore.managed.server.web.persistence.ServiceSchemaMain, -cp, /app.jar, org.springframework.boot.loader.launch.PropertiesLauncher]
+    command: [--component=runtime]
     environment:
-      BUILDER_MANAGED_DB_URL: jdbc:postgresql://db:5432/${POSTGRES_DB:-agentscope}?currentSchema=ma
-      BUILDER_MANAGED_DB_USER: agentscope
-      BUILDER_MANAGED_DB_PASSWORD: ${POSTGRES_PASSWORD}
+      MANAGED_AGENTS_RUNTIME_DB_URL: jdbc:postgresql://db:5432/${POSTGRES_DB:-managed_agents}?currentSchema=ma
+      MANAGED_AGENTS_RUNTIME_DB_USER: managed_agents
+      MANAGED_AGENTS_RUNTIME_DB_PASSWORD: ${POSTGRES_PASSWORD}
     depends_on:
       db: {condition: service_healthy}
   schema-grants:
@@ -119,140 +151,138 @@ services:
     entrypoint: [sh, /postgres-roles.sh]
     environment:
       PGHOST: db
-      PGDATABASE: ${POSTGRES_DB:-agentscope}
-      PGUSER: agentscope
+      PGDATABASE: ${POSTGRES_DB:-managed_agents}
+      PGUSER: managed_agents
       PGPASSWORD: ${POSTGRES_PASSWORD}
       CONTROL_DB_PASSWORD: ${CONTROL_DB_PASSWORD:?Required}
-      PORTAL_DB_PASSWORD: ${PORTAL_DB_PASSWORD:?Required}
-      DATA_DB_PASSWORD: ${DATA_DB_PASSWORD:?Required}
-      HANDS_DB_PASSWORD: ${HANDS_DB_PASSWORD:?Required}
+      AGENT_SERVICE_DB_PASSWORD: ${AGENT_SERVICE_DB_PASSWORD:?Required}
+      AGENT_HARNESS_RUNTIME_DB_PASSWORD: ${AGENT_HARNESS_RUNTIME_DB_PASSWORD:?Required}
+      TOOL_WORKER_DB_PASSWORD: ${TOOL_WORKER_DB_PASSWORD:?Required}
     volumes:
       - ./postgres-roles.sh:/postgres-roles.sh:ro
     depends_on:
       schema-control: {condition: service_completed_successfully}
-      schema-portal: {condition: service_completed_successfully}
+      schema-agent-service: {condition: service_completed_successfully}
       schema-data: {condition: service_completed_successfully}
-      schema-managed: {condition: service_completed_successfully}
-  control:
-    image: ${IMAGE_REPOSITORY}/as-controlplane:${SERVICE_VERSION}
+      schema-runtime: {condition: service_completed_successfully}
+  control-plane:
+    image: ${IMAGE_REPOSITORY}/managed-agents-control-plane:${SERVICE_VERSION}
     restart: unless-stopped
     stop_grace_period: 30s
     command: [--storage-driver=postgres, --schema-mode=validate, --enable-runtime-workers=true]
     environment:
-      BUILDER_LOCAL_DEV: ${BUILDER_LOCAL_DEV:-false}
-      BUILDER_USER_FILES_ENABLED: ${BUILDER_USER_FILES_ENABLED:-true}
+      MANAGED_AGENTS_LOCAL_DEV: ${MANAGED_AGENTS_LOCAL_DEV:-false}
       CONTROL_PLANE_ENABLE_KUBERNETES: 'false'
       CONTROL_PLANE_HTTP_BIND: ':8081'
-      CONTROL_PLANE_PRODUCT_DSN: postgres://agentscope_control:${CONTROL_DB_PASSWORD}@db:5432/${POSTGRES_DB:-agentscope}?sslmode=disable
-      CONTROL_PLANE_STORAGE_DSN: postgres://agentscope_control:${CONTROL_DB_PASSWORD}@db:5432/${POSTGRES_DB:-agentscope}?sslmode=disable&search_path=rt
+      CONTROL_PLANE_PRODUCT_DSN: postgres://managed_agents_control:${CONTROL_DB_PASSWORD}@db:5432/${POSTGRES_DB:-managed_agents}?sslmode=disable
+      CONTROL_PLANE_STORAGE_DSN: postgres://managed_agents_control:${CONTROL_DB_PASSWORD}@db:5432/${POSTGRES_DB:-managed_agents}?sslmode=disable&search_path=rt
       CONTROL_PLANE_SEED_USERS: 'false'
       CONTROL_PLANE_BOOTSTRAP_ADMIN: ${CONTROL_PLANE_BOOTSTRAP_ADMIN:-admin}
       CONTROL_PLANE_BOOTSTRAP_PASSWORD: ${CONTROL_PLANE_BOOTSTRAP_PASSWORD:?Required}
       CONTROL_PLANE_WORKSPACE_ROOT: /data/workspaces
       CONTROL_PLANE_ARTIFACT_ROOT: /data/artifacts
-      BUILDER_JWT_SECRET: ${BUILDER_JWT_SECRET}
-      BUILDER_INTERNAL_TOKEN: ${BUILDER_INTERNAL_TOKEN}
-      BUILDER_VAULT_MASTER_KEY: ${BUILDER_VAULT_MASTER_KEY}
-      BUILDER_DATA_URL: http://data:8082
-      BUILDER_SESSION_PORTAL_URL: http://portal:8084
-      BUILDER_WEBHOOK_ALLOWED_HOSTS: ${BUILDER_WEBHOOK_ALLOWED_HOSTS:-}
-      BUILDER_WEBHOOK_ALLOW_LOOPBACK_HTTP: ${BUILDER_WEBHOOK_ALLOW_LOOPBACK_HTTP:-false}
-      BUILDER_WEBHOOK_SLOTS: ${BUILDER_WEBHOOK_SLOTS:-8}
-      BUILDER_CHANNEL_SLOTS: ${BUILDER_CHANNEL_SLOTS:-8}
-      BUILDER_OAUTH_PUBLIC_URL: ${BUILDER_OAUTH_PUBLIC_URL:-http://localhost:18080}
-      BUILDER_ALLOW_LOCAL_ENVIRONMENT: ${BUILDER_ALLOW_LOCAL_ENVIRONMENT:-false}
+      MANAGED_AGENTS_JWT_SECRET: ${MANAGED_AGENTS_JWT_SECRET}
+      MANAGED_AGENTS_INTERNAL_TOKEN: ${MANAGED_AGENTS_INTERNAL_TOKEN}
+      MANAGED_AGENTS_VAULT_MASTER_KEY: ${MANAGED_AGENTS_VAULT_MASTER_KEY}
+      MANAGED_AGENTS_AGENT_HARNESS_RUNTIME_URL: http://agent-harness-runtime:8082
+      MANAGED_AGENTS_AGENT_SERVICE_URL: http://agent-service:8084
+      MANAGED_AGENTS_WEBHOOK_ALLOWED_HOSTS: ${MANAGED_AGENTS_WEBHOOK_ALLOWED_HOSTS:-}
+      MANAGED_AGENTS_WEBHOOK_ALLOW_LOOPBACK_HTTP: ${MANAGED_AGENTS_WEBHOOK_ALLOW_LOOPBACK_HTTP:-false}
+      MANAGED_AGENTS_WEBHOOK_SLOTS: ${MANAGED_AGENTS_WEBHOOK_SLOTS:-8}
+      MANAGED_AGENTS_CHANNEL_SLOTS: ${MANAGED_AGENTS_CHANNEL_SLOTS:-8}
+      MANAGED_AGENTS_OAUTH_PUBLIC_URL: ${MANAGED_AGENTS_OAUTH_PUBLIC_URL:-http://localhost:18080}
+      MANAGED_AGENTS_ALLOW_LOCAL_ENVIRONMENT: ${MANAGED_AGENTS_ALLOW_LOCAL_ENVIRONMENT:-false}
     volumes:
       - workspaces:/data/workspaces
       - artifacts:/data/artifacts
     healthcheck:
-      test: [CMD, /service-controlplane, --healthcheck]
+      test: [CMD, /control-plane, --healthcheck]
       interval: 5s
       timeout: 5s
       retries: 30
     depends_on:
       schema-grants: {condition: service_completed_successfully}
-  portal:
-    image: ${IMAGE_REPOSITORY}/as-session-portal:${SERVICE_VERSION}
+  agent-service:
+    image: ${IMAGE_REPOSITORY}/managed-agents-agent-service:${SERVICE_VERSION}
     restart: unless-stopped
     environment:
-      <<: *runtime-env
+      <<: [*runtime-env, *query-env]
+      MANAGED_AGENTS_BRAIN_HTTP_ENABLED: "true"
+      MANAGED_AGENTS_BRAIN_CALLBACK_URL: http://agent-harness-runtime:8082/api/internal/brain/notify
       SERVER_PORT: 8084
-      BUILDER_PORTAL_DB_URL: jdbc:postgresql://db:5432/${POSTGRES_DB:-agentscope}?currentSchema=portal
-      BUILDER_PORTAL_DB_USER: agentscope_portal
-      BUILDER_PORTAL_DB_PASSWORD: ${PORTAL_DB_PASSWORD}
-      BUILDER_PORTAL_SCHEMA_INIT: never
-      BUILDER_PORTAL_FILE_TRANSFER_SLOTS: ${BUILDER_PORTAL_FILE_TRANSFER_SLOTS:-16}
-      BUILDER_PORTAL_DB_POOL_SIZE: ${BUILDER_PORTAL_DB_POOL_SIZE:-10}
-    healthcheck: *java-health
-    depends_on:
-      schema-grants: {condition: service_completed_successfully}
-      control: {condition: service_healthy}
-  data:
-    image: ${IMAGE_REPOSITORY}/as-dataplane:${SERVICE_VERSION}
-    restart: unless-stopped
-    environment:
-      <<: *runtime-env
-      SERVER_PORT: 8082
-      BUILDER_DB_URL: jdbc:postgresql://db:5432/${POSTGRES_DB:-agentscope}?currentSchema=dp
-      BUILDER_DB_USER: agentscope_data
-      BUILDER_DB_PASSWORD: ${DATA_DB_PASSWORD}
-      BUILDER_DATAPLANE_PUBLIC_URL: http://data:8082
-      BUILDER_MANAGED_CONSUMERS_ENABLED: "true"
-      BUILDER_MANAGED_CONCURRENCY: ${BUILDER_MANAGED_CONCURRENCY:-32}
-      BUILDER_MANAGED_TURN_CALLBACKS: ${BUILDER_MANAGED_TURN_CALLBACKS:-64}
-      BUILDER_MANAGED_RESUME_CALLBACKS: ${BUILDER_MANAGED_RESUME_CALLBACKS:-64}
-      BUILDER_MANAGED_TOOL_EVENT_CONCURRENCY: ${BUILDER_MANAGED_TOOL_EVENT_CONCURRENCY:-16}
-      BUILDER_MANAGED_CHILD_CONTROL_CONCURRENCY: ${BUILDER_MANAGED_CHILD_CONTROL_CONCURRENCY:-4}
-      BUILDER_RUNTIME_NATIVE_LOG_CONNECTIONS: ${BUILDER_RUNTIME_NATIVE_LOG_CONNECTIONS:-8}
-      BUILDER_RUNTIME_FILE_TRANSFER_SLOTS: ${BUILDER_RUNTIME_FILE_TRANSFER_SLOTS:-16}
-      SPRING_DATASOURCE_HIKARI_MAXIMUM_POOL_SIZE: ${BUILDER_DATA_DB_POOL_SIZE:-10}
+      MANAGED_AGENTS_AGENT_SERVICE_DB_URL: jdbc:postgresql://db:5432/${POSTGRES_DB:-managed_agents}?currentSchema=portal
+      MANAGED_AGENTS_AGENT_SERVICE_DB_USER: managed_agents_agent_service
+      MANAGED_AGENTS_AGENT_SERVICE_DB_PASSWORD: ${AGENT_SERVICE_DB_PASSWORD}
+      MANAGED_AGENTS_AGENT_SERVICE_SCHEMA_INIT: never
+      MANAGED_AGENTS_AGENT_SERVICE_FILE_TRANSFER_SLOTS: ${MANAGED_AGENTS_AGENT_SERVICE_FILE_TRANSFER_SLOTS:-16}
     volumes:
-      - workspaces:/data/workspaces
+      - runtime-objects:/data/runtime-objects
     healthcheck: *java-health
     depends_on:
-      portal: {condition: service_healthy}
-  hands:
-    image: ${IMAGE_REPOSITORY}/as-hands:${SERVICE_VERSION}
+      schema-query: {condition: service_completed_successfully}
+      schema-grants: {condition: service_completed_successfully}
+      control-plane: {condition: service_healthy}
+  agent-harness-runtime:
+    image: ${IMAGE_REPOSITORY}/managed-agents-agent-harness-runtime:${SERVICE_VERSION}
+    restart: unless-stopped
+    stop_grace_period: 45s
+    environment:
+      SERVER_PORT: 8082
+      MANAGED_AGENTS_SESSION_SERVICE_URL: http://agent-service:8084/internal/session-service/v0
+      MANAGED_AGENTS_INTERNAL_TOKEN: ${MANAGED_AGENTS_INTERNAL_TOKEN:?Required}
+      MANAGED_AGENTS_JWT_SECRET: ${MANAGED_AGENTS_JWT_SECRET:?Required}
+      MANAGED_AGENTS_VAULT_MASTER_KEY: ${MANAGED_AGENTS_VAULT_MASTER_KEY:?Required}
+      MANAGED_AGENTS_LOCAL_DEV: ${MANAGED_AGENTS_LOCAL_DEV:-false}
+      MANAGED_AGENTS_OBJECT_STORE_BACKEND_ID: ${MANAGED_AGENTS_OBJECT_STORE_BACKEND_ID:-runtime}
+      MANAGED_AGENTS_RUNTIME_CONCURRENCY: ${MANAGED_AGENTS_RUNTIME_CONCURRENCY:-32}
+      DASHSCOPE_API_KEY: ${DASHSCOPE_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+    healthcheck: *java-health
+    depends_on:
+      agent-service: {condition: service_healthy}
+  tool-worker:
+    image: ${IMAGE_REPOSITORY}/managed-agents-tool-worker:${SERVICE_VERSION}
     restart: unless-stopped
     stop_grace_period: 45s
     command: [--platform-service]
     environment:
       <<: *runtime-env
       SERVER_PORT: 8085
-      BUILDER_HANDS_PORT: 8085
-      BUILDER_HANDS_DB_URL: jdbc:postgresql://db:5432/${POSTGRES_DB:-agentscope}?currentSchema=ma
-      BUILDER_HANDS_DB_USER: agentscope_hands
-      BUILDER_HANDS_DB_PASSWORD: ${HANDS_DB_PASSWORD}
-      BUILDER_MANAGED_TOOL_CONCURRENCY: ${BUILDER_MANAGED_TOOL_CONCURRENCY:-16}
-      BUILDER_MANAGED_TOOL_CONTROL_CONCURRENCY: ${BUILDER_MANAGED_TOOL_CONTROL_CONCURRENCY:-4}
-      BUILDER_HANDS_DB_POOL_SIZE: ${BUILDER_HANDS_DB_POOL_SIZE:-16}
+      MANAGED_AGENTS_TOOL_WORKER_PORT: 8085
+      MANAGED_AGENTS_TOOL_WORKER_DB_URL: jdbc:postgresql://db:5432/${POSTGRES_DB:-managed_agents}?currentSchema=ma
+      MANAGED_AGENTS_TOOL_WORKER_DB_USER: managed_agents_tool_worker
+      MANAGED_AGENTS_TOOL_WORKER_DB_PASSWORD: ${TOOL_WORKER_DB_PASSWORD}
+      MANAGED_AGENTS_RUNTIME_TOOL_CONCURRENCY: ${MANAGED_AGENTS_RUNTIME_TOOL_CONCURRENCY:-700}
     volumes:
+      - runtime-objects:/data/runtime-objects
       - workspaces:/data/workspaces
     healthcheck: *java-health
     depends_on:
       schema-grants: {condition: service_completed_successfully}
-      control: {condition: service_healthy}
+      control-plane: {condition: service_healthy}
   gateway:
-    image: ${IMAGE_REPOSITORY}/as-gateway:${SERVICE_VERSION}
+    image: ${IMAGE_REPOSITORY}/managed-agents-gateway:${SERVICE_VERSION}
     restart: unless-stopped
     environment:
       SERVER_PORT: 8080
-      BUILDER_USER_FILES_ENABLED: ${BUILDER_USER_FILES_ENABLED:-true}
-      BUILDER_LOCAL_DEV: ${BUILDER_LOCAL_DEV:-false}
-      BUILDER_INTERNAL_TOKEN: ${BUILDER_INTERNAL_TOKEN}
-      BUILDER_CONTROL_URL: http://control:8081
-      BUILDER_DATA_URL: http://data:8082
-      BUILDER_SESSION_PORTAL_URL: http://portal:8084
-      BUILDER_HANDS_URL: http://hands:8085
+      MANAGED_AGENTS_USER_FILES_ENABLED: ${MANAGED_AGENTS_USER_FILES_ENABLED:-true}
+      MANAGED_AGENTS_LOCAL_DEV: ${MANAGED_AGENTS_LOCAL_DEV:-false}
+      MANAGED_AGENTS_INTERNAL_TOKEN: ${MANAGED_AGENTS_INTERNAL_TOKEN}
+      MANAGED_AGENTS_CONTROL_URL: http://control-plane:8081
+      MANAGED_AGENTS_AGENT_HARNESS_RUNTIME_URL: http://agent-harness-runtime:8082
+      MANAGED_AGENTS_AGENT_SERVICE_URL: http://agent-service:8084
+      MANAGED_AGENTS_TOOL_WORKER_URL: http://tool-worker:8085
       MANAGEMENT_ENDPOINT_HEALTH_SHOW_DETAILS: never
     ports:
       - '${BIND_ADDRESS:-127.0.0.1}:${GATEWAY_PORT:-18080}:8080'
     healthcheck: *java-health
     depends_on:
-      hands: {condition: service_healthy}
-      portal: {condition: service_healthy}
+      tool-worker: {condition: service_healthy}
+      agent-service: {condition: service_healthy}
 
 volumes:
+  runtime-objects:
   postgres:
   workspaces:
   artifacts:

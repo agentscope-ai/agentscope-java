@@ -21,18 +21,18 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.core.agent.ThreadKey;
+import io.agentscope.core.journal.JournalEvent;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ToolSchema;
-import io.agentscope.core.session.SessionEvent;
-import io.agentscope.core.session.SessionKey;
 import io.agentscope.core.tool.ToolCallParam;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.core.util.JsonUtils;
-import io.agentscope.harness.agent.session.WorkspaceSessionLogStore;
+import io.agentscope.harness.agent.journal.WorkspaceThreadJournalStore;
 import io.agentscope.harness.agent.workspace.WorkspaceManager;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -51,22 +51,23 @@ import org.junit.jupiter.params.provider.ValueSource;
 class KeywordSearchModesTest {
     @TempDir Path workspace;
     private MemorySearchTool memory;
-    private SessionSearchTool sessions;
+    private ThreadHistoryTool sessions;
     private static final String CONTENT = "部署决定：使用蓝鲸方案，端口 9580。 Alpha middle BETA [x].* C++";
 
     @BeforeEach
     void setUp() throws Exception {
         WorkspaceManager manager = new WorkspaceManager(workspace);
         memory = new MemorySearchTool(manager);
-        sessions = new SessionSearchTool(manager);
+        sessions = new ThreadHistoryTool(manager);
         Files.writeString(workspace.resolve("MEMORY.md"), CONTENT + "\nonly-first\nonly-second\n");
         Files.createDirectories(workspace.resolve("memory"));
         Files.writeString(
                 workspace.resolve("memory/2026-09-08.md"), "ledger-first separate ledger-second\n");
-        var store = new WorkspaceSessionLogStore(manager);
-        var log = store.open(new SessionKey(null, "agent", "session"), RuntimeContext.empty());
+        var store = new WorkspaceThreadJournalStore(manager);
+        var log =
+                store.open(new ThreadKey(null, "agent", "session", "main"), RuntimeContext.empty());
         var writer = log.acquire("keyword-fixture", Duration.ofMinutes(2));
-        var events = new ArrayList<SessionEvent>();
+        var events = new ArrayList<JournalEvent>();
         var contents = List.of(CONTENT, "only-first", "only-second");
         for (int index = 0; index < contents.size(); index++) {
             MsgRole role = index == 2 ? MsgRole.ASSISTANT : MsgRole.USER;
@@ -76,8 +77,8 @@ class KeywordSearchModesTest {
                             .content(TextBlock.builder().text(contents.get(index)).build())
                             .build();
             events.add(
-                    new SessionEvent(
-                            1,
+                    new JournalEvent(
+                            JournalEvent.SCHEMA_VERSION,
                             "keyword-event-" + index,
                             index + 1,
                             1,
@@ -94,7 +95,7 @@ class KeywordSearchModesTest {
     private List<String> search(String query, String mode) {
         return List.of(
                 memory.memorySearch(null, query, mode),
-                sessions.sessionSearch(null, query, "agent", 10, mode));
+                sessions.threadSearch(null, query, "agent", 10, mode));
     }
 
     @Test
@@ -102,8 +103,8 @@ class KeywordSearchModesTest {
         assertEquals(
                 memory.memorySearch(null, "部署 蓝鲸"), memory.memorySearch(null, "部署 蓝鲸", "phrase"));
         assertEquals(
-                sessions.sessionSearch(null, "部署 蓝鲸", null, 10),
-                sessions.sessionSearch(null, "部署 蓝鲸", null, 10, "phrase"));
+                sessions.threadSearch(null, "部署 蓝鲸", null, 10),
+                sessions.threadSearch(null, "部署 蓝鲸", null, 10, "phrase"));
         search("部署 蓝鲸", null).forEach(result -> assertFalse(found(result), result));
         search("蓝鲸", null).forEach(result -> assertTrue(found(result), result));
         search(" 蓝鲸 ", "phrase").forEach(result -> assertFalse(found(result), result));
@@ -156,8 +157,8 @@ class KeywordSearchModesTest {
 
     @Test
     void sessionFilterAndLimitArePreserved() {
-        assertMatchCount(1, sessions.sessionSearch(null, "only-first only-second", null, 1, "any"));
-        assertEquals("[]", sessions.sessionSearch(null, "蓝鲸", "different-agent", 10, "all"));
+        assertMatchCount(1, sessions.threadSearch(null, "only-first only-second", null, 1, "any"));
+        assertEquals("[]", sessions.threadSearch(null, "蓝鲸", "different-agent", 10, "all"));
     }
 
     @Test
@@ -165,7 +166,7 @@ class KeywordSearchModesTest {
         Toolkit toolkit = new Toolkit();
         toolkit.registerTool(memory);
         toolkit.registerTool(sessions);
-        for (String name : List.of("memory_search", "session_search")) {
+        for (String name : List.of("memory_search", "thread_search")) {
             List<ToolSchema> schemas =
                     toolkit.getToolSchemas().stream()
                             .filter(s -> s.getName().equals(name))

@@ -36,7 +36,7 @@ def run(args):
 
     def api(path, body=None, key=None):
         headers = {'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json',
-                   'X-AgentScope-Tenant': 'default', 'X-AgentScope-Namespace': 'default', 'AgentScope-Extensions': 'turn-inputs-v1'}
+                   'X-Managed-Agents-Tenant': 'default', 'X-Managed-Agents-Namespace': 'default', 'Managed-Agents-Extensions': 'turn-inputs-v1'}
         if key:
             headers['Idempotency-Key'] = key
         request = urllib.request.Request(base + path,
@@ -50,13 +50,13 @@ def run(args):
             raise RuntimeError(f'HTTP {error.code}: {path}; see private error file') from None
 
     capabilities = api(session_path + '/capabilities')
-    if capabilities.get('protocol_revision') != 'agentscope-service-2026-10-19-draft3':
+    if capabilities.get('protocol_revision') != 'managed-agents-2026-10-19-draft3':
         raise RuntimeError('Deploy the target protocol before running cluster acceptance; no work was submitted')
 
     def submit(text, key):
         response = api(session_path + '/events', {'events': [{'type': 'user.message',
-            'content': [{'type': 'text', 'text': text}], 'agentscope_service': {'intent': 'new_turn'}}]}, key)
-        return response['data'][0]['agentscope_service']['receipt']
+            'content': [{'type': 'text', 'text': text}], 'managed_agents': {'intent': 'new_turn'}}]}, key)
+        return response['data'][0]['managed_agents']['receipt']
     t1 = submit(f'请只调用一次 longwait__long_wait，marker={marker}，seconds={args.seconds}。'
         '等待真实结果后完整报告 marker、call_id、started_at、finished_at。不要重复调用，不要伪造结果。', marker + '-t1')
     t2 = submit(f'这是排队的 T2。本次 marker 是 {marker}。不要调用任何工具，只从上一轮真实工具结果'
@@ -78,9 +78,9 @@ def run(args):
             save('report.json', report)
             previous = current
         if current == ('waiting_tool', 'accepted') and injected is None:
-            body = {'events': [{'type': 'user.message', 'content': [{'type': 'text', 'text': '请在本轮最终答复额外原样包含 ' + injection}], 'agentscope_service': {'intent': 'inject', 'turn_id': t1['id']}}]}
-            injected = api(session_path + '/events', body, marker + '-inject')['data'][0]['agentscope_service']
-            assert api(session_path + '/events', body, marker + '-inject')['data'][0]['agentscope_service'] == injected
+            body = {'events': [{'type': 'user.message', 'content': [{'type': 'text', 'text': '请在本轮最终答复额外原样包含 ' + injection}], 'managed_agents': {'intent': 'inject', 'turn_id': t1['id']}}]}
+            injected = api(session_path + '/events', body, marker + '-inject')['data'][0]['managed_agents']
+            assert api(session_path + '/events', body, marker + '-inject')['data'][0]['managed_agents'] == injected
             report['injectedInput'] = injected
             save('report.json', report)
         if any(s in {'failed', 'cancelled'} for s in current):
@@ -116,15 +116,15 @@ def run(args):
         cursor = page['next_page']
     save('events.json', events)
     completed = [i for i, event in enumerate(events)
-                 if event['type'] == 'agentscope_service.turn.completed' and event['agentscope_service'].get('turn_id') == t1['id']]
+                 if event['type'] == 'managed_agents.turn.completed' and event['managed_agents'].get('turn_id') == t1['id']]
     running = [i for i, event in enumerate(events)
-               if event['type'] == 'agentscope_service.turn.running' and event['agentscope_service'].get('turn_id') == t2['id']]
+               if event['type'] == 'managed_agents.turn.running' and event['managed_agents'].get('turn_id') == t2['id']]
     assert completed and running and max(completed) < min(running), 'T2 overtook T1'
     report.update(outputs=outputs, t1CompletedEventIndex=completed[-1], t2RunningEventIndex=running[0])
     if args.kubeconfig:
         kubectl = ['kubectl', '--kubeconfig', str(args.kubeconfig)]
         logs = subprocess.check_output(kubectl + ['logs', '-n', config['kubernetesNamespace'],
-            '-l', 'app=agentscope-service-long-tool-mcp', '--tail=-1', '--max-log-requests=4'], text=True)
+            '-l', 'app=managed-agents-long-tool-mcp', '--tail=-1', '--max-log-requests=4'], text=True)
         physical = []
         for line in logs.splitlines():
             try:

@@ -146,7 +146,7 @@ export default function App() {
   const totals = object(view?.usage?.totals);
   const availablePages = Object.entries(view?.resource_pages ?? {}).filter(([kind, page]) => kind !== 'model_usage' && page.has_more);
   return <div className="playground">
-    <header className="topbar"><div className="brand"><span className="brand-symbol"><Zap size={22} fill="currentColor" /></span><div><strong>AgentScope Service</strong><span>SESSION PLAYGROUND</span></div></div><div className="top-meta"><span className="dev-label">LOCAL DEV</span><span>发送 · 观察 · 核对</span></div></header>
+    <header className="topbar"><div className="brand"><span className="brand-symbol"><Zap size={22} fill="currentColor" /></span><div><strong>Managed Agents</strong><span>SESSION PLAYGROUND</span></div></div><div className="top-meta"><span className="dev-label">LOCAL DEV</span><span>发送 · 观察 · 核对</span></div></header>
     <main>
       <section className="intro"><div><p className="eyebrow">让执行过程看得见</p><h1>一个会话，完整观察。</h1><p>发送用户指令，实时查看输出、工具执行与公开事件。</p></div><div className="intro-note"><Radio size={18} /><span>SSE 断开只停止观察<br />任务继续在服务端运行</span></div></section>
       <section className="connection-card">

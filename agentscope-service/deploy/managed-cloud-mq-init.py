@@ -8,7 +8,6 @@ This script initializes management resources; credentials remain in Secrets.
 """
 import argparse
 import json
-import os
 import subprocess
 
 PAIRS = [
@@ -17,10 +16,11 @@ PAIRS = [
     ("ma_tool_control_v1", "ma_hands_control_v1"),
     ("ma_tool_events_v3", "ma_brain_tool_events_v3"),
     ("ma_turn_resumes_v3", "ma_brain_resumes_v3"),
+    ("ma_session_projections_v3", "ma_session_projections_v3"),
 ]
 
 
-def initialize(instance, region):
+def initialize(instance, region, session_queue=False):
     def call(action, *args, missing=None):
         result = subprocess.run(
             ["aliyun", "rocketmq", action, "--region", region,
@@ -35,17 +35,13 @@ def initialize(instance, region):
             raise RuntimeError(json.dumps(value, ensure_ascii=False))
         return value.get("data")
 
-    keys = [('TURN_TOPIC', 'BRAIN_GROUP'), ('TOOL_EXECUTE_TOPIC', 'TOOL_EXECUTE_GROUP'),
-            ('TOOL_CONTROL_TOPIC', 'TOOL_CONTROL_GROUP'), ('TOOL_EVENT_TOPIC', 'TOOL_EVENTS_GROUP'),
-            ('RESUME_TOPIC', 'RESUME_GROUP')]
-    for (topic, group), (topic_key, group_key) in zip(PAIRS, keys):
-        topic = os.environ.get('BUILDER_MANAGED_MQ_' + topic_key) or topic
-        group = os.environ.get('BUILDER_MANAGED_MQ_' + group_key) or group
+    pairs = PAIRS + ([("ma_session_ready_v1", "ma_session_ready_v1")] if session_queue else [])
+    for topic, group in pairs:
         existing = call("GetTopic", "--topicName", topic, missing="Topic.NotFound")
         if existing is None:
             call("CreateTopic", "--topicName", topic, "--body", json.dumps({
                 "messageType": "LITE", "liteTopicExpiration": -1,
-                "remark": "AgentScope Service " + topic,
+                "remark": "Managed Agents " + topic,
             }))
         elif existing.get("messageType") != "LITE":
             raise RuntimeError("Existing Topic must be LITE: " + topic)
@@ -57,7 +53,7 @@ def initialize(instance, region):
                 "consumeRetryPolicy": {"retryPolicy": "FixedRetryPolicy",
                                        "fixedIntervalRetryTime": 1, "maxRetryTimes": 16},
                 "messageModel": "CLUSTERING", "topicName": topic,
-                "remark": "AgentScope Service verified wildcard Lite consumer",
+                "remark": "Managed Agents verified wildcard Lite consumer",
             }))
         elif (existing.get("messageModel") != "CLUSTERING"
               or existing.get("topicName") != topic
@@ -69,6 +65,7 @@ def initialize(instance, region):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--instance", required=True)
-    parser.add_argument("--region", required=True)
+    parser.add_argument("--region", default="cn-hangzhou")
+    parser.add_argument("--session-queue", action="store_true", help="Provision the opt-in database queue notification channel")
     options = parser.parse_args()
-    initialize(options.instance, options.region)
+    initialize(options.instance, options.region, options.session_queue)

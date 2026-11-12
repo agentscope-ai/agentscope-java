@@ -16,7 +16,7 @@
 package io.agentscope.claw2.web.config;
 
 import io.agentscope.core.agent.RuntimeContext;
-import io.agentscope.core.session.SessionTranscriptExport;
+import io.agentscope.core.journal.ThreadTranscriptExport;
 import io.agentscope.extensions.controlplane.adapter.SessionHistorySource;
 import io.agentscope.extensions.controlplane.model.MessagePage;
 import io.agentscope.extensions.controlplane.model.SessionEvent;
@@ -49,7 +49,7 @@ public final class AgentSessionHistorySource implements SessionHistorySource {
             RuntimeContext rc = RuntimeContext.builder().userId(uid).sessionId(sessionId).build();
             List<MessagePage.MessageItem> items = new ArrayList<>();
             int seq = 0;
-            for (var entry : SessionTranscriptExport.entries(harness.sessionTranscript(rc))) {
+            for (var entry : ThreadTranscriptExport.entries(harness.threadTranscript(rc))) {
                 items.add(
                         new MessagePage.MessageItem(
                                 ++seq,

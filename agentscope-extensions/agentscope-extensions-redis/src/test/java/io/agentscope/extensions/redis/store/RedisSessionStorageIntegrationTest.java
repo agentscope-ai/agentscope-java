@@ -19,10 +19,10 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
-import io.agentscope.core.session.JournalSessionLog;
-import io.agentscope.core.session.SessionEvent;
-import io.agentscope.core.session.SessionLogException;
-import io.agentscope.harness.agent.session.StoreSessionStorage;
+import io.agentscope.core.journal.AtomicThreadJournal;
+import io.agentscope.core.journal.JournalEvent;
+import io.agentscope.core.journal.JournalException;
+import io.agentscope.harness.agent.journal.StoreJournalStorage;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
@@ -66,33 +66,32 @@ class RedisSessionStorageIntegrationTest {
                         firstCas.get(10, TimeUnit.SECONDS), secondCas.get(10, TimeUnit.SECONDS));
                 assertEquals(1, firstStore.get(List.of("cas"), "key").version());
                 var first =
-                        new JournalSessionLog(
-                                new StoreSessionStorage(firstStore, List.of("tenant")), "session");
+                        new AtomicThreadJournal(
+                                new StoreJournalStorage(firstStore, List.of("tenant")), "session");
                 var second =
-                        new JournalSessionLog(
-                                new StoreSessionStorage(secondStore, List.of("tenant")), "session");
+                        new AtomicThreadJournal(
+                                new StoreJournalStorage(secondStore, List.of("tenant")), "session");
                 var writer = first.acquire("run-a", Duration.ofMinutes(1));
                 assertThrows(
-                        SessionLogException.class,
+                        JournalException.class,
                         () -> second.acquire("run-b", Duration.ofMinutes(1)));
                 var event =
-                        new SessionEvent(
-                                1, "event", 1, 1, "run/start", "run-a", "turn", true, "{}");
+                        new JournalEvent(
+                                2, "event", 1, 1, "run/start", "run-a", "turn", true, "{}");
                 first.commit(writer, "batch", 0, List.of(event));
                 first.commit(writer, "batch", 0, List.of(event));
                 assertEquals(List.of(event), second.readAfter(0, 10));
                 second.sealWriter("run-a");
                 assertThrows(
-                        SessionLogException.class,
-                        () -> first.renew(writer, Duration.ofMinutes(1)));
+                        JournalException.class, () -> first.renew(writer, Duration.ofMinutes(1)));
                 assertThrows(
-                        SessionLogException.class,
+                        JournalException.class,
                         () -> first.acquire("run-a", Duration.ofMinutes(1)));
                 second.release(second.acquire("run-b", Duration.ofMinutes(1)));
                 assertEquals(
                         0,
-                        new JournalSessionLog(
-                                        new StoreSessionStorage(secondStore, List.of("other")),
+                        new AtomicThreadJournal(
+                                        new StoreJournalStorage(secondStore, List.of("other")),
                                         "session")
                                 .head()
                                 .seq());

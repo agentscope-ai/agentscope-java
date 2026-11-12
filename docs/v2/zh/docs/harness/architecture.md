@@ -8,7 +8,7 @@ en_link: /v2/en/docs/harness/architecture
 
 `ReActAgent` 提供推理循环、工具、权限和会话上下文等基础 API；Harness 在这些能力上提供开箱即用的组合与默认配置。两者都支持 `call` 和 `streamEvents`。
 
-推荐在应用启动时配置共享 `HarnessAgent.Builder`，每次直接调用前用 `builder.build()` 创建新实例，执行结束后关闭。会话通过稳定身份与同一日志后端延续；具体代码和共享实例的适用方式见[实例生命周期](/v2/zh/docs/building-blocks/agent#实例生命周期)。后台 `AgentSession` 的实例则由会话管理器持有到后台执行结束。
+推荐在应用启动时配置共享 `HarnessAgent.Builder`，每次直接调用前用 `builder.build()` 创建新实例，执行结束后关闭。会话通过稳定身份与同一日志后端延续；具体代码和共享实例的适用方式见[实例生命周期](/v2/zh/docs/building-blocks/agent#实例生命周期)。Durable adapter 工厂为受管调用创建原生 Agent，Runtime 统一管理持久任务调度。
 
 ## 核心工作原理
 
@@ -18,11 +18,13 @@ en_link: /v2/en/docs/harness/architecture
 
 - **获取回复或把 Agent 接入工作流**：使用 `call(input, ctx)`。
 - **在当前请求内展示实时文本和工具进度**：使用 `streamEvents(input, ctx)`。
-- **让任务在后台继续，支持排队、补充要求和中断恢复**：使用 `agent.session(ctx)` 提供的 `AgentSession`。
+- **让任务在后台继续，支持排队、补充要求和恢复**：使用 [DurableRuntime](/v2/zh/docs/harness/durable)。
 
-直接调用也支持多轮会话，并使用默认的 Session Log 和 checkpoint 保存状态。AgentSession 进一步负责持久接收任务、安排执行和关联待办；业务无需为这些操作自行管理执行订阅。两种方式使用同一个 Agent 的模型、工具和中间件配置。
+直接调用也支持多轮会话，并使用默认的 Thread 日志 和 checkpoint 保存状态。Durable 负责持久受理、Thread 队列和待办关联。Harness 经由 AgentScope adapter 提供同一套模型、工具和中间件能力，不再持有另一套任务调度器。
 
-调用示例见[智能体](/v2/zh/docs/building-blocks/agent)，完整的后台会话流程见[会话操作、事件与恢复](/v2/zh/docs/harness/session-log)。已有工作流调度器的应用可继续直接调用；托管 HTTP 接入使用 [Service Agent API](/v2/zh/service/session-event-log)。
+普通调用不创建持久 Turn。本地子 Agent 使用自己的 Run 和执行计数，通过父 Run/Step 关联来源；不继承父调用的控制对象或恢复位置。需要持久任务、后台接管与跨进程控制时，由 Durable 管理相应 Thread/Turn。
+
+调用示例见[智能体](/v2/zh/docs/building-blocks/agent)，后台任务接入见 [Durable](/v2/zh/docs/harness/durable)。已有工作流调度器的应用可继续直接调用；托管 HTTP 接入使用 [Service Agent API](/v2/zh/service/session-event-log)。
 
 ## 核心组件
 
@@ -31,8 +33,8 @@ en_link: /v2/en/docs/harness/architecture
 | 能力 | 解决什么问题 | 配置或操作 | 详细文档 |
 |---|---|---|---|
 | 工作区驱动的人格 | 人格 / 知识 / 子 agent / 技能 / MCP 白名单都以文件形式存在 | `.workspace(path)` | [工作区](/v2/zh/docs/harness/workspace) |
-| 状态持久化与执行日志 | 完整事实、checkpoint、跨请求和跨节点恢复 | 默认 EVENT_LOG；`.sessionLogStore(...)` 替换 | [会话日志](/v2/zh/docs/harness/session-log) |
-| 会话任务管理 | 后台执行、持久排队、补充信息和恢复 | `agent.session(ctx)` | [会话操作](/v2/zh/docs/harness/session-log) |
+| 状态持久化与执行日志 | 完整事实、checkpoint、跨请求和跨节点恢复 | 默认日志模式；`.threadJournalStore(...)` 替换 | [会话日志](/v2/zh/docs/harness/session-log) |
+| 持久任务 | 后台执行、排队、补充信息和恢复 | `DurableRuntime` | [Durable](/v2/zh/docs/harness/durable) |
 | 双层长期记忆 | 长会话里有价值的事实自动沉淀到 `MEMORY.md` | 默认开启；`.memory(...)` 定制 prompt / 触发策略 | [记忆](/v2/zh/docs/harness/memory) |
 | 对话压缩 | 上下文有界；模型真的溢出时强制重试 | `.compaction(...)` | [上下文管理](/v2/zh/docs/harness/context) |
 | 大工具结果卸载 | 超 80K 字符的结果落盘 + 占位符 | `.toolResultEviction(...)` | [上下文管理](/v2/zh/docs/harness/context) |
@@ -49,14 +51,14 @@ en_link: /v2/en/docs/harness/architecture
 状态分三层，框架自动在层之间搬数据。
 
 - **调用内状态** —— `AgentState`（对话上下文、权限规则、Plan Mode 状态、工具状态）加上 `RuntimeContext`（`sessionId`、`userId`、沙箱句柄、extra）。
-- **跨调用状态** —— 默认从 Session Log 的 checkpoint 及后续可应用事实恢复；完整历史保留，JSONL 仅按需导出。LEGACY 使用 AgentStateStore；文件、子任务及 sandbox 元数据仍由各自后端保存。
+- **跨调用状态** —— 默认从 Thread 日志 的 checkpoint 及后续可应用事实恢复；完整历史保留，JSONL 仅按需导出。快照模式 使用 AgentStateStore；文件、子任务及 sandbox 元数据仍由各自后端保存。
 - **长期记忆** —— 跨 session 累积：`memory/YYYY-MM-DD.md` 只追加；后台节流任务把它周期合并到 `MEMORY.md`；`MEMORY.md` 每次 call 加载为参考上下文，不作为 System 指令。
 
 三个值得记住的规律：
 
 - 最终请求每轮重新构建，但工作区文件按 call 加载；修改 AGENTS.md 或 MEMORY.md 后下一次 call 生效，不需要重启。
 - 压缩、记忆提炼、后台维护都被节流闸门管着，不会每轮都跑。
-- `AgentState` 的持久化由 Core 执行生命周期管理：EVENT_LOG 写 checkpoint，LEGACY 写旧状态存储。Harness 配置默认日志后端。
+- `AgentState` 的持久化由 Core 执行生命周期管理：日志模式 写 checkpoint，快照模式写状态存储。Harness 配置默认日志后端。
 
 ## 自己加 middleware 时要注意什么
 

@@ -1,7 +1,7 @@
-# Source build of the complete Session Portal architecture.
+# Source build of the complete Agent Service architecture.
 # Run ./deploy/init-env.sh VERSION LOCAL_IMAGE_NAMESPACE, then:
 # docker compose --env-file deploy/.env up --build --wait
-name: agentscope-service-dev
+name: managed-agents-dev
 services:
   db:
     extends:
@@ -10,104 +10,108 @@ services:
     volumes:
       - postgres:/var/lib/postgresql/data
       - ./deploy/postgres-init.sql:/docker-entrypoint-initdb.d/01-schemas.sql:ro
+  schema-query:
+    extends:
+      file: ./deploy/compose.yaml
+      service: schema-query
+    build:
+      context: ..
+      dockerfile: managed-agents/docker/Dockerfile.service
+      args:
+        MODULE: agent-service
   schema-control:
     extends:
       file: ./deploy/compose.yaml
       service: schema-control
     build:
       context: ..
-      dockerfile: agentscope-service/docker/Dockerfile.control
-      args:
-        VERSION: ${SERVICE_VERSION:?Set source image version}
-  schema-portal:
+      dockerfile: managed-agents/docker/Dockerfile.control
+  schema-agent-service:
     extends:
       file: ./deploy/compose.yaml
-      service: schema-portal
+      service: schema-agent-service
     build:
       context: ..
-      dockerfile: agentscope-service/docker/Dockerfile.service
+      dockerfile: managed-agents/docker/Dockerfile.service
       args:
-        MODULE: service-session-portal
+        MODULE: agent-service
   schema-data:
     extends:
       file: ./deploy/compose.yaml
       service: schema-data
     build:
       context: ..
-      dockerfile: agentscope-service/docker/Dockerfile.service
+      dockerfile: managed-agents/docker/Dockerfile.service
       args:
-        MODULE: service-dataplane
-  schema-managed:
+        MODULE: agent-harness-runtime
+  schema-runtime:
     extends:
       file: ./deploy/compose.yaml
-      service: schema-managed
+      service: schema-runtime
     build:
       context: ..
-      dockerfile: agentscope-service/docker/Dockerfile.service
+      dockerfile: managed-agents/docker/Dockerfile.service
       args:
-        MODULE: service-session-portal
+        MODULE: agent-service
   schema-grants:
     extends:
       file: ./deploy/compose.yaml
       service: schema-grants
     volumes:
       - ./deploy/postgres-roles.sh:/postgres-roles.sh:ro
-  control:
+  control-plane:
     extends:
       file: ./deploy/compose.yaml
-      service: control
+      service: control-plane
     build:
       context: ..
-      dockerfile: agentscope-service/docker/Dockerfile.control
-      args:
-        VERSION: ${SERVICE_VERSION:?Set source image version}
+      dockerfile: managed-agents/docker/Dockerfile.control
     environment:
-      BUILDER_LOCAL_DEV: ${BUILDER_LOCAL_DEV:-true}
-  portal:
+      MANAGED_AGENTS_LOCAL_DEV: ${MANAGED_AGENTS_LOCAL_DEV:-true}
+  agent-service:
     extends:
       file: ./deploy/compose.yaml
-      service: portal
+      service: agent-service
     build:
       context: ..
-      dockerfile: agentscope-service/docker/Dockerfile.service
+      dockerfile: managed-agents/docker/Dockerfile.service
       args:
-        MODULE: service-session-portal
+        MODULE: agent-service
     environment:
-      BUILDER_LOCAL_DEV: ${BUILDER_LOCAL_DEV:-true}
-  data:
+      MANAGED_AGENTS_LOCAL_DEV: ${MANAGED_AGENTS_LOCAL_DEV:-true}
+  agent-harness-runtime:
     extends:
       file: ./deploy/compose.yaml
-      service: data
+      service: agent-harness-runtime
     build:
       context: ..
-      dockerfile: agentscope-service/docker/Dockerfile.service
+      dockerfile: managed-agents/docker/Dockerfile.service
       args:
-        MODULE: service-dataplane
+        MODULE: agent-harness-runtime
     environment:
-      BUILDER_LOCAL_DEV: ${BUILDER_LOCAL_DEV:-true}
-  hands:
+      MANAGED_AGENTS_LOCAL_DEV: ${MANAGED_AGENTS_LOCAL_DEV:-true}
+  tool-worker:
     extends:
       file: ./deploy/compose.yaml
-      service: hands
+      service: tool-worker
     build:
       context: ..
-      dockerfile: agentscope-service/docker/Dockerfile.service
+      dockerfile: managed-agents/docker/Dockerfile.service
       args:
-        MODULE: service-hands
-    environment:
-      BUILDER_LOCAL_DEV: ${BUILDER_LOCAL_DEV:-true}
+        MODULE: tool-worker
   gateway:
     extends:
       file: ./deploy/compose.yaml
       service: gateway
     build:
       context: ..
-      dockerfile: agentscope-service/docker/Dockerfile.service
+      dockerfile: managed-agents/docker/Dockerfile.service
       args:
-        MODULE: service-gateway
+        MODULE: gateway
     environment:
-      BUILDER_LOCAL_DEV: ${BUILDER_LOCAL_DEV:-true}
+      MANAGED_AGENTS_LOCAL_DEV: ${MANAGED_AGENTS_LOCAL_DEV:-true}
 volumes:
+  runtime-objects:
   postgres:
   workspaces:
   artifacts:

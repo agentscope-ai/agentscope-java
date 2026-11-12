@@ -230,7 +230,14 @@ class ReActAgentOnAgentStateReadyTest {
 
         agent.call(List.of(new UserMessage("hello")), rc("u4", "s4")).block(TIMEOUT);
 
-        AgentState saved = store.get("u4", "s4", "agent_state", AgentState.class).orElseThrow();
+        AgentState saved =
+                store.get(
+                                "u4",
+                                "s4",
+                                new ThreadKey(null, "asst", "unused-bucket", "main")
+                                        .stateEntry("agent_state"),
+                                AgentState.class)
+                        .orElseThrow();
         assertTrue(
                 saved.getContext().stream().anyMatch(m -> "boot".equals(m.getTextContent())),
                 "middleware-written state must be persisted");

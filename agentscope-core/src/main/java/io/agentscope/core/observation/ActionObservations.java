@@ -18,9 +18,9 @@ package io.agentscope.core.observation;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.event.AgentEventEmitter;
 import io.agentscope.core.event.CustomEvent;
+import io.agentscope.core.journal.InvocationRecorder;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolResultState;
-import io.agentscope.core.session.SessionRecorder;
 import io.agentscope.core.tool.ToolCallParam;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -43,7 +43,7 @@ public final class ActionObservations {
                     RuntimeContext context = param.getRuntimeContext();
                     Object configured =
                             context == null ? null : context.get(ActionObserver.CONTEXT_KEY);
-                    SessionRecorder recorder = SessionRecorder.from(context);
+                    InvocationRecorder recorder = InvocationRecorder.from(context);
                     ActionObserver observer;
                     if (recorder != null) {
                         observer =

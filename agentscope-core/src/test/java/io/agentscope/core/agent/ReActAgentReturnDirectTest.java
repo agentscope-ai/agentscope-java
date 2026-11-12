@@ -32,6 +32,8 @@ import io.agentscope.core.event.TextBlockStartEvent;
 import io.agentscope.core.hook.Hook;
 import io.agentscope.core.hook.HookEvent;
 import io.agentscope.core.hook.PostActingEvent;
+import io.agentscope.core.journal.InMemoryThreadJournalStore;
+import io.agentscope.core.journal.JournalEvent;
 import io.agentscope.core.message.DataBlock;
 import io.agentscope.core.message.GenerateReason;
 import io.agentscope.core.message.MessageMetadataKeys;
@@ -64,6 +66,7 @@ import java.util.function.Supplier;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
+import org.junit.jupiter.params.provider.ValueSource;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
@@ -771,6 +774,60 @@ class ReActAgentReturnDirectTest {
     }
 
     // ==== External-resume closure (caller supplies results after TOOL_SUSPENDED) ====
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void externalReturnDirectRecordsAnActingStepBeforeApplyingTheResult(boolean streaming) {
+        var model =
+                new ScriptedModel(
+                        List.of(() -> Flux.just(toolUseResponse("tc1", "ext", Map.of()))));
+        var logs = new InMemoryThreadJournalStore();
+        var agent =
+                ReActAgent.builder()
+                        .name("asst")
+                        .model(model)
+                        .toolkit(toolkitWith(new TestTool("ext", true, null).suspended()))
+                        .threadJournalStore(logs)
+                        .build();
+        var first =
+                RuntimeContext.builder().sessionId("session").turnId("turn").runId("first").build();
+        assertEquals(
+                GenerateReason.TOOL_SUSPENDED,
+                agent.call(List.of(), first).block(Duration.ofSeconds(5)).getGenerateReason());
+        var second =
+                RuntimeContext.builder(first)
+                        .runId("second")
+                        .put(AgentExecutionPosition.class, new AgentExecutionPosition(1, 0))
+                        .build();
+        var input = List.of(externalResultMsg(successResult("tc1", "ext", "result")));
+        Msg output =
+                streaming
+                        ? agent.streamEvents(input, second)
+                                .ofType(AgentResultEvent.class)
+                                .map(AgentResultEvent::getResult)
+                                .single()
+                                .block(Duration.ofSeconds(5))
+                        : agent.call(input, second).block(Duration.ofSeconds(5));
+        assertEquals(GenerateReason.TOOL_RETURN_DIRECT, output.getGenerateReason());
+        assertEquals(1, model.callCount());
+        var log = agent.threadJournal(second);
+        var events = new ArrayList<JournalEvent>();
+        log.scan(0, log.head().seq()).forEach(events::add);
+        var steps = events.stream().filter(e -> "step/start".equals(e.type())).toList();
+        assertEquals(2, steps.size());
+        assertEquals("first", steps.get(0).executionRunId());
+        assertEquals("second", steps.get(1).executionRunId());
+        assertEquals("ACTING", steps.get(1).data().get("phase"));
+        assertEquals(
+                steps.get(0).data().get("stepId"), steps.get(1).data().get("resumedFromStepId"));
+        assertNotEquals(steps.get(0).data().get("stepId"), steps.get(1).data().get("stepId"));
+        var applied =
+                events.stream()
+                        .filter(e -> "interaction/resolved".equals(e.type()))
+                        .findFirst()
+                        .orElseThrow();
+        assertTrue(steps.get(1).seq() < applied.seq());
+    }
 
     @Test
     void externalResumeShortCircuitsReturnDirect() {

@@ -1,0 +1,253 @@
+# Copyright 2024-2026 the original author or authors.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# Required: the registry namespace from your release manifest.
+imageRepository: ""
+# Empty uses Chart.appVersion; release packaging sets appVersion.
+imageTag: ""
+imagePullPolicy: IfNotPresent
+imagePullSecrets: []
+# Optional full OCI image reference on each component (image:) overrides imageTag.
+# Evaluation controls are opt-in; normal installations retain native defaults.
+evaluation:
+  initResources: {}
+  contextMode: "" # short | native
+  toolEnvelope: "" # text-json-v1 (text benchmark track)
+  toolSurface: "" # mcp-only (disable implicit framework capabilities)
+# Pre-create a Secret using deploy/kubernetes.env.example. Never put credentials in values.
+existingSecret: ""
+# Explicit single-user development identity for POC deployments.
+localDev: false
+# Migration credentials belong in a separate, pre-created Secret.
+schema:
+  enabled: true
+  # Render/run initialization Jobs without service workloads or PVCs.
+  only: false
+  existingSecret: ""
+  # Cloud owner connections override any stale migration env file. Empty opts out explicitly.
+  dataExistingSecret: managed-agents-cloud-data-migration
+  activeDeadlineSeconds: 600
+  resources:
+    requests: {cpu: 100m, memory: 256Mi}
+    limits: {memory: 1Gi}
+# Cloud business connections load last, after workload and MQ Secrets.
+# Missing Secrets prevent startup; empty explicitly opts into another installation.
+data:
+  existingSecret: managed-agents-cloud-data
+# PostgreSQL is operated separately; create cp, rt, portal, dp, ma schemas before installing.
+# This Chart runs standalone control-plane: no Kubernetes reconcilers or RuntimeProtocol gRPC.
+allowLocalEnvironment: false
+# Disable public file APIs and use per-pod scratch workspaces without shared user-file storage.
+userFilesEnabled: true
+publicURL: http://localhost:18080
+service:
+  type: ClusterIP
+  port: 8080
+persistence:
+  workspaces:
+    existingClaim: ""
+    storageClass: ""
+    accessModes: [ReadWriteMany]
+    size: 10Gi
+  artifacts:
+    existingClaim: ""
+    storageClass: ""
+    accessModes: [ReadWriteMany]
+    size: 10Gi
+runtime:
+  processOwnership: false
+  fragmentDeadlineSeconds: 600
+  toolCollectorDeadlineSeconds: 3600
+  stableRouting:
+    enabled: false
+    cell: default
+    layout: 1
+    shards: 64
+  sessionLog:
+    enabled: true
+    chunksEnabled: false
+  sessionQueue:
+    enabled: false
+  # Cloud data Secret supplies Redis; MQ endpoint/auth use the MQ-only Secret.
+  mq:
+    # ACS uses the managed cloud MQ Secret; loaded after the workload Secret.
+    # Set empty explicitly only for a self-hosted installation.
+    existingSecret: managed-agents-cloud-mq
+    projectionTopic: ma_session_projections_v3
+    projectionGroup: ma_session_projections_v3
+    sessionReadyTopic: ma_session_ready_v1
+    sessionReadyGroup: ma_session_ready_v1
+    turnTopic: ma_turns_v3
+    toolEventTopic: ma_tool_events_v3
+    toolExecuteTopic: ma_tool_execute_v1
+    toolControlTopic: ma_tool_control_v1
+    toolExecuteGroup: ma_hands_execute_v1
+    toolControlGroup: ma_hands_control_v1
+    resumeTopic: ma_turn_resumes_v3
+    harnessRuntimeGroup: ma_brain_v3
+    resumeGroup: ma_brain_resumes_v3
+    toolEventsGroup: ma_brain_tool_events_v3
+    cacheMessages: 512
+    cacheBytes: 33554432
+    ssl: false
+control-plane:
+  executionSlots: 32
+  workerBatch: 64
+  databaseMaxOpenConns: 16
+  databaseMaxIdleConns: 5
+  webhookSlots: 8
+  channelSlots: 8
+  replicas: 2
+  existingSecret: ""
+  resources:
+    requests: {cpu: "2", memory: 4Gi}
+    limits: {cpu: "2", memory: 4Gi}
+# One Brain kernel per installation; Session bindings cannot be changed by switching this value.
+brain:
+  type: agentscope-java # agentscope-java | pi | pi-durable | codex
+  # Shared sealed model catalog for every Harness; nonempty bindings override legacy options.
+  model:
+    provider: openai
+    bindings: {}
+  pi:
+    # Dedicated Secret containing ONLY MANAGED_AGENTS_INTERNAL_TOKEN and model credentials.
+    existingSecret: ""
+    imageTag: ""
+    modelProvider: openai
+    # Nonsecret sealed options: api/baseUrl/credentialEnv/contextWindow/outputLimit/cost/parameters.
+    modelOptions: {}
+    concurrency: 4
+    inlineWaitMs: 1000
+    drainMs: 30000
+    abortGraceMs: 2000
+    terminationGracePeriodSeconds: 40
+    retryBaseMs: 1000
+    retryMaxMs: 300000
+    retryBudget: 8
+  codex:
+    # Dedicated Secret containing only the internal token and selected model credentials.
+    existingSecret: ""
+    imageTag: ""
+    modelProvider: openai
+    modelBaseUrl: https://api.openai.com/v1
+    modelOptions: {}
+    modelBindings: {}
+    concurrency: 4
+    inlineWaitMs: 1000
+    terminationGracePeriodSeconds: 40
+agent-harness-runtime:
+  replicas: 2
+  # Only named auth/model keys are projected, never envFrom platform infrastructure secrets.
+  existingSecret: ""
+  modelCredentialEnv: [DASHSCOPE_API_KEY, OPENAI_API_KEY, ANTHROPIC_API_KEY]
+  ddlAuto: validate
+  concurrency: 32 # HTTP Brain requires 1..256; callbacks return 429 at capacity.
+  resumeHandoffCapacity: 64
+  projectionNotificationConcurrency: 16
+  toolPublicationConcurrency: 32
+  toolPublicationRepairInterval: 30s
+  renewalThreads: 32
+  controlThreads: 32
+  inlineToolWaitSeconds: 5
+  modelTimeoutSeconds: 0
+  loadTestModel:
+    enabled: false
+    profiles: {}
+  turnCallbacks: 64
+  resumeCallbacks: 64
+  toolEventConcurrency: 16
+  childControlConcurrency: 4
+  nativeLogConnections: 8
+  fileTransferSlots: 16
+  resources:
+    requests: {cpu: 250m, memory: 512Mi}
+    limits: {memory: 2Gi}
+webhooks:
+  allowedHosts: []
+gateway:
+  replicas: 2
+  resources:
+    requests: {cpu: 100m, memory: 256Mi}
+    limits: {memory: 1Gi}
+agent-service:
+  projection:
+    role: both
+    concurrency: 4
+    objectMaxRequests: 4
+    objectMaxInflightBytes: 134217728
+  traceEnabled: false
+  replicas: 2
+  existingSecret: ""
+  fileTransferSlots: 16
+  resources:
+    requests: {cpu: 250m, memory: 512Mi}
+    limits: {memory: 2Gi}
+tool-worker:
+  # Platform HTTP / MQ service; customer Environment Workers connect through Gateway.
+  # Optional component-only rollout; empty inherits the global imageTag.
+  imageTag: ""
+  replicas: 2
+  existingSecret: ""
+  toolControlConcurrency: 4
+  # Short blocking transitions only; pending async tools do not occupy these threads.
+  toolInflightCapacity: 16384
+  toolHandoffCapacity: 64
+  toolRepairPeriod: 30s
+  toolConcurrency: 700
+  toolCallbacks: 16
+  toolRenewalThreads: 16
+  mcpWorkerThreads: 700
+  mcpCachedClients: 1024
+  resources:
+    requests: {cpu: 250m, memory: 512Mi}
+    limits: {memory: 2Gi}
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+  host: ""
+  tls: []
+nodeSelector: {}
+tolerations: []
+
+# Runtime content backend; S3-compatible endpoints include self-hosted object stores.
+# Set credentials in the existing business Secret, not in values.
+objectStore:
+  # Object credentials are mounted only in the three Java data-plane roles.
+  existingSecret: ""
+  cacheBytes: 67108864
+  cacheItemBytes: 262144
+  stateCacheEntries: 16384
+  maxRequests: 32
+  maxInflightBytes: 268435456
+  capacityWaitMs: 5000
+  provider: s3
+  backendId: runtime
+  endpoint: ""
+  bucket: ""
+  region: us-east-1
+  # filesystem requires a durable RWX claim shared by API, Brain and Tool Worker.
+  existingClaim: ""
+
+# Credentials, endpoint and signing key are supplied by this dedicated Secret.
+# PostgreSQL query-store.jdbc-url must refer to an independent query database.
+queryStore:
+  enabled: true
+  provider: tablestore
+  existingSecret: ""
+  tablePrefix: Ma
+  build: v3
+  segmentSpan: 100000
+  maxConnections: 256
+  initialize: false

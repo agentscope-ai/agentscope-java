@@ -1,0 +1,4 @@
+psycopg[binary]==3.2.13
+httpx==0.28.1
+starlette==1.9.0
+uvicorn==0.54.0

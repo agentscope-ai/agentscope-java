@@ -52,6 +52,7 @@ public class ToolCallParam {
     private final Agent agent;
     private final RuntimeContext runtimeContext;
     private final ToolEmitter emitter;
+    private final boolean propagateErrors;
 
     private ToolCallParam(Builder builder) {
         this.toolUseBlock = builder.toolUseBlock;
@@ -59,6 +60,7 @@ public class ToolCallParam {
         this.agent = builder.agent;
         this.runtimeContext = builder.runtimeContext;
         this.emitter = builder.emitter;
+        this.propagateErrors = builder.propagateErrors;
     }
 
     /**
@@ -121,6 +123,16 @@ public class ToolCallParam {
     }
 
     /**
+     * Whether Toolkit preserves invocation exceptions and empty completion for the caller.
+     * Validation failures still return error results. This does not change retry policies.
+     *
+     * @return true when invocation failures must not be converted to tool error results
+     */
+    public boolean isPropagateErrors() {
+        return propagateErrors;
+    }
+
+    /**
      * Creates a new builder for constructing ToolCallParam instances.
      *
      * @return A new builder
@@ -166,6 +178,7 @@ public class ToolCallParam {
         private Agent agent;
         private RuntimeContext runtimeContext;
         private ToolEmitter emitter;
+        private boolean propagateErrors;
 
         private Builder() {}
 
@@ -175,6 +188,7 @@ public class ToolCallParam {
             this.agent = source.agent;
             this.runtimeContext = source.runtimeContext;
             this.emitter = source.emitter;
+            this.propagateErrors = source.propagateErrors;
         }
 
         /**
@@ -246,6 +260,19 @@ public class ToolCallParam {
          */
         public Builder emitter(ToolEmitter emitter) {
             this.emitter = emitter;
+            return this;
+        }
+
+        /**
+         * Preserve invocation exceptions and empty completion in {@link Toolkit#callTool}.
+         * Useful when the caller must distinguish an unconfirmed effect from a tool-reported error.
+         * Defaults to false; suspension remains an explicit suspended result.
+         *
+         * @param propagateErrors whether to preserve the invocation outcome
+         * @return this builder
+         */
+        public Builder propagateErrors(boolean propagateErrors) {
+            this.propagateErrors = propagateErrors;
             return this;
         }
 

@@ -32,11 +32,11 @@ en_link: /v2/en/docs/harness/workspace
 - **自学习技能**（`skills/`）—— agent 从成功模式中起草新技能；经过可选的审批闸门后成为可复用能力，再由后台 curator 把长期未用的老化、归档。
 - **计划文件**（`plans/`）—— Plan Mode 中写下的计划会持久化、跨调用保留，让"想清楚"与"做出来"解耦。
 - **工具结果落盘**（compaction）—— 超大工具输出写到磁盘，上下文里只留 head/tail 预览 + `read_file` 指针，agent 之后可按需重读而不撑爆 prompt。
-- **会话日志** —— 原生 Session Log 保存完整执行事实和 checkpoint；`agents/<agentId>/sessions/` 的 JSONL 保留为兼容消息视图。
+- **会话日志** —— 原生 Thread 日志保存完整执行事实和 checkpoint；通过 `ThreadTranscriptExport` 按需导出消息视图。
 
 这些进化数据默认长期有效：记忆无限累积，会话日志只追加不自动清除。每条通道如何产生与维护，详见下文 [智能体如何进化](#智能体如何进化)。
 
-`AgentState` 描述当前工作状态；默认 EVENT_LOG 模式将它保存为原生日志中的 checkpoint。旧 AgentStateStore 仍用于 legacy 和显式迁移，详见 [会话日志与恢复](/v2/zh/docs/harness/session-log)。
+`AgentState` 描述当前工作状态；默认日志模式 模式将它保存为原生日志中的 checkpoint。关闭日志时，AgentStateStore 保存当前工作状态，详见 [会话日志与恢复](/v2/zh/docs/harness/session-log)。
 
 **2. 内容按生命周期分三类，互不混淆。**
 
@@ -48,7 +48,7 @@ en_link: /v2/en/docs/harness/workspace
 
 混在一棵树里只是为了部署方便（一个目录拷贝走就是完整 agent），框架内部走不同的读写路径。
 
-> **区分文件产物和恢复状态。** 计划、技能和记忆是 Workspace 文件；AgentState 是结构化运行状态。默认 EVENT_LOG 模式将状态 checkpoint 放进原生 Session Log，日志复用 Filesystem 的保留分区或自定义后端。LEGACY 才以独立 AgentStateStore 为恢复来源。
+> **区分文件产物和恢复状态。** 计划、技能和记忆是 Workspace 文件；AgentState 是结构化运行状态。默认日志模式 模式将状态 checkpoint 放进原生 Thread 日志，日志复用 Filesystem 的保留分区或自定义后端。快照模式 才以独立 AgentStateStore 为恢复来源。
 
 **3. 原生多租户隔离。** 工作区数据（记忆、会话、任务、技能、沙箱状态）由单一的 `IsolationScope` 分桶——无需应用层手写任何分区逻辑。Scope 决定谁和谁共享一个桶：
 
@@ -157,11 +157,11 @@ env:
 |------|---------|
 | `disableWorkspaceContext()` | 工作区指令和参考材料加载（`AGENTS.md` / `MEMORY.md` / `knowledge/`） |
 | `disableMemoryHooks()` | 记忆 flush + 后台维护；同时去掉 Persistence 段里「对话结束自动抽取」的文案。与 `disableMemoryTools()` 一起用时，也不再注入 `HARNESS_CONTEXT` 中的 memory 材料（`MEMORY.md`） |
-| `disableMemoryTools()` | `memory_search` / `memory_get` / `memory_save` / `session_search` 工具；同时去掉 Memory Recall 与依赖这些工具的 Persistence 引导 |
+| `disableMemoryTools()` | `memory_search` / `memory_get` / `memory_save` / `thread_search` 工具；同时去掉 Memory Recall 与依赖这些工具的 Persistence 引导 |
 | `disableSubagents()` | 整个子 agent 子系统 |
 | `disableDynamicSkills()` | 每轮重新合并技能；改成 build 时一次 |
 | `disableToolsConfig()` | 不读 `tools.json` |
-| `disableSessionPersistence()` | 兼容 no-op；不能用它关闭原生 Session Log，模式选择见会话日志指南 |
+| `journalEnabled(false)` | 使用 stateStore 工作状态快照；不再写执行日志 |
 
 ## 工作区内容如何被加载
 
@@ -295,12 +295,12 @@ HarnessAgent agent = HarnessAgent.builder()
 
 ## 运行时数据与 Memory 怎么存
 
-默认 EVENT_LOG 下，AgentState 的 checkpoint 与完整执行事实保存在原生 Session Log 中；文件产物和长期记忆仍各有生命周期。
+默认日志模式 下，AgentState 的 checkpoint 与完整执行事实保存在原生 Thread 日志 中；文件产物和长期记忆仍各有生命周期。
 
 | 数据 | 存储与恢复 |
 | --- | --- |
-| 原生执行历史、AgentState checkpoint | Filesystem 的 `.agentscope-runtime/` / 远端保留分区，或显式 SessionLogStore；通过 API 读取 |
-| AgentStateStore | LEGACY 恢复来源和显式迁移来源；默认本地根 `~/.agentscope/state/<agentId>/`，可用 stateStore 替换 |
+| 原生执行历史、AgentState checkpoint | Filesystem 的 `.agentscope-runtime/` / 远端保留分区，或显式 ThreadJournalStore；通过 API 读取 |
+| AgentStateStore | 快照模式 恢复来源和显式迁移来源；默认本地根 `~/.agentscope/state/<agentId>/`，可用 stateStore 替换 |
 | 任务、计划、记忆和工作文件 | Workspace / TaskRepository / sandbox 等对应后端；日志 checkpoint 不复制它们的全部内容 |
 
 ### Agent 状态与原生日志
@@ -356,7 +356,7 @@ workspace/
 | **自学习技能** | `skills/`、`skills/_drafts/`、`skills/.archive/` | `.enableSkillManageTool(...)` | agent 调 `propose_skill` 从有效模式起草技能 → 可选审批闸门放行 → 后台 curator 把长期未用的标记为 stale（30 天）并归档（90 天） | [技能 — 自学习闭环](/v2/zh/docs/harness/skill#自学习闭环可选) |
 | **计划文件** | `plans/PLAN.md` | `.enablePlanMode()` | 只读规划阶段用 `plan_write` 写计划；跨调用保留并驱动执行阶段，让意图与动作解耦 | [Plan Mode](/v2/zh/docs/harness/plan-mode) |
 | **工具结果落盘** | 工作区下的 eviction 目录 | `.toolResultEviction(...)` | 单个工具结果超阈值（默认 80K 字符）时，完整输出写盘，上下文消息替换为 head/tail 预览 + `read_file` 指针 | [上下文管理](/v2/zh/docs/harness/context) |
-| **会话日志** | Filesystem 保留分区 / 自定义 SessionLogStore，另有兼容 JSONL | 默认 EVENT_LOG | 保存执行事实；工具可读原生消息历史，旧索引用于发现 | [会话日志](/v2/zh/docs/harness/session-log) |
+| **会话日志** | Filesystem 保留分区 / 自定义 ThreadJournalStore；可按需导出消息 | 默认日志模式 | 保存执行事实；工具可读原生消息历史，ThreadJournalStore 提供作用域内发现 | [会话日志](/v2/zh/docs/harness/session-log) |
 
 记忆、技能、计划和卸载结果沿用 Workspace 的租户隔离与 Filesystem 路由。原生日志另需原子存储能力，并通过保留分区保护提交结构；兼容 JSONL 不能替代完整执行记录。
 
@@ -456,9 +456,9 @@ agents/<agentId>/
     └── <sessionId>.json       ← 子 agent 后台任务记录（taskId → TaskRecord）
 ```
 
-> 上图仅展示任务记录。原生 Session Log 位于 Filesystem 保留分区：本地为 `.agentscope-runtime/`，远端为 `__agentscope_session_log_v1__`。通过 `sessionTranscript()`、`session_history` 和 `session_list` 读取历史；不再写旧 JSONL、sessions.json 或分段 transcript。
+> 上图仅展示任务记录。原生 Thread 日志位于 Filesystem 保留分区：本地为 `.agentscope-runtime/`，远端为 `__agentscope_session_log_v1__`。通过 `threadTranscript()`、`thread_history` 和 `thread_list` 读取历史；不再写旧 JSONL、sessions.json 或分段 transcript。
 
-跨节点恢复时，原生日志、任务/文件产物、sandbox 元数据等都应使用适合的共享后端；仅配置共享 AgentStateStore 不会自动共享本地 Session Log。见 [会话日志](/v2/zh/docs/harness/session-log) 与 [Filesystem](/v2/zh/docs/harness/filesystem)。
+跨节点恢复时，原生日志、任务/文件产物、sandbox 元数据等都应使用适合的共享后端；仅配置共享 AgentStateStore 不会自动共享本地 Thread 日志。见 [会话日志](/v2/zh/docs/harness/session-log) 与 [Filesystem](/v2/zh/docs/harness/filesystem)。
 
 ### `knowledge/`
 

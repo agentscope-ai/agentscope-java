@@ -2,21 +2,23 @@
 
 [中文](redis-usage-and-turn-lifecycle.md)
 
-This document describes Redis usage by deployment, component and execution phase in the backported AgentScope Service implementation dated 2026-10-21; no live Redis inspection was performed. See also [RocketMQ topics and the Turn lifecycle](rocketmq-topics-and-turn-lifecycle.en.md).
+This document describes Redis usage by deployment, component, and execution phase. It is based on `master` in `/Users/ken/agentcore/agentcore-managed-agents` on 2026-10-22; no live Redis inspection was performed. See also [RocketMQ topics and the Turn lifecycle](rocketmq-topics-and-turn-lifecycle.en.md).
 
 ## Deployments and components
 
-Local development scripts, Compose, and Kubernetes/Helm deployments require a reachable Redis for Managed execution. The connection setting is `builder.managed.redis-uri` / `BUILDER_MANAGED_REDIS_URI`. Production deployments use external Redis; Helm does not install it.
+Local development scripts, Compose, and Kubernetes/Helm deployments require a reachable Redis for Managed execution. The connection setting is `managed-agents.runtime.redis-uri` / `MANAGED_AGENTS_RUNTIME_REDIS_URI`. Production deployments use external Redis; Helm does not install it.
 
 | Component | Redis usage |
 | --- | --- |
-| Session Portal | Turn publication mutex; delivery of durably accepted Inputs to a Redis copy, including a fast cancellation marker |
-| Brain | Session execution leases; input refill and cancellation checks; tool result mailbox publication, waiting, and repair; Resume publication mutex; child Agent tool leases; checkpoint administration and lifecycle cleanup leases; Harness MessageBus primitives |
-| Hands | Tool execution leases and takeover checks; token checks for self-hosted Worker claims, renewals, and applicable callbacks; cloud Sandbox creation/reconnection mutex |
+| Agent Service | Turn publication mutex; delivery of durably accepted Inputs to a Redis copy, including a fast cancellation marker |
+| Agent Harness Runtime | Session execution leases; input refill and cancellation checks; tool result mailbox publication, waiting, and repair; Resume publication mutex; child Agent tool leases; checkpoint administration and lifecycle cleanup leases; Harness MessageBus primitives |
+| Tool Worker | Tool execution leases and takeover checks; token checks for self-hosted Worker claims, renewals, and applicable callbacks; cloud Sandbox creation/reconnection mutex |
 | Gateway and Control Plane | No direct use of these Redis business protocols in the current implementation |
-| External MCP servers and self-hosted Workers | No requirement to connect directly to this Redis; self-hosted Workers claim, renew, and report through Hands HTTP APIs |
+| External MCP servers and self-hosted Workers | No requirement to connect directly to this Redis; self-hosted Workers claim, renew, and report through Tool Worker HTTP APIs |
 
 MCP, cloud Sandbox, local test execution, and self-hosted execution use the same server-side coordination infrastructure. Execution modes do not each define their own Redis topics.
+
+Application RPS also uses `ma:admission-rate:<quotaKey>:<unixSecond>`: an application-scoped two-second Redis counter with a 200ms wait and fail-open rate enforcement. It does not use the Session key wrapper. See [soft application quotas](design/application-soft-quotas.en.md).
 
 ## Purposes and data structures
 
@@ -24,20 +26,20 @@ Suffixes below are wrapped by `ManagedScope.key(...)`, giving `ma:{scopeHash}:<s
 
 | Phase | User | Key suffix or channel | Structure / operation | Purpose |
 | --- | --- | --- | --- | --- |
-| Turn publication | Session Portal | `publication` | String, `SET NX PX` | Short Session publication mutex; default TTL 60 seconds, ownership checked before send, released afterward |
+| Turn publication | Agent Service | `publication` | String, `SET NX PX` | Short Session publication mutex; default TTL 60 seconds, ownership checked before send, released afterward |
 | Turn inference and recovery | Runtime | `execution` | String token; token-checked Lua renewal/deletion | Active inference ownership per Session; default TTL 60 seconds with 15-second renewal, combined with database execution epochs to fence stale attempts |
 | Runtime Resume publication | Runtime | `resume-publication` | String, `SET NX PX` | Short publication ownership while replicas scan pending Resumes; TTL 60 seconds |
-| Tool execution and takeover | Hands; Runtime child Agent executor | `tool:<taskId>` | String token; ownership checks, renewal, release | Active execution coordination per task; default TTL 60 seconds, in-service execution loops renew every 15 seconds, self-hosted Workers renew through HTTP |
-| User Input notification copy | Session Portal writes; Runtime refills and checks | `inputs:<turnId>`, `input-seen:<turnId>`, `cancel:<turnId>` | Stream, deduplication Hash, cancellation String; atomic Lua append | Notification copies and durable payload references for `STEER`, `INJECT`, `REPLY`, `CANCEL`; fast cancellation detection by the Runtime control loop |
+| Tool execution and takeover | Tool Worker; Runtime child Agent executor | `tool:<taskId>` | String token; ownership checks, renewal, release | Active execution coordination per task; default TTL 60 seconds, in-service execution loops renew every 15 seconds, self-hosted Workers renew through HTTP |
+| User Input notification copy | Agent Service writes; Runtime refills and checks | `inputs:<turnId>`, `input-seen:<turnId>`, `cancel:<turnId>` | Stream, deduplication Hash, cancellation String; atomic Lua append | Notification copies and durable payload references for `STEER`, `INJECT`, `REPLY`, `CANCEL`; fast cancellation detection by the Runtime control loop |
 | Tool result mailbox | Runtime publishes/repairs; Runtime waiters read | `tool-result:<taskHash>` and `:identity` | Single-result Stream (`MAXLEN=1`), identity String; `XREAD` | Notify inline waiters of an immutable committed result; each publication/repair refreshes a five-minute TTL, all waiters read the same result |
-| Cloud Sandbox creation/reconnection | Hands | `sandbox-create` | String, `SET NX PX` | Short mutex for cloud Sandbox creation/restoration per Session; TTL 60 seconds, released afterward |
+| Cloud Sandbox creation/reconnection | Tool Worker | `sandbox-create` | String, `SET NX PX` | Short mutex for cloud Sandbox creation/restoration per Session; TTL 60 seconds, released afterward |
 | Checkpoint administration | Runtime | `checkpoint:<operationId>` | Renewable String token | Coordinate checkpoint administration across replicas; default TTL 60 seconds with 15-second renewal, advancing durable operation records |
 | Lifecycle cleanup | Runtime | `lifecycle-cleanup` | Renewable String token | Coordinate Session lifecycle cleanup across replicas; default TTL 60 seconds with 15-second renewal |
 | Harness MessageBus | Harness/middleware in Runtime | `harness:queue:<hash>`, `harness:log:<hash>`, logical `harness:broadcast:<hash>` | List queues, Stream logs, Pub/Sub | SDK queue, readable message-log, and broadcast primitives; physical Pub/Sub channel is `ma:harness:notifications`, dispatched by logical key |
 
 The Input Stream exposes an `XREAD` interface, but the current Turn path does not drive all Input application from Stream cursors. Harness reads pending Inputs in business order from PostgreSQL and checks Redis cancellation markers in its control loop. Durable Inputs are refilled approximately every two seconds; cancellation marker checks run approximately every 200 ms.
 
-Ordinary Hands cancellation uses durable Control commands/cancellation tombstones. `ManagedToolExecutions` additionally reads the Redis cancellation marker only for paths not backed by `ManagedHandsStore`, such as Runtime child Agent tools. Ordinary Worker cancellation must not be portrayed as relying only on Redis markers.
+Ordinary Tool Worker cancellation uses durable Control commands/cancellation tombstones. `ManagedToolExecutions` additionally reads the Redis cancellation marker only for paths not backed by `ManagedToolWorkerStore`, such as Runtime child Agent tools. Ordinary Worker cancellation must not be portrayed as relying only on Redis markers.
 
 Managed Harness construction injects the MessageBus implementation, but actual operations depend on SDK/middleware calls; queues, logs, and broadcasts are not mandatory on every Turn. These Stream message logs are not native SessionLog or checkpoints. Pub/Sub broadcasts have no durable replay guarantee.
 
@@ -49,11 +51,11 @@ Runtime and Worker each represent replica sets. MQ topics share one participant 
 sequenceDiagram
     autonumber
     actor C as Client
-    participant S as Session Portal
-    participant R as Brain
+    participant S as Agent Service
+    participant R as Harness Runtime
     participant K as Redis
     participant Q as RocketMQ
-    participant W as Hands
+    participant W as Tool Worker
     participant D as PostgreSQL
 
     C->>S: Submit Turn
@@ -139,16 +141,16 @@ Sandbox creation, checkpoint administration, lifecycle cleanup, and SDK MessageB
 
 ## Implementation entry points
 
-- [Redis client, leases, Input copy, and broadcasts](../service-common/src/main/java/io/agentscope/builder/runtime/managed/RedisManagedInfrastructure.java)
-- [Shared Redis configuration](../service-common/src/main/java/io/agentscope/builder/runtime/managed/ManagedInfrastructureConfiguration.java)
-- [Turn publication mutex](../service-common/src/main/java/io/agentscope/builder/runtime/managed/ManagedTurnPublisher.java)
-- [Session execution guard](../service-common/src/main/java/io/agentscope/builder/runtime/managed/ManagedExecutionGuard.java)
-- [Input delivery and refill](../service-common/src/main/java/io/agentscope/builder/runtime/managed/ManagedInputDelivery.java)
-- [Harness cancellation checks and Input handling](../service-common/src/main/java/io/agentscope/builder/runtime/managed/ManagedHarnessTurns.java)
-- [Tool execution and renewal](../service-common/src/main/java/io/agentscope/builder/runtime/managed/ManagedToolExecutions.java)
-- [Tool result mailbox](../service-common/src/main/java/io/agentscope/builder/runtime/managed/RedisManagedToolResultDelivery.java)
-- [Mailbox repair](../service-common/src/main/java/io/agentscope/builder/runtime/managed/ManagedToolResultRelay.java)
-- [Runtime loop and result notification wiring](../service-dataplane/src/main/java/io/agentscope/builder/runtime/ManagedBrainConfiguration.java)
-- [Self-hosted Worker protocol](../service-hands/src/main/java/io/agentscope/builder/hands/ManagedWorkerService.java)
-- [Cloud Sandbox mutex](../service-hands/src/main/java/io/agentscope/builder/hands/ManagedSandboxProviders.java)
-- [Harness MessageBus](../service-common/src/main/java/io/agentscope/builder/runtime/managed/ManagedRedisMessageBus.java)
+- [Redis client, leases, Input copy, and broadcasts](../common/src/main/java/io/agentcore/managed/server/runtime/managed/RedisManagedInfrastructure.java)
+- [Shared Redis configuration](../common/src/main/java/io/agentcore/managed/server/runtime/managed/ManagedInfrastructureConfiguration.java)
+- [Turn publication mutex](../common/src/main/java/io/agentcore/managed/server/runtime/managed/ManagedTurnPublisher.java)
+- [Session execution guard](../common/src/main/java/io/agentcore/managed/server/runtime/managed/ManagedExecutionGuard.java)
+- [Input delivery and refill](../common/src/main/java/io/agentcore/managed/server/runtime/managed/ManagedInputDelivery.java)
+- [Harness cancellation checks and Input handling](../agent-harness-runtime/java/adapter-agentscope/src/main/java/io/agentcore/managed/server/runtime/managed/ManagedHarnessTurns.java)
+- [Tool execution and renewal](../agent-service/src/main/java/io/agentcore/managed/server/runtime/managed/ManagedToolExecutions.java)
+- [Tool result mailbox](../common/src/main/java/io/agentcore/managed/server/runtime/managed/RedisManagedToolResultDelivery.java)
+- [Mailbox repair](../agent-service/src/main/java/io/agentcore/managed/server/runtime/managed/ManagedToolResultRelay.java)
+- [Runtime loop and result notification wiring](../agent-harness-runtime/java/brain-agentscope/src/main/java/io/agentcore/managed/server/runtime/ManagedHarnessRuntimeConfiguration.java)
+- [Self-hosted Worker protocol](../tool-worker/src/main/java/io/agentcore/managed/server/toolworker/ManagedWorkerService.java)
+- [Cloud Sandbox mutex](../tool-worker/src/main/java/io/agentcore/managed/server/toolworker/ManagedSandboxProviders.java)
+- [Harness MessageBus](../agent-harness-runtime/java/adapter-agentscope/src/main/java/io/agentcore/managed/server/runtime/managed/ManagedRedisMessageBus.java)

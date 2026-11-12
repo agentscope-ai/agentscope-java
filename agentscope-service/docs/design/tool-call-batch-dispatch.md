@@ -4,8 +4,8 @@
 
 日期：2026-10-19。状态：备选设计分析，暂缓实施。
 
-本文记录在现有分段挂起实现之上，将同一轮工具调用批量提交给 Hands 的讨论。
-Brain 指 Brain。用户明确要求当前版本先不改：本文不构成实施决定，
+本文记录在现有分段挂起实现之上，将同一轮工具调用批量提交给 Tool Worker 的讨论。
+Brain 指 Agent Harness Runtime。用户明确要求当前版本先不改：本文不构成实施决定，
 不改变现有消息协议、Topic、数据库结构、执行职责或部署配置，也不表示已经完成原型验证。
 
 ## 1. 当前实现与讨论前提
@@ -23,11 +23,11 @@ Brain 指 Brain。用户明确要求当前版本先不改：本文不构成实�
   后续操作还可能依赖前一步结果；`subagent.call` 当前由 Runtime 编排。
 
 源码依据：
-[命令结构](../../service-common/src/main/java/io/agentscope/builder/runtime/managed/ManagedToolCommand.java)、
-[意图提交](../../service-common/src/main/java/io/agentscope/builder/runtime/managed/ManagedJournalStore.java)、
-[命令发布](../../service-common/src/main/java/io/agentscope/builder/runtime/managed/ManagedToolTransport.java)、
-[操作身份与请求](../../service-common/src/main/java/io/agentscope/builder/runtime/managed/ManagedToolRequests.java)、
-[挂起与汇合](../../service-common/src/main/java/io/agentscope/builder/runtime/managed/ManagedSuspensions.java)。
+[命令结构](../../common/src/main/java/io/agentcore/managed/server/runtime/managed/ManagedToolCommand.java)、
+[意图提交](../../common/src/main/java/io/agentcore/managed/server/runtime/managed/ManagedJournalStore.java)、
+[命令发布](../../common/src/main/java/io/agentcore/managed/server/runtime/managed/ManagedToolTransport.java)、
+[操作身份与请求](../../agent-harness-runtime/java/adapter-agentscope/src/main/java/io/agentcore/managed/server/runtime/managed/ManagedToolRequests.java)、
+[挂起与汇合](../../common/src/main/java/io/agentcore/managed/server/runtime/managed/ManagedSuspensions.java)。
 
 ## 2. 候选方案与收益
 
@@ -37,9 +37,9 @@ Brain 指 Brain。用户明确要求当前版本先不改：本文不构成实�
 
 ```mermaid
 sequenceDiagram
-    participant R as Brain
+    participant R as Agent Harness Runtime
     participant Q as RocketMQ
-    participant W as Hands
+    participant W as Tool Worker
     participant D as Worker PostgreSQL
     R->>Q: ExecuteBatch(batchId, tasks, manifestHash)
     Q->>W: 投递批次
@@ -87,7 +87,7 @@ sequenceDiagram
 仍然需要。批次是传输与汇总单位，不是外部副作用的原子事务。一个批次租约也不能替代每项
 执行状态；具体租约粒度与现有 Redis Guard、数据库 fencing 的适配仍待设计。
 
-参考现有[执行与恢复逻辑](../../service-common/src/main/java/io/agentscope/builder/runtime/managed/ManagedToolExecutions.java)。
+参考现有[执行与恢复逻辑](../../tool-worker/src/main/java/io/agentcore/managed/server/runtime/managed/ManagedAsyncToolExecution.java)。
 
 ### 并行、取消和失败策略不能隐式改变
 
@@ -109,9 +109,9 @@ sequenceDiagram
 参数校验和授权、哪些仍需用户答复、哪些在 Runtime 本地执行，以及哪些属于子 Agent 编排。
 如果只提交 Worker 子集，要显式标明批次范围；Worker 子集完成不代表 Runtime 的整个等待集合完成。
 
-参考[文件操作适配](../../service-common/src/main/java/io/agentscope/builder/runtime/managed/ManagedRemoteFilesystem.java)、
-[MCP 适配](../../service-common/src/main/java/io/agentscope/builder/runtime/managed/ManagedMcpTool.java)、
-[子 Agent 入口](../../service-common/src/main/java/io/agentscope/builder/runtime/managed/ManagedSubagentExecution.java)。
+参考[文件操作适配](../../agent-harness-runtime/java/adapter-agentscope/src/main/java/io/agentcore/managed/server/runtime/managed/ManagedRemoteFilesystem.java)、
+[MCP 适配](../../agent-harness-runtime/java/adapter-agentscope/src/main/java/io/agentcore/managed/server/runtime/managed/ManagedMcpTool.java)、
+[子 Agent 入口](../../agent-harness-runtime/java/adapter-agentscope/src/main/java/io/agentcore/managed/server/runtime/managed/ManagedSubagentExecution.java)。
 
 ## 5. 协议与可靠性要求（待设计）
 

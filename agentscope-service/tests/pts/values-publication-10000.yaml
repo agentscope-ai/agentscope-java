@@ -1,0 +1,44 @@
+# Apply AFTER the environment/image values; capacity only, no rollout or credentials.
+# Four Brain replicas, two per other component; per-Pod resources and PostgreSQL unchanged.
+runtime:
+  mq:
+    cacheMessages: 2048
+    cacheBytes: 67108864
+agent-harness-runtime:
+  replicas: 4
+  concurrency: 0 # Disable Brain execution admission and the fixed execution worker ceiling.
+  resumeHandoffCapacity: 64
+  inlineToolWaitSeconds: 1
+  turnCallbacks: 1024
+  resumeCallbacks: 1024
+  toolEventConcurrency: 128
+  childControlConcurrency: 32
+  projectionNotificationConcurrency: 64
+  toolPublicationConcurrency: 128
+  toolPublicationRepairInterval: 30s
+  renewalThreads: 64
+  controlThreads: 64
+  databasePoolSize: 64
+agent-service:
+  replicas: 2
+  databasePoolSize: 64
+  projection:
+    concurrency: 32
+    objectMaxRequests: 32
+    objectMaxInflightBytes: 268435456
+tool-worker:
+  replicas: 2
+  toolConcurrency: 1024
+  toolCallbacks: 128
+  toolControlConcurrency: 32
+  toolRenewalThreads: 32
+  mcpWorkerThreads: 700
+  mcpCachedClients: 4096
+  databasePoolSize: 32
+control-plane:
+  replicas: 2
+gateway:
+  replicas: 2
+objectStore:
+  maxRequests: 128
+  maxInflightBytes: 1073741824

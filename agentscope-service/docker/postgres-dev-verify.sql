@@ -12,7 +12,6 @@ BEGIN
           ('cp', 'users'),
           ('cp', 'agents'),
           ('cp', 'sessions'),
-          ('cp', 'product_schema_migrations'),
           ('rt', 'schema_migrations'),
           ('rt', 'issues'),
           ('rt', 'comments'),
@@ -49,21 +48,7 @@ BEGIN
           ('dp', 'builder_user'),
           ('dp', 'builder_agent'),
           ('dp', 'builder_session'),
-          ('dp', 'builder_session_event'),
-          ('dp', 'agentscope_store'),
-          ('ma', 'builder_schema_migration'),
-          ('ma', 'session'),
-          ('ma', 'turn'),
-          ('ma', 'input'),
-          ('ma', 'state_checkpoint'),
-          ('ma', 'native_event'),
-          ('ma', 'private_object'),
-          ('ma', 'tool_task'),
-          ('ma', 'tool_command_outbox'),
-          ('ma', 'turn_suspension'),
-          ('ma', 'turn_resume'),
-          ('ma', 'hands_execution'),
-          ('ma', 'hands_tool_result_outbox')
+          ('dp', 'builder_session_event')
       ) AS expected(schema_name, relation_name)
      WHERE to_regclass(format('%I.%I', expected.schema_name, expected.relation_name)) IS NULL;
 
@@ -84,12 +69,5 @@ BEGIN
            AND tablename IN ('issues', 'comments', 'agent_tasks', 'execution_attempts', 'orchestration_runs')
     ) THEN
         RAISE EXCEPTION 'v4 orchestration relations must not be created in public';
-    END IF;
-
-    IF NOT EXISTS (SELECT 1 FROM cp.product_schema_migrations
-                   WHERE version='0007_integrated_scheduler') OR
-       NOT EXISTS (SELECT 1 FROM ma.builder_schema_migration
-                   WHERE component='managed' AND version='managed-tool-submission.sql') THEN
-        RAISE EXCEPTION 'Control or Managed schema migrations are incomplete';
     END IF;
 END $$;

@@ -124,3 +124,56 @@ agentscope-service/.dev-stack/
 # Mintlify documentation dependencies and local preview
 /docs/node_modules/
 /docs/.mintlify/
+
+# Local dependencies, caches, reports and build output across all modules
+node_modules/
+.pnpm-store/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.cache/
+dist/
+coverage/
+test-results/
+playwright-report/
+*.tsbuildinfo
+
+# Temporary files, logs, binary packages and local databases
+*.log
+*.tmp
+*.temp
+*.swp
+*~
+*.class
+*.jar
+*.war
+*.zip
+*.tar
+*.gz
+*.tgz
+*.exe
+*.dll
+*.dylib
+*.so
+*.pyc
+*.sqlite
+*.sqlite3
+*.db-shm
+*.db-wal
+!.mvn/wrapper/maven-wrapper.jar
+
+# Local credentials; example templates are source files
+.env
+.env.*
+!.env.example
+!.env.sample
+!.env.template
+
+# Reorganized Service binaries and generated acceptance reports
+/agentscope-service/control-plane/bin/
+/agentscope-service/control-plane/ui/*
+!/agentscope-service/control-plane/ui/.gitkeep
+/agentscope-service/tests/general-agent-eval/reports/
+/agentscope-service/tests/pts/report-*
+/agentscope-service/tests/session-protocol/verification.json
+/agentscope-service/tests/session-protocol/verification.md

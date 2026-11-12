@@ -1,31 +1,34 @@
-# AgentScope Service 集群 API 测试手册
+# Managed Agents 集群 API 测试手册
+
+> 本文保留旧部署的基础设施诊断记录，其中 /turns 写入、snapshot 与持久 SSE 示例不适用于 Draft 3。
+> 新源码协议见 [会话事件 API](../../docs/v2/zh/service/claude-session-api.md)；新 MCP 验收见
+> [长工具手册](managed-mcp-long-tool-cluster-walkthrough.md)。本轮未升级集群。
+
 
 按顺序完成登录、创建 Session、提交两轮任务、检查上下文与执行顺序、读取结果及断线续传。最后可单独测试幂等、轮内输入、取消、checkpoint 和预算。
 
-本手册对应 2026 年 10 月 19 日的集群部署，镜像版本为 `2.1.0-test.20261019-100944-all`。Control、Gateway、Portal、Dataplane 和 Hands 各自独立部署，每个组件有两个就绪 Pod。
+本手册对应 `agencore-ma` 命名空间，镜像版本 `2.1.0-build.20261019-175119-773ce32b`。五个应用组件各一个副本，独立 HTTP MCP 服务两个副本。
 
 | 项目 | 当前值 |
 | --- | --- |
-| Console 和 API 入口 | `http://121.43.66.28` |
-| 登录用户名 | `admin`，密码沿用原管理员密码 |
+| Console 和 API 入口 | `http://101.37.135.162` |
+| 登录用户名 | `admin`，脚本默认通过本机集群凭据读取登录信息 |
 | Tenant 和 Namespace | `default` / `default` |
-| 可用文本 Agent | `b65bc0ac-80a1-4979-81b9-da61f358de3b`，部署验收 20261018 |
-| 可用文本 Environment | `env_1bec5a78c20a`，文本验收环境（文件和外部工具关闭） |
-| 已完成部署验收的 Session | `f4972fa1-209e-59c7-9629-eb87eab452b0` |
+| 测试 Agent | `3c8f0737-fab1-4c52-8851-4561a341b087`，MCP 长工具顺序验收 |
+| 文本/MCP Environment | `env_edbcd65c892f`，remote 记录，无 Sandbox 或 Environment Worker |
+| MCP 手动测试 Session | `8f195d20-4396-509e-9a6b-a826dca30e93`，交付时不含 Turn |
 
-第 1 至 9 节使用关闭内置工具的文本验收 Agent。长工具测试另有专用 HTTP MCP 服务、Agent 和 Session，可直接验证 Suspend、Resume 和 T2 顺序，见第 10 节；这条 MCP 路径不需要 Sandbox、Environment Worker 或 NAS。
-
-用户文件上传、file_input 和 Artifact 功能关闭；checkpoint 和大对象使用 PostgreSQL，不依赖 NAS。旧的[本地测试手册](managed-api-local-walkthrough.md)仍保留，但其中 localhost、免鉴权、Docker、本地进程目录及旧 Topic 名称不适用于本集群。
+本手册文本流程复用同一个 Agent，文本提示不要求调用工具。真实 90 秒 MCP 长工具、Suspend/Resume 和 T2 排队测试见[专用手册](managed-mcp-long-tool-cluster-walkthrough.md)。文件、Shell 和 Artifact 功能关闭，checkpoint 和大对象保存在 PostgreSQL，不依赖 NAS。
 
 ## 1 准备终端并登录
 
-终端 A 只需运行下面一条命令。脚本使用本机已有 kubeconfig 读取测试集群管理员凭据并自动登录，无需输入密码，然后准备测试变量和 `api` 函数并进入测试终端。
+终端 A 只需运行下面一条命令，默认通过本机集群权限登录，也可加 `--password` 输入新环境管理员密码。脚本自动登录、准备测试变量和 `api` 函数，并进入测试终端，无需手动切换 Bash 或复制初始化代码。
 
 ```bash
-bash /Users/ken/agentscope-3/agentscope-java/agentscope-service/scripts/cluster-api-shell.sh
+bash /Users/ken/agentcore/agentcore-managed-agents/managed-agents/scripts/cluster-api-shell.sh
 ```
 
-看到 `agentscope-test>` 提示符后，直接继续第 2 节，后续命令都在该终端执行。输入 `exit` 返回原终端。脚本需要 `curl`、`jq`、`uuidgen` 和已获此测试集群访问权限的 `kubectl`；在其他机器可加 `--password` 手动输入真正的管理员密码，密码不是用户名 `admin`。
+看到 `managed-agents-test>` 提示符后，直接继续第 2 节，后续命令都在该终端执行。输入 `exit` 返回原终端。脚本需要 `curl`、`jq` 和 `uuidgen`，缺少时会提示。
 
 测试记录自动保存在脚本打印的目录中。`login.json` 和 `active.env` 含登录令牌，文件仅当前用户可读写；分享记录时不要包含它们。令牌失效时退出测试终端，重新执行本节命令登录。
 
@@ -281,31 +284,29 @@ api "/v1/sessions/$SESSION_ID/turns/$TARGET_TURN/inputs" \
   --data-binary "@$D/reply-request.json" | jq .
 ```
 
-只有明确要求外部执行结果的待办才使用 `payload={"content":[{"type":"text","text":"真实结果"}],"is_error":false}`；它与审批答复不能互换。Hands 正在执行的普通工具不需要客户端填写结果。答复后查询 Input 应用状态及同一个 Turn 的进度。
+只有明确要求外部执行结果的待办才使用 `payload={"content":[{"type":"text","text":"真实结果"}],"is_error":false}`；它与审批答复不能互换。Tool Worker 正在执行的普通工具不需要客户端填写结果。答复后查询 Input 应用状态及同一个 Turn 的进度。
 
-## 10 HTTP MCP 长工具挂起和自动 Resume
+## 10 长工具挂起和自动 Resume
 
-已为此场景配置独立的两个 HTTP MCP Pod，以及专用 Agent 和手动测试 Session。直接运行下面一条命令，自动登录并选中专用资源：
+独立 HTTP MCP 长工具已部署在 `agencore-ma`，无需 Sandbox、Environment Worker 或 NAS。运行：
 
 ```bash
-bash /Users/ken/agentscope-3/agentscope-java/agentscope-service/scripts/cluster-api-shell.sh --long-tool
+bash /Users/ken/agentcore/agentcore-managed-agents/managed-agents/scripts/cluster-api-shell.sh --long-tool
 ```
 
-随后按[集群 HTTP MCP 长工具测试手册](managed-mcp-long-tool-cluster-walkthrough.md)提交 T1 和 T2，观察 90 秒真实等待期间 T1 为 waiting_tool、T2 保持 accepted；工具完成后 T1 自动恢复，T1 completed 后 T2 才 running。
-
-这项测试不需要 Sandbox、Environment Worker 或 NAS。工具由平台 Hands 直接通过 HTTP 调用，只等待并返回唯一调用编号与时间，不执行 Shell 或文件操作。原文本测试 Session 保留，`--long-tool` 使用另一份专用 Session。Shell/Sandbox、进程故障接管和 Broker 重启不属于这项测试的验收范围。
+随后按[HTTP MCP 长工具测试手册](managed-mcp-long-tool-cluster-walkthrough.md)第 2 节提交 T1/T2。脚本自动选中专用手动 Session；验收目标为 `waiting_tool/accepted`、同一 T1 自动恢复、T1 completed 后 T2 才 running，且实际工具只调用一次。
 
 ## 11 记录异常和测试结果
 
-2026 年 10 月 19 日部署验收已完成旧 Session 恢复及新 Session 两轮真实模型调用。此前空响应 HTTP 500 对应 Gateway 转发到 Portal 时的连接重置。Helm revision 8 已增加连接池 10 秒空闲上限及每 5 秒后台回收；两个 Gateway 的空闲回收、40 次查询、原幂等键创建重试与 30 秒 SSE 均通过验证。遇到相同现象请记录时间、请求路径、HTTP 状态和响应体，提交请求始终使用原幂等键重试。
+2026 年 10 月 19 日部署验收已完成旧 Session 恢复及新 Session 两轮真实模型调用。整理本手册时，只读复查的 Turn 和事件查询各出现一次 HTTP 500，随后重试成功；原因尚未定位。遇到相同现象请记录时间、请求路径、HTTP 状态和响应体，避免把短暂失败当作任务终态。
 
 可用下面的方式单独保存一次查询的响应头、响应体和 HTTP 状态；文件可能包含测试内容，按需分享：
 
 ```bash
 curl -sS --connect-timeout 10 --max-time 30 \
   -H "Authorization: Bearer $TOKEN" \
-  -H 'X-AgentScope-Tenant: default' \
-  -H 'X-AgentScope-Namespace: default' \
+  -H 'X-Managed-Agents-Tenant: default' \
+  -H 'X-Managed-Agents-Namespace: default' \
   -D "$D/query-headers.txt" -o "$D/query-body.json" \
   -w 'HTTP %{http_code}\n' \
   "$BASE/v1/sessions/$SESSION_ID/turns/$TURN1"

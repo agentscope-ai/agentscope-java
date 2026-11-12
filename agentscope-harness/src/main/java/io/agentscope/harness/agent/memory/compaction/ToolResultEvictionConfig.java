@@ -58,7 +58,7 @@ public class ToolResultEvictionConfig {
      *   <li>{@code read_file} — evicting would cause re-read loops; pagination handles size</li>
      *   <li>{@code write_file}, {@code edit_file} — return tiny success messages</li>
      *   <li>Search/list tools have bounded previews and remain eligible for eviction.</li>
-     *   <li>{@code memory_search}, {@code memory_get}, {@code session_search} — small/paginated results</li>
+     *   <li>{@code memory_search}, {@code memory_get}, {@code thread_search} — small/paginated results</li>
      * </ul>
      *
      * Shell ({@code execute}) is intentionally NOT excluded: command output can be very large.
@@ -70,7 +70,7 @@ public class ToolResultEvictionConfig {
                     "edit_file",
                     "memory_search",
                     "memory_get",
-                    "session_search");
+                    "thread_search");
 
     private final int maxResultChars;
     private final int previewChars;

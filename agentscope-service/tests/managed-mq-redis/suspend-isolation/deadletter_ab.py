@@ -13,7 +13,7 @@ import time
 
 
 def main(args):
-    assert args.namespace.startswith("agentscope-suspend-") and args.namespace != "agentscope-test"
+    assert args.namespace.startswith("managed-agents-suspend-") and args.namespace != "managed-agents-test"
     base = ["kubectl", "--kubeconfig", str(args.kubeconfig), "--request-timeout=30s"]
     kube = base + ["-n", args.namespace]
 
@@ -24,7 +24,7 @@ def main(args):
         return json.loads(command(*kube, "get", *argv, "-o", "json"))
 
     ns = json.loads(command(*base, "get", "namespace", args.namespace, "-o", "json"))
-    assert ns["metadata"]["labels"].get("purpose") == "agentscope-suspend-isolation"
+    assert ns["metadata"]["labels"].get("purpose") == "managed-agents-suspend-isolation"
     deployments = get("deployments")["items"]
     assert all(d["spec"]["replicas"] == 0 for d in deployments
                if d["metadata"]["name"].startswith("dlq-")), "Finish all probe cases before Broker rollout"

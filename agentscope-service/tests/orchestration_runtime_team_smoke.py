@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Public Hosted Team Job with real Portal/Go/PostgreSQL and a fenced fake Host.
+"""Public Hosted Team Job with real Agent Service/Go/PostgreSQL and a fenced fake Host.
 
 Use a dedicated local schema. The configuration source is a fixture and the
 control-plane process is stopped before execution. No provider/model is called.
-Build Portal, Go runtime binaries, service-controlplane/sdk/dsh and service-client
+Build Agent Service, Go runtime binaries, control-plane/sdk/dsh and java-client
 (including dependency:build-classpath output) before running; public Python,
 compiled DSH and Java clients are exercised through real HTTP.
 """
@@ -26,10 +26,10 @@ def run(version, dsn, cancel=False, team=True, daemon=False, approval=None):
     if urlparse(dsn).hostname not in ('127.0.0.1', 'localhost'):
         raise ValueError('Use a dedicated loopback PostgreSQL fixture')
     kind = 'team' if team else 'hosted'
-    folder = Path(tempfile.mkdtemp(prefix='agentscope-' + kind + '-runtime-smoke-'))
-    environment = {'PATH': os.environ['PATH'], 'TZ': 'UTC', 'BUILDER_INTERNAL_TOKEN': SERVICE_SECRET,
-                   'BUILDER_JWT_SECRET': SIGNING_SECRET,
-                   'BUILDER_VAULT_MASTER_KEY': 'team-smoke-runtime-encryption-key-only'}
+    folder = Path(tempfile.mkdtemp(prefix='managed-agents-' + kind + '-runtime-smoke-'))
+    environment = {'PATH': os.environ['PATH'], 'TZ': 'UTC', 'MANAGED_AGENTS_INTERNAL_TOKEN': SERVICE_SECRET,
+                   'MANAGED_AGENTS_JWT_SECRET': SIGNING_SECRET,
+                   'MANAGED_AGENTS_VAULT_MASTER_KEY': 'team-smoke-runtime-encryption-key-only'}
     if os.environ.get('JAVA_HOME'):
         environment['JAVA_HOME'] = os.environ['JAVA_HOME']
     processes, handles, passed = [], [], False
@@ -62,14 +62,14 @@ def run(version, dsn, cancel=False, team=True, daemon=False, approval=None):
 
     try:
         with (folder / 'migration.log').open('w') as migration_log:
-            subprocess.run([str(ROOT/'service-controlplane/bin/service-controlplane'),
+            subprocess.run([str(ROOT/'control-plane/bin/control-plane'),
                 '--storage-driver=postgres', '--storage-dsn='+dsn, '--migrate-only'], env=environment,
                 stdout=migration_log, stderr=subprocess.STDOUT, check=True, timeout=90)
-        control_port, runtime_port, portal_port = port(), port(), port()
+        control_port, runtime_port, agent_service_port = port(), port(), port()
         control_url = 'http://127.0.0.1:'+str(control_port)
         runtime_url = 'http://127.0.0.1:'+str(runtime_port)
-        control = start('seed-control', [str(ROOT/'service-controlplane/bin/service-controlplane'),
-            '--enable-kubernetes=false', '--enable-product=false', '--enable-asdp=false',
+        control = start('seed-control', [str(ROOT/'control-plane/bin/control-plane'),
+            '--enable-kubernetes=false', '--enable-product=false', '--enable-runtime-protocol=false',
             '--local-dev=true', '--scope-mode=single', '--default-tenant=fixture-tenant',
             '--default-namespace=fixture-space', '--enable-runtime-workers=false',
             '--storage-driver=postgres', '--storage-dsn='+dsn,
@@ -80,13 +80,13 @@ def run(version, dsn, cancel=False, team=True, daemon=False, approval=None):
         fixture = folder/(kind + '.json')
         seed(control_url, fixture, 'job', team=team)
         stop(control)
-        start('runtime', [str(ROOT/'service-controlplane/bin/service-controlplane'),
-            '--enable-kubernetes=false', '--enable-asdp=false', '--scope-mode=multi', '--enable-runtime-workers=true',
+        start('runtime', [str(ROOT/'control-plane/bin/control-plane'),
+            '--enable-kubernetes=false', '--enable-runtime-protocol=false', '--scope-mode=multi', '--enable-runtime-workers=true',
             '--http-bind-address=127.0.0.1:'+str(runtime_port), '--storage-driver=postgres',
-            '--storage-dsn='+dsn, '--session-portal-url=http://127.0.0.1:'+str(portal_port),
+            '--storage-dsn='+dsn, '--agent-service-url=http://127.0.0.1:'+str(agent_service_port),
             '--artifact-root='+str(folder/'artifacts')], runtime_url+'/readyz')
-        native_run(version, runtime_url, portal_port, fixture, exercise_cancel=cancel,
-                   exercise_daemon=daemon, approval=approval, public_create=True, portal_dsn=dsn)
+        native_run(version, runtime_url, agent_service_port, fixture, exercise_cancel=cancel,
+                   exercise_daemon=daemon, approval=approval, public_create=True, agent_service_dsn=dsn)
         passed = True
     finally:
         for process in reversed(processes):

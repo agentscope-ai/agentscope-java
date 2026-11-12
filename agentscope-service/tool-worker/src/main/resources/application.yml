@@ -1,0 +1,51 @@
+server:
+  port: ${MANAGED_AGENTS_TOOL_WORKER_PORT:8085}
+spring:
+  application:
+    name: managed-agents-tool-worker
+  main:
+    web-application-type: reactive
+  datasource:
+    url: ${MANAGED_AGENTS_TOOL_WORKER_DB_URL:jdbc:postgresql://localhost:5432/managed_agents}
+    username: ${MANAGED_AGENTS_TOOL_WORKER_DB_USER:managed_agents}
+    password: ${MANAGED_AGENTS_TOOL_WORKER_DB_PASSWORD:}
+    hikari:
+      maximum-pool-size: ${MANAGED_AGENTS_TOOL_WORKER_DB_POOL_SIZE:16}
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: none
+  sql:
+    init:
+      mode: never
+  http:
+    codecs:
+      max-in-memory-size: 64MB
+managed-agents:
+  object-store:
+    cache-bytes: ${MANAGED_AGENTS_OBJECT_STORE_CACHE_BYTES:67108864}
+    cache-item-bytes: ${MANAGED_AGENTS_OBJECT_STORE_CACHE_ITEM_BYTES:262144}
+    state-cache-entries: ${MANAGED_AGENTS_OBJECT_STORE_STATE_CACHE_ENTRIES:16384}
+    max-requests: ${MANAGED_AGENTS_OBJECT_STORE_MAX_REQUESTS:32}
+    max-inflight-bytes: ${MANAGED_AGENTS_OBJECT_STORE_MAX_INFLIGHT_BYTES:268435456}
+    capacity-wait-ms: ${MANAGED_AGENTS_OBJECT_STORE_CAPACITY_WAIT_MS:5000}
+    provider: ${MANAGED_AGENTS_OBJECT_STORE_PROVIDER:filesystem}
+    backend-id: ${MANAGED_AGENTS_OBJECT_STORE_BACKEND_ID:runtime}
+    root: ${MANAGED_AGENTS_OBJECT_STORE_ROOT:}
+    endpoint: ${MANAGED_AGENTS_OBJECT_STORE_ENDPOINT:}
+    bucket: ${MANAGED_AGENTS_OBJECT_STORE_BUCKET:}
+    region: ${MANAGED_AGENTS_OBJECT_STORE_REGION:us-east-1}
+    access-key: ${MANAGED_AGENTS_OBJECT_STORE_ACCESS_KEY:}
+    secret-key: ${MANAGED_AGENTS_OBJECT_STORE_SECRET_KEY:}
+  runtime:
+    role: tool-worker
+  control-plane-url: ${MANAGED_AGENTS_CONTROL_URL:http://localhost:8081}
+  internal-token: ${MANAGED_AGENTS_INTERNAL_TOKEN:}
+  e2b:
+    api-key: ${MANAGED_AGENTS_E2B_API_KEY:${E2B_API_KEY:}}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics

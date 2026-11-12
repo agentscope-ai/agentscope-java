@@ -17,9 +17,14 @@ State is addressed by `(userId, sessionId)`:
 - `sessionId` — required, non-blank, identifies a session.
 - `userId` — optional. `null` means anonymous / single-tenant (CLI, tests, etc.).
 
-## Native Session Log is a separate contract
+## AgentStateStore and the Thread journal
 
-This page covers AgentStateStore. HarnessAgent defaults to EVENT_LOG recovery through SessionLogStore; changing stateStore alone does not migrate/share native history. LEGACY still use this interface. A file-capable BaseStore does not necessarily offer journal CAS: current OSS/COS need a separate native backend. See [Session logs](/v2/en/docs/harness/session-log).
+This page covers `AgentStateStore`. With journaling enabled, `HarnessAgent` recovers from its
+`ThreadJournalStore`; changing only `stateStore` does not move or share journal history. The main
+Thread also reads state written by AgentScope 2.0 and mirrors each committed checkpoint back to the
+2.0 `agent_state` slot for rollback compatibility. Named Threads use independent state entries.
+A file-capable BaseStore does not necessarily provide the journal CAS and fencing contract. See
+[Thread journals and recovery](/v2/en/docs/harness/session-log).
 
 ## Available Implementations
 

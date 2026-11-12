@@ -1,0 +1,2529 @@
+{
+  "openapi": "3.1.1",
+  "info": {
+    "title": "Managed Agents internal Session Service",
+    "version": "0.1.0",
+    "description": "Internal Session Service in the Agent Service JVM. Generic 0.1.0 operations are used by PI runtimes. AgentScope uses the prepared Java profile documented separately. Authentication, fencing and durable receipts apply before any tool authorization. Prepared handoff endpoints below use the numeric AgentScope Java profile."
+  },
+  "jsonSchemaDialect": "https://json-schema.org/draft/2020-12/schema",
+  "servers": [
+    {
+      "url": "/internal/session-service/v0"
+    }
+  ],
+  "security": [
+    {
+      "ServiceBearer": []
+    }
+  ],
+  "paths": {
+    "/executions/claim": {
+      "post": {
+        "operationId": "claimExecution",
+        "summary": "claimExecution",
+        "description": "Durably claim an eligible Turn; the same claimId returns the original receipt, never a new owner. A receipt past expiry grants no execution authority.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "./schemas/execution.schema.json#/$defs/ClaimRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Completed durable operation or authorized read.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/execution.schema.json#/$defs/ClaimReceipt"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Typed protocol error; see README for code/status/retry mapping.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/common.schema.json#/$defs/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Typed protocol error; see README for code/status/retry mapping.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/common.schema.json#/$defs/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Typed protocol error; see README for code/status/retry mapping.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/common.schema.json#/$defs/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Typed protocol error; see README for code/status/retry mapping.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/common.schema.json#/$defs/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Typed protocol error; see README for code/status/retry mapping.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/common.schema.json#/$defs/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Typed protocol error; see README for code/status/retry mapping.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/common.schema.json#/$defs/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Typed protocol error; see README for code/status/retry mapping.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/common.schema.json#/$defs/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Typed protocol error; see README for code/status/retry mapping.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/common.schema.json#/$defs/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Typed protocol error; see README for code/status/retry mapping.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/common.schema.json#/$defs/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/executions/renew": {
+      "post": {
+        "operationId": "renewExecution",
+        "summary": "renewExecution",
+        "description": "Renew only a live matching owner; retrying renewalId returns the original expiry and cannot revive an expired lease.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "./schemas/execution.schema.json#/$defs/RenewRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Completed durable operation or authorized read.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/execution.schema.json#/$defs/RenewReceipt"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Typed protocol error; see README for code/status/retry mapping.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/common.schema.json#/$defs/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Typed protocol error; see README for code/status/retry mapping.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/common.schema.json#/$defs/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Typed protocol error; see README for code/status/retry mapping.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/common.schema.json#/$defs/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Typed protocol error; see README for code/status/retry mapping.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/common.schema.json#/$defs/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Typed protocol error; see README for code/status/retry mapping.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/common.schema.json#/$defs/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Typed protocol error; see README for code/status/retry mapping.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/common.schema.json#/$defs/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Typed protocol error; see README for code/status/retry mapping.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/common.schema.json#/$defs/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Typed protocol error; see README for code/status/retry mapping.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/common.schema.json#/$defs/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Typed protocol error; see README for code/status/retry mapping.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/common.schema.json#/$defs/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/deliveries/defer": {
+      "post": {
+        "operationId": "deferDelivery",
+        "summary": "deferDelivery",
+        "description": "Persist deferral of the validated original Ready/Resume intent before acknowledging delivery. This does not release an active execution owner.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "./schemas/execution.schema.json#/$defs/DeferRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Completed durable operation or authorized read.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/execution.schema.json#/$defs/DeferReceipt"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Typed protocol error; see README for code/status/retry mapping.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/common.schema.json#/$defs/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Typed protocol error; see README for code/status/retry mapping.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/common.schema.json#/$defs/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Typed protocol error; see README for code/status/retry mapping.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/common.schema.json#/$defs/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Typed protocol error; see README for code/status/retry mapping.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/common.schema.json#/$defs/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Typed protocol error; see README for code/status/retry mapping.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/common.schema.json#/$defs/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Typed protocol error; see README for code/status/retry mapping.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/common.schema.json#/$defs/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Typed protocol error; see README for code/status/retry mapping.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/common.schema.json#/$defs/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Typed protocol error; see README for code/status/retry mapping.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/common.schema.json#/$defs/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Typed protocol error; see README for code/status/retry mapping.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/common.schema.json#/$defs/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/recovery/read": {
+      "post": {
+        "operationId": "loadRecovery",
+        "summary": "loadRecovery",
+        "description": "Return a consistent immutable metadata snapshot, inline or by reference. This read does not acquire ownership.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "./schemas/recovery.schema.json#/$defs/RecoveryRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Completed durable operation or authorized read.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/recovery.schema.json#/$defs/RecoveryResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Typed protocol error; see README for code/status/retry mapping.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/common.schema.json#/$defs/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Typed protocol error; see README for code/status/retry mapping.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/common.schema.json#/$defs/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Typed protocol error; see README for code/status/retry mapping.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/common.schema.json#/$defs/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Typed protocol error; see README for code/status/retry mapping.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/common.schema.json#/$defs/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Typed protocol error; see README for code/status/retry mapping.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/common.schema.json#/$defs/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Typed protocol error; see README for code/status/retry mapping.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/common.schema.json#/$defs/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Typed protocol error; see README for code/status/retry mapping.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/common.schema.json#/$defs/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Typed protocol error; see README for code/status/retry mapping.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/common.schema.json#/$defs/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Typed protocol error; see README for code/status/retry mapping.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/common.schema.json#/$defs/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/commits": {
+      "post": {
+        "operationId": "commitBoundary",
+        "summary": "commitBoundary",
+        "description": "Return only after durable commit; replay identical commitId/content before checking its now-old fence. Still authorize the caller. No 202 accepted response.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "./schemas/commit.schema.json#/$defs/CommitBoundary"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Completed durable operation or authorized read.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/commit.schema.json#/$defs/CommitReceipt"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Typed protocol error; see README for code/status/retry mapping.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/common.schema.json#/$defs/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Typed protocol error; see README for code/status/retry mapping.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/common.schema.json#/$defs/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Typed protocol error; see README for code/status/retry mapping.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/common.schema.json#/$defs/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Typed protocol error; see README for code/status/retry mapping.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/common.schema.json#/$defs/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Typed protocol error; see README for code/status/retry mapping.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/common.schema.json#/$defs/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Typed protocol error; see README for code/status/retry mapping.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/common.schema.json#/$defs/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Typed protocol error; see README for code/status/retry mapping.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/common.schema.json#/$defs/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Typed protocol error; see README for code/status/retry mapping.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/common.schema.json#/$defs/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Typed protocol error; see README for code/status/retry mapping.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/common.schema.json#/$defs/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/commits/receipt": {
+      "post": {
+        "operationId": "getCommitReceipt",
+        "summary": "getCommitReceipt",
+        "description": "Read an original receipt after scope authorization, including after ownership changes. A 404 does not prove external nonexecution.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "./schemas/commit.schema.json#/$defs/ReceiptRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Completed durable operation or authorized read.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/commit.schema.json#/$defs/CommitReceipt"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Typed protocol error; see README for code/status/retry mapping.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/common.schema.json#/$defs/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Typed protocol error; see README for code/status/retry mapping.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/common.schema.json#/$defs/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Typed protocol error; see README for code/status/retry mapping.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/common.schema.json#/$defs/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Typed protocol error; see README for code/status/retry mapping.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/common.schema.json#/$defs/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Typed protocol error; see README for code/status/retry mapping.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/common.schema.json#/$defs/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Typed protocol error; see README for code/status/retry mapping.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/common.schema.json#/$defs/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Typed protocol error; see README for code/status/retry mapping.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/common.schema.json#/$defs/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Typed protocol error; see README for code/status/retry mapping.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/common.schema.json#/$defs/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Typed protocol error; see README for code/status/retry mapping.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/common.schema.json#/$defs/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/objects/write": {
+      "post": {
+        "operationId": "putNativeObject",
+        "summary": "putNativeObject",
+        "description": "Store immutable bytes scoped to this caller; validate base64, decoded size and SHA-256. Same objectId/different bytes conflicts. Upload is not an execution commit.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "./schemas/common.schema.json#/$defs/ObjectWriteRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Completed durable operation or authorized read.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/common.schema.json#/$defs/ObjectWriteResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Typed protocol error; see README for code/status/retry mapping.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/common.schema.json#/$defs/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Typed protocol error; see README for code/status/retry mapping.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/common.schema.json#/$defs/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Typed protocol error; see README for code/status/retry mapping.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/common.schema.json#/$defs/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Typed protocol error; see README for code/status/retry mapping.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/common.schema.json#/$defs/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Typed protocol error; see README for code/status/retry mapping.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/common.schema.json#/$defs/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Typed protocol error; see README for code/status/retry mapping.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/common.schema.json#/$defs/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Typed protocol error; see README for code/status/retry mapping.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/common.schema.json#/$defs/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Typed protocol error; see README for code/status/retry mapping.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/common.schema.json#/$defs/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Typed protocol error; see README for code/status/retry mapping.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/common.schema.json#/$defs/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/objects/read": {
+      "post": {
+        "operationId": "readNativeObject",
+        "summary": "readNativeObject",
+        "description": "Read scoped immutable bytes and verify the requested digest; references do not authorize arbitrary URLs or cross-tenant access.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "./schemas/common.schema.json#/$defs/ObjectReadRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Completed durable operation or authorized read.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/common.schema.json#/$defs/ObjectReadResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Typed protocol error; see README for code/status/retry mapping.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/common.schema.json#/$defs/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Typed protocol error; see README for code/status/retry mapping.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/common.schema.json#/$defs/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Typed protocol error; see README for code/status/retry mapping.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/common.schema.json#/$defs/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Typed protocol error; see README for code/status/retry mapping.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/common.schema.json#/$defs/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Typed protocol error; see README for code/status/retry mapping.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/common.schema.json#/$defs/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Typed protocol error; see README for code/status/retry mapping.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/common.schema.json#/$defs/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Typed protocol error; see README for code/status/retry mapping.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/common.schema.json#/$defs/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Typed protocol error; see README for code/status/retry mapping.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/common.schema.json#/$defs/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Typed protocol error; see README for code/status/retry mapping.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/common.schema.json#/$defs/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/tools/state": {
+      "post": {
+        "operationId": "getToolState",
+        "summary": "getToolState",
+        "description": "Read accepted platform result or timestamped observation. Missing or stale state never authorizes an external restart.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "./schemas/tools.schema.json#/$defs/ToolStateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Completed durable operation or authorized read.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/tools.schema.json#/$defs/ToolStateResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Typed protocol error; see README for code/status/retry mapping.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/common.schema.json#/$defs/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Typed protocol error; see README for code/status/retry mapping.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/common.schema.json#/$defs/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Typed protocol error; see README for code/status/retry mapping.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/common.schema.json#/$defs/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Typed protocol error; see README for code/status/retry mapping.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/common.schema.json#/$defs/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Typed protocol error; see README for code/status/retry mapping.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/common.schema.json#/$defs/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Typed protocol error; see README for code/status/retry mapping.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/common.schema.json#/$defs/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Typed protocol error; see README for code/status/retry mapping.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/common.schema.json#/$defs/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Typed protocol error; see README for code/status/retry mapping.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/common.schema.json#/$defs/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Typed protocol error; see README for code/status/retry mapping.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/common.schema.json#/$defs/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/executions/next": {
+      "post": {
+        "operationId": "nextExecutions",
+        "summary": "nextExecutions",
+        "description": "Read eligible durable queue hints. This does not claim, acknowledge or remove the queued turn.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "./schemas/runtime.schema.json#/$defs/NextRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Completed durable operation or authorized read.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/runtime.schema.json#/$defs/NextResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Typed protocol error; see README for code/status/retry mapping.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/common.schema.json#/$defs/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Typed protocol error; see README for code/status/retry mapping.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/common.schema.json#/$defs/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Typed protocol error; see README for code/status/retry mapping.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/common.schema.json#/$defs/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Typed protocol error; see README for code/status/retry mapping.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/common.schema.json#/$defs/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Typed protocol error; see README for code/status/retry mapping.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/common.schema.json#/$defs/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Typed protocol error; see README for code/status/retry mapping.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/common.schema.json#/$defs/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Typed protocol error; see README for code/status/retry mapping.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/common.schema.json#/$defs/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Typed protocol error; see README for code/status/retry mapping.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/common.schema.json#/$defs/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Typed protocol error; see README for code/status/retry mapping.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/common.schema.json#/$defs/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/executions/configuration": {
+      "post": {
+        "operationId": "getExecutionConfiguration",
+        "summary": "getExecutionConfiguration",
+        "description": "Read the configuration pinned to this Turn, including the original sealed tool configuration reference.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "./schemas/runtime.schema.json#/$defs/FencedRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Completed durable operation or authorized read.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/runtime.schema.json#/$defs/ConfigurationResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Typed protocol error; see README for code/status/retry mapping.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/common.schema.json#/$defs/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Typed protocol error; see README for code/status/retry mapping.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/common.schema.json#/$defs/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Typed protocol error; see README for code/status/retry mapping.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/common.schema.json#/$defs/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Typed protocol error; see README for code/status/retry mapping.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/common.schema.json#/$defs/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Typed protocol error; see README for code/status/retry mapping.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/common.schema.json#/$defs/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Typed protocol error; see README for code/status/retry mapping.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/common.schema.json#/$defs/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Typed protocol error; see README for code/status/retry mapping.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/common.schema.json#/$defs/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Typed protocol error; see README for code/status/retry mapping.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/common.schema.json#/$defs/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Typed protocol error; see README for code/status/retry mapping.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/common.schema.json#/$defs/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/inputs/read": {
+      "post": {
+        "operationId": "readInputs",
+        "summary": "readInputs",
+        "description": "Read accepted, unsettled inputs under the current fence.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "./schemas/runtime.schema.json#/$defs/FencedRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Completed durable operation or authorized read.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/runtime.schema.json#/$defs/InputsResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Typed protocol error; see README for code/status/retry mapping.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/common.schema.json#/$defs/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Typed protocol error; see README for code/status/retry mapping.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/common.schema.json#/$defs/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Typed protocol error; see README for code/status/retry mapping.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/common.schema.json#/$defs/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Typed protocol error; see README for code/status/retry mapping.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/common.schema.json#/$defs/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Typed protocol error; see README for code/status/retry mapping.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/common.schema.json#/$defs/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Typed protocol error; see README for code/status/retry mapping.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/common.schema.json#/$defs/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Typed protocol error; see README for code/status/retry mapping.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/common.schema.json#/$defs/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Typed protocol error; see README for code/status/retry mapping.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/common.schema.json#/$defs/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Typed protocol error; see README for code/status/retry mapping.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/common.schema.json#/$defs/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/inputs/close": {
+      "post": {
+        "operationId": "closeInputs",
+        "summary": "closeInputs",
+        "description": "Close input admission atomically and return the cutoff. Settle every accepted input before terminal commit.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "./schemas/runtime.schema.json#/$defs/FencedRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Completed durable operation or authorized read.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/runtime.schema.json#/$defs/CloseInputsReceipt"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Typed protocol error; see README for code/status/retry mapping.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/common.schema.json#/$defs/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Typed protocol error; see README for code/status/retry mapping.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/common.schema.json#/$defs/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Typed protocol error; see README for code/status/retry mapping.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/common.schema.json#/$defs/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Typed protocol error; see README for code/status/retry mapping.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/common.schema.json#/$defs/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Typed protocol error; see README for code/status/retry mapping.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/common.schema.json#/$defs/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Typed protocol error; see README for code/status/retry mapping.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/common.schema.json#/$defs/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Typed protocol error; see README for code/status/retry mapping.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/common.schema.json#/$defs/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Typed protocol error; see README for code/status/retry mapping.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/common.schema.json#/$defs/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Typed protocol error; see README for code/status/retry mapping.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/common.schema.json#/$defs/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/models/reserve": {
+      "post": {
+        "operationId": "reserveModel",
+        "summary": "reserveModel",
+        "description": "Reserve budget before provider dispatch, using a stable modelCallId. Unknown usage is never zero.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "./schemas/runtime.schema.json#/$defs/ReserveModelRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Completed durable operation or authorized read.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/runtime.schema.json#/$defs/ReserveModelReceipt"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Typed protocol error; see README for code/status/retry mapping.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/common.schema.json#/$defs/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Typed protocol error; see README for code/status/retry mapping.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/common.schema.json#/$defs/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Typed protocol error; see README for code/status/retry mapping.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/common.schema.json#/$defs/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Typed protocol error; see README for code/status/retry mapping.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/common.schema.json#/$defs/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Typed protocol error; see README for code/status/retry mapping.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/common.schema.json#/$defs/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Typed protocol error; see README for code/status/retry mapping.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/common.schema.json#/$defs/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Typed protocol error; see README for code/status/retry mapping.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/common.schema.json#/$defs/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Typed protocol error; see README for code/status/retry mapping.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/common.schema.json#/$defs/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Typed protocol error; see README for code/status/retry mapping.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/common.schema.json#/$defs/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/prepared/tool-publication": {
+      "post": {
+        "operationId": "preparedToolPublication",
+        "summary": "ToolPublication",
+        "description": "Publishes an unexecutable proposal under the current execution owner. A later prepared commit must authorize it; this receipt is a Broker receipt, not an execution authorization. Retrying the same command may redeliver it but cannot start an uncommitted tool.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "./schemas/prepared.schema.json#/$defs/ToolPublication"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Publication receipt",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/prepared.schema.json#/$defs/ToolPublicationReceipt"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Typed protocol error; see README for code/status/retry mapping.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/common.schema.json#/$defs/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Typed protocol error; see README for code/status/retry mapping.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/common.schema.json#/$defs/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Typed protocol error; see README for code/status/retry mapping.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/common.schema.json#/$defs/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Typed protocol error; see README for code/status/retry mapping.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/common.schema.json#/$defs/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Typed protocol error; see README for code/status/retry mapping.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/common.schema.json#/$defs/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Typed protocol error; see README for code/status/retry mapping.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/common.schema.json#/$defs/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Typed protocol error; see README for code/status/retry mapping.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/common.schema.json#/$defs/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Typed protocol error; see README for code/status/retry mapping.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/common.schema.json#/$defs/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Typed protocol error; see README for code/status/retry mapping.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/common.schema.json#/$defs/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/prepared/resume-defer": {
+      "post": {
+        "operationId": "preparedResumeDeferral",
+        "summary": "ResumeDeferral",
+        "description": "Durably defers the same canonical Resume identity before the Brain releases or ACKs its MQ delivery. This does not activate a Turn or change its execution owner.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "./schemas/prepared.schema.json#/$defs/ResumeDeferral"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Deferral committed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/prepared.schema.json#/$defs/ResumeDeferralReceipt"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Typed protocol error; see README for code/status/retry mapping.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/common.schema.json#/$defs/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Typed protocol error; see README for code/status/retry mapping.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/common.schema.json#/$defs/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Typed protocol error; see README for code/status/retry mapping.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/common.schema.json#/$defs/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Typed protocol error; see README for code/status/retry mapping.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/common.schema.json#/$defs/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Typed protocol error; see README for code/status/retry mapping.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/common.schema.json#/$defs/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Typed protocol error; see README for code/status/retry mapping.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/common.schema.json#/$defs/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Typed protocol error; see README for code/status/retry mapping.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/common.schema.json#/$defs/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Typed protocol error; see README for code/status/retry mapping.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/common.schema.json#/$defs/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Typed protocol error; see README for code/status/retry mapping.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/common.schema.json#/$defs/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/prepared/coordination": {
+      "post": {
+        "operationId": "coordinatePreparedExecution",
+        "summary": "Coordinate prepared execution metadata",
+        "description": "Closed AgentScope control operations. Service owns process leases, Turn claims, Session queue metadata, private FIFO ACK receipts, MCP catalog pinning and frozen child relationships. No broker/model/tool call runs inside a metadata transaction.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "./schemas/coordination.schema.json#/$defs/CoordinationRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Deferral committed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/coordination.schema.json#/$defs/CoordinationResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Typed protocol error; see README for code/status/retry mapping.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/common.schema.json#/$defs/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Typed protocol error; see README for code/status/retry mapping.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/common.schema.json#/$defs/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Typed protocol error; see README for code/status/retry mapping.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/common.schema.json#/$defs/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Typed protocol error; see README for code/status/retry mapping.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/common.schema.json#/$defs/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Typed protocol error; see README for code/status/retry mapping.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/common.schema.json#/$defs/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Typed protocol error; see README for code/status/retry mapping.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/common.schema.json#/$defs/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Typed protocol error; see README for code/status/retry mapping.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/common.schema.json#/$defs/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Typed protocol error; see README for code/status/retry mapping.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/common.schema.json#/$defs/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Typed protocol error; see README for code/status/retry mapping.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/common.schema.json#/$defs/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/previews/interest": {
+      "post": {
+        "operationId": "previewInterest",
+        "summary": "previewInterest",
+        "description": "Authorized ephemeral text previews for an active model call. No durable writes, retries or replay guarantees.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "./schemas/preview.schema.json#/$defs/InterestRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Interest snapshot or best-effort enqueue result; never a durable receipt.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/preview.schema.json#/$defs/InterestResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Typed protocol error; see README for code/status/retry mapping.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/common.schema.json#/$defs/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Typed protocol error; see README for code/status/retry mapping.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/common.schema.json#/$defs/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Typed protocol error; see README for code/status/retry mapping.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/common.schema.json#/$defs/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Typed protocol error; see README for code/status/retry mapping.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/common.schema.json#/$defs/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Typed protocol error; see README for code/status/retry mapping.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/common.schema.json#/$defs/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Typed protocol error; see README for code/status/retry mapping.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/common.schema.json#/$defs/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Typed protocol error; see README for code/status/retry mapping.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/common.schema.json#/$defs/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Typed protocol error; see README for code/status/retry mapping.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/common.schema.json#/$defs/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Typed protocol error; see README for code/status/retry mapping.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/common.schema.json#/$defs/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/previews/publish": {
+      "post": {
+        "operationId": "previewPublish",
+        "summary": "previewPublish",
+        "description": "Authorized ephemeral text previews for an active model call. No durable writes, retries or replay guarantees.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "./schemas/preview.schema.json#/$defs/PublishRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Interest snapshot or best-effort enqueue result; never a durable receipt.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/preview.schema.json#/$defs/PublishResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Typed protocol error; see README for code/status/retry mapping.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/common.schema.json#/$defs/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Typed protocol error; see README for code/status/retry mapping.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/common.schema.json#/$defs/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Typed protocol error; see README for code/status/retry mapping.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/common.schema.json#/$defs/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Typed protocol error; see README for code/status/retry mapping.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/common.schema.json#/$defs/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Typed protocol error; see README for code/status/retry mapping.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/common.schema.json#/$defs/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Typed protocol error; see README for code/status/retry mapping.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/common.schema.json#/$defs/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Typed protocol error; see README for code/status/retry mapping.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/common.schema.json#/$defs/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Typed protocol error; see README for code/status/retry mapping.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/common.schema.json#/$defs/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Typed protocol error; see README for code/status/retry mapping.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/common.schema.json#/$defs/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/executions/release": {
+      "post": {
+        "operationId": "releaseExecution",
+        "summary": "Release the matching execution lease",
+        "description": "Idempotently expire only the matching owner/turn/epoch/token. Does not complete work. Late writes remain fenced; a successor cannot be released by the old owner.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "./schemas/runtime.schema.json#/$defs/FencedRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Completed durable operation or authorized read.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/runtime.schema.json#/$defs/ReleaseReceipt"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Typed protocol error; see README for code/status/retry mapping.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/common.schema.json#/$defs/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Typed protocol error; see README for code/status/retry mapping.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/common.schema.json#/$defs/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Typed protocol error; see README for code/status/retry mapping.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/common.schema.json#/$defs/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Typed protocol error; see README for code/status/retry mapping.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/common.schema.json#/$defs/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Typed protocol error; see README for code/status/retry mapping.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/common.schema.json#/$defs/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Typed protocol error; see README for code/status/retry mapping.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/common.schema.json#/$defs/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Typed protocol error; see README for code/status/retry mapping.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/common.schema.json#/$defs/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Typed protocol error; see README for code/status/retry mapping.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/common.schema.json#/$defs/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Typed protocol error; see README for code/status/retry mapping.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/common.schema.json#/$defs/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/prepared/resources": {
+      "post": {
+        "operationId": "accessPreparedResource",
+        "summary": "Access an admitted resource",
+        "description": "Java native compatibility port. Session Service resolves the admitted memory mount and forwards fixed resource operations to Control Plane under the session owner; arbitrary URLs are not accepted. Response preserves the Control Plane document/list payload.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "./schemas/prepared.schema.json#/$defs/ResourceRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Completed durable operation or authorized read.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/prepared.schema.json#/$defs/ResourceResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Typed protocol error; see README for code/status/retry mapping.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/common.schema.json#/$defs/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Typed protocol error; see README for code/status/retry mapping.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/common.schema.json#/$defs/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Typed protocol error; see README for code/status/retry mapping.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/common.schema.json#/$defs/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Typed protocol error; see README for code/status/retry mapping.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/common.schema.json#/$defs/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Typed protocol error; see README for code/status/retry mapping.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/common.schema.json#/$defs/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Typed protocol error; see README for code/status/retry mapping.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/common.schema.json#/$defs/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Typed protocol error; see README for code/status/retry mapping.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/common.schema.json#/$defs/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Typed protocol error; see README for code/status/retry mapping.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/common.schema.json#/$defs/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Typed protocol error; see README for code/status/retry mapping.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./schemas/common.schema.json#/$defs/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "ServiceBearer": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "Use platform service identity authorization; this contract does not prescribe token format. Scope authorization remains mandatory."
+      }
+    }
+  }
+}

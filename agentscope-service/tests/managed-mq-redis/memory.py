@@ -3,7 +3,7 @@
 # Licensed under the Apache License, Version 2.0.
 """Actual Harness MemoryStore operations after a real local tool suspension.
 
-Uses the explicit fixture model and real CP / Portal / Brain / Hands / DB / MQ /
+Uses the explicit fixture model and real CP / Agent Service / HarnessRuntime / Tool Worker / DB / MQ /
 Redis. The Sandbox is a local subprocess, not ACS. No legacy CP Session exists.
 """
 import argparse
@@ -81,7 +81,7 @@ def run(state, seconds, readonly):
     assert document_updated, "Memory document was never updated during suspension"
     events = replicas.request(replicas.PORTS["portal-b"], base + "/events?limit=256")
     assert not events["has_more"]
-    expected = "brain-confirmed-memory-" + ("denied-" if readonly else "") + label
+    expected = "harness-runtime-confirmed-memory-" + ("denied-" if readonly else "") + label
     assert expected in json.dumps(events), events
     lifecycle = [(e["type"], e["data"].get("turn_id")) for e in events["data"] if e["type"].startswith("turn.")]
     assert lifecycle == [("turn.running", turn["id"]), ("turn.waiting_tool", turn["id"]),

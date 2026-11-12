@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Real Portal/Go/PostgreSQL native execution with an authenticated fake Host.
+"""Real Agent Service/Go/PostgreSQL native execution with an authenticated fake Host.
 
 Seed only an isolated control-plane fixture, stop that process, then attach the
-runtime configured with --session-portal-url matching --portal-port. The fake
+runtime configured with --agent-service-url matching --agent-service-port. The fake
 Host uses real machine and attempt credentials. --exercise-daemon runs the real
 Host binary with a local stdio Codex fixture and no external model calls.
 """
@@ -24,8 +24,8 @@ import uuid
 from urllib.error import URLError
 
 from orchestration_runtime_host_smoke import ROOT, SERVICE_SECRET, SIGNING_SECRET, credential, request
-from orchestration_runtime_portal_smoke import digest, user_token
-from portal_postgres_fixture import portal_arguments
+from orchestration_runtime_agent_service_smoke import digest, user_token
+from agent_service_postgres_fixture import agent_service_arguments
 from session_smoke_http import read_sse
 
 
@@ -66,7 +66,7 @@ def seed(control_url, destination, mode, team=False):
     print(json.dumps({'resource_fixture_seeded': True, 'mode': mode, 'fixture_file': str(destination)}))
 
 
-def run(version, runtime_url, portal_port, fixture_file, exercise_cancel=False, exercise_daemon=False, approval=None, public_create=False, portal_dsn=None):
+def run(version, runtime_url, agent_service_port, fixture_file, exercise_cancel=False, exercise_daemon=False, approval=None, public_create=False, agent_service_dsn=None):
     fixture = json.loads(fixture_file.read_text(encoding='utf-8'))
     configuration = fixture['configuration']
     runtime_kind = fixture.get('runtime_kind', 'hosted-runtime')
@@ -74,16 +74,16 @@ def run(version, runtime_url, portal_port, fixture_file, exercise_cancel=False, 
     if runtime_kind == 'team' and (exercise_daemon or approval):
         raise ValueError('Team fixture currently uses the authenticated manual Host path')
     session_id = configuration['session']['id']
-    folder = Path(tempfile.mkdtemp(prefix='agentscope-native-runtime-smoke-'))
-    portal_url = 'http://127.0.0.1:' + str(portal_port)
-    environment = {'PATH': os.environ['PATH'], 'TZ': 'UTC', 'BUILDER_INTERNAL_TOKEN': SERVICE_SECRET,
-        'BUILDER_JWT_SECRET': SIGNING_SECRET}
+    folder = Path(tempfile.mkdtemp(prefix='managed-agents-native-runtime-smoke-'))
+    agent_service_url = 'http://127.0.0.1:' + str(agent_service_port)
+    environment = {'PATH': os.environ['PATH'], 'TZ': 'UTC', 'MANAGED_AGENTS_INTERNAL_TOKEN': SERVICE_SECRET,
+        'MANAGED_AGENTS_JWT_SECRET': SIGNING_SECRET}
     if os.environ.get('JAVA_HOME'):
         environment['JAVA_HOME'] = os.environ['JAVA_HOME']
     processes, handles, passed = [], [], False
     configuration_control_url = 'http://127.0.0.1:1'
     configuration_control = None
-    portal_storage_arguments = portal_arguments(version, portal_dsn or os.environ.get('AGENTSCOPE_TEST_POSTGRES_DSN'), folder, environment)
+    agent_service_storage_arguments = agent_service_arguments(version, agent_service_dsn or os.environ.get('MANAGED_AGENTS_TEST_POSTGRES_DSN'), folder, environment)
 
     def stop(process):
         if process.poll() is None:
@@ -94,29 +94,29 @@ def run(version, runtime_url, portal_port, fixture_file, exercise_cancel=False, 
                 process.kill()
                 process.wait(timeout=5)
 
-    def start_portal():
+    def start_agent_service():
         handle = (folder / 'portal.log').open('a')
         handles.append(handle)
-        jar = ROOT / 'service-session-portal/target' / ('service-session-portal-' + version + '.jar')
+        jar = ROOT / 'agent-service/target' / ('managed-agents-agent-service-' + version + '.jar')
         process = subprocess.Popen([shutil.which('java'), '-jar', str(jar),
-            '--server.address=127.0.0.1', '--server.port=' + str(portal_port),
-            '--spring.profiles.active=test', '--builder.local-dev=false',
-            '--builder.jwt.secret=' + SIGNING_SECRET, '--builder.vault.master-key=native-runtime-smoke-only',
-            '--builder.orchestration-runtime-url=' + runtime_url, '--builder.control-plane-url=' + configuration_control_url,
-            '--builder.portal.turn-delivery-poll-ms=200'] + portal_storage_arguments,
+            '--server.address=127.0.0.1', '--server.port=' + str(agent_service_port),
+            '--spring.profiles.active=test', '--managed-agents.local-dev=false',
+            '--managed-agents.jwt.secret=' + SIGNING_SECRET, '--managed-agents.vault.master-key=native-runtime-smoke-only',
+            '--managed-agents.orchestration-runtime-url=' + runtime_url, '--managed-agents.control-plane-url=' + configuration_control_url,
+            '--managed-agents.agent-service.turn-delivery-poll-ms=200'] + agent_service_storage_arguments,
             env=environment, stdout=handle, stderr=subprocess.STDOUT)
         processes.append(process)
         deadline = time.monotonic() + 45
         while time.monotonic() < deadline:
             if process.poll() is not None:
-                raise RuntimeError('Portal exited; inspect ' + str(handle.name))
+                raise RuntimeError('Agent Service exited; inspect ' + str(handle.name))
             try:
-                if request(portal_url + '/actuator/health')[0] == 200:
+                if request(agent_service_url + '/actuator/health')[0] == 200:
                     return process
             except (URLError, TimeoutError):
                 pass
             time.sleep(0.2)
-        raise RuntimeError('Portal did not become healthy')
+        raise RuntimeError('Agent Service did not become healthy')
 
     try:
         assert request(runtime_url + '/readyz')[0] == 200
@@ -131,7 +131,7 @@ def run(version, runtime_url, portal_port, fixture_file, exercise_cancel=False, 
         policy = {'tenant': context['tenant'], 'namespace': context['namespace'],
             'humans': {'fixture-user': ['read', 'invoke', 'interact', 'cancel', 'approve']},
             'credentials': [], 'application': None, 'enabled': True, 'valid_until': now + 120000}
-        service = {'X-Builder-Internal-Token': SERVICE_SECRET}
+        service = {'X-Managed-Agents-Internal-Token': SERVICE_SECRET}
         view = {'id': session_id, 'status': 'active', 'runtimeKind': runtime_kind,
             'target': {'type': target['targetType'], 'id': target['targetRef']}}
         creation_headers = {'Authorization': 'Bearer ' + user_token(), 'Idempotency-Key': 'create:' + session_id}
@@ -153,29 +153,29 @@ def run(version, runtime_url, portal_port, fixture_file, exercise_cancel=False, 
                     body = json.loads(self.rfile.read(int(self.headers.get('Content-Length', '0'))))
                     assert body['target']['id'] == target['targetRef']
                     assert self.headers.get('Authorization') == creation_headers['Authorization']
-                    assert self.headers.get('X-Builder-Internal-Token') == SERVICE_SECRET
+                    assert self.headers.get('X-Managed-Agents-Internal-Token') == SERVICE_SECRET
                     assert self.path == '/api/internal/runtime-admissions/sessions'
                     self.send(200, {**view, 'tenant': context['tenant'], 'admissionActor': context['actor']})
 
                 def do_GET(self):
-                    assert self.headers.get('X-Builder-Internal-Token') == SERVICE_SECRET
+                    assert self.headers.get('X-Managed-Agents-Internal-Token') == SERVICE_SECRET
                     assert self.path.startswith('/api/internal/runtime-sessions/' + session_id + '/projection')
                     self.send(200, {'managed': False, 'runtimeKind': runtime_kind,
                         'view': view, 'policy': policy, 'resolved': configuration})
             configuration_control = ThreadingHTTPServer(('127.0.0.1', 0), ConfigurationFixture)
             Thread(target=configuration_control.serve_forever, daemon=True).start()
             configuration_control_url = 'http://127.0.0.1:' + str(configuration_control.server_port)
-        portal = start_portal()
+        agentService = start_agent_service()
         if public_create:
             body = {'target': {'type': target['targetType'], 'id': target['targetRef']}}
-            status, ready = request(portal_url + '/api/v1/agent-sessions', 'POST', body, creation_headers)
+            status, ready = request(agent_service_url + '/api/v1/agent-sessions', 'POST', body, creation_headers)
             assert status == 200 and ready['state'] == 'ready', (status, ready)
-            assert request(portal_url + '/api/v1/agent-sessions', 'POST', body, creation_headers)[1]['id'] == session_id
+            assert request(agent_service_url + '/api/v1/agent-sessions', 'POST', body, creation_headers)[1]['id'] == session_id
             configuration_control.shutdown()
             configuration_control.server_close()
             configuration_control = None
         else:
-            status, ready = request(portal_url + '/api/internal/runtime/sessions/provision', 'POST',
+            status, ready = request(agent_service_url + '/api/internal/runtime/sessions/provision', 'POST',
                 {'bootstrap': bootstrap, 'policy': policy, 'publicView': view}, service)
         assert status == 200 and ready['state'] == 'ready', (status, ready)
         if exercise_daemon:
@@ -189,8 +189,8 @@ def run(version, runtime_url, portal_port, fixture_file, exercise_cancel=False, 
             host_environment = {**environment, 'FAKE_CODEX_REQUEST_LOG': str(folder / 'provider-requests.jsonl'),
                 'FAKE_CODEX_WAIT_FOR_CANCEL': 'true' if exercise_cancel else 'false',
                 'FAKE_CODEX_APPROVAL': approval or ''}
-            host = subprocess.Popen([str(ROOT / 'service-controlplane/bin/agentscope-runtime-host'),
-                '--control-plane=' + portal_url, '--internal-token=' + credential(host_key),
+            host = subprocess.Popen([str(ROOT / 'control-plane/bin/managed-agents-runtime-host'),
+                '--control-plane=' + agent_service_url, '--internal-token=' + credential(host_key),
                 '--tenant=' + context['tenant'], '--namespace=' + context['namespace'],
                 '--host-key=' + host_key, '--pool=' + fixture['pool_name'], '--capacity=1',
                 '--workspace-root=' + str(folder / 'workspace'), '--state-root=' + str(folder / 'state'),
@@ -218,12 +218,12 @@ def run(version, runtime_url, portal_port, fixture_file, exercise_cancel=False, 
             assert ready_file.read_bytes() == ready_before_duplicate, 'Duplicate daemon changed Host registration'
         else:
             host_headers = {'Authorization': 'Bearer ' + credential()}
-            status, registered = request(portal_url + '/api/v1/runtime-hosts/register', 'POST',
+            status, registered = request(agent_service_url + '/api/v1/runtime-hosts/register', 'POST',
                 {'hostKey': 'fixture-host', 'tenant': context['tenant'], 'namespace': context['namespace'],
                 'poolName': fixture['pool_name'], 'capacity': 1, 'capabilities': {'providers': {'codex': 'fixture/1'}}}, host_headers)
             assert status == 200, (status, registered)
             host = registered['host']
-        public = portal_url + '/api/v1/agent-sessions/' + session_id
+        public = agent_service_url + '/api/v1/agent-sessions/' + session_id
         caller = {'Authorization': 'Bearer ' + user_token(), 'Idempotency-Key': 'native-fixture-turn'}
         artifact_record, artifact_bytes = None, None
         input_value = {'message': '你好 🧰', 'number': 9007199254740993}
@@ -254,11 +254,11 @@ def run(version, runtime_url, portal_port, fixture_file, exercise_cancel=False, 
             snapshot = request(public + '/turns/' + turn_id + '/snapshot?limit=100', headers=caller)[1]
             actions = snapshot['resources']['required_actions']['data']
             assert len(actions) == 1 and actions[0]['data']['request_id'] == approval_id, actions
-            # Cross a physical lease interval and restart Portal while provider waits.
+            # Cross a physical lease interval and restart Agent Service while provider waits.
             time.sleep(31)
             assert host.poll() is None and request(public + '/turns/' + turn_id, headers=caller)[1]['status'] == 'requires_action'
-            stop(portal)
-            portal = start_portal()
+            stop(agentService)
+            agentService = start_agent_service()
             approval_headers = {**caller, 'Idempotency-Key': 'native-fixture-approval'}
             action = {'answers': [{'request_id': approval_id, 'allow': approval == 'approve'}]}
             status, approval_receipt = request(public + '/turns/' + turn_id + '/actions', 'POST', action, approval_headers)
@@ -280,7 +280,7 @@ def run(version, runtime_url, portal_port, fixture_file, exercise_cancel=False, 
             assert status == 202, (status, cancel_receipt)
             assert request(public + '/turns/' + turn_id + '/cancel', 'POST', headers=cancel_headers)[1]['command_id'] == cancel_receipt['command_id']
         if not exercise_daemon:
-            host_base = portal_url + '/api/v1/runtime-hosts/' + host['id'] + '/execution-attempts'
+            host_base = agent_service_url + '/api/v1/runtime-hosts/' + host['id'] + '/execution-attempts'
             lease = {'tenant': context['tenant'], 'namespace': context['namespace'],
                 'runtimePoolName': fixture['pool_name'], 'generation': host['leaseGeneration'],
                 'leaseOwner': 'fixture-native-host', 'leaseToken': uuid.uuid4().hex, 'leaseSeconds': 60}
@@ -324,7 +324,7 @@ def run(version, runtime_url, portal_port, fixture_file, exercise_cancel=False, 
                 assert status == 200, (status, cancelled)
             else:
                 artifact_bytes = bytes(range(256)) * 2048
-                status, uploaded = request(portal_url + '/mcp/collaboration', 'POST',
+                status, uploaded = request(agent_service_url + '/mcp/collaboration', 'POST',
                     {'jsonrpc': '2.0', 'id': 2, 'method': 'tools/call', 'params':
                         {'name': 'artifact.upload', 'arguments': {'filename': 'native-result.bin',
                             'contentType': 'application/octet-stream',
@@ -335,7 +335,7 @@ def run(version, runtime_url, portal_port, fixture_file, exercise_cancel=False, 
                 assert artifact_record['sizeBytes'] == len(artifact_bytes) and 'portalCommandId' not in artifact_record
                 result = {'output': 'fixture native answer', 'usage': {'inputTokens': 3, 'outputTokens': 2}}
                 if runtime_kind == 'team':
-                    status, semantic = request(portal_url + '/mcp/collaboration', 'POST',
+                    status, semantic = request(agent_service_url + '/mcp/collaboration', 'POST',
                         {'jsonrpc': '2.0', 'id': 1, 'method': 'tools/call', 'params':
                             {'name': 'run.node.complete', 'arguments': {'output': result}}},
                         {'Authorization': 'Bearer ' + work['taskToken']})
@@ -344,8 +344,8 @@ def run(version, runtime_url, portal_port, fixture_file, exercise_cancel=False, 
             time.sleep(1.5)
             status, waiting = request(public + '/turns/' + turn_id, headers=caller)
             assert status == 200 and waiting['status'] == ('cancel_requested' if exercise_cancel else 'running'), (status, waiting)
-            stop(portal)
-            portal = start_portal()
+            stop(agentService)
+            agentService = start_agent_service()
             assert request(attempt_url + '/physical-stop', 'POST', {**proof, 'fencingToken': proof['fencingToken'] + 1}, attempt_headers)[0] == 409
             for _ in range(2):
                 assert request(attempt_url + '/physical-stop', 'POST', proof, attempt_headers)[0] == 200
@@ -362,8 +362,8 @@ def run(version, runtime_url, portal_port, fixture_file, exercise_cancel=False, 
         status, active = request(public + '/turns?order=desc&status=running&limit=1', headers=caller)
         assert status == 200 and active['data'] == [], (status, active)
         if exercise_daemon:
-            stop(portal)
-            portal = start_portal()
+            stop(agentService)
+            agentService = start_agent_service()
             assert request(public + '/turns/' + turn_id, headers=caller)[1]['status'] == ('cancelled' if exercise_cancel else 'completed')
         status, page = request(public + '/events?limit=1000', headers=caller)
         assert status == 200 and not page['has_more'], (status, page)
@@ -380,15 +380,15 @@ def run(version, runtime_url, portal_port, fixture_file, exercise_cancel=False, 
             published = [event for event in events if event['type'] == 'artifact.published']
             assert len(published) == 1 and published[0]['data']['artifact_id'] == artifact_record['id'], published
             download = published[0]['data']['download_url']
-            assert download == public.removeprefix(portal_url) + '/turns/' + turn_id + '/artifacts/' + artifact_record['id'] + '/content'
-            assert request(portal_url + download, headers=caller, raw_response=True) == (200, artifact_bytes)
+            assert download == public.removeprefix(agent_service_url) + '/turns/' + turn_id + '/artifacts/' + artifact_record['id'] + '/content'
+            assert request(agent_service_url + download, headers=caller, raw_response=True) == (200, artifact_bytes)
             status, artifacts = request(public + '/turns/' + turn_id + '/artifacts?limit=10', headers=caller)
             assert status == 200 and len(artifacts['data']) == 1 and artifacts['data'][0]['data']['artifact_id'] == artifact_record['id'], (status, artifacts)
             assert request(public + '/turns/' + turn_id + '/artifacts/' + artifact_record['id'], headers=caller)[1]['data']['data']['artifact_id'] == artifact_record['id']
-            sdk = importlib.util.spec_from_file_location('fixture_public_service_sdk', ROOT / 'service-controlplane/sdk/python/agentscope_service/service.py')
+            sdk = importlib.util.spec_from_file_location('fixture_public_service_sdk', ROOT / 'control-plane/sdk/python/managed_agents/service.py')
             sdk_module = importlib.util.module_from_spec(sdk)
             sdk.loader.exec_module(sdk_module)
-            client = sdk_module.ServiceClient(portal_url, api_token=user_token())
+            client = sdk_module.ServiceClient(agent_service_url, api_token=user_token())
             assert client.artifact(session_id, turn_id, artifact_record['id']) == artifact_bytes
             assert client.artifact_metadata(session_id, artifact_record['id'], turn_id=turn_id)['data']['data']['artifact_id'] == artifact_record['id']
             assert len(client.artifacts(session_id, turn_id, limit=10)['data']) == 1
@@ -398,17 +398,17 @@ def run(version, runtime_url, portal_port, fixture_file, exercise_cancel=False, 
             assert client.usage(session_id, turn_id)['totals'] == {'inputTokens': 3, 'outputTokens': 2}
             assert len(client.turns(session_id, limit=10, order='desc')['data']) == 1
             assert len(client.actions(session_id, turn_id, limit=10)['data']) == 0
-            subprocess.run([shutil.which('node'), str(ROOT / 'tests/service_client_portal_smoke.mjs'), portal_url, session_id, turn_id, artifact_record['id'], hashlib.sha256(artifact_bytes).hexdigest()], env={'PATH': os.environ['PATH'], 'AGENTSCOPE_TEST_TOKEN': user_token()}, check=True, timeout=30)
-            java_module = ROOT / 'service-client'
+            subprocess.run([shutil.which('node'), str(ROOT / 'tests/service_client_agent_service_smoke.mjs'), agent_service_url, session_id, turn_id, artifact_record['id'], hashlib.sha256(artifact_bytes).hexdigest()], env={'PATH': os.environ['PATH'], 'MANAGED_AGENTS_TEST_TOKEN': user_token()}, check=True, timeout=30)
+            java_module = ROOT / 'java-client'
             classpath = java_module / 'target/client-classpath.txt'
-            java_jar = java_module / 'target' / ('agentscope-service-client-' + version + '.jar')
+            java_jar = java_module / 'target' / ('managed-agents-client-' + version + '.jar')
             if not classpath.is_file() or not java_jar.is_file():
-                raise RuntimeError('Build service-client and dependency:build-classpath before this fixture')
-            sdk_environment = {'PATH': os.environ['PATH'], 'AGENTSCOPE_TEST_TOKEN': user_token()}
+                raise RuntimeError('Build java-client and dependency:build-classpath before this fixture')
+            sdk_environment = {'PATH': os.environ['PATH'], 'MANAGED_AGENTS_TEST_TOKEN': user_token()}
             if os.environ.get('JAVA_HOME'):
                 sdk_environment['JAVA_HOME'] = os.environ['JAVA_HOME']
-            subprocess.run([shutil.which('java'), '--class-path', str(java_jar) + os.pathsep + classpath.read_text().strip(), '--source', '17', str(ROOT / 'tests/ServiceClientPortalSmoke.java'), portal_url, session_id, turn_id, artifact_record['id'], hashlib.sha256(artifact_bytes).hexdigest()], env=sdk_environment, check=True, timeout=30)
-            print('Native task artifact and actual Python/DSH/Java ServiceClient flows passed after Portal restart.')
+            subprocess.run([shutil.which('java'), '--class-path', str(java_jar) + os.pathsep + classpath.read_text().strip(), '--source', '17', str(ROOT / 'tests/ServiceClientAgentServiceSmoke.java'), agent_service_url, session_id, turn_id, artifact_record['id'], hashlib.sha256(artifact_bytes).hexdigest()], env=sdk_environment, check=True, timeout=30)
+            print('Native task artifact and actual Python/DSH/Java ServiceClient flows passed after Agent Service restart.')
         if approval:
             status, applied = request(public + '/commands/' + approval_receipt['command_id'], headers=caller)
             assert status == 200 and applied['command_status'] == 'applied', (status, applied)
@@ -503,7 +503,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--version', default='2.1.0-SNAPSHOT')
     parser.add_argument('--runtime-url')
-    parser.add_argument('--portal-port', type=int)
+    parser.add_argument('--agent-service-port', type=int)
     parser.add_argument('--fixture-file', type=Path, required=True)
     parser.add_argument('--seed-control-url')
     parser.add_argument('--mode', choices=('job', 'conversation'), default='job')
@@ -519,9 +519,9 @@ if __name__ == '__main__':
     if args.seed_control_url:
         seed(args.seed_control_url, args.fixture_file, args.mode, args.team)
     else:
-        if not args.runtime_url or not args.portal_port:
-            parser.error('--runtime-url and --portal-port are required to run')
-        run(args.version, args.runtime_url.rstrip('/'), args.portal_port, args.fixture_file,
+        if not args.runtime_url or not args.agent_service_port:
+            parser.error('--runtime-url and --agent-service-port are required to run')
+        run(args.version, args.runtime_url.rstrip('/'), args.agent_service_port, args.fixture_file,
             args.exercise_cancel or args.daemon_cancel,
             args.exercise_daemon or args.daemon_cancel or args.daemon_approve or args.daemon_deny,
             'approve' if args.daemon_approve else 'deny' if args.daemon_deny else None, args.public_create)

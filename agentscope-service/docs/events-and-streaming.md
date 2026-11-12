@@ -22,7 +22,7 @@ export NAMESPACE="${NAMESPACE:-default}"
 export TOKEN="${TOKEN:-}"
 export SESSION_API_KEY="${SESSION_API_KEY:-}"
 export RUN_ID="events-$(date +%s)-$$"
-export D=$(mktemp -d "${TMPDIR:-/tmp}/agentscope-service-events.XXXXXX")
+export D=$(mktemp -d "${TMPDIR:-/tmp}/managed-agents-events.XXXXXX")
 
 api() {
   local path="$1"
@@ -38,8 +38,8 @@ api() {
   fi
   curl --fail-with-body -sS "$BASE_URL$path" \
     "${auth[@]}" \
-    -H "X-AgentScope-Tenant: $TENANT" \
-    -H "X-AgentScope-Namespace: $NAMESPACE" \
+    -H "X-Managed-Agents-Tenant: $TENANT" \
+    -H "X-Managed-Agents-Namespace: $NAMESPACE" \
     -H 'Content-Type: application/json' \
     -H 'anthropic-version: 2023-06-01' \
     -H 'anthropic-beta: managed-agents-2026-04-01' \
@@ -96,7 +96,7 @@ EVENT_ID=$(jq -er '.data[0].id' "$D/message.json")
 printf 'Accepted Event: %s\n' "$EVENT_ID"
 ```
 
-HTTP 200 和 Event ID 表示已经持久受理，`processed_at:null` 表示尚未处理完成。正文是普通文本事件，没有 `agentscope_service` 意图；普通消息需要 Session 空闲且没有活动或排队工作。
+HTTP 200 和 Event ID 表示已经持久受理，`processed_at:null` 表示尚未处理完成。正文是普通文本事件，没有 `managed_agents` 意图；普通消息需要 Session 空闲且没有活动或排队工作。
 
 HTTP 响应不确定时，用原 JSON 文件和同一个 `$RUN_ID-message-1` 重试这条 cURL 命令，不要重新生成 RUN_ID 或换键。冻结回执不随执行更新，也不会在新开的流中重放旧答复；当前状态通过事件观察。
 
@@ -115,7 +115,7 @@ HTTP 响应不确定时，用原 JSON 文件和同一个 `$RUN_ID-message-1` 重
 | `session.error` | 检查错误，不能根据后续 idle 推断成功 |
 | `session.status_idle` | 查看 stop_reason，判断本次交互为何停止 |
 
-`stop_reason.type:end_turn` 表示工作停止，正常结束和中断都可能产生此值。助手消息是已提交文本，本版本没有 token deltas。SSE 在 idle 后继续保持连接；看到答复与 idle 后，可以保留此流观察下一条消息。
+`stop_reason.type:end_turn` 表示工作停止，正常结束和中断都可能产生此值。默认助手消息是完整的已提交文本；可用 `event_deltas[]=agent.message` 显式启用在线文本预览，允许丢失，不持久化或补发，最终由完整 `agent.message` 覆盖。SSE 在 idle 后继续保持连接；看到答复与 idle 后，可以保留此流观察下一条消息。
 
 Ctrl+C 只停止观察，不取消工作。刚提交后立即 GET Session 仍为 idle，也不能证明新消息已经完成；应跟随消息处理事件及后续状态。
 
@@ -250,8 +250,9 @@ printf 'Replacement message Event: %s\n' "$REPLACEMENT_EVENT_ID"
 | user.custom_tool_result / user.tool_result | 未开放客户端回填外部结果 |
 | budget_reached / Budget | 未开放预算暂停与恢复 API |
 | system.message | 当前入口拒绝；系统指令通过 Agent 定义配置 |
-| Threads/Workflow、preview/deltas | 不属于当前 Session 兼容子集 |
+| 助手文本预览 | 显式 `event_deltas[]=agent.message`，临时、尽力发送 |
+| Threads/Workflow、thinking/工具预览 | 不属于当前 Session 兼容子集 |
 
-本项目的服务端工具由 Hands 执行，不使用客户端工具确认/结果回填流程。已有 Session 固定其 Agent 定义；系统指令变化需配置新版本并按需新建 Session。平台 Turn/Input 与独立最终输出是可选增强，见 [API 层级](api-reference.md#api-layers)，不影响本文事件流程。
+本项目的服务端工具由 Tool Worker 执行，不使用客户端工具确认/结果回填流程。已有 Session 固定其 Agent 定义；系统指令变化需配置新版本并按需新建 Session。平台 Turn/Input 与独立最终输出是可选增强，见 [API 层级](api-reference.md#api-layers)，不影响本文事件流程。
 
-实际契约由 [Session 校验与 SSE](../service-session-portal/src/main/java/io/agentscope/builder/portal/session/ManagedSessionTurnsApi.java)、[持久事件投影](../service-common/src/main/java/io/agentscope/builder/runtime/managed/ManagedSessionProtocol.java)和[入口过滤器](../service-session-portal/src/main/java/io/agentscope/builder/portal/config/SessionApiErrors.java)决定。本文只采用当前已支持的上游交互模式，不将章节对齐等同于全部能力兼容。
+实际契约由 [Session 校验与 SSE](../agent-service/src/main/java/io/agentcore/managed/server/agentservice/session/ManagedSessionTurnsApi.java)、[持久事件投影](../common/src/main/java/io/agentcore/managed/server/runtime/managed/ManagedSessionProtocol.java)和[入口过滤器](../agent-service/src/main/java/io/agentcore/managed/server/agentservice/config/SessionApiErrors.java)决定。本文只采用当前已支持的上游交互模式，不将章节对齐等同于全部能力兼容。

@@ -55,7 +55,7 @@ def continue_observation(state, source, timeout):
     record = json.loads(source.read_text())
     if record["passed"] or not all(key in record for key in
             ("while_brain_absent", "sources", "captured_output", "public_before_resume", "new_brain_pids")):
-        raise ValueError("Continue only after the original source and Brain-restart checks")
+        raise ValueError("Continue only after the original source and HarnessRuntime-restart checks")
     output = state / f"tool-stream-continuation-{time.time_ns()}.json"
     record.update(continued_from=str(source), previous_error=record.pop("error", None),
                   completion_observation_seconds=timeout)
@@ -89,7 +89,7 @@ def continue_observation(state, source, timeout):
         output.write_text(json.dumps(record, indent=2) + "\n")
 
 
-def run(state, seconds, replace_hands, completion_timeout=600):
+def run(state, seconds, replace_tool_worker, completion_timeout=600):
     if seconds < 90 or seconds > 240:
         raise ValueError("Stream acceptance duration must be 90..240 seconds")
     manifest = json.loads((state / "manifest.json").read_text())
@@ -140,11 +140,11 @@ def run(state, seconds, replace_hands, completion_timeout=600):
             time.sleep(.25)
         else:
             raise AssertionError("Initial source delta was not durably visible during suspension")
-        record.update(before=before, brain_pids=kill(state,["brain-a","brain-b"]))
+        record.update(before=before, harness_runtime_pids=kill(state,["harness-runtime-a","harness-runtime-b"]))
         save()
-        if replace_hands:
-            record["old_hands_pids"] = kill(state,["hands-a","hands-b"])
-            record["new_hands_pids"] = {name: replicas.restart_replica(state,name) for name in ["hands-a","hands-b"]}
+        if replace_tool_worker:
+            record["old_hands_pids"] = kill(state,["tool-worker-a","tool-worker-b"])
+            record["new_hands_pids"] = {name: replicas.restart_replica(state,name) for name in ["tool-worker-a","tool-worker-b"]}
             save()
         deadline = time.monotonic() + seconds + 100
         while time.monotonic() < deadline:
@@ -153,7 +153,7 @@ def run(state, seconds, replace_hands, completion_timeout=600):
                 break
             time.sleep(.5)
         else:
-            raise AssertionError(f"Hands did not finish the original tool while Brain was absent: {after}")
+            raise AssertionError(f"Tool Worker did not finish the original tool while HarnessRuntime was absent: {after}")
         assert all(exited(pid) for pid in record["brain_pids"].values()), record
         assert all(before[0][key] == after[0][key] for key in ("task","execution","handle")), (before,after)
         assert after[0]["mode"] == "replayable" and not after[0]["has_gap"], after
@@ -161,7 +161,7 @@ def run(state, seconds, replace_hands, completion_timeout=600):
         public = all_events(base)
         tool_events = [event for event in public if event["type"] == "tool.delta" and event["data"].get("task_id") == after[0]["task"]]
         text = "".join(block["text"] for event in tool_events for block in event["data"]["output"])
-        assert text == f"begin-{label} 世界\nmiddle-{label}\nhands-{label}\n", text
+        assert text == f"begin-{label} 世界\nmiddle-{label}\ntool-worker-{label}\n", text
         premature = [event["id"] for event in public if event["type"] == "tool.completed" and event["data"].get("tool_call_id") == "replica-execute-" + label]
         assert not premature, {"premature_model_tool_completions": premature}
         assert replicas.request(replicas.PORTS["portal-a"],base + "/turns/" + first["id"])["status"] == "waiting_tool"
@@ -188,10 +188,10 @@ def run(state, seconds, replace_hands, completion_timeout=600):
             if event["type"] == "tool.result":
                 assert event["data"]["last_chunk_seq"] == chunks and event["data"]["output_offset"] == offset, event
         assert captured.decode() == text and len(captured) == after[0]["offset"], (captured,text)
-        record.update(while_brain_absent=after, sources=sources, captured_output=text, public_before_resume=public)
-        record["new_brain_pids"] = {name: replicas.restart_replica(state,name) for name in ["brain-a","brain-b"]}
+        record.update(while_harness_runtime_absent=after, sources=sources, captured_output=text, public_before_resume=public)
+        record["new_brain_pids"] = {name: replicas.restart_replica(state,name) for name in ["harness-runtime-a","harness-runtime-b"]}
         save()
-        # Workspace / memory finalization can suspend through Hands as well. This is a bounded
+        # Workspace / memory finalization can suspend through Tool Worker as well. This is a bounded
         # observation budget, independent of the business tool's requested duration.
         deadline = time.monotonic() + completion_timeout
         while time.monotonic() < deadline:
@@ -202,7 +202,7 @@ def run(state, seconds, replace_hands, completion_timeout=600):
                 raise AssertionError(turns)
             time.sleep(.5)
         else:
-            raise AssertionError(f"Turns did not complete after Brain restart: {turns}")
+            raise AssertionError(f"Turns did not complete after HarnessRuntime restart: {turns}")
         record["seconds"] = seconds
         save()
         replicas.verify_smoke(state,output)
@@ -211,7 +211,7 @@ def run(state, seconds, replace_hands, completion_timeout=600):
         assert len(completed) == 1, completed
         record.update(passed=True, model_tool_completions=1)
         save()
-        print(f"PASSED tool source while both Brain processes were absent: {output}",flush=True)
+        print(f"PASSED tool source while both HarnessRuntime processes were absent: {output}",flush=True)
     except BaseException:
         record.update(passed=False,error=traceback.format_exc())
         save()
@@ -222,7 +222,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--state",type=Path,required=True)
     parser.add_argument("--seconds",type=int,default=180)
-    parser.add_argument("--replace-hands",action="store_true")
+    parser.add_argument("--replace-tool-workers",action="store_true")
     parser.add_argument("--continue-record", type=Path,
                         help="Observe the original requests without restarting or resubmitting them")
     parser.add_argument("--completion-timeout", type=int, default=600)
@@ -233,5 +233,5 @@ if __name__ == "__main__":
         continue_observation(arguments.state.resolve(), arguments.continue_record,
                              arguments.completion_timeout)
     else:
-        run(arguments.state.resolve(), arguments.seconds, arguments.replace_hands,
+        run(arguments.state.resolve(), arguments.seconds, arguments.replace_tool_workers,
             arguments.completion_timeout)

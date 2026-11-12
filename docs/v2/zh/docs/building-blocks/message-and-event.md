@@ -421,7 +421,7 @@ agent.streamEvents(userMsg)
 
 <Tip>
 
-当前请求的流式界面可以将 AgentEvent 映射为 SSE。`streamEvents()` 用于启动执行，本身没有持久游标，不应用它重新执行请求来补齐断线期间的内容。Harness 默认也会保存直接调用的日志；读取历史，以及需要后台任务时如何引入 `AgentSession`，见[会话操作、事件与恢复](/v2/zh/docs/harness/session-log)。托管前端直接使用 [Agent API 的 snapshot + SSE](/v2/zh/service/session-event-log)。
+当前请求的流式界面可以将 AgentEvent 映射为 SSE。`streamEvents()` 用于启动执行，本身没有持久游标，不应用它重新执行请求来补齐断线期间的内容。Harness 默认也会保存直接调用的日志；原生历史读取见 [Thread 日志](/v2/zh/docs/harness/session-log)；后台任务与公共快照、事件使用 [Durable](/v2/zh/docs/harness/durable)。托管前端直接使用 [Agent API 的 snapshot + SSE](/v2/zh/service/session-event-log)。
 
 </Tip>
 

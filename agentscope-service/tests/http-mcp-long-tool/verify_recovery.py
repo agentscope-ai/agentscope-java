@@ -48,7 +48,7 @@ def run(args):
 
     def api(path, body=None):
         headers = {'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json',
-                   'X-AgentScope-Tenant': 'default', 'X-AgentScope-Namespace': 'default',
+                   'X-Managed-Agents-Tenant': 'default', 'X-Managed-Agents-Namespace': 'default',
                    'Idempotency-Key': 'ha-recovery-' + str(uuid.uuid4())}
         request = urllib.request.Request(config['baseUrl'] + path,
             None if body is None else json.dumps(body).encode(), headers)
@@ -83,7 +83,7 @@ def run(args):
         return sorted(events, key=lambda event: event['timestamp'])
 
     def physical(marker):
-        output = subprocess.check_output(kubectl + ['logs', '-l', 'app=agentscope-service-long-tool-mcp',
+        output = subprocess.check_output(kubectl + ['logs', '-l', 'app=managed-agents-long-tool-mcp',
             '--tail=-1', '--max-log-requests=4'], text=True)
         events = []
         for line in output.splitlines():
@@ -131,12 +131,12 @@ def run(args):
                     assert len(started) <= 1, 'Duplicate physical start before fault injection'
                     if started:
                         events = logs(args.component, session['id'])
-                        if args.component == 'hands':
-                            owners = [e for e in events if e['event'] == 'hands.tool.start.requested'
+                        if args.component == 'tool-worker':
+                            owners = [e for e in events if e['event'] == 'tool_worker.tool.start.requested'
                                       and e.get('turn_id') == state['turn1'] and e.get('tool_name') == 'mcp.call'
                                       and e.get('mode') == 'first_launch']
                         else:
-                            owners = [e for e in events if e['event'] == 'brain.execution.started'
+                            owners = [e for e in events if e['event'] == 'harness_runtime.execution.started'
                                       and e.get('turn_id') == state['turn1']]
                         if owners:
                             break
@@ -174,22 +174,22 @@ def run(args):
         events = logs(args.component, session['id'])
         save('recovery-log-after.json', events)
         report['observedHostsAfterFault'] = sorted({e['host'] for e in events if e['timestamp'] > report['faultAt']})
-        if args.component == 'brain':
+        if args.component == 'agent-harness-runtime':
             report['recoveredExecutionHosts'] = sorted({e['host'] for e in events
-                if e['event'] == 'brain.execution.started' and e.get('turn_id') == state['turn1']
+                if e['event'] == 'harness_runtime.execution.started' and e.get('turn_id') == state['turn1']
                 and e['host'] != report['deletedPod'] and e['timestamp'] > report['faultAt']})
         else:
             report['remoteResultRecovery'] = [e for e in events
-                if e['event'] == 'hands.mcp.execution.queried' and e.get('turn_id') == state['turn1']
+                if e['event'] == 'tool_worker.mcp.execution.queried' and e.get('turn_id') == state['turn1']
                 and e.get('external_state') == 'SUCCEEDED' and e['host'] != report['deletedPod']
                 and e['timestamp'] > report['faultAt']]
-        wait = subprocess.run(kubectl + ['rollout', 'status', 'deployment/ma-agentscope-service-' + args.component,
+        wait = subprocess.run(kubectl + ['rollout', 'status', 'deployment/ma-managed-agents-' + args.component,
             '--timeout=300s'], capture_output=True, text=True)
         report['replicasRestored'] = wait.returncode == 0
         save('deployments-after.json', kube('get', 'deployments', '-l', 'app.kubernetes.io/instance=ma'))
         report['passed'] = child.returncode == 0 and report['acceptance'].get('passed') is True \
             and len(starts) == len(finished) == 1 and report['replicasRestored']
-        if args.component == 'brain':
+        if args.component == 'agent-harness-runtime':
             report['passed'] = report['passed'] and bool(report['recoveredExecutionHosts'])
         else:
             report['passed'] = report['passed'] and bool(report['remoteResultRecovery'])
@@ -209,7 +209,7 @@ def run(args):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--component', choices=['brain', 'hands'], required=True)
+    parser.add_argument('--component', choices=['agent-harness-runtime', 'tool-worker'], required=True)
     parser.add_argument('--token-file', type=Path, required=True)
     parser.add_argument('--kubeconfig', type=Path, required=True)
     parser.add_argument('--out-dir', type=Path, required=True, help='New private output directory')

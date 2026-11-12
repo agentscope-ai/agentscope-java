@@ -18,8 +18,9 @@ package io.agentscope.core.agent;
 /**
  * Optional call-scoped iteration positions supplied by a durable execution host through
  * {@link RuntimeContext}. The host resolves these from committed reasoning/tool facts, rather than
- * treating a process restart as a new iteration budget. Without this value, both entry points retain
- * their ordinary iteration-zero behavior. This does not replay Java stacks or middleware effects.
+ * treating a process restart as a new iteration budget. Without a supplied position, native journals
+ * restore an unfinished invocation's committed position; a fresh call starts at zero. This does not
+ * replay Java stacks or middleware effects.
  *
  * @param reasoningIteration iteration for the next reasoning entry (including the maxIters check)
  * @param actingIteration iteration whose pending tool calls are being continued

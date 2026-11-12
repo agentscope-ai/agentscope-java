@@ -1,12 +1,12 @@
-# Additional AgentScope Service Harness kernel research
+# Additional Managed Agents Harness kernel research
 
 [中文](harness2-pi-brain-evaluation.md)
 
-This supplement follows the evaluation goal, example, and section numbering of `~/agentscope-3/agentscope-java/docs/v2/zh/blogs/harness-design.md`: select a lightweight, maintainable Brain kernel for general AgentScope Service, emphasizing external tools, complete checkpoints, cross-node recovery, in-turn inputs, and Java porting cost. Sections 4.7 and 4.8 continue the original six framework reviews; 1.3 and 5.1 extend its adapter table and selection conclusion.
+This supplement follows the evaluation goal, example, and section numbering of `~/agentscope-3/agentscope-java/docs/v2/zh/blogs/harness-design.md`: select a lightweight, maintainable Brain kernel for general Managed Agents, emphasizing external tools, complete checkpoints, cross-node recovery, in-turn inputs, and Java porting cost. Sections 4.7 and 4.8 continue the original six framework reviews; 1.3 and 5.1 extend its adapter table and selection conclusion.
 
 Source snapshots reviewed on 2026-10-19: Harness² [`1cfe254`](https://github.com/google-research/harness2/tree/1cfe254e8d25b15f37048c3730134686abe60335), Pi [`d2e7d8b`](https://github.com/earendil-works/pi/tree/d2e7d8b7c1d31d3661f769d5caef7ba8d50c3e03). No cross-process recovery prototype was completed for either framework. Existing capabilities and proposed adaptations are distinguished below.
 
-Use this repository's current [runtime architecture](managed-runtime-dataplane.md). Brain means Brain; Hands owns physical Hands execution. Runtime transactionally commits native logs, checkpoints, tool intents, and Execute Outbox. Tool events enter its Inbox, and Resume validates the current suspension and complete pending set. Suspension releases the Harness, Redis token, and MQ callback while retaining the original FIFO head. The original document's older runtime-event topic and Hands database ownership do not describe this project.
+Use this repository's current [runtime architecture](managed-runtime-dataplane.md). Brain means Agent Harness Runtime; Tool Worker owns physical Hands execution. Runtime transactionally commits native logs, checkpoints, tool intents, and Execute Outbox. Tool events enter its Inbox, and Resume validates the current suspension and complete pending set. Suspension releases the Harness, Redis token, and MQ callback while retaining the original FIFO head. The original document's older runtime-event topic and Hands database ownership do not describe this project.
 
 ## 1.3 Outer adapter and framework kernel
 
@@ -20,7 +20,7 @@ These rows extend the original adapter/kernel table. Pi's two kernels need separ
 
 ## 4. Harness framework research
 
-Use the original example: platform Turn T1 requests call-1 and call-2 in one step. The first finishes quickly; the second runs for ten minutes on Hands. The user adds a Windows requirement. Brain A times out and exits; Brain B must continue T1 with original call IDs, received/applied result state, and input position, without executing call-2 again. Orange diagram nodes identify adaptation or validation work.
+Use the original example: platform Turn T1 requests call-1 and call-2 in one step. The first finishes quickly; the second runs for ten minutes on Tool Worker. The user adds a Windows requirement. Brain A times out and exits; Brain B must continue T1 with original call IDs, received/applied result state, and input position, without executing call-2 again. Orange diagram nodes identify adaptation or validation work.
 
 ### 4.7 Google Harness² Python optimizes a harness while its substrate owns recovery
 
@@ -43,7 +43,7 @@ flowchart LR
     subgraph B["A Brain substrate is still required"]
         R["Problem 1: batch checkpoint<br/>safe suspension and original results"]
     end
-    H["Hands: original execution and result"]
+    H["Tool Worker: original execution and result"]
     X --> D --> S
     S --> R --> H
     H -->|"Original result / Resume"| R
@@ -62,7 +62,7 @@ flowchart LR
 
 **Problem two: single-process commits and local views need shared platform commits and stale-writer fencing; costs are medium to high.** Durable has Memory, SQLite, JSONL, and Cloudflare storage, but requires one process per storage and supplies no cross-process lock. A PostgreSQL adapter must also commit native task/checkpoint state with platform intents, Execute Outbox, Input receipts, and terminal facts, validating epoch on every write. Losing Redis ownership must prevent old commits. Brain B reconstructs from committed head rather than stale caches. SessionManager conversation persistence does not implement this protocol either. Pi's turn is one model response plus tools; its run more closely matches T1. Map platform runId/epoch separately and retain subsequent platform Turns in MQ rather than creating another follow-up scheduler. [Storage and ownership](https://github.com/earendil-works/pi/blob/d2e7d8b7c1d31d3661f769d5caef7ba8d50c3e03/packages/durable/README.md), [Storage and Task contracts](https://github.com/earendil-works/pi/blob/d2e7d8b7c1d31d3661f769d5caef7ba8d50c3e03/packages/durable/src/types.ts), [authoritative SessionManager context](https://github.com/earendil-works/pi/blob/d2e7d8b7c1d31d3661f769d5caef7ba8d50c3e03/packages/coding-agent/docs/sdk.md)
 
-**Context, input, and event boundaries.** Durable has a persisted inbox: steer applies after a tool round, while follow-up starts later work after the run. Reuse these seams while committing platform input receipts and terminal arbitration consistently. Pin prompts, schemas, skills, extension code, cwd/workspace, and child resources across recovery instead of resolving hot-reloaded versions. Permission hooks depend on extension selection, so retain mandatory platform authorization. Watches can replace intermediate frames with snapshots; project public events from authoritative history rather than treating watches as audit logs. Built-ins, MCP, codemode, and subagents must route physical execution through Hands. [Specification](https://github.com/earendil-works/pi/blob/d2e7d8b7c1d31d3661f769d5caef7ba8d50c3e03/packages/durable/docs/spec.md), [event projection](https://github.com/earendil-works/pi/blob/d2e7d8b7c1d31d3661f769d5caef7ba8d50c3e03/packages/durable/src/harness/events.ts)
+**Context, input, and event boundaries.** Durable has a persisted inbox: steer applies after a tool round, while follow-up starts later work after the run. Reuse these seams while committing platform input receipts and terminal arbitration consistently. Pin prompts, schemas, skills, extension code, cwd/workspace, and child resources across recovery instead of resolving hot-reloaded versions. Permission hooks depend on extension selection, so retain mandatory platform authorization. Watches can replace intermediate frames with snapshots; project public events from authoritative history rather than treating watches as audit logs. Built-ins, MCP, codemode, and subagents must route physical execution through Tool Worker. [Specification](https://github.com/earendil-works/pi/blob/d2e7d8b7c1d31d3661f769d5caef7ba8d50c3e03/packages/durable/docs/spec.md), [event projection](https://github.com/earendil-works/pi/blob/d2e7d8b7c1d31d3661f769d5caef7ba8d50c3e03/packages/durable/src/harness/events.ts)
 
 ```mermaid
 flowchart LR
@@ -77,7 +77,7 @@ flowchart LR
         D[("Shared complete state and platform facts<br/>checkpoint / Input / Outbox")]
         R["Resume validation / new epoch<br/>original-operation reconciliation"]
     end
-    H["Hands: original operation only"]
+    H["Tool Worker: original operation only"]
     X --> O --> H
     X --> D
     S <--> D
@@ -102,7 +102,7 @@ The original distinction between basic kernel and effectiveness strategy still a
 
 Continue lightweight extensions around AgentScope Java, preserving customizable models/context, definition loading, tool interception, input safe points, and recovery ports. Harness² can test optimization outside the stable kernel; Pi can inform loop and durable state-machine design. Do not assume every framework requires a Core fork: validate outer tools/storage/commit adapters first, modifying the kernel only where safe suspension cannot be expressed.
 
-Costs are engineering judgments, not staffing estimates. AgentScope remains a separately versioned Maven dependency through agentscope.version. This repository owns platform adapters, not binary Core/Harness internals. [Execution seam](../service-common/src/main/java/io/agentscope/builder/runtime/managed/ManagedHarnessTurns.java), [original-result reconciliation](../service-common/src/main/java/io/agentscope/builder/runtime/managed/ManagedToolRecovery.java), [implementation status](session-portal-implementation-status.md)
+Costs are engineering judgments, not staffing estimates. AgentScope remains a separately versioned Maven dependency through agentscope.version. This repository owns platform adapters, not binary Core/Harness internals. [Execution seam](../agent-harness-runtime/java/adapter-agentscope/src/main/java/io/agentcore/managed/server/runtime/managed/ManagedHarnessTurns.java), [original-result reconciliation](../agent-harness-runtime/java/adapter-agentscope/src/main/java/io/agentcore/managed/server/runtime/managed/ManagedToolRecovery.java), [implementation status](agent-service-implementation-status.md)
 
 ## Recovery prototype validation
 

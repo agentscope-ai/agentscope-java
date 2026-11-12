@@ -661,7 +661,7 @@ public class AgentCatalogService {
                             "shell_execute",
                             "memory_search",
                             "memory_get",
-                            "session_search");
+                            "thread_search");
 
             AgentConfigEntry.ToolsConfig tc = cfg != null ? cfg.getTools() : null;
             AgentConfigEntry.IdentityConfig ic = cfg != null ? cfg.getIdentity() : null;

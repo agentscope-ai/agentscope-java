@@ -1,0 +1,279 @@
+{
+  "renewRequest": {
+    "protocolVersion": "0.1.0",
+    "scope": {
+      "tenant": "t1",
+      "namespace": "demo",
+      "sessionId": "s1"
+    },
+    "turnId": "turn1",
+    "renewalId": "renew1",
+    "fence": {
+      "owner": {
+        "instanceId": "brain-a",
+        "incarnationId": "boot-a"
+      },
+      "epoch": "7",
+      "executionToken": "token7"
+    }
+  },
+  "renewReceipt": {
+    "protocolVersion": "0.1.0",
+    "scope": {
+      "tenant": "t1",
+      "namespace": "demo",
+      "sessionId": "s1"
+    },
+    "turnId": "turn1",
+    "renewalId": "renew1",
+    "fence": {
+      "owner": {
+        "instanceId": "brain-a",
+        "incarnationId": "boot-a"
+      },
+      "epoch": "7",
+      "executionToken": "token7"
+    },
+    "expiresAt": "2026-10-28T10:01:30Z",
+    "serverTime": "2026-10-28T09:00:00Z"
+  },
+  "deferRequest": {
+    "protocolVersion": "0.1.0",
+    "scope": {
+      "tenant": "t1",
+      "namespace": "demo",
+      "sessionId": "s1"
+    },
+    "turnId": "turn1",
+    "deferralId": "defer1",
+    "trigger": {
+      "kind": "ready",
+      "messageId": "ready1",
+      "queueVersion": "1"
+    },
+    "retryAfterMs": 500,
+    "reason": "capacity"
+  },
+  "deferReceipt": {
+    "protocolVersion": "0.1.0",
+    "scope": {
+      "tenant": "t1",
+      "namespace": "demo",
+      "sessionId": "s1"
+    },
+    "turnId": "turn1",
+    "deferralId": "defer1",
+    "messageId": "ready1",
+    "outcome": "deferred",
+    "notBefore": "2026-10-28T10:00:00.500Z"
+  },
+  "cancel": {
+    "protocolVersion": "0.1.0",
+    "scope": {
+      "tenant": "t1",
+      "namespace": "demo",
+      "sessionId": "s1"
+    },
+    "turnId": "turn1",
+    "messageId": "cancel_tool_e2af6b0a5a0ace3cf4cff7d3a564aa71c18639f491b0304a7718ec4df173638a",
+    "kind": "tool.cancel",
+    "taskId": "tool_e2af6b0a5a0ace3cf4cff7d3a564aa71c18639f491b0304a7718ec4df173638a",
+    "executionId": "tool_e2af6b0a5a0ace3cf4cff7d3a564aa71c18639f491b0304a7718ec4df173638a",
+    "reason": "user_requested"
+  },
+  "unknownState": {
+    "protocolVersion": "0.1.0",
+    "scope": {
+      "tenant": "t1",
+      "namespace": "demo",
+      "sessionId": "s1"
+    },
+    "turnId": "turn1",
+    "taskId": "tool_e2af6b0a5a0ace3cf4cff7d3a564aa71c18639f491b0304a7718ec4df173638a",
+    "executionId": "tool_e2af6b0a5a0ace3cf4cff7d3a564aa71c18639f491b0304a7718ec4df173638a",
+    "state": "unknown",
+    "observedAt": "2026-10-28T10:00:00Z",
+    "cancelRequested": true
+  },
+  "outputExecute": {
+    "protocolVersion": "0.1.0",
+    "scope": {
+      "tenant": "t1",
+      "namespace": "demo",
+      "sessionId": "s-output"
+    },
+    "turnId": "turn1",
+    "messageId": "execute_tool_bd74dd0c3eeadaec844db76a1ba9fb05e29945d5c8e4ffaa5a39c32ea871394c",
+    "kind": "tool.execute",
+    "authorizationCommitId": "output-commit1",
+    "operation": {
+      "operationId": "call1_0",
+      "taskId": "tool_bd74dd0c3eeadaec844db76a1ba9fb05e29945d5c8e4ffaa5a39c32ea871394c",
+      "executionId": "tool_bd74dd0c3eeadaec844db76a1ba9fb05e29945d5c8e4ffaa5a39c32ea871394c",
+      "nativeCallIds": [
+        "call1"
+      ],
+      "toolName": "fs.read",
+      "arguments": {
+        "inline": {
+          "path": "/workspace/a.txt"
+        }
+      },
+      "configurationRef": {
+        "scope": {
+          "tenant": "t1",
+          "namespace": "demo",
+          "sessionId": "s-output"
+        },
+        "backendId": "objects",
+        "key": "fixture/config",
+        "sha256": "4a180ef66750c0827c66e67fdda6058985bf659ca1505a3a05bce84c2115098d",
+        "size": "21",
+        "mediaType": "application/json",
+        "formatVersion": "config-v1"
+      }
+    }
+  },
+  "delta": {
+    "protocolVersion": "0.1.0",
+    "scope": {
+      "tenant": "t1",
+      "namespace": "demo",
+      "sessionId": "s-output"
+    },
+    "turnId": "turn1",
+    "messageId": "tool_event_763dad979a4395df9602d2b5ebf642b17f5b1df08fa56436b084de4481e052f5",
+    "kind": "tool.event",
+    "taskId": "tool_bd74dd0c3eeadaec844db76a1ba9fb05e29945d5c8e4ffaa5a39c32ea871394c",
+    "executionId": "tool_bd74dd0c3eeadaec844db76a1ba9fb05e29945d5c8e4ffaa5a39c32ea871394c",
+    "sourceSeq": "1",
+    "type": "tool.delta",
+    "data": {
+      "offset": "0",
+      "nextOffset": "2",
+      "dataBase64": "aGk="
+    }
+  },
+  "progress": {
+    "protocolVersion": "0.1.0",
+    "scope": {
+      "tenant": "t1",
+      "namespace": "demo",
+      "sessionId": "s-output"
+    },
+    "turnId": "turn1",
+    "messageId": "tool_event_feff422739251d41cbba9b55f9ba16f95fa2563e3205ccb6fe9ce6be2d4dcde6",
+    "kind": "tool.event",
+    "taskId": "tool_bd74dd0c3eeadaec844db76a1ba9fb05e29945d5c8e4ffaa5a39c32ea871394c",
+    "executionId": "tool_bd74dd0c3eeadaec844db76a1ba9fb05e29945d5c8e4ffaa5a39c32ea871394c",
+    "sourceSeq": "2",
+    "type": "tool.progress",
+    "data": {
+      "message": "running"
+    }
+  },
+  "gap": {
+    "protocolVersion": "0.1.0",
+    "scope": {
+      "tenant": "t1",
+      "namespace": "demo",
+      "sessionId": "s-output"
+    },
+    "turnId": "turn1",
+    "messageId": "tool_event_2e57cd60144df60842d8803d2729577829f495aafb798ac0b24f9dce0c3eaf4c",
+    "kind": "tool.event",
+    "taskId": "tool_bd74dd0c3eeadaec844db76a1ba9fb05e29945d5c8e4ffaa5a39c32ea871394c",
+    "executionId": "tool_bd74dd0c3eeadaec844db76a1ba9fb05e29945d5c8e4ffaa5a39c32ea871394c",
+    "sourceSeq": "3",
+    "type": "tool.output_gap",
+    "data": {
+      "fromOffset": "2",
+      "toOffset": "5",
+      "reason": "provider_output_unavailable"
+    }
+  },
+  "outOfOrderFinal": {
+    "protocolVersion": "0.1.0",
+    "scope": {
+      "tenant": "t1",
+      "namespace": "demo",
+      "sessionId": "s-output"
+    },
+    "turnId": "turn1",
+    "messageId": "tool_event_7f6ac4982111a70de4edf520f3eb02a2cab1d1756fb30c04ecb980cae268bd02",
+    "kind": "tool.event",
+    "taskId": "tool_bd74dd0c3eeadaec844db76a1ba9fb05e29945d5c8e4ffaa5a39c32ea871394c",
+    "executionId": "tool_bd74dd0c3eeadaec844db76a1ba9fb05e29945d5c8e4ffaa5a39c32ea871394c",
+    "sourceSeq": "4",
+    "type": "tool.result",
+    "data": {
+      "result": {
+        "resultId": "result_ccec22e1ac51fd977783232852b883cdb25daec48a8eb8d0bd6c91adec604f22",
+        "taskId": "tool_bd74dd0c3eeadaec844db76a1ba9fb05e29945d5c8e4ffaa5a39c32ea871394c",
+        "executionId": "tool_bd74dd0c3eeadaec844db76a1ba9fb05e29945d5c8e4ffaa5a39c32ea871394c",
+        "status": "succeeded",
+        "content": {
+          "inline": {
+            "text": "hello"
+          }
+        },
+        "artifacts": [],
+        "output": {
+          "mode": "gapped",
+          "throughSourceSeq": "3",
+          "byteLength": "5",
+          "gapEventIds": [
+            "tool_event_2e57cd60144df60842d8803d2729577829f495aafb798ac0b24f9dce0c3eaf4c"
+          ]
+        }
+      }
+    }
+  },
+  "bufferedReceipt": {
+    "protocolVersion": "0.1.0",
+    "scope": {
+      "tenant": "t1",
+      "namespace": "demo",
+      "sessionId": "s-output"
+    },
+    "taskId": "tool_bd74dd0c3eeadaec844db76a1ba9fb05e29945d5c8e4ffaa5a39c32ea871394c",
+    "executionId": "tool_bd74dd0c3eeadaec844db76a1ba9fb05e29945d5c8e4ffaa5a39c32ea871394c",
+    "eventId": "tool_event_7f6ac4982111a70de4edf520f3eb02a2cab1d1756fb30c04ecb980cae268bd02",
+    "contentHash": "9c8708ac0ee30fa538c7b9d9daeabac16738ebb3c783fb5a2be04bf44ce86d44",
+    "outcome": "buffered",
+    "throughSourceSeq": "0",
+    "acceptedResultIds": []
+  },
+  "drainedReceipt": {
+    "protocolVersion": "0.1.0",
+    "scope": {
+      "tenant": "t1",
+      "namespace": "demo",
+      "sessionId": "s-output"
+    },
+    "taskId": "tool_bd74dd0c3eeadaec844db76a1ba9fb05e29945d5c8e4ffaa5a39c32ea871394c",
+    "executionId": "tool_bd74dd0c3eeadaec844db76a1ba9fb05e29945d5c8e4ffaa5a39c32ea871394c",
+    "eventId": "tool_event_feff422739251d41cbba9b55f9ba16f95fa2563e3205ccb6fe9ce6be2d4dcde6",
+    "contentHash": "fcfbeded68e083241fa75fd234ccf7702fee31f83dd6ee5078d15b41a43ec620",
+    "outcome": "applied",
+    "throughSourceSeq": "4",
+    "acceptedResultIds": [
+      "result_ccec22e1ac51fd977783232852b883cdb25daec48a8eb8d0bd6c91adec604f22"
+    ]
+  },
+  "replay": {
+    "protocolVersion": "0.1.0",
+    "scope": {
+      "tenant": "t1",
+      "namespace": "demo",
+      "sessionId": "s-output"
+    },
+    "turnId": "turn1",
+    "messageId": "replay_870c350155c2e2b98df7728966a941f1a7367f67d9bd630a0e2d76527b0ef9a5",
+    "kind": "tool.replay",
+    "taskId": "tool_bd74dd0c3eeadaec844db76a1ba9fb05e29945d5c8e4ffaa5a39c32ea871394c",
+    "executionId": "tool_bd74dd0c3eeadaec844db76a1ba9fb05e29945d5c8e4ffaa5a39c32ea871394c",
+    "requestId": "replay-request1",
+    "fromSourceSeq": "1"
+  }
+}

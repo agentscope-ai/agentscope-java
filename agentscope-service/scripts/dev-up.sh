@@ -1,74 +1,80 @@
 #!/usr/bin/env bash
 #
-# dev-up.sh - start the AgentScope Service stack locally.
+# dev-up.sh - start the Managed Agents stack locally.
 #
 #   Gateway    :18080
-#   service-controlplane    :8081  (Go control plane: /api/*, /api/v1/*, console SPA)
+#   control-plane    :8081  (Go control plane: /api/*, /api/v1/*, console SPA)
 #   Data       :8082
-#   Portal     :8084
-#   Hands      :8085 (platform HTTP/MQ service)
+#   Agent Service     :8084
+#   Go Runtime :8086
+#   Tool Worker      :8085 (platform HTTP/MQ service)
 #   Postgres   :5432  (schemas cp + rt + portal + dp + ma; via Docker)
 #
-# service-controlplane runs standalone here (CONTROL_PLANE_ENABLE_KUBERNETES=false), so no
-# reconcilers, CRD-backed APIs, or ASDP gRPC listener are started.
+# control-plane runs standalone here (CONTROL_PLANE_ENABLE_KUBERNETES=false), so no
+# reconcilers, CRD-backed APIs, or RuntimeProtocol gRPC listener are started.
 #
 # Usage:
 #   scripts/dev-up.sh
-#   BUILDER_REBUILD=1 scripts/dev-up.sh   # rebuild binaries and preserve data
-#   BUILDER_REBUILD=1 BUILDER_RESET_DB=1 scripts/dev-up.sh  # explicitly reset disposable dev schemas
+#   MANAGED_AGENTS_REBUILD=1 scripts/dev-up.sh   # rebuild binaries and reset the disposable dev schemas
+#   MANAGED_AGENTS_REBUILD=1 MANAGED_AGENTS_RESET_DB=0 scripts/dev-up.sh  # rebuild while preserving local data
 #   scripts/dev-down.sh
 #
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-RUN_DIR="${BUILDER_RUN_DIR:-$ROOT/.dev-stack}"
+RUN_DIR="${MANAGED_AGENTS_RUN_DIR:-$ROOT/.dev-stack}"
 LOG_DIR="$RUN_DIR/logs"
 PID_DIR="$RUN_DIR/pids"
 mkdir -p "$LOG_DIR" "$PID_DIR"
 
 STARTUP_SUCCEEDED=0
-STARTED_PLANES=0
 cleanup_failed_startup() {
     local status=$?
-    if [ "$status" -ne 0 ] && [ "$STARTED_PLANES" = "1" ] && [ "$STARTUP_SUCCEEDED" != "1" ] && [ "${BUILDER_KEEP_FAILED_STACK:-0}" != "1" ]; then
+    if [ "$status" -ne 0 ] && [ "$STARTUP_SUCCEEDED" != "1" ] && [ "${MANAGED_AGENTS_KEEP_FAILED_STACK:-0}" != "1" ]; then
         echo "==> Startup failed; stopping partially started planes" >&2
         "$ROOT/scripts/dev-down.sh" || true
     fi
 }
 trap cleanup_failed_startup EXIT
 
-GATEWAY_PORT="${BUILDER_GATEWAY_PORT:-18080}"
-CONTROL_PORT="${BUILDER_CONTROL_PORT:-8081}"
-DATA_PORT="${BUILDER_DATA_PORT:-8082}"
-PORTAL_PORT="${BUILDER_PORTAL_PORT:-8084}"
-HANDS_PORT="${BUILDER_HANDS_PORT:-8085}"
-PG_PORT="${BUILDER_PG_PORT:-5432}"
-PG_CONTAINER="${BUILDER_PG_CONTAINER:-agentscope-dev-pg}"
-RESET_DB="${BUILDER_RESET_DB:-0}"
+GATEWAY_PORT="${MANAGED_AGENTS_GATEWAY_PORT:-18080}"
+CONTROL_PORT="${MANAGED_AGENTS_CONTROL_PORT:-8081}"
+AGENT_HARNESS_RUNTIME_PORT="${MANAGED_AGENTS_AGENT_HARNESS_RUNTIME_PORT:-8082}"
+AGENT_SERVICE_PORT="${MANAGED_AGENTS_AGENT_SERVICE_PORT:-8084}"
+TOOL_WORKER_PORT="${MANAGED_AGENTS_TOOL_WORKER_PORT:-8085}"
+PG_PORT="${MANAGED_AGENTS_PG_PORT:-5432}"
+PG_CONTAINER="${MANAGED_AGENTS_PG_CONTAINER:-managed-agents-dev-pg}"
+RESET_DB="${MANAGED_AGENTS_RESET_DB:-${MANAGED_AGENTS_REBUILD:-0}}"
 
 # jdbc profile requires >=32 chars and rejects known short defaults (see InternalTokenStartupValidator)
-export BUILDER_LOCAL_DEV="${BUILDER_LOCAL_DEV:-true}"
-export BUILDER_INTERNAL_TOKEN="${BUILDER_INTERNAL_TOKEN:-local-dev-internal-token-at-least-32chars}"
-export BUILDER_JWT_SECRET="${BUILDER_JWT_SECRET:-builder-default-dev-secret-change-in-production-32chars}"
-export BUILDER_VAULT_MASTER_KEY="${BUILDER_VAULT_MASTER_KEY:-local-dev-stable-vault-key-at-least-32chars}"
-export BUILDER_SESSION_PORTAL_URL="http://localhost:${PORTAL_PORT}"
-export BUILDER_WORKSPACE_ROOT="$RUN_DIR/workspaces"
-export BUILDER_JPA_DDL_AUTO=validate
-export BUILDER_SCHEMA_INIT=false
+export MANAGED_AGENTS_LOCAL_DEV="${MANAGED_AGENTS_LOCAL_DEV:-true}"
+export MANAGED_AGENTS_INTERNAL_TOKEN="${MANAGED_AGENTS_INTERNAL_TOKEN:-local-dev-internal-token-at-least-32chars}"
+export MANAGED_AGENTS_JWT_SECRET="${MANAGED_AGENTS_JWT_SECRET:-managed-agents-default-dev-secret-change-in-production-32chars}"
+export MANAGED_AGENTS_VAULT_MASTER_KEY="${MANAGED_AGENTS_VAULT_MASTER_KEY:-local-dev-stable-vault-key-at-least-32chars}"
+export MANAGED_AGENTS_AGENT_SERVICE_URL="http://localhost:${AGENT_SERVICE_PORT}"
+export MANAGED_AGENTS_SESSION_SERVICE_URL="${MANAGED_AGENTS_SESSION_SERVICE_URL:-${MANAGED_AGENTS_AGENT_SERVICE_URL}/internal/session-service/v0}"
+export MANAGED_AGENTS_WORKSPACE_ROOT="$RUN_DIR/workspaces"
+export MANAGED_AGENTS_JPA_DDL_AUTO=validate
+export MANAGED_AGENTS_SCHEMA_INIT=false
 CONTROL_DB_PASSWORD="${CONTROL_DB_PASSWORD:-local-control-db-password}"
-PORTAL_DB_PASSWORD="${PORTAL_DB_PASSWORD:-local-portal-db-password}"
-DATA_DB_PASSWORD="${DATA_DB_PASSWORD:-local-data-db-password}"
-HANDS_DB_PASSWORD="${HANDS_DB_PASSWORD:-local-hands-db-password}"
-export BUILDER_HANDS_URL="http://localhost:${HANDS_PORT}"
+AGENT_SERVICE_DB_PASSWORD="${AGENT_SERVICE_DB_PASSWORD:-local-agent-service-db-password}"
+AGENT_HARNESS_RUNTIME_DB_PASSWORD="${AGENT_HARNESS_RUNTIME_DB_PASSWORD:-local-agent-harness-runtime-db-password}"
+TOOL_WORKER_DB_PASSWORD="${TOOL_WORKER_DB_PASSWORD:-local-tool-worker-db-password}"
+export MANAGED_AGENTS_TOOL_WORKER_URL="http://localhost:${TOOL_WORKER_PORT}"
+export MANAGED_AGENTS_RUNTIME_BLOB_DIR="$RUN_DIR/managed-runtime-blobs"
 export SERVER_ADDRESS="127.0.0.1"
 export SPRING_PROFILES_ACTIVE="${SPRING_PROFILES_ACTIVE:-jdbc}"
 
-DB_URL="jdbc:postgresql://localhost:${PG_PORT}/builder?currentSchema=dp"
-CONTROL_PLANE_DSN="postgres://builder:builder@localhost:${PG_PORT}/builder?sslmode=disable"
+DB_URL="jdbc:postgresql://localhost:${PG_PORT}/managed_agents?currentSchema=dp"
+CONTROL_PLANE_DSN="postgres://managed_agents:managed_agents@localhost:${PG_PORT}/managed_agents?sslmode=disable"
 CONTROL_PLANE_RUNTIME_DSN="${CONTROL_PLANE_DSN}&search_path=rt"
 
 jar_of() {
-    find "$ROOT/$1/target" -maxdepth 1 -name "$1-*.jar" \
+    local module_path="$1"
+    [ "$1" != agent-harness-runtime ] || module_path="agent-harness-runtime/java/brain-agentscope"
+    local jar_pattern="managed-agents-$1-*.jar"
+    [ "$1" != tool-worker ] || jar_pattern="managed-agents-tool-worker-*-exec.jar"
+    find "$ROOT/$module_path/target" -maxdepth 1 -name "$jar_pattern" \
         ! -name "*sources*" ! -name "*javadoc*" | head -1
 }
 
@@ -77,11 +83,11 @@ managed_plane_name() {
     command="$(ps -p "$pid" -o command= 2>/dev/null || true)"
     [ -n "$command" ] || return 1
     case "$command" in
-        *"$ROOT/service-controlplane/bin/service-controlplane"*) echo control ;;
-        *"$ROOT/service-session-portal/target/service-session-portal-"*.jar*) echo portal ;;
-        *"$ROOT/service-hands/target/service-hands-"*.jar*) echo hands ;;
-        *"$ROOT/service-dataplane/target/service-dataplane-"*.jar*) echo data ;;
-        *"$ROOT/service-gateway/target/service-gateway-"*.jar*) echo gateway ;;
+        *"$ROOT/control-plane/bin/control-plane"*) echo control ;;
+        *"$ROOT/agent-service/target/managed-agents-agent-service-"*.jar*) echo agent-service ;;
+        *"$ROOT/tool-worker/target/managed-agents-tool-worker-"*.jar*) echo tool-worker ;;
+        *"$ROOT/agent-harness-runtime/java/brain-agentscope/target/managed-agents-agent-harness-runtime-"*.jar*) echo agent-harness-runtime ;;
+        *"$ROOT/gateway/target/managed-agents-gateway-"*.jar*) echo gateway ;;
         *) return 1 ;;
     esac
 }
@@ -122,12 +128,12 @@ free_port() {
 
 ensure_service_ports_available() {
     local blocked=0 port
-    for port in "$GATEWAY_PORT" "$CONTROL_PORT" "$DATA_PORT" "$PORTAL_PORT" "$HANDS_PORT"; do
+    for port in "$GATEWAY_PORT" "$CONTROL_PORT" "$AGENT_HARNESS_RUNTIME_PORT" "$AGENT_SERVICE_PORT" "$TOOL_WORKER_PORT"; do
         free_port "$port" || blocked=1
     done
     if [ "$blocked" != "0" ]; then
-        echo "Another application or Docker container owns an AgentScope Service port." >&2
-        echo "Stop that workload or override BUILDER_GATEWAY_PORT/CONTROL_PORT/DATA_PORT/PORTAL_PORT/HANDS_PORT." >&2
+        echo "Another application or Docker container owns an Managed Agents port." >&2
+        echo "Stop that workload or override MANAGED_AGENTS_GATEWAY_PORT/CONTROL_PORT/AGENT_HARNESS_RUNTIME_PORT/SCHEDULER_PORT." >&2
         return 1
     fi
 }
@@ -176,12 +182,11 @@ os.dup2(devnull.fileno(), 0)
 os.execvpe(argv[0], argv, os.environ)
 PY
     echo $! >"$pidfile"
-    STARTED_PLANES=1
     echo "  * ${name} started (pid $!)"
 }
 
-: "${BUILDER_MANAGED_REDIS_URI:?Set Redis URI before starting Managed services}"
-: "${BUILDER_MANAGED_MQ_ENDPOINTS:?Set RocketMQ 5.5.1 Cluster Proxy endpoints}"
+: "${MANAGED_AGENTS_RUNTIME_REDIS_URI:?Set Redis URI before starting Managed services}"
+: "${MANAGED_AGENTS_RUNTIME_MQ_ENDPOINTS:?Set RocketMQ 5.5.1 Cluster Proxy endpoints}"
 
 # Check before expensive builds or database changes. On macOS, Docker Desktop
 # itself listens on ports published by containers, so arbitrary port-based kills
@@ -189,28 +194,25 @@ PY
 ensure_service_ports_available
 
 # ---------------------------------------------------------------- build Java
-# Always install from the monorepo root (not agentscope-service/ alone):
-# fat jars embed ~/.m2 harness/core/extensions; a service-only build can keep a
-# stale snapshot. Root `mvn install` also walks agentscope-service children
-# (unlike `-pl agentscope-service`, which only builds the packaging=pom aggregator).
-if [ "${BUILDER_REBUILD:-0}" = "1" ] || [ ! -f "$(jar_of service-gateway || true)" ] || [ ! -f "$(jar_of service-session-portal || true)" ] || [ ! -f "$(jar_of service-dataplane || true)" ] || [ ! -f "$(jar_of service-hands || true)" ]; then
-    echo "==> Building agentscope-java monorepo (mvn install -DskipTests)"
-    MONOREPO_ROOT="$(cd "$ROOT/.." && pwd)"
-    (cd "$MONOREPO_ROOT" && mvn -T1 install -DskipTests -q)
+# Build this standalone reactor; AgentScope Java libraries resolve as Maven artifacts.
+if [ "${MANAGED_AGENTS_REBUILD:-0}" = "1" ] || [ ! -f "$(jar_of gateway || true)" ] || [ ! -f "$(jar_of agent-service || true)" ] || [ ! -f "$(jar_of tool-worker || true)" ] || [ ! -f "$(jar_of agent-harness-runtime || true)" ]; then
+    echo "==> Building standalone Service project (mvn install -DskipTests)"
+    PROJECT_ROOT="$(cd "$ROOT/.." && pwd)"
+    (cd "$PROJECT_ROOT" && mvn -T1 install -DskipTests -q)
 fi
 
 # ---------------------------------------------------------------- build console
 # Generated UI assets are no longer tracked; a fresh clone must build the SPA.
-if [ "${BUILDER_REBUILD:-0}" = "1" ] || [ ! -f "$ROOT/service-controlplane/ui/index.html" ]; then
-    echo "==> Building console from frontend sources"
-    (cd "$ROOT/frontend" && npm ci && npm run build)
+if [ "${MANAGED_AGENTS_REBUILD:-0}" = "1" ] || [ ! -f "$ROOT/control-plane/ui/index.html" ]; then
+    echo "==> Building console from console sources"
+    (cd "$ROOT/console" && npm ci && npm run build)
 fi
 
-# ---------------------------------------------------------------- build service-controlplane
-CONTROL_PLANE_BIN="$ROOT/service-controlplane/bin/service-controlplane"
-if [ "${BUILDER_REBUILD:-0}" = "1" ] || [ ! -x "$CONTROL_PLANE_BIN" ]; then
-    echo "==> Building service-controlplane"
-    (cd "$ROOT/service-controlplane" && mkdir -p bin && go build -o bin/service-controlplane ./cmd/service-controlplane)
+# ---------------------------------------------------------------- build control-plane
+CONTROL_PLANE_BIN="$ROOT/control-plane/bin/control-plane"
+if [ "${MANAGED_AGENTS_REBUILD:-0}" = "1" ] || [ ! -x "$CONTROL_PLANE_BIN" ]; then
+    echo "==> Building control-plane"
+    (cd "$ROOT/control-plane" && mkdir -p bin && go build -o bin/control-plane ./cmd/control-plane)
 fi
 
 # ---------------------------------------------------------------- postgres
@@ -226,10 +228,10 @@ if ! docker ps --format '{{.Names}}' | grep -qx "$PG_CONTAINER"; then
     else
         echo "==> Creating Postgres container ${PG_CONTAINER} on :${PG_PORT}"
         docker run -d --name "$PG_CONTAINER" \
-            -e POSTGRES_DB=builder \
-            -e POSTGRES_USER=builder \
-            -e POSTGRES_PASSWORD=builder \
-            -p "127.0.0.1:${PG_PORT}:5432" \
+            -e POSTGRES_DB=managed_agents \
+            -e POSTGRES_USER=managed_agents \
+            -e POSTGRES_PASSWORD=managed_agents \
+            -p "${PG_PORT}:5432" \
             -v "$ROOT/docker/postgres-init.sql:/docker-entrypoint-initdb.d/01-schemas.sql:ro" \
             postgres:17 >/dev/null
     fi
@@ -237,7 +239,7 @@ fi
 
 echo "==> Waiting for Postgres"
 for i in $(seq 1 60); do
-    if docker exec "$PG_CONTAINER" pg_isready -U builder -d builder >/dev/null 2>&1; then
+    if docker exec "$PG_CONTAINER" pg_isready -U managed_agents -d managed_agents >/dev/null 2>&1; then
         echo "  OK Postgres ready"
         break
     fi
@@ -249,48 +251,67 @@ for i in $(seq 1 60); do
 done
 
 # v4 intentionally has no compatibility migration from the unpublished legacy
-# Issue/OrchestrationRun/AgentTask/ExecutionAttempt schema. Rebuilds preserve data by default.
-# Set BUILDER_RESET_DB=1 only to recreate this disposable development database's schemas.
+# Issue/OrchestrationRun/AgentTask/ExecutionAttempt schema. A full local rebuild therefore recreates the
+# disposable development schemas before either Hibernate or control-plane starts.
+# Set MANAGED_AGENTS_RESET_DB=0 explicitly when the current v4 development data should be kept.
 if [ "$RESET_DB" = "1" ]; then
     echo "==> Resetting disposable Postgres schemas cp, rt, portal, dp, ma"
-    docker exec "$PG_CONTAINER" psql -v ON_ERROR_STOP=1 -U builder -d builder -c \
+    docker exec "$PG_CONTAINER" psql -v ON_ERROR_STOP=1 -U managed_agents -d managed_agents -c \
         "DROP SCHEMA IF EXISTS cp CASCADE; DROP SCHEMA IF EXISTS rt CASCADE; DROP SCHEMA IF EXISTS portal CASCADE; DROP SCHEMA IF EXISTS dp CASCADE; DROP SCHEMA IF EXISTS ma CASCADE;" >/dev/null
 fi
 
 # Apply the bootstrap on every start, not only when Docker first creates the
 # volume. This also restores grants and the role search_path after a reset.
-docker exec -i "$PG_CONTAINER" psql -v ON_ERROR_STOP=1 -U builder -d builder \
+docker exec -i "$PG_CONTAINER" psql -v ON_ERROR_STOP=1 -U managed_agents -d managed_agents \
     <"$ROOT/docker/postgres-init.sql" >/dev/null
 
-schema_count="$(docker exec "$PG_CONTAINER" psql -U builder -d builder -Atc \
+schema_count="$(docker exec "$PG_CONTAINER" psql -U managed_agents -d managed_agents -Atc \
     "SELECT count(*) FROM information_schema.schemata WHERE schema_name IN ('cp','rt','portal','dp','ma')")"
 if [ "$schema_count" != "5" ]; then
     echo "Expected cp, rt, portal, dp, and ma schemas, found ${schema_count}" >&2
     exit 1
 fi
 
+# Schema 3 public projections use a separate local database. Production should budget
+# query storage independently; this shared development container is not a load-test baseline.
+if ! docker exec "$PG_CONTAINER" psql -U managed_agents -d managed_agents -Atc \
+    "SELECT 1 FROM pg_database WHERE datname='managed_agents_query'" | grep -qx 1; then
+    docker exec "$PG_CONTAINER" createdb -U managed_agents managed_agents_query
+fi
+if [ "$RESET_DB" = "1" ]; then
+    docker exec "$PG_CONTAINER" psql -v ON_ERROR_STOP=1 -U managed_agents -d managed_agents_query \
+        -c "DROP SCHEMA IF EXISTS ma_query CASCADE" >/dev/null
+fi
+docker exec -i "$PG_CONTAINER" psql -v ON_ERROR_STOP=1 -U managed_agents -d managed_agents_query \
+    <"$ROOT/common/src/main/resources/managed-query-store.sql" >/dev/null
+QUERY_ENV=(MANAGED_AGENTS_QUERY_STORE_ENABLED=true MANAGED_AGENTS_QUERY_STORE_PROVIDER=postgres
+    "MANAGED_AGENTS_QUERY_STORE_JDBC_URL=jdbc:postgresql://localhost:${PG_PORT}/managed_agents_query"
+    MANAGED_AGENTS_QUERY_STORE_USER=managed_agents MANAGED_AGENTS_QUERY_STORE_PASSWORD=managed_agents
+    MANAGED_AGENTS_QUERY_STORE_SIGNING_KEY=local-query-cursor-key-at-least-32-characters
+    MANAGED_AGENTS_QUERY_STORE_BUILD=v3)
+
 # ---------------------------------------------------------------- independent schema jobs
 CONTROL_PLANE_PRODUCT_DSN="$CONTROL_PLANE_DSN" "$CONTROL_PLANE_BIN" \
     --storage-driver=postgres --storage-dsn="$CONTROL_PLANE_RUNTIME_DSN" --migrate-only \
     >"$LOG_DIR/schema-control.log" 2>&1
-for component in portal dataplane managed; do
-    module=service-dataplane
+for component in agent-service agent-harness-runtime runtime; do
+    module=agent-harness-runtime
     schema=dp
-    [ "$component" != portal ] || { module=service-session-portal; schema=portal; }
-    [ "$component" != managed ] || { module=service-session-portal; schema=ma; }
-    BUILDER_PORTAL_DB_PASSWORD=builder BUILDER_DB_PASSWORD=builder BUILDER_MANAGED_DB_PASSWORD=builder \
-    java -Dloader.main=io.agentscope.builder.web.persistence.ServiceSchemaMain \
+    [ "$component" != agent-service ] || { module=agent-service; schema=portal; }
+    [ "$component" != runtime ] || { module=agent-service; schema=ma; }
+    MANAGED_AGENTS_AGENT_SERVICE_DB_PASSWORD=managed_agents MANAGED_AGENTS_AGENT_HARNESS_RUNTIME_DB_PASSWORD=managed_agents MANAGED_AGENTS_RUNTIME_DB_PASSWORD=managed_agents \
+    java -Dloader.main=io.agentcore.managed.server.web.persistence.ServiceSchemaMain \
         -cp "$(jar_of "$module")" org.springframework.boot.loader.launch.PropertiesLauncher \
         "--component=$component" "--schema=$schema" \
-        "--url=jdbc:postgresql://localhost:${PG_PORT}/builder" --username=builder \
+        "--url=jdbc:postgresql://localhost:${PG_PORT}/managed_agents" --username=managed_agents \
         >"$LOG_DIR/schema-${component}.log" 2>&1
 done
-docker exec -i -e PGHOST=127.0.0.1 -e PGDATABASE=builder -e PGUSER=builder -e PGPASSWORD=builder \
+docker exec -i -e PGHOST=127.0.0.1 -e PGDATABASE=managed_agents -e PGUSER=managed_agents -e PGPASSWORD=managed_agents \
     -e "CONTROL_DB_PASSWORD=$CONTROL_DB_PASSWORD" \
-    -e "PORTAL_DB_PASSWORD=$PORTAL_DB_PASSWORD" -e "DATA_DB_PASSWORD=$DATA_DB_PASSWORD" \
-    -e "HANDS_DB_PASSWORD=$HANDS_DB_PASSWORD" "$PG_CONTAINER" sh -s \
+    -e "AGENT_SERVICE_DB_PASSWORD=$AGENT_SERVICE_DB_PASSWORD" -e "AGENT_HARNESS_RUNTIME_DB_PASSWORD=$AGENT_HARNESS_RUNTIME_DB_PASSWORD" \
+    -e "TOOL_WORKER_DB_PASSWORD=$TOOL_WORKER_DB_PASSWORD" "$PG_CONTAINER" sh -s \
     <"$ROOT/deploy/postgres-roles.sh" >"$LOG_DIR/schema-grants.log" 2>&1
-CONTROL_PLANE_DSN="postgres://agentscope_control:${CONTROL_DB_PASSWORD}@localhost:${PG_PORT}/builder?sslmode=disable"
+CONTROL_PLANE_DSN="postgres://managed_agents_control:${CONTROL_DB_PASSWORD}@localhost:${PG_PORT}/managed_agents?sslmode=disable"
 CONTROL_PLANE_RUNTIME_DSN="${CONTROL_PLANE_DSN}&search_path=rt"
 
 # ---------------------------------------------------------------- planes
@@ -302,61 +323,60 @@ start control "$PID_DIR/control.pid" \
     env CONTROL_PLANE_ENABLE_KUBERNETES=false \
         CONTROL_PLANE_PRODUCT_DSN="$CONTROL_PLANE_DSN" \
         CONTROL_PLANE_HTTP_BIND="127.0.0.1:${CONTROL_PORT}" \
-        BUILDER_JWT_SECRET="$BUILDER_JWT_SECRET" \
-        BUILDER_INTERNAL_TOKEN="$BUILDER_INTERNAL_TOKEN" \
-        BUILDER_DATA_URL="http://localhost:${DATA_PORT}" \
-        BUILDER_ALLOW_LOCAL_ENVIRONMENT=true \
+        MANAGED_AGENTS_JWT_SECRET="$MANAGED_AGENTS_JWT_SECRET" \
+        MANAGED_AGENTS_INTERNAL_TOKEN="$MANAGED_AGENTS_INTERNAL_TOKEN" \
+        MANAGED_AGENTS_AGENT_HARNESS_RUNTIME_URL="http://localhost:${AGENT_HARNESS_RUNTIME_PORT}" \
+        MANAGED_AGENTS_ALLOW_LOCAL_ENVIRONMENT=true \
         CONTROL_PLANE_WORKSPACE_ROOT="$RUN_DIR/workspaces" \
         CONTROL_PLANE_ARTIFACT_ROOT="$RUN_DIR/artifacts" \
-        CONTROL_PLANE_STATIC_DIR="$ROOT/service-controlplane/ui" \
+        CONTROL_PLANE_STATIC_DIR="$ROOT/control-plane/ui" \
     "$CONTROL_PLANE_BIN" \
         --storage-driver=postgres \
         --storage-dsn="$CONTROL_PLANE_RUNTIME_DSN" \
         --schema-mode=validate --enable-runtime-workers=true --log-format=console
 
-start portal "$PID_DIR/portal.pid" \
-    env BUILDER_PORTAL_DB_URL="jdbc:postgresql://localhost:${PG_PORT}/builder?currentSchema=portal" \
-        BUILDER_PORTAL_DB_USER=agentscope_portal BUILDER_PORTAL_DB_PASSWORD="$PORTAL_DB_PASSWORD" \
-        BUILDER_PORTAL_SCHEMA_INIT=never BUILDER_PORTAL_PORT="$PORTAL_PORT" \
-        BUILDER_CONTROL_URL="http://localhost:${CONTROL_PORT}" \
-        BUILDER_DATA_URL="http://localhost:${DATA_PORT}" \
-    java -jar "$(jar_of service-session-portal)"
+start agent-service "$PID_DIR/agent-service.pid" \
+    env "${QUERY_ENV[@]}" MANAGED_AGENTS_AGENT_SERVICE_DB_URL="jdbc:postgresql://localhost:${PG_PORT}/managed_agents?currentSchema=portal" \
+        MANAGED_AGENTS_AGENT_SERVICE_DB_USER=managed_agents_agent_service MANAGED_AGENTS_AGENT_SERVICE_DB_PASSWORD="$AGENT_SERVICE_DB_PASSWORD" \
+        MANAGED_AGENTS_BRAIN_HTTP_ENABLED=true \
+        MANAGED_AGENTS_BRAIN_CALLBACK_URL="http://localhost:${AGENT_HARNESS_RUNTIME_PORT}/api/internal/brain/notify" \
+        MANAGED_AGENTS_AGENT_SERVICE_SCHEMA_INIT=never MANAGED_AGENTS_AGENT_SERVICE_PORT="$AGENT_SERVICE_PORT" \
+        MANAGED_AGENTS_AGENT_HARNESS_RUNTIME_URL="http://localhost:${AGENT_HARNESS_RUNTIME_PORT}" \
+    java -jar "$(jar_of agent-service)"
 
-start data "$PID_DIR/data.pid" \
-    env BUILDER_DB_URL="$DB_URL" BUILDER_DB_DRIVER=org.postgresql.Driver \
-        BUILDER_DB_USER=agentscope_data BUILDER_DB_PASSWORD="$DATA_DB_PASSWORD" \
-        BUILDER_MANAGED_CONSUMERS_ENABLED=true \
-        BUILDER_DATA_PORT="$DATA_PORT" \
-        BUILDER_CONTROL_URL="http://localhost:${CONTROL_PORT}" \
-        BUILDER_INTERNAL_TOKEN="$BUILDER_INTERNAL_TOKEN" \
-        BUILDER_JWT_SECRET="$BUILDER_JWT_SECRET" \
-    java -jar "$(jar_of service-dataplane)"
+start agent-harness-runtime "$PID_DIR/agent-harness-runtime.pid" \
+    env -u MANAGED_AGENTS_RUNTIME_REDIS_URI -u MANAGED_AGENTS_RUNTIME_MQ_ENDPOINTS \
+        SPRING_PROFILES_ACTIVE= \
+        MANAGED_AGENTS_AGENT_HARNESS_RUNTIME_PORT="$AGENT_HARNESS_RUNTIME_PORT" \
+        MANAGED_AGENTS_INTERNAL_TOKEN="$MANAGED_AGENTS_INTERNAL_TOKEN" \
+        MANAGED_AGENTS_JWT_SECRET="$MANAGED_AGENTS_JWT_SECRET" \
+    java -jar "$(jar_of agent-harness-runtime)"
 
 start gateway "$PID_DIR/gateway.pid" \
-    env BUILDER_GATEWAY_PORT="$GATEWAY_PORT" \
-        BUILDER_CONTROL_URL="http://localhost:${CONTROL_PORT}" \
-        BUILDER_DATA_URL="http://localhost:${DATA_PORT}" \
-    java -jar "$(jar_of service-gateway)"
+    env MANAGED_AGENTS_GATEWAY_PORT="$GATEWAY_PORT" \
+        MANAGED_AGENTS_CONTROL_URL="http://localhost:${CONTROL_PORT}" \
+        MANAGED_AGENTS_AGENT_HARNESS_RUNTIME_URL="http://localhost:${AGENT_HARNESS_RUNTIME_PORT}" \
+    java -jar "$(jar_of gateway)"
 
-start hands "$PID_DIR/hands.pid" \
-    env BUILDER_HANDS_DB_URL="jdbc:postgresql://localhost:${PG_PORT}/builder?currentSchema=ma" \
-        BUILDER_HANDS_DB_USER=agentscope_hands BUILDER_HANDS_DB_PASSWORD="$HANDS_DB_PASSWORD" \
-        BUILDER_HANDS_PORT="$HANDS_PORT" BUILDER_CONTROL_URL="http://localhost:${CONTROL_PORT}" \
-    java -jar "$(jar_of service-hands)" --platform-service
+start tool-worker "$PID_DIR/tool-worker.pid" \
+    env MANAGED_AGENTS_TOOL_WORKER_DB_URL="jdbc:postgresql://localhost:${PG_PORT}/managed_agents?currentSchema=ma" \
+        MANAGED_AGENTS_TOOL_WORKER_DB_USER=managed_agents_tool_worker MANAGED_AGENTS_TOOL_WORKER_DB_PASSWORD="$TOOL_WORKER_DB_PASSWORD" \
+        MANAGED_AGENTS_TOOL_WORKER_PORT="$TOOL_WORKER_PORT" MANAGED_AGENTS_CONTROL_URL="http://localhost:${CONTROL_PORT}" \
+    java -jar "$(jar_of tool-worker)" --platform-service
 
 echo "==> Waiting for health"
 wait_health control "$CONTROL_PORT" 60 /healthz
-wait_health portal "$PORTAL_PORT"
-wait_health data "$DATA_PORT"
-wait_health hands "$HANDS_PORT"
+wait_health agent-service "$AGENT_SERVICE_PORT"
+wait_health agent-harness-runtime "$AGENT_HARNESS_RUNTIME_PORT"
+wait_health tool-worker "$TOOL_WORKER_PORT"
 wait_health gateway "$GATEWAY_PORT" 30
 
 echo "==> Verifying database schemas and v4 terminal migrations"
-docker exec -i "$PG_CONTAINER" psql -v ON_ERROR_STOP=1 -U builder -d builder \
+docker exec -i "$PG_CONTAINER" psql -v ON_ERROR_STOP=1 -U managed_agents -d managed_agents \
     <"$ROOT/docker/postgres-dev-verify.sql" >/dev/null
-echo "  OK cp/rt/portal/dp/ma schemas and current execution tables"
+echo "  OK cp/rt/dp schemas and v4 collaboration/orchestration/runtime tables"
 
-if [ "${BUILDER_SMOKE_TEST:-0}" = "1" ]; then
+if [ "${MANAGED_AGENTS_SMOKE_TEST:-0}" = "1" ]; then
     echo "==> Running API smoke test"
     BASE="http://localhost:${GATEWAY_PORT}" "$ROOT/scripts/smoke.sh"
 fi
@@ -365,12 +385,12 @@ STARTUP_SUCCEEDED=1
 
 cat <<EOF
 
-==> AgentScope Service stack is up (Control (Go orchestration, Cron and channels) + Portal + Harness + Hands + Gateway)
+==> Managed Agents stack is up (Control (Go orchestration, Cron and channels) + Agent Service + Harness + Tool Worker + Gateway)
 
   Console (SPA via gateway):  http://localhost:${GATEWAY_PORT}/
-  Identity:                  local developer when BUILDER_LOCAL_DEV=true
+  Default login:              admin / admin
 
-  Frontend HMR (optional):    cd frontend && npm run dev
+  Frontend HMR (optional):    cd console && npm run dev
 
   Logs:   ${LOG_DIR}
   Verify: scripts/smoke.sh

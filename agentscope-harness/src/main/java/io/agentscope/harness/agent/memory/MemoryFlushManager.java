@@ -16,6 +16,7 @@
 package io.agentscope.harness.agent.memory;
 
 import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.core.journal.JournalException;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
@@ -23,7 +24,6 @@ import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.Model;
-import io.agentscope.core.session.SessionLogException;
 import io.agentscope.core.util.JsonUtils;
 import io.agentscope.harness.agent.context.ContextModelCalls;
 import io.agentscope.harness.agent.memory.compaction.ConversationCompactor;
@@ -214,8 +214,8 @@ public class MemoryFlushManager {
             String content = workspaceManager.readManagedWorkspaceFileUtf8(rc, relativePath);
             return content != null ? content : "";
         } catch (Exception e) {
-            if (SessionLogException.causedBy(e))
-                throw new SessionLogException(
+            if (JournalException.causedBy(e))
+                throw new JournalException(
                         "Memory read cannot advance without its recorded outcome", e);
             log.debug("Could not read {}: {}", relativePath, e.getMessage());
             return "";

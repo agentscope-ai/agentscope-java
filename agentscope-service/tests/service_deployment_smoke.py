@@ -29,7 +29,7 @@ from urllib.request import Request, urlopen
 from urllib.parse import urlencode, urlsplit
 import uuid
 from session_smoke_http import read_sse
-from portal_postgres_fixture import managed_environment
+from agent_service_postgres_fixture import managed_environment
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -65,10 +65,10 @@ def run(options):
     options.managed_turn = options.managed_turn or options.managed_files or options.webhooks or options.managed_maintenance
     if not re.fullmatch(r'[A-Za-z_][A-Za-z0-9_]{0,62}', options.owner):
         raise ValueError('PostgreSQL fixture owner must be an identifier')
-    password = os.environ['AGENTSCOPE_TEST_POSTGRES_PASSWORD']
+    password = os.environ['MANAGED_AGENTS_TEST_POSTGRES_PASSWORD']
     suffix = uuid.uuid4().hex[:18]
     database = 'deployment_' + suffix
-    folder = Path(tempfile.mkdtemp(prefix='agentscope-service-deployment-'))
+    folder = Path(tempfile.mkdtemp(prefix='managed-agents-deployment-'))
     processes, logs, roles = [], [], {}
     model_server, model_calls = None, []
     webhook_server, webhook_calls = None, []
@@ -120,25 +120,25 @@ def run(options):
         raise RuntimeError(name + ' startup timed out; logs: ' + str(folder))
 
     def jar(module):
-        return str(ROOT / module / 'target' / (module + '-' + options.version + '.jar'))
+        return str(ROOT / module / 'target' / ('managed-agents-' + module + '-' + options.version + '.jar'))
 
     sql('CREATE DATABASE ' + database + ';', 'postgres')
     try:
         sql('CREATE SCHEMA rt; CREATE SCHEMA cp;')
-        control = str(ROOT / 'service-controlplane/bin/service-controlplane')
+        control = str(ROOT / 'control-plane/bin/control-plane')
         command('schema-control', [control, '--storage-driver=postgres', '--migrate-only'],
                 {'CONTROL_PLANE_STORAGE_DSN': owner_dsn + '&search_path=rt',
                  'CONTROL_PLANE_PRODUCT_DSN': owner_dsn})
-        for component, module in [('portal', 'service-session-portal'), ('dataplane', 'service-dataplane'), ('managed', 'service-session-portal')]:
+        for component, module in [('agent-service', 'agent-service'), ('agent-harness-runtime', 'agent-harness-runtime'), ('runtime', 'agent-service')]:
             command('schema-' + component, [shutil.which('java'),
-                '-Dloader.main=io.agentscope.builder.web.persistence.ServiceSchemaMain',
+                '-Dloader.main=io.agentcore.managed.server.web.persistence.ServiceSchemaMain',
                 '-cp', jar(module), 'org.springframework.boot.loader.launch.PropertiesLauncher',
                 '--component=' + component, '--url=' + jdbc, '--username=' + options.owner],
-                {'BUILDER_PORTAL_DB_PASSWORD': password, 'BUILDER_DB_PASSWORD': password, 'BUILDER_MANAGED_DB_PASSWORD': password})
+                {'MANAGED_AGENTS_AGENT_SERVICE_DB_PASSWORD': password, 'MANAGED_AGENTS_AGENT_HARNESS_RUNTIME_DB_PASSWORD': password, 'MANAGED_AGENTS_RUNTIME_DB_PASSWORD': password})
         role_environment = {'PGHOST': '127.0.0.1', 'PGDATABASE': database,
                             'PGUSER': options.owner, 'PGPASSWORD': password}
         for component, prefix in [('control', 'CONTROL'),
-                                  ('portal', 'PORTAL'), ('data', 'DATA'), ('hands', 'HANDS')]:
+                                  ('portal', 'AGENT_SERVICE'), ('data', 'AGENT_HARNESS_RUNTIME'), ('hands', 'TOOL_WORKER')]:
             role, secret = component + '_' + suffix, secrets.token_hex(24)
             roles[component] = (role, secret)
             role_environment[prefix + '_DB_USER'] = role
@@ -181,17 +181,17 @@ def run(options):
         environment.update(managed_environment(folder, suffix))
         ports = {name: port() for name in ['control', 'portal', 'data', 'gateway']}
         urls = {name: 'http://127.0.0.1:' + str(value) for name, value in ports.items()}
-        common = {'BUILDER_LOCAL_DEV': 'false', 'BUILDER_JWT_SECRET': 'deployment-smoke-jwt-secret-at-least-32-bytes',
-                  'BUILDER_INTERNAL_TOKEN': 'deployment-smoke-internal-token-at-least-32-bytes',
-                  'BUILDER_VAULT_MASTER_KEY': 'deployment-smoke-vault-key-at-least-32-bytes',
-                  'BUILDER_CONTROL_URL': urls['control'], 'BUILDER_DATA_URL': urls['data'],
-                  'BUILDER_SESSION_PORTAL_URL': urls['portal'],
-                  'SESSION_PORTAL_URL': urls['portal'],
-                  'BUILDER_WORKSPACE_ROOT': str(folder / 'workspaces'), 'BUILDER_JPA_DDL_AUTO': 'validate',
-                  'BUILDER_SCHEMA_INIT': 'false', 'BUILDER_PORTAL_SCHEMA_INIT': 'never',
-                  'BUILDER_SEED_USERS': 'false'}
+        common = {'MANAGED_AGENTS_LOCAL_DEV': 'false', 'MANAGED_AGENTS_JWT_SECRET': 'deployment-smoke-jwt-secret-at-least-32-bytes',
+                  'MANAGED_AGENTS_INTERNAL_TOKEN': 'deployment-smoke-internal-token-at-least-32-bytes',
+                  'MANAGED_AGENTS_VAULT_MASTER_KEY': 'deployment-smoke-vault-key-at-least-32-bytes',
+                  'MANAGED_AGENTS_CONTROL_URL': urls['control'], 'MANAGED_AGENTS_AGENT_HARNESS_RUNTIME_URL': urls['data'],
+                  'MANAGED_AGENTS_AGENT_SERVICE_URL': urls['portal'],
+                  'AGENT_SERVICE_URL': urls['portal'],
+                  'MANAGED_AGENTS_WORKSPACE_ROOT': str(folder / 'workspaces'), 'MANAGED_AGENTS_JPA_DDL_AUTO': 'validate',
+                  'MANAGED_AGENTS_SCHEMA_INIT': 'false', 'MANAGED_AGENTS_AGENT_SERVICE_SCHEMA_INIT': 'never',
+                  'MANAGED_AGENTS_SEED_USERS': 'false'}
         if options.webhooks:
-            common.update({'BUILDER_WEBHOOK_ALLOW_LOOPBACK_HTTP': 'true', 'BUILDER_WEBHOOK_SLOTS': '2'})
+            common.update({'MANAGED_AGENTS_WEBHOOK_ALLOW_LOOPBACK_HTTP': 'true', 'MANAGED_AGENTS_WEBHOOK_SLOTS': '2'})
             class WebhookFixture(BaseHTTPRequestHandler):
                 def log_message(self, *_):
                     pass
@@ -248,14 +248,14 @@ def run(options):
 
             model_server = ThreadingHTTPServer(('127.0.0.1', 0), ModelFixture)
             threading.Thread(target=model_server.serve_forever, daemon=True).start()
-        for name, module in [('portal', 'service-session-portal'), ('data', 'service-dataplane'), ('gateway', 'service-gateway')]:
+        for name, module in [('portal', 'agent-service'), ('data', 'agent-harness-runtime'), ('gateway', 'gateway')]:
             extra = {**common, 'SERVER_PORT': str(ports[name]), 'SERVER_ADDRESS': '127.0.0.1'}
             if name == 'portal':
-                extra.update({'BUILDER_PORTAL_DB_URL': jdbc + '?currentSchema=portal',
-                    'BUILDER_PORTAL_DB_USER': roles[name][0], 'BUILDER_PORTAL_DB_PASSWORD': roles[name][1]})
+                extra.update({'MANAGED_AGENTS_AGENT_SERVICE_DB_URL': jdbc + '?currentSchema=portal',
+                    'MANAGED_AGENTS_AGENT_SERVICE_DB_USER': roles[name][0], 'MANAGED_AGENTS_AGENT_SERVICE_DB_PASSWORD': roles[name][1]})
             elif name == 'data':
-                extra.update({'BUILDER_DB_URL': jdbc + '?currentSchema=dp',
-                    'BUILDER_DB_USER': roles[name][0], 'BUILDER_DB_PASSWORD': roles[name][1],
+                extra.update({'MANAGED_AGENTS_AGENT_HARNESS_RUNTIME_DB_URL': jdbc + '?currentSchema=dp',
+                    'MANAGED_AGENTS_AGENT_HARNESS_RUNTIME_DB_USER': roles[name][0], 'MANAGED_AGENTS_AGENT_HARNESS_RUNTIME_DB_PASSWORD': roles[name][1],
                     'SPRING_PROFILES_ACTIVE': 'jdbc'})
                 if name == 'data' and options.managed_turn:
                     extra.update({'DASHSCOPE_API_KEY': 'deployment-fake-model-key',
@@ -286,7 +286,7 @@ def run(options):
             'POST', {'generation': registered_host['leaseGeneration']}, token=machine['runtimeToken'])
         assert status == 200 and renewed.get('runtimeToken') and renewed['hostKey'] == machine['hostKey'], (status, renewed)
         if options.managed_turn:
-            scoped = {'X-AgentScope-Tenant': scope['tenant'], 'X-AgentScope-Namespace': scope['name']}
+            scoped = {'X-Managed-Agents-Tenant': scope['tenant'], 'X-Managed-Agents-Namespace': scope['name']}
             environment_config = {}
             status, selected_environment = request(urls['gateway'] + '/api/environments', 'POST',
                 {'name': 'deployment-environment', 'type': 'self_hosted',
@@ -329,12 +329,12 @@ def run(options):
                 assert status == 200 and all(capabilities['capabilities'][name] for name in ('files', 'file_input', 'artifacts')), (status, capabilities)
                 assert request(public + '/files', headers=scoped)[0] == 401
                 assert request(public + '/files', token=login['token'],
-                    headers={**scoped, 'X-AgentScope-Namespace': 'unrelated'})[0] == 404
+                    headers={**scoped, 'X-Managed-Agents-Namespace': 'unrelated'})[0] == 404
                 private_files = urls['data'] + '/api/internal/runtime/managed/sessions/' + session['id'] + '/files'
                 assert request(private_files)[0] == 401
                 assert request(private_files, token=login['token'])[0] == 403
-                assert request(private_files, headers={'X-Builder-Internal-Token': common['BUILDER_INTERNAL_TOKEN'],
-                    'X-Builder-Internal-User': 'unrelated-owner'})[0] == 403
+                assert request(private_files, headers={'X-Managed-Agents-Internal-Token': common['MANAGED_AGENTS_INTERNAL_TOKEN'],
+                    'X-Managed-Agents-Internal-User': 'unrelated-owner'})[0] == 403
                 binary = secrets.token_bytes(2 * 1024 * 1024 + 17)
                 file_headers = {**scoped, 'Content-Type': 'application/octet-stream',
                     'X-File-Name': 'deployment.bin', 'Idempotency-Key': 'deployment-binary'}
@@ -428,7 +428,7 @@ def run(options):
             assert kinds.count('item.finalized') == 1 and kinds.index('item.finalized') < kinds.index('turn.completed'), kinds
             if options.managed_files:
                 assert 'data:image/png;base64,' + base64.b64encode(image).decode() in json.dumps(model_calls[0]), model_calls[0]
-                print('Managed file Gateway/Portal flow passed: binary >2 MiB, dedup/conflict, list/metadata/download, '
+                print('Managed file Gateway/Agent Service flow passed: binary >2 MiB, dedup/conflict, list/metadata/download, '
                     'size limit, Session isolation, artifact publication/deletion/snapshot/idempotency, '
                     'and referenced image delivered to the local fake model.')
                 assert kinds.count('artifact.published') == 1 and kinds.count('artifact.deleted') == 1, kinds
@@ -442,7 +442,7 @@ def run(options):
             replay = read_sse(public + '/events/stream', {**scoped, 'Authorization': 'Bearer ' + login['token'],
                 'Last-Event-ID': cursor}, len(events['data']) - 1)
             assert replay == events['data'][1:], 'Gateway SSE replay changed the public event sequence'
-            print('Managed deployment flow passed: real control-plane account/resources, Gateway, Portal, '
+            print('Managed deployment flow passed: real control-plane account/resources, Gateway, Agent Service, '
                   'dataplane, DML-only accounts, command deduplication, terminal/events/usage; '
                   + str(len(model_calls)) + ' local fake model calls, ' + str(len(kinds)) + ' public events.')
         if options.webhooks:
@@ -456,7 +456,7 @@ def run(options):
                 time.sleep(0.1)
             assert receipts and receipts['data'][0]['status'] == 'retrying', receipts
             delivery_id = receipts['data'][0]['id']
-            # Stop the sender before Portal; resume both from the same role-scoped databases.
+            # Stop the sender before Agent Service; resume both from the same role-scoped databases.
             for component in ('control', 'portal'):
                 old = launches[component][3]
                 old.terminate()
@@ -479,17 +479,17 @@ def run(options):
                 payload = json.loads(callback['raw'])
                 assert set(payload) == {'id', 'type', 'session_id', 'cursor', 'created_at', 'event_url'}, payload
                 assert payload['type'] == 'turn.completed' and payload['session_id'] == session['id'], payload
-                assert callback_headers['x-agentscope-delivery'] == delivery_id
-                signed = callback_headers['x-agentscope-timestamp'].encode() + b'.' + callback['raw']
-                assert hmac.compare_digest(callback_headers['x-agentscope-signature'], 'v1=' + hmac.new(hook['signing_secret'].encode(), signed, hashlib.sha256).hexdigest())
-                assert not {'authorization', 'x-api-key', 'x-builder-internal-token'} & callback_headers.keys(), callback_headers
+                assert callback_headers['x-managed-agents-delivery'] == delivery_id
+                signed = callback_headers['x-managed-agents-timestamp'].encode() + b'.' + callback['raw']
+                assert hmac.compare_digest(callback_headers['x-managed-agents-signature'], 'v1=' + hmac.new(hook['signing_secret'].encode(), signed, hashlib.sha256).hexdigest())
+                assert not {'authorization', 'x-api-key', 'x-managed-agents-internal-token'} & callback_headers.keys(), callback_headers
                 assert request(urls['gateway'] + payload['event_url'], token=login['token'], headers=scoped)[0] == 200
             status, listed = request(public + '/webhooks?limit=1', token=login['token'], headers=scoped)
             assert status == 200 and listed['data'][0]['id'] == hook['id'] and 'signing_secret' not in json.dumps(listed), (status, listed)
             assert request(public + '/webhooks/' + hook['id'], 'DELETE', token=login['token'], headers=scoped)[0] == 200
             assert sql("SELECT secret FROM portal.builder_portal_webhook WHERE id='" + hook['id'] + "'") == ''
-            print('Webhook Gateway/Portal/Scheduler flow passed: actual control-plane permissions, four DML-only roles, '
-                  'stable failed/retried delivery and signing secret across Portal/Scheduler restart, HMAC metadata only, '
+            print('Webhook Gateway/Agent Service/Scheduler flow passed: actual control-plane permissions, four DML-only roles, '
+                  'stable failed/retried delivery and signing secret across Agent Service/Scheduler restart, HMAC metadata only, '
                   'authenticated event read, private route isolation, secret-free listing and deletion.')
         if options.managed_maintenance:
             def read_public(url):
@@ -497,8 +497,8 @@ def run(options):
                 if status != 200 and '/checkpoints?' in url:
                     private_status, private_value = request(urls['data'] + '/api/internal/runtime/managed/sessions/'
                         + session['id'] + '/checkpoints?limit=100', headers={
-                            'X-Builder-Internal-Token': common['BUILDER_INTERNAL_TOKEN'],
-                            'X-Builder-Internal-User': session['ownerId']})
+                            'X-Managed-Agents-Internal-Token': common['MANAGED_AGENTS_INTERNAL_TOKEN'],
+                            'X-Managed-Agents-Internal-User': session['ownerId']})
                     raise AssertionError(('Public checkpoint read failed', status, value,
                         'private response', private_status, private_value, 'policy', policy_diagnostic(session['id'])))
                 assert status == 200, (status, value)
@@ -576,14 +576,14 @@ def run(options):
             assert read_public(target_url + '/snapshot?limit=20')['usage']['model_calls'] == 0
             assert read_public(target_url + '/budget')['limits'] != limit
             run_next(target_url, 'deployment-after-fork')
-            print('Managed maintenance Gateway/Control/Portal/Data flow passed: revisioned budget, stale revision rejection, '
+            print('Managed maintenance Gateway/Control/Agent Service/Data flow passed: revisioned budget, stale revision rejection, '
                 'fixed checkpoint pages, stable restore receipt, real frozen Agent fork, independent target usage/budget, '
                 'and resumed source/target Turns; ' + str(len(model_calls)) + ' total local fake model calls.')
         assert sql('SELECT count(*) FROM dp.builder_user') == '0', 'Execution must use the frozen owner without local account initialization'
         passed = True
         print('Deployment process smoke passed: explicit schema jobs, four DML-only roles, '
-              'one Go control plane plus Portal/Dataplane/Gateway and optional Hands, Gateway login/private-route isolation, Go readiness, '
-              'and scoped machine enrollment/registration/renewal through Gateway + Portal. No external model calls.')
+              'one Go control plane plus Agent Service/Dataplane/Gateway and optional Tool Worker, Gateway login/private-route isolation, Go readiness, '
+              'and scoped machine enrollment/registration/renewal through Gateway + Agent Service. No external model calls.')
     finally:
         for process in reversed(processes):
             process.terminate()
@@ -618,6 +618,6 @@ if __name__ == '__main__':
     parser.add_argument('--schema-only', action='store_true')
     parser.add_argument('--managed-turn', action='store_true', help='Run a Managed Turn with the real control plane and a local fake model')
     parser.add_argument('--managed-files', action='store_true', help='Verify Managed Session file APIs and referenced input through Gateway')
-    parser.add_argument('--webhooks', action='store_true', help='Verify durable Portal subscription and integrated Go sending across restart')
+    parser.add_argument('--webhooks', action='store_true', help='Verify durable Agent Service subscription and integrated Go sending across restart')
     parser.add_argument('--managed-maintenance', action='store_true', help='Verify budget/checkpoint/restore/fork with actual control-plane resources')
     run(parser.parse_args())

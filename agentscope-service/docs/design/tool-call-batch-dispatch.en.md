@@ -4,8 +4,8 @@
 
 Date: 2026-10-19. Status: candidate design analysis; implementation deferred.
 
-This note records the discussion of dispatching one round of tool calls to Hands as a batch,
-on top of the existing segmented suspension implementation. Brain means Brain.
+This note records the discussion of dispatching one round of tool calls to Tool Worker as a batch,
+on top of the existing segmented suspension implementation. Brain means Agent Harness Runtime.
 The user explicitly requested no change to the current version. This note is not an implementation
 decision: it changes no message protocol, Topic, database structure, execution responsibility or
 deployment configuration, and does not claim that a prototype has been validated.
@@ -30,11 +30,11 @@ deployment configuration, and does not claim that a prototype has been validated
   `subagent.call`.
 
 Source references:
-[command structure](../../service-common/src/main/java/io/agentscope/builder/runtime/managed/ManagedToolCommand.java),
-[intent commit](../../service-common/src/main/java/io/agentscope/builder/runtime/managed/ManagedJournalStore.java),
-[command publication](../../service-common/src/main/java/io/agentscope/builder/runtime/managed/ManagedToolTransport.java),
-[operation identity and requests](../../service-common/src/main/java/io/agentscope/builder/runtime/managed/ManagedToolRequests.java),
-and [suspension and result aggregation](../../service-common/src/main/java/io/agentscope/builder/runtime/managed/ManagedSuspensions.java).
+[command structure](../../common/src/main/java/io/agentcore/managed/server/runtime/managed/ManagedToolCommand.java),
+[intent commit](../../common/src/main/java/io/agentcore/managed/server/runtime/managed/ManagedJournalStore.java),
+[command publication](../../common/src/main/java/io/agentcore/managed/server/runtime/managed/ManagedToolTransport.java),
+[operation identity and requests](../../agent-harness-runtime/java/adapter-agentscope/src/main/java/io/agentcore/managed/server/runtime/managed/ManagedToolRequests.java),
+and [suspension and result aggregation](../../common/src/main/java/io/agentcore/managed/server/runtime/managed/ManagedSuspensions.java).
 
 ## 2. Candidate and benefits
 
@@ -46,9 +46,9 @@ distributed scheduling of tasks from one batch across multiple Workers.
 
 ```mermaid
 sequenceDiagram
-    participant R as Brain
+    participant R as Agent Harness Runtime
     participant Q as RocketMQ
-    participant W as Hands
+    participant W as Tool Worker
     participant D as Worker PostgreSQL
     R->>Q: ExecuteBatch(batchId, tasks, manifestHash)
     Q->>W: Deliver batch
@@ -103,7 +103,7 @@ fencing of stale writes remain necessary. A batch is a transport and aggregation
 transaction over external side effects. A batch lease cannot replace individual execution records.
 Lease granularity and integration with existing Redis Guards and database fencing remain to be designed.
 
-See the existing [execution and recovery logic](../../service-common/src/main/java/io/agentscope/builder/runtime/managed/ManagedToolExecutions.java).
+See the existing [execution and recovery logic](../../tool-worker/src/main/java/io/agentcore/managed/server/runtime/managed/ManagedAsyncToolExecution.java).
 
 ### Preserve concurrency, cancellation and failure semantics
 
@@ -128,9 +128,9 @@ finish validation and authorization before dispatch, which require user replies,
 in Runtime, and which are subagent orchestration. If a batch contains only the Worker subset, make
 that scope explicit: completing that subset does not imply completing Runtime's entire wait set.
 
-See [filesystem adaptation](../../service-common/src/main/java/io/agentscope/builder/runtime/managed/ManagedRemoteFilesystem.java),
-[MCP adaptation](../../service-common/src/main/java/io/agentscope/builder/runtime/managed/ManagedMcpTool.java),
-and the [subagent entrypoint](../../service-common/src/main/java/io/agentscope/builder/runtime/managed/ManagedSubagentExecution.java).
+See [filesystem adaptation](../../agent-harness-runtime/java/adapter-agentscope/src/main/java/io/agentcore/managed/server/runtime/managed/ManagedRemoteFilesystem.java),
+[MCP adaptation](../../agent-harness-runtime/java/adapter-agentscope/src/main/java/io/agentcore/managed/server/runtime/managed/ManagedMcpTool.java),
+and the [subagent entrypoint](../../agent-harness-runtime/java/adapter-agentscope/src/main/java/io/agentcore/managed/server/runtime/managed/ManagedSubagentExecution.java).
 
 ## 5. Protocol and reliability requirements to design
 

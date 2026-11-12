@@ -1,0 +1,321 @@
+{
+  "snapshot": {
+    "session": {
+      "namespace": "projection",
+      "sessionId": "session"
+    },
+    "turns": [],
+    "projection": {
+      "messages": {},
+      "tools": {},
+      "session": null,
+      "threads": {}
+    },
+    "sequence": "9007199254740992",
+    "cursor": "snapshot-cursor"
+  },
+  "events": [
+    {
+      "schemaVersion": "1",
+      "eventId": "e0",
+      "session": {
+        "namespace": "projection",
+        "sessionId": "session"
+      },
+      "turnId": "r",
+      "sequence": "9007199254740993",
+      "cursor": "cursor-0",
+      "type": "message.delta",
+      "data": {
+        "messageId": "m",
+        "attempt": 1,
+        "revision": 0,
+        "text": "discard"
+      },
+      "runId": "original-run",
+      "stepId": "original-step",
+      "threadId": "main"
+    },
+    {
+      "schemaVersion": "1",
+      "eventId": "e1",
+      "session": {
+        "namespace": "projection",
+        "sessionId": "session"
+      },
+      "turnId": "r",
+      "sequence": "9007199254740994",
+      "cursor": "cursor-1",
+      "type": "message.delta",
+      "data": {
+        "messageId": "m",
+        "attempt": 2,
+        "revision": 0,
+        "text": "new"
+      },
+      "runId": "continued-run",
+      "stepId": "continued-step",
+      "threadId": "main"
+    },
+    {
+      "schemaVersion": "1",
+      "eventId": "e2",
+      "session": {
+        "namespace": "projection",
+        "sessionId": "session"
+      },
+      "turnId": "r",
+      "sequence": "9007199254740995",
+      "cursor": "cursor-2",
+      "type": "message.delta",
+      "data": {
+        "messageId": "m",
+        "attempt": 1,
+        "revision": 0,
+        "text": "stale"
+      },
+      "runId": "original-run",
+      "stepId": "original-step",
+      "threadId": "main"
+    },
+    {
+      "schemaVersion": "1",
+      "eventId": "e3",
+      "session": {
+        "namespace": "projection",
+        "sessionId": "session"
+      },
+      "turnId": "r",
+      "sequence": "9007199254740996",
+      "cursor": "cursor-3",
+      "type": "message.completed",
+      "data": {
+        "messageId": "m",
+        "attempt": 2,
+        "revision": 1,
+        "text": "final"
+      },
+      "runId": "continued-run",
+      "stepId": "continued-step",
+      "threadId": "main"
+    },
+    {
+      "schemaVersion": "1",
+      "eventId": "e4",
+      "session": {
+        "namespace": "projection",
+        "sessionId": "session"
+      },
+      "turnId": "r",
+      "sequence": "9007199254740997",
+      "cursor": "cursor-4",
+      "type": "message.delta",
+      "data": {
+        "messageId": "m",
+        "attempt": 2,
+        "revision": 1,
+        "text": "late"
+      },
+      "runId": "continued-run",
+      "stepId": "continued-step",
+      "threadId": "main"
+    },
+    {
+      "schemaVersion": "1",
+      "eventId": "e5",
+      "session": {
+        "namespace": "projection",
+        "sessionId": "session"
+      },
+      "turnId": "r",
+      "sequence": "9007199254740998",
+      "cursor": "cursor-5",
+      "type": "tool.requested",
+      "data": {
+        "executionId": "exec",
+        "turnId": "r",
+        "call": {
+          "callId": "call",
+          "executor": "hands",
+          "name": "job",
+          "arguments": {},
+          "binding": null,
+          "origin": null
+        },
+        "thread": {
+          "session": {
+            "namespace": "projection",
+            "sessionId": "session"
+          },
+          "threadId": "main"
+        }
+      },
+      "runId": null,
+      "stepId": null,
+      "threadId": "main"
+    },
+    {
+      "schemaVersion": "1",
+      "eventId": "e6",
+      "session": {
+        "namespace": "projection",
+        "sessionId": "session"
+      },
+      "turnId": "r",
+      "sequence": "9007199254740999",
+      "cursor": "cursor-6",
+      "type": "tool.result.accepted",
+      "data": {
+        "executionId": "exec",
+        "callId": "call",
+        "result": {
+          "state": "SUCCEEDED",
+          "handle": "exec",
+          "result": 42,
+          "error": null
+        }
+      },
+      "runId": null,
+      "stepId": null,
+      "threadId": "main"
+    },
+    {
+      "schemaVersion": "1",
+      "eventId": "e7",
+      "session": {
+        "namespace": "projection",
+        "sessionId": "session"
+      },
+      "turnId": "r",
+      "sequence": "9007199254741000",
+      "cursor": "cursor-7",
+      "type": "tool.result.applied",
+      "data": {
+        "executionId": "exec",
+        "callId": "call",
+        "appliedAt": null
+      },
+      "runId": "continued-run",
+      "stepId": "acting-step",
+      "threadId": "main"
+    },
+    {
+      "schemaVersion": "1",
+      "eventId": "e8",
+      "session": {
+        "namespace": "projection",
+        "sessionId": "session"
+      },
+      "turnId": "r",
+      "sequence": "9007199254741001",
+      "cursor": "cursor-8",
+      "type": "message.completed",
+      "data": {
+        "messageId": "user",
+        "attempt": 0,
+        "revision": 0,
+        "text": "steer",
+        "message": {
+          "schemaVersion": "1",
+          "messageId": "user",
+          "role": "user",
+          "content": [
+            {
+              "type": "text",
+              "text": "steer"
+            }
+          ]
+        },
+        "requestId": "input-command",
+        "inputKind": "steer"
+      },
+      "runId": null,
+      "stepId": null,
+      "threadId": "main"
+    }
+  ],
+  "expected": {
+    "messages": {
+      "m": {
+        "messageId": "m",
+        "attempt": 2,
+        "revision": 1,
+        "text": "final",
+        "complete": true,
+        "turnId": "r",
+        "sequence": "9007199254740993",
+        "threadId": "main",
+        "runId": "continued-run",
+        "stepId": "continued-step"
+      },
+      "user": {
+        "messageId": "user",
+        "attempt": 0,
+        "revision": 0,
+        "text": "steer",
+        "message": {
+          "schemaVersion": "1",
+          "messageId": "user",
+          "role": "user",
+          "content": [
+            {
+              "type": "text",
+              "text": "steer"
+            }
+          ]
+        },
+        "requestId": "input-command",
+        "inputKind": "steer",
+        "complete": true,
+        "turnId": "r",
+        "sequence": "9007199254741001",
+        "threadId": "main"
+      }
+    },
+    "tools": {
+      "tool:118293c9053fff3d9c856c9ec5623d49b8eda8a3827e8f33be0f3d3bcf51a6fe": {
+        "eventId": "e7",
+        "type": "tool.result.applied",
+        "data": {
+          "executionId": "exec",
+          "turnId": "r",
+          "call": {
+            "callId": "call",
+            "executor": "hands",
+            "name": "job",
+            "arguments": {},
+            "binding": null,
+            "origin": null
+          },
+          "callId": "call",
+          "result": {
+            "state": "SUCCEEDED",
+            "handle": "exec",
+            "result": 42,
+            "error": null
+          },
+          "thread": {
+            "session": {
+              "namespace": "projection",
+              "sessionId": "session"
+            },
+            "threadId": "main"
+          },
+          "name": "job",
+          "arguments": {},
+          "status": "SUCCEEDED",
+          "applied": true,
+          "appliedAt": null,
+          "origin": null
+        },
+        "runId": "continued-run",
+        "stepId": "acting-step",
+        "threadId": "main",
+        "turnId": "r",
+        "sequence": "9007199254740998"
+      }
+    },
+    "session": null,
+    "threads": {}
+  }
+}

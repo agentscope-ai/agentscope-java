@@ -65,13 +65,13 @@ class Matrix:
                 "app": "dlq-" + case}
 
     def setup(self, cases):
-        assert self.args.namespace.startswith("agentscope-suspend-")
+        assert self.args.namespace.startswith("managed-agents-suspend-")
         ns = json.loads(self.command(*self.base, "get", "namespace", self.args.namespace, "-o", "json"))
-        assert ns["metadata"]["labels"]["purpose"] == "agentscope-suspend-isolation"
+        assert ns["metadata"]["labels"]["purpose"] == "managed-agents-suspend-isolation"
         for app in ["mq-namesrv", "mq-broker", "mq-proxy"]:
             self.wait(app, lambda app=app: self.ready(app))
-        source = json.loads(self.command(*self.base, "-n", "agentscope-test", "get",
-                                        "deployment/service-agentscope-dataplane", "-o", "json"))
+        source = json.loads(self.command(*self.base, "-n", "managed-agents-test", "get",
+                                        "deployment/service-managed-agents-dataplane", "-o", "json"))
         image = source["spec"]["template"]["spec"]["containers"][0]["image"]
         binary = (self.out / "classes/DeadLetterProbe.class").read_bytes()
         code = {"apiVersion": "v1", "kind": "ConfigMap", "metadata": {
@@ -100,7 +100,7 @@ class Matrix:
             manifest = {"apiVersion": "apps/v1", "kind": "Deployment", "metadata": {
                 "name": c["app"], "namespace": self.args.namespace}, "spec": {"replicas": 1,
                 "selector": {"matchLabels": {"app": c["app"]}}, "template": {"metadata": {
-                "labels": {"app": c["app"], "purpose": "agentscope-suspend-isolation"},
+                "labels": {"app": c["app"], "purpose": "managed-agents-suspend-isolation"},
                 "annotations": {"probe-sha256": hashlib.sha256(binary).hexdigest()}}, "spec": {
                 "automountServiceAccountToken": False, "imagePullSecrets": [{"name": "acr-pull"}],
                 "volumes": [{"name": "code", "configMap": {"name": "dlq-code"}}],

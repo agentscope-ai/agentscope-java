@@ -2,7 +2,7 @@
 
 [English](rocketmq-topics-and-turn-lifecycle.en.md)
 
-本文基于 2026-10-21 回迁后的 AgentScope Service 实现，梳理业务 Topic、生产订阅关系及一次长耗时工具调用的 Turn 时序。以下名称是配置默认值，不代表对线上 MQ 实时状态的查询结果。
+本文基于 2026-10-21 主目录 `/Users/ken/agentcore/agentcore-managed-agents` 的 `master` 分支源码，梳理业务 Topic、生产订阅关系及一次长耗时工具调用的 Turn 时序。以下名称是配置默认值，不代表对线上 MQ 实时状态的查询结果。
 
 ## Topic 与生产订阅关系
 
@@ -10,11 +10,11 @@
 
 | 父 Topic | 逻辑通道 | 生产者 | 订阅者 | 默认消费组 | 用途 |
 | --- | --- | --- | --- | --- | --- |
-| `ma_turns_v3` | `TURNS` | Session Portal | Brain | `ma_brain_v3` | 已受理的 Turn，驱动推理执行 |
-| `ma_tool_execute_v1` | `TOOL_EXECUTE` | Brain | Hands | `ma_hands_execute_v1` | 工具执行命令 `execute` |
-| `ma_tool_control_v1` | `TOOL_CONTROL` | Brain | Hands | `ma_hands_control_v1` | 取消 `cancel`、事件重放请求 `replay` |
-| `ma_tool_events_v3` | `TOOL_EVENTS` | Hands、Brain | Brain | `ma_brain_tool_events_v3` | 工具进度、增量输出、输出缺口和最终结果；Runtime 也发布子 Agent 执行产生的事件 |
-| `ma_turn_resumes_v3` | `TURN_RESUMES` | Brain | Brain | `ma_brain_resumes_v3` | 通过 MQ 调度挂起 Turn 的恢复 |
+| `ma_turns_v3` | `TURNS` | Agent Service | Agent Harness Runtime | `ma_brain_v3` | 已受理的 Turn，驱动推理执行 |
+| `ma_tool_execute_v1` | `TOOL_EXECUTE` | Agent Harness Runtime | Tool Worker | `ma_hands_execute_v1` | 工具执行命令 `execute` |
+| `ma_tool_control_v1` | `TOOL_CONTROL` | Agent Harness Runtime | Tool Worker | `ma_hands_control_v1` | 取消 `cancel`、事件重放请求 `replay` |
+| `ma_tool_events_v3` | `TOOL_EVENTS` | Tool Worker、Agent Harness Runtime | Agent Harness Runtime | `ma_brain_tool_events_v3` | 工具进度、增量输出、输出缺口和最终结果；Runtime 也发布子 Agent 执行产生的事件 |
+| `ma_turn_resumes_v3` | `TURN_RESUMES` | Agent Harness Runtime | Agent Harness Runtime | `ma_brain_resumes_v3` | 通过 MQ 调度挂起 Turn 的恢复 |
 
 Gateway 和 Control Plane 不直接生产或订阅这些业务 Topic。自建 MQ 初始化脚本还创建 `DefaultHeartBeatSyncerTopic`，用于 Proxy 内部心跳，不计入上述 5 个业务 Topic；云 MQ 不需要由本项目创建该内部 Topic。
 
@@ -43,10 +43,10 @@ Gateway 和 Control Plane 不直接生产或订阅这些业务 Topic。自建 MQ
 sequenceDiagram
     autonumber
     actor C as 客户端
-    participant S as Session Portal
-    participant R as Brain
+    participant S as Agent Service
+    participant R as Harness Runtime
     participant Q as RocketMQ
-    participant W as Hands
+    participant W as Tool Worker
     participant T as 外部工具 / MCP
     participant D as PostgreSQL
 
@@ -119,19 +119,19 @@ sequenceDiagram
     S-->>C: 返回完成结果
 ```
 
-时序图省略了 Redis 执行租约及结果通知、MQ 重试和各类故障分支。工具进度和增量输出可以在工具执行期间持续发布；图中将事件生产消费合并展示，`mcp.batch` 使用父批次完成事件。快速完成的工具不一定触发挂起。初次 Turns 发送失败或响应不明时，Session Portal 已持久受理的记录仍保留，由待发布记录重试。
+时序图省略了 Redis 执行租约及结果通知、MQ 重试和各类故障分支。工具进度和增量输出可以在工具执行期间持续发布；图中将事件生产消费合并展示，`mcp.batch` 使用父批次完成事件。快速完成的工具不一定触发挂起。初次 Turns 发送失败或响应不明时，Agent Service 已持久受理的记录仍保留，由待发布记录重试。
 
 Execute 的 Broker ACK 只证明消息已入队。Worker 仍需检查数据库授权，持久受理后才 ACK Execute，实际执行可以在其后继续。Control ACK 表示控制命令已处理，不保证外部 MCP 操作立即停止。最终 Turn 状态可以是 `succeeded`、`failed` 或 `cancelled`。
 
 ## 实现入口
 
-- [Topic 默认值、角色生产权限与消费组](../service-common/src/main/java/io/agentscope/builder/runtime/managed/ManagedInfrastructureConfiguration.java)
-- [MQ 消息发送与订阅](../service-common/src/main/java/io/agentscope/builder/runtime/managed/RocketMqManagedMessageBus.java)
-- [工具 Execute / Control 发送](../service-common/src/main/java/io/agentscope/builder/runtime/managed/ManagedToolTransport.java)
-- [Worker 授权检查与命令受理](../service-common/src/main/java/io/agentscope/builder/runtime/managed/ManagedHandsCommands.java)
-- [恢复记录及 MQ / direct 路径选择](../service-common/src/main/java/io/agentscope/builder/runtime/managed/ManagedSuspensions.java)
-- [直接恢复执行器](../service-common/src/main/java/io/agentscope/builder/runtime/managed/ManagedContinuationLoop.java)
-- [Resume 发布器](../service-common/src/main/java/io/agentscope/builder/runtime/managed/ManagedResumePublisher.java)
-- [原 Turns 消息终态 ACK](../service-common/src/main/java/io/agentscope/builder/runtime/managed/ManagedTurnAcknowledgements.java)
+- [Topic 默认值、角色生产权限与消费组](../common/src/main/java/io/agentcore/managed/server/runtime/managed/ManagedInfrastructureConfiguration.java)
+- [MQ 消息发送与订阅](../common/src/main/java/io/agentcore/managed/server/runtime/managed/RocketMqManagedMessageBus.java)
+- [工具 Execute / Control 发送](../common/src/main/java/io/agentcore/managed/server/runtime/managed/ManagedToolTransport.java)
+- [Worker 授权检查与命令受理](../tool-worker/src/main/java/io/agentcore/managed/server/runtime/managed/ManagedToolWorkerCommands.java)
+- [恢复记录及 MQ / direct 路径选择](../common/src/main/java/io/agentcore/managed/server/runtime/managed/ManagedSuspensions.java)
+- [直接恢复执行器](../common/src/main/java/io/agentcore/managed/server/runtime/managed/ManagedContinuationLoop.java)
+- [Resume 发布器](../agent-service/src/main/java/io/agentcore/managed/server/runtime/managed/ManagedResumePublisher.java)
+- [原 Turns 消息终态 ACK](../agent-harness-runtime/java/adapter-agentscope/src/main/java/io/agentcore/managed/server/runtime/managed/ManagedTurnAcknowledgements.java)
 - [MCP 批次与恢复说明](mcp-execution-recovery.md)
 - [云 RocketMQ 配置](cloud-rocketmq.md)

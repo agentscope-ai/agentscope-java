@@ -17,13 +17,14 @@ package io.agentscope.harness.agent.middleware;
 
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.AgentBase;
+import io.agentscope.core.agent.RunOutcome;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.event.AgentEvent;
+import io.agentscope.core.journal.InvocationRecorder;
+import io.agentscope.core.journal.JournalException;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.middleware.AgentInput;
 import io.agentscope.core.model.Model;
-import io.agentscope.core.session.SessionLogException;
-import io.agentscope.core.session.SessionRecorder;
 import io.agentscope.core.state.AgentState;
 import io.agentscope.harness.agent.IsolationScope;
 import io.agentscope.harness.agent.coordination.LocalPeriodicGate;
@@ -176,8 +177,8 @@ public class MemoryFlushMiddleware implements HarnessRuntimeMiddleware {
     @Override
     public Mono<Void> onAgentFinish(Agent agent, RuntimeContext rc, Msg result) {
         if (!Boolean.TRUE.equals(rc.get(INLINE_CONTEXT_KEY))
-                || SessionRecorder.from(rc) == null
-                || !"completed".equals(SessionRecorder.outcome(result.getGenerateReason())))
+                || InvocationRecorder.from(rc) == null
+                || RunOutcome.fromResult(result).status() != RunOutcome.Status.COMPLETED)
             return Mono.empty();
         return Mono.defer(() -> doFlush(agent, rc))
                 .subscribeOn(Schedulers.boundedElastic())
@@ -195,7 +196,10 @@ public class MemoryFlushMiddleware implements HarnessRuntimeMiddleware {
         // and session ids, whose flushes must not displace each other.
         ConversationKey conversationKey =
                 new ConversationKey(
-                        agent, blankToEmpty(rc.getUserId()), blankToEmpty(rc.getSessionId()));
+                        agent,
+                        blankToEmpty(rc.getUserId()),
+                        blankToEmpty(rc.getSessionId()),
+                        rc.getThreadId());
         Runnable task = () -> runFlush(key, agent, rc);
         Runnable[] starter = new Runnable[1];
         Runnable[] displaced = new Runnable[1];
@@ -298,7 +302,7 @@ public class MemoryFlushMiddleware implements HarnessRuntimeMiddleware {
                 .onErrorResume(
                         e -> {
                             if (Boolean.TRUE.equals(rc.get(INLINE_CONTEXT_KEY))
-                                    && SessionLogException.causedBy(e)) return Mono.error(e);
+                                    && JournalException.causedBy(e)) return Mono.error(e);
                             log.warn("Memory flush failed: {}", e.getMessage());
                             return Mono.empty();
                         });
@@ -338,8 +342,8 @@ public class MemoryFlushMiddleware implements HarnessRuntimeMiddleware {
         return "memory-flush:" + isolationScope.name() + ":" + timerKeyFor(rc);
     }
 
-    /** The conversation a queued flush reads when it executes: agent instance, user, session. */
-    private record ConversationKey(Agent agent, String userId, String sessionId) {}
+    /** Thread-private context; sibling Threads may share memory files but not queued flush work. */
+    private record ConversationKey(Agent agent, String userId, String sessionId, String threadId) {}
 
     /**
      * Normalises {@code null} and blank identifiers to {@code ""} so absent ids share one slot.

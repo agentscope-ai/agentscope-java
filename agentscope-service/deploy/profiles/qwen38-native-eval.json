@@ -1,0 +1,44 @@
+{
+  "brain": {
+    "model": {
+      "provider": "dashscope",
+      "bindings": {
+        "dashscope:qwen3.8-max": {
+          "provider": "dashscope",
+          "id": "qwen3.8-max",
+          "api": "openai-responses",
+          "baseUrl": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+          "credentialEnv": "MANAGED_MODEL_KEY",
+          "contextWindow": 1000000,
+          "outputLimit": 131072,
+          "reasoning": true,
+          "parameters": {
+            "temperature": 0.2,
+            "maxTokens": 8192,
+            "reasoning": "low",
+            "topP": 1,
+            "parallelToolCalls": false,
+            "toolChoice": "auto"
+          },
+          "cost": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0
+          },
+          "requestTimeoutSeconds": 180
+        }
+      }
+    }
+  },
+  "agent-harness-runtime": {
+    "modelCredentialEnv": [
+      "MANAGED_MODEL_KEY"
+    ],
+    "modelTimeoutSeconds": 180,
+    "loadTestModel": {
+      "enabled": false,
+      "profiles": {}
+    }
+  }
+}

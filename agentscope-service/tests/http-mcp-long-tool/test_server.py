@@ -17,7 +17,7 @@ import uuid
 BASE = os.environ.get("MCP_TEST_BASE", "http://127.0.0.1:18888")
 TOKEN = os.environ["MCP_TEST_TOKEN"]
 PEER = os.environ.get('MCP_TEST_PEER_BASE')
-RECOVERY_META = 'io.agentscope/execution-recovery'
+RECOVERY_META = 'io.agentcore.managed/execution-recovery'
 
 
 def rpc(method, params=None, base=BASE, timeout=10):
@@ -44,10 +44,8 @@ class LongToolHttpTest(unittest.TestCase):
                                     "clientInfo": {"name": "fixture-check", "version": "1"}})
         self.assertEqual(result["result"]["protocolVersion"], "2025-06-18")
         tools = {t['name']: t for t in rpc('tools/list')['result']['tools']}
-        self.assertEqual(set(tools), {'long_wait', 'managed_execution_get'})
-        self.assertEqual(tools['long_wait']['_meta'][RECOVERY_META],
-                         {'version': 1, 'queryTool': 'managed_execution_get'})
-        self.assertTrue(tools['managed_execution_get']['annotations']['readOnlyHint'])
+        self.assertEqual(set(tools), {'long_wait'})
+        self.assertNotIn(RECOVERY_META, tools['long_wait'].get('_meta', {}))
 
     def test_real_wait_and_concurrent_requests(self):
         def call(marker):
@@ -66,51 +64,37 @@ class LongToolHttpTest(unittest.TestCase):
         self.assertTrue(all(datetime.fromisoformat(r["finished_at"]) >
                             datetime.fromisoformat(r["started_at"]) for r in results))
 
+    def test_fast_tool_preserves_two_hundred_millisecond_duration_and_replay(self):
+        execution = 'http-fast-' + str(uuid.uuid4())
+        params = {'name': 'long_wait', 'arguments': {'marker': execution, 'seconds': .2},
+                  '_meta': {RECOVERY_META: {'version': 1, 'execution_id': execution}}}
+        started = time.monotonic()
+        result = rpc('tools/call', params)['result']
+        self.assertFalse(result.get('isError', False))
+        evidence = result['structuredContent']
+        self.assertEqual(evidence['seconds'], .2)
+        self.assertGreaterEqual(time.monotonic()-started, .2)
+        self.assertGreaterEqual((datetime.fromisoformat(evidence['finished_at'])-
+                                datetime.fromisoformat(evidence['started_at'])).total_seconds(), .2)
+        self.assertNotEqual(rpc('tools/call', params)['result']['structuredContent']['call_id'], evidence['call_id'])
+        changed = {**params, 'arguments': {'marker': execution, 'seconds': .3}}
+        self.assertFalse(rpc('tools/call', changed)['result']['isError'])
+
     def test_wait_is_bounded(self):
         result = rpc("tools/call", {"name": "long_wait",
                                     "arguments": {"marker": "invalid", "seconds": 181}})
         self.assertTrue(result["result"]["isError"])
 
-    @unittest.skipUnless(PEER, 'Set MCP_TEST_PEER_BASE to a second process sharing the execution database')
-    def test_two_processes_deduplicate_and_reject_changed_arguments(self):
-        execution = 'http-dedup-' + str(uuid.uuid4())
-        params = {'name': 'long_wait', 'arguments': {'marker': execution, 'seconds': 2},
-                  '_meta': {RECOVERY_META: {'version': 1, 'execution_id': execution}}}
+    @unittest.skipUnless(PEER, 'Set MCP_TEST_PEER_BASE for two independent performance servers')
+    def test_two_processes_have_no_shared_storage_or_deduplication(self):
+        params = {'name': 'long_wait', 'arguments': {'marker': 'same-marker', 'seconds': .2}}
         with ThreadPoolExecutor(max_workers=2) as pool:
             results = list(pool.map(lambda base: rpc('tools/call', params, base)['result'], [BASE, PEER]))
-        self.assertEqual(results[0], results[1])
-        changed = {**params, 'arguments': {'marker': execution, 'seconds': 3}}
-        self.assertTrue(rpc('tools/call', changed, PEER)['result']['isError'])
-        found = rpc('tools/call', {'name': 'managed_execution_get', 'arguments': {'execution_id': execution}}, PEER)
-        state = found['result']['structuredContent']
-        self.assertEqual(state['state'], 'succeeded')
-        self.assertEqual(state['result'], results[0])
+        self.assertEqual(len({r['structuredContent']['call_id'] for r in results}), 2)
 
-    @unittest.skipUnless(PEER, 'Set MCP_TEST_PEER_BASE to a second process sharing the execution database')
-    def test_disconnected_caller_can_query_the_original_result_from_a_peer(self):
-        execution = 'http-disconnect-' + str(uuid.uuid4())
-        params = {'name': 'long_wait', 'arguments': {'marker': execution, 'seconds': 3},
-                  '_meta': {RECOVERY_META: {'version': 1, 'execution_id': execution}}}
-        with self.assertRaises(TimeoutError):
-            rpc('tools/call', params, BASE, timeout=0.5)
-        query = {'name': 'managed_execution_get', 'arguments': {'execution_id': execution}}
-        running = rpc('tools/call', query, PEER)['result']['structuredContent']
-        self.assertEqual(running['state'], 'running')
-        deadline = time.monotonic() + 8
-        while time.monotonic() < deadline:
-            found = rpc('tools/call', query, PEER)['result']['structuredContent']
-            if found['state'] == 'succeeded':
-                break
-            time.sleep(0.1)
-        self.assertEqual(found['state'], 'succeeded')
-        self.assertEqual(found['execution_id'], execution)
-        self.assertEqual(rpc('tools/call', params, PEER)['result'], found['result'])
-
-    def test_unknown_execution_lookup_has_no_side_effect(self):
-        execution = 'never-admitted-' + str(uuid.uuid4())
-        state = rpc('tools/call', {'name': 'managed_execution_get',
-                                 'arguments': {'execution_id': execution}})['result']['structuredContent']
-        self.assertEqual(state, {'version': 1, 'execution_id': execution, 'state': 'not_found'})
+    def test_no_persistent_execution_lookup_is_exposed(self):
+        result = rpc('tools/call', {'name': 'managed_execution_get', 'arguments': {'execution_id': 'absent'}})
+        self.assertTrue(result['result']['isError'])
 
 
 if __name__ == "__main__":

@@ -50,6 +50,8 @@ header:
     - '**/*.properties'
     - '**/*.sh'
     - '**/*.bat'
+    # Python utility scripts only; SDK/library sources remain checked
+    - '**/scripts/**/*.py'
     - '**/*.md'
     - '**/*.svg'
     - '**/*.png'

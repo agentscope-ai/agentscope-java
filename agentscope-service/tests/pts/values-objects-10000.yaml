@@ -1,0 +1,135 @@
+# Copyright 2024-2026 the original author or authors.
+# Licensed under the Apache License, Version 2.0.
+# Fixed benchmark baseline: 2 replicas per business component; RDS 12 CPU / 48 GiB.
+# Real MQ/MCP, synthetic models, automatic object GC disabled.
+# Provision private Secrets and the fresh data space before applying; no credentials here.
+imageRepository: sca-registry.cn-hangzhou.cr.aliyuncs.com/agentcore
+imageTag: 2.1.0-objects-20261023-124015
+imagePullSecrets:
+- name: acr-pull
+existingSecret: managed-agents-credentials
+data:
+  existingSecret: managed-agents-object-database
+schema:
+  existingSecret: managed-agents-cloud-data-migration
+  dataExistingSecret: managed-agents-object-migration-target
+userFilesEnabled: false
+runtime:
+  sessionQueue:
+    enabled: true
+  mq:
+    existingSecret: managed-agents-cloud-mq
+    turnTopic: ma_turns_obj_20261023
+    harnessRuntimeGroup: ma_brain_obj_20261023
+    sessionReadyTopic: ma_ready_obj_20261023
+    sessionReadyGroup: ma_ready_obj_20261023
+    resumeTopic: ma_resumes_obj_20261023
+    resumeGroup: ma_resume_obj_20261023
+    toolEventTopic: ma_tool_events_obj_20261023
+    toolEventsGroup: ma_tool_events_obj_20261023
+    toolExecuteTopic: ma_tool_execute_obj_20261023
+    toolExecuteGroup: ma_hands_execute_obj_20261023
+    toolControlTopic: ma_tool_control_obj_20261023
+    toolControlGroup: ma_hands_control_obj_20261023
+    projectionTopic: ma_projections_obj_20261023
+    projectionGroup: ma_projections_obj_20261023
+objectStore:
+  existingSecret: managed-agents-runtime-objects
+  provider: oss
+  backendId: ma-oss-20261023
+  endpoint: https://oss-cn-hangzhou-internal.aliyuncs.com
+  bucket: managed-agents-runtime-1195119814114662-20261023
+  region: cn-hangzhou
+  maxRequests: 64
+  maxInflightBytes: 536870912
+  capacityWaitMs: 5000
+  cacheBytes: 268435456
+  cacheItemBytes: 262144
+  stateCacheEntries: 32768
+control-plane:
+  imageTag: 2.1.0-build.20261020-082845-7fd25024@sha256:484e3c1e8d8ff899adf2feba6a7fa6195587daad8cfd688f67b5fb1f26be6630
+  replicas: 2
+  executionSlots: 8
+  workerBatch: 16
+  databaseMaxOpenConns: 16
+  databaseMaxIdleConns: 2
+gateway:
+  replicas: 2
+  imageTag: 2.1.0-objects-20261023-124015@sha256:9db5ea34aeabe3139277a71f74d741064cced1da42f6aa06dbc95632f6e77a08
+  resources:
+    requests:
+      cpu: '4'
+      memory: 8Gi
+    limits:
+      cpu: '4'
+      memory: 8Gi
+agent-service:
+  replicas: 2
+  imageTag: 2.1.0-objects-20261023-134520@sha256:79b22877df29f5c52c93ae27f29654084808097e12c87a49ee8095dc43ebb32a
+  resources:
+    requests:
+      cpu: '8'
+      memory: 16Gi
+    limits:
+      cpu: '8'
+      memory: 16Gi
+  databasePoolSize: 32
+  projection:
+    role: both
+    concurrency: 4
+    objectMaxRequests: 4
+    objectMaxInflightBytes: 134217728
+agent-harness-runtime:
+  replicas: 2
+  imageTag: 2.1.0-objects-20261023-134520@sha256:4c5449b88238fc4faf4d215a697fb0b006453d8387b2baa8fb40a3c150634603
+  resources:
+    requests:
+      cpu: '8'
+      memory: 16Gi
+    limits:
+      cpu: '8'
+      memory: 16Gi
+  databasePoolSize: 32
+  concurrency: 512
+  turnCallbacks: 512
+  resumeCallbacks: 512
+  toolEventConcurrency: 64
+  childControlConcurrency: 16
+  inlineToolWaitSeconds: 1
+  modelTimeoutSeconds: 60
+  loadTestModel:
+    enabled: true
+    profiles:
+      short-v1:
+        firstChunkDelayMs: 300
+        chunkIntervalMs: 50
+        chunks: 40
+        chunkChars: 80
+      cancel-v1:
+        firstChunkDelayMs: 120000
+        chunks: 1
+        chunkChars: 80
+      tool30-v1:
+        firstChunkDelayMs: 300
+        chunkIntervalMs: 50
+        chunks: 40
+        chunkChars: 80
+        toolName: longwait__long_wait
+        toolArguments:
+          marker: '{{marker}}'
+          seconds: 30
+        toolRounds: 1
+        parallelToolCalls: 1
+tool-worker:
+  replicas: 2
+  imageTag: 2.1.0-objects-20261023-124015@sha256:7d50a5ba218be3f3da413706d909d1ce19d96a486b04a8d1416829b0468fb62e
+  resources:
+    requests:
+      cpu: '4'
+      memory: 8Gi
+    limits:
+      cpu: '4'
+      memory: 8Gi
+  databasePoolSize: 8
+  toolConcurrency: 768
+  toolControlConcurrency: 16

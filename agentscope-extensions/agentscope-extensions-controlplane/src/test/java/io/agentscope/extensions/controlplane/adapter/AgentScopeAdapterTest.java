@@ -15,6 +15,7 @@
  */
 package io.agentscope.extensions.controlplane.adapter;
 
+import io.agentscope.durable.codec.agentscope.AgentScopeCheckpoints;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;

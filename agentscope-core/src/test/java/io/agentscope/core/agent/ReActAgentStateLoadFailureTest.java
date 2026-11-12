@@ -54,7 +54,11 @@ class ReActAgentStateLoadFailureTest {
     void versionedStoreFailureFailsCallWithoutOverwritingPersistedState() {
         ThrowingVersionedStore store = new ThrowingVersionedStore();
         AgentState persisted = persistedState();
-        store.save(USER_ID, SESSION_ID, "agent_state", persisted);
+        store.save(
+                USER_ID,
+                SESSION_ID,
+                new ThreadKey(null, "assistant", "unused-bucket", "main").stateEntry("agent_state"),
+                persisted);
         int writesBeforeFailure = store.writeCount();
         IllegalStateException failure = new IllegalStateException("simulated backend failure");
         store.failLoadsWith(failure);
@@ -98,7 +102,11 @@ class ReActAgentStateLoadFailureTest {
     @DisplayName("an existing state still loads normally")
     void existingStateStillLoadsNormally() {
         InMemoryAgentStateStore store = new InMemoryAgentStateStore();
-        store.save(USER_ID, SESSION_ID, "agent_state", persistedState());
+        store.save(
+                USER_ID,
+                SESSION_ID,
+                new ThreadKey(null, "assistant", "unused-bucket", "main").stateEntry("agent_state"),
+                persistedState());
 
         AgentState restored = agent(store).getAgentState(USER_ID, SESSION_ID);
 

@@ -79,22 +79,22 @@ public final class ControlPlaneObserverMiddleware implements MiddlewareBase {
         adapter.rememberSession(sessionId, ctx == null ? null : ctx.getUserId(), agent);
 
         if (agent instanceof io.agentscope.core.ReActAgent react
-                && react.sessionLogEnabled()
+                && react.journalEnabled()
                 && ctx != null) {
             var prior =
-                    (io.agentscope.core.session.SessionExportSink)
-                            ctx.get(io.agentscope.core.session.SessionExportSink.CONTEXT_KEY);
+                    (io.agentscope.core.journal.JournalExportSink)
+                            ctx.get(io.agentscope.core.journal.JournalExportSink.CONTEXT_KEY);
             if (prior == null || !prior.name().contains("controlplane-native-v1")) {
                 ctx.put(
-                        io.agentscope.core.session.SessionExportSink.CONTEXT_KEY,
-                        new io.agentscope.core.session.SessionExportSink() {
+                        io.agentscope.core.journal.JournalExportSink.CONTEXT_KEY,
+                        new io.agentscope.core.journal.JournalExportSink() {
                             public String name() {
                                 return prior == null
                                         ? "controlplane-native-v1"
                                         : prior.name() + "+controlplane-native-v1";
                             }
 
-                            public void accept(io.agentscope.core.session.SessionEvent fact) {
+                            public void accept(io.agentscope.core.journal.JournalEvent fact) {
                                 if (prior != null) prior.accept(fact);
                                 publishNative(sessionId, fact);
                             }
@@ -130,7 +130,7 @@ public final class ControlPlaneObserverMiddleware implements MiddlewareBase {
                 .doFinally(signal -> adapter.markBusy(sessionId, false));
     }
 
-    private void publishNative(String sessionId, io.agentscope.core.session.SessionEvent fact) {
+    private void publishNative(String sessionId, io.agentscope.core.journal.JournalEvent fact) {
         String type =
                 switch (fact.type()) {
                     case "message/user", "message/assistant" -> SessionEvent.MESSAGE;
@@ -182,7 +182,7 @@ public final class ControlPlaneObserverMiddleware implements MiddlewareBase {
             ActingInput input,
             Function<ActingInput, Flux<AgentEvent>> next) {
         String sessionId = sessionIdOf(ctx, agent);
-        if (io.agentscope.core.session.SessionRecorder.from(ctx) != null) return next.apply(input);
+        if (io.agentscope.core.journal.InvocationRecorder.from(ctx) != null) return next.apply(input);
         if (input != null && input.toolCalls() != null) {
             for (ToolUseBlock call : input.toolCalls()) {
                 adapter.publish(

@@ -1,17 +1,21 @@
+import { activeTurn, pendingInteractions, items } from './chat-view.mjs';
+
 const $ = id => document.getElementById(id);
 const labels = {
-    starting: '准备中', running: '执行中', generating: '生成中', finishing: '生成中',
-    generating_arguments: '生成参数中', requested: '等待执行', completed: '已完成',
-    success: '已完成', error: '执行失败', denied: '已拒绝', suspended: '等待补充',
-    queued: '已排队', interrupted: '已中断', cancelled: '已取消', failed: '执行失败'
+    RUNNING: '执行中', WAITING: '等待结果或补充', PAUSING: '正在暂停', PAUSED: '已暂停',
+    CANCELLING: '正在取消', SUCCEEDED: '已完成', FAILED: '执行失败', CANCELLED: '已取消',
+    QUEUED: '已排队', GENERATING_ARGUMENTS: '生成参数中', REQUESTED: '等待执行',
+    SUCCESS: '已完成', ERROR: '执行失败', DENIED: '已拒绝', UNKNOWN: '结果待核实',
+    SUSPENDED: '等待补充', INTERRUPTED: '已停止', completed: '已完成', generating: '生成中'
 };
 let session = new URLSearchParams(location.search).get('session')
-    || localStorage.getItem('session-chat.selected') || crypto.randomUUID();
-let source, snapshot, cursor = 0, eventCursor = 0, trace = new Map(), pendingRun;
-let sessionIds = [], reloadTimer, refreshing = false, refreshAgain = false;
+    || localStorage.getItem('session-chat.selected');
+let source, snapshot, sequence = 0n, eventSequence = 0n, trace = new Map();
+let reloadTimer, refreshing = false, refreshAgain = false;
 let connectVersion = 0, selectionVersion = 0, connected = true;
 const short = value => value ? value.slice(0, 8) : '—';
 const path = () => `/api/sessions/${encodeURIComponent(session)}`;
+const turnPath = turnId => `${path()}/turns/${encodeURIComponent(turnId)}`;
 
 async function request(url, body) {
     const response = await fetch(url, body === undefined ? {} : {
@@ -21,115 +25,101 @@ async function request(url, body) {
     if (!response.ok) throw new Error(data.error || data.message || `HTTP ${response.status}`);
     return data;
 }
+// A retry of an unacknowledged operation retains its ID and complete target/payload.
+async function mutate(url, payload) {
+    const key = 'session-chat.pending-command';
+    let saved;
+    try { saved = JSON.parse(localStorage.getItem(key)); } catch { /* No saved command. */ }
+    const digest = JSON.stringify({ url, payload });
+    const command = saved?.digest === digest ? saved : { digest, requestId: crypto.randomUUID() };
+    localStorage.setItem(key, JSON.stringify(command));
+    const result = await request(url, { ...payload, requestId: command.requestId });
+    if (localStorage.getItem(key) === JSON.stringify(command)) localStorage.removeItem(key);
+    return result;
+}
 function notice(error) { $('notice').textContent = error?.message || error || ''; }
 function text(blocks) {
-    return (blocks || []).map(block => {
-        if (block.type === 'text') return block.text || '';
-        if (block.type === 'thinking') return block.thinking || '';
-        if (block.type === 'tool_result') return text(block.output);
-        return '';
-    }).filter(Boolean).join('\n');
+    return (blocks || []).map(block => block.type === 'text' ? block.text || '' : '').filter(Boolean).join('\n');
 }
-function bubble(role, value, className = role) {
-    const node = document.createElement('article');
-    node.className = `message ${className}`;
+function bubble(role, value, className) {
+    const node = document.createElement('article'); node.className = `message ${className}`;
     const label = document.createElement('div'); label.className = 'role'; label.textContent = role;
     const content = document.createElement('div'); content.className = 'text'; content.textContent = value;
-    node.append(label, content);
-    return node;
+    node.append(label, content); return node;
 }
 function renderItem(item) {
-    const state = labels[item.status] || item.status;
     let node;
     if (item.kind === 'tool') {
-        const call = item.content.find(block => block.type === 'tool_use');
-        const result = item.content.find(block => block.type === 'tool_result');
-        const args = call && Object.keys(call.input || {}).length
-            ? JSON.stringify(call.input) : call?.content || '';
-        node = bubble(`${call?.name || result?.name || '工具'} · ${state}`,
-            `参数：${args || '等待参数'}${result ? '\n结果：' + text(result.output) : ''}`, 'tool');
-        if (item.progress.length) {
+        const data = item.data;
+        const args = data.arguments ? JSON.stringify(data.arguments) : data.argumentsText;
+        const result = text(data.content || data.result?.output?.content);
+        node = bubble(`${data.name || '工具'} · ${labels[item.status] || item.status}`,
+            `参数：${args || '等待参数'}${result ? '\n结果：' + result : ''}`, 'tool');
+        if (data.progress?.length) {
             const progress = document.createElement('div'); progress.className = 'tool-progress';
-            progress.textContent = '执行进度\n' + text(item.progress); node.append(progress);
+            progress.textContent = '执行进度\n' + text(data.progress); node.append(progress);
         }
     } else {
-        node = bubble(item.status === 'completed' ? item.role : `${item.role} · ${state}`,
+        node = bubble(item.status === 'completed' ? item.role : `${item.role} · ${labels[item.status]}`,
             text(item.content), item.role);
     }
-    node.dataset.itemId = item.id;
-    node.dataset.status = item.status;
-    return node;
+    node.dataset.itemId = item.id; node.dataset.status = item.status; return node;
 }
 function render() {
-    $('session-label').textContent = `session ${session}`;
-    $('cursor').textContent = cursor;
-    $('checkpoint').textContent = snapshot?.checkpointSeq || 0;
-    $('counts').textContent = `${snapshot?.messages.length || 0} / ${snapshot?.workingMessages || 0}`;
-    const latest = snapshot?.turns.at(-1);
-    if (latest?.runId === pendingRun?.runId) pendingRun = undefined;
-    const active = pendingRun || latest;
-    const busy = ['starting', 'running'].includes(active?.status);
-    $('status').textContent = labels[active?.status] || '就绪';
-    $('run-label').textContent = active ? `turn ${short(active.turnId)} · run ${short(active.runId)}` : '';
-    $('interrupt').hidden = !busy;
-    $('resume').hidden = busy || !latest || !['interrupted', 'failed', 'suspended'].includes(latest.status)
-        || snapshot.pending.length > 0;
-    $('send').disabled = $('input-mode').value === 'steer' && !busy;
-    $('queue').textContent = (snapshot?.tasks || []).filter(task => task.status === 'queued')
-        .map(task => `排队任务 ${short(task.turnId)}`).join(' · ');
-    const nodes = (snapshot?.items || []).map(renderItem);
+    $('session-label').textContent = session ? `session ${session}` : '请选择或新建会话';
+    $('cursor').textContent = sequence.toString();
+    $('turn-count').textContent = snapshot?.turns.length || 0;
+    $('counts').textContent = `${Object.keys(snapshot?.projection?.messages || {}).length} / ${Object.keys(snapshot?.projection?.tools || {}).length}`;
+    const active = activeTurn(snapshot), latest = active || snapshot?.turns.at(-1);
+    $('status').textContent = labels[latest?.status] || '就绪';
+    $('run-label').textContent = latest ? `turn ${short(latest.turnId)}` : '';
+    $('pause').hidden = !active || !['QUEUED', 'RUNNING', 'WAITING'].includes(active.status);
+    $('resume').hidden = active?.status !== 'PAUSED';
+    $('cancel').hidden = !active || active.status === 'CANCELLING';
+    $('send').disabled = !snapshot || ($('input-mode').value !== 'submit' && !active);
+    $('queue').textContent = (snapshot?.turns || []).filter(turn => turn.status === 'QUEUED')
+        .map(turn => `排队任务 ${short(turn.turnId)}`).join(' · ');
+    const nodes = items(snapshot).map(renderItem);
     const messages = $('messages');
     const atBottom = messages.scrollHeight - messages.scrollTop - messages.clientHeight < 80;
     const scrollTop = messages.scrollTop;
     messages.replaceChildren(...(nodes.length ? nodes : [bubble('', '发送一条消息，开始这段会话。', 'empty')]));
     messages.scrollTop = atBottom ? messages.scrollHeight : scrollTop;
-    $('trace').replaceChildren(...[...trace.values()].slice(-80).reverse().map(event => {
+    $('trace').replaceChildren(...[...trace.values()].reverse().map(event => {
         const li = document.createElement('li'), button = document.createElement('button');
-        const seq = document.createElement('span'); seq.className = 'seq'; seq.textContent = event.seq;
+        const seq = document.createElement('span'); seq.className = 'seq'; seq.textContent = event.sequence;
         const type = document.createElement('span'); type.className = 'event'; type.textContent = event.type;
-        button.append(seq, type); button.title = `turn ${event.turnId || '—'} / run ${event.runId || '—'}`;
-        button.onclick = async () => {
-            try {
-                const records = await request(`${path()}/events?after=${encodeURIComponent(session + ':' + (event.seq - 1))}&limit=1`);
-                $('payload').textContent = JSON.stringify(records[0], null, 2); $('detail').showModal();
-            } catch (error) { notice(error); }
-        };
+        button.append(seq, type); button.title = `turn ${event.turnId || '—'} / run ${event.runId || '—'} / step ${event.stepId || '—'}`;
+        button.onclick = () => { $('payload').textContent = JSON.stringify(event, null, 2); $('detail').showModal(); };
         li.append(button); return li;
     }));
-    // Keep answer forms (including focus and partially typed input) during view refreshes.
-    const pendingIds = (snapshot?.pending || []).map(event => event.data.requestId);
-    for (const form of [...$('pending').children]) if (!pendingIds.includes(form.dataset.requestId)) form.remove();
-    for (const event of snapshot?.pending || []) {
-        let form = [...$('pending').children].find(node => node.dataset.requestId === event.data.requestId);
+    const pending = pendingInteractions(snapshot);
+    for (const form of [...$('pending').children]) if (!pending.some(item => item.id === form.dataset.interactionId)) form.remove();
+    for (const item of pending) {
+        let form = [...$('pending').children].find(node => node.dataset.interactionId === item.id);
         if (!form) {
-            form = document.createElement('form'); form.dataset.requestId = event.data.requestId;
-            const question = document.createElement('p'), input = document.createElement('input');
-            const button = document.createElement('button');
-            question.textContent = event.data.call?.input?.question || '请提供外部执行结果';
-            input.name = event.data.requestId; input.required = true; input.maxLength = 8000;
-            input.setAttribute('aria-label', question.textContent); button.textContent = '提交并继续';
-            form.append(question, input, button);
-            form.onsubmit = async e => {
-                e.preventDefault();
-                await action(() => request(`${path()}/answers`, { request_id: input.name, output: input.value }));
+            form = document.createElement('form'); form.dataset.interactionId = item.id;
+            const question = document.createElement('p'), input = document.createElement('input'), button = document.createElement('button');
+            question.textContent = item.call?.arguments?.question || '请提供外部执行结果';
+            input.required = true; input.maxLength = 8000; input.setAttribute('aria-label', question.textContent);
+            button.textContent = '提交答案'; form.append(question, input, button);
+            form.onsubmit = event => {
+                event.preventDefault();
+                action(() => mutate(`${turnPath(item.turnId)}/answers`, { interactionId: item.id, output: input.value }));
             };
             $('pending').append(form);
         }
-        form.querySelector('button').disabled = busy;
+        // Answering a paused task records the result without resuming it.
+        form.querySelector('button').disabled = active?.status === 'CANCELLING';
     }
+    $('task-error').textContent = active?.recovery?.message || latest?.error || '';
 }
 async function loadSnapshot() {
+    if (!session) return;
     const version = selectionVersion;
     const data = await request(path());
-    if (version !== selectionVersion) return;
-    const seq = Number(data.cursor.split(':').at(-1));
-    // A newer SSE notification does not invalidate a useful view. Only a newer applied view does.
-    if (seq < cursor) return;
-    snapshot = data; cursor = seq;
-    for (const event of data.trace) trace.set(event.seq, event);
-    trace = new Map([...trace].sort((a, b) => a[0] - b[0]).slice(-80));
-    if (data.executionError) { pendingRun = undefined; notice(data.executionError); }
-    render();
+    if (version !== selectionVersion || BigInt(data.sequence) < sequence) return;
+    snapshot = data; sequence = BigInt(data.sequence); render();
 }
 function scheduleSnapshot() {
     refreshAgain = true;
@@ -137,10 +127,7 @@ function scheduleSnapshot() {
     reloadTimer = setTimeout(async () => {
         reloadTimer = undefined; refreshing = true; refreshAgain = false;
         try { await loadSnapshot(); } catch (error) { notice(error); }
-        finally {
-            refreshing = false;
-            if (refreshAgain || (connected && pendingRun)) scheduleSnapshot();
-        }
+        finally { refreshing = false; if (refreshAgain) scheduleSnapshot(); }
     }, 150);
 }
 async function connect() {
@@ -148,73 +135,58 @@ async function connect() {
     const version = ++connectVersion, selected = session;
     await loadSnapshot();
     if (!connected || selected !== session || version !== connectVersion || !snapshot) return;
-    eventCursor = cursor;
+    eventSequence = sequence;
     const events = new EventSource(`${path()}/stream?after=${encodeURIComponent(snapshot.cursor)}`);
     source = events;
-    events.onopen = () => {
-        if (source !== events) return;
-        $('connection').textContent = '事件已连接'; scheduleSnapshot();
-    };
-    events.onerror = () => {
-        if (source === events) $('connection').textContent = '连接中断，自动重连中';
-    };
+    events.onopen = () => { if (source === events) { $('connection').textContent = '事件已连接'; scheduleSnapshot(); } };
+    events.onerror = () => { if (source === events) $('connection').textContent = '连接中断，自动重连中'; };
+    events.addEventListener('reset', () => { if (source === events) connect().catch(notice); });
     events.addEventListener('committed', message => {
         if (selected !== session || source !== events) return;
         try {
-            const event = JSON.parse(message.data);
-            if (event.seq <= eventCursor) return;
-            eventCursor = event.seq;
-            trace.set(event.seq, event); trace = new Map([...trace].slice(-80));
+            const event = JSON.parse(message.data), next = BigInt(event.sequence);
+            if (next <= eventSequence) return;
+            eventSequence = next; trace.set(event.sequence, event); trace = new Map([...trace].slice(-80));
             scheduleSnapshot();
         } catch (error) { notice(error); }
     });
 }
 async function loadList() {
-    const version = selectionVersion;
-    const data = await request('/api/sessions');
+    const version = selectionVersion, data = await request('/api/sessions');
     if (version !== selectionVersion) return;
     $('model').textContent = data.model;
-    sessionIds = [...new Set([...sessionIds, ...data.sessions, session])].sort();
     const list = $('sessions'), scrollTop = list.scrollTop;
-    const unchanged = [...list.options].map(option => option.value).join(',') === sessionIds.join(',');
-    if (!unchanged) list.replaceChildren(...sessionIds.map(id => {
+    list.replaceChildren(...data.sessions.map(id => {
         const option = document.createElement('option'); option.value = id; option.textContent = id; return option;
     }));
-    list.value = session;
-    list.scrollTop = scrollTop;
+    list.value = session; list.scrollTop = scrollTop; return data.sessions;
 }
 async function select(id) {
     source?.close(); source = undefined; selectionVersion++; connectVersion++;
     clearTimeout(reloadTimer); reloadTimer = undefined; refreshAgain = false;
-    session = id; cursor = 0; eventCursor = 0; snapshot = undefined; pendingRun = undefined; trace.clear();
+    session = id; sequence = 0n; eventSequence = 0n; snapshot = undefined; trace.clear();
     localStorage.setItem('session-chat.selected', session);
     history.replaceState(null, '', `?session=${encodeURIComponent(session)}`);
     notice(''); render(); await loadList(); await connect();
 }
+async function create() {
+    const id = crypto.randomUUID();
+    await request(`/api/sessions/${encodeURIComponent(id)}`, {}); await select(id);
+}
 async function action(work) {
     const version = selectionVersion;
-    try {
-        notice(''); const started = await work();
-        if (version !== selectionVersion) return;
-        if (started?.runId) pendingRun = started;
-        render(); scheduleSnapshot();
-    } catch (error) { if (version === selectionVersion) notice(error); }
+    try { notice(''); await work(); if (version === selectionVersion) await loadSnapshot(); }
+    catch (error) { if (version === selectionVersion) notice(error); }
 }
-$('compose').onsubmit = async event => {
+$('compose').onsubmit = event => {
     event.preventDefault(); const message = $('prompt').value.trim(); if (!message) return;
-    const mode = $('input-mode').value;
-    if (mode !== 'submit') {
-        await action(async () => { const ack = await request(`${path()}/${mode}`, { message }); $('prompt').value = ''; return ack; });
-        return;
-    }
-    let saved;
-    try { saved = JSON.parse(localStorage.getItem('session-chat.request')); } catch { /* No prior submission. */ }
-    const body = saved?.session === session && saved.message === message
-        ? saved : { session, request_id: crypto.randomUUID(), message };
-    localStorage.setItem('session-chat.request', JSON.stringify(body));
-    await action(async () => {
-        const ack = await request(`${path()}/turns`, body);
-        $('prompt').value = ''; localStorage.removeItem('session-chat.request'); return ack;
+    const mode = $('input-mode').value, active = activeTurn(snapshot);
+    if (mode !== 'submit' && !active) return;
+    const target = mode === 'submit' ? `${path()}/turns` : `${turnPath(active.turnId)}/${mode}`;
+    const version = selectionVersion;
+    action(async () => {
+        await mutate(target, { message });
+        if (version === selectionVersion && $('prompt').value.trim() === message) $('prompt').value = '';
     });
 };
 $('input-mode').onchange = render;
@@ -228,17 +200,23 @@ $('connect').onclick = async () => {
     $('connect').textContent = connected ? '断开事件连接' : '重新连接并补历史';
     if (connected) await connect().catch(notice);
     else {
-        source?.close(); source = undefined;
-        clearTimeout(reloadTimer); reloadTimer = undefined; refreshAgain = false;
+        source?.close(); source = undefined; clearTimeout(reloadTimer); reloadTimer = undefined; refreshAgain = false;
         $('connection').textContent = '已断开，后台继续执行';
     }
 };
-$('new-session').onclick = () => select(crypto.randomUUID()).catch(notice);
+$('new-session').onclick = () => create().catch(notice);
 $('sessions').onchange = () => select($('sessions').value).catch(notice);
-$('interrupt').onclick = () => action(() => request(`${path()}/interrupt`, { run_id: (pendingRun || snapshot?.turns.at(-1)).runId }));
-$('resume').onclick = () => action(() => request(`${path()}/turns/${snapshot.turns.at(-1).turnId}/resume`, {}));
+for (const operation of ['pause', 'resume', 'cancel']) $(operation).onclick = () => {
+    const turn = activeTurn(snapshot); if (!turn) return;
+    const payload = operation === 'resume' ? { expectedRevision: turn.revision } : {};
+    action(() => mutate(`${turnPath(turn.turnId)}/${operation}`, payload));
+};
 $('close-detail').onclick = () => $('detail').close();
 for (const button of document.querySelectorAll('[data-prompt]')) button.onclick = () => { $('prompt').value = button.dataset.prompt; $('prompt').focus(); };
-// Inbox acceptance can change the queue without advancing the execution-event cursor.
-setInterval(() => { if (connected && !document.hidden) scheduleSnapshot(); }, 2000);
-await select(session).catch(notice);
+setInterval(() => { if (connected && session && !document.hidden) scheduleSnapshot(); }, 2000);
+render();
+if (session) await select(session).catch(notice);
+else {
+    try { const ids = await loadList(); if (ids.length) await select(ids[0]); else await create(); }
+    catch (error) { notice(error); }
+}

@@ -18,6 +18,7 @@ package io.agentscope.core.agent;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.ReActAgent;
@@ -273,12 +274,12 @@ class AgentRunTest {
     private record Label(String value) {}
 
     @Test
-    void preparedCallRunIdMatchesContextRunId() {
+    void preparedCallAllocatesRunOrAdoptsExplicitIdentity() {
         try (ReActAgent agent =
                 ReActAgent.builder().name("runid-match").model(new MockModel("done")).build()) {
             RuntimeContext ctx = context("a", "runid-session");
             AgentRun<Msg> run = agent.prepareCall(input(), ctx);
-            assertEquals(ctx.getRunId(), run.runId());
+            assertNull(ctx.getRunId());
             assertNotNull(run.runId());
 
             RuntimeContext explicit = RuntimeContext.builder().runId("explicit-run-id").build();

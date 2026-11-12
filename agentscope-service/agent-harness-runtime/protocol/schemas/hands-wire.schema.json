@@ -1,0 +1,212 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.agentcore.invalid/managed-agents/0.1.0/hands-wire.schema.json",
+  "title": "Actual Java Hands MQ transport profile; envelope version is independent of logical protocol version",
+  "$defs": {
+    "Envelope": {
+      "type": "object",
+      "properties": {
+        "version": {
+          "const": 2
+        },
+        "kind": {
+          "enum": [
+            "tool_command",
+            "tool_event",
+            "tool_result"
+          ]
+        },
+        "scope": {
+          "$ref": "common.schema.json#/$defs/Scope"
+        },
+        "batchId": {
+          "type": "string"
+        },
+        "hash": {
+          "$ref": "common.schema.json#/$defs/Hash"
+        },
+        "inline": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "contentEncoding": "base64"
+        },
+        "backendId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "version",
+        "kind",
+        "scope",
+        "batchId",
+        "hash",
+        "inline",
+        "backendId"
+      ],
+      "additionalProperties": false
+    },
+    "Command": {
+      "type": "object",
+      "properties": {
+        "scope": {
+          "$ref": "common.schema.json#/$defs/Scope"
+        },
+        "commandId": {
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "execute",
+            "cancel",
+            "replay"
+          ]
+        },
+        "task": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "turnId": {
+              "type": "string"
+            },
+            "toolCallId": {
+              "type": "string"
+            },
+            "executionId": {
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            },
+            "arguments": {
+              "type": "string"
+            },
+            "status": {
+              "type": "string"
+            },
+            "checkpointSequence": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "processHandle": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "result": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "workerToken": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "id",
+            "turnId",
+            "toolCallId",
+            "executionId",
+            "name",
+            "arguments",
+            "status",
+            "checkpointSequence",
+            "processHandle",
+            "result",
+            "workerToken"
+          ],
+          "additionalProperties": false
+        },
+        "configuration": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "submission": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "epoch": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "executionToken": {
+                  "type": "string"
+                },
+                "batchId": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "epoch",
+                "executionToken",
+                "batchId"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "scope",
+        "commandId",
+        "kind",
+        "task",
+        "configuration",
+        "submission"
+      ],
+      "additionalProperties": false
+    },
+    "Event": {
+      "type": "object",
+      "properties": {
+        "scope": {
+          "$ref": "common.schema.json#/$defs/Scope"
+        },
+        "taskId": {
+          "type": "string"
+        },
+        "executionId": {
+          "type": "string"
+        },
+        "sourceSeq": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "type": {
+          "enum": [
+            "tool.delta",
+            "tool.progress",
+            "tool.output_gap",
+            "tool.result"
+          ]
+        },
+        "data": {
+          "type": "object"
+        }
+      },
+      "required": [
+        "scope",
+        "taskId",
+        "executionId",
+        "sourceSeq",
+        "type",
+        "data"
+      ],
+      "additionalProperties": false
+    }
+  }
+}

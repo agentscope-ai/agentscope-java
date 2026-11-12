@@ -38,7 +38,7 @@ graph LR
     Conv -->|each call end / can be throttled| Flush["Flush LLM call"]
     Flush -->|extract new facts| Daily["memory/YYYY-MM-DD.md"]
     Conv -->|over threshold| Compactor["conversation compaction"]
-    Conv -->|commit execution facts| Sess["Native Session Log"]
+    Conv -->|commit execution facts| Sess["Native Thread journal"]
     Compactor -->|flush again before summarizing| Flush
     Daily -. throttled background consolidation .-> MEM["MEMORY.md"]
     MEM -->|loaded per call| SYS["HARNESS_CONTEXT reference message"]
@@ -48,7 +48,7 @@ Key points:
 
 - Layer 1 only appends, never dedupes; Layer 2 is periodically rewritten as a whole; **the two layers never overwrite each other**.
 - Layer 2 is the only one injected into the prompt; Layer 1 waits to be merged.
-- Native Session Log already records messages and execution facts. Compaction changes working context only; `session_history` / `session_search` read full history without duplicate offloading.
+- Native Thread journal already records messages and execution facts. Compaction changes working context only; `thread_history` / `thread_search` read full history without duplicate offloading.
 
 ## When flush fires
 
@@ -60,7 +60,7 @@ Flush (path 1) is triggered at three different moments:
 
 All three sites share the **same** `flushPrompt`, so customizing it changes all three.
 
-Per-call long-term memory flush runs in the background; pre-compaction flush belongs to the compaction step. Native Session Log commits at execution boundaries: it is not a background copy, and failure to commit required facts stops further execution.
+Per-call long-term memory flush runs in the background; pre-compaction flush belongs to the compaction step. Native Thread journal commits at execution boundaries: it is not a background copy, and failure to commit required facts stops further execution.
 
 <span id="enable-compaction" />
 
@@ -93,7 +93,7 @@ Common options:
 | `summaryPrompt` | see `DEFAULT_SUMMARY_PROMPT` | Path-3 summary prompt (must contain `{messages}`) |
 | `model` | `null` (uses the agent's primary model) | Dedicated model for the compaction summarization call |
 
-**Auto-recovery on overflow**: when the model returns `context_length_exceeded` or a similar error, the framework attempts forced compaction unless compaction is disabled. In the default `EVENT_LOG` execution mode, it retries the current reasoning step once within the same execution. No explicit `.compaction(...)` call is needed to enable this; a repeated overflow propagates to the caller.
+**Auto-recovery on overflow**: when the model returns `context_length_exceeded` or a similar error, the framework attempts forced compaction unless compaction is disabled. In the default native journal execution mode, it retries the current reasoning step once within the same execution. No explicit `.compaction(...)` call is needed to enable this; a repeated overflow propagates to the caller.
 
 ### Want it lighter? Trim arguments first
 
@@ -132,7 +132,7 @@ Notes:
 
 - `THROTTLED` only affects **path 1** (per-call flush). The flush embedded in compaction (path 2) and the overflow flush (path 3) still fire on their own triggers — compaction is rare, so those two are infrequent by construction.
 - The first eligible call flushes immediately; `Duration.ofMinutes(10)` limits only later per-call flushes.
-- **Native history is unaffected**: flush throttling does not disable Session Log, history search or checkpoint recovery.
+- **Native history is unaffected**: flush throttling does not disable Thread journal, history search or checkpoint recovery.
 
 ### Example 2: disable per-call flush entirely
 
@@ -239,11 +239,11 @@ When memory is enabled, the agent gets four tools:
 - `memory_search query="..."` — keyword scan over `MEMORY.md` + `memory/*.md`
 - `memory_get path="memory/2026-06-02.md" startLine=10 endLine=40` — read a specific line range
 - `memory_save content="..."` — persist a memory via `MEMORY.md` and the daily ledger
-- `session_search query="..."` — search past session transcripts
+- `thread_search query="..."` — search past session transcripts
 
 When the model sees a "MEMORY truncated" note in the prompt, it typically calls `memory_search` to look further back.
 
-`memory_search` and `session_search` accept an optional `matchMode`:
+`memory_search` and `thread_search` accept an optional `matchMode`:
 
 | Mode | Behavior |
 | --- | --- |
@@ -276,7 +276,7 @@ If you want to handle memory yourself or wire your own tools:
 HarnessAgent.builder()
     ...
     .disableMemoryHooks()      // disables flush + background maintenance (+ auto-extract prompt line)
-    .disableMemoryTools()      // skips memory_search / memory_get / memory_save / session_search
+    .disableMemoryTools()      // skips memory_search / memory_get / memory_save / thread_search
                                // and matching Memory Recall / tool Persistence guidance
     .build();
 ```

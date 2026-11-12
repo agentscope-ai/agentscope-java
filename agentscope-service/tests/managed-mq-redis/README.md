@@ -8,10 +8,10 @@ LiteTopic with a separate Cluster Proxy** on `127.0.0.1:19981`. The classic 5.3.
 ## Infrastructure
 
 ```sh
-docker compose -p managed-mq-redis -f agentscope-service/tests/managed-mq-redis/compose.yaml \
+docker compose -p managed-mq-redis -f managed-agents/tests/managed-mq-redis/compose.yaml \
   --profile database up -d --wait
-agentscope-service/tests/managed-mq-redis/build-lite-image.sh
-docker compose -p managed-mq-redis-lite -f agentscope-service/tests/managed-mq-redis/compose-lite.yaml \
+managed-agents/tests/managed-mq-redis/build-lite-image.sh
+docker compose -p managed-mq-redis-lite -f managed-agents/tests/managed-mq-redis/compose-lite.yaml \
   up -d --wait
 ```
 
@@ -32,7 +32,7 @@ Use a **new** database for the current destructive Service schema; existing fixt
 never automatically upgraded or reset:
 
 ```sh
-docker compose -p managed-mq-redis -f agentscope-service/tests/managed-mq-redis/compose.yaml \
+docker compose -p managed-mq-redis -f managed-agents/tests/managed-mq-redis/compose.yaml \
   exec -T postgres psql -X -v ON_ERROR_STOP=1 -U managed -d postgres \
   -c 'CREATE DATABASE managed_mq_lite_test;'
 ```
@@ -45,30 +45,12 @@ Overriding only `-Xmx` retains the image's `-Xmn2g`, leaving almost no old gener
 frequent collection and administration timeouts. The fixture and deployment initializers check
 mqadmin's success text as well as its exit status, retry at most three times, and fail before
 starting business processes if any resource is unconfirmed. Run their offline regression with
-`python3 -m unittest discover -s agentscope-service/release/tests -p test_managed_mq_init.py`.
-
-### Current backport verification profile
-
-Use the explicit `min-offset` Broker derivative described below for positive protocol verification;
-the unmodified 5.5.1 profile remains the documented initial-offset negative baseline. The raw
-`ma_push_bus_*` callback-capacity fixture groups use a customized 100 ms retry interval and a
-1000-delivery budget so broker backoff cannot consume the 40-second, sixteen-depth test window.
-Those settings apply only to the isolated stress-test groups; ordinary `ma_*` business groups and
-`deploy/managed-mq-init.sh` retain their existing retry settings. Callback, ordering, completion,
-Topic/group-count and timeout assertions are unchanged.
-
-The real Turn ACK fixture now wires the same direct Execute publisher as production before
-committing tool intents. This is necessary for the new publication-before-authorization contract.
-
-The current isolated run passed the peer-ACK and owner-stopped scenarios. Natural receipt expiry
-remains unverified: the normal renewal-enabled Proxy did not redeliver a fresh receipt within the
-scenario's 65-second window. An experimental no-renewal Proxy did not deliver the initial Turn and
-is not a supported verification profile. Do not treat these results as production MQ acceptance.
+`python3 -m unittest discover -s managed-agents/release/tests -p test_managed_mq_init.py`.
 
 ## Protocol contracts
 
 ```sh
-mvn -T1 -pl agentscope-service/service-common -am \
+mvn -T1 -pl managed-agents/common -am \
   -Dtest=ManagedInfrastructureTest,ManagedExecutionGuardTest,RocketMqManagedMessageBusTest,ManagedAdmissionStoreTest,ManagedJournalStoreTest,ManagedPipelineTest,ManagedToolExecutionsTest \
   -Dsurefire.failIfNoSpecifiedTests=false \
   '-DspotlessFiles=.*/runtime/managed/.*[.]java' test
@@ -76,7 +58,7 @@ mvn -T1 -pl agentscope-service/service-common -am \
 MANAGED_REDIS_TEST_URI=redis://127.0.0.1:16389 \
 MANAGED_MQ_TEST_ENDPOINT=127.0.0.1:19981 \
 MANAGED_DATABASE_TEST_URI=jdbc:postgresql://127.0.0.1:16991/managed_mq_lite_test \
-mvn -T1 -pl agentscope-service/service-common -am \
+mvn -T1 -pl managed-agents/common -am \
   -Dtest=RedisManagedInfrastructureIntegrationTest,RocketMqManagedMessageBusIntegrationTest,ManagedPostgresAdmissionIntegrationTest,ManagedPostgresJournalIntegrationTest,ManagedPostgresPublicResourcesIntegrationTest \
   -Dsurefire.failIfNoSpecifiedTests=false \
   '-DspotlessFiles=.*/runtime/managed/.*[.]java' test
@@ -90,28 +72,28 @@ for 70 seconds, beyond the Proxy's default visibility interval; its topic and gr
 through `MANAGED_LITE_PUSH_TEST_TOPIC` and `MANAGED_LITE_PUSH_TEST_GROUP`.
 
 The earlier single-database long-tool protocol fixture has been replaced by
-`ManagedHandsRealInfrastructureTest`. Its independent Brain and Hands databases, actual Sandbox
+`ManagedToolWorkerRealInfrastructureTest`. Its independent Agent Harness Runtime and Tool Worker databases, actual Sandbox
 processes and Execute/Control consumers exercise the production ownership boundary, reliable
-Resume, ordered Turn recovery and cancellation; see the Hands execution boundary section below.
+Resume, ordered Turn recovery and cancellation; see the Tool Worker execution boundary section below.
 
 Optional infrastructure tests skip unless their variables are explicitly set. Production
 never falls back to a fake or the classic FIFO adapter after a dependency failure.
 
-## Hands execution boundary
+## Tool Worker execution boundary
 
-`ManagedHandsPipelineTest` runs actual local Sandbox processes with independent H2 execution/runtime
-ledgers and an explicit in-memory transport. `ManagedHandsReliabilityTest` covers lost publish
+`ManagedToolWorkerPipelineTest` runs actual local Sandbox processes with independent H2 execution/runtime
+ledgers and an explicit in-memory transport. `ManagedToolWorkerReliabilityTest` covers lost publish
 responses, reordered events beyond one Inbox page, stale collectors, all pending conditions and
 confirmed late results. `ManagedMcpExecutorsTest` uses a controlled MCP client to cover uncertain RPCs,
 result capture outages, definition changes and active connection protection. None requires provider
 credentials.
 
-`ManagedHandsRealInfrastructureTest` runs the same four Sandbox assertions with Redis, RocketMQ Lite
+`ManagedToolWorkerRealInfrastructureTest` runs the same four Sandbox assertions with Redis, RocketMQ Lite
 and two fresh owned PostgreSQL databases per case. Set a new dedicated prefix such as
 `ma_hands_test_20261018a`; provision all five families with `deploy/managed-mq-init.sh` using these
 suffixes (including the Turn depth families):
 
-| Variable suffix after `BUILDER_MANAGED_MQ_` | Value suffix after the chosen prefix |
+| Variable suffix after `MANAGED_AGENTS_RUNTIME_MQ_` | Value suffix after the chosen prefix |
 | --- | --- |
 | `TURN_TOPIC` / `HARNESS_RUNTIME_GROUP` | `_turns` / `_brain` |
 | `TOOL_EVENT_TOPIC` / `TOOL_EVENTS_GROUP` | `_events` / `_brain_tools` |
@@ -120,13 +102,13 @@ suffixes (including the Turn depth families):
 | `TOOL_CONTROL_TOPIC` / `TOOL_CONTROL_GROUP` | `_control` / `_hands_control` |
 
 ```sh
-MANAGED_HANDS_PROTOCOL_TEST=true \
-MANAGED_HANDS_MQ_TEST_PREFIX=ma_hands_test_20261018a \
+MANAGED_AGENTS_TOOL_WORKER_PROTOCOL_TEST=true \
+MANAGED_AGENTS_TOOL_WORKER_MQ_TEST_PREFIX=ma_hands_test_20261018a \
 MANAGED_REDIS_TEST_URI=redis://127.0.0.1:16389 \
 MANAGED_MQ_TEST_ENDPOINT=127.0.0.1:19981 \
 MANAGED_DATABASE_TEST_URI=jdbc:postgresql://127.0.0.1:16991/postgres \
-mvn -T1 -pl agentscope-service/service-hands -am test \
-  -Dtest=ManagedHandsRealInfrastructureTest -Dsurefire.failIfNoSpecifiedTests=false
+mvn -T1 -pl managed-agents/agent-service -am test \
+  -Dtest=ManagedToolWorkerRealInfrastructureTest -Dsurefire.failIfNoSpecifiedTests=false
 ```
 
 Use only the isolated fixture's administrator account (`managed` / `managed-local-test`); this test
@@ -135,35 +117,35 @@ database. The retired single-database protocol runner is no longer a test entry 
 
 ## Actual service replicas
 
-`replicas.py` starts two separate JVMs for each of Session Portal, Brain and Hands, plus the Go Control
+`replicas.py` starts two separate JVMs for each of Agent Service, Agent Harness Runtime and Tool Worker, plus the Go Control
 Plane. Each run creates a new database, one-queue Lite parents and dedicated consumer groups.
 It runs the actual four schema migration entry points, then provisions six scoped business
 roles with the deployment grants script. Ordinary JVMs and Control use those business roles;
 only migration/inspection commands use the fixture database owner. The ma version ledger is
-validated at startup, including when Session Portal and Brain use another schema as their search path.
+validated at startup, including when Agent Service and Agent Harness Runtime use another schema as their search path.
 It preserves a manifest and logs in the supplied **new** directory. Failed deliveries cannot
 enter the next run's database, and the existing development stack is untouched. Ports `19081`,
 `19082`, `19084`, `19085`, `19182`, `19184`, `19185`, `19281` and `19282` must be free.
 
-Build Control Plane with `make build` in `agentscope-service/service-controlplane`, then compile
+Build Control Plane with `make build` in `managed-agents/control-plane`, then compile
 Java services and test classes from the repository root:
 
 ```sh
-mvn -T1 -pl agentscope-service/service-session-portal,agentscope-service/service-dataplane,agentscope-service/service-hands \
+mvn -T1 -pl managed-agents/agent-service,managed-agents/agent-harness-runtime/java/brain-agentscope,managed-agents/tool-worker \
   -am package -DskipTests
-python3 agentscope-service/tests/managed-mq-redis/replicas.py start --state /tmp/managed-replicas-example
-python3 agentscope-service/tests/managed-mq-redis/replicas.py smoke --state /tmp/managed-replicas-example --seconds 180
-python3 agentscope-service/tests/managed-mq-redis/replicas.py parallel --state /tmp/managed-replicas-example --seconds 60
-python3 agentscope-service/tests/managed-mq-redis/replicas.py controls --state /tmp/managed-replicas-example
-python3 agentscope-service/tests/managed-mq-redis/replicas.py cancellation --state /tmp/managed-replicas-example
-python3 agentscope-service/tests/managed-mq-redis/replicas.py hands-restart --state /tmp/managed-replicas-example
-python3 agentscope-service/tests/managed-mq-redis/replicas.py redis-restart --state /tmp/managed-replicas-example
-python3 agentscope-service/tests/managed-mq-redis/replicas.py stop --state /tmp/managed-replicas-example
+python3 managed-agents/tests/managed-mq-redis/replicas.py start --state /tmp/managed-replicas-example
+python3 managed-agents/tests/managed-mq-redis/replicas.py smoke --state /tmp/managed-replicas-example --seconds 180
+python3 managed-agents/tests/managed-mq-redis/replicas.py parallel --state /tmp/managed-replicas-example --seconds 60
+python3 managed-agents/tests/managed-mq-redis/replicas.py controls --state /tmp/managed-replicas-example
+python3 managed-agents/tests/managed-mq-redis/replicas.py cancellation --state /tmp/managed-replicas-example
+python3 managed-agents/tests/managed-mq-redis/replicas.py tool-worker-restart --state /tmp/managed-replicas-example
+python3 managed-agents/tests/managed-mq-redis/replicas.py redis-restart --state /tmp/managed-replicas-example
+python3 managed-agents/tests/managed-mq-redis/replicas.py stop --state /tmp/managed-replicas-example
 ```
 
 Only the deterministic `ManagedReplicaModel` class and its nested class are put in a small
-fixture JAR. Brain's explicit fixture main registers that model before the real application
-starts; other test configurations are excluded. Hands explicitly enables local process Sandbox
+fixture JAR. Agent Harness Runtime's explicit fixture main registers that model before the real application
+starts; other test configurations are excluded. Tool Worker explicitly enables local process Sandbox
 execution. Provider credentials are cleared. Harness, HTTP, MQ, Redis, database transactions,
 Redis/MQ renewal, tool requests, result commits and public event projection use the actual services.
 No ACS or model provider is contacted.
@@ -173,15 +155,15 @@ hashes in `manifest.artifacts`. A later Maven build or clean cannot change its r
 restarted JVMs. The Go binary must still be built before starting the fixture. Use a new state
 directory for a new schema or deployment; retained evidence is never converted into a passing run.
 
-`smoke` submits T1 / T2 through different Session Portal processes and verifies durable lifecycle order,
+`smoke` submits T1 / T2 through different Agent Service processes and verifies durable lifecycle order,
 public results and one subprocess execution. `parallel` waits for a long tool to actually start,
 then requires another Session to complete before that subprocess finishes; both share the same
 physical parent queue. A long tool can be `waiting_tool` while another Session progresses.
-`controls` accepts inject / steer during suspension through different SessionPortals and retries each
+`controls` accepts inject / steer during suspension through different AgentServices and retries each
 idempotency key across replicas. It checks applied receipts, ordered model-visible input,
-two actual SSE subscribers and Last-Event-ID replay through another Session Portal against the exact
+two actual SSE subscribers and Last-Event-ID replay through another Agent Service against the exact
 durable event history. `cancellation` stops a suspended Turn's subprocess and requires its
-queued successor to complete. `hands-restart` kills both Hands JVMs during a 120-second tool,
+queued successor to complete. `tool-worker-restart` kills both Tool Worker JVMs during a 120-second tool,
 restarts them and requires the same task, execution ID and process handle with one start/done.
 `redis-restart` stops only the fixture Redis container, accepts a durable steer while Redis is
 offline, restarts Redis without deleting data and checks input refill and one tool execution.
@@ -198,12 +180,12 @@ stop that manifest's processes before retrying a new state directory. Databases 
 After starting a newly built fixture, run:
 
 ```sh
-python3 agentscope-service/tests/managed-mq-redis/memory.py --state /tmp/managed-replicas-example --seconds 30
-python3 agentscope-service/tests/managed-mq-redis/memory.py --state /tmp/managed-replicas-example --seconds 30 --readonly
+python3 managed-agents/tests/managed-mq-redis/memory.py --state /tmp/managed-replicas-example --seconds 30
+python3 managed-agents/tests/managed-mq-redis/memory.py --state /tmp/managed-replicas-example --seconds 30 --readonly
 ```
 
 The explicit fixture model performs a real local tool and resumes the same Turn. During
-suspension the fixture updates a document through the public resource API; resumed Brain must
+suspension the fixture updates a document through the public resource API; resumed Agent Harness Runtime must
 read the new version through its actual client and Go resource API. The second case also changes
 the Environment to read-only and attempts an Agent write. Agent shared mounts already enforce
 read-only, and the write must preserve that policy and create no additional document version.
@@ -211,7 +193,7 @@ This does not attribute the denial to the Environment change: live Environment e
 independently tested against real PostgreSQL by the Go resource suite. Both scenarios require
 a completed queued successor, one physical tool execution, valid private checkpoints and no
 legacy `cp.sessions` row. They do not use ACS or a provider model. Native Memory requests validate
-the frozen mount in Brain and current ownership, archival and Environment access in Control Plane.
+the frozen mount in Agent Harness Runtime and current ownership, archival and Environment access in Control Plane.
 
 The ordinary smoke's `verify_smoke` helper can also
 audit the same admitted run after a harness fault without starting a replacement tool. It checks
@@ -224,15 +206,15 @@ Build the Go control-plane binary and the three Java services first. Start a new
 fixture with the real AgentTask Outbox and observer workers enabled:
 
 ```sh
-python3 agentscope-service/tests/managed-mq-redis/replicas.py start --state /tmp/managed-tasks-example --task-workers
-python3 agentscope-service/tests/managed-mq-redis/tasks.py --state /tmp/managed-tasks-example --seconds 180
-python3 agentscope-service/tests/managed-mq-redis/tasks.py --state /tmp/managed-tasks-example --cancel
-python3 agentscope-service/tests/managed-mq-redis/tasks.py --state /tmp/managed-tasks-example --timeout
-python3 agentscope-service/tests/managed-mq-redis/replicas.py stop --state /tmp/managed-tasks-example
+python3 managed-agents/tests/managed-mq-redis/replicas.py start --state /tmp/managed-tasks-example --task-workers
+python3 managed-agents/tests/managed-mq-redis/tasks.py --state /tmp/managed-tasks-example --seconds 180
+python3 managed-agents/tests/managed-mq-redis/tasks.py --state /tmp/managed-tasks-example --cancel
+python3 managed-agents/tests/managed-mq-redis/tasks.py --state /tmp/managed-tasks-example --timeout
+python3 managed-agents/tests/managed-mq-redis/replicas.py stop --state /tmp/managed-tasks-example
 ```
 
 The explicit fixture model calls the actual collaboration MCP `task.get`, performs one local
-Sandbox subprocess through Hands, and calls MCP `task.complete` after the same Turn resumes.
+Sandbox subprocess through Tool Worker, and calls MCP `task.complete` after the same Turn resumes.
 Assertions cover one Attempt / Turn / side effect, persisted suspension and Resume, original
 human Actor, native terminal output and no legacy `cp.sessions` row or control-plane heartbeat.
 Cancellation checks a durable native Input, actual stopped subprocess and observed terminal
@@ -249,10 +231,10 @@ one Turn / Attempt and one subprocess side effect. The proxy is opt-in fixture c
 part of the production deployment.
 
 Private credential and business-timeout checks use the Go HTTP suite with an explicit test DSN;
-the suite creates and deletes its own PostgreSQL database and uses a labeled Session Portal HTTP fixture:
+the suite creates and deletes its own PostgreSQL database and uses a labeled Agent Service HTTP fixture:
 
 ```sh
-cd agentscope-service/service-controlplane
+cd managed-agents/control-plane
 CONTROL_PLANE_TEST_POSTGRES_DSN='postgres://managed:managed-local-test@127.0.0.1:16991/postgres?sslmode=disable' \
   go test ./internal/httpapi -run 'TestNativeManagedTaskAdmissionRetryAndCancellation|TestManagedDeadlineUsesFrozenPolicyAndStartedTime' -count=1 -v
 ```
@@ -265,7 +247,7 @@ verification is not a wall-clock multi-day execution test.
 
 ```sh
 MANAGED_LITE_TEST_ENDPOINT=127.0.0.1:19981 mvn -T1 \
-  -pl agentscope-service/service-common -am -Dtest=RocketMqLiteIsolationIntegrationTest \
+  -pl managed-agents/common -am -Dtest=RocketMqLiteIsolationIntegrationTest \
   -Dsurefire.failIfNoSpecifiedTests=false
 ```
 
@@ -294,8 +276,8 @@ Java client remains 5.2.2; Lettuce remains BOM-managed. RocketMQ runs under amd6
 this arm64 fixture host. Stop only the task's two Compose projects; omit `-v` to retain evidence:
 
 ```sh
-docker compose -p managed-mq-redis-lite -f agentscope-service/tests/managed-mq-redis/compose-lite.yaml down
-docker compose -p managed-mq-redis -f agentscope-service/tests/managed-mq-redis/compose.yaml \
+docker compose -p managed-mq-redis-lite -f managed-agents/tests/managed-mq-redis/compose-lite.yaml down
+docker compose -p managed-mq-redis -f managed-agents/tests/managed-mq-redis/compose.yaml \
   --profile database down
 ```
 
@@ -309,7 +291,7 @@ Runtime replica to one shared Turn callback, so parents must Suspend to let desc
 All consumption uses LitePushConsumer with FIFO and wildcard groups. Proxy automatic renewal is
 explicitly enabled for up to three hours. Active Harness execution and held callbacks have separate
 bounded capacities. Tools wait inline for five seconds by default
-(`builder.managed.inline-tool-wait-seconds`), then release Harness resources and Redis execution
+(`managed-agents.runtime.inline-tool-wait-seconds`), then release Harness resources and Redis execution
 ownership and returns SDK Suspend. A Resume completes its own callback after its durable handoff;
 the original message remains at the FIFO head until its durable terminal result is observed.
 
@@ -320,20 +302,20 @@ makes no claim to read an SDK ACK from the database. `subagents.py` checks durab
 The earlier `/private/tmp/managed-mq-replicas-20261014-resume-a` evidence used the retired
 suspension-ACK protocol. It remains historical evidence only. The new
 `/private/tmp/managed-mq-replicas-20261015-push-e` fixture passed same-Session ordering, parent/child
-send, actual tool cancellation and replacement of both Brains while the tool continued. Its model
+send, actual tool cancellation and replacement of both HarnessRuntimes while the tool continued. Its model
 is explicit and deterministic; its Sandbox is a real local subprocess, not ACS.
 
-Native log commits return after Brain saves durable journal facts. Tool results use a Redis
+Native log commits return after Agent Harness Runtime saves durable journal facts. Tool results use a Redis
 logical mailbox; the callback completion protocol has been removed. Recovery and
 bounded repair use DB facts. Exact artifacts and remaining gaps, including expiry and saturation,
-are recorded in `agentscope-service/docs/managed-mq-redis-refactoring-plan.md`. No individual check
+are recorded in `managed-agents/docs/managed-mq-redis-refactoring-plan.md`. No individual check
 proves that the complete refactoring plan has finished.
 
 ## Retired execution paths
 
 The source no longer includes RuntimeTurnDispatcher, its database claim/heartbeat schedulers,
-ToolTaskHandsWorker, SandboxHandsToolExecutor or the synchronous hands-tools.py bridge.
-Bootstrap/command controllers in the old Dataplane HTTP protocol and the Session Portal tool-task
+ToolTaskToolWorkerWorker, SandboxToolWorkerToolExecutor or the synchronous tool-worker-tools.py bridge.
+Bootstrap/command controllers in the old Dataplane HTTP protocol and the Agent Service tool-task
 forwarding controller are removed. Native MQ consumers now start by default; the replica
 fixture omits their enable flag so actual startup exercises that default. The subprocess-child
 cancellation regression has moved to ManagedSandboxToolExecutorTest and invokes the new
@@ -343,10 +325,10 @@ implementation plan; this removal is not a claim that all legacy paths have been
 
 ## Native Channel and Deployment/Cron adapters
 
-After starting a fresh replica fixture with the current Go binary, Session Portal and Brain artifacts:
+After starting a fresh replica fixture with the current Go binary, Agent Service and Agent Harness Runtime artifacts:
 
 ```sh
-python3 agentscope-service/tests/managed-mq-redis/triggers.py --state /absolute/path/to/owned-fixture
+python3 managed-agents/tests/managed-mq-redis/triggers.py --state /absolute/path/to/owned-fixture
 ```
 
 This check submits the Channel adapter's internal request concurrently twice, checks one native
@@ -365,7 +347,7 @@ actual Java reply parsing against that running fixture. Set `MANAGED_TRIGGER_CON
 `MANAGED_TRIGGER_TEST_INTERNAL_TOKEN` from the owned fixture, then run:
 
 ```sh
-mvn -T1 -pl agentscope-service/service-scheduler -am test \
+mvn -T1 -pl managed-agents/service-scheduler -am test \
   '-Dtest=ManagedSessionChannelBridgeTest#liveNativeChannelReplyAndProviderRetry' \
   -Dsurefire.failIfNoSpecifiedTests=false
 ```
@@ -380,18 +362,18 @@ this method in `/tmp/managed-trigger-java-live-channel-final.log`.
 Against an owned current replica fixture:
 
 ```sh
-python3 agentscope-service/tests/managed-mq-redis/failures.py --state /absolute/owned/state
-python3 agentscope-service/tests/managed-mq-redis/input-boundaries.py --scenario reply --state /absolute/owned/state
-python3 agentscope-service/tests/managed-mq-redis/input-boundaries.py --scenario closing --state /absolute/owned/state
-python3 agentscope-service/tests/managed-mq-redis/replicas.py takeover --seconds 240 --state /absolute/owned/state
+python3 managed-agents/tests/managed-mq-redis/failures.py --state /absolute/owned/state
+python3 managed-agents/tests/managed-mq-redis/input-boundaries.py --scenario reply --state /absolute/owned/state
+python3 managed-agents/tests/managed-mq-redis/input-boundaries.py --scenario closing --state /absolute/owned/state
+python3 managed-agents/tests/managed-mq-redis/replicas.py takeover --seconds 240 --state /absolute/owned/state
 ```
 
 The reply case uses an existing confirmation action with synthetic fixture data. It proves the
 native reply identity, same-Turn continuation and one local tool effect; it does not add a permission
 mechanism or prove every external-result provider. The closing case initializes the workspace,
-uses a finite cross-Session Portal input load, then verifies every accepted receipt and post-close retries.
+uses a finite cross-Agent Service input load, then verifies every accepted receipt and post-close retries.
 It imposes no two-second finishing SLA. The takeover case also initializes the workspace before
-pausing a Brain, keeps the subprocess alive through lease expiry, restores the old process and
+pausing a Agent Harness Runtime, keeps the subprocess alive through lease expiry, restores the old process and
 checks both effect uniqueness and committed epoch order. Its finally block resumes that owned PID.
 A failed observation is retained and must not be treated as process termination or passing evidence.
 
@@ -402,7 +384,7 @@ ACKs are confirmed. Database terminal status remains separately observable by th
 ## Console conversations
 
 ```sh
-python3 agentscope-service/tests/managed-mq-redis/conversations.py --state /absolute/owned/state
+python3 managed-agents/tests/managed-mq-redis/conversations.py --state /absolute/owned/state
 ```
 
 This checks native Session registration before any Turn, concurrent Chat retry deduplication,
@@ -414,26 +396,26 @@ the explicit local tool/model fixtures, without external model or ACS credential
 ## Native parent and persistent child Turns
 
 ```sh
-python3 agentscope-service/tests/managed-mq-redis/replicas.py start --state /tmp/managed-children-example --concurrency 1
-python3 agentscope-service/tests/managed-mq-redis/subagents.py --state /tmp/managed-children-example --seconds 30 --send
-python3 agentscope-service/tests/managed-mq-redis/subagents.py --state /tmp/managed-children-example --seconds 30 --send --replace-harness-runtimes
-python3 agentscope-service/tests/managed-mq-redis/subagents.py --state /tmp/managed-children-example --seconds 30 --cancel
-python3 agentscope-service/tests/managed-mq-redis/replicas.py stop --state /tmp/managed-children-example
+python3 managed-agents/tests/managed-mq-redis/replicas.py start --state /tmp/managed-children-example --concurrency 1
+python3 managed-agents/tests/managed-mq-redis/subagents.py --state /tmp/managed-children-example --seconds 30 --send
+python3 managed-agents/tests/managed-mq-redis/subagents.py --state /tmp/managed-children-example --seconds 30 --send --replace-harness-runtimes
+python3 managed-agents/tests/managed-mq-redis/subagents.py --state /tmp/managed-children-example --seconds 30 --cancel
+python3 managed-agents/tests/managed-mq-redis/replicas.py stop --state /tmp/managed-children-example
 ```
 
 The deterministic model invokes the actual Harness `agent_spawn` and, with `--send`,
 `agent_send` tools. The same durable child Session receives distinct native Turns; the child
-uses Hands for real local subprocesses. Assertions cover original Actor, immutable tool and
+uses Tool Worker for real local subprocesses. Assertions cover original Actor, immutable tool and
 execution identities, checkpoint suspension / Resume, durable public events and SSE cursors,
 one start / done effect per tool, and absence of legacy Session mirrors. `--replace-harness-runtimes`
-kills both owned Brain JVMs only after parent and child are durably suspended while the
+kills both owned Agent Harness Runtime JVMs only after parent and child are durably suspended while the
 tool is running, then restarts the same frozen deployment. `--cancel` requires confirmed
 physical cancellation, a start without a done effect, and cancelled parent / child outcomes.
 A terminal Turn alone cannot satisfy this cancellation check.
 
-`--concurrency 1` limits each Brain channel and physical Hands tool pool to one slot. Child
-admission / query / cancellation use a separate bounded pool inside the same Hands process,
-configured by `builder.managed.child-control-concurrency` (default 4). Physical tools cannot
+`--concurrency 1` limits each Agent Harness Runtime channel and physical Tool Worker tool pool to one slot. Child
+admission / query / cancellation use a separate bounded pool inside the same Tool Worker process,
+configured by `managed-agents.runtime.child-control-concurrency` (default 4). Physical tools cannot
 occupy those control slots. This adds no deployed component. Each invocation saves a new
 `subagents-*.json` with `passed=false` before execution and preserves failure details.
 
@@ -454,7 +436,7 @@ MANAGED_LITE_PUSH_TEST_ENDPOINT=127.0.0.1:19981 \
 MANAGED_LITE_PUSH_TEST_TOPIC=your_owned_parent \
 MANAGED_LITE_PUSH_TEST_GROUP=your_owned_group \
 MANAGED_LITE_PUSH_HOLD_SECONDS=70 \
-mvn -T1 -pl agentscope-service/service-common -am test \
+mvn -T1 -pl managed-agents/common -am test \
   -Dtest=RocketMqLitePushIntegrationTest -Dsurefire.failIfNoSpecifiedTests=false
 ```
 
@@ -467,27 +449,27 @@ it does not verify the entire three-hour limit, process takeover or every fault 
 No explicit receipt ACK or application message-renewal loop is used. With no endpoint setting,
 the test skips and must not be counted as a real broker pass.
 
-## Tool output while Brain is absent
+## Tool output while Agent Harness Runtime is absent
 
 After building the current services and starting a **new** replica fixture, run:
 
 ```sh
-python3 agentscope-service/tests/managed-mq-redis/tool-stream.py \
-  --state /tmp/managed-replicas-example --seconds 180 --replace-handss
+python3 managed-agents/tests/managed-mq-redis/tool-stream.py \
+  --state /tmp/managed-replicas-example --seconds 180 --replace-tool-workers
 ```
 
 This uses a deterministic model and a real local subprocess that emits beginning, middle and final
-output. It waits for a persisted delta and a durable suspension, kills both Brain processes, and
-optionally replaces both Hands processes. Before restarting Brain, it requires the same tool execution
+output. It waits for a persisted delta and a durable suspension, kills both Agent Harness Runtime processes, and
+optionally replaces both Tool Worker processes. Before restarting Agent Harness Runtime, it requires the same tool execution
 and process handle to finish, a contiguous durable source/chunk/byte prefix, a matching final
-watermark, and exactly the expected public output while neither Brain process exists. It then restarts
-Brain and verifies restored reasoning, exactly one model tool completion, one subprocess side effect,
+watermark, and exactly the expected public output while neither Agent Harness Runtime process exists. It then restarts
+Agent Harness Runtime and verifies restored reasoning, exactly one model tool completion, one subprocess side effect,
 and T1 completion before T2. JSON evidence retains the raw source journal hashes and the public
 history observed before resumption. Startup alone is not acceptance; a failed assertion leaves its
 failure evidence and the fixture must still be stopped with `replicas.py stop`.
 
-Workspace and memory finalization can also suspend through Hands. `--completion-timeout` explicitly
-bounds observation after Brain restarts (default 600 seconds, maximum 900); it is separate from the
+Workspace and memory finalization can also suspend through Tool Worker. `--completion-timeout` explicitly
+bounds observation after Agent Harness Runtime restarts (default 600 seconds, maximum 900); it is separate from the
 business tool duration and is retained in the result. If an observation ends before the existing
 work completes, use `--continue-record /absolute/path/to/tool-stream-<id>.json` to observe the same
 requests and rerun the original strict lifecycle/checkpoint/side-effect checks. This creates another
@@ -507,17 +489,17 @@ These tests do not establish ACS or paid-model integration.
 After building the three services and Dataplane test classes, start a new fixture:
 
 ```sh
-python3 agentscope-service/tests/managed-mq-redis/replicas.py start \
+python3 managed-agents/tests/managed-mq-redis/replicas.py start \
   --state /tmp/managed-artifact-example --mq-profile min-offset \
   --concurrency 1 --callbacks 8
-python3 agentscope-service/tests/managed-mq-redis/artifacts.py --state /tmp/managed-artifact-example
+python3 managed-agents/tests/managed-mq-redis/artifacts.py --state /tmp/managed-artifact-example
 ```
 
 The explicit model calls production `execute` to generate a 2 MiB binary, then the Service's
 `publish_artifact` tool to archive and publish it. The Agent requires metadata before continuing
 and overwrites the original file. The native Python SDK downloads the original bytes through
-the other Session Portal, checks the hash, file membership, one publication and one export task, then
-replaces both Brain and Hands processes and checks the same archived content again. A successor
+the other Agent Service, checks the hash, file membership, one publication and one export task, then
+replaces both Agent Harness Runtime and Tool Worker processes and checks the same archived content again. A successor
 Turn must complete and the original subprocess effects must each occur once. The tool is enabled
 through ordinary toolsConfig; private runtime files are not deliverables. The fixture stops its
 owned processes and retains JSON evidence. This is a deterministic model and actual local-process
@@ -534,16 +516,16 @@ different scopes; report their actual results separately.
 Build the three services and Dataplane test classes, then use a new fixture:
 
 ```sh
-python3 agentscope-service/tests/managed-mq-redis/replicas.py start \
+python3 managed-agents/tests/managed-mq-redis/replicas.py start \
   --state /tmp/managed-checkpoint-example --mq-profile min-offset \
   --concurrency 1 --callbacks 8
-python3 agentscope-service/tests/managed-mq-redis/checkpoints.py --state /tmp/managed-checkpoint-example
+python3 managed-agents/tests/managed-mq-redis/checkpoints.py --state /tmp/managed-checkpoint-example
 ```
 
 The explicit model writes and reads actual Sandbox version files, a 2 MiB binary and a 0555
 directory. It verifies both model context and physical content after restoring a historical
 checkpoint. The verifier first saves a Workspace image through Fork, advances the source,
-replaces both Brain and Hands replicas, and requires independent targets and source restoration.
+replaces both Agent Harness Runtime and Tool Worker replicas, and requires independent targets and source restoration.
 It also requires a historical checkpoint without a matching Workspace image to be rejected.
 Fork copies the selected immutable file membership; later uploads and Artifact publications
 stay independent resources. Each phase, original Turn and operation identity is retained.
@@ -554,51 +536,51 @@ are stopped after the experiment, while the database, private objects and eviden
 
 ## Native webhook acceptance
 
-Build Session Portal, Brain, Hands and `service-scheduler` with their test classes. Use a new fixture:
+Build Agent Service, Agent Harness Runtime, Tool Worker and `service-scheduler` with their test classes. Use a new fixture:
 
 ```sh
-python3 agentscope-service/tests/managed-mq-redis/replicas.py start \
+python3 managed-agents/tests/managed-mq-redis/replicas.py start \
   --state /tmp/managed-webhook-example --mq-profile min-offset --webhooks \
   --concurrency 1 --callbacks 8
-python3 agentscope-service/tests/managed-mq-redis/webhooks.py --state /tmp/managed-webhook-example
+python3 managed-agents/tests/managed-mq-redis/webhooks.py --state /tmp/managed-webhook-example
 ```
 
 The explicit `--webhooks` flag permits a loopback HTTP receiver only in this owned fixture.
-`webhooks.py` freezes the Scheduler JAR and starts the production `SessionPortalWebhookWorker` from
+`webhooks.py` freezes the Scheduler JAR and starts the production `AgentServiceWebhookWorker` from
 a test-only main, without unrelated Channel/Cron schedulers. The first receiver accepts a signed
-notification, while a local proxy drops its Session Portal receipt. The script kills that Worker and starts
-two replacements against different SessionPortals. It waits for the real claim timeout, requires the same
+notification, while a local proxy drops its Agent Service receipt. The script kills that Worker and starts
+two replacements against different AgentServices. It waits for the real claim timeout, requires the same
 delivery ID with a newer attempt, validates HMAC over each original request body and deduplicates
 receiver side effects. Native Turn notifications stay ordered; a later Artifact with an event ID
-longer than 64 characters is found from idle without a Session Portal wakeup. All event URLs and scoped
+longer than 64 characters is found from idle without a Agent Service wakeup. All event URLs and scoped
 cursors must read the actual native journal. The script records retained evidence and stops every
 manifest process, including replacement Workers. This proves the network worker, not a full
 Scheduler Spring application or the formal container deployment.
 
 ## Persistent input waits
 
-`input-wait.py` exercises the actual Session Portal / Brain / Hands deployment, with a deterministic
+`input-wait.py` exercises the actual Agent Service / Agent Harness Runtime / Tool Worker deployment, with a deterministic
 model and a local process Sandbox. Start a **new** fixture with `--concurrency 1 --callbacks 8`
 and an explicitly selected MQ profile. The fixture model supplies a schema-only `ask_user` tool
 through its test initializer for external-result acceptance; it is not a new production tool or
 an implicit configuration fallback.
 
 ```sh
-python3 agentscope-service/tests/managed-mq-redis/input-wait.py \
+python3 managed-agents/tests/managed-mq-redis/input-wait.py \
   --state /tmp/managed-replicas-example --scenario confirmation --seconds 45
-python3 agentscope-service/tests/managed-mq-redis/input-wait.py \
+python3 managed-agents/tests/managed-mq-redis/input-wait.py \
   --state /tmp/managed-replicas-example --scenario external
-python3 agentscope-service/tests/managed-mq-redis/input-wait.py \
+python3 managed-agents/tests/managed-mq-redis/input-wait.py \
   --state /tmp/managed-replicas-example --scenario external-error
-python3 agentscope-service/tests/managed-mq-redis/input-wait.py \
+python3 managed-agents/tests/managed-mq-redis/input-wait.py \
   --state /tmp/managed-replicas-example --scenario cancel
-python3 agentscope-service/tests/managed-mq-redis/input-wait.py \
+python3 managed-agents/tests/managed-mq-redis/input-wait.py \
   --state /tmp/managed-replicas-example --scenario capacity
 ```
 
 Each wait must persist a pending action checkpoint and release its execution token. Reply scenarios
-kill both Brain processes, admit and deduplicate a reply across both SessionPortals, require one durable
-Resume intent while Brain is absent, then restart Brain and audit the same Turn and its FIFO
+kill both Agent Harness Runtime processes, admit and deduplicate a reply across both AgentServices, require one durable
+Resume intent while Agent Harness Runtime is absent, then restart Agent Harness Runtime and audit the same Turn and its FIFO
 successor. The capacity scenario requires waiting executions observed on both replicas and an independent
 Session to complete with one active Harness slot per replica. If waiters initially land on one
 consumer, it adds bounded ownership probes, with at most six waiters. `--continue-record` retains
@@ -607,7 +589,7 @@ condition; original work is not resubmitted. Both external reply cases require t
 to observe the submitted content and success/error state, one matching public tool completion,
 and a completed original Turn followed by its successor. H2 / real-PG race coverage is in
 `ManagedInputSuspensionsTest` / `ManagedPostgresInputSuspensionsIntegrationTest`, including reply,
-cancel, archive, invalid associations and unsettled Hands work. Actual Harness external reply and
+cancel, archive, invalid associations and unsettled Tool Worker work. Actual Harness external reply and
 cancellation coverage is in `ManagedFailureIntegrationTest`.
 
 ## Shared parent/child callback saturation
@@ -618,12 +600,12 @@ successor. `ManagedSubagentHarnessIntegrationTest` also runs the actual parent/c
 Harness pipeline with a single root callback. Neither test claims that a default leaf
 Harness can recursively spawn 16 children; existing Harness depth/tool restrictions apply.
 
-For actual two-Brain admission, persistence, reasoning and Sandbox execution:
+For actual two-Agent Harness Runtime admission, persistence, reasoning and Sandbox execution:
 
 ```sh
-python3 agentscope-service/tests/managed-mq-redis/replicas.py start --state /tmp/managed-depth-example --concurrency 1 --callbacks 1
-python3 agentscope-service/tests/managed-mq-redis/depth-capacity.py --state /tmp/managed-depth-example --seconds 30
-python3 agentscope-service/tests/managed-mq-redis/replicas.py stop --state /tmp/managed-depth-example
+python3 managed-agents/tests/managed-mq-redis/replicas.py start --state /tmp/managed-depth-example --concurrency 1 --callbacks 1
+python3 managed-agents/tests/managed-mq-redis/depth-capacity.py --state /tmp/managed-depth-example --seconds 30
+python3 managed-agents/tests/managed-mq-redis/replicas.py stop --state /tmp/managed-depth-example
 ```
 
 The check submits five parent Sessions and a queued successor, requires evidence that
@@ -633,7 +615,7 @@ It preserves a `passed=false` result before starting and retains failures. The d
 model and real local-process Sandbox are explicit fixture choices, not ACS validation.
 
 The saturation check includes Harness file/memory operations in its observation budget;
-a 30-second tool does not imply a 30-second logical Turn with one Hands slot. To continue
+a 30-second tool does not imply a 30-second logical Turn with one Tool Worker slot. To continue
 observing already admitted work after an observer timeout, pass `--continue-record` with
 the failed `depth-capacity-*.json`. This submits no new work and writes a distinct result
 that references the preserved original failure. All completion, checkpoint and side-effect
@@ -656,11 +638,11 @@ on 19981. `broker-lite-min-offset.conf` disables the in-memory shortcut so the g
 MIN semantics directly. This is not an upstream release or an automatic production fallback.
 
 ```sh
-sh agentscope-service/tests/managed-mq-redis/build-lite-min-offset-image.sh
-docker compose -p managed-mq-redis-lite-min-offset -f agentscope-service/tests/managed-mq-redis/compose-lite.yaml -f agentscope-service/tests/managed-mq-redis/compose-lite-min-offset.yaml up -d --wait namesrv mq-store-init broker topics proxy
-python3 agentscope-service/tests/managed-mq-redis/lite-initial-offset.py --profile min-offset --mode live --state /tmp/lite-min-live
-python3 agentscope-service/tests/managed-mq-redis/lite-initial-offset.py --profile min-offset --mode offline-restart --state /tmp/lite-min-restart
-python3 agentscope-service/tests/managed-mq-redis/lite-initial-offset.py --profile min-offset --mode offline --from-last --state /tmp/lite-last-control
+sh managed-agents/tests/managed-mq-redis/build-lite-min-offset-image.sh
+docker compose -p managed-mq-redis-lite-min-offset -f managed-agents/tests/managed-mq-redis/compose-lite.yaml -f managed-agents/tests/managed-mq-redis/compose-lite-min-offset.yaml up -d --wait namesrv mq-store-init broker topics proxy
+python3 managed-agents/tests/managed-mq-redis/lite-initial-offset.py --profile min-offset --mode live --state /tmp/lite-min-live
+python3 managed-agents/tests/managed-mq-redis/lite-initial-offset.py --profile min-offset --mode offline-restart --state /tmp/lite-min-restart
+python3 managed-agents/tests/managed-mq-redis/lite-initial-offset.py --profile min-offset --mode offline --from-last --state /tmp/lite-last-control
 ```
 
 The raw-SDK gate uses 100 independent LiteTopics and two Broker-confirmed messages per
@@ -678,9 +660,9 @@ After the capability gates pass, initialize the integration parent families in t
 project and select the matching endpoint for Java tests:
 
 ```sh
-docker compose -p managed-mq-redis-lite-min-offset -f agentscope-service/tests/managed-mq-redis/compose-lite.yaml -f agentscope-service/tests/managed-mq-redis/compose-lite-min-offset.yaml exec -T broker sh /opt/managed/init-topics.sh
+docker compose -p managed-mq-redis-lite-min-offset -f managed-agents/tests/managed-mq-redis/compose-lite.yaml -f managed-agents/tests/managed-mq-redis/compose-lite-min-offset.yaml exec -T broker sh /opt/managed/init-topics.sh
 # Java real-protocol tests: MANAGED_MQ_TEST_ENDPOINT=127.0.0.1:19982
-python3 agentscope-service/tests/managed-mq-redis/replicas.py start --mq-profile min-offset --state /tmp/managed-min-example --concurrency 1 --callbacks 1
+python3 managed-agents/tests/managed-mq-redis/replicas.py start --mq-profile min-offset --state /tmp/managed-min-example --concurrency 1 --callbacks 1
 ```
 
 Replica manifests pin the chosen profile, endpoint and derivative status; restart uses that
@@ -688,16 +670,16 @@ same choice. A production deployment must provide tested earliest-offset behavio
 three channels. The test derivative's pass cannot certify unmodified 5.5.1 or a managed MQ
 provider, and integration success does not imply formal production deployment.
 
-## Current Hands boundary regression
+## Current Tool Worker boundary regression
 
 The earlier `agent_service_bootstrap_smoke.py` / `agent_service_postgres_smoke.py`
 HTTP runtime fixtures have been retired. Current process acceptance uses this directory's
-native `replicas.py`, `checkpoints.py`, tool-stream, cancellation and Hands-restart cases.
+native `replicas.py`, `checkpoints.py`, tool-stream, cancellation and Tool Worker-restart cases.
 Java `ManagedEnvironmentWorkspaceIntegrationTest` and `ManagedCheckpointWorkspaceIntegrationTest`
-now drive the Brain administrative Outbox, Hands command consumer, immutable target and result
+now drive the Agent Harness Runtime administrative Outbox, Tool Worker command consumer, immutable target and result
 consumer used in production. `ManagedAdministrativeWorkerTest` covers unknown takeover, late
-results and conflicts for both workspace phases. `ManagedHandsRealInfrastructureTest` runs the
-same Brain/Hands failure cases with separate PostgreSQL databases, real Redis and RocketMQ Lite.
+results and conflicts for both workspace phases. `ManagedToolWorkerRealInfrastructureTest` runs the
+same Agent Harness Runtime/Tool Worker failure cases with separate PostgreSQL databases, real Redis and RocketMQ Lite.
 
 Depth Topic consolidation requires draining the old deployment before switching producers and
 consumers; see [the coordinated cutover procedure](../../deploy/README.md#consolidated-turn-topic-upgrade).
@@ -716,7 +698,7 @@ Use exclusively owned fixtures/databases: the test consumes the default five Lit
 ```sh
 MANAGED_MQ_TEST_ENDPOINT=127.0.0.1:19981 \
 MANAGED_DATABASE_TEST_URI=jdbc:postgresql://127.0.0.1:16991/managed_mq_lite_test \
-mvn -B -ntp -T1 -pl agentscope-service/service-common -am test \
+mvn -B -ntp -T1 -pl managed-agents/common -am test \
   -Dtest=ManagedTurnAcknowledgementsTest,ManagedPostgresTurnAcknowledgementsIntegrationTest,ManagedLitePushConsumerTest,RocketMqTurnAcknowledgementsIntegrationTest \
   -Dsurefire.failIfNoSpecifiedTests=false
 ```

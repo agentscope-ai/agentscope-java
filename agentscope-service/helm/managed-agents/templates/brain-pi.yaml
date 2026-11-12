@@ -1,0 +1,101 @@
+{{- if not (has .Values.brain.type (list "agentscope-java" "pi" "pi-durable" "codex")) -}}
+{{- fail "brain.type must be agentscope-java, pi, pi-durable, or codex" -}}
+{{- end -}}
+{{- if and (not .Values.schema.only) (has .Values.brain.type (list "pi" "pi-durable")) -}}
+{{- $name := include "service.name" . -}}
+{{- $config := index .Values "agent-harness-runtime" -}}
+{{- $pi := .Values.brain.pi -}}
+{{- $secret := required "brain.pi.existingSecret must name a dedicated Brain Secret" $pi.existingSecret -}}
+{{- if has $secret (list .Values.existingSecret .Values.schema.existingSecret .Values.data.existingSecret .Values.schema.dataExistingSecret .Values.runtime.mq.existingSecret .Values.objectStore.existingSecret .Values.queryStore.existingSecret) -}}
+{{- fail "PI Brain Secret must differ from database, MQ, object-store and migration Secrets" -}}
+{{- end -}}
+{{- if not .Values.runtime.sessionQueue.enabled -}}
+{{- fail "PI Brain requires runtime.sessionQueue.enabled=true" -}}
+{{- end -}}
+{{- if or (lt (int $pi.concurrency) 1) (gt (int $pi.concurrency) 64) -}}
+{{- fail "brain.pi.concurrency must be 1..64" -}}
+{{- end -}}
+{{- if le (mul (int $pi.terminationGracePeriodSeconds) 1000) (add (int $pi.drainMs) (int $pi.abortGraceMs)) -}}
+{{- fail "PI termination grace must exceed drainMs + abortGraceMs" -}}
+{{- end -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $name }}-agent-harness-runtime
+  labels:
+    {{- include "service.labels" . | nindent 4 }}
+    app.kubernetes.io/component: agent-harness-runtime
+spec:
+  replicas: {{ $config.replicas }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate: {maxSurge: 1, maxUnavailable: 0}
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      app.kubernetes.io/component: agent-harness-runtime
+  template:
+    metadata:
+      labels:
+        {{- include "service.labels" . | nindent 8 }}
+        app.kubernetes.io/component: agent-harness-runtime
+    spec:
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: {{ $pi.terminationGracePeriodSeconds }}
+      securityContext: {runAsNonRoot: true, runAsUser: 1000, runAsGroup: 1000, fsGroup: 1000}
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: agent-harness-runtime
+          image: {{ $config.image | default (printf "%s/managed-agents-brain-pi:%s" (required "imageRepository is required" .Values.imageRepository) ($pi.imageTag | default .Values.imageTag | default .Chart.AppVersion)) | quote }}
+          imagePullPolicy: {{ .Values.imagePullPolicy }}
+          securityContext:
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+            capabilities: {drop: [ALL]}
+          ports: [{name: http, containerPort: 8082}]
+          envFrom: [{secretRef: {name: {{ $secret | quote }}}}]
+          env:
+            - {name: PORT, value: "8082"}
+            - {name: SESSION_SERVICE_URL, value: "http://{{ $name }}-agent-service:8084/internal/session-service/v0"}
+            - {name: MANAGED_AGENTS_HARNESS_TYPE, value: {{ .Values.brain.type | quote }}}
+            {{- include "service.evaluationEnv" . | nindent 12 }}
+            - {name: BRAIN_CONCURRENCY, value: {{ $pi.concurrency | quote }}}
+            - {name: BRAIN_INLINE_WAIT_MS, value: {{ $pi.inlineWaitMs | quote }}}
+            - {name: BRAIN_DRAIN_MS, value: {{ $pi.drainMs | quote }}}
+            - {name: BRAIN_ABORT_GRACE_MS, value: {{ $pi.abortGraceMs | quote }}}
+            - {name: BRAIN_RETRY_BASE_MS, value: {{ $pi.retryBaseMs | quote }}}
+            - {name: BRAIN_RETRY_MAX_MS, value: {{ $pi.retryMaxMs | quote }}}
+            - {name: BRAIN_RETRY_BUDGET, value: {{ $pi.retryBudget | quote }}}
+          startupProbe: {httpGet: {path: /healthz, port: http}, periodSeconds: 2, failureThreshold: 30}
+          livenessProbe: {httpGet: {path: /healthz, port: http}, periodSeconds: 15}
+          readinessProbe: {httpGet: {path: /readyz, port: http}, periodSeconds: 5}
+          volumeMounts:
+            - {name: workspace, mountPath: /workspace}
+            - {name: tmp, mountPath: /tmp}
+          resources:
+            {{- toYaml $config.resources | nindent 12 }}
+      volumes:
+        - {name: workspace, emptyDir: {}}
+        - {name: tmp, emptyDir: {}}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $name }}-agent-harness-runtime
+spec:
+  selector:
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/component: agent-harness-runtime
+  ports: [{name: http, port: 8082, targetPort: http}]
+{{- end }}

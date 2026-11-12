@@ -2278,7 +2278,7 @@
     }
   },
   "additionalProperties": true,
-  "description": "A AgentScope Service `session`.",
+  "description": "A Managed Agents `session`.",
   "properties": {
     "id": {
       "title": "Id",

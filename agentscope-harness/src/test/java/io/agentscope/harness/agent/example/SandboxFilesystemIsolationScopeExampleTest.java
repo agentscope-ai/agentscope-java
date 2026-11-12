@@ -32,7 +32,7 @@ import io.agentscope.harness.agent.IsolationScope;
 import io.agentscope.harness.agent.example.support.InMemorySandboxClient;
 import io.agentscope.harness.agent.example.support.InMemorySandboxFilesystemSpec;
 import io.agentscope.harness.agent.filesystem.local.LocalFilesystem;
-import io.agentscope.harness.agent.session.WorkspaceSessionLogStore;
+import io.agentscope.harness.agent.journal.WorkspaceThreadJournalStore;
 import io.agentscope.harness.agent.testing.HarnessQuiescence;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -119,8 +119,8 @@ class SandboxFilesystemIsolationScopeExampleTest {
                         .model(stubModel("done"))
                         .workspace(workspace.toAbsolutePath().normalize().toString())
                         .filesystem(spec)
-                        .sessionLogStore(
-                                new WorkspaceSessionLogStore(
+                        .threadJournalStore(
+                                new WorkspaceThreadJournalStore(
                                         new LocalFilesystem(workspace.resolve("journal"))))
                         .build();
 
@@ -152,8 +152,8 @@ class SandboxFilesystemIsolationScopeExampleTest {
                         .model(stubModel("done"))
                         .workspace(workspace.toAbsolutePath().normalize().toString())
                         .filesystem(spec)
-                        .sessionLogStore(
-                                new WorkspaceSessionLogStore(
+                        .threadJournalStore(
+                                new WorkspaceThreadJournalStore(
                                         new LocalFilesystem(workspace.resolve("journal"))))
                         .build();
 
@@ -189,8 +189,8 @@ class SandboxFilesystemIsolationScopeExampleTest {
                         .model(stubModel("done"))
                         .workspace(workspace.toAbsolutePath().normalize().toString())
                         .filesystem(spec)
-                        .sessionLogStore(
-                                new WorkspaceSessionLogStore(
+                        .threadJournalStore(
+                                new WorkspaceThreadJournalStore(
                                         new LocalFilesystem(workspace.resolve("journal"))))
                         .build();
 
@@ -221,8 +221,8 @@ class SandboxFilesystemIsolationScopeExampleTest {
                         .model(stubModel("done"))
                         .workspace(workspace.toAbsolutePath().normalize().toString())
                         .filesystem(spec)
-                        .sessionLogStore(
-                                new WorkspaceSessionLogStore(
+                        .threadJournalStore(
+                                new WorkspaceThreadJournalStore(
                                         new LocalFilesystem(workspace.resolve("journal"))))
                         .build();
 
@@ -257,8 +257,8 @@ class SandboxFilesystemIsolationScopeExampleTest {
                         .model(stubModel("done"))
                         .workspace(workspace.toAbsolutePath().normalize().toString())
                         .filesystem(spec)
-                        .sessionLogStore(
-                                new WorkspaceSessionLogStore(
+                        .threadJournalStore(
+                                new WorkspaceThreadJournalStore(
                                         new LocalFilesystem(workspace.resolve("journal"))))
                         .build();
 

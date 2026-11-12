@@ -19,6 +19,7 @@ import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.EventSource;
 import io.agentscope.core.agent.EventType;
+import io.agentscope.core.agent.RunOutcome;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.agent.StreamOptions;
 import io.agentscope.core.agent.SubagentEventBus;
@@ -27,12 +28,11 @@ import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.event.AgentEventEmitter;
 import io.agentscope.core.event.AgentStartEvent;
 import io.agentscope.core.event.SubagentExposedEvent;
+import io.agentscope.core.journal.JournalException;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.permission.PermissionContextState;
 import io.agentscope.core.permission.PermissionMode;
 import io.agentscope.core.permission.PermissionRule;
-import io.agentscope.core.session.SessionLogException;
-import io.agentscope.core.session.SessionRecorder;
 import io.agentscope.core.state.AgentState;
 import io.agentscope.core.tool.Tool;
 import io.agentscope.core.tool.ToolParam;
@@ -420,7 +420,7 @@ public class AgentSpawnTool {
 
         SpawnedAgent spawned =
                 new SpawnedAgent(key, agentId, sessionId, canonLabel, agent, nextDepth);
-        var recorder = io.agentscope.core.session.SessionRecorder.from(runtimeContext);
+        var recorder = io.agentscope.core.journal.InvocationRecorder.from(runtimeContext);
         if (recorder != null)
             recorder.recordNow(
                     "subagent/spawned",
@@ -433,7 +433,7 @@ public class AgentSpawnTool {
                             key,
                             "childLogAgentId",
                             agent instanceof HarnessAgent child
-                                    ? child.sessionKey(
+                                    ? child.threadKey(
                                                     RuntimeContext.builder()
                                                             .userId(currentUserId)
                                                             .sessionId(sessionId)
@@ -912,14 +912,10 @@ public class AgentSpawnTool {
                 .doOnSuccess(
                         reply -> {
                             var recorder =
-                                    io.agentscope.core.session.SessionRecorder.from(parentCtx);
+                                    io.agentscope.core.journal.InvocationRecorder.from(parentCtx);
                             if (recorder != null
-                                    && !"suspended"
-                                            .equals(
-                                                    SessionRecorder.outcome(
-                                                            reply == null
-                                                                    ? null
-                                                                    : reply.getGenerateReason())))
+                                    && RunOutcome.fromResult(reply).status()
+                                            != RunOutcome.Status.SUSPENDED)
                                 recorder.recordIfOpen(
                                         "subagent/completed",
                                         Map.of(
@@ -1093,7 +1089,7 @@ public class AgentSpawnTool {
             Disposable innerSub) {
 
         Throwable cause = err instanceof CompletionException ? err.getCause() : err;
-        if (cause instanceof ToolSuspendException || cause instanceof SessionLogException) {
+        if (cause instanceof ToolSuspendException || cause instanceof JournalException) {
             sink.error(cause);
             return;
         }

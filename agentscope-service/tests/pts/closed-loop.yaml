@@ -1,0 +1,44 @@
+# Copyright 2024-2026 the original author or authors.
+# Licensed under the Apache License, Version 2.0.
+# Populate the config and token Secrets out of band. No public ingress or PTS credentials in source.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: managed-agents-closed-loop
+  namespace: agencore-ma
+  labels: {app.kubernetes.io/component: load-generator}
+spec:
+  restartPolicy: Never
+  activeDeadlineSeconds: 3600
+  terminationGracePeriodSeconds: 250
+  imagePullSecrets: [{name: acr-pull}]
+  securityContext: {runAsNonRoot: true, runAsUser: 65532, runAsGroup: 65532, fsGroup: 65532}
+  containers:
+    - name: driver
+      image: sca-registry.cn-hangzhou.cr.aliyuncs.com/agentcore/managed-agents-http-mcp-long-tool@sha256:c628644d9b74678ac1f2d7ce23b658291d6e9dbdc380cc6457a0b17381c4557a
+      command: [python, /source/closed_loop.py]
+      args: [--base-url, '$(BASE_URL)', --agent, '$(AGENT_ID)', --environment, '$(ENVIRONMENT_ID)',
+             --batch, '$(BATCH)', --concurrency, '$(CONCURRENCY)', --hold, '$(HOLD_SECONDS)',
+             --ramp, '5', --http-attempts, '6', --tool, --observer-url, 'http://managed-agents-observer:9108', --out, /results/run]
+      envFrom: [{configMapRef: {name: managed-agents-closed-loop-config}}]
+      env:
+        - name: PTS_TOKEN
+          valueFrom: {secretKeyRef: {name: managed-agents-closed-loop-token, key: token}}
+        - name: DATABASE_URI
+          valueFrom: {secretKeyRef: {name: managed-agents-observer, key: uri}}
+      resources:
+        requests: {cpu: '2', memory: 2Gi}
+        limits: {cpu: '4', memory: 4Gi}
+      volumeMounts: [{name: source, mountPath: /source, readOnly: true}, {name: results, mountPath: /results}]
+    - name: evidence
+      image: sca-registry.cn-hangzhou.cr.aliyuncs.com/agentcore/managed-agents-http-mcp-long-tool@sha256:c628644d9b74678ac1f2d7ce23b658291d6e9dbdc380cc6457a0b17381c4557a
+      command: [python, -m, http.server, '9109', --directory, /results]
+      resources:
+        requests: {cpu: 25m, memory: 32Mi}
+        limits: {cpu: 250m, memory: 256Mi}
+      volumeMounts: [{name: results, mountPath: /results, readOnly: true}]
+  volumes:
+    - name: source
+      configMap: {name: managed-agents-closed-loop-source}
+    - name: results
+      emptyDir: {sizeLimit: 512Mi}

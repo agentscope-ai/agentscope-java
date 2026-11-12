@@ -16,8 +16,8 @@ import uuid
 def has_idle_boundary(events, interrupt_event_id, next_turn):
     """History sorts by processed_at/id, not the optional Turn-notification order."""
     interrupt = next(event for event in events if event['id'] == interrupt_event_id)
-    running = next(event for event in events if event['type'] == 'agentscope_service.turn.running'
-                   and event.get('agentscope_service', {}).get('turn_id') == next_turn)
+    running = next(event for event in events if event['type'] == 'managed_agents.turn.running'
+                   and event.get('managed_agents', {}).get('turn_id') == next_turn)
     lower, upper = (datetime.fromisoformat(event['processed_at'].replace('Z', '+00:00')) for event in (interrupt, running))
     return any(event['type'] == 'session.status_idle' and event.get('stop_reason') == {'type': 'end_turn'}
                and lower <= datetime.fromisoformat(event['processed_at'].replace('Z', '+00:00')) <= upper for event in events)
@@ -32,8 +32,8 @@ def run(args):
     path = '/v1/sessions/' + urllib.parse.quote(args.session, safe='')
     marker = 'interrupt-' + str(uuid.uuid4())
     headers = {'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json',
-               'X-AgentScope-Tenant': 'default', 'X-AgentScope-Namespace': 'default',
-               'AgentScope-Extensions': 'turn-inputs-v1'}
+               'X-Managed-Agents-Tenant': 'default', 'X-Managed-Agents-Namespace': 'default',
+               'Managed-Agents-Extensions': 'turn-inputs-v1'}
 
     def api(suffix, body=None, key=None):
         request = urllib.request.Request(config['baseUrl'] + path + suffix,
@@ -44,20 +44,20 @@ def run(args):
 
     def message(text, intent=True):
         return {'type': 'user.message', 'content': [{'type': 'text', 'text': text}],
-                **({'agentscope_service': {'intent': 'new_turn'}} if intent else {})}
+                **({'managed_agents': {'intent': 'new_turn'}} if intent else {})}
 
-    assert api('/capabilities')['protocol_revision'] == 'agentscope-service-2026-10-19-draft3'
+    assert api('/capabilities')['protocol_revision'] == 'managed-agents-2026-10-19-draft3'
     first = api('/events', {'events': [message('请只调用一次 longwait__long_wait，seconds=15，marker=' + marker + '。等待真实结果再回答。')]}, marker + '-t1')
-    t1 = first['data'][0]['agentscope_service']['turn_id']
+    t1 = first['data'][0]['managed_agents']['turn_id']
     deadline = time.monotonic() + 180
     while api('/turns/' + t1)['status'] != 'waiting_tool':
         assert time.monotonic() < deadline, 'T1 did not suspend'
         time.sleep(1)
-    t2 = api('/events', {'events': [message('不要调用工具，只回复 T2-OK')]}, marker + '-t2')['data'][0]['agentscope_service']['turn_id']
+    t2 = api('/events', {'events': [message('不要调用工具，只回复 T2-OK')]}, marker + '-t2')['data'][0]['managed_agents']['turn_id']
     batch = {'events': [{'type': 'user.interrupt'}, message('不要调用工具，只回复 FOLLOWUP-OK', False)]}
     receipt = api('/events', batch, marker + '-interrupt')
-    assert receipt['data'][0]['agentscope_service']['turn_id'] == t1
-    t3 = receipt['data'][1]['agentscope_service']['turn_id']
+    assert receipt['data'][0]['managed_agents']['turn_id'] == t1
+    t3 = receipt['data'][1]['managed_agents']['turn_id']
     states = []
     while True:
         current = [api('/turns/' + turn)['status'] for turn in [t1, t2, t3]]
@@ -71,7 +71,7 @@ def run(args):
         time.sleep(1)
     assert api('/events', batch, marker + '-interrupt') == receipt, 'Frozen interrupt receipt changed'
     try:
-        api('/events', {'events': [{'type': 'user.interrupt', 'agentscope_service': {'intent': 'cancel', 'turn_id': t1}}]}, marker + '-terminal')
+        api('/events', {'events': [{'type': 'user.interrupt', 'managed_agents': {'intent': 'cancel', 'turn_id': t1}}]}, marker + '-terminal')
         raise AssertionError('Terminal cancel unexpectedly admitted')
     except urllib.error.HTTPError as error:
         detail = json.load(error)
@@ -82,8 +82,8 @@ def run(args):
         events.extend(page['data']); cursor = page['next_page']
         if cursor is None: break
     def index(kind, turn):
-        return next(i for i, event in enumerate(events) if event['type'] == kind and event.get('agentscope_service', {}).get('turn_id') == turn)
-    assert index('agentscope_service.turn.cancelled', t1) < index('agentscope_service.turn.running', t2) < index('agentscope_service.turn.running', t3)
+        return next(i for i, event in enumerate(events) if event['type'] == kind and event.get('managed_agents', {}).get('turn_id') == turn)
+    assert index('managed_agents.turn.cancelled', t1) < index('managed_agents.turn.running', t2) < index('managed_agents.turn.running', t3)
     assert has_idle_boundary(events, receipt['data'][0]['id'], t2), 'Missing interrupt/idle/end_turn boundary'
     result = {'passed': True, 'sessionId': args.session, 'turns': [t1, t2, t3], 'states': states, 'receipt': receipt, 'events': events}
     report = args.out_dir/'report.json'; report.write_text(json.dumps(result, indent=2, ensure_ascii=False)+'\n'); report.chmod(0o600)

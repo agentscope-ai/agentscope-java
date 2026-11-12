@@ -28,7 +28,7 @@ spec.loader.exec_module(release)
 
 VERSION = '2.1.0-BETA1'
 COMMIT = 'a' * 40
-GO_REF = 'refs/tags/agentscope-service/service-controlplane/v' + VERSION
+GO_REF = 'refs/tags/managed-agents/control-plane/v' + VERSION
 
 
 class GitHubReleaseTests(unittest.TestCase):
@@ -73,7 +73,7 @@ class GitHubReleaseTests(unittest.TestCase):
     def test_source_requires_matching_java_go_versions_and_module_major(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            control = root / 'agentscope-service/service-controlplane'
+            control = root / 'managed-agents/control-plane'
             (control / 'internal/version').mkdir(parents=True)
             for revision, go_version, module in [
                     (VERSION, VERSION, 'example.com/module/v2'),
@@ -85,7 +85,7 @@ class GitHubReleaseTests(unittest.TestCase):
                 (control / 'go.mod').write_text(f'module {module}\n')
                 with self.subTest(revision=revision, go_version=go_version, module=module), \
                         mock.patch.object(release, 'ROOT', root), \
-                        mock.patch.object(release, 'SERVICE', root / 'agentscope-service'), \
+                        mock.patch.object(release, 'SERVICE', root / 'managed-agents'), \
                         mock.patch.object(release, 'require_clean'), \
                         mock.patch.object(release, 'run', return_value=COMMIT):
                     if revision == go_version == VERSION and module.endswith('/v2'):
@@ -107,12 +107,12 @@ class GitHubReleaseTests(unittest.TestCase):
             return run.call_args_list, go_tag.call_args_list
 
     def package_fixture(self, output):
-        names = [f'agentscope-cli-{VERSION}-{system}-{arch}.tar.gz'
+        names = [f'managed-agents-cli-{VERSION}-{system}-{arch}.tar.gz'
                  for system, arch in [('linux', 'amd64'), ('linux', 'arm64'),
                                       ('darwin', 'amd64'), ('darwin', 'arm64')]]
-        names += [f'agentscope-service-{VERSION}-compose.tar.gz',
-                  f'agentscope-service-{VERSION}-kubernetes.tar.gz',
-                  f'agentscope-service-{VERSION}.tgz', 'release-manifest.json']
+        names += [f'managed-agents-{VERSION}-compose.tar.gz',
+                  f'managed-agents-{VERSION}-kubernetes.tar.gz',
+                  f'managed-agents-{VERSION}.tgz', 'release-manifest.json']
         for name in names:
             (output / name).write_bytes(b'archive fixture')
         (output / 'release-manifest.json').write_text(json.dumps({

@@ -57,7 +57,7 @@
     <modules>
         <module>agentscope-core</module>
         <module>agentscope-harness</module>
-        <module>agentscope-service</module>
+        <module>agentscope-durable</module>
         <module>agentscope-extensions</module>
         <module>agentscope-examples</module>
         <module>agentscope-dependencies-bom</module>
@@ -361,6 +361,18 @@
     </build>
 
     <profiles>
+        <profile>
+            <id>service-modules</id>
+            <activation>
+                <property>
+                    <name>agentscope.frameworkOnly</name>
+                    <value>!true</value>
+                </property>
+            </activation>
+            <modules>
+                <module>agentscope-service</module>
+            </modules>
+        </profile>
         <profile>
             <id>release</id>
             <build>

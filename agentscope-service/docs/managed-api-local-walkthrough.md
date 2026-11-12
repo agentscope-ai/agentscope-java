@@ -1,4 +1,4 @@
-# AgentScope Service 本地 API 测试手册
+# Managed Agents 本地 API 测试手册
 
 > 本文保留旧部署的基础设施诊断记录，其中 /turns 写入、snapshot 与持久 SSE 示例不适用于 Draft 3。
 > 新源码协议见 [会话事件 API](../../docs/v2/zh/service/claude-session-api.md)；新 MCP 验收见
@@ -7,7 +7,7 @@
 
 从创建 Environment、Agent、Session 开始，提交一个调用 90 秒工具的 Turn，再提交第二个 Turn，验证排队、checkpoint、工具结果回传、推理恢复和结果订阅。
 
-这套流程对应 2026 年 10 月 16 日启动的本地源码环境：入口为 `http://localhost:18080`，启用本地开发模式，无需认证请求头；使用真实模型、PostgreSQL、Redis 和 RocketMQ，工具通过本机 Hands 子进程执行。当前环境未接入 ACS Sandbox，因此本流程验证本地 Brain 与 Hands 分离链路。
+这套流程对应 2026 年 10 月 16 日启动的本地源码环境：入口为 `http://localhost:18080`，启用本地开发模式，无需认证请求头；使用真实模型、PostgreSQL、Redis 和 RocketMQ，工具通过本机 Tool Worker 子进程执行。当前环境未接入 ACS Sandbox，因此本流程验证本地 Agent Harness Runtime 与 Tool Worker 分离链路。
 
 ## 1 准备终端和变量
 
@@ -21,8 +21,8 @@ bash
 set -o pipefail
 umask 077
 
-REPO=$REPO_ROOT
-RUN_DIR="$REPO/agentscope-service/.dev-stack"
+REPO=/Users/ken/agentcore/agentcore-managed-agents
+RUN_DIR="$REPO/managed-agents/.dev-stack"
 D="$RUN_DIR/manual-api"
 API="$RUN_DIR/manual-api.sh"
 BASE=http://localhost:18080
@@ -38,7 +38,7 @@ save_state() {
 }
 
 db() {
-  docker exec -i agentscope-service-native-dev-pg \
+  docker exec -i managed-agents-native-dev-pg \
     psql -X -v ON_ERROR_STOP=1 -U builder -d builder "$@"
 }
 ```
@@ -145,7 +145,7 @@ curl --fail-with-body -sS "$BASE/v1/sessions/$SESSION_ID" | jq .
 另开终端 B，加载终端 A 保存的 Session，保持 SSE 连接打开：
 
 ```bash
-source $REPO_ROOT
+source /Users/ken/agentcore/agentcore-managed-agents/managed-agents/.dev-stack/manual-api/active.env
 
 curl --fail-with-body -NsS \
   "$BASE/v1/sessions/$SESSION_ID/events/stream"
@@ -353,7 +353,7 @@ mqadmin consumerProgress -n namesrv:9876 \
 | 通道 | 父 Topic | 消费组 |
 | --- | --- | --- |
 | Turn | `ma_local_turns_v3` | `ma_local_brain_v3` |
-| Brain 运行事件 | `ma_local_runtime_events_v3` | `ma_local_hands_events_v3` |
+| Agent Harness Runtime 运行事件 | `ma_local_runtime_events_v3` | `ma_local_hands_events_v3` |
 | 工具事件 | `ma_local_tool_events_v3` | `ma_local_hands_tool_events_v3` |
 | Resume | `ma_local_turn_resumes_v3` | `ma_local_brain_resumes_v3` |
 
@@ -404,7 +404,7 @@ curl --fail-with-body -sS \
 
 当前本机长工具运行期间可能暂时显示 `unknown` 和 `result_status=pending`。应结合 Turn 状态、stdout 和最终结果判断，不要因此重新执行同一条命令。
 
-### 9.2 数据库和实际 Hands 进程
+### 9.2 数据库和实际 Tool Worker 进程
 
 ```bash
 "$API" tools
@@ -423,7 +423,7 @@ SQL
 )
 
 JOB_DIR="$RUN_DIR/sandbox/$SCOPE_KEY/.managed-tools/$EXECUTION_ID"
-printf 'Hands process directory: %s\n' "$JOB_DIR"
+printf 'Tool Worker process directory: %s\n' "$JOB_DIR"
 jq '{execution,tool,arguments,operation}' "$JOB_DIR/request.json"
 if [ -f "$JOB_DIR/output" ]; then cat "$JOB_DIR/output"; fi
 if [ -f "$JOB_DIR/result.json" ]; then jq . "$JOB_DIR/result.json"; fi
@@ -549,7 +549,7 @@ curl --fail-with-body -sS \
 当前服务由本机 Java 和 Go 进程运行，启动脚本将标准输出和标准错误重定向到独立文件，目录为：
 
 ```bash
-RUN_DIR=$REPO_ROOT
+RUN_DIR=/Users/ken/agentcore/agentcore-managed-agents/managed-agents/.dev-stack
 API="$RUN_DIR/manual-api.sh"
 LOG_DIR="$RUN_DIR/logs"
 ls -lh "$LOG_DIR"
@@ -559,13 +559,13 @@ ls -lh "$LOG_DIR"
 | --- | --- | --- | --- |
 | Gateway | `18080` | `gateway.log` | 入口路由、连接和转发异常 |
 | Control Plane | `8081` | `control.log` | Agent、Environment 等资源定义与配置 |
-| Session Portal | `8084` | `portal.log` | Session、Turn、Input 受理，查询与 SSE |
-| Dataplane / Brain | `8082` | `data.log` | Agent 构建、模型调用、工具调用与恢复后的推理 |
-| Hands | `8085` | `hands.log` | 事件消费、checkpoint 提交、工具执行和恢复异常 |
-| Go Orchestration Runtime | `8086` | `orchestration.log` | 独立编排运行时；本例的 Brain 在 Dataplane 中运行 |
+| Agent Service | `8084` | `portal.log` | Session、Turn、Input 受理，查询与 SSE |
+| Dataplane / Agent Harness Runtime | `8082` | `data.log` | Agent 构建、模型调用、工具调用与恢复后的推理 |
+| Tool Worker | `8085` | `hands.log` | 事件消费、checkpoint 提交、工具执行和恢复异常 |
+| Go Orchestration Runtime | `8086` | `orchestration.log` | 独立编排运行时；本例的 Agent Harness Runtime 在 Dataplane 中运行 |
 | Scheduler | `8083` | `scheduler.log` | 调度、外部消息和 Webhook 投递相关问题 |
 
-每个文件均位于 `LOG_DIR`。例如，在两个终端分别跟踪 Brain 和 Hands：
+每个文件均位于 `LOG_DIR`。例如，在两个终端分别跟踪 Agent Harness Runtime 和 Tool Worker：
 
 ```bash
 "$API" logs data
@@ -587,7 +587,7 @@ ls -lh "$LOG_DIR"
 tail -n 100 -F "$LOG_DIR/data.log" "$LOG_DIR/hands.log" "$LOG_DIR/portal.log"
 ```
 
-这些命令会持续运行，`Ctrl+C` 仅停止跟踪。启动和迁移失败时另外查看 `schema-control.log`、`schema-session-portal.log`、`schema-brain.log`、`schema-runtime.log` 和 `schema-grants.log`。
+这些命令会持续运行，`Ctrl+C` 仅停止跟踪。启动和迁移失败时另外查看 `schema-control.log`、`schema-agent-service.log`、`schema-agent-harness-runtime.log`、`schema-runtime.log` 和 `schema-grants.log`。
 
 ### 12.2 查找一轮任务相关的日志
 
@@ -618,9 +618,9 @@ tail -n 100 -F "$LOG_DIR/data.log" "$LOG_DIR/hands.log" \
   | rg --line-buffered 'PRE_CALL|PRE_REASONING|POST_REASONING|PRE_ACTING|POST_ACTING|POST_CALL|ManagedToolWaiting|unacknowledged|unconfirmed|retry/reconciliation'
 ```
 
-长工具挂起时，当前 Agent Trace 会将 `ManagedToolWaiting: Inline tool wait expired; the original Hands operation remains active` 记录在带 `ERROR` 字样的消息中。这是内联短等待结束的信号；应结合公共 Turn 的 `waiting_tool`、挂起 checkpoint 和后续恢复判断，不能仅凭这行判定任务失败。
+长工具挂起时，当前 Agent Trace 会将 `ManagedToolWaiting: Inline tool wait expired; the original Tool Worker operation remains active` 记录在带 `ERROR` 字样的消息中。这是内联短等待结束的信号；应结合公共 Turn 的 `waiting_tool`、挂起 checkpoint 和后续恢复判断，不能仅凭这行判定任务失败。
 
-升级前的 Hands 进程正常运行时可能长期只有启动信息；包含新增日志的构建会记录工具启动、查询已有执行、结果提交和工具事件发布；Resume 发布日志位于 Brain。工具 stdout 仍在第 9 节的 `JOB_DIR/output`，完整工具结果在数据库和 `result.json` 中，结构化生命周期日志不打印这些正文。
+升级前的 Tool Worker 进程正常运行时可能长期只有启动信息；包含新增日志的构建会记录工具启动、查询已有执行、结果提交和工具事件发布；Resume 发布日志位于 Agent Harness Runtime。工具 stdout 仍在第 9 节的 `JOB_DIR/output`，完整工具结果在数据库和 `result.json` 中，结构化生命周期日志不打印这些正文。
 
 ### 12.3 基础设施日志
 
@@ -628,7 +628,7 @@ tail -n 100 -F "$LOG_DIR/data.log" "$LOG_DIR/hands.log" \
 
 | 组件 | 容器名 |
 | --- | --- |
-| PostgreSQL | `agentscope-service-native-dev-pg` |
+| PostgreSQL | `managed-agents-native-dev-pg` |
 | Redis | `managed-mq-redis-redis-1` |
 | MQ NameServer | `managed-mq-redis-lite-min-offset-namesrv-1` |
 | MQ Broker | `managed-mq-redis-lite-min-offset-broker-1` |
@@ -648,7 +648,7 @@ docker exec managed-mq-redis-lite-min-offset-broker-1 sh -c \
 
 ## 13 多实例与跨机器恢复的观察方式
 
-本节是后续验证准备，不表示已完成多实例或跨机器验收。当前运行的 Dataplane 和 Hands 各一个实例。
+本节是后续验证准备，不表示已完成多实例或跨机器验收。当前运行的 Dataplane 和 Tool Worker 各一个实例。
 
 ### 13.1 区分物理实例
 
@@ -657,15 +657,15 @@ docker exec managed-mq-redis-lite-min-offset-broker-1 sh -c \
 下一次启动各个 Java 实例时，为结构化日志配置独立物理实例标签。下面仅展示日志配置片段，应用到完整部署环境后再启动进程；执行这些 `export` 不会修改已经运行的 JVM：
 
 ```bash
-export BUILDER_INSTANCE_ID=dataplane-a
+export MANAGED_AGENTS_INSTANCE_ID=dataplane-a
 
 # 可选：在普通日志前缀中也展示标签
-export LOGGING_PATTERN_CONSOLE="%d{yyyy-MM-dd'T'HH:mm:ss.SSSXXX} %-5level [${BUILDER_INSTANCE_ID}] [%thread] %logger{36} : %msg%n"
+export LOGGING_PATTERN_CONSOLE="%d{yyyy-MM-dd'T'HH:mm:ss.SSSXXX} %-5level [${MANAGED_AGENTS_INSTANCE_ID}] [%thread] %logger{36} : %msg%n"
 ```
 
 在其他实例上分别更换标签，并将 stdout、stderr 收集到各自的文件或容器日志中。远程 JVM 的日志应由其所在机器或部署平台采集，不会自动写回当前机器的 `.dev-stack/logs`。
 
-新增 JSON 中的 `instance_id` 使用 `BUILDER_INSTANCE_ID`，也支持 JVM 参数 `-Dbuilder.instance-id=dataplane-a`，未指定时使用主机名和 PID。`boot_id` 在每次 JVM 启动时重新生成，可区分同一个部署标签下的重启；`host`、`pid` 同时记录。
+新增 JSON 中的 `instance_id` 使用 `MANAGED_AGENTS_INSTANCE_ID`，也支持 JVM 参数 `-Dmanaged-agents.instance-id=dataplane-a`，未指定时使用主机名和 PID。`boot_id` 在每次 JVM 启动时重新生成，可区分同一个部署标签下的重启；`host`、`pid` 同时记录。
 
 已有 `Built data-plane agent ... instanceId=dpa-...` 日志里的 `instanceId` 是逻辑 Agent 标识，不能当作 Dataplane 物理实例标识。新增的 `brain.consumer.started`、`brain.callback.registered` 和运行日志将真实消费者 ID、投递 ID 与物理进程关联。
 
@@ -676,16 +676,16 @@ export LOGGING_PATTERN_CONSOLE="%d{yyyy-MM-dd'T'HH:mm:ss.SSSXXX} %-5level [${BUI
 | PostgreSQL | 连接同一组业务和 Managed 账本，不能各自创建独立数据库 |
 | Redis | 使用同一服务和作用域，保证执行 Guard、Input 和结果信箱可见 |
 | RocketMQ | 使用同一套 Topic；相同职责的副本加入同一消费组，不能为每个实例另建业务消费组 |
-| `BUILDER_MANAGED_BLOB_DIR` | Session Portal、Brain、Hands 能读取同一份私有 batch 和 checkpoint 文件；当前实现基于文件路径，需要真正的共享文件系统，只有相同目录字符串不够 |
+| `MANAGED_AGENTS_RUNTIME_BLOB_DIR` | Agent Service、Agent Harness Runtime、Tool Worker 能读取同一份私有 batch 和 checkpoint 文件；当前实现基于文件路径，需要真正的共享文件系统，只有相同目录字符串不够 |
 | 工作区与资源文件 | 定义文件、资源和需要共享的产物使用一致的可访问存储，不能依赖另一台机器的本地目录 |
-| Sandbox | 各 Hands 副本能通过持久绑定访问同一个远程 Sandbox 和稳定 `execution_id` |
-| 模型及资源配置 | Brain 副本都能解析同一冻结配置，并具备可用的模型连接 |
+| Sandbox | 各 Tool Worker 副本能通过持久绑定访问同一个远程 Sandbox 和稳定 `execution_id` |
+| 模型及资源配置 | Agent Harness Runtime 副本都能解析同一冻结配置，并具备可用的模型连接 |
 | 日志、进程、监听端口 | 每实例独立；同机监听端口不能冲突 |
 | 服务地址 | PostgreSQL、Redis、MQ Proxy、Control Plane 等地址从每台机器均可达；本机配置中的 `localhost` 不能原样用于跨机部署 |
 
-当前 `local-test-mode` 在 Hands 本机启动子进程，其执行目录、进程身份和进程控制依赖宿主机。同机多个 Hands 若使用它，需要共享同一个实际 Sandbox 根目录；跨机器不能仅复制这些目录或挂载共享盘，就将其视为远程 Sandbox 的等价验证。跨机工具接管应使用各副本均可重新连接的远程 Sandbox。
+当前 `local-test-mode` 在 Tool Worker 本机启动子进程，其执行目录、进程身份和进程控制依赖宿主机。同机多个 Tool Worker 若使用它，需要共享同一个实际 Sandbox 根目录；跨机器不能仅复制这些目录或挂载共享盘，就将其视为远程 Sandbox 的等价验证。跨机工具接管应使用各副本均可重新连接的远程 Sandbox。
 
-`dev-up.sh` 是整套单机开发环境启动脚本，会检查并清理服务端口，还会执行迁移作业。后续增加副本应单独启动目标组件或调整部署配置，不能直接再运行一遍它作为第二个 Dataplane 或 Hands 实例。
+`dev-up.sh` 是整套单机开发环境启动脚本，会检查并清理服务端口，还会执行迁移作业。后续增加副本应单独启动目标组件或调整部署配置，不能直接再运行一遍它作为第二个 Dataplane 或 Tool Worker 实例。
 
 ### 13.3 用持久记录跟进卸载与恢复
 
@@ -722,14 +722,14 @@ SQL
 1. 明确 Dataplane A 开始本 Turn 的物理实例与 run ID，保存其挂起 checkpoint ID、序号和待完成工具执行 ID。
 2. 确认 checkpoint 已持久提交，工具仍在运行，第二轮仍排队；按测试安排让 A 退出或不再执行恢复，不能只依赖随机消费分配来假定迁移发生。
 3. 明确 Dataplane B 实际加载了同一挂起 checkpoint，并从同一个工具结果继续推理，Turn ID 保持不变。
-4. 分别验证 Hands A 启动和 Hands B 查询或接管同一个远程执行；确认稳定执行 ID 未变化，长命令没有再次启动。
+4. 分别验证 Tool Worker A 启动和 Tool Worker B 查询或接管同一个远程执行；确认稳定执行 ID 未变化，长命令没有再次启动。
 5. 第一轮提交终态并 ACK，随后第二轮实际读取原产物；保存两边日志、公开事件、原生记录和消费位点。
 
-这些步骤应按 Brain 切换、Hands 切换、两者共同切换分开验证，最后再测试非正常退出。
+这些步骤应按 Agent Harness Runtime 切换、Tool Worker 切换、两者共同切换分开验证，最后再测试非正常退出。
 
 ### 13.4 结构化生命周期日志
 
-新增日志在 INFO 级别输出，消息前缀为 `managed_runtime `，随后是单行 JSON。必须使用包含此变更的构建并重启 Dataplane 和 Hands；旧进程不会自动加载新代码。日志只包含标识和生命周期元数据，不包含模型上下文、工具参数、工具完整结果、凭据或 Guard token。
+新增日志在 INFO 级别输出，消息前缀为 `managed_runtime `，随后是单行 JSON。必须使用包含此变更的构建并重启 Dataplane 和 Tool Worker；旧进程不会自动加载新代码。日志只包含标识和生命周期元数据，不包含模型上下文、工具参数、工具完整结果、凭据或 Guard token。
 
 这轮只在 Service 增加观测，不修改 Core、Harness 接口、数据库格式或 Turn 与 Resume 协议。关联标识在异步边界显式传递，不依赖线程局部的 Session 状态。MQ 重投可能再次输出同一 checkpoint 或工具结果的提交确认，应按 checkpoint、batch 或来源事件标识关联去重，不能将日志条数当作实际工具启动次数。
 
@@ -740,10 +740,10 @@ SQL
 | `brain.execution.started` | 本次 epoch、消费投递与选中的 checkpoint；checkpoint 可能来自前一轮 |
 | `brain.checkpoint.loaded` | 已校验并读取本 Turn 的挂起 checkpoint、加载 continuation；包括 checkpoint 的原 run、序号和恢复阶段 |
 | `brain.run.started` / `brain.run.exited` | 当前 run ID、epoch、checkpoint；退出区分 `suspended`、`returned`、`aborted` |
-| `brain.recovery.applied` | 恢复事实已应用并发布到原生日志通道；其持久提交仍由 Hands 完成 |
+| `brain.recovery.applied` | 恢复事实已应用并发布到原生日志通道；其持久提交仍由 Tool Worker 完成 |
 | `brain.checkpoint.published` | Broker 已接受 checkpoint 批次；挂起批次包括 `pending_task_ids` 和 `suspension_id`，此时不能认定 DB 已提交 |
-| `hands.checkpoint.committed` | Hands 已提交 checkpoint；包括 batch、来源消息、checkpoint ID、序号、run、epoch 和终态或挂起信息 |
-| `brain.execution.released` | 活动执行退出并调用 Guard 释放；`handed_off` 表示已发布交接批次，是否持久提交另看 Hands 日志；构建缓存并不因此移除 |
+| `hands.checkpoint.committed` | Tool Worker 已提交 checkpoint；包括 batch、来源消息、checkpoint ID、序号、run、epoch 和终态或挂起信息 |
+| `brain.execution.released` | 活动执行退出并调用 Guard 释放；`handed_off` 表示已发布交接批次，是否持久提交另看 Tool Worker 日志；构建缓存并不因此移除 |
 | `brain.agent.cache.resolved` / `brain.agent.cache.closed` | 缓存解析和实际移除关闭；用 `cache_entry` 和 `logical_agent_id` 关联，关闭可能发生在活跃 Turn 之外 |
 | `hands.sandbox.attached` | Session 与 Sandbox 绑定；远程 Sandbox 区分 `created` 和 `reconnected` |
 | `hands.tool.execution.claimed` | worker 取得工具执行权，包含 Session、Turn、task、execution、checkpoint 序号和 `first_launch` |
@@ -754,7 +754,7 @@ SQL
 | `hands.tool.result.notified` / `hands.tool.stored_result.reused` | 结果已投递信箱，或恢复 worker 复用已冻结结果 |
 | `hands.resume.published` | 独立 Resume 已发布，关联 Turn、挂起点和挂起 epoch |
 | `hands.callback.notification.published` / `brain.callback.notification.received` | 匹配原 callback 的完成或替换通知 |
-| `brain.callback.returning` / `hands.callback.returning` | Brain 回调返回 `SUCCESS` 或 `FAILURE`；Hands 只记录失败的回调，避免逐输出批次刷日志；回调返回不是 Broker ACK 已确认的证明，ACK 完成继续看第 8 节消费位点 |
+| `brain.callback.returning` / `hands.callback.returning` | Agent Harness Runtime 回调返回 `SUCCESS` 或 `FAILURE`；Tool Worker 只记录失败的回调，避免逐输出批次刷日志；回调返回不是 Broker ACK 已确认的证明，ACK 完成继续看第 8 节消费位点 |
 
 用 JSON 字段实时跟踪当前 Session：
 
@@ -771,14 +771,14 @@ tail -n 200 -F "$LOG_DIR/data.log" "$LOG_DIR/hands.log" \
 
 查询历史时，将 `tail ...` 换为 `cat "$LOG_DIR/data.log" "$LOG_DIR/hands.log"`。跨机器先分别收集日志，再用相同字段合并分析。消费者启动、SDK 回调返回以及缓存关闭事件可能没有当前 Session 或 Turn 字段，应分别通过 `consumer_id`、`delivery_id`、`cache_entry` 与带完整作用域的记录关联，不能因为上面的 Session 过滤未显示它们而判定事件没有发生。
 
-验证 A 到 B 恢复时，比较提交该挂起点的 Hands 实例的 `hands.checkpoint.committed` 与 Dataplane B 的 `brain.checkpoint.loaded` 中的 checkpoint ID，并确认同一个 Turn 在 B 上有新的 run 和 epoch。工具接管则比较 `execution_id`，结合 `hands.tool.querying_existing`、结果提交和最终退出状态判断，不能只数启动请求日志；启动请求也可能是稳定 ID 的幂等重试。
+验证 A 到 B 恢复时，比较提交该挂起点的 Tool Worker 实例的 `hands.checkpoint.committed` 与 Dataplane B 的 `brain.checkpoint.loaded` 中的 checkpoint ID，并确认同一个 Turn 在 B 上有新的 run 和 epoch。工具接管则比较 `execution_id`，结合 `hands.tool.querying_existing`、结果提交和最终退出状态判断，不能只数启动请求日志；启动请求也可能是稳定 ID 的幂等重试。
 
 ## 14 继续已有测试和常用命令
 
 重新打开终端时，进入 Bash 并加载已保存的变量，无需重新创建资源：
 
 ```bash
-source $REPO_ROOT
+source /Users/ken/agentcore/agentcore-managed-agents/managed-agents/.dev-stack/manual-api/active.env
 D="$RUN_DIR/manual-api"
 API="$RUN_DIR/manual-api.sh"
 ```
@@ -800,7 +800,7 @@ API="$RUN_DIR/manual-api.sh"
 | 完整事件导出 | `"$API" history` |
 | 已提交的补充输入 | `"$API" inputs` |
 | Dataplane 日志 | `"$API" logs data` |
-| Hands 日志 | `"$API" logs hands` |
+| Tool Worker 日志 | `"$API" logs hands` |
 | 全部应用组件日志 | `"$API" logs all` |
 
 本次本机实测已经覆盖 90 秒长工具、挂起 checkpoint、独立 Resume、第二轮排队、第二轮读取工具产物和 SSE 输出。此手册对应本地基本流程；ACS 执行和多实例故障恢复不属于这次实测范围。

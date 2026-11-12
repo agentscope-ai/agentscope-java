@@ -1,416 +1,145 @@
 ---
-title: Session operations, events and recovery
-description: Build background conversations, restore the UI, handle user input and continue interrupted tasks with AgentSession.
+title: Thread journals and recovery
+description: Read messages and Run/Step facts, persist checkpoints and explicitly recover native calls; Durable schedules persistent tasks.
 zh_link: /v2/zh/docs/harness/session-log
 ---
 
-If you followed the [Quick Start](/v2/en/docs/quickstart), keep using `agent.call` for replies or `agent.streamEvents` for live output in ordinary multi-turn chat. HarnessAgent saves history and checkpoints for those calls by default. Persistence alone does not require `AgentSession`.
+HarnessAgent records execution facts and checkpoints in a native Thread journal by default. This supports continuous conversations, history and explicit recovery. Use [Durable](/v2/en/docs/harness/durable) for background queues, pause, persistent controls and autonomous takeover. A journal does not start a task scheduler.
 
-Use `AgentSession` when your application accepts a task now and lets it run in the background: the user can close the page, submit more work, add guidance, answer a question or continue after interruption. The application submits commands; the frontend independently reads committed progress. This guide follows a cost-comparison assistant through those interactions.
+## Choose the invocation model
 
-If AgentScope Service hosts your Agent, use its [Service Agent API](/v2/en/service/session-event-log). For a complete SDK application, see the [recoverable chat example](/v2/en/blogs/best-practices/session-chat).
+Direct `agent.call(input, ctx)` and `agent.streamEvents(input, ctx)` leave subscription and invocation lifetime to the application. Calls on the same Thread reuse context, while each new invocation gets a new Run. Native `turnId` may be absent; journaling does not create persistent tasks.
 
-<span id="concepts-and-basic-apis" />
+Background applications obtain Sessions through `runtime` and submit Turns on the primary or another Thread. Controls target the Turn; Run/Step describe actual execution. The following assumes a Runtime configured using the [Durable guide](/v2/en/docs/harness/durable):
 
-<span id="scenario-1-chat-queueing-and-restart-recovery" />
+```java
+var session = runtime.getSession(sessionKey);
+var turn = session.submit("request-1", "Compare proposals A and B.");
+turn.steer("request-2", "Focus on operating costs.");
+turn.pause("request-3");
+```
 
-## Start a background conversation
+A pause receipt acknowledges intent. After observing `PAUSED`, call `turn.resume(requestId, revision)` using that state's revision. Answer interactions with `turn.respond` and cancel tasks with `turn.cancel`. Queries, wait timeouts and SSE disconnection do not cancel durable tasks. Cancelling a native Agent subscription ends that invocation.
 
-Configure a shared Builder, then let your application's session manager build and retain the runtime that owns the conversation. The following assumes `model` is configured as described in [Models](/v2/en/docs/building-blocks/model):
+## Read one Thread's messages and execution facts
+
+`ThreadKey(userId, agentId, sessionId, threadId)` identifies the context. Preserve this identity and its storage namespace. Threads in one Session have independent working state and journals. Applications coordinate concurrent direct calls on the same Thread; Durable provides persistent FIFO and ownership.
 
 ```java
 import io.agentscope.core.agent.RuntimeContext;
-import io.agentscope.harness.agent.HarnessAgent;
-import java.nio.file.Path;
+import io.agentscope.core.journal.JournalProjection;
+import io.agentscope.core.journal.ThreadHistory;
 
-HarnessAgent.Builder chatBuilder = HarnessAgent.builder()
-        .name("Cost Assistant")
-        .agentId("cost-assistant")
-        .model(model)
-        .workspace(Path.of("/data/chat-workspace"));
+RuntimeContext ctx = RuntimeContext.builder()
+        .userId("alice")
+        .sessionId("conversation-001")
+        .threadId("main")
+        .build();
 
-// The application session manager retains this runtime.
-HarnessAgent agent = chatBuilder.build();
-var ctx = RuntimeContext.builder()
-        .userId("alice").sessionId("conversation-001").build();
-var session = agent.session(ctx);
-
-var task = session.submit("request-001", "Compare the operating costs of plans A and B");
-System.out.println(task.turnId());
+var journal = agent.threadJournal(ctx);
+var transcript = ThreadHistory.transcript(journal);
+transcript.messages().forEach(message ->
+        System.out.println(message.getTextContent()));
+var projection = JournalProjection.read(journal);
+var events = journal.readAfter(0, 100);
 ```
 
-Return the task receipt from the HTTP handler. `submit` durably accepts the input and allocates a `turnId`; execution can still be queued, so its `runId` may be absent. Retry a failed submission request with the same request key and identical input to obtain the existing receipt. A different task needs a different key.
+Reads neither claim a writer nor repair state or invoke a model. Harness also supplies `threadTranscript(ctx)` and `inspectThread(ctx)`. Native queries and storage SPIs are blocking; WebFlux applications must schedule them on suitable blocking workers rather than network event loops.
 
-Keep the Agent alive after that response: closing it stops scheduling and interrupts active work. Close it when its owning session manager shuts down or deliberately releases the runtime. This differs from ordinary direct requests, whose caller builds and closes the Agent per request; see [Instance lifecycle](/v2/en/docs/building-blocks/agent#instance-lifecycle).
+`ThreadHistory.Transcript` contains complete messages and `asOfSeq`, not a public UI snapshot with task controls, partial text and tool progress. Durable applications restore the UI through Session/Thread/Turn `snapshot()`, `history()` and event APIs instead of inferring Turn state from native logs. See the runnable [recoverable chat example](/v2/en/blogs/best-practices/session-chat).
 
-Further submissions queue in acceptance order while the session is busy. Interruption or pending human input parks the queue until the unfinished task continues. To observe a task from a CLI or worker:
+## Event envelope and reads
 
-```java
-var outcome = session.await(task).block();
-System.out.println(outcome.status());
-session.transcript().messages().forEach(msg -> System.out.println(msg.getTextContent()));
-```
-
-`await` observes the submitted command's execution until completion, suspension, interruption or failure. It does not start, retry or cancel execution; a suspended task still needs an answer. `respond` and `resume` return new receipts to observe with `await`. Use `session.tasks()` to query task state. Disconnecting an observer does not cancel background work.
-
-Choose one execution entry for a conversation: application-owned `call` / `streamEvents`, or `AgentSession` scheduling. Reading a submitted task's log observes it; calling `streamEvents` would start another execution. Obtaining `agent.session(ctx)` or reading history never starts inference, and the transcript includes earlier direct calls made with the same identity.
-
-<span id="scenario-2-guide-execution-and-reconnect-the-frontend" />
-
-## Add guidance or material while work is running
-
-Suppose the assistant is comparing two plans and the user adds, "We only have two operators; prioritize staffing cost." This refines the current task instead of asking for another report. Send guidance while that task is running:
-
-```java
-session.steer(task, "Prioritize staffing cost; we only have two operators.");
-session.inject("Additional material: plan A requires weekly maintenance; plan B is managed.");
-```
-
-`steer(task, ...)` binds the guidance to the expected task and rejects it if that task is no longer running. `steer(input)` instead targets whichever task is currently running. Guidance becomes available at the next reasoning step; it does not rewrite an already-sent model request or change a tool call's running arguments. Unconsumed guidance remains bound to the original turn across interruption.
-
-`inject` persists reference material without starting execution. While idle, it waits for future work; if the running task has no further reasoning step, the material remains pending. Use `submit` when the user wants a separate comparison queued after the current one.
-
-## Restore the UI after refresh or reconnection
-
-Now imagine the assistant has finished looking up plan A, called a tool for plan B, and is streaming its comparison. Refreshing the page should restore the earlier messages, both tool calls, committed results and the current text prefix before new output appears. Reconnecting an event stream from a cursor alone cannot restore the content that preceded that cursor.
-
-Build the frontend around a snapshot and a stream of subsequent committed events:
-
-1. Read one committed prefix and build a snapshot containing complete messages, partial text, tool names and arguments, progress, results and pending interactions. Return a cursor covering exactly that prefix.
-2. Render that snapshot, then observe events after its cursor. Update existing items by stable message/tool IDs, or refresh the snapshot when new commits arrive.
-3. On a stream reconnect, continue after the last successfully applied cursor. If a page refresh lost the view, fetch a new snapshot before subscribing again.
-
-The SDK provides the records from which your application builds that view:
-
-```java
-var log = session.log();
-long watermark = log.head().seq();
-var committed = log.scan(0, watermark);
-// Build the application's snapshot from committed, and return watermark with it.
-
-for (var event : log.readAfter(watermark, 100)) {
-    System.out.printf("%d %s%n", event.seq(), event.type());
-    // Apply or publish this committed event before advancing the consumer cursor.
-}
-```
-
-`session.transcript()` returns complete committed messages and their `asOfSeq`; it does not reconstruct unfinished text or tool argument fragments. Those require projecting `model/chunk` and `tool/chunk` along with messages and results. Do not assemble a snapshot from separate reads at different watermarks and then attach the newest cursor: that can skip content.
-
-The [chat example](/v2/en/blogs/best-practices/session-chat) implements this application layer in `ChatHistory` and `ChatItems`. Its snapshot includes `items`, `messages`, `pending` and a consistent `cursor`. Its SSE endpoint sends filtered `committed` notifications, and the browser throttles snapshot refreshes in response; it does not apply raw model chunks directly. These snapshots and HTTP/SSE endpoints belong to the example, not a unified SDK snapshot API.
-
-Restoring a page only reads committed history. Do not resubmit the task, replay old input or call the Agent to reconstruct the UI. SDK storage operations block; WebFlux applications should schedule them on `Schedulers.boundedElastic()`.
-
-<span id="scenario-3-answer-hitl-requests"></span>
-
-## Answer HITL requests
-
-If the cost comparison needs a missing quote or approval to purchase, the Agent can suspend and persist an interaction request. Display that request from `session.pending()` and submit the user's answer using its request ID:
-
-```java
-session.pending().forEach((requestId, request) ->
-        System.out.println(requestId + " " + request.data().get("kind")));
-
-session.respond("external-request-id", "The annual quote is USD 12,000.");
-session.respond("confirmation-request-id", true);
-```
-
-These illustrate two request kinds: strings answer `external_execution` requests; booleans answer confirmation requests. Use the actual persisted IDs for your interaction. The framework resolves the original turn and tool identity, constructs the existing HITL input and continues that turn. Unknown, resolved or mismatched requests are rejected.
-
-For a confirmation denial, use `SessionAnswer.reject(reason)`. `SessionAnswer.Output` accepts custom result blocks, and `SessionAnswer.Confirmation` supports permission rules or edited tool arguments. Parallel answers can be submitted with `respond(Map<String, SessionAnswer>)`; they must belong to one turn.
-
-Direct calls can also use the [existing HITL APIs](/v2/en/docs/building-blocks/agent#human-in-the-loop); human confirmation alone does not require session scheduling. Reply to inline Service interactions through their owning service's actions endpoint.
-
-<span id="scenario-4-continue-after-interruption"></span>
-
-## Continue after interruption
-
-To pause the comparison, request interruption and wait for the running execution to stop. `interrupt()` is a cooperative request, not a completion acknowledgment. A CLI or worker can wait and then continue the original task:
-
-```java
-session.interrupt();
-var stopped = session.await(task).block();
-if ("interrupted".equals(stopped.status())) {
-    var continued = session.resume(stopped.turnId());
-}
-```
-
-In a web application, return after requesting interruption and let the UI observe task state before offering continuation. If the page knows the active run ID, use `session.interrupt(runId)` to avoid stopping a newer execution from a stale page. `resume` restores the checkpoint and unapplied original input, preserves the `turnId` and starts a new run. Applications do not construct empty input, replay messages or set turn metadata. Only the latest unfinished task can continue; completed or cancelled tasks cannot resume, and pending interactions require `respond` first.
-
-After an application restart, build the same Agent configuration and obtain the session with the same `userId`, stable `agentId`, `sessionId` and storage namespace. Read its history immediately, then explicitly start dispatching accepted work:
-
-```java
-session.start(); // Dispatch queued work; interrupted tasks still need resume(turnId).
-```
-
-`submit`, `respond` and `resume` start dispatch automatically. Read-only history pages do not need `start()`. Durable recovery needs the same tools, credentials and working files as the original task.
-
-A checkpoint restores Agent working state. It does not recreate an operating-system thread, resume a network request or restore a tool's internal progress. After a forced process exit, the previous writer lease must release or expire before another runtime can write. Inspect the saved state before continuing if a tool may have changed external data.
-
-### Reconciling uncertain tool outcomes
-
-Suppose `create_order` created an order, but the process stopped before committing the tool result. `session.inspect().uncertainToolCalls()` identifies calls whose outcomes need verification. Check the order system, then record the result you actually found:
-
-```java
-import io.agentscope.core.message.TextBlock;
-import io.agentscope.core.message.ToolResultBlock;
-import io.agentscope.core.message.ToolResultState;
-import java.util.Map;
-
-System.out.println(session.inspect().uncertainToolCalls());
-var result = ToolResultBlock.builder()
-        .id("call-id-from-inspection").name("create_order")
-        .output(TextBlock.builder().text("Order ORD-42 confirmed created").build())
-        .state(ToolResultState.SUCCESS).build();
-agent.reconcileToolOutcomes(ctx, Map.of(result.getId(), result), "Verified order-system records");
-var continued = session.resume(task.turnId());
-```
-
-Supply results covering exactly the uncertain call IDs. Reconciliation saves the verified results and checkpoint without executing those tools again; continuation is explicit. If the outcome is still unknown, investigate it rather than inventing an empty successful result. Recovery is not arbitrary history rollback.
-
-## Sessions, turns and runs
-
-A session is the continuing conversation. A turn is one logical request, and a run is one execution of that request. One run can contain many model calls, tool calls and messages. In conversation `S1`, the workflow might be:
-
-| Action | turnId | runId |
-| --- | --- | --- |
-| Submit the cost comparison | New `T1` | New `R1` once dispatched |
-| Refresh the page or steer toward staffing cost | `T1` | Still `R1` |
-| Interrupt execution | `T1` | `R1` ends |
-| Continue the comparison | `T1` | New `R2` |
-| Suspend for approval, then answer | `T1` | `R2` ends; new `R3` |
-| Submit a separate report | New `T2` | New `R4` once dispatched |
-
-The `sessionId` remains `S1`. Submission idempotency keys, interaction request IDs and event IDs serve different purposes: retrying a submission, answering a pending request and deduplicating a record. They are not interchangeable with turn IDs. This example uses suspended HITL; inline confirmation can continue within the same live run. Choose the operation that matches the user's intent and let the framework assign identities. Model calls, tool calls, messages and interaction requests also have their own IDs for correlating fragments, results and answers.
-
-<span id="history-events-and-checkpoints" />
-
-<span id="scenario-5-inspect-execution-export-records-or-change-storage" />
-
-<span id="event-envelope-and-reads" />
-
-## Inspect execution and read events
-
-Use `session.log()` or `agent.sessionLog(ctx)` to inspect a request across its runs. Group by `turnId`, then examine the model, tool and state events within each `executionRunId`:
-
-```java
-var log = session.log();
-long through = log.head().seq();
-for (var event : log.scan(0, through)) {
-    System.out.printf("%d %s turn=%s run=%s%n",
-            event.seq(), event.type(), event.turnId(), event.executionRunId());
-}
-```
-
-`scan(0, through)` reads a fixed committed prefix; `readAfter(seq, limit)` reads a batch after a cursor. Neither executes models or tools. History records what happened, while checkpoints preserve working state for later execution; compacting working context does not erase earlier history.
-
-`AgentEvent` carries live notifications; `SessionEvent` carries durable facts. A live notification is not a commit acknowledgment. Native `seq` starts at 1 and increases within a session; use it for ordering and `eventId` for deduplication. Service public SSE has its own cursor, which must not be interchanged with native sequence numbers.
-
-### Event types
-
-The catalog below helps locate the facts needed for a timeline, diagnosis or application projection:
-
-| Types | What they describe |
-| --- | --- |
-| `run/start`, `run/end`, `run/stop_requested` | Execution boundaries, outcomes and interruption requests |
-| `turn/start`, `turn/resumed`, `turn/output` | Initial invocation, continuation and final output |
-| `turn/completed`, `turn/suspended`, `turn/failed`, `turn/interrupted`, `turn/cancelled` | Logical outcomes and paused state |
-| `step/start`, `step/end` | Reasoning steps |
-| `input/received`, `input/applied`, `input/discarded` | Input admission and consumption |
-| `message/system`, `message/user`, `message/assistant` | Message history |
-| `request/prepared`, `model/dispatch`, `model/chunk`, `model/end`, `model/retry` | Adapter requests, output fragments, usage and retries |
-| `tool/requested`, `tool/decision`, `tool/dispatch`, `tool/chunk`, `tool/result` | Tool arguments, decisions, progress and results |
-| `action/start`, `action/end` | Individual tool-action boundaries |
-| `interaction/requested`, `interaction/resolved` | Pending interactions and applied answers |
-| `context/build`, `context/replaced`, `compaction/start`, `compaction/end` | Working-context changes |
-| `task/changed`, `plan/changed`, `permission/changed`, `verification/result` | Task, plan, permission and verification state |
-| `subagent/spawned`, `subagent/completed`, `subagent/linked` | Child links; full child execution lives in its own log |
-| `state/checkpoint`, `state/restored`, `recovery/applied`, `migration/baseline` | Saved state, restoration, reconciliation and imported state |
-| `inbox/started`, `inbox/applied` | Accepted commands linked to execution and checkpointed input |
-| `presentation/hint`, application types | Presentation hints and custom facts |
-
-Events cover adapter-visible requests and output, not provider internals or backups of referenced files. Keep raw requests, tool results and checkpoints in an authorized diagnostic interface; filter what you expose to a browser.
-
-The `compaction/end` payload includes `compactionId`, `status`, `beforeMsgCount`, and
-`beforeTokenCount`. When `status` is `completed`, it also includes `afterMsgCount` and
-`afterTokenCount`, calculated from the effective post-compaction conversation. Failed or cancelled
-compactions include only the before metrics because no post-compaction state is available.
-
-<Accordion title="SessionEvent envelope">
-
-Events are immutable, with payloads frozen as JSON when accepted.
+`AgentEvent` carries live invocation notifications; `JournalEvent` carries committed native facts. Live emission is not a persistence acknowledgment. Native `seq` increases within one Thread and is not interchangeable with Durable's Session-wide public cursor.
 
 | Field | Meaning |
 | --- | --- |
-| `schemaVersion` | Envelope version |
-| `eventId`, `seq` | Deduplication identity and durable order within the session |
-| `occurredAt` | Timestamp; use `seq` for ordering |
-| `type` | Event type |
-| `turnId`, `executionRunId` | Logical task and execution; administrative events may have no turn |
-| `required` | Whether recovery must recognize this type |
-| `payloadJson`, `data()` | Frozen JSON and its parsed map |
+| `schemaVersion` | Current native event version: 2 |
+| `eventId / seq` | Event identity and Thread-local commit ordering |
+| `occurredAt / type` | Timestamp and native event type |
+| `executionRunId / turnId` | Invocation and optional host-task correlation; state initialization invents no Run |
+| `required / payloadJson` | Recovery requirement and frozen JSON payload; relevant payloads contain Step identity and phase |
 
-</Accordion>
+| Event family | Contents |
+| --- | --- |
+| `run/start`, `run/end`, `run/output` | Invocation start, outcome and output |
+| `step/start`, `step/phase`, `step/end` | Steps and continuation phases within a Run |
+| `input/received`, `input/applied` | Invocation input reception and application |
+| `model/dispatch`, `model/chunk`, `model/end` | Logical model calls/output; end retains last reported usage and observation scope |
+| `model/request_started`, `model/request_usage`, `model/request_ended` | Independent attempt identity, provenance, partial usage and outcome at the shared request boundary |
+| `tool/requested`, `tool/dispatch`, `action/end`, `tool/result` | Tool decisions, execution and results |
+| `interaction/requested`, `interaction/resolved` | Native external requests and answers |
+| `state/initialized`, `state/checkpoint`, `state/restored`, `recovery/applied` | Current-format initialization, state and reconciliation facts |
+
+A normal Step includes a model decision and zero or more tool calls. A recovery Step may only apply an existing tool result. It belongs to the new Run and references its source Step. Native `run/end` does not declare a persistent Turn successful; Durable decides that after checking input and external-operation settlement.
+
+`ModelUtils` observes inside retry through the call-scoped `ModelRequestObserver`, preserving each
+transport attempt. Custom models outside this boundary report logical calls without inferred request
+counts. Usage can commit before request completion; failure/loss cannot turn missing usage into zero.
+Recording failures do not trigger provider retries, and committed-result replay creates no request.
 
 ## Storage and backend configuration
 
-Harness uses `WorkspaceSessionLogStore` by default, so storage follows the Workspace Filesystem. With `LocalFilesystem`, records live in `.agentscope-runtime/` under the root resolved for the current identity. With `RemoteFilesystem`, they occupy the `__agentscope_session_log_v1__` partition in the corresponding `BaseStore` namespace.
+Harness defaults to `WorkspaceThreadJournalStore`, scoped by its Workspace Filesystem. POSIX local storage uses atomic file commits under `.agentscope-runtime/`; Windows uses `journal.sqlite3` in that directory. Remote storage uses a reserved BaseStore partition. Do not edit internal files or keys manually.
 
-On Linux and macOS, local storage commits forced temporary files through atomic replacement and syncs their parent directories. On Windows, the Java filesystem provider cannot open directories for this sync, so local Session storage uses SQLite transactions in `.agentscope-runtime/journal.sqlite3`, with a rollback journal and `synchronous=EXTRA`. Writers still perform an atomic version comparison, and storage errors propagate to the caller. Read records through the SDK; when backing up a Windows workspace, pause all writers before copying the database, or use a consistent SQLite backup. The POSIX file layout and the Windows database hold the same logical objects but are different physical formats, so moving history between them requires a log migration or a shared backend.
+Override storage with `.threadJournalStore(store)`. Custom backends implement `ThreadJournalStore`; atomic storage implementations can supply `AtomicJournalStorage` and reuse `AtomicThreadJournal`. Preserve CAS, writer fencing, ordered/idempotent batches and export cursors. Filesystems expose this through `journalStorage(context)`; ordinary file reads/writes cannot implement atomic journal commits.
 
-`SessionKey(userId, agentId, sessionId)` identifies a conversation inside that backend. Preserve both the key and namespace across restarts. Within one Agent, the same identity reuses an `AgentSession` with a copy of its initial `RuntimeContext`; establish stable session-level configuration when first obtaining the session.
+`ThreadJournalStore.list(ctx)` discovers Threads only within the caller's storage scope; SESSION isolation does not enumerate other Sessions. In-memory stores are process-local. Shared persistence alone provides neither background claiming nor autonomous recovery; use a Durable Backend for those capabilities.
 
-<span id="shared-storage" />
+The authoritative `head.json` carries the native journal format version, currently 2. Missing/unsupported versions and corruption fail explicitly without conversion, clearing or silently creating a fresh journal over old data. Recovery follows the committed chain rather than guessing committed segments through directory listing.
 
-Working files and session records can use separate backends. For example, keep files local while storing logs and accepted commands in an application-configured `sharedStore` with atomic versioned writes:
+For state snapshots without execution history, use `.journalEnabled(false).stateStore(snapshotStore)`. Snapshot mode does not provide complete historical events. With journaling enabled, checkpoints are the native recovery authority. For Durable-managed execution, factories return Agent builders and the adapter installs the invocation Journal so it and the Backend commit state and facts together.
 
-```java
-import io.agentscope.harness.agent.filesystem.remote.RemoteFilesystem;
-import io.agentscope.harness.agent.session.WorkspaceSessionLogStore;
-import java.util.List;
+## Explicit recovery and tool reconciliation
 
-var logStore = new WorkspaceSessionLogStore(
-        new RemoteFilesystem(sharedStore, List.of("my-app", "session-history")));
-HarnessAgent.Builder sharedLogBuilder = HarnessAgent.builder()
-        .name("Cost Assistant").agentId("cost-assistant")
-        .model(model).workspace(Path.of("/data/chat-workspace"))
-        .sessionLogStore(logStore);
-```
+Direct-call recovery uses the saved native phase, input and tool results. A new invocation after completion reuses context but starts fresh execution counters; continuation retains accumulated progress and provenance. This does not restore arbitrary Java stacks or automatically execute after restart.
 
-Replicas must share this backend, namespace and session identity. Shared storage does not automatically queue concurrent direct calls to the same conversation; the application must coordinate those. AgentSession receives and queues tasks through its durable inbox, with execution owned by the started session scheduler. In-memory storage is process-local and cannot survive restart. Discovery through `SessionLogStore.list(ctx)` follows the current namespace: a session-isolated namespace does not enumerate other sessions. See [Workspace](/v2/en/docs/harness/workspace) for filesystem and namespace configuration.
+`ThreadInteractions.pending(journal)` reads native pending requests; `continuationRequests` validates selected requests and returns their original Run/Step provenance. See the ordinary [Agent HITL APIs](/v2/en/docs/building-blocks/agent#human-in-the-loop). Durable interactions use their Turn's `respond`; applications must not bypass Backend by writing managed journals directly.
 
-<span id="custom-backends-and-backups" />
-
-For a custom backend, implement `SessionLogStore`, or implement `AtomicSessionStorage` and reuse `JournalSessionLog`. Preserve compare-and-set writes, writer leases, stale-writer fencing, ordered idempotent commits and durable export cursors. A custom Filesystem must supply `sessionStorage` or use a separate log store; ordinary file reads and writes cannot provide atomic journal commits. A custom `SessionLog` also needs `inbox()` for `AgentSession` commands; `JournalSessionLog` already supports it.
-
-Backends that externalize state bodies can override `readMetadataAfter` and `materialize` to avoid loading unused historical checkpoints. `scanMetadata` traverses the same committed prefix, retaining ordinary payloads and references to external state. Projection validates every event and materializes the last checkpoint; Recorder combines startup checks and historical message ID collection with that traversal. Imported baselines still supply historical messages. The default hooks preserve ordinary reads, and `JournalSessionLog` retains its optimized chain scan. `readAfter` and `scan` continue to return complete original payloads; the serialized event and recovery protocol are unchanged.
-
-<Accordion title="Physical layout, command journal and backups">
-
-The logical object layout below is useful for operating a backend. Identity segments use Base64URL. POSIX local objects include a version prefix; Windows stores their logical paths, versions and payloads as SQLite rows. Read them through the SDK rather than treating them as application JSONL files.
-
-```text
-agents/s_<agent>/sessions/s_<user>/s_<session>/
-  session.json
-  head.json
-  commits/<batch-hash>.json
-  blobs/<sha256>
-  exports/<sink-hash>.json
-  inbox/
-    session.json
-    head.json
-    commits/<batch-hash>.json
-```
-
-The inbox durably records tasks, steering, injected material and answers in the same backend. It has its own sequence and short writer lease, separate from execution `seq` and public SSE cursors. `inbox/accepted` records acceptance; `inbox/opened` and `inbox/closed` govern execution admission; `inbox/handled` and `inbox/rejected` record control handling. Execution events link commands through `inbox/started` and `inbox/applied`. Consumption preserves the acceptance record, and input is marked applied only after its checkpoint commits.
-
-Back up headers, heads, reachable commits/blobs, inbox and export watermarks using a consistent backend snapshot or paused writers. Working files, artifacts and external dependencies need their own backups. Retention and archiving belong to the deployment.
-
-</Accordion>
-
-<span id="exporting-records" />
+For uncertain tool outcomes, query the original operation and obtain real results before invoking `agent.reconcileToolOutcomes(ctx, outcomes, reason)` or `ThreadRecovery.reconcile`. Reconciliation commits results and checkpoint together while preserving execution provenance. Re-executing a side effect is not a way to discover an unknown result.
 
 ## Export records to another system
 
-To feed an audit database or application event view, implement `SessionExportSink`. Its `accept` method should return only after durable acknowledgment, and duplicate `eventId` deliveries must be harmless. Drain committed records at startup or during idle periods:
+`ThreadTranscriptExport` exports message views. `JournalExporter` and `JournalExportSink` export native events. The persistent cursor advances only after sink acknowledgment; failures can be drained again, so destinations deduplicate by event identity.
 
-```java
-import io.agentscope.core.session.SessionLogExporter;
-
-// sink is your SessionExportSink implementation.
-new SessionLogExporter(session.log(), sink).drain();
-```
-
-Keep `sink.name()` stable across deployments because it identifies the saved destination watermark. `drain()` exports committed events without re-executing the Agent. Arrange retries and coordinate replicas exporting the same session and sink. Hosted Service provides its own public event export and SSE endpoints.
-
-To also export during execution, put the sink under `SessionExportSink.CONTEXT_KEY` in the `RuntimeContext` used for the direct call or for the first `agent.session(ctx)` lookup. Adding it to a later lookup does not replace the cached session's initial context.
-
-<span id="custom-events" />
+Install a sink under `JournalExportSink.CONTEXT_KEY` in the invocation RuntimeContext to trigger export during execution. Applications still arrange redelivery after failure. Public SSE and business consumers use Durable events rather than exposing journals containing private state.
 
 ## Append application events
 
-A business tool or middleware may want to record a review note alongside Agent events. Obtain the invocation's `SessionRecorder` from its `RuntimeContext` and compose the commit into execution:
+Obtain `InvocationRecorder.from(ctx)` inside the current tool or middleware invocation, call `record(type, payload)` and await its `Mono`. Diagnostic facts can use `append(type, payload, false)` followed by `flush()`. Do not write through a recorder after its invocation ends.
 
-```java
-import io.agentscope.core.agent.RuntimeContext;
-import io.agentscope.core.session.SessionRecorder;
-import java.util.Map;
-import reactor.core.publisher.Mono;
-
-static Mono<Void> recordReview(RuntimeContext context, String note) {
-    SessionRecorder recorder = SessionRecorder.from(context);
-    if (recorder == null) return Mono.empty();
-    recorder.append("acme/review_note", Map.of("note", note), false);
-    return recorder.flush();
-}
-```
-
-Await the returned `Mono` as part of the tool or middleware pipeline. `required=false` suits diagnostic facts that do not participate in recovery. For recovery-relevant types, register validators and reducers through `SessionEventCodecRegistry` before execution or restoration; an unknown required type prevents recovery. Do not retain the recorder for writes after its invocation ends.
+Register validation and state application through `JournalEventCodecRegistry` before executing or restoring recovery-relevant extension events. An unknown required type blocks recovery rather than being silently discarded. Application facts obey the same commit and writer checks.
 
 ## Host-managed iteration budgets
 
-A durable host may bind `AgentExecutionPosition(reasoningIteration, actingIteration)` in the
-call's `RuntimeContext`. Core starts reasoning or pending-tool continuation at those positions;
-the next reasoning step still checks `maxIters`. The host must derive the positions from
-committed step and tool facts, preserve them across suspension, and reset them for a new logical
-Turn. This prevents process restarts from resetting a Turn's iteration budget. Without this
-binding, both entry points keep their existing iteration-zero behavior. The record adds no
-fields to `AgentState` or native events and does not replay middleware effects or Java stacks.
+`AgentExecutionPosition` records accumulated logical reasoning progress separately from the current Run's Step index. Durable preserves the budget across Runs of one Turn; applying an existing tool result consumes no additional model reasoning iteration. A fresh direct call after completion starts a new budget.
 
 ## Host-managed finalization
 
-A host that restores the full Agent state can bind `AgentFinalization` in the call's
-`RuntimeContext`. Its `resumeResult()` returns an already produced reply when only finalization
-remains; Core skips primary inference and still runs the finalization boundary before delivering
-the same result through `call()` or `streamEvents()`. Without this binding, the normal lifecycle
-is unchanged. The host persists the phase and keeps execution ownership valid while it runs.
+Core's `AgentExecutionHost` cooperates with its host at reasoning, model, acting and finalization boundaries. The interface stays in Core and the Durable implementation in its adapter; Harness does not depend on Durable. When a final answer exists but finalization is unfinished, save the answer and continuation position before confirming pause so recovery does not regenerate it.
 
-`SessionModelInvocation` is an optional model boundary on the same context. Calling its `next`
-function records the chosen model call ID and executes the existing `SessionModelPolicy`; a host
-may instead replay a fully recorded response. The host must validate the frozen request and keep
-incomplete model attempts distinct from complete responses. These hooks add no fields to
-`AgentState` or existing native event payloads.
+## Initialize, export state or fork
 
-`SessionRecorder.checkpointedRecordNow(state, reason, type, payload)` commits a recovery-critical
-fact and its checkpoint in one batch, including when the state is unchanged. Existing checkpoint
-methods retain their behavior.
+`ThreadCheckpoints` supplies current-format `initialize`, `exportSnapshot`, `exportState` and `fork`. The source must have no active writer; first reconcile uncertain tools and settle unfinished executions and interactions. `exportSnapshot` returns state and `asOfSeq`. `initialize(target, state, source, sourceSequence)` writes a provenance-bearing `state/initialized` into an empty target without inventing Run history.
 
-For repeatable memory finalization, `MemoryFlushManager` accepts an optional `Clock` from the
-context; absent a clock it uses the current system time and default zone. Inline memory flushes
-propagate `SessionLogException` so a host can resume a suspended operation rather than report a
-successful flush. Recovery facts owned by a host use registered, required event schemas.
+Fork preserves valid working state while replacing destination user/session/thread identity. It cannot undo external effects or copy executable old tasks. Durable-managed Threads use public checkpoint/restore/fork APIs to retain task and ownership checks.
 
+## Journal persistence scheduling
+
+Commits use the bounded `agentscope-session-commit` executor rather than model-request threads. Each recorder serializes commits; concurrent `flush()` calls await their respective accepted prefixes, and cancelling one waiter does not cancel a shared commit. Commit or ownership failure stops the execution boundary instead of permitting new effects.
+
+JVM properties `agentscope.journal.commitThreadCap`, `maintenanceThreadCap`, `leaseThreadCap` and `taskQueueCapacity` configure the corresponding lanes. Larger queues do not increase storage throughput; size workers against backend capacity. `ModelCallPolicy` supplies model admission hooks, without scheduling empty work when no hook is needed.
+
+<span id="concepts-and-basic-apis" />
+<span id="scenario-1-chat-queueing-and-restart-recovery" />
+<span id="scenario-2-guide-execution-and-reconnect-the-frontend" />
+<span id="scenario-3-answer-hitl-requests" />
+<span id="scenario-4-continue-after-interruption" />
+<span id="history-events-and-checkpoints" />
+<span id="scenario-5-inspect-execution-export-records-or-change-storage" />
+<span id="event-envelope-and-reads" />
+<span id="shared-storage" />
+<span id="custom-backends-and-backups" />
+<span id="exporting-records" />
+<span id="custom-events" />
 <span id="migration-and-forking" />
-
-## Export state or fork a conversation
-
-For an offline migration or a new conversation starting from an existing result, use `SessionMigration`. Stop source execution and resolve uncertain tools, unfinished runs and pending interactions first. `exportSnapshot(source)` returns the saved state and `asOfSeq`; `exportState(source)` returns state alone, and `importBaseline(target, state, source, sourceVersion)` imports a complete `AgentState` into an empty target with provenance.
-
-To fork a completed comparison into a separate conversation:
-
-```java
-import io.agentscope.core.agent.RuntimeContext;
-import io.agentscope.core.session.SessionMigration;
-
-var forkContext = RuntimeContext.builder(ctx).sessionId("comparison-alternative").build();
-SessionMigration.fork(
-        session.log(),
-        agent.sessionLog(forkContext),
-        agent.sessionKey(forkContext),
-        "conversation-001");
-```
-
-The destination starts from an imported baseline. It does not copy the source event history, sandbox or external resources, and it does not invent earlier execution events.
-
-## Complete example: recoverable Web Chat
-
-The [agentscope-chat walkthrough](/v2/en/blogs/best-practices/session-chat) connects these operations to HTTP handlers and a browser: submit a background task, restore partial messages and tools, reconnect SSE, answer pending input and continue after interruption or restart. It runs offline by default and can also use a real model. Follow its source to adapt the application projection and runtime ownership to your own chat or task UI.
-
-## Session persistence scheduling
-
-`SessionLog` remains a blocking storage SPI. Recorder commits run on `agentscope-session-commit`, independently of `agentscope-model-request`. A recorder serializes its commits, but releases its state monitor during storage I/O so incoming events can append to a bounded buffer. Overlapping `flush()` calls share the active commit; each caller still waits until its own accepted prefix is acknowledged. Cancelling one waiter does not cancel a shared commit. A failed or fenced commit fails the boundary and must not authorize a subsequent external effect.
-
-A dirty recorder schedules at most one delayed flush, after one second; idle recorders do not enqueue periodic flushes. Dirty and explicit flushes share the commit lane, so a critical boundary cannot be stuck behind a separate low-capacity background writer. Lease renewal uses an independent lane every 30 seconds, with the existing two-minute writer lease. Transcript export uses the maintenance lane. Renewal, export and timers do not consume model-request workers. `finish()` awaits the final prefix before releasing the writer.
-
-The JVM properties `agentscope.session.commitThreadCap` (default `max(64, availableProcessors * 10)`), `agentscope.session.maintenanceThreadCap` (4), `agentscope.session.leaseThreadCap` (4), and `agentscope.session.taskQueueCapacity` (65536 tasks per backing thread) configure these bounded schedulers before first use. Size them against actual backend capacity; a larger queue does not improve storage throughput. There is still one active commit per recorder and a 16 MiB pending-event limit.
-
-An absent `SessionModelPolicy` requires no scheduling. Custom policies can explicitly return `false` from `hasBeforeCall()` or `hasAfterCall()` for hooks with no work; defaults remain `true`. Real admission checks continue to run before the model call. Direct calls without a `SessionExecution` also skip empty inbox step and close hooks. Event schemas, checkpoint contents and writer fencing are unchanged.

@@ -33,27 +33,31 @@ spec.loader.exec_module(sync_helm)
 
 class HelmSyncTest(unittest.TestCase):
     def setUp(self):
+        for key, value in {"UPSTREAM": "example/managed-agents", "HELM_REPOSITORY": "example/helm-charts", "HELM_URL": "https://helm.example.com"}.items():
+            patcher = mock.patch.object(sync_helm, key, value)
+            patcher.start()
+            self.addCleanup(patcher.stop)
         self.version = "2.1.0-BETA2"
         self.archive = b"original Release chart"
         self.digest = hashlib.sha256(self.archive).hexdigest()
         self.release = {
             "tag_name": "v" + self.version, "draft": False,
-            "assets": [{"name": f"agentscope-service-{self.version}.tgz",
+            "assets": [{"name": f"managed-agents-{self.version}.tgz",
                         "digest": "sha256:" + self.digest}],
         }
         self.entry = {
             "version": self.version, "appVersion": self.version, "digest": self.digest,
-            "urls": [f"{sync_helm.HELM_URL}/agentscope-service-{self.version}.tgz"],
+            "urls": [f"{sync_helm.HELM_URL}/managed-agents-{self.version}.tgz"],
         }
 
     def test_public_chart_matches_release(self):
         self.assertEqual(sync_helm.release_digest(self.release, self.version), self.digest)
-        index = {"entries": {"agentscope-service": [self.entry]}}
+        index = {"entries": {"managed-agents": [self.entry]}}
         sync_helm.verify_publication(index, self.archive, self.version, self.digest)
 
     def test_reject_draft_wrong_tag_missing_chart_and_missing_digest(self):
         for change in ({"draft": True}, {"tag_name": "v2.1.0-BETA1"}, {"assets": []},
-                       {"assets": [{"name": f"agentscope-service-{self.version}.tgz"}]}):
+                       {"assets": [{"name": f"managed-agents-{self.version}.tgz"}]}):
             with self.subTest(change=change), self.assertRaises(ValueError):
                 sync_helm.release_digest(dict(self.release, **change), self.version)
 
@@ -62,14 +66,14 @@ class HelmSyncTest(unittest.TestCase):
                        {"digest": "0" * 64}, {"urls": ["https://example.com/changed.tgz"]}):
             with self.subTest(change=change), self.assertRaises(ValueError):
                 entry = dict(self.entry, **change)
-                sync_helm.verify_publication({"entries": {"agentscope-service": [entry]}},
+                sync_helm.verify_publication({"entries": {"managed-agents": [entry]}},
                                              self.archive, self.version, self.digest)
         with self.assertRaises(ValueError):
-            sync_helm.verify_publication({"entries": {"agentscope-service": [self.entry]}},
+            sync_helm.verify_publication({"entries": {"managed-agents": [self.entry]}},
                                          b"different bytes", self.version, self.digest)
 
     def test_reject_duplicate_chart_versions(self):
-        index = {"entries": {"agentscope-service": [self.entry, copy.deepcopy(self.entry)]}}
+        index = {"entries": {"managed-agents": [self.entry, copy.deepcopy(self.entry)]}}
         with self.assertRaises(ValueError):
             sync_helm.verify_publication(index, self.archive, self.version, self.digest)
 
@@ -92,8 +96,8 @@ class HelmSyncTest(unittest.TestCase):
             download.assert_not_called()
 
     def test_waits_for_new_public_index_after_pages_deploy(self):
-        old_index = {"entries": {"agentscope-service": []}}
-        new_index = {"entries": {"agentscope-service": [self.entry]}}
+        old_index = {"entries": {"managed-agents": []}}
+        new_index = {"entries": {"managed-agents": [self.entry]}}
         responses = [io.BytesIO(yaml.safe_dump(old_index).encode()), io.BytesIO(self.archive),
                      io.BytesIO(yaml.safe_dump(new_index).encode()), io.BytesIO(self.archive)]
         with mock.patch.object(sync_helm, "gh_api", side_effect=[
@@ -104,7 +108,7 @@ class HelmSyncTest(unittest.TestCase):
                 mock.patch.dict(sync_helm.os.environ, {"GITHUB_STEP_SUMMARY": ""}):
             sync_helm.sync(self.version)
             api.assert_called_with(
-                "repos/chickenlj/helm-charts/actions/workflows/publish.yml/dispatches",
+                "repos/example/helm-charts/actions/workflows/publish.yml/dispatches",
                 {"ref": "main", "inputs": {"version": self.version}},
             )
             sleep.assert_called_once_with(10)
@@ -112,3 +116,10 @@ class HelmSyncTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+class ExplicitTargetsTest(unittest.TestCase):
+    def test_no_upstream_account_is_contacted_without_configuration(self):
+        with mock.patch.object(sync_helm, "UPSTREAM", ""), mock.patch.object(sync_helm, "gh_api") as api:
+            with self.assertRaisesRegex(ValueError, "Configure MANAGED_AGENTS"):
+                sync_helm.sync("2.1.0-BETA1")
+            api.assert_not_called()

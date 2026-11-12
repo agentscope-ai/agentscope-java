@@ -1,0 +1,18 @@
+{
+  "name": "managed-agents-harness-typescript",
+  "private": true,
+  "packageManager": "pnpm@10.28.2",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "pnpm -r build",
+    "test": "pnpm -r test",
+    "test:http": "bash scripts/test-pi-http.sh",
+    "check": "pnpm -r check"
+  },
+  "devDependencies": {
+    "typescript": "5.9.3",
+    "@types/node": "22.19.9"
+  }
+}

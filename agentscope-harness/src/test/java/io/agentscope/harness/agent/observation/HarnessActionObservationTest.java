@@ -35,7 +35,7 @@ import io.agentscope.core.tool.Tool;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.harness.agent.HarnessAgent;
 import io.agentscope.harness.agent.filesystem.local.LocalFilesystem;
-import io.agentscope.harness.agent.session.WorkspaceSessionLogStore;
+import io.agentscope.harness.agent.journal.WorkspaceThreadJournalStore;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.List;
@@ -74,14 +74,14 @@ class HarnessActionObservationTest {
                                         "stop")));
         var toolkit = new Toolkit();
         toolkit.registerTool(new Probe());
-        var store = new WorkspaceSessionLogStore(new LocalFilesystem(workspace));
+        var store = new WorkspaceThreadJournalStore(new LocalFilesystem(workspace));
         var context = RuntimeContext.builder().userId("user").sessionId("session").build();
         try (var agent =
                 HarnessAgent.builder()
                         .name("observed")
                         .model(model)
                         .workspace(workspace)
-                        .sessionLogStore(store)
+                        .threadJournalStore(store)
                         .toolkit(toolkit)
                         .build()) {
             var events =
@@ -101,7 +101,7 @@ class HarnessActionObservationTest {
                                                         .equals(custom.getValue().get("status"))) {
                                             String actionId =
                                                     (String) custom.getValue().get("action_id");
-                                            var log = agent.getDelegate().sessionLog(context);
+                                            var log = agent.getDelegate().threadJournal(context);
                                             var record =
                                                     StreamSupport.stream(
                                                                     log.scan(0, log.head().seq())

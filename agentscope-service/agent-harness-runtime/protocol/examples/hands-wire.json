@@ -1,0 +1,57 @@
+{
+  "command": {
+    "scope": {
+      "tenant": "t1",
+      "namespace": "demo",
+      "sessionId": "s1"
+    },
+    "commandId": "execute_tool_e2af6b0a5a0ace3cf4cff7d3a564aa71c18639f491b0304a7718ec4df173638a",
+    "kind": "execute",
+    "task": {
+      "id": "tool_e2af6b0a5a0ace3cf4cff7d3a564aa71c18639f491b0304a7718ec4df173638a",
+      "turnId": "turn1",
+      "toolCallId": "call1_0",
+      "executionId": "tool_e2af6b0a5a0ace3cf4cff7d3a564aa71c18639f491b0304a7718ec4df173638a",
+      "name": "fs.read",
+      "arguments": "{\"path\":\"/workspace/a.txt\"}",
+      "checkpointSequence": 1,
+      "status": "ready",
+      "processHandle": null,
+      "result": null,
+      "workerToken": null
+    },
+    "configuration": "sealed-target-fixture",
+    "submission": {
+      "epoch": 1,
+      "executionToken": "fenced-token",
+      "batchId": "commit1"
+    }
+  },
+  "envelope": {
+    "version": 2,
+    "kind": "tool_command",
+    "scope": {
+      "tenant": "t1",
+      "namespace": "demo",
+      "sessionId": "s1"
+    },
+    "batchId": "execute_tool_e2af6b0a5a0ace3cf4cff7d3a564aa71c18639f491b0304a7718ec4df173638a",
+    "hash": "087091c03cc7bdd3853ba39d4e6cff8087207863b0a0db3b3b9da6fb14c45d83",
+    "inline": "eyJzY29wZSI6eyJ0ZW5hbnQiOiJ0MSIsIm5hbWVzcGFjZSI6ImRlbW8iLCJzZXNzaW9uSWQiOiJzMSJ9LCJjb21tYW5kSWQiOiJleGVjdXRlX3Rvb2xfZTJhZjZiMGE1YTBhY2UzY2Y0Y2ZmN2QzYTU2NGFhNzFjMTg2MzlmNDkxYjAzMDRhNzcxOGVjNGRmMTczNjM4YSIsImtpbmQiOiJleGVjdXRlIiwidGFzayI6eyJpZCI6InRvb2xfZTJhZjZiMGE1YTBhY2UzY2Y0Y2ZmN2QzYTU2NGFhNzFjMTg2MzlmNDkxYjAzMDRhNzcxOGVjNGRmMTczNjM4YSIsInR1cm5JZCI6InR1cm4xIiwidG9vbENhbGxJZCI6ImNhbGwxXzAiLCJleGVjdXRpb25JZCI6InRvb2xfZTJhZjZiMGE1YTBhY2UzY2Y0Y2ZmN2QzYTU2NGFhNzFjMTg2MzlmNDkxYjAzMDRhNzcxOGVjNGRmMTczNjM4YSIsIm5hbWUiOiJmcy5yZWFkIiwiYXJndW1lbnRzIjoie1wicGF0aFwiOlwiL3dvcmtzcGFjZS9hLnR4dFwifSIsImNoZWNrcG9pbnRTZXF1ZW5jZSI6MSwic3RhdHVzIjoicmVhZHkiLCJwcm9jZXNzSGFuZGxlIjpudWxsLCJyZXN1bHQiOm51bGwsIndvcmtlclRva2VuIjpudWxsfSwiY29uZmlndXJhdGlvbiI6InNlYWxlZC10YXJnZXQtZml4dHVyZSIsInN1Ym1pc3Npb24iOnsiZXBvY2giOjEsImV4ZWN1dGlvblRva2VuIjoiZmVuY2VkLXRva2VuIiwiYmF0Y2hJZCI6ImNvbW1pdDEifX0=",
+    "backendId": "runtime"
+  },
+  "event": {
+    "scope": {
+      "tenant": "t1",
+      "namespace": "demo",
+      "sessionId": "s1"
+    },
+    "taskId": "tool_e2af6b0a5a0ace3cf4cff7d3a564aa71c18639f491b0304a7718ec4df173638a",
+    "executionId": "tool_e2af6b0a5a0ace3cf4cff7d3a564aa71c18639f491b0304a7718ec4df173638a",
+    "sourceSeq": 1,
+    "type": "tool.progress",
+    "data": {
+      "status": "unknown"
+    }
+  }
+}

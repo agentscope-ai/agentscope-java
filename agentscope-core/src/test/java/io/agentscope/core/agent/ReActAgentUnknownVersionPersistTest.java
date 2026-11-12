@@ -77,14 +77,18 @@ class ReActAgentUnknownVersionPersistTest {
         Method method =
                 ReActAgent.class.getDeclaredMethod(
                         "persistAgentStateCas",
-                        String.class,
-                        String.class,
-                        String.class,
+                        ThreadKey.class,
                         AgentState.class,
                         long.class,
                         int.class);
         method.setAccessible(true);
-        return (long) method.invoke(agent, "u", "s", "u/s", state, AgentStateStore.UNVERSIONED, 0);
+        return (long)
+                method.invoke(
+                        agent,
+                        new ThreadKey("u", "unconditional-persist", "s", "main"),
+                        state,
+                        AgentStateStore.UNVERSIONED,
+                        0);
     }
 
     @Test
@@ -99,7 +103,18 @@ class ReActAgentUnknownVersionPersistTest {
                 ConcurrentSessionModificationException.class, () -> agent.saveAgentState("u", "s"));
         assertEquals(1, agent.getStateConflictCount());
         assertSame(
-                store.other, store.getVersioned("u", "s", "agent_state", AgentState.class).value());
+                store.other,
+                store.getVersioned(
+                                "u",
+                                "s",
+                                new ThreadKey(
+                                                null,
+                                                "unconditional-persist",
+                                                "unused-bucket",
+                                                "main")
+                                        .stateEntry("agent_state"),
+                                AgentState.class)
+                        .value());
     }
 
     @Test
@@ -131,7 +146,19 @@ class ReActAgentUnknownVersionPersistTest {
         agent.saveAgentState("u", "s");
         assertEquals(1, store.plainSaves);
         assertEquals(List.of(), store.expectedVersions);
-        assertSame(mine, store.getVersioned("u", "s", "agent_state", AgentState.class).value());
+        assertSame(
+                mine,
+                store.getVersioned(
+                                "u",
+                                "s",
+                                new ThreadKey(
+                                                null,
+                                                "unconditional-persist",
+                                                "unused-bucket",
+                                                "main")
+                                        .stateEntry("agent_state"),
+                                AgentState.class)
+                        .value());
     }
 
     /**

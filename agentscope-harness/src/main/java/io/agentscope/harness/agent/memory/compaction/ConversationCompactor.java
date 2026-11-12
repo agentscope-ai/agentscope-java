@@ -16,6 +16,8 @@
 package io.agentscope.harness.agent.memory.compaction;
 
 import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.core.journal.InvocationRecorder;
+import io.agentscope.core.journal.JournalException;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
@@ -23,8 +25,6 @@ import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.Model;
-import io.agentscope.core.session.SessionLogException;
-import io.agentscope.core.session.SessionRecorder;
 import io.agentscope.core.util.ExceptionUtils;
 import io.agentscope.core.util.JsonUtils;
 import io.agentscope.harness.agent.context.ContextModelCalls;
@@ -98,7 +98,7 @@ public class ConversationCompactor {
             CompactionConfig config,
             String agentId,
             String sessionId) {
-        var recorder = SessionRecorder.from(rc);
+        var recorder = InvocationRecorder.from(rc);
         int beforeMsgCount = conversationMessages == null ? 0 : conversationMessages.size();
         int beforeTokenCount = TokenCounterUtil.calculateToken(conversationMessages);
         boolean triggered =
@@ -125,7 +125,7 @@ public class ConversationCompactor {
                                         beforeTokenCount,
                                         execution.afterMessages(conversationMessages))),
                 (execution, error) ->
-                        SessionLogException.causedBy(error)
+                        JournalException.causedBy(error)
                                 ? Mono.empty()
                                 : recorder.record(
                                         "compaction/end",
@@ -275,7 +275,7 @@ public class ConversationCompactor {
                                 .onErrorResume(
                                         e -> {
                                             if ((ExceptionUtils.containsInterruptedException(e)
-                                                    || SessionLogException.causedBy(e))) {
+                                                    || JournalException.causedBy(e))) {
                                                 return Mono.error(e);
                                             }
                                             log.warn(
@@ -288,12 +288,14 @@ public class ConversationCompactor {
         // Native logging already preserves all pre-compaction messages. Reference the logical
         // history API; never write another full transcript or expose private journal paths.
         String historyReference =
-                SessionRecorder.from(rc) == null
+                InvocationRecorder.from(rc) == null
                         ? null
-                        : "session_history(agentId="
+                        : "thread_history(agentId="
                                 + JsonUtils.getJsonCodec().toJson(agentId)
                                 + ", sessionId="
                                 + JsonUtils.getJsonCodec().toJson(sessionId)
+                                + ", threadId="
+                                + JsonUtils.getJsonCodec().toJson(rc.getThreadId())
                                 + ")";
 
         // Step 4: LLM summarization of prior summaries plus the newly compacted prefix.

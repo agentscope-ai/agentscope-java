@@ -17,9 +17,14 @@ en_link: /v2/en/integration/session/overview
 - `sessionId`——非空、非空白，标识一次会话 / session。
 - `userId`——可空。`null` 表示匿名 / 单租户调用方（CLI、测试等）。
 
-## 与原生 Session Log 的区别
+## AgentStateStore 与 Thread 日志
 
-本页是 AgentStateStore 接口参考。HarnessAgent 默认 EVENT_LOG 通过 SessionLogStore 恢复 checkpoint；仅替换 stateStore 不会迁移或共享原生日志。LEGACY 仍使用本页的状态存储。Workspace 的 BaseStore 能存文件，也不代表具备日志所需的原子 CAS，例如当前 OSS/COS 需配合独立日志后端。存储位置和支持矩阵见 [会话日志与恢复](/v2/zh/docs/harness/session-log)。
+本页是 `AgentStateStore` 接口参考。启用日志时，`HarnessAgent` 通过
+`ThreadJournalStore` 恢复；只替换 `stateStore` 不会迁移或共享 Thread 日志。主 Thread
+会读取 AgentScope 2.0 写入的状态，并在 checkpoint 提交后将最新状态镜像回 2.0 的
+`agent_state` 位置，以支持回滚读取；命名 Thread 使用独立状态项。Workspace 的
+BaseStore 能保存文件，也不等于具备日志要求的 CAS 和 writer fencing。详见
+[Thread 执行日志与恢复](/v2/zh/docs/harness/session-log)。
 
 ## 可用实现
 

@@ -1,108 +1,68 @@
 #!/usr/bin/env python3
 # Copyright 2024-2026 the original author or authors.
 # Licensed under the Apache License, Version 2.0.
-"""Official SDK contract checks against the isolated Portal/Dataplane/Harness fixture."""
-
-import time
+"""First-release official SDK smoke against an explicitly provided local execution fixture."""
 import threading
-
 import anthropic
+from managed_agents import ServiceClient
 
 
-def verify_session_api(base_url, key, restart_portal, approval=False, external=False):
-    client = anthropic.Anthropic(api_key=key, base_url=base_url, max_retries=0,
-                                 timeout=30, _strict_response_validation=True)
-    sessions = client.beta.sessions
-    session = sessions.create(agent="agent-1", environment_id="environment-1", title="SDK contract",
-                              metadata={"fixture": "claude-session"},
-                              extra_headers={"Idempotency-Key": "sdk-create"})
-    assert session.type == "session" and session.id == "sdk-session"
-    assert session.status == "idle" and session.agent.id == "agent-1", session.model_dump()
-    assert session.agent.model.id and session.agent.version >= 1
-    assert sessions.retrieve(session.id).metadata == {"fixture": "claude-session"}
-    assert sessions.update(session.id, title="Updated SDK title").title == "Updated SDK title"
-    assert session.id in [row.id for row in sessions.list()]
+def verify_session_api(base_url, key, restart_agent_service, approval=False, external=False):
+    with anthropic.Anthropic(api_key=key, base_url=base_url, max_retries=0, timeout=30,
+                             _strict_response_validation=True) as client:
+        sessions = client.beta.sessions
+        session = sessions.create(agent="agent-1", environment_id="environment-1", title="SDK contract",
+                                  metadata={"fixture": "claude-session"},
+                                  extra_headers={"Idempotency-Key": "sdk-create"})
+        assert session.type == "session" and session.status == "idle"
+        assert sessions.retrieve(session.id).metadata == {"fixture": "claude-session"}
+        native = ServiceClient(base_url, api_key=key).managed_sessions()
+        capabilities = native.capabilities(session.id)
+        assert capabilities["extensions"]["durable-events-v1"] is False
+        assert capabilities["features"]["turn_output"] is True
 
-    def message(text, idempotency):
-        return sessions.events.send(session.id, events=[{"type": "user.message", "content": [
-            {"type": "text", "text": text}]}], extra_headers={"Idempotency-Key": idempotency})
+        def send():
+            return sessions.events.send(session.id, events=[{"type": "user.message", "content": [
+                {"type": "text", "text": "SDK hello"}]}], extra_headers={"Idempotency-Key": "sdk-message"})
 
-    def await_idle(required_action=False):
-        deadline = time.monotonic() + 35
-        while time.monotonic() < deadline:
-            history = list(sessions.events.list(session.id))
-            idle = [row for row in history if row.type == "session.status_idle"]
-            if idle and idle[-1].stop_reason.type == ("requires_action" if required_action else "end_turn"):
-                return history
-            time.sleep(0.1)
-        raise AssertionError("Session did not settle: " + str(history))
-
-    # Open first: Claude streams follow new events unless the caller opts into replay.
-    with sessions.events.stream(session.id, event_deltas=["agent.message"]) as stream:
-        timeout = threading.Timer(35, stream.close)
-        timeout.daemon = True
-        timeout.start()
-        accepted = message("SDK hello", "sdk-message")
-        assert len(accepted.data) == 1 and accepted.data[0].processed_at is None
-        echoed_id = accepted.data[0].id
-        seen = []
-        for event in stream:
-            seen.append(event)
-            if event.type == "session.status_idle" and event.stop_reason.type == "end_turn":
-                break
-        timeout.cancel()
-    assert any(row.type == "user.message" and row.id == echoed_id and row.processed_at for row in seen)
-    buffered = [row for row in seen if row.type == "agent.message"]
-    assert buffered and any(block.type == "text" and "Smoke response" in block.text for row in buffered for block in row.content)
-    previews = [row for row in seen if row.type == "event_start" and row.event.type == "agent.message"]
-    assert previews and any(row.event.id == buffered[0].id for row in previews)
-    assert any(row.type == "event_delta" and row.event_id == buffered[0].id for row in seen)
-    starts = {row.id for row in seen if row.type == "span.model_request_start"}
-    assert all(row.model_request_start_id in starts for row in seen if row.type == "span.model_request_end")
-    history = await_idle()
-    assert not any(row.type in ("event_start", "event_delta") for row in history)
-    first_page = sessions.events.list(session.id, limit=1)
-    assert first_page.has_next_page() and first_page.data[0].id != first_page.get_next_page().data[0].id
-    assert len(sessions.events.list(session.id, types=["user.message"]).data) == 1
-    assert message("SDK hello", "sdk-message").data[0].id == echoed_id
-    restart_portal()
-    assert [row.id for row in sessions.events.list(session.id)] == [row.id for row in history]
-
-    if approval or external:
-        before = {row.id for row in history}
-        message("approval tool fixture" if approval else "external result fixture", "sdk-tool")
-        # Ignore the previous end_turn while waiting for this Turn's requires_action.
-        deadline = time.monotonic() + 35
-        while time.monotonic() < deadline:
-            history = list(sessions.events.list(session.id))
-            uses = [row for row in history if row.type == "agent.tool_use" and row.id not in before]
-            blocked = [row for row in history if row.type == "session.status_idle" and row.id not in before and row.stop_reason.type == "requires_action"]
-            if uses and blocked:
-                break
-            time.sleep(0.1)
-        assert uses and blocked and set(blocked[-1].stop_reason.event_ids) == {row.id for row in uses}
-        answers = ([{"type": "user.tool_confirmation", "tool_use_id": row.id, "result": "allow"} for row in uses]
-                   if approval else [{"type": "user.tool_result", "tool_use_id": row.id, "content": [
-                       {"type": "text", "text": "SDK first result"},
-                       {"type": "text", "text": "SDK second result"}], "is_error": False} for row in uses])
-        response = sessions.events.send(session.id, events=answers, extra_headers={"Idempotency-Key": "sdk-results"})
-        assert len(response.data) == len(uses)
-        if external:
-            assert all(row.processed_at for row in response.data)
-            sessions.events.send(session.id, events=answers)
-        await_idle()
-
-    interrupted = sessions.events.send(session.id, events=[{"type": "user.interrupt"}])
-    assert interrupted.data[0].type == "user.interrupt"
-    archived = sessions.archive(session.id)
-    assert archived.status == "terminated" and archived.archived_at
-    assert session.id not in [row.id for row in sessions.list()]
-    assert session.id in [row.id for row in sessions.list(include_archived=True)]
-    deleted = sessions.delete(session.id)
-    assert deleted.type == "session_deleted" and deleted.id == session.id
-    try:
-        sessions.retrieve(session.id)
-        raise AssertionError("Deleted Session remains readable")
-    except anthropic.NotFoundError as error:
-        assert error.body["type"] == "error"
-    client.close()
+        with sessions.events.stream(session.id) as stream:
+            timer = threading.Timer(35, stream.close)
+            timer.daemon = True
+            timer.start()
+            receipt = send()
+            assert receipt.data[0].processed_at is None
+            seen = []
+            for event in stream:
+                seen.append(event)
+                if event.type == "session.status_idle" and event.stop_reason.type == "end_turn":
+                    break
+            timer.cancel()
+        assert any(event.type == "user.message" and event.id == receipt.data[0].id for event in seen)
+        assert any(event.type == "agent.message" for event in seen)
+        assert not any(event.type in {"event_start", "event_delta"} for event in seen)
+        history = list(sessions.events.list(session.id))
+        first = sessions.events.list(session.id, limit=1)
+        assert first.has_next_page()
+        assert first.data[0].id != first.get_next_page().data[0].id
+        turn = native.turns(session.id)["data"][0]
+        assert receipt.data[0].id in turn["input_event_ids"]
+        assert native.final_output(session.id, turn["id"], timeout=35)
+        frozen = receipt.model_dump()
+        restart_agent_service()
+        assert send().model_dump() == frozen
+        assert [row.id for row in sessions.events.list(session.id)] == [row.id for row in history]
+        for operation in [lambda: sessions.list(), lambda: sessions.update(session.id, title="unsupported"),
+                          lambda: sessions.archive(session.id), lambda: sessions.delete(session.id)]:
+            try:
+                operation()
+                raise AssertionError("Unsupported capability was accepted")
+            except anthropic.BadRequestError:
+                pass
+        if approval or external:
+            event = ({"type": "user.tool_confirmation", "tool_use_id": "unsupported", "result": "allow"}
+                     if approval else {"type": "user.custom_tool_result", "custom_tool_use_id": "unsupported", "content": []})
+            try:
+                sessions.events.send(session.id, events=[event], extra_headers={"Managed-Agents-Extensions": "turn-inputs-v1"})
+                raise AssertionError("Unsupported tool interaction was accepted")
+            except anthropic.BadRequestError as error:
+                assert error.body["error"]["code"] == "unsupported_capability"

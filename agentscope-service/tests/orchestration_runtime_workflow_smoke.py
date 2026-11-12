@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Public Workflow approval flow against real Portal, Go and isolated PostgreSQL.
+"""Public Workflow approval flow against real Agent Service, Go and isolated PostgreSQL.
 
 Control-plane CRUD seeds a revision and then stops. Configuration admission uses
 an isolated HTTP fixture; this does not verify real account/Namespace RBAC.
@@ -20,8 +20,8 @@ from urllib.error import URLError
 from urllib.parse import urlparse
 
 from orchestration_runtime_host_smoke import ROOT, SERVICE_SECRET, SIGNING_SECRET, credential, port, request
-from orchestration_runtime_portal_smoke import digest, user_token
-from portal_postgres_fixture import portal_arguments
+from orchestration_runtime_agent_service_smoke import digest, user_token
+from agent_service_postgres_fixture import agent_service_arguments
 from orchestration_runtime_native_smoke import seed
 from session_smoke_http import read_sse
 
@@ -30,18 +30,18 @@ def run(version, dsn, deny=False, parallel=False, signal=False, nested=False, ag
     signal = signal or agent_signal
     if urlparse(dsn).hostname not in ('127.0.0.1', 'localhost'):
         raise ValueError('Use a dedicated loopback PostgreSQL fixture')
-    folder = Path(tempfile.mkdtemp(prefix='agentscope-workflow-runtime-smoke-'))
-    environment = {'PATH': os.environ['PATH'], 'TZ': 'UTC', 'BUILDER_INTERNAL_TOKEN': SERVICE_SECRET,
-                   'BUILDER_JWT_SECRET': SIGNING_SECRET,
-                   'BUILDER_VAULT_MASTER_KEY': 'workflow-smoke-runtime-encryption-key-only'}
+    folder = Path(tempfile.mkdtemp(prefix='managed-agents-workflow-runtime-smoke-'))
+    environment = {'PATH': os.environ['PATH'], 'TZ': 'UTC', 'MANAGED_AGENTS_INTERNAL_TOKEN': SERVICE_SECRET,
+                   'MANAGED_AGENTS_JWT_SECRET': SIGNING_SECRET,
+                   'MANAGED_AGENTS_VAULT_MASTER_KEY': 'workflow-smoke-runtime-encryption-key-only'}
     if os.environ.get('JAVA_HOME'):
         environment['JAVA_HOME'] = os.environ['JAVA_HOME']
     processes, handles, configuration_source, passed = [], [], None, False
-    portal_port, runtime_port, control_port = port(), port(), port()
-    portal_url, runtime_url, control_url = ['http://127.0.0.1:' + str(value)
-                                          for value in (portal_port, runtime_port, control_port)]
+    agent_service_port, runtime_port, control_port = port(), port(), port()
+    agent_service_url, runtime_url, control_url = ['http://127.0.0.1:' + str(value)
+                                          for value in (agent_service_port, runtime_port, control_port)]
     scope = {'tenant': 'fixture-tenant', 'namespace': 'fixture-space'}
-    portal_storage_arguments = portal_arguments(version, dsn, folder, environment)
+    agent_service_storage_arguments = agent_service_arguments(version, dsn, folder, environment)
 
     def stop(process):
         if process.poll() is None:
@@ -81,11 +81,11 @@ def run(version, dsn, deny=False, parallel=False, signal=False, nested=False, ag
 
     try:
         with (folder / 'migration.log').open('w') as migration_log:
-            subprocess.run([str(ROOT / 'service-controlplane/bin/service-controlplane'),
+            subprocess.run([str(ROOT / 'control-plane/bin/control-plane'),
                 '--storage-driver=postgres', '--storage-dsn=' + dsn, '--migrate-only'], env=environment,
                 stdout=migration_log, stderr=subprocess.STDOUT, check=True, timeout=90)
-        control = start('seed-control', [str(ROOT / 'service-controlplane/bin/service-controlplane'),
-            '--enable-kubernetes=false', '--enable-product=false', '--enable-asdp=false',
+        control = start('seed-control', [str(ROOT / 'control-plane/bin/control-plane'),
+            '--enable-kubernetes=false', '--enable-product=false', '--enable-runtime-protocol=false',
             '--local-dev=true', '--scope-mode=single', '--default-tenant=fixture-tenant',
             '--default-namespace=fixture-space', '--enable-runtime-workers=false',
             '--storage-driver=postgres', '--storage-dsn=' + dsn,
@@ -157,37 +157,37 @@ def run(version, dsn, deny=False, parallel=False, signal=False, nested=False, ag
                 body = json.loads(self.rfile.read(int(self.headers['Content-Length'])))
                 assert body['target']['id'] == definition['id']
                 assert self.headers.get('Authorization') == caller['Authorization']
-                assert self.headers.get('X-Builder-Internal-Token') == SERVICE_SECRET
+                assert self.headers.get('X-Managed-Agents-Internal-Token') == SERVICE_SECRET
                 self.send({**view, 'admissionActor': actor})
 
             def do_GET(self):
-                assert self.headers.get('X-Builder-Internal-Token') == SERVICE_SECRET
+                assert self.headers.get('X-Managed-Agents-Internal-Token') == SERVICE_SECRET
                 self.send({'managed': False, 'runtimeKind': 'workflow', 'view': view, 'policy': policy, 'resolved': configuration})
 
         configuration_source = ThreadingHTTPServer(('127.0.0.1', 0), ConfigurationFixture)
         Thread(target=configuration_source.serve_forever, daemon=True).start()
         config_url = 'http://127.0.0.1:' + str(configuration_source.server_port)
-        runtime = start('runtime', [str(ROOT / 'service-controlplane/bin/service-controlplane'),
-            '--enable-kubernetes=false', '--enable-asdp=false', '--scope-mode=multi', '--enable-runtime-workers=true',
+        runtime = start('runtime', [str(ROOT / 'control-plane/bin/control-plane'),
+            '--enable-kubernetes=false', '--enable-runtime-protocol=false', '--scope-mode=multi', '--enable-runtime-workers=true',
             '--http-bind-address=127.0.0.1:' + str(runtime_port), '--storage-driver=postgres',
-            '--storage-dsn=' + dsn, '--session-portal-url=' + portal_url], runtime_url + '/readyz')
+            '--storage-dsn=' + dsn, '--agent-service-url=' + agent_service_url], runtime_url + '/readyz')
 
-        def start_portal():
-            return start('portal', [shutil.which('java'), '-jar', str(ROOT / 'service-session-portal/target' / ('service-session-portal-' + version + '.jar')),
-                '--server.address=127.0.0.1', '--server.port=' + str(portal_port), '--spring.profiles.active=test',
-                '--builder.local-dev=false', '--builder.jwt.secret=' + SIGNING_SECRET,
-                '--builder.vault.master-key=workflow-smoke-only', '--builder.orchestration-runtime-url=' + runtime_url,
-                '--builder.control-plane-url=' + config_url, '--builder.portal.turn-delivery-poll-ms=200'] + portal_storage_arguments, portal_url + '/actuator/health')
+        def start_agent_service():
+            return start('portal', [shutil.which('java'), '-jar', str(ROOT / 'agent-service/target' / ('managed-agents-agent-service-' + version + '.jar')),
+                '--server.address=127.0.0.1', '--server.port=' + str(agent_service_port), '--spring.profiles.active=test',
+                '--managed-agents.local-dev=false', '--managed-agents.jwt.secret=' + SIGNING_SECRET,
+                '--managed-agents.vault.master-key=workflow-smoke-only', '--managed-agents.orchestration-runtime-url=' + runtime_url,
+                '--managed-agents.control-plane-url=' + config_url, '--managed-agents.agent-service.turn-delivery-poll-ms=200'] + agent_service_storage_arguments, agent_service_url + '/actuator/health')
 
-        portal = start_portal()
+        agentService = start_agent_service()
         body = {'target': view['target']}
-        status, created = request(portal_url + '/api/v1/agent-sessions', 'POST', body, caller)
+        status, created = request(agent_service_url + '/api/v1/agent-sessions', 'POST', body, caller)
         assert status == 200 and created['state'] == 'ready', (status, created)
-        assert request(portal_url + '/api/v1/agent-sessions', 'POST', body, caller)[1]['id'] == session_id
+        assert request(agent_service_url + '/api/v1/agent-sessions', 'POST', body, caller)[1]['id'] == session_id
         configuration_source.shutdown()
         configuration_source.server_close()
         configuration_source = None
-        public = portal_url + '/api/v1/agent-sessions/' + session_id
+        public = agent_service_url + '/api/v1/agent-sessions/' + session_id
         caller['Idempotency-Key'] = 'workflow-turn'
         status, accepted = request(public + '/turns', 'POST', {'value': 42, 'apiKey': 'fixture-secret'}, caller)
         assert status == 202, (status, accepted)
@@ -202,21 +202,21 @@ def run(version, dsn, deny=False, parallel=False, signal=False, nested=False, ag
         assert 'fixture-secret' not in json.dumps(pending)
         await_value(turn_url, lambda value: value['status'] == ('running' if parallel or agent_signal else 'requires_action'), caller)
         assert 'actions' in request(turn_url + '/capabilities', headers=caller)[1]['available_commands']
-        stop(portal)
+        stop(agentService)
         stop(runtime)
-        runtime = start('runtime', [str(ROOT / 'service-controlplane/bin/service-controlplane'),
-            '--enable-kubernetes=false', '--enable-asdp=false', '--scope-mode=multi', '--enable-runtime-workers=true',
+        runtime = start('runtime', [str(ROOT / 'control-plane/bin/control-plane'),
+            '--enable-kubernetes=false', '--enable-runtime-protocol=false', '--scope-mode=multi', '--enable-runtime-workers=true',
             '--http-bind-address=127.0.0.1:' + str(runtime_port), '--storage-driver=postgres',
-            '--storage-dsn=' + dsn, '--session-portal-url=' + portal_url], runtime_url + '/readyz')
-        portal = start_portal()
+            '--storage-dsn=' + dsn, '--agent-service-url=' + agent_service_url], runtime_url + '/readyz')
+        agentService = start_agent_service()
         if agent_signal:
             host_headers = {'Authorization': 'Bearer ' + credential()}
-            status, registered = request(portal_url + '/api/v1/runtime-hosts/register', 'POST',
+            status, registered = request(agent_service_url + '/api/v1/runtime-hosts/register', 'POST',
                 {'hostKey': 'fixture-host', **scope, 'poolName': agent_fixture['pool_name'],
                  'capacity': 1, 'capabilities': {'providers': {'codex': 'fixture/1'}}}, host_headers)
             assert status == 200, (status, registered)
             host = registered['host']
-            host_base = portal_url + '/api/v1/runtime-hosts/' + host['id'] + '/execution-attempts'
+            host_base = agent_service_url + '/api/v1/runtime-hosts/' + host['id'] + '/execution-attempts'
             lease = {**scope, 'runtimePoolName': agent_fixture['pool_name'], 'generation': host['leaseGeneration'],
                      'leaseOwner': 'fixture-signal-host', 'leaseToken': uuid.uuid4().hex, 'leaseSeconds': 60}
             deadline = time.monotonic() + 30
@@ -234,11 +234,11 @@ def run(version, dsn, deny=False, parallel=False, signal=False, nested=False, ag
                 assert request(attempt_url + '/' + operation, 'POST', proof, attempt_headers)[0] == 200
             task_headers = {'Authorization': 'Bearer ' + work['taskToken']}
             def send_signal(value, request_id=approval_id, key='agent-workflow-answer'):
-                return request(portal_url + '/mcp/collaboration', 'POST',
+                return request(agent_service_url + '/mcp/collaboration', 'POST',
                     {'jsonrpc': '2.0', 'id': 1, 'method': 'tools/call', 'params': {
                         'name': 'run.signal', 'arguments': {'name': 'ready', 'requestId': request_id,
                          'idempotencyKey': key, 'payload': {'value': value}}}}, task_headers)
-            # Scope and pending identity are checked before a durable Portal command exists.
+            # Scope and pending identity are checked before a durable Agent Service command exists.
             status, rejected = send_signal(1, str(uuid.uuid4()), 'foreign-node')
             assert status == 200 and rejected['result']['isError'], (status, rejected)
             status, result = send_signal(9007199254740993)
@@ -253,10 +253,10 @@ def run(version, dsn, deny=False, parallel=False, signal=False, nested=False, ag
             await_value(public + '/commands/' + receipt['command_id'], lambda value: value['command_status'] == 'applied', caller)
             payload_file = folder / 'signal.json'
             payload_file.write_text(json.dumps({'value': 9007199254740993}))
-            cli = subprocess.run([str(ROOT / 'service-controlplane/bin/as'), '--api-endpoint=' + portal_url,
+            cli = subprocess.run([str(ROOT / 'control-plane/bin/mactl'), '--api-endpoint=' + agent_service_url,
                 'task', 'run', 'signal', 'ready', work['task']['id'], '--request-id=' + approval_id,
                 '--idempotency-key=agent-workflow-answer', '--file=' + str(payload_file)],
-                env={**environment, 'AGENTSCOPE_TASK_TOKEN': work['taskToken']}, capture_output=True,
+                env={**environment, 'MANAGED_AGENTS_TASK_TOKEN': work['taskToken']}, capture_output=True,
                 text=True, timeout=15)
             assert cli.returncode == 0, cli.stderr
             assert json.loads(cli.stdout)['command_id'] == receipt['command_id'], cli.stdout

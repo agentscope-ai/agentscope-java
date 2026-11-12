@@ -21,261 +21,371 @@ import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import io.agentscope.core.message.ToolResultBlock;
-import io.agentscope.core.util.JsonUtils;
+import com.fasterxml.jackson.databind.JsonNode;
+import io.agentscope.durable.DurableException;
+import io.agentscope.durable.DurableJson;
+import io.agentscope.durable.DurableTypes.PublicEvent;
+import io.agentscope.durable.DurableTypes.Snapshot;
+import io.agentscope.durable.DurableTypes.TurnStatus;
+import io.agentscope.durable.DurableTypes.TurnView;
+import io.agentscope.durable.EventProjection;
+import java.math.BigInteger;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.function.Predicate;
+import java.util.stream.StreamSupport;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 class ChatSessionsTest {
     @TempDir Path workspace;
 
+    private ChatSessions open() {
+        return new ChatSessions(
+                workspace, new DemoChatModel(Duration.ofMillis(8), Duration.ofMillis(20)));
+    }
+
     @Test
-    void queuedTasksAreDistinctAndSteeringStaysInCurrentExecution() throws Exception {
-        try (var sessions =
-                new ChatSessions(
-                        workspace,
-                        new DemoChatModel(Duration.ofMillis(15), Duration.ofMillis(20)))) {
-            var session = sessions.session("conversation");
-            var first = session.submit("first", "/slow investigate");
-            var running =
-                    await(
-                            sessions,
-                            s ->
-                                    s.trace().stream()
-                                            .anyMatch(e -> e.type().equals("model/dispatch")));
-            String runId = running.turns().get(0).runId();
-            var next = session.submit("second", "follow-up task");
+    void queriesNeverCreateSessionsAndExplicitCreationIsIdempotent() {
+        try (var sessions = open()) {
+            assertEquals(
+                    DurableException.Code.NOT_FOUND,
+                    assertThrows(DurableException.class, () -> sessions.snapshot("missing"))
+                            .code());
+            assertTrue(sessions.list().isEmpty());
+            assertEquals(sessions.create("conversation"), sessions.create("conversation"));
+            assertEquals(List.of("conversation"), sessions.list());
+        }
+    }
+
+    @Test
+    void queuedTasksAreDistinctAndSupplementalInputsStayInTheirTurn() throws Exception {
+        try (var sessions = open()) {
+            sessions.create("conversation");
+            var first = sessions.submit("conversation", "first", "/slow investigate");
+            await(sessions, s -> status(s, first.turnId()) == TurnStatus.RUNNING);
+            var next = sessions.submit("conversation", "second", "follow-up task");
             assertNotEquals(first.turnId(), next.turnId());
-            assertEquals("queued", next.status());
-            var steer = sessions.steer("conversation", "focus on operating cost");
-            assertEquals(first.turnId(), steer.turnId());
-            sessions.inject("conversation", "supporting material");
-            var completed =
-                    await(
-                            sessions,
-                            s -> s.turns().size() == 2 && lastStatus(s).equals("completed"));
-            assertEquals(runId, completed.turns().get(0).runId());
-            assertTrue(
-                    completed.messages().stream()
-                            .anyMatch(m -> m.getTextContent().equals("focus on operating cost")));
-            assertTrue(
-                    completed.messages().stream()
-                            .anyMatch(m -> m.getTextContent().equals("supporting material")));
-            var facts = session.log().scan(0, session.log().head().seq());
-            long starts = 0;
-            for (var fact : facts) if (fact.type().equals("run/start")) starts++;
-            assertEquals(2, starts);
-            assertEquals(
-                    3,
-                    completed.items().stream().filter(item -> item.kind().equals("tool")).count());
-            assertThrows(IllegalStateException.class, () -> session.steer("too late"));
-        }
-    }
-
-    @Test
-    void injectionDoesNotStartExecutionAndSurvivesRestart() throws Exception {
-        try (var sessions = new ChatSessions(workspace, new DemoChatModel())) {
-            var session = sessions.session("conversation");
-            session.inject("durable reference material");
-            assertTrue(session.tasks().isEmpty());
-            assertEquals(0, session.log().head().seq());
-        }
-        try (var sessions = new ChatSessions(workspace, new DemoChatModel())) {
-            var session = sessions.session("conversation");
-            var task = session.submit("read the reference");
-            var done = session.await(task).block(Duration.ofSeconds(15));
-            assertEquals("completed", done.status());
-            assertEquals(
-                    1,
-                    session.transcript().messages().stream()
-                            .filter(m -> m.getTextContent().equals("durable reference material"))
-                            .count());
-        }
-    }
-
-    @Test
-    void interruptedTaskKeepsQueuedWorkUntilExplicitContinuation() throws Exception {
-        String firstTurn, secondTurn;
-        try (var sessions =
-                new ChatSessions(
-                        workspace,
-                        new DemoChatModel(Duration.ofMillis(15), Duration.ofMillis(20)))) {
-            var session = sessions.session("conversation");
-            firstTurn = session.submit("first", "/slow pause").turnId();
-            await(
-                    sessions,
-                    s -> s.trace().stream().anyMatch(e -> e.type().equals("model/dispatch")));
-            secondTurn = session.submit("second", "queued work").turnId();
-            assertTrue(session.interrupt());
-            await(sessions, s -> lastStatus(s).equals("interrupted"));
-            assertEquals("queued", session.task("second").status());
-        }
-        try (var sessions =
-                new ChatSessions(
-                        workspace,
-                        new DemoChatModel(Duration.ofMillis(2), Duration.ofMillis(10)))) {
-            var session = sessions.session("conversation");
-            session.resume(firstTurn);
+            assertEquals(TurnStatus.QUEUED, next.status());
+            sessions.steer("conversation", first.turnId(), "guidance", "focus on operating cost");
+            sessions.inject("conversation", first.turnId(), "material", "supporting material");
             var done =
                     await(
                             sessions,
-                            s -> s.turns().size() == 2 && lastStatus(s).equals("completed"));
+                            s ->
+                                    s.turns().size() == 2
+                                            && s.turns().stream()
+                                                    .allMatch(
+                                                            t ->
+                                                                    t.status()
+                                                                            == TurnStatus
+                                                                                    .SUCCEEDED));
             assertEquals(
-                    List.of(firstTurn, secondTurn),
-                    done.turns().stream().map(ChatHistory.Turn::turnId).toList());
-        }
-    }
-
-    @Test
-    void committedHistorySurvivesAgentRecreationAndSubmissionIsIdempotent() throws Exception {
-        long before;
-        try (var first = new ChatSessions(workspace, new DemoChatModel())) {
-            var started = first.submit("conversation", "turn-one", "remember this");
+                    1,
+                    messages(done).stream()
+                            .filter(m -> m.path("text").asText().equals("focus on operating cost"))
+                            .count());
             assertEquals(
-                    started.commandId(),
-                    first.submit("conversation", "turn-one", "remember this").commandId());
-            var snapshot = await(first, s -> lastStatus(s).equals("completed"));
-            assertEquals(2, snapshot.messages().size());
-            before = snapshot.checkpointSeq();
-            assertTrue(before > 0);
-            assertEquals(
-                    started.commandId(),
-                    first.submit("conversation", "turn-one", "remember this").commandId());
+                    1,
+                    messages(done).stream()
+                            .filter(m -> m.path("text").asText().equals("supporting material"))
+                            .count());
+            assertEquals(3, done.projection().path("tools").size());
             assertThrows(
-                    IllegalArgumentException.class,
-                    () -> first.submit("conversation", "turn-one", "changed"));
-        }
-        try (var rebuilt = new ChatSessions(workspace, new DemoChatModel())) {
-            assertTrue(rebuilt.list().contains("conversation"));
-            assertEquals(2, rebuilt.snapshot("conversation").messages().size());
-            rebuilt.submit("conversation", "turn-two", "continue");
-            var snapshot =
-                    await(rebuilt, s -> s.turns().size() == 2 && lastStatus(s).equals("completed"));
-            assertEquals(4, snapshot.messages().size());
-            assertTrue(snapshot.checkpointSeq() > before);
-            assertTrue(snapshot.messages().get(3).getTextContent().contains("remember this"));
-        }
-    }
-
-    @Test
-    void pendingExternalRequestSurvivesRestartAndContinuesSameTurn() throws Exception {
-        String requestId, firstRun, turnId;
-        try (var first = new ChatSessions(workspace, new DemoChatModel())) {
-            turnId = first.submit("conversation", "turn-one", "/ask preference").turnId();
-            var snapshot = await(first, s -> lastStatus(s).equals("suspended"));
-            firstRun = snapshot.turns().get(0).runId();
-            requestId = String.valueOf(snapshot.pending().get(0).data().get("requestId"));
-            assertThrows(IllegalStateException.class, () -> first.resume("conversation", turnId));
-        }
-        try (var rebuilt = new ChatSessions(workspace, new DemoChatModel())) {
-            assertEquals(1, rebuilt.snapshot("conversation").pending().size());
-            var resumed = rebuilt.answer("conversation", requestId, "keep it short");
-            assertEquals(turnId, resumed.turnId());
-            assertNotEquals(firstRun, resumed.runId());
-            var done = await(rebuilt, s -> lastStatus(s).equals("completed"));
-            assertTrue(done.pending().isEmpty());
+                    DurableException.class,
+                    () -> sessions.steer("conversation", first.turnId(), "late", "too late"));
             assertTrue(
-                    done.messages()
-                            .get(done.messages().size() - 1)
-                            .getTextContent()
-                            .contains("keep it short"));
+                    sessions.runs("conversation", first.turnId(), null, 100).items().stream()
+                            .allMatch(run -> run.turnId().equals(first.turnId())));
         }
     }
 
     @Test
-    void interruptThenResumeKeepsInputAndTurnAndSeparatesExecutionIds() throws Exception {
-        String turnId;
-        try (var sessions = new ChatSessions(workspace, new DemoChatModel())) {
-            var run = sessions.submit("conversation", "turn-one", "/slow recovery");
-            turnId = run.turnId();
+    void pauseKeepsQueuedWorkAcrossRestartAndResumeUsesNewRun() throws Exception {
+        String first, second, oldRun;
+        long revision;
+        try (var sessions = open()) {
+            sessions.create("conversation");
+            first = sessions.submit("conversation", "first", "/slow pause").turnId();
             await(
                     sessions,
-                    s -> s.trace().stream().anyMatch(e -> e.type().equals("model/dispatch")));
-            sessions.interrupt("conversation", run.runId());
-            var stopped = await(sessions, s -> lastStatus(s).equals("interrupted"));
-            assertFalse(stopped.messages().isEmpty());
-            assertTrue(stopped.uncertainTools().isEmpty());
+                    s ->
+                            status(s, first) == TurnStatus.RUNNING
+                                    && sessions
+                                            .runs("conversation", first, null, 100)
+                                            .items()
+                                            .stream()
+                                            .anyMatch(run -> run.startedAt() != null));
+            second = sessions.submit("conversation", "second", "queued work").turnId();
+            sessions.pause("conversation", first, "pause");
+            var paused = await(sessions, s -> status(s, first) == TurnStatus.PAUSED);
+            assertEquals(TurnStatus.QUEUED, status(paused, second));
+            revision = paused.turns().get(0).revision();
+            oldRun = sessions.runs("conversation", first, null, 100).items().get(0).runId();
         }
-        try (var rebuilt = new ChatSessions(workspace, new DemoChatModel())) {
-            var resumed = rebuilt.resume("conversation", turnId);
-            assertEquals(turnId, resumed.turnId());
-            await(rebuilt, s -> lastStatus(s).equals("running"));
-            rebuilt.interrupt("conversation", resumed.runId());
-            await(rebuilt, s -> lastStatus(s).equals("interrupted"));
+        try (var sessions = open()) {
+            assertEquals(TurnStatus.PAUSED, status(sessions.snapshot("conversation"), first));
+            assertThrows(
+                    DurableException.class,
+                    () -> sessions.resume("conversation", first, "stale", revision - 1));
+            sessions.resume("conversation", first, "continue", revision);
+            var done = await(sessions, s -> status(s, second) == TurnStatus.SUCCEEDED);
+            assertEquals(
+                    List.of(first, second), done.turns().stream().map(TurnView::turnId).toList());
+            assertEquals(TurnStatus.SUCCEEDED, status(done, first));
+            var runs = sessions.runs("conversation", first, null, 100).items();
+            assertTrue(runs.size() > 1);
+            assertNotEquals(oldRun, runs.get(runs.size() - 1).runId());
         }
     }
 
     @Test
-    void multiStepDemoRetainsEveryToolAndMessageAcrossReconstruction() throws Exception {
-        ChatHistory.Snapshot completed;
-        try (var sessions =
-                new ChatSessions(
-                        workspace,
-                        new DemoChatModel(Duration.ofMillis(2), Duration.ofMillis(40)))) {
-            sessions.submit("conversation", "multi-step", "/slow replay everything");
-            completed = await(sessions, s -> lastStatus(s).equals("completed"));
-            var tools =
-                    completed.items().stream().filter(item -> item.kind().equals("tool")).toList();
-            assertEquals(3, tools.size());
-            assertTrue(tools.stream().allMatch(item -> item.status().equals("success")));
-            assertTrue(tools.stream().allMatch(item -> item.progress().size() == 4));
+    void inputsOnPausedTaskPersistWithoutStartingAndApplyAfterResume() throws Exception {
+        String turn;
+        try (var sessions = open()) {
+            sessions.create("conversation");
+            turn = sessions.submit("conversation", "ask", "/ask preference").turnId();
+            await(sessions, s -> status(s, turn) == TurnStatus.WAITING);
+            sessions.pause("conversation", turn, "pause");
+            await(sessions, s -> status(s, turn) == TurnStatus.PAUSED);
+            sessions.inject("conversation", turn, "reference", "durable reference material");
+            assertEquals(TurnStatus.PAUSED, sessions.turn("conversation", turn).status().status());
+        }
+        try (var sessions = open()) {
+            var before = sessions.snapshot("conversation");
+            var interaction = pending(before).get(0);
+            sessions.answer(
+                    "conversation",
+                    turn,
+                    "answer",
+                    interaction.path("id").asText(),
+                    "keep it short");
+            assertEquals(TurnStatus.PAUSED, sessions.turn("conversation", turn).status().status());
+            assertEquals(1, sessions.runs("conversation", turn, null, 100).items().size());
+            sessions.resume(
+                    "conversation",
+                    turn,
+                    "resume",
+                    sessions.turn("conversation", turn).status().revision());
+            var done = await(sessions, s -> status(s, turn) == TurnStatus.SUCCEEDED);
+            assertEquals(
+                    1,
+                    messages(done).stream()
+                            .filter(
+                                    m ->
+                                            m.path("text")
+                                                    .asText()
+                                                    .equals("durable reference material"))
+                            .count());
+            assertTrue(pending(done).isEmpty());
+        }
+    }
+
+    @Test
+    void committedHistoryAndSubmissionReceiptsSurviveRecreation() throws Exception {
+        String turn, cursor;
+        try (var sessions = open()) {
+            sessions.create("conversation");
+            turn = sessions.submit("conversation", "turn-one", "remember this").turnId();
+            assertEquals(
+                    turn, sessions.submit("conversation", "turn-one", "remember this").turnId());
+            var done = await(sessions, s -> status(s, turn) == TurnStatus.SUCCEEDED);
+            assertEquals(2, messages(done).size());
+            cursor = done.cursor();
+            assertThrows(
+                    DurableException.class,
+                    () -> sessions.submit("conversation", "turn-one", "changed"));
+        }
+        try (var sessions = open()) {
+            assertEquals(cursor, sessions.snapshot("conversation").cursor());
+            assertEquals(
+                    turn, sessions.submit("conversation", "turn-one", "remember this").turnId());
+            var next = sessions.submit("conversation", "turn-two", "continue");
+            var done = await(sessions, s -> status(s, next.turnId()) == TurnStatus.SUCCEEDED);
+            assertEquals(4, messages(done).size());
+            assertTrue(messages(done).get(3).path("text").asText().contains("remember this"));
+        }
+    }
+
+    @Test
+    void pendingRequestSurvivesRestartAndAnswerContinuesSameTurn() throws Exception {
+        String turn, interactionId, firstRun;
+        try (var sessions = open()) {
+            sessions.create("conversation");
+            turn = sessions.submit("conversation", "turn-one", "/ask preference").turnId();
+            var waiting = await(sessions, s -> status(s, turn) == TurnStatus.WAITING);
+            interactionId = pending(waiting).get(0).path("id").asText();
+            firstRun = sessions.runs("conversation", turn, null, 100).items().get(0).runId();
+            assertThrows(
+                    DurableException.class,
+                    () ->
+                            sessions.resume(
+                                    "conversation",
+                                    turn,
+                                    "bypass",
+                                    waiting.turns().get(0).revision()));
+        }
+        try (var sessions = open()) {
+            sessions.answer("conversation", turn, "answer", interactionId, "keep it short");
+            var done = await(sessions, s -> status(s, turn) == TurnStatus.SUCCEEDED);
+            assertTrue(pending(done).isEmpty());
             assertTrue(
-                    tools.stream()
-                            .allMatch(
-                                    item ->
-                                            item.content().stream()
-                                                            .filter(
-                                                                    ToolResultBlock.class
-                                                                            ::isInstance)
-                                                            .count()
-                                                    == 1));
+                    messages(done).stream()
+                            .anyMatch(
+                                    m -> m.path("text").asText().contains("收到你的补充：keep it short")));
+            var runs = sessions.runs("conversation", turn, null, 100).items();
+            assertEquals(2, runs.size());
+            assertNotEquals(firstRun, runs.get(1).runId());
+            assertThrows(
+                    DurableException.class,
+                    () ->
+                            sessions.answer(
+                                    "conversation",
+                                    turn,
+                                    "another-answer",
+                                    interactionId,
+                                    "changed"));
+        }
+    }
+
+    @Test
+    void cancelTargetsTheQueuedTurnWithoutCancellingTheWaitingTask() throws Exception {
+        try (var sessions = open()) {
+            sessions.create("conversation");
+            String first = sessions.submit("conversation", "first", "/ask preference").turnId();
+            var waiting = await(sessions, s -> status(s, first) == TurnStatus.WAITING);
+            String second = sessions.submit("conversation", "second", "queued").turnId();
+            sessions.cancel("conversation", second, "cancel-second");
+            assertEquals(
+                    TurnStatus.CANCELLED, sessions.turn("conversation", second).status().status());
+            assertEquals(
+                    TurnStatus.WAITING, sessions.turn("conversation", first).status().status());
+            assertTrue(sessions.runs("conversation", second, null, 100).items().isEmpty());
+            sessions.answer(
+                    "conversation",
+                    first,
+                    "answer",
+                    pending(waiting).get(0).path("id").asText(),
+                    "yes");
+            await(sessions, s -> status(s, first) == TurnStatus.SUCCEEDED);
+        }
+    }
+
+    @Test
+    void multiStepMessagesToolsProgressAndReplaySurviveRecreation() throws Exception {
+        Snapshot completed;
+        try (var sessions = open()) {
+            sessions.create("conversation");
+            String turn =
+                    sessions.submit("conversation", "multi-step", "/slow replay everything")
+                            .turnId();
+            completed = await(sessions, s -> status(s, turn) == TurnStatus.SUCCEEDED);
+            assertEquals(3, completed.projection().path("tools").size());
+            for (var tool : completed.projection().path("tools")) {
+                assertEquals("SUCCEEDED", tool.path("data").path("status").asText());
+                assertEquals(4, tool.path("data").path("progress").size());
+                assertFalse(tool.path("data").path("content").isEmpty());
+            }
             assertEquals(
                     3,
-                    completed.items().stream()
-                            .filter(item -> item.role().equals("assistant"))
+                    messages(completed).stream()
+                            .filter(
+                                    m ->
+                                            m.path("message")
+                                                    .path("role")
+                                                    .asText()
+                                                    .equals("assistant"))
                             .count());
-        }
-        try (var rebuilt = new ChatSessions(workspace, new DemoChatModel())) {
-            var restored = rebuilt.snapshot("conversation");
-            assertEquals(completed.cursor(), restored.cursor());
+            var projection = new EventProjection(completed.session());
+            for (var event : events(sessions)) {
+                projection.accept(event);
+                projection.accept(event);
+            }
+            // Compare the complete wire representation: JSON integer widths are not protocol state.
             assertEquals(
-                    JsonUtils.getJsonCodec().toJson(completed.items()),
-                    JsonUtils.getJsonCodec().toJson(restored.items()));
+                    DurableJson.parse(completed.projection().toString()),
+                    DurableJson.parse(projection.value().toString()));
+            assertEquals(completed.cursor(), projection.cursor());
+            var runs = sessions.runs("conversation", turn, null, 100).items();
+            assertEquals(1, runs.size());
+            assertEquals(
+                    3,
+                    sessions.turn("conversation", turn)
+                            .listSteps(runs.get(0).runId(), null, 100)
+                            .items()
+                            .size());
+        }
+        try (var sessions = open()) {
+            var restored = sessions.snapshot("conversation");
+            assertEquals(completed, restored);
         }
     }
 
     @Test
-    void cursorsAreSessionScopedAndCannotSkipBeyondHistory() {
-        try (var sessions = new ChatSessions(workspace, new DemoChatModel())) {
-            assertThrows(IllegalArgumentException.class, () -> ChatHistory.position("a", "b:3"));
+    void cursorsAreOpaqueAndSessionScoped() {
+        try (var sessions = open()) {
+            sessions.create("conversation");
+            sessions.create("other");
+            var cursor = sessions.snapshot("conversation").cursor();
+            assertThrows(DurableException.class, () -> sessions.events("other", cursor, 10));
             assertThrows(
-                    IllegalArgumentException.class, () -> sessions.events("conversation", 1, 10));
-            assertEquals(0, ChatHistory.position("a", "a:0"));
+                    DurableException.class,
+                    () -> sessions.events("conversation", "conversation:1", 10));
+            assertTrue(sessions.events("conversation", cursor, 10).events().isEmpty());
         }
     }
 
-    private String lastStatus(ChatHistory.Snapshot snapshot) {
-        return snapshot.turns().isEmpty()
-                ? "empty"
-                : snapshot.turns().get(snapshot.turns().size() - 1).status();
+    static List<JsonNode> messages(Snapshot snapshot) {
+        return values(snapshot.projection().path("messages")).stream()
+                .sorted(
+                        Comparator.comparing(
+                                message -> new BigInteger(message.path("sequence").asText())))
+                .toList();
     }
 
-    private ChatHistory.Snapshot await(ChatSessions sessions, Predicate<ChatHistory.Snapshot> ready)
-            throws Exception {
-        long deadline = System.nanoTime() + Duration.ofSeconds(15).toNanos();
-        ChatHistory.Snapshot snapshot;
+    static List<JsonNode> pending(Snapshot snapshot) {
+        return values(snapshot.projection().path("interactions")).stream()
+                .filter(
+                        i ->
+                                "pending".equals(i.path("status").asText())
+                                        && !i.path("automatic").asBoolean())
+                .toList();
+    }
+
+    static List<JsonNode> values(JsonNode node) {
+        return StreamSupport.stream(node.spliterator(), false).toList();
+    }
+
+    static TurnStatus status(Snapshot snapshot, String id) {
+        return snapshot.turns().stream()
+                .filter(t -> t.turnId().equals(id))
+                .findFirst()
+                .orElseThrow()
+                .status();
+    }
+
+    static List<PublicEvent> events(ChatSessions sessions) {
+        var events = new ArrayList<PublicEvent>();
+        String cursor = null;
+        while (true) {
+            var page = sessions.events("conversation", cursor, 100);
+            events.addAll(page.events());
+            cursor = page.cursor();
+            if (page.events().isEmpty()) return events;
+        }
+    }
+
+    static Snapshot await(ChatSessions sessions, Predicate<Snapshot> ready) throws Exception {
+        long deadline = System.nanoTime() + Duration.ofSeconds(30).toNanos();
+        Snapshot snapshot;
         do {
             snapshot = sessions.snapshot("conversation");
-            if (snapshot.executionError() != null)
-                throw new AssertionError(snapshot.executionError());
-            if (ready.test(snapshot)) {
-                Thread.sleep(50);
-                return snapshot;
-            }
+            if (ready.test(snapshot)) return snapshot;
+            if (snapshot.turns().stream().anyMatch(t -> t.status() == TurnStatus.FAILED))
+                throw new AssertionError(DurableJson.value(snapshot.turns()).toString());
             Thread.sleep(30);
         } while (System.nanoTime() < deadline);
         throw new AssertionError("Timed out: " + snapshot.turns());

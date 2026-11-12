@@ -21,14 +21,14 @@ import io.agentscope.claw2.web.scaffold.WorkspaceScaffolder;
 import io.agentscope.claw2.web.toolbus.ToolEventBus;
 import io.agentscope.claw2.web.toolbus.ToolNotificationMiddleware;
 import io.agentscope.core.model.Model;
-import io.agentscope.core.session.SessionLogStore;
+import io.agentscope.core.journal.ThreadJournalStore;
 import io.agentscope.extensions.controlplane.adapter.AgentScopeAdapter;
 import io.agentscope.extensions.model.dashscope.DashScopeChatModel;
 import io.agentscope.harness.agent.filesystem.local.LocalFilesystem;
 import io.agentscope.harness.agent.gateway.channel.ChannelConfig;
 import io.agentscope.harness.agent.gateway.channel.DmScope;
 import io.agentscope.harness.agent.gateway.channel.chatui.ChatUiChannel;
-import io.agentscope.harness.agent.session.WorkspaceSessionLogStore;
+import io.agentscope.harness.agent.journal.WorkspaceThreadJournalStore;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -109,8 +109,8 @@ public class BuilderConfig {
 
     @Bean
     @ConditionalOnExpression("'${claw.session-log.root:}' != ''")
-    public SessionLogStore pawSessionLogStore() {
-        return new WorkspaceSessionLogStore(new LocalFilesystem(resolvePath(sessionLogRoot)));
+    public ThreadJournalStore pawSessionLogStore() {
+        return new WorkspaceThreadJournalStore(new LocalFilesystem(resolvePath(sessionLogRoot)));
     }
 
     // -----------------------------------------------------------------
@@ -123,7 +123,7 @@ public class BuilderConfig {
             Optional<Model> modelOpt,
             ToolEventBus toolEventBus,
             Optional<AgentScopeAdapter> controlPlaneAdapter,
-            Optional<SessionLogStore> sessionLogStore)
+            Optional<ThreadJournalStore> threadJournalStore)
             throws IOException {
         Path home = resolveClawHome();
         ensureAgentscopeConfig(home);
@@ -149,8 +149,8 @@ public class BuilderConfig {
 
         builder.configureAllAgents(b -> b.middleware(new ToolNotificationMiddleware(toolEventBus)));
 
-        sessionLogStore.ifPresent(
-                store -> builder.configureAllAgents(b -> b.sessionLogStore(store)));
+        threadJournalStore.ifPresent(
+                store -> builder.configureAllAgents(b -> b.threadJournalStore(store)));
 
         // A ReActAgent's middleware list is fixed at build time, so controlplane has to be wired in
         // here

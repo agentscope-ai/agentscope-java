@@ -337,7 +337,7 @@ public class WorkspaceManager implements AutoCloseable {
     /**
      * Returns the legacy session file path (.json) without creating directories.
      *
-     * @deprecated Native session history is stored through SessionLogStore; use explicit migration
+     * @deprecated Native session history is stored through ThreadJournalStore; use explicit migration
      *     when importing old state files.
      */
     @Deprecated

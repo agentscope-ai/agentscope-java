@@ -146,8 +146,8 @@ public class RemoteFilesystem implements AbstractFilesystem {
     }
 
     @Override
-    public io.agentscope.core.session.AtomicSessionStorage sessionStorage(RuntimeContext rc) {
-        return new io.agentscope.harness.agent.session.StoreSessionStorage(store, getNamespace(rc));
+    public io.agentscope.core.journal.AtomicJournalStorage journalStorage(RuntimeContext rc) {
+        return new io.agentscope.harness.agent.journal.StoreJournalStorage(store, getNamespace(rc));
     }
 
     private List<String> getNamespace(RuntimeContext rc) {

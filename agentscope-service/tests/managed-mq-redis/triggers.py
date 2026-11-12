@@ -15,8 +15,8 @@ import replicas
 
 def trigger(body, expected=200):
     headers = {"Content-Type": "application/json",
-               "X-Builder-Internal-Token": "managed-replica-fixture-internal-token-2026",
-               "X-Builder-Internal-User": body["ownerId"]}
+               "X-Managed-Agents-Internal-Token": "managed-replica-fixture-internal-token-2026",
+               "X-Managed-Agents-Internal-User": body["ownerId"]}
     request = urllib.request.Request("http://127.0.0.1:19081/api/internal/managed/triggers",
                                      json.dumps(body).encode(), headers)
     try:
@@ -77,7 +77,7 @@ def run(state):
         request = urllib.request.Request("http://127.0.0.1:19081" + path,
              json.dumps({"text": "fixture:echo:cron-" + identity}).encode(),
              {"Content-Type": "application/json", "Idempotency-Key": key,
-              "X-Builder-Internal-Token": "managed-replica-fixture-internal-token-2026"})
+              "X-Managed-Agents-Internal-Token": "managed-replica-fixture-internal-token-2026"})
         with urllib.request.urlopen(request, timeout=40) as response:
             return json.load(response)
     fired = [fire(), fire()]

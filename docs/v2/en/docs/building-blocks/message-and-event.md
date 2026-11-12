@@ -417,7 +417,7 @@ agent.streamEvents(userMsg)
 
 <Tip>
 
-For live output within the current request, adapt AgentEvent to SSE. `streamEvents()` starts execution and has no durable cursor; do not execute the request again to catch up after a disconnect. Harness also saves logs for direct calls by default. See [Session operations, events and recovery](/v2/en/docs/harness/session-log) for reading history and introducing `AgentSession` when you need background tasks. Hosted frontends use [Agent API snapshot plus SSE](/v2/en/service/session-event-log).
+For live output within the current request, adapt AgentEvent to SSE. `streamEvents()` starts execution and has no durable cursor; do not execute the request again to catch up after a disconnect. Harness also saves logs for direct calls by default. See [Thread journals](/v2/en/docs/harness/session-log) for native history and [Durable](/v2/en/docs/harness/durable) for background tasks, public snapshots and events. Hosted frontends use [Agent API snapshot plus SSE](/v2/en/service/session-event-log).
 
 </Tip>
 
