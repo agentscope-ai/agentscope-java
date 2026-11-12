@@ -84,7 +84,8 @@ public final class WorkspaceProjectionApplier {
         }
 
         String hash = bytesToHex(digest.digest());
-        return new ProjectionPayload(hash, baos.toByteArray(), ordered.size());
+        List<String> paths = ordered.stream().map(Map.Entry::getKey).toList();
+        return new ProjectionPayload(hash, baos.toByteArray(), ordered.size(), paths);
     }
 
     private static void collectProjectionEntries(
@@ -151,6 +152,10 @@ public final class WorkspaceProjectionApplier {
      * @param hash deterministic hash over projected file paths and bytes
      * @param tarBytes tar archive containing projected files
      * @param fileCount number of projected files
+     * @param paths workspace-relative POSIX paths of the projected files; the sandbox keeps
+     *     the last applied list so a later, narrower projection can revoke exactly these
+     *     files (authoritative replace, never overlay)
      */
-    public record ProjectionPayload(String hash, byte[] tarBytes, int fileCount) {}
+    public record ProjectionPayload(
+            String hash, byte[] tarBytes, int fileCount, List<String> paths) {}
 }

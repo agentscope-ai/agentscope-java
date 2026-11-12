@@ -19,8 +19,13 @@ import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.harness.agent.sandbox.snapshot.SandboxSnapshot;
 import java.io.ByteArrayInputStream;
 import java.io.InputStream;
+import java.nio.file.Path;
+import java.util.Comparator;
+import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
+import java.util.TreeSet;
 import java.util.concurrent.atomic.AtomicBoolean;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -53,6 +58,9 @@ public abstract class AbstractBaseSandbox implements Sandbox {
     /** Default timeout in seconds for workspace probing commands. */
     private static final int PROBE_TIMEOUT_SECONDS = 10;
 
+    /** Max projected paths revoked per delete command, keeping commands within length limits. */
+    private static final int DELETE_CHUNK_SIZE = 50;
+
     private final SandboxState state;
     private final WorkspaceSpecApplier workspaceSpecApplier;
     private final AtomicBoolean running = new AtomicBoolean(false);
@@ -71,6 +79,7 @@ public abstract class AbstractBaseSandbox implements Sandbox {
     public void start() throws Exception {
         WorkspaceSpec spec = state.getWorkspaceSpec();
         SandboxSnapshot snapshot = state.getSnapshot();
+        boolean restoredFromSnapshot = false;
 
         try {
             if (state.isWorkspaceRootReady()) {
@@ -86,6 +95,7 @@ public abstract class AbstractBaseSandbox implements Sandbox {
                     log.debug("[sandbox] Branch B: workspace lost, restoring from snapshot");
                     Optional<InputStream> archive = openSnapshotArchive(snapshot);
                     if (archive.isPresent()) {
+                        restoredFromSnapshot = true;
                         doSetupWorkspace();
                         try (InputStream stream = archive.get()) {
                             doHydrateWorkspace(stream);
@@ -104,6 +114,7 @@ public abstract class AbstractBaseSandbox implements Sandbox {
                 if (archive.isPresent()) {
                     // Branch C: restore from snapshot + all spec entries
                     log.debug("[sandbox] Branch C: restoring from snapshot");
+                    restoredFromSnapshot = true;
                     doSetupWorkspace();
                     try (InputStream stream = archive.get()) {
                         doHydrateWorkspace(stream);
@@ -116,7 +127,11 @@ public abstract class AbstractBaseSandbox implements Sandbox {
                     workspaceSpecApplier.applyWorkspaceSpec(spec, false);
                 }
             }
-            applyWorkspaceProjectionIfChanged(spec);
+            // Snapshot restores may carry files from an earlier, wider projection: force the
+            // authoritative pass there so restored-but-unauthorized files are revoked even
+            // when the projection hash is unchanged. Branches A and D hold no surprise
+            // content, the hash check suffices.
+            applyWorkspaceProjectionIfChanged(spec, restoredFromSnapshot);
             state.setWorkspaceRootReady(true);
             running.set(true);
         } catch (Exception e) {
@@ -279,25 +294,165 @@ public abstract class AbstractBaseSandbox implements Sandbox {
      */
     protected abstract String getWorkspaceRoot();
 
-    private void applyWorkspaceProjectionIfChanged(WorkspaceSpec spec) throws Exception {
-        WorkspaceProjectionApplier.ProjectionPayload payload =
-                WorkspaceProjectionApplier.build(spec);
-        if (payload == null) {
+    /**
+     * Deletes workspace files that a previous projection put in place and the current one
+     * no longer authorizes. Every manifest path is a regular file by construction (the
+     * projection collects regular files only), so the default implementation deletes with
+     * {@code rm -f --} — never {@code rm -r}: a tampered manifest entry pointing at a
+     * directory fails the deletion and the start (fail-closed) instead of recursively
+     * removing a tree. Paths are validated against a strict character whitelist before use
+     * (workspace-relative POSIX file paths only) and single-quoted — no expansion vector
+     * remains in POSIX sh; a validation failure throws rather than skipping — leftover
+     * unauthorized files are an authorization breach, not a cosmetic issue. Runs through
+     * {@link #doExec(RuntimeContext, String, int)} (no backend currently consumes the
+     * runtime context inside {@code doExec}); backends with a native delete primitive may
+     * override. Paths are chunked to respect command-length limits.
+     *
+     * <p>Assumes this sandbox owns its workspace root: concurrent sandboxes never share a
+     * root, so revoking "everything this sandbox itself projected" cannot touch another
+     * call's files.
+     *
+     * @param relativePaths workspace-relative POSIX paths previously projected
+     * @throws Exception when a manifest path is invalid or deletion fails
+     */
+    protected void doDeleteWorkspacePaths(List<String> relativePaths) throws Exception {
+        String root = getWorkspaceRoot();
+        for (String path : relativePaths) {
+            requireSafeProjectedPath(path);
+        }
+        for (int from = 0; from < relativePaths.size(); from += DELETE_CHUNK_SIZE) {
+            List<String> chunk =
+                    relativePaths.subList(
+                            from, Math.min(from + DELETE_CHUNK_SIZE, relativePaths.size()));
+            // rm -f, never -r: manifest entries are regular files only, so a directory
+            // entry fails the delete (fail-closed) instead of removing a tree. Single
+            // quotes: no expansion inside '...' in POSIX sh, and the whitelist above
+            // already rejects any ' in the path.
+            StringBuilder command = new StringBuilder("rm -f --");
+            for (String path : chunk) {
+                command.append(" '").append(root).append('/').append(path).append('\'');
+            }
+            ExecResult result = doExec(null, command.toString(), PROBE_TIMEOUT_SECONDS);
+            if (!result.ok()) {
+                throw new SandboxException.WorkspaceStartException(
+                        Path.of(root),
+                        new IllegalStateException(
+                                "failed to revoke stale projected files (exit "
+                                        + result.exitCode()
+                                        + "): "
+                                        + result.combinedOutput()));
+            }
+        }
+        pruneEmptiedAncestorDirs(root, relativePaths);
+    }
+
+    /**
+     * Best-effort {@code rmdir} of the (deepest-first) parent directories of revoked files:
+     * skill names live in directory paths, so a leftover empty tree still enumerates the
+     * revoked catalog. {@code rmdir} only removes empty directories — a directory still
+     * holding another call's files is simply not removed — so pruning can never delete
+     * content. Non-zero exits are expected on non-empty directories and are ignored.
+     *
+     * @param root absolute workspace root
+     * @param relativePaths revoked workspace-relative file paths
+     */
+    private void pruneEmptiedAncestorDirs(String root, List<String> relativePaths) {
+        Set<String> ancestors =
+                new TreeSet<>(
+                        Comparator.comparingInt((String p) -> p.split("/").length)
+                                .reversed()
+                                .thenComparing(Comparator.naturalOrder()));
+        for (String path : relativePaths) {
+            for (int end = path.lastIndexOf('/'); end > 0; end = path.lastIndexOf('/', end - 1)) {
+                ancestors.add(path.substring(0, end));
+            }
+        }
+        if (ancestors.isEmpty()) {
             return;
         }
-        if (Objects.equals(payload.hash(), state.getWorkspaceProjectionHash())) {
+        List<String> ordered = List.copyOf(ancestors);
+        for (int from = 0; from < ordered.size(); from += DELETE_CHUNK_SIZE) {
+            List<String> chunk =
+                    ordered.subList(from, Math.min(from + DELETE_CHUNK_SIZE, ordered.size()));
+            StringBuilder command = new StringBuilder("rmdir --");
+            for (String dir : chunk) {
+                command.append(" '").append(root).append('/').append(dir).append('\'');
+            }
+            try {
+                doExec(null, command.toString(), PROBE_TIMEOUT_SECONDS);
+            } catch (Exception e) {
+                log.debug("[sandbox] Empty-parent pruning skipped: {}", e.getMessage());
+            }
+        }
+    }
+
+    /**
+     * Validates one manifest path before it reaches a delete command. The manifest is
+     * persisted JSON — treat it as untrusted on read: absolute paths, {@code ..} segments,
+     * backslashes and quotes are rejected loudly instead of being sanitized into use.
+     *
+     * @param path the recorded workspace-relative POSIX path
+     * @throws IllegalStateException when the path could target anything outside the
+     *     projected file set
+     */
+    private static void requireSafeProjectedPath(String path) {
+        // Strict whitelist: projected paths are workspace-relative POSIX file paths and can
+        // never legitimately contain anything else — this rejects every shell metacharacter
+        // (quotes, $, backticks, whitespace) instead of enumerating the dangerous ones.
+        if (path == null || !path.matches("[A-Za-z0-9._/-]+")) {
+            throw new IllegalStateException("unsafe projected path in manifest: " + path);
+        }
+        for (String segment : path.split("/")) {
+            if (segment.isEmpty() || segment.equals(".") || segment.equals("..")) {
+                throw new IllegalStateException("unsafe projected path in manifest: " + path);
+            }
+        }
+    }
+
+    /**
+     * Applies the workspace projection authoritatively: hydrates the current payload and
+     * revokes every file of the previously applied projection that the current one no
+     * longer authorizes (a narrowed projection must remove, not overlay). Only
+     * projection-managed paths are ever deleted — sandbox user files are untouched, which
+     * is also what keeps concurrent sandboxes sharing a host directory safe: each deletes
+     * only what it itself projected.
+     *
+     * @param spec the workspace spec carrying the projection entries
+     * @param force skip the hash short-circuit (snapshot-restore paths): the restored
+     *     workspace may carry files from an earlier, wider projection even when the hash is
+     *     unchanged, so the revocation pass must run regardless
+     */
+    private void applyWorkspaceProjectionIfChanged(WorkspaceSpec spec, boolean force)
+            throws Exception {
+        WorkspaceProjectionApplier.ProjectionPayload payload =
+                WorkspaceProjectionApplier.build(spec);
+        String currentHash = payload != null ? payload.hash() : null;
+        if (!force && Objects.equals(currentHash, state.getWorkspaceProjectionHash())) {
             log.debug("[sandbox] Workspace projection unchanged, skipping");
             return;
         }
-        if (payload.fileCount() > 0) {
+        List<String> currentPaths = payload != null ? payload.paths() : List.of();
+        List<String> previousPaths = state.getProjectedWorkspacePaths();
+        List<String> stale =
+                previousPaths == null
+                        ? List.of()
+                        : previousPaths.stream()
+                                .filter(path -> !currentPaths.contains(path))
+                                .toList();
+        if (!stale.isEmpty()) {
+            doDeleteWorkspacePaths(stale);
+        }
+        if (payload != null && payload.fileCount() > 0) {
             try (InputStream archive = new ByteArrayInputStream(payload.tarBytes())) {
                 doHydrateWorkspace(archive);
             }
         }
-        state.setWorkspaceProjectionHash(payload.hash());
+        state.setWorkspaceProjectionHash(currentHash);
+        state.setProjectedWorkspacePaths(currentPaths);
         log.debug(
-                "[sandbox] Workspace projection applied: files={}, hash={}",
-                payload.fileCount(),
-                payload.hash());
+                "[sandbox] Workspace projection applied: files={}, revoked={}, hash={}",
+                payload != null ? payload.fileCount() : 0,
+                stale.size(),
+                currentHash);
     }
 }
