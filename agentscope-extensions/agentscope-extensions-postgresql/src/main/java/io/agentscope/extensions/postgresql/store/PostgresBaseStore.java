@@ -18,6 +18,7 @@ package io.agentscope.extensions.postgresql.store;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.harness.agent.filesystem.remote.store.BaseStore;
+import io.agentscope.harness.agent.filesystem.remote.store.BulkReadableStore;
 import io.agentscope.harness.agent.filesystem.remote.store.InMemoryStore;
 import io.agentscope.harness.agent.filesystem.remote.store.StoreItem;
 import java.sql.Connection;
@@ -27,6 +28,9 @@ import java.sql.SQLException;
 import java.sql.SQLIntegrityConstraintViolationException;
 import java.sql.Statement;
 import java.util.ArrayList;
+import java.util.Collection;
+import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -70,7 +74,7 @@ import org.slf4j.LoggerFactory;
  * primary-key conflict as a failed CAS. Both paths are atomic without additional locking, so the
  * store is safe to share among multiple JVMs writing to the same database.
  */
-public class PostgresBaseStore implements BaseStore {
+public class PostgresBaseStore implements BulkReadableStore {
 
     private static final Logger LOG = LoggerFactory.getLogger(PostgresBaseStore.class);
 
@@ -86,6 +90,9 @@ public class PostgresBaseStore implements BaseStore {
 
     private static final Pattern VALID_IDENTIFIER = Pattern.compile("[A-Za-z_][A-Za-z0-9_]*");
 
+    /** Bound on {@code IN (...)} parameters for a single batch read. */
+    private static final int GET_ALL_CHUNK = 256;
+
     private static final String CREATE_TABLE_SQL =
             """
             CREATE TABLE IF NOT EXISTS %s (
@@ -100,6 +107,10 @@ public class PostgresBaseStore implements BaseStore {
 
     private static final String SELECT_SQL =
             "SELECT value_json, version FROM %s WHERE namespace_path = ? AND item_key = ?";
+
+    private static final String SELECT_MANY_SQL =
+            "SELECT item_key, value_json, version FROM %s"
+                    + " WHERE namespace_path = ? AND item_key IN (%s)";
 
     private static final String UPSERT_SQL =
             """
@@ -213,6 +224,46 @@ public class PostgresBaseStore implements BaseStore {
         } catch (SQLException e) {
             throw new IllegalStateException("PostgresBaseStore get failed", e);
         }
+    }
+
+    @Override
+    public Map<String, StoreItem> getAll(List<String> namespace, Collection<String> keys) {
+        var unique = new LinkedHashSet<String>();
+        for (String key : keys) {
+            validateKey(key);
+            unique.add(key);
+        }
+        if (unique.isEmpty()) return Map.of();
+        String nsPath = namespacePath(namespace);
+        var result = new HashMap<String, StoreItem>();
+        var list = new ArrayList<>(unique);
+        try (Connection c = dataSource.getConnection()) {
+            for (int start = 0; start < list.size(); start += GET_ALL_CHUNK) {
+                var chunk = list.subList(start, Math.min(start + GET_ALL_CHUNK, list.size()));
+                var placeholders = new StringBuilder();
+                for (int i = 0; i < chunk.size(); i++) {
+                    if (i > 0) placeholders.append(", ");
+                    placeholders.append('?');
+                }
+                String sql = String.format(SELECT_MANY_SQL, qualifiedTableName, placeholders);
+                try (PreparedStatement ps = c.prepareStatement(sql)) {
+                    ps.setString(1, nsPath);
+                    for (int i = 0; i < chunk.size(); i++) ps.setString(i + 2, chunk.get(i));
+                    try (ResultSet rs = ps.executeQuery()) {
+                        while (rs.next()) {
+                            String key = rs.getString(1);
+                            result.put(
+                                    key,
+                                    new StoreItem(
+                                            key, deserialize(rs.getString(2)), rs.getLong(3)));
+                        }
+                    }
+                }
+            }
+        } catch (SQLException e) {
+            throw new IllegalStateException("PostgresBaseStore getAll failed", e);
+        }
+        return result;
     }
 
     @Override

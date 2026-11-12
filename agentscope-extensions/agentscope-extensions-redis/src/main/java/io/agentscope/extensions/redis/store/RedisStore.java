@@ -18,11 +18,16 @@ package io.agentscope.extensions.redis.store;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.harness.agent.filesystem.remote.store.BaseStore;
+import io.agentscope.harness.agent.filesystem.remote.store.BulkReadableStore;
 import io.agentscope.harness.agent.filesystem.remote.store.StoreItem;
 import java.util.ArrayList;
+import java.util.Collection;
+import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import redis.clients.jedis.Response;
 import redis.clients.jedis.UnifiedJedis;
 
 /**
@@ -54,10 +59,13 @@ import redis.clients.jedis.UnifiedJedis;
  * and {@code HSET}, which is closed by the Lua atomicity above) or to an item that was
  * concurrently deleted. The implementation tolerates the latter by skipping missing items.
  */
-public class RedisStore implements BaseStore {
+public class RedisStore implements BulkReadableStore {
 
     /** Default Redis key prefix; pick something distinctive enough not to collide with other apps. */
     public static final String DEFAULT_KEY_PREFIX = "agentscope:store:";
+
+    /** Bound on keys sent through one pipeline before syncing. */
+    private static final int PIPELINE_CHUNK = 256;
 
     private static final String NS_SEPARATOR = "\0";
 
@@ -137,6 +145,34 @@ public class RedisStore implements BaseStore {
     }
 
     @Override
+    public Map<String, StoreItem> getAll(List<String> namespace, Collection<String> keys) {
+        var unique = new LinkedHashSet<String>();
+        for (String key : keys) {
+            validateKey(key);
+            unique.add(key);
+        }
+        if (unique.isEmpty()) return Map.of();
+        var result = new HashMap<String, StoreItem>();
+        var list = new ArrayList<>(unique);
+        for (int start = 0; start < list.size(); start += PIPELINE_CHUNK) {
+            var chunk = list.subList(start, Math.min(start + PIPELINE_CHUNK, list.size()));
+            var responses = new ArrayList<Response<Map<String, String>>>(chunk.size());
+            try (var pipeline = jedis.pipelined()) {
+                for (String key : chunk) responses.add(pipeline.hgetAll(itemKey(namespace, key)));
+                pipeline.sync();
+            }
+            for (int i = 0; i < chunk.size(); i++) {
+                var hash = responses.get(i).get();
+                if (hash != null && !hash.isEmpty()) {
+                    String key = chunk.get(i);
+                    result.put(key, toItem(key, hash));
+                }
+            }
+        }
+        return result;
+    }
+
+    @Override
     public void put(List<String> namespace, String key, Map<String, Object> value) {
         validateKey(key);
         String itemKey = itemKey(namespace, key);
@@ -179,13 +215,22 @@ public class RedisStore implements BaseStore {
         if (keys == null || keys.isEmpty()) {
             return List.of();
         }
+        // Pipeline each bounded chunk instead of one HGETALL round-trip per key.
         List<StoreItem> items = new ArrayList<>(keys.size());
-        for (String k : keys) {
-            Map<String, String> hash = jedis.hgetAll(itemKey(namespace, k));
-            if (hash == null || hash.isEmpty()) {
-                continue; // stale index entry — tolerated
+        for (int start = 0; start < keys.size(); start += PIPELINE_CHUNK) {
+            var chunk = keys.subList(start, Math.min(start + PIPELINE_CHUNK, keys.size()));
+            var responses = new ArrayList<Response<Map<String, String>>>(chunk.size());
+            try (var pipeline = jedis.pipelined()) {
+                for (String k : chunk) responses.add(pipeline.hgetAll(itemKey(namespace, k)));
+                pipeline.sync();
             }
-            items.add(toItem(k, hash));
+            for (int i = 0; i < chunk.size(); i++) {
+                Map<String, String> hash = responses.get(i).get();
+                if (hash == null || hash.isEmpty()) {
+                    continue; // stale index entry — tolerated
+                }
+                items.add(toItem(chunk.get(i), hash));
+            }
         }
         return items;
     }

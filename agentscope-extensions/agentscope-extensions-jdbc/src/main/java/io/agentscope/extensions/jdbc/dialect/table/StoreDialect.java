@@ -16,6 +16,7 @@
 package io.agentscope.extensions.jdbc.dialect.table;
 
 import io.agentscope.extensions.jdbc.dialect.BoundSql;
+import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -95,6 +96,28 @@ public interface StoreDialect {
                         + " WHERE namespace_path = ? AND item_key = ?",
                 namespacePath,
                 key);
+    }
+
+    /** Multi-item SELECT. Projection: (item_key, value_json, version). */
+    default BoundSql storeSelectMany(String namespacePath, List<String> keys) {
+        if (keys.isEmpty()) {
+            throw new IllegalArgumentException("keys must not be empty");
+        }
+        var placeholders = new StringBuilder();
+        for (int i = 0; i < keys.size(); i++) {
+            if (i > 0) placeholders.append(", ");
+            placeholders.append('?');
+        }
+        var params = new ArrayList<>(keys.size() + 1);
+        params.add(namespacePath);
+        params.addAll(keys);
+        return new BoundSql(
+                "SELECT item_key, value_json, version FROM "
+                        + storeTableName()
+                        + " WHERE namespace_path = ? AND item_key IN ("
+                        + placeholders
+                        + ")",
+                params);
     }
 
     /** Single-item DELETE. */

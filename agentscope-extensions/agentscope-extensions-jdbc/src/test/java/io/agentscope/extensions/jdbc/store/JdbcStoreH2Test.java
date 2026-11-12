@@ -24,6 +24,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import io.agentscope.extensions.jdbc.H2TestSupport;
 import io.agentscope.extensions.jdbc.dialect.AbstractJdbcDialect;
 import io.agentscope.harness.agent.filesystem.remote.store.StoreItem;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import javax.sql.DataSource;
@@ -155,5 +156,26 @@ class JdbcStoreH2Test {
         assertEquals(2, page.size());
         assertEquals("key1", page.get(0).key());
         assertEquals("key2", page.get(1).key());
+    }
+
+    @Test
+    @DisplayName("getAll returns requested items and chunks large key sets")
+    void getAllReturnsRequestedItemsAndChunksLargeKeySets() {
+        List<String> ns = List.of("batch");
+        List<String> keys = new ArrayList<>();
+        for (int i = 0; i < 300; i++) {
+            String key = "key" + i;
+            store.put(ns, key, Map.of("v", i));
+            keys.add(key);
+        }
+        keys.add("missing");
+        keys.add("key0"); // duplicate
+
+        Map<String, StoreItem> items = store.getAll(ns, keys);
+
+        assertEquals(300, items.size());
+        assertEquals(299, items.get("key299").value().get("v"));
+        assertEquals(1L, items.get("key0").version());
+        assertNull(items.get("missing"));
     }
 }
