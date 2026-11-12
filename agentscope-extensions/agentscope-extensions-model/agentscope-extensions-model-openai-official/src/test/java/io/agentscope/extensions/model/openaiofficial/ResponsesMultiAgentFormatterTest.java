@@ -18,6 +18,7 @@ package io.agentscope.extensions.model.openaiofficial;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.openai.models.responses.EasyInputMessage;
@@ -27,6 +28,8 @@ import com.openai.models.responses.ResponseReasoningItem;
 import io.agentscope.core.message.Base64Source;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.DataBlock;
+import io.agentscope.core.message.DocumentBlock;
+import io.agentscope.core.message.FileIdSource;
 import io.agentscope.core.message.HintBlock;
 import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.MessageMetadataKeys;
@@ -37,6 +40,8 @@ import io.agentscope.core.message.ThinkingBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.message.URLSource;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -44,6 +49,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 /**
  * Unit tests for {@link ResponsesMultiAgentFormatter}.
@@ -742,6 +748,137 @@ class ResponsesMultiAgentFormatterTest {
             String allText = extractAllText(result);
             assertTrue(allText.contains("<history>"));
             assertTrue(allText.contains("Hello!"));
+        }
+    }
+
+    @Nested
+    class DocumentInput {
+
+        @TempDir Path directory;
+
+        @Test
+        void mergedDocumentsPreserveContentOrderAcrossMessages() {
+            List<ResponseInputItem> result =
+                    formatter.formatHistory(
+                            List.of(
+                                    user(
+                                            "Alice",
+                                            text("before"),
+                                            DocumentBlock.builder()
+                                                    .source(
+                                                            new URLSource(
+                                                                    "https://example.com/report.docx"))
+                                                    .build(),
+                                            text("middle")),
+                                    user(
+                                            "Bob",
+                                            DocumentBlock.builder()
+                                                    .source(new FileIdSource("openai", "file-123"))
+                                                    .build(),
+                                            text("after"))));
+            List<ResponseInputContent> parts =
+                    result.get(0)
+                            .asEasyInputMessage()
+                            .content()
+                            .asResponseInputMessageContentList();
+            assertEquals(5, parts.size());
+            assertTrue(parts.get(0).asInputText().text().contains("Alice: before"));
+            assertEquals(
+                    "https://example.com/report.docx",
+                    parts.get(1).asInputFile().fileUrl().orElseThrow());
+            assertTrue(parts.get(2).asInputText().text().contains("Alice: middle"));
+            assertEquals("file-123", parts.get(3).asInputFile().fileId().orElseThrow());
+            assertTrue(parts.get(4).asInputText().text().contains("Bob: after"));
+            assertTrue(parts.get(4).asInputText().text().contains("</history>"));
+        }
+
+        @Test
+        void assistantDocumentIsRenderedAsATextReference() {
+            DocumentBlock document =
+                    DocumentBlock.builder()
+                            .source(new FileIdSource("anthropic", "file-123"))
+                            .name("report.pdf")
+                            .mimeType("application/pdf")
+                            .build();
+
+            List<ResponseInputContent> parts =
+                    formatter
+                            .formatHistory(List.of(assistant(document)))
+                            .get(0)
+                            .asEasyInputMessage()
+                            .content()
+                            .asResponseInputMessageContentList();
+
+            assertEquals(1, parts.size());
+            assertFalse(parts.get(0).isInputFile());
+            assertTrue(
+                    parts.get(0)
+                            .asInputText()
+                            .text()
+                            .contains(
+                                    "[document: report.pdf, application/pdf, provider file id:"
+                                            + " file-123 (anthropic)]"));
+        }
+
+        @Test
+        void mergedLocalDocumentUsesSameConversionAsDirectMapping() throws Exception {
+            Path path = directory.resolve("报告 #1.pdf");
+            Files.writeString(path, "abc");
+            Msg message =
+                    user(
+                            DocumentBlock.builder()
+                                    .source(new URLSource(path.toUri().toString()))
+                                    .mimeType("application/pdf")
+                                    .build());
+            List<ResponseInputContent> merged =
+                    formatter
+                            .formatHistory(List.of(message))
+                            .get(0)
+                            .asEasyInputMessage()
+                            .content()
+                            .asResponseInputMessageContentList();
+            List<ResponseInputContent> direct =
+                    ResponsesRequestMapper.mapHistory(List.of(message))
+                            .get(0)
+                            .asEasyInputMessage()
+                            .content()
+                            .asResponseInputMessageContentList();
+            assertEquals(direct.get(0).asInputFile(), merged.get(1).asInputFile());
+        }
+
+        @Test
+        void bypassDocumentKeepsNativeFileInput() {
+            Msg message =
+                    bypassUser(
+                            DocumentBlock.builder()
+                                    .source(new Base64Source("text/csv", "YWJj"))
+                                    .name("report.csv")
+                                    .build());
+            List<ResponseInputContent> parts =
+                    formatter
+                            .formatHistory(List.of(message))
+                            .get(0)
+                            .asEasyInputMessage()
+                            .content()
+                            .asResponseInputMessageContentList();
+            assertEquals(1, parts.size());
+            assertEquals("report.csv", parts.get(0).asInputFile().filename().orElseThrow());
+            assertEquals(
+                    "data:text/csv;base64,YWJj",
+                    parts.get(0).asInputFile().fileData().orElseThrow());
+        }
+
+        @Test
+        void invalidDocumentFailsInsteadOfBeingSilentlyDropped() {
+            Msg message =
+                    user(
+                            text("summarize"),
+                            DocumentBlock.builder()
+                                    .source(new FileIdSource("anthropic", "file-123"))
+                                    .build());
+            assertThrows(
+                    OpenAIOfficialModelException.class,
+                    () -> formatter.formatHistory(List.of(message)));
         }
     }
 
