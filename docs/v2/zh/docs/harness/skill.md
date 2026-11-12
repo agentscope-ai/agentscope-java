@@ -320,8 +320,8 @@ agent 感知不到这种差异，`load_skill_through_path` 调起来都一样。
 
 | 文件系统模式（是否有 shell） | 工作区 skill 的 `<files-root>` | 市场 skill 的 `<files-root>` |
 |---------------------------|----------------------------|---------------------------|
-| Sandbox | `/workspace/skills/<name>` | `/workspace/.skills-cache/<source>/<name>` |
-| Local-with-shell | `<wsRoot>/skills/<name>` | `<wsRoot>/.skills-cache/<source>/<name>` |
+| Sandbox | `/workspace/skills/<name>` | `/workspace/.skills-cache/<scope>/<source>/<name>` |
+| Local-with-shell | `<wsRoot>/skills/<name>` | `<wsRoot>/.skills-cache/<scope>/<source>/<name>` |
 | Local 不带 shell / Composite | （不渲染——没注册 shell 工具） | （不渲染） |
 
 `<files-root>` 是执行环境中的原始绝对路径，空格也原样保留。agent 以它为基准解析脚本路径，再按该环境的 shell 语法引用。本地 Windows 使用 `cmd.exe`，本地 POSIX 使用 `sh`，Docker 和 Kubernetes 在各自沙箱里执行。宿主 JVM 的系统、路径和已安装运行时不代表沙箱。应按已加载 skill 的脚本说明，使用命令执行环境中实际可用的解释器，不再假定 `ls` 或 `python3` 存在。只有可见技能中至少一个带 `<files-root>` 时，才会提供执行指引。
@@ -332,16 +332,22 @@ agent 感知不到这种差异，`load_skill_through_path` 调起来都一样。
 
 仓库技能的文件落在哪儿取决于后端：
 
-- **带缓存的后端（Git / 配置了版本的 Nacos / JDBC 系 / JAR 内 Classpath）**：每次按版本读取都由仓储自己物化成不可变、按版本键控的缓存目录——Maven local 风格，默认在 `~/.agentscope/skill-cache/<repoIdentity>/<skill>/<version>/`。可在仓储构造参数里传 `cacheDir` 覆盖缓存根，测试/运维也可用系统属性 `agentscope.skill.cache.dir` 全局覆盖。该目录树跨进程共享，可随时被运维整棵删除——未命中只是按同版本确定性重拉，`close()` 永远不会删它。`<files-root>` 方面，harness 会把该物化目录**按版本一次**地 stage 到 `<wsRoot>/.skills-cache/<source>/<name>/`（源不可变，完整的 staged 拷贝即被复用、绝不重写）——以此保证 shell 与沙箱两种模式路径可解析；未配置 shell 时完全跳过 staging。
-- **不带缓存的后端（Workspace，以及纯内存形态到达的技能）**：保持原有 staging 路径——harness 在每次 call 前（PreCall 阶段，与 `<available_skills>` 同一次 `onSystemPrompt`）把它们物化到 `<wsRoot>/.skills-cache/<source>/<name>/`，文件级 SHA-256 去重、只重写变化过的文件；已经下架的 skill（或被从 builder 中移除的整个仓库）留下的孤儿目录会在同一次物化里顺手清掉。Sandbox 模式下，`.skills-cache` 默认包含在 workspace projection roots 里，沙箱启动时（以及内容变化时）会跟 `workspace/skills/` 一起 hydrate 进沙箱。FileSystem 仓储以自身磁盘树作为 origin 目录，走与缓存后端相同的"按版本一次"拷贝 staging。
+- **带缓存的后端（Git / 配置了版本的 Nacos / JDBC 系 / JAR 内 Classpath）**：每次按版本读取都由仓储自己物化成不可变、按版本键控的缓存目录——Maven local 风格，默认在 `~/.agentscope/skill-cache/<repoIdentity>/<skill>/<version>/`。可在仓储构造参数里传 `cacheDir` 覆盖缓存根，测试/运维也可用系统属性 `agentscope.skill.cache.dir` 全局覆盖。该目录树跨进程共享，可随时被运维整棵删除——未命中只是按同版本确定性重拉，`close()` 永远不会删它。`<files-root>` 方面，harness 会把该物化目录**按版本一次**地 stage 到 `<wsRoot>/.skills-cache/<scope>/<source>/<name>/`（源不可变，完整的 staged 拷贝即被复用、绝不重写）——以此保证 shell 与沙箱两种模式路径可解析；未配置 shell 时完全跳过 staging。
+- **不带缓存的后端（Workspace，以及纯内存形态到达的技能）**：保持原有 staging 路径——harness 在每次 call 前（PreCall 阶段，与 `<available_skills>` 同一次 `onSystemPrompt`）把它们物化到 `<wsRoot>/.skills-cache/<scope>/<source>/<name>/`，文件级 SHA-256 去重、只重写变化过的文件；已经下架的 skill（或被从 builder 中移除的整个仓库）留下的孤儿目录，在整个宽限期内未被使用后，会在同一次物化里清理掉（默认宽限期为 30 分钟）。Sandbox 模式下，`.skills-cache` 默认包含在 workspace projection roots 里，沙箱启动时（以及内容变化时）会跟 `workspace/skills/` 一起 hydrate 进沙箱。FileSystem 仓储以自身磁盘树作为 origin 目录，走与缓存后端相同的"按版本一次"拷贝 staging。
 
 沙箱注意事项：仓储缓存默认在宿主的 `~/.agentscope/skill-cache`。若沙箱内执行需要直接看到仓库技能文件，请把 `cacheDir` 指到会话可见卷（harness 侧构造注入），或走上面的 workspace staging 路径。
 
 plain（非 context）仓储只服务显式 `SkillFilter.only(...)` 选中的名字。黑名单基线、通配基线或不设 filter 都不会为它们选中任何名字——这样的仓储会被跳过服务并按仓储告警一次。请显式绑定要服务的名字，或使用 `RuntimeContextSkillRepository` 做请求作用域的动态发现。
 
+进行 stage 时，技能名称必须是单个目录名。绝对路径、`/` 或 `\` 分隔符、盘符或数据流语法（`:`）、`.`/`..`、以点或空格结尾的名称，以及 Windows 设备保留名称（如 `CON`、`NUL.txt` 或 `COM1`），会在暂存写入或资源清理前被拒绝。受影响的技能不会获得暂存的 `<files-root>`，其他技能仍会正常 stage。技能名称不会被改写，此检查也不要求名称仅使用小写或限制为 64 字符。
+
+来源标识和隔离作用域使用同一个映射规则，转换为最多 64 字符的安全目录段。`git-owner/repo` 和 `classpath-agentscope/skills` 等标识仍可正常使用；映射改变标识时，会添加摘要后缀加以区分。Windows 设备保留名称也会被安全映射。空作用域使用 `_shared`，字面值为 `_shared` 的身份标识则单独映射。
+
+**升级说明：** 来源映射会改变已有的嵌套缓存路径（例如，同一作用域下的 `git-owner/repo/<name>` 变为 `git-owner_repo-<digest>/<name>`）。下一次 stage 会在新路径重建缓存。旧嵌套目录可在宽限期后由孤儿 GC 回收；GC 会递归删除过期的第二级目录。缓存的 `<files-root>` 路径不保证跨升级保持不变：已持久化的提示词和会话记录不会被改写，应使用重新渲染的技能上下文中的路径。
+
 工作区 skill（Layer 3 / Layer 4）不需要 stage——它们本来就在工作区目录里。
 
-如果两个仓库返回了相同的 `getSource()`，第二个会自动加后缀（`<source>_2`、`<source>_3` …），并打 warning log，所以路径和 skill-id 不会撞。
+如果多个仓库返回相同的 `getSource()`，每个仓库会先加上序号后缀（`<source>_1`、`<source>_2` …），再进行目录段映射，并输出 warning log。
 
 ## 在沙箱里运行 skill
 
@@ -354,14 +360,14 @@ plain（非 context）仓储只服务显式 `SkillFilter.only(...)` 选中的名
 | 来源 | 进沙箱前住哪儿 | 沙箱里的路径 |
 |------|--------------|-------------|
 | 工作区 skill（Layer 3 `workspace/skills/`、Layer 4 `<userId>/skills/`） | 本来就在工作区目录树里 | `/workspace/skills/<name>` |
-| 市场 skill（Layer 1 项目全局、Layer 2 Git / MySQL / Nacos / classpath） | 资源最初只在内存里 | `/workspace/.skills-cache/<source>/<name>` |
+| 市场 skill（Layer 1 项目全局、Layer 2 Git / MySQL / Nacos / classpath） | 资源最初只在内存里 | `/workspace/.skills-cache/<scope>/<source>/<name>` |
 
 ### 第一步：把市场 skill 物化到宿主
 
-市场 skill 的资源拿到时只是内存里的字节，shell 没法直接执行。每次 call 前（PreCall 阶段），`MarketplaceStager` 把它们写到宿主的 `<wsRoot>/.skills-cache/<source>/<name>/`：
+市场 skill 的资源拿到时只是内存里的字节，shell 没法直接执行。每次 call 前（PreCall 阶段），`MarketplaceStager` 把它们写到宿主的 `<wsRoot>/.skills-cache/<scope>/<source>/<name>/`：
 
 - **文件级 SHA-256 去重** —— 只重写变化过的文件，没变的跳过；
-- **孤儿清理** —— 已下架的 skill、或从 builder 里移除的整个仓库，留下的目录在同一次物化里顺手删掉；
+- **孤儿清理** —— 已下架的 skill、或从 builder 里移除的整个仓库，留下的目录在整个宽限期内未被使用后，在同一次物化里顺手删掉；
 - **恢复执行位** —— 资源在入库时被转成字符串，POSIX 权限丢了，所以 stager 用启发式补回 `+x`：文件开头是 shebang（`#!`），或后缀是已知脚本类型（`.sh`/`.bash`/`.py`/`.rb`/`.pl`/`.js`/`.mjs`），就加上可执行位（按 `chmod +x` 的语义，只给本来有读权限的位加执行位）。纯静态资产（`.json`/`.md`/`.txt`）保持 644。
 
 工作区 skill（Layer 3 / Layer 4）跳过这一步——它们本来就在工作区目录里。
@@ -390,7 +396,7 @@ AGENTS.md  skills/  subagents/  knowledge/  .skills-cache/
 | skill 类型 | `<files-root>` |
 |-----------|----------------|
 | 工作区 skill | `/workspace/skills/<name>` |
-| 市场 skill | `/workspace/.skills-cache/<source>/<name>` |
+| 市场 skill | `/workspace/.skills-cache/<scope>/<source>/<name>` |
 
 以默认 `/workspace` 根目录、沙箱已安装 `sh` 为例，agent 可以用以下参数调用 `execute`：
 

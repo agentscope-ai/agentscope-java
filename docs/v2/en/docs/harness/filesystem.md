@@ -366,6 +366,9 @@ HarnessAgent agent = HarnessAgent.builder()
 | `addRoot(Path)` | Extra host directory the agent may access | none |
 | `additionalRoots(Collection)` | Batch-set extra directories | none |
 | `projectWritable(boolean)` | Route non-workspace writes to the project directory instead of workspace | `false` |
+| `namespaceBoundary(Boolean)` | Override the namespace boundary (absolute paths confined to the caller's own namespace under the workspace root, [isolation scopes](#isolationscope--bucketing-across-users-and-replicas)); `true`/`false` force, omit for the default | on for `ROOTED` |
+
+> **Upgrading — absolute paths under the workspace root:** the namespace boundary is on by default for `ROOTED` workspaces, so an absolute key such as `<workspace>/skills/tool.md` no longer reaches shared content at the workspace root (previously any session could address another session's directory that way). Shared content stays reachable through workspace-relative paths, which the overlay resolves against the read-only project layer; on a vetted single-tenant workspace that needs the old behaviour, pass `.namespaceBoundary(false)`.
 
 #### Path resolution policy (`LocalFsMode`)
 
@@ -518,7 +521,9 @@ The four-layer priority is unchanged (low → high): `projectGlobalSkillsDir` �
 
 All file tools call through the `AbstractFilesystem` interface, passing the current `RuntimeContext` on every operation. The filesystem implementation decides the actual read/write location. Agent code is completely unaware of the mode.
 
-`read_file` bounds each response to 16,000 Unicode code points by default, even when `limit` is omitted or a single line is very long. Set the optional `max_chars` to request a different page size (hard maximum: 32,000). `offset` and `limit` still select lines; `char_offset` selects a character page **within that same line selection**, starting at zero. When truncated, the result supplies the next `char_offset`: keep the same path, `offset`, and `limit` to continue. Unicode surrogate pairs are never split. Read a stable file when assembling multiple pages; offsets do not identify an immutable snapshot.
+`read_file` bounds each response to 16,000 Unicode code points by default, even when `limit` is omitted or a single line is very long. Set the optional `max_chars` to request a different page size, clamped to the application-configured maximum (32,000 by default). `offset` and `limit` still select lines; `char_offset` selects a character page **within that same line selection**, starting at zero. When truncated, the result supplies the next `char_offset`: keep the same path, `offset`, and `limit` to continue. Unicode surrogate pairs are never split. Read a stable file when assembling multiple pages; offsets do not identify an immutable snapshot.
+
+Configure the maximum with `HarnessAgent.Builder.readFileMaxChars(int)`. For example, `.readFileMaxChars(64_000)` permits a tool call to request up to 64,000 code points. The configured maximum must be at least 16,000; smaller values cause `IllegalArgumentException`. Automatically constructed general-purpose and declared subagents inherit the setting. Raising the maximum does not change the 16,000-code-point page size when `max_chars` is omitted. Direct users of `FilesystemTool` can pass the maximum to its `(filesystem, pathNormalizer, readFileMaxChars)` constructor; existing constructors retain the default maximum.
 
 This also bounds reads of offloaded tool artifacts. These limits apply to tool output for all filesystem backends; they do not bound the backend's allocation or I/O when producing the selected content. Binary content is paged as its encoded text and must be reassembled before decoding.
 
@@ -548,7 +553,9 @@ Under shared-store mode, `tools.json` also follows the "remote upper, local temp
 
 ## Two-layer reading in the workspace
 
-Key files like `AGENTS.md`, `MEMORY.md`, `KNOWLEDGE.md` have a "two-layer fallback" on reads: look in your configured filesystem first, fall back to local disk if not found. This is useful for **"template files" in mode 1 (shared store)**: the first replica's local has the template `AGENTS.md` so it works immediately; later replicas read the up-to-date version from the shared store.
+Key files like `AGENTS.md`, `KNOWLEDGE.md` have a "two-layer fallback" on reads: look in your configured filesystem first, fall back to local disk if not found. This is useful for **"template files" in mode 1 (shared store)**: the first replica's local has the template `AGENTS.md` so it works immediately; later replicas read the up-to-date version from the shared store.
+
+Per-identity runtime data (`MEMORY.md`, `memory/*.md`, task records) falls back **inside the caller's namespace**, never the workspace root. See [Workspace](/v2/en/docs/harness/workspace#two-layer-reads-filesystem-first--local-fallback) for the rule.
 
 Writes always go through the configured filesystem store.
 

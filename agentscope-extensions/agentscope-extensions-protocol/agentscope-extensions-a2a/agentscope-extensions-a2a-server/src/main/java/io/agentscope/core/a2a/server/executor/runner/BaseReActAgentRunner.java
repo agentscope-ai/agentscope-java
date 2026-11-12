@@ -33,7 +33,7 @@ import reactor.core.publisher.Flux;
  */
 public abstract class BaseReActAgentRunner implements AgentRunner {
 
-    private final ConcurrentMap<String, ReActAgent> agentCache;
+    private final ConcurrentMap<String, RunningTask> agentCache;
 
     protected BaseReActAgentRunner() {
         this.agentCache = new ConcurrentHashMap<>();
@@ -56,14 +56,15 @@ public abstract class BaseReActAgentRunner implements AgentRunner {
             throw new IllegalStateException("Agent already exists for taskId: " + taskId);
         }
         ReActAgent agent = buildReActAgent();
-        if (agentCache.putIfAbsent(taskId, agent) != null) {
+        RunningTask task = new RunningTask(agent, buildRuntimeContext(options));
+        if (agentCache.putIfAbsent(taskId, task) != null) {
             throw new IllegalStateException("Agent already exists for taskId: " + taskId);
         }
         try {
-            return agent.streamEvents(requestMessages, buildRuntimeContext(options))
-                    .doFinally(signal -> agentCache.remove(taskId, agent));
+            return agent.streamEvents(requestMessages, task.context())
+                    .doFinally(signal -> agentCache.remove(taskId, task));
         } catch (RuntimeException | Error e) {
-            agentCache.remove(taskId, agent);
+            agentCache.remove(taskId, task);
             throw e;
         }
     }
@@ -86,11 +87,16 @@ public abstract class BaseReActAgentRunner implements AgentRunner {
 
     @Override
     public void stop(String taskId) {
-        ReActAgent agent = agentCache.remove(taskId);
-        if (null != agent) {
-            agent.interrupt();
+        RunningTask task = agentCache.remove(taskId);
+        if (null != task) {
+            // Interrupt the session the task runs in; the no-arg interrupt() targets the default
+            // session, which may belong to another caller of a shared agent.
+            task.agent().interrupt(task.context());
         }
     }
+
+    /** The agent running a task and the context it was started with. */
+    private record RunningTask(ReActAgent agent, RuntimeContext context) {}
 
     /**
      * Build {@link ReActAgent} to run new request.

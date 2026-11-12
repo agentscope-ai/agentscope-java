@@ -11,11 +11,15 @@ zh_link: /v2/zh/integration/protocol/agui
 
 `AguiMessage.content` is represented as typed message content. For text-only code paths, use `getTextContent()`.
 
-Multimodal input supports text, image, audio, and video. Document input is not supported yet: the adapter rejects it with `RUN_ERROR` and code `INVALID_INPUT_ERROR`, without including the document source or metadata in the error message.
+Multimodal input supports image/audio/video/document. Document parts are converted to `DocumentBlock`; model providers that cannot consume a document report an error instead of silently dropping the content.
 
-This protection applies only to the `RUN_ERROR` message, not to the entire event stream. The preceding `RUN_STARTED.input` retains the original request, including rejected document content. Consumers that log or forward events must redact sensitive input themselves.
+`RUN_STARTED.input` retains the original request, including any document content. Consumers that log or forward events must redact sensitive input themselves.
 
-`AguiMessageConverter.toAguiMessageList()` expands a TOOL `Msg` containing multiple `ToolResultBlock`s into one AG-UI tool message per tool result. `toAguiMessage()` remains for messages with at most one tool result and rejects a multi-result TOOL message; use `toAguiMessages()` for the expanded form. It currently preserves text and tool-call fields only; image, audio, video, and document content blocks are not serialized back into AG-UI message content.
+`AguiMessageConverter.toAguiMessageList()` expands a TOOL `Msg` containing multiple `ToolResultBlock`s into one AG-UI tool message per tool result. `toAguiMessage()` remains for messages with at most one tool result and rejects a multi-result TOOL message; use `toAguiMessages()` for the expanded form.
+
+On the outbound path, URL-backed `ImageBlock` / `AudioBlock` / `VideoBlock` / `DocumentBlock` content is serialized into AG-UI `MessageContent.Blocks` (`image` / `audio` / `video` / `document`); URL-backed `DataBlock` is routed by its resolved MIME type. Base64 media sources are skipped on outbound conversion for now.
+
+When an assistant message contains reasoning and supported URL media without text, `toAguiMessages()` and `toAguiMessageList()` preserve both as a reasoning message followed by an assistant message containing the media.
 
 ## When To Use
 
@@ -71,6 +75,30 @@ Flux<AguiEvent> events = Flux.using(
 ```
 
 The front end provides `RunAgentInput`, including `threadId`, `runId`, `messages`, `tools`, `state`, and related fields. The adapter converts AG-UI messages to AgentScope `Msg` objects, invokes v2 `streamEvents(...)`, and converts each `AgentEvent` to AG-UI events.
+
+## Custom Request Processor
+
+For manual Spring MVC or WebFlux configuration, supply an `AguiRequestProcessor` to use your own agent resolver and request processing configuration:
+
+```java
+import io.agentscope.core.agui.processor.AguiRequestProcessor;
+import io.agentscope.spring.boot.agui.mvc.AguiMvcController;
+import io.agentscope.spring.boot.agui.webflux.AguiWebFluxHandler;
+
+AguiRequestProcessor processor = AguiRequestProcessor.builder()
+    .agentResolver(customAgentResolver)
+    .build();
+
+AguiMvcController controller = AguiMvcController.builder()
+    .requestProcessor(processor)
+    .build();
+
+AguiWebFluxHandler handler = AguiWebFluxHandler.builder()
+    .requestProcessor(processor)
+    .build();
+```
+
+With a custom processor, the MVC controller and WebFlux handler do not require an agent registry. Their `agentRegistry`, `sessionManager`, `serverSideMemory`, `config`, `adapterFactory`, and `runtimeContextResolver` builder options are ignored; configure these behaviors on the supplied processor instead. Transport options such as MVC `sseTimeout` and the shared `agentIdHeader` and `interruptOnDisconnect` options still apply. Omit `requestProcessor` (or pass `null`) to keep the default processor and required registry.
 
 ## Event Mapping
 

@@ -36,6 +36,7 @@ import io.agentscope.core.middleware.TaskReminderMiddleware;
 import io.agentscope.core.model.ExecutionConfig;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.Model;
+import io.agentscope.core.model.ModelRegistry;
 import io.agentscope.core.permission.PermissionContextState;
 import io.agentscope.core.session.SessionHistoryMode;
 import io.agentscope.core.session.SessionKey;
@@ -514,6 +515,16 @@ public class HarnessAgent implements Agent, AutoCloseable {
     public io.agentscope.core.permission.PermissionMode getPermissionMode(
             String userId, String sessionId) {
         return delegate.getPermissionMode(userId, sessionId);
+    }
+
+    /**
+     * Replaces the permission context (mode and rules) for the given {@code (userId, sessionId)}
+     * session at runtime. See
+     * {@link ReActAgent#replacePermissionContext(String, String, PermissionContextState)}.
+     */
+    public void replacePermissionContext(
+            String userId, String sessionId, PermissionContextState permissionContext) {
+        delegate.replacePermissionContext(userId, sessionId, permissionContext);
     }
 
     @Override
@@ -1414,6 +1425,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
 
         ArtifactDeliveryTarget artifactDeliveryTarget;
         boolean disableFilesystemTools = false;
+        int readFileMaxChars = FilesystemTool.DEFAULT_MAX_READ_CHARS;
         boolean disableShellTool = false;
         boolean disableWebTools = false;
 
@@ -1514,7 +1526,9 @@ public class HarnessAgent implements Agent, AutoCloseable {
          *       <td>{@code name}</td><td>{@code agent.getName()}</td></tr>
          *   <tr><td>{@code description}</td><td>{@code agent.getDescription()}</td></tr>
          *   <tr><td>{@code sysPrompt}</td><td>{@code agent.getSysPrompt()}</td></tr>
-         *   <tr><td>{@code model}</td><td>{@code agent.getModel()}</td></tr>
+         *   <tr><td>{@code model}</td><td>{@code agent.getModel(null)} — an identity-mode source
+         *       is pinned to its identity's current instance (harness orchestration needs a
+         *       {@code Model} at build time, not a lazy per-run reference)</td></tr>
          *   <tr><td>{@code maxIters}</td><td>{@code agent.getMaxIters()}</td></tr>
          *   <tr><td>{@code generateOptions}</td><td>{@code agent.getGenerateOptions()}</td></tr>
          *   <tr><td>{@code toolkit}</td><td>defensive copy via {@code agent.getToolkit().copy()}</td></tr>
@@ -1559,7 +1573,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
          *   <li>Workspace &amp; filesystem: {@link #workspace(Path)}, {@link #filesystem(SandboxFilesystemSpec)},
          *       {@link #filesystem(LocalFilesystemSpec)}, {@link #filesystem(RemoteFilesystemSpec)},
          *       {@link #abstractFilesystem(AbstractFilesystem)},
-         *       {@link #environmentMemory(String)}</li>
+         *       {@link #environmentMemory(String)}, {@link #readFileMaxChars(int)}</li>
          *   <li>Subagents: {@link #subagent(SubagentDeclaration)}, {@link #subagents(List)},
          *       {@link #subagentFactory(String, Function)},
          *       {@link #subagentFactory(SubagentDeclaration, SubagentFactory)},
@@ -1605,7 +1619,9 @@ public class HarnessAgent implements Agent, AutoCloseable {
             b.name(agent.getName());
             b.description(agent.getDescription());
             b.sysPrompt(agent.getSysPrompt());
-            b.model(agent.getModel());
+            // Identity-mode sources are pinned to the identity's current instance: harness
+            // orchestration needs a Model at build time, not a lazy per-run reference.
+            b.model(agent.getModel(null));
             b.maxIters(agent.getMaxIters());
             b.generateOptions(agent.getGenerateOptions());
             List<AgentTool> frameworkTools =
@@ -1735,8 +1751,17 @@ public class HarnessAgent implements Agent, AutoCloseable {
             return this;
         }
 
-        public Builder model(String modelId) {
-            Model resolved = io.agentscope.core.model.ModelRegistry.resolve(modelId);
+        /**
+         * Legacy eager form: resolves the identity string through {@code ModelRegistry} once
+         * at build time and pins the instance — harness orchestration (subagents, memory,
+         * compaction) needs a {@code Model} at build time, so the inner agent holds the
+         * resolved instance rather than a lazy reference; see {@code
+         * ReActAgent.Builder#model(String)} for the lazy reference mode.
+         *
+         * @throws IllegalArgumentException if the identity cannot be resolved at build time
+         */
+        public Builder model(String modelIdentity) {
+            Model resolved = ModelRegistry.resolve(modelIdentity);
             this.model = resolved;
             inner.model(resolved);
             return this;
@@ -2329,6 +2354,24 @@ public class HarnessAgent implements Agent, AutoCloseable {
          */
         public Builder artifactDeliveryTarget(ArtifactDeliveryTarget target) {
             this.artifactDeliveryTarget = target;
+            return this;
+        }
+
+        /**
+         * Sets the maximum Unicode code points returned by a {@code read_file} page.
+         *
+         * <p>Defaults to {@link FilesystemTool#DEFAULT_MAX_READ_CHARS}. Must be at least {@link
+         * FilesystemTool#DEFAULT_READ_CHARS}, which remains the page size when the tool call omits
+         * {@code max_chars}. Automatically constructed subagents inherit this limit.
+         *
+         * @throws IllegalArgumentException if the limit is smaller than the default page size
+         */
+        public Builder readFileMaxChars(int maxChars) {
+            if (maxChars < FilesystemTool.DEFAULT_READ_CHARS) {
+                throw new IllegalArgumentException(
+                        "readFileMaxChars must be at least " + FilesystemTool.DEFAULT_READ_CHARS);
+            }
+            this.readFileMaxChars = maxChars;
             return this;
         }
 
@@ -3047,7 +3090,8 @@ public class HarnessAgent implements Agent, AutoCloseable {
                         WorkspacePathNormalizer.of(resolvedWorkspace.toAbsolutePath().toString());
             }
             if (!disableFilesystemTools) {
-                agentToolkit.registerTool(new FilesystemTool(filesystem, pathNormalizer));
+                agentToolkit.registerTool(
+                        new FilesystemTool(filesystem, pathNormalizer, readFileMaxChars));
             }
             if (artifactDeliveryEnabled) {
                 agentToolkit.registerTool(

@@ -320,8 +320,8 @@ When a skill ships scripts (e.g. `scripts/run-checks.sh`), the agent needs an ab
 
 | FS mode (shell available?) | Workspace skill `<files-root>` | Marketplace skill `<files-root>` |
 |----------------------------|--------------------------------|-----------------------------------|
-| Sandbox | `/workspace/skills/<name>` | `/workspace/.skills-cache/<source>/<name>` |
-| Local-with-shell | `<wsRoot>/skills/<name>` | `<wsRoot>/.skills-cache/<source>/<name>` |
+| Sandbox | `/workspace/skills/<name>` | `/workspace/.skills-cache/<scope>/<source>/<name>` |
+| Local-with-shell | `<wsRoot>/skills/<name>` | `<wsRoot>/.skills-cache/<scope>/<source>/<name>` |
 | Local without shell / Composite | (not rendered — no shell tool registered) | (not rendered) |
 
 `<files-root>` is a raw absolute path in the execution environment, including any spaces. The agent resolves script paths against it and quotes them for that environment's shell. Local Windows execution uses `cmd.exe`; local POSIX execution uses `sh`; Docker and Kubernetes execute in their sandbox. The host JVM's OS, paths, and installed runtimes do not describe the sandbox. Follow the loaded skill's script instructions and use an interpreter available where the command runs, rather than assuming `ls` or `python3` exists. The execution guidance appears only when at least one visible skill has `<files-root>`.
@@ -332,16 +332,22 @@ For repository skills with no materialized auxiliary resources (for example, an 
 
 Where a repository skill's files live depends on the backend:
 
-- **Caching backends (Git / Nacos with a configured version / JDBC family / Classpath-in-JAR)** materialize every versioned read themselves into an immutable, version-keyed cache directory — Maven-local style, at `~/.agentscope/skill-cache/<repoIdentity>/<skill>/<version>/` by default. Override the cache root with the repository constructor's `cacheDir` argument, or globally for tests and ops with the `agentscope.skill.cache.dir` system property. The tree is shared across processes and may be deleted out of band at any time — a miss simply re-pulls the same version deterministically; `close()` never deletes it. For `<files-root>`, the harness stages that materialized directory into `<wsRoot>/.skills-cache/<source>/<name>/` **once per version** (the source is immutable, so a complete staged copy is reused, never rewritten) — this keeps shell and sandbox paths resolvable; with no shell configured, staging is skipped entirely.
-- **Non-caching backends (Workspace, or skills that arrive as pure in-memory bytes)** keep the legacy staging path: harness materializes them to `<wsRoot>/.skills-cache/<source>/<name>/` before each call (during PreCall, in the same `onSystemPrompt` pass that builds `<available_skills>`) with per-file SHA-256 dedup, and orphan directories (skills no longer published, or repos removed from the builder) are cleaned up in the same pass. In sandbox mode, `.skills-cache` is in the default workspace projection roots, so the staged tree is hydrated into the sandbox alongside `workspace/skills/` at sandbox start time (and on content change). FileSystem repositories serve their own on-disk tree as the origin directory and stage through the same once-per-version copy as the caching backends.
+- **Caching backends (Git / Nacos with a configured version / JDBC family / Classpath-in-JAR)** materialize every versioned read themselves into an immutable, version-keyed cache directory — Maven-local style, at `~/.agentscope/skill-cache/<repoIdentity>/<skill>/<version>/` by default. Override the cache root with the repository constructor's `cacheDir` argument, or globally for tests and ops with the `agentscope.skill.cache.dir` system property. The tree is shared across processes and may be deleted out of band at any time — a miss simply re-pulls the same version deterministically; `close()` never deletes it. For `<files-root>`, the harness stages that materialized directory into `<wsRoot>/.skills-cache/<scope>/<source>/<name>/` **once per version** (the source is immutable, so a complete staged copy is reused, never rewritten) — this keeps shell and sandbox paths resolvable; with no shell configured, staging is skipped entirely.
+- **Non-caching backends (Workspace, or skills that arrive as pure in-memory bytes)** keep the legacy staging path: harness materializes them to `<wsRoot>/.skills-cache/<scope>/<source>/<name>/` before each call (during PreCall, in the same `onSystemPrompt` pass that builds `<available_skills>`) with per-file SHA-256 dedup, and orphan directories (skills no longer published, or repos removed from the builder) are cleaned up in the same pass once untouched for the grace period (30 minutes by default). In sandbox mode, `.skills-cache` is in the default workspace projection roots, so the staged tree is hydrated into the sandbox alongside `workspace/skills/` at sandbox start time (and on content change). FileSystem repositories serve their own on-disk tree as the origin directory and stage through the same once-per-version copy as the caching backends.
 
 Sandbox note for the repository cache: the default `~/.agentscope/skill-cache` root lives on the host. When sandboxed execution must see repository-skill files directly, point `cacheDir` at a session-visible volume (the harness-side constructor injection), or rely on the workspace staging path above.
 
 Plain (non-context) repositories serve only the names an explicit `SkillFilter.only(...)` selects. A blacklist baseline, a wildcard baseline, or no filter at all selects nothing for them — such a repository is skipped for serving with one warning per repository. Bind the names to serve explicitly, or use a `RuntimeContextSkillRepository` for dynamic, request-scoped discovery.
 
+For staging, the skill name must be a single directory name. Absolute paths, `/` or `\` separators, drive/stream syntax (`:`), `.`/`..`, names ending in a dot or space, and Windows device names (such as `CON`, `NUL.txt`, or `COM1`) are rejected before staging writes or resource cleanup. The affected skill has no staged `<files-root>`; other skills continue staging normally. Skill names are not rewritten, and this check imposes neither a lowercase-only convention nor a 64-character limit on them.
+
+Source identifiers and isolation scopes use a shared mapping to one safe segment of at most 64 characters. Identifiers such as `git-owner/repo` and `classpath-agentscope/skills` remain usable: when mapping changes an identifier, a digest suffix disambiguates it. Windows device names are mapped safely too. Blank scopes use `_shared`; a literal `_shared` identity is mapped separately.
+
+**Upgrade note:** source mapping changes existing nested cache paths (for example, `git-owner/repo/<name>` becomes `git-owner_repo-<digest>/<name>` within the same scope). The cache is rebuilt at the new path on the next staging pass. Old nested directories can be reclaimed by orphan GC after the grace period; GC recursively removes stale second-level directories. Cached `<files-root>` paths are not stable across upgrades: persisted prompts and transcripts are not rewritten, so use the path from the newly rendered skill context.
+
 Workspace skills (Layer 3 / Layer 4) need no staging — they already live in the workspace tree.
 
-If two repositories report the same `getSource()`, the second is auto-suffixed (`<source>_2`, `<source>_3`, …) with a warning log, so paths and skill-ids never collide.
+If repositories report the same `getSource()`, each receives an index suffix (`<source>_1`, `<source>_2`, …) before segment mapping, with a warning log.
 
 ## Running skills in a sandbox
 
@@ -354,14 +360,14 @@ Two classes of skills can run in the container, with different staging points:
 | Source | Where it lives before the sandbox | Path inside the sandbox |
 |--------|-----------------------------------|-------------------------|
 | Workspace skills (Layer 3 `workspace/skills/`, Layer 4 `<userId>/skills/`) | already in the workspace tree | `/workspace/skills/<name>` |
-| Marketplace skills (Layer 1 project-global, Layer 2 Git / MySQL / Nacos / classpath) | start as in-memory bytes | `/workspace/.skills-cache/<source>/<name>` |
+| Marketplace skills (Layer 1 project-global, Layer 2 Git / MySQL / Nacos / classpath) | start as in-memory bytes | `/workspace/.skills-cache/<scope>/<source>/<name>` |
 
 ### Step 1: materialize marketplace skills to the host
 
-Marketplace skill resources arrive as in-memory bytes — shell can't execute those directly. Before each call (during PreCall), `MarketplaceStager` writes them to the host at `<wsRoot>/.skills-cache/<source>/<name>/`:
+Marketplace skill resources arrive as in-memory bytes — shell can't execute those directly. Before each call (during PreCall), `MarketplaceStager` writes them to the host at `<wsRoot>/.skills-cache/<scope>/<source>/<name>/`:
 
 - **Per-file SHA-256 dedup** — only changed files are rewritten; unchanged ones are skipped.
-- **Orphan cleanup** — directories left by skills that are no longer published, or by repos removed from the builder, are deleted in the same pass.
+- **Orphan cleanup** — directories left by skills that are no longer published, or by repos removed from the builder, are deleted in the same pass once untouched for the grace period.
 - **Exec-bit recovery** — ingestion turns resources into Strings and discards POSIX mode, so the stager re-derives `+x` heuristically: a shebang (`#!`) at byte 0, or a known script suffix (`.sh`/`.bash`/`.py`/`.rb`/`.pl`/`.js`/`.mjs`), adds the execute bit (following `chmod +x` semantics — only bits that already have read get execute). Pure static assets (`.json`/`.md`/`.txt`) stay 644.
 
 Workspace skills (Layer 3 / Layer 4) skip this step — they already live in the workspace tree.
@@ -390,7 +396,7 @@ In sandbox mode, each skill's `<files-root>` in the `<available_skills>` block i
 | Skill type | `<files-root>` |
 |------------|----------------|
 | Workspace skill | `/workspace/skills/<name>` |
-| Marketplace skill | `/workspace/.skills-cache/<source>/<name>` |
+| Marketplace skill | `/workspace/.skills-cache/<scope>/<source>/<name>` |
 
 For the default `/workspace` root and a sandbox with `sh`, the agent can call `execute` with:
 

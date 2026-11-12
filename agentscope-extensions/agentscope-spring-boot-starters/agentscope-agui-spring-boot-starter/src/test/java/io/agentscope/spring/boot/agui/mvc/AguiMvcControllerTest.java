@@ -19,6 +19,8 @@ import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
@@ -49,6 +51,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.locks.LockSupport;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import reactor.core.publisher.Flux;
@@ -56,6 +59,61 @@ import reactor.core.publisher.SignalType;
 import reactor.core.publisher.Sinks;
 
 class AguiMvcControllerTest {
+
+    @Test
+    void customProcessorHandlesRequestsWithoutRegistry() throws Exception {
+        AguiRequestProcessor processor = mock(AguiRequestProcessor.class);
+        CountDownLatch completed = new CountDownLatch(1);
+        when(processor.process(any(AguiRuntimeContextRequest.class)))
+                .thenReturn(
+                        new AguiRequestProcessor.ProcessResult(
+                                mock(Agent.class),
+                                Flux.<AguiEvent>empty().doFinally(signal -> completed.countDown()),
+                                RuntimeContext.empty()));
+        AguiMvcController controller =
+                AguiMvcController.builder().requestProcessor(processor).build();
+        ExecutorService executor =
+                (ExecutorService) ReflectionTestUtils.getField(controller, "executorService");
+        RunAgentInput input = input("custom-run");
+        try {
+            SseEmitter emitter = controller.handleWithAgentId(input, "header-agent", "path-agent");
+
+            assertTrue(completed.await(5, TimeUnit.SECONDS));
+            assertTrue((Boolean) ReflectionTestUtils.getField(emitter, "complete"));
+            ArgumentCaptor<AguiRuntimeContextRequest> request =
+                    ArgumentCaptor.forClass(AguiRuntimeContextRequest.class);
+            verify(processor).process(request.capture());
+            assertSame(input, request.getValue().getInput());
+            assertEquals("header-agent", request.getValue().getHeaderAgentId());
+            assertEquals("path-agent", request.getValue().getPathAgentId());
+        } finally {
+            executor.shutdownNow();
+        }
+    }
+
+    @Test
+    void customProcessorTakesPrecedenceOverDefaultProcessorConfiguration() {
+        AguiRequestProcessor processor = mock(AguiRequestProcessor.class);
+        AguiMvcController controller =
+                AguiMvcController.builder()
+                        .agentRegistry(new AguiAgentRegistry())
+                        .requestProcessor(processor)
+                        .build();
+        try {
+            assertSame(processor, ReflectionTestUtils.getField(controller, "processor"));
+        } finally {
+            ((ExecutorService) ReflectionTestUtils.getField(controller, "executorService"))
+                    .shutdownNow();
+        }
+    }
+
+    @Test
+    void registryIsStillRequiredWithoutCustomProcessor() {
+        assertThrows(IllegalStateException.class, () -> AguiMvcController.builder().build());
+        assertThrows(
+                IllegalStateException.class,
+                () -> AguiMvcController.builder().requestProcessor(null).build());
+    }
 
     @Test
     void eventEncodingFailureFailsEmitterInsteadOfCompletingSuccessfully() throws Exception {
