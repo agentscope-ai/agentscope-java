@@ -49,6 +49,9 @@ import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.Model;
 import io.agentscope.core.model.ModelRegistry;
 import io.agentscope.core.model.ToolSchema;
+import io.agentscope.core.permission.PermissionBehavior;
+import io.agentscope.core.permission.PermissionContextState;
+import io.agentscope.core.permission.PermissionRule;
 import io.agentscope.core.session.SessionHistoryMode;
 import io.agentscope.core.session.SessionRecorder;
 import io.agentscope.core.shutdown.GracefulShutdownMiddleware;
@@ -92,8 +95,10 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.Comparator;
+import java.util.EnumSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -232,6 +237,37 @@ class HarnessAgentTest {
 
             assertNotSame(target, delegate.getAgentState("u1", "sessA"));
             assertSame(other, delegate.getAgentState("u1", "sessB"));
+        }
+    }
+
+    @Test
+    void replacePermissionContext_delegatesTargetedSessionToReActAgent() throws Exception {
+        Files.createDirectories(workspace);
+        try (HarnessAgent agent =
+                HarnessAgent.builder()
+                        .name("t")
+                        .model(stubModel("ok"))
+                        .workspace(workspace)
+                        .abstractFilesystem(new LocalFilesystem(workspace))
+                        .build()) {
+            PermissionContextState replacement =
+                    PermissionContextState.builder()
+                            .addDenyRule(
+                                    "blocked_tool",
+                                    new PermissionRule(
+                                            "blocked_tool",
+                                            null,
+                                            PermissionBehavior.DENY,
+                                            "role-policy"))
+                            .build();
+
+            agent.replacePermissionContext("u1", "sessA", replacement);
+
+            ReActAgent delegate = agent.getDelegate();
+            assertEquals(replacement, delegate.getAgentState("u1", "sessA").getPermissionContext());
+            assertTrue(
+                    delegate.getAgentState("u2", "sessA").getPermissionContext().isTrivial(),
+                    "replacing one user's session must not alter another user's session");
         }
     }
 
@@ -592,6 +628,11 @@ class HarnessAgentTest {
                         .middleware(
                                 new MiddlewareBase() {
                                     @Override
+                                    public Set<ExtensionPoint> activePoints() {
+                                        return EnumSet.of(ExtensionPoint.ON_SYSTEM_PROMPT);
+                                    }
+
+                                    @Override
                                     public Mono<String> onSystemPrompt(
                                             Agent agent, RuntimeContext ctx, String currentPrompt) {
                                         seen.set(ctx);
@@ -630,6 +671,11 @@ class HarnessAgentTest {
                         .abstractFilesystem(agentFilesystem)
                         .middleware(
                                 new MiddlewareBase() {
+                                    @Override
+                                    public Set<ExtensionPoint> activePoints() {
+                                        return EnumSet.of(ExtensionPoint.ON_SYSTEM_PROMPT);
+                                    }
+
                                     @Override
                                     public Mono<String> onSystemPrompt(
                                             Agent agent, RuntimeContext ctx, String currentPrompt) {
@@ -675,6 +721,11 @@ class HarnessAgentTest {
                         .middleware(
                                 new MiddlewareBase() {
                                     @Override
+                                    public Set<ExtensionPoint> activePoints() {
+                                        return EnumSet.of(ExtensionPoint.ON_SYSTEM_PROMPT);
+                                    }
+
+                                    @Override
                                     public Mono<String> onSystemPrompt(
                                             Agent agent, RuntimeContext ctx, String currentPrompt) {
                                         seen.set(ctx);
@@ -710,6 +761,11 @@ class HarnessAgentTest {
                                         new LocalFilesystem(workspace.resolve("journal"))))
                         .middleware(
                                 new MiddlewareBase() {
+                                    @Override
+                                    public Set<ExtensionPoint> activePoints() {
+                                        return EnumSet.of(ExtensionPoint.ON_SYSTEM_PROMPT);
+                                    }
+
                                     @Override
                                     public Mono<String> onSystemPrompt(
                                             Agent agent, RuntimeContext ctx, String prompt) {
@@ -788,6 +844,11 @@ class HarnessAgentTest {
                                         new LocalFilesystem(workspace.resolve("journal"))))
                         .middleware(
                                 new MiddlewareBase() {
+                                    @Override
+                                    public Set<ExtensionPoint> activePoints() {
+                                        return EnumSet.of(ExtensionPoint.ON_SYSTEM_PROMPT);
+                                    }
+
                                     @Override
                                     public Mono<String> onSystemPrompt(
                                             Agent agent, RuntimeContext ctx, String currentPrompt) {
@@ -1052,6 +1113,11 @@ class HarnessAgentTest {
                         .middleware(
                                 new MiddlewareBase() {
                                     @Override
+                                    public Set<ExtensionPoint> activePoints() {
+                                        return EnumSet.of(ExtensionPoint.ON_AGENT);
+                                    }
+
+                                    @Override
                                     public Flux<AgentEvent> onAgent(
                                             Agent agent,
                                             RuntimeContext ctx,
@@ -1119,6 +1185,11 @@ class HarnessAgentTest {
         AtomicInteger userMiddlewareHits = new AtomicInteger();
         MiddlewareBase userMiddleware =
                 new MiddlewareBase() {
+                    @Override
+                    public Set<ExtensionPoint> activePoints() {
+                        return EnumSet.of(ExtensionPoint.ON_AGENT);
+                    }
+
                     @Override
                     public Flux<AgentEvent> onAgent(
                             Agent agent,

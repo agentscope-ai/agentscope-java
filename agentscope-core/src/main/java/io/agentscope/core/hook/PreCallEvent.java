@@ -16,6 +16,7 @@
 package io.agentscope.core.hook;
 
 import io.agentscope.core.agent.Agent;
+import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.message.Msg;
 import java.util.ArrayList;
 import java.util.List;
@@ -31,6 +32,8 @@ import java.util.Objects;
  *   <li>{@link #getAgent()} - The agent instance</li>
  *   <li>{@link #getMemory()} - Agent's existing memory or conversation history prior to processing this call</li>
  *   <li>{@link #getInputMessages()} - Messages input to the agent (modifiable)</li>
+ *   <li>{@link #getRuntimeContext()} - The per-call runtime context, or {@code null} when
+ *       dispatched outside a call chain</li>
  * </ul>
  *
  * <p><b>Use Cases:</b>
@@ -47,19 +50,47 @@ import java.util.Objects;
 public final class PreCallEvent extends HookEvent {
 
     private List<Msg> inputMessages;
+    private final RuntimeContext runtimeContext;
 
     /**
-     * Constructor for PreCallEvent.
+     * Constructor for PreCallEvent without a runtime context (legacy form).
      *
      * @param agent The agent instance (must not be null)
      * @param inputMessages The messages input to the agent (must not be null)
      * @throws NullPointerException if agent or inputMessages is null
      */
     public PreCallEvent(Agent agent, List<Msg> inputMessages) {
+        this(agent, inputMessages, null);
+    }
+
+    /**
+     * Constructor carrying the per-call {@link RuntimeContext}.
+     *
+     * @param agent The agent instance (must not be null)
+     * @param inputMessages The messages input to the agent (must not be null)
+     * @param runtimeContext the per-call runtime context, or {@code null} for dispatch outside
+     *     a call chain (see {@link #getRuntimeContext()})
+     * @throws NullPointerException if agent or inputMessages is null
+     */
+    public PreCallEvent(Agent agent, List<Msg> inputMessages, RuntimeContext runtimeContext) {
         super(HookEventType.PRE_CALL, agent);
         this.inputMessages =
                 new ArrayList<>(
                         Objects.requireNonNull(inputMessages, "inputMessages cannot be null"));
+        this.runtimeContext = runtimeContext;
+    }
+
+    /**
+     * The per-call {@link RuntimeContext} of the dispatching call, or {@code null} when the
+     * event was constructed without one (legacy constructor or trusted direct dispatch).
+     * Hooks consulting per-call state — e.g. the {@code CapabilitySurface} grant set — treat
+     * {@code null} as "authorization not engaged" and keep their unrestricted default
+     * behaviour.
+     *
+     * @return the per-call runtime context, or {@code null}
+     */
+    public RuntimeContext getRuntimeContext() {
+        return runtimeContext;
     }
 
     /**

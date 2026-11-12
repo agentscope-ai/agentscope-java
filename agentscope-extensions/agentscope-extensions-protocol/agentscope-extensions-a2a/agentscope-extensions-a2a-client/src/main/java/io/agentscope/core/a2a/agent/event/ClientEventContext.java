@@ -54,7 +54,7 @@ public class ClientEventContext {
 
     private String replyId;
 
-    private Task task;
+    private volatile Task task;
 
     /**
      * Temporarily store the complete historical dialogue context at the time of this call,
