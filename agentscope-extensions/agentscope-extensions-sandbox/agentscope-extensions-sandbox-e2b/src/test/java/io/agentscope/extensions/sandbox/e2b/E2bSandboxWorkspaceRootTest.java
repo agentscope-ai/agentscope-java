@@ -16,8 +16,6 @@
 package io.agentscope.extensions.sandbox.e2b;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.harness.agent.sandbox.Sandbox;
@@ -29,8 +27,8 @@ import org.junit.jupiter.api.Test;
  * Regression tests for {@link E2bSandboxClient} honouring {@link WorkspaceSpec#getRoot()} instead
  * of only {@link E2bSandboxClientOptions#getWorkspaceRoot()}.
  *
- * <p>On upstream main the workspace spec root is ignored, so the exec cwd stays at the options
- * default ({@code /home/user}) and volume coverage is judged against the wrong root.
+ * <p>Creation honours the supplied workspace layout. Resumption retains the persisted execution
+ * root and aligns legacy manifest metadata without relocating the workspace.
  */
 class E2bSandboxWorkspaceRootTest {
 
@@ -48,7 +46,7 @@ class E2bSandboxWorkspaceRootTest {
     }
 
     @Test
-    void resumeUsesWorkspaceSpecRootOverPersistedStateRoot() {
+    void resumeKeepsPersistedExecutionRootOverWorkspaceSpecRoot() {
         E2bSandboxClient client = new E2bSandboxClient();
         E2bSandboxState state = new E2bSandboxState();
         state.setSessionId("session-1");
@@ -58,11 +56,12 @@ class E2bSandboxWorkspaceRootTest {
         Sandbox resumed = client.resume(state);
 
         assertTrue(resumed instanceof E2bSandbox);
-        assertEquals(SPEC_ROOT, ((E2bSandbox) resumed).getWorkspaceRoot());
+        assertEquals("/home/user", ((E2bSandbox) resumed).getWorkspaceRoot());
+        assertEquals("/home/user", resumed.getState().getWorkspaceSpec().getRoot());
     }
 
     @Test
-    void resumeResetsWorkspaceStateWhenRootChanges() {
+    void resumePreservesWorkspaceStateWhenLegacyManifestRootDiffers() {
         E2bSandboxClient client = new E2bSandboxClient();
         E2bSandboxState state = new E2bSandboxState();
         state.setSessionId("session-1");
@@ -73,8 +72,10 @@ class E2bSandboxWorkspaceRootTest {
 
         client.resume(state);
 
-        assertFalse(state.isWorkspaceRootReady(), "the new root has not been initialized");
-        assertNull(state.getWorkspaceProjectionHash());
+        assertEquals("/home/user", state.getWorkspaceRoot());
+        assertEquals("/home/user", state.getWorkspaceSpec().getRoot());
+        assertTrue(state.isWorkspaceRootReady());
+        assertEquals("old-projection", state.getWorkspaceProjectionHash());
     }
 
     @Test
