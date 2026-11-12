@@ -25,7 +25,7 @@ tool Workers are available when the application needs multiple hosts.
 This is a development source API. The repository includes an AgentScope Java
 adapter for `ReActAgent` and `HarnessAgent`; the adapter contract allows other
 Harness integrations, but they require their own implementation and recovery
-verification. Development checks are distinct from production acceptance.
+verification.
 
 ## Start here
 
@@ -432,18 +432,16 @@ make -C agentscope-durable independent
 ```
 
 Normal checking covers build, formatting and tests. Isolation checking builds source
-dependencies in a separate Maven cache and audits dependency trees. Success requires
-actual execution evidence; this entry adds no passing claims. Real MQ, cloud Sandbox,
-multi-process fault matrices, backend combinations and production capacity still
-require independent acceptance. Unqueryable or unverifiable external effects remain
-`UNKNOWN`; arbitrary external operations are not promised exactly-once execution.
+dependencies in a separate Maven cache and audits dependency trees.
+Validate broker delivery, provider query/cancel
+behavior and recovery under host replacement in your deployment environment.
+Unqueryable or unverifiable external effects remain `UNKNOWN`; arbitrary external
+operations are not promised exactly-once execution.
 
-## Design and verification
+## Usage and reference
 
-- [docs/design](docs/design): [execution model](docs/design/execution-model-plan.md),
-  [multi-agent/Thread design](docs/design/multiagent-thread-design.md),
-  [Hands extensions](docs/design/hands-extension-plan.md), [queued Hands](docs/design/queued-hands-plan.md).
-- [docs/verification](docs/verification): [independent acceptance backlog](docs/verification/execution-model-acceptance.md),
-  [development progress](docs/verification/execution-model-progress.md),
-  [historical user API verification](docs/verification/user-api-verification.md), [historical verification](docs/verification/verification.md).
-  Existing dates, results and commands are evidence for their recorded versions, not passing claims for the current tree.
+- [Java usage guide](../docs/v2/en/docs/harness/durable.md): reconnect, control tasks,
+  configure independent Threads and diagnose recovery.
+- [Public interaction contract](protocol/public-interaction-contract.en.md): lifecycle,
+  controls, messages and events.
+- [Protocol reference](protocol/README.md): schema, transport boundaries and conformance fixtures.

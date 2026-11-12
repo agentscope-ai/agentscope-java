@@ -2,8 +2,8 @@
 
 [中文](public-interaction-contract.md)
 
-Date: 2026-11-10. Current contract during the Java execution-model refactor. Executable formats are in [schema.json](schema.json);
-the full target and acceptance are tracked in the [execution model plan](../docs/design/execution-model-plan.md).
+Executable formats are in [schema.json](schema.json); the
+[Java usage guide](../../docs/v2/en/docs/harness/durable.md) covers application integration.
 Only the current contract is supported: no old entry points, conversion, dual protocol or
 compatibility paths. Reject version mismatches while preserving idempotency, fencing and recovery.
 
@@ -18,7 +18,7 @@ but operation scope, state conditions, identities, idempotency, events and error
 - Session / Thread lifecycle is OPEN/CLOSED. Nonterminal work prevents closure. A closed Session rejects new Threads, submissions and checkpoint restoration, while historical queries remain available.
 - DurableTurn is a persistent logical task; Run is one native invocation, and each Step belongs to one Run.
   Native AgentRun shares runId with the persistent Run record. Recovery retains turnId and creates new runId/stepId.
-  Explicit PAUSING/PAUSED remains planned work, not a completed capability below.
+  Pause persists intent; PAUSED confirms a safe boundary. Resume requires the observed revision.
 - requestId identifies admission/control. turnId/runId/stepId/messageId/eventId/interactionId/executionId
   have distinct scopes and are not interchangeable.
 - Session idle is derived from queue/Turn state. QUEUED/RUNNING/WAITING/PAUSING/PAUSED/CANCELLING are nonterminal;
@@ -259,26 +259,13 @@ full TurnView, retaining failures/cancellations; nonterminal result is CONFLICT.
 the wait and retains task identity. Fork records the target Thread restoration in the target Session timeline;
 inherited native history is private recovery state, never fabricated past public events.
 
-## 5. Relationship to Claude Managed Agents
+## 5. Delivery guarantees
 
-Reference checked on 2026-11-09. This is design input, not a Claude wire-compatibility claim. Durable's own versioned specification defines its fields and names.
-
-Claude documents bidirectional events for input, tool interactions, state and progress, distinguishing queued events from processed ones. [Session event stream](https://platform.claude.com/docs/en/managed-agents/events-and-streaming)
-
-Its delta documentation treats live previews as best effort and buffered messages as authoritative; previews cannot be replayed after reconnect. [Event deltas](https://platform.claude.com/docs/en/managed-agents/event-deltas)
-
-The following are **Durable design decisions**:
-
-| Reference theme | Durable contract |
-| --- | --- |
-| User input and agent output | Operations, standard Input/Message and PublicEvent together define interaction; Java methods are bindings |
-| Interaction pauses/responses | Stable interaction IDs, typed answers, continuation conditions and accepted/applied distinction |
-| Interruption/redirection | Steer supplies input at a safe boundary; cancellation, continuation and new tasks are separate |
-| Preview/completion | Preserve persisted message.delta/completed and projection semantics; do not downgrade replayable deltas to ephemeral data |
-| Reconnection | Session cursor plus consistent snapshots/history, without client assembly of private logs |
-| Session state | Preserve Durable Session/Thread/Turn granularity instead of equating external idle/workflow/thread concepts with Durable Turn |
-
-Do not add a disposable preview channel in this iteration. A future channel needs a distinct name/capability and explicit no-replay/non-authoritative behavior, never a different guarantee under message.delta. Do not add implicit privileged system input or expose native reasoning.
+Public `message.delta` and `message.completed` events are persisted and replayable.
+Consumers resume with the Session cursor and a consistent snapshot when necessary;
+they do not reconstruct state from private native logs. A control receipt confirms
+admission, while application events or the resulting Turn state confirm processing.
+User input does not acquire system privileges, and public events exclude private reasoning.
 
 ## 6. Capabilities, errors and recovery
 
@@ -321,7 +308,7 @@ are known; pause/cancel still take precedence. WAITING may therefore have no `wa
 when a recovery record or outstanding tools explain it. Java defaults to 3 retries with 1s initial
 and 30s maximum delay. Other implementations must preserve the persisted policy and these semantics.
 
-HarnessAdapter uses settle(context, status, error) for failed/cancelled native settlement. AgentScope atomically commits interaction cleanup, real result application, checkpoint and terminal Turn; a failed write cannot acknowledge applied early. The previous cancel(HarnessContext) method is directly replaced without a forwarding entry point.
+HarnessAdapter uses settle(context, status, error) for failed/cancelled native settlement. AgentScope atomically commits interaction cleanup, real result application, checkpoint and terminal Turn; a failed write cannot acknowledge applied early.
 
 ## 7. Conformance vectors and Harness checklist
 
@@ -331,7 +318,7 @@ generated identity. [vectors.json](vectors.json) covers digests/numbers/identiti
 [projection-vector.json](projection-vector.json) covers attempt replacement, late deltas, large
 sequences and public input. Java local/HTTP share UserApiContract, including control races,
 interactions, recovery and lifecycle. Shared vectors are conformance targets for other implementations;
-this iteration does not validate TS adaptation to the new Thread protocol or claim another language binding is complete.
+the supplied language binding is Java. Other implementations must validate the same contract independently.
 
 | Harness concern | AgentScope Java mapping/constraint |
 | --- | --- |

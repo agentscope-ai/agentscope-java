@@ -24,10 +24,8 @@ Historical development formats are not migrated or supported through fallback pa
 
 See the [library README](../README.md) for modules, assembly, and build instructions,
 and the [examples](../../agentscope-examples/durable/README.md) for runnable applications.
-The [execution model design](../docs/design/execution-model-plan.md) explains
-design decisions; the [acceptance backlog](../docs/verification/execution-model-acceptance.md)
-tracks verification still required. A schema, fixture, or documented operation is
-not evidence that independent integration acceptance has passed.
+The [Java usage guide](../../docs/v2/en/docs/harness/durable.md) explains task controls,
+deployment choices and recovery limits.
 
 ## Authoritative files and packaging
 
@@ -497,6 +495,6 @@ exercise `user-workflows.json`. Behavioral checks must also cover identical and
 conflicting retries, stale leases, uncertain responses, result acceptance versus
 application, event pruning/resynchronization, and out-of-order execution delivery.
 
-These checks do not establish real-broker, multi-process, external-provider, or
-production recovery acceptance. Track observed results and remaining gaps in the
-[verification backlog](../docs/verification/execution-model-acceptance.md).
+Validate broker delivery, host replacement, provider query/cancel behavior and
+output recovery in the deployment environment. Schema and fixture checks alone
+do not establish those runtime guarantees.

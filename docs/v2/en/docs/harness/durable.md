@@ -11,6 +11,24 @@ A host can restart and continue the original Turn from a compatible native check
 This is a development API in the source tree. Artifacts have not been published;
 build the matching checkout before using the coordinates below.
 
+## Choose the right task boundary
+
+Use Durable when a task must continue after its HTTP request, observer or execution
+process ends. Ordinary `ReActAgent` and `HarnessAgent` calls remain suitable when
+the caller manages invocation and state persistence itself.
+
+| Resource | Use it for |
+| --- | --- |
+| Session | One business conversation, its Threads and public event timeline |
+| Thread | One Agent's continuing context, pinned definition and ordered task queue |
+| Turn | One submitted task; this is the identity to save, observe and control |
+| Run / Step | Diagnosing actual invocations and reasoning/tool processing within a Turn |
+
+Recovery preserves Session, Thread and Turn identity. A replacement invocation creates
+a new Run and new Steps; it does not create another user task. Most applications use
+the Session's primary Thread. Create additional Threads for independent contexts or
+durable child Agents, not for every retry or reconnect.
+
 ## Java modules and deployment boundaries
 
 Library JARs live in `durable-runtime`, `durable-worker` and
@@ -77,6 +95,91 @@ invocation's Thread Journal and builds the Agent. The public binding exposes the
 runtime context and Durable workspace. The Runtime owns the durable lease and task scheduling.
 ThreadJournal owns native Agent history; Durable scheduling remains in the Durable Runtime.
 The namespace maps to `RuntimeContext.userId`; identity is invocation-scoped.
+
+## Reconnect and control tasks
+
+### Reopen an existing task
+
+Persist the `SessionKey`, Thread ID and Turn ID with your application's task record.
+After a page refresh or application restart, use those identities to query the same
+task. Here `runtime` is connected to the original Backend or public HTTP endpoint:
+
+```java
+var conversation = runtime.getSession(new SessionKey("application", "conversation-1"));
+var thread = conversation.getThread("main");
+var turn = thread.getTurn(savedTurnId);
+var current = turn.status();
+var history = thread.history(null, 100);
+```
+
+These reads do not start execution. A compatible Brain Runtime must be running to
+advance unfinished work. Reattach an [observer](#observe-independently) to receive
+the snapshot and subsequent events. A wait timeout or disconnected stream does not
+cancel the Turn.
+
+If the submit response was lost before you saved the Turn ID, retry with the original
+request ID and input. Request IDs are deduplicated within the Session; changing the
+target Thread, operation or input under the same ID produces a conflict. Use a new
+ID for a new action, including actions on another Thread.
+
+### Queue follow-ups or change the current task
+
+For an incident investigation, submit the follow-up summary as another Turn and send
+new constraints to the running investigation with `steer`:
+
+```java
+var investigation = conversation.submit("investigate-1", "Investigate the export timeout");
+var summary = conversation.submit("summary-1", "Summarize the investigation");
+investigation.steer("constraint-1", "Focus on database access; do not change the API");
+summary.cancel("cancel-summary-1");
+```
+
+The summary waits behind the investigation in the primary Thread. A WAITING or PAUSED
+head also blocks later Turns. `steer` and `inject` add input to the existing Turn at
+a safe boundary; they do not interrupt a model mid-token or undo a dispatched tool.
+`withdraw` can remove input only before it is applied. If completion wins a race with
+a control, re-read the Turn rather than assuming the control took effect.
+
+A control receipt confirms admission. Observe `signal.applied` or the resulting Turn
+state to confirm processing. A queued Turn can be cancelled immediately. Cancellation
+of active work requires settlement of external operations; accepted cancellation does
+not prove a remote process has stopped.
+
+### Pause and resume deliberately
+
+Call `turn.pause("pause-1")`, then observe PAUSED before reporting that the Agent has
+stopped advancing. In a later request, resume using the observed revision:
+
+```java
+import io.agentscope.durable.DurableTypes.TurnStatus;
+
+var paused = turn.status();
+if (paused.status() == TurnStatus.PAUSED) {
+    turn.resume("resume-1", paused.revision());
+}
+```
+
+Pause does not cancel dispatched Hands operations. Tool results and interaction
+answers can still be recorded while paused. Resume removes the explicit pause but
+does not bypass approvals, running tools or UNKNOWN outcomes. Terminal Turns cannot
+be resumed; submit a new Turn when the user wants another task.
+
+### Run independent work in another Thread
+
+```java
+var research = conversation.createThread("research", "assistant");
+research.submit("research-1", "Find related incidents");
+// A later request reuses that Agent's context.
+conversation.getThread("research").submit("research-2", "Compare their mitigations");
+```
+
+Different Threads can execute concurrently within the host's capacity. Their histories,
+checkpoints and queues are independent. Session event visibility does not copy one
+Thread's conversation into another Agent's context. Use [durable delegation](#durable-child-delegation)
+when the parent Agent must wait for a child's result. Shared files, credentials and
+Sandboxes need explicit configuration and access control; Thread isolation does not
+serialize writes to shared resources. Close a Thread or Session after its tasks settle;
+closure rejects unfinished work and does not implicitly cancel it.
 
 ## Unified user API
 
@@ -252,9 +355,10 @@ var receipt = runtime.getSession(session).submit("picture-1", input);
 Text, image, audio and video content support URL/base64 media sources. Arbitrary native
 objects are rejected. Final Turn output uses the public Message format; completed
 events and snapshots retain its structured content. Native reasoning is excluded.
-Each Turn has one logical assistant reply; a new attempt or final completion replaces
-provisional text. Custom events use `x.<namespace>.<name>`; reserved lifecycle, tool,
-message and artifact events have constrained payloads.
+A Turn can contain multiple assistant messages. Replayed versions of the same message
+replace provisional text rather than creating another message. Custom events use
+`x.<namespace>.<name>`; reserved lifecycle, tool, message and artifact events have
+constrained payloads.
 
 
 ## Hands Workers and RocketMQ execution
@@ -454,6 +558,14 @@ and terminal tasks cannot restart. Generic extension signals require an `x.*` ke
 
 ## Invocation failures and automatic recovery
 
+For host replacement, run compatible Brain instances against the same persistent Backend.
+After an owner's lease expires, another instance can claim its unfinished Thread and
+continue from committed state. Hosts need the pinned Agent definition/state version,
+tool bindings and access to the original workspace and external operations. PostgreSQL
+can provide shared storage across hosts; separate container-local SQLite files cannot.
+Fencing rejects stale owners' commits, while periodic scans recover missed wakeups.
+No user resubmission is required. If every Brain stops, a process supervisor must restart one.
+
 Runtime classifies invocation failures and records them through Backend. By default, I/O errors,
 timeouts and internal UNAVAILABLE/CONFLICT failures receive bounded retries; unknown programming
 errors do not. The AgentScope adapter uses Core's model-error classification: 429/5xx and network
@@ -569,22 +681,39 @@ public events to pass to EventProjection.
 Hosts supply authentication, operation/session authorization and blocking-I/O threads.
 Claims, native checkpoints, result intake and global discovery are privileged operations.
 
+## Diagnose a task that is not advancing
+
+Start with `turn.status()`, `turn.pendingInteractions()` and the Thread's ordered
+`listTurns` result. Inspect `turn.listRuns` and `turn.listSteps` for invocation details;
+a stopped Run is not necessarily a terminal Turn.
+
+| Observation | What to check or do |
+| --- | --- |
+| QUEUED behind a WAITING or PAUSED Turn | Resolve or cancel the head Turn, or submit independent work to a different Thread |
+| QUEUED with no execution | Confirm Brain called `start()`, has capacity, can reach storage and resolves the Thread's pinned definition |
+| WAITING for approval or a manual result | Read the original interaction and respond through `turn.respond`; automatic Hands results use the Executor path |
+| PAUSED after a tool result arrives | Explicitly resume with the observed revision when the user is ready |
+| Recovery backoff | Read `turn.status().recovery()`; replacing a host or sending another signal does not reset retries |
+| UNKNOWN external outcome or cancellation that does not finish | Query the original execution and verify its outcome; do not resubmit a side effect to make the queue advance |
+| Observer disconnected or cursor expired | Reopen observation; restore from a snapshot when required, without resubmitting the task |
+
 ## Recovery limits
 
 Threads pin Harness and native-state versions. Restarts need matching factories,
 tool bindings and execution environments. A shared backend does not permit switching
-native kernels. This iteration verifies the Java implementation only; experimental adapters
-in other languages need their own adaptation and contract acceptance before claiming support
-for the current execution model.
+native kernels. The supplied implementation is Java; other language integrations require
+their own adapter and protocol conformance checks.
 
 Recovery requires an active Runtime and accessible storage. Closing the Runtime does
 not cancel durable work or close caller-owned backends/providers. If all hosts stop,
 an external process manager must restart one.
 
-The reference backend stores a session in one transactional JSON row. Large histories
-and high throughput require capacity measurements, compaction or another Backend.
-Local process-crash and PostgreSQL tests do not replace real cloud Sandbox and
-RocketMQ broker acceptance.
+The reference backend stores partitioned records within Session-scoped transactions.
+Threads can execute concurrently, but their short state commits share that transaction
+scope. Measure contention and storage growth for large histories or busy Sessions.
+Recovery cannot recreate a deleted workspace or establish the outcome of an unqueryable
+external effect. Validate provider query/cancel behavior and storage durability in the
+deployment environment.
 
 
 ## Java platform integration
@@ -738,6 +867,8 @@ Host callbacks must honor interruption or use bounded IO. A callback closing its
 cannot wait for itself.
 
 
+## Run the examples
+
 Java examples live in `agentscope-examples/durable`, under the Examples Maven
 aggregator. Durable's `durable-standalone` profile also includes them for standalone
 builds and checks. Each scenario has its own launcher at
@@ -762,12 +893,14 @@ select the JAR; `worker` is not an alias. Start Hands first, then Brain in anoth
 Java 17+ and Maven are required. Use `make -C agentscope-durable check` for normal checks
 and `make -C agentscope-durable independent` for isolated dependency checking, which also
 requires Python 3. Real queued execution needs RocketMQ 5 services and configured topics/groups;
-compile-only runs do not provide that evidence. Historical records in
-`agentscope-durable/docs/verification` retain their original results. Documents and imported files
-in `agentscope-durable/docs/archive` are provenance only; their links and commands may be obsolete.
-This guide adds no build or production acceptance claims.
+`--compile-only` packages the applications without connecting to a broker or running tools.
 
 ## Durable child delegation
+
+Use delegation for child work that must survive restarts, be observed independently
+or accept follow-ups in a continuing context. Ordinary Core/Harness subagent calls do
+not automatically create Durable child Threads. Route the declared tool to
+`DelegationExecutor` to obtain persistent child scheduling and result handoff.
 
 `DelegationExecutor` defaults to an isolated child Thread in the same Session, derived from the parent's
 executionId. To reuse a child Agent's context across tasks, explicitly select its Thread in the resolver;

@@ -2,8 +2,8 @@
 
 [English](public-interaction-contract.en.md)
 
-日期：2026-11-10。Java 执行模型改造中的当前契约；机器可执行格式见 [schema.json](schema.json)，
-整体目标与验收见 [统一执行模型计划](../docs/design/execution-model-plan.md)。只支持当前契约，不保留旧入口、
+机器可执行格式见 [schema.json](schema.json)，应用接入见
+[Java 使用指南](../../docs/v2/zh/docs/harness/durable.md)。只支持当前契约，不保留旧入口、
 格式转换、双协议或兼容分支。版本不匹配明确拒绝；幂等、fencing 与恢复保证不因此削弱。
 
 ## 1. 统一概念与生命周期
@@ -17,7 +17,7 @@ Java 是它的绑定；其他语言可使用自己的 Future/Promise、回调或
 - Session / Thread 使用 OPEN/CLOSED 生命周期；有未终结任务时不能关闭。关闭父 Session 后不能新增 Thread、提交任务或恢复 checkpoint，历史仍可查询。
 - DurableTurn 表示持久逻辑任务；Run 表示其中一次原生调用，Step 只属于一个 Run。
   原生 AgentRun 与持久 Run 记录使用同一个 runId；重启续接保留 turnId，使用新 runId/stepId。
-  显式 PAUSING/PAUSED 仍按整体计划推进，以下不将其列为当前已完成能力。
+  暂停先持久化意图，PAUSED 确认已到达安全边界；恢复需要观察到的版本。
 - requestId 标识提交或控制。turnId/runId/stepId/messageId/eventId/interactionId/executionId 各有自己的范围，不能互换。
 - Session “空闲”从队列和 Turn 状态推导。QUEUED/RUNNING/WAITING/PAUSING/PAUSED/CANCELLING 不是终态；
   SUCCEEDED/FAILED/CANCELLED 才是终态。TurnView.output 为公开 JSON，AgentScope 输出标准 Message。
@@ -225,26 +225,11 @@ SSE 初始过期返回 410，流中过期发送 resync。
 TurnView，失败和取消不伪装成功；result 在非终态 CONFLICT。超时只结束等待，保留任务身份。
 fork 在目标 Session 时间线记录目标 Thread 的恢复；继承的原生历史仅在私有恢复状态中，不伪造旧公开事件。
 
-## 5. 与 Claude Managed Agents 的参考关系
+## 5. 交付保证
 
-参考日期：2026-11-09。以下用于设计对照，不宣称 Claude wire 兼容；Durable 字段与事件名以自己的版本化规范为准。
-
-Claude 的文档展示了双向事件交互：发送输入、响应工具交互，并接收状态与进展事件。它区分事件排队与处理完成。[Session event stream](https://platform.claude.com/docs/en/managed-agents/events-and-streaming)
-
-其 delta 文档将实时预览视为 best-effort，最终 buffered message 才是权威记录；预览不能在重连后重放。[Event deltas](https://platform.claude.com/docs/en/managed-agents/event-deltas)
-
-以下是 **Durable 自己的设计决定**：
-
-| 参考主题 | Durable 的对应规范 |
-| --- | --- |
-| 用户输入与 Agent 输出 | 用户操作 + 标准 Input/Message + PublicEvent 共同构成对外交互；Java 方法不是另一个协议 |
-| 交互暂停和响应 | 固定 interaction ID、响应类型及恢复条件，统一已受理与已应用状态 |
-| 中断/重定向 | steer 是安全边界输入，不伪装成即时中断；取消、继续、新任务分别建模 |
-| 消息预览与完成 | 沿用当前持久化 message.delta/completed 与投影规则，不把已承诺可重放的 delta 改成易失数据 |
-| 重连 | 沿用 Session cursor + 一致快照/历史回放，不要求用户自行拼接私有日志 |
-| 会话状态 | 使用自己的 Session/Thread/Turn 粒度；不把参考产品的 session idle、workflow run 或 thread 概念直接套成 Durable Turn |
-
-本轮不增加一套可丢弃的 preview 通道。未来如确有需求，须单独命名、声明能力，并明确无重放/不改变权威投影；不能复用现有 message.delta 名称承载不同保证。亦不增加隐式 system 权限输入或公开原生推理内容。
+公共 `message.delta` 和 `message.completed` 事件持久化且可重放。消费者使用 Session 游标
+恢复读取，必要时获取一致性快照，不需要从私有原生日志重建状态。控制回执确认已受理，
+应用事件或最终 Turn 状态确认后续处理。用户输入不会获得系统权限，公共事件不包含私有推理。
 
 ## 6. 能力、错误与恢复
 
@@ -281,7 +266,7 @@ pause/resume 均不清零累计失败次数；退避也不能绕过已有等待�
 结果明确后才 FAILED；暂停和取消仍优先。因此，recovery 或未结清工具可以解释没有 waiting 条件
 的 WAITING。Java 默认额外重试 3 次、初始 1 秒、最大 30 秒；其他语言须遵守已持久化的策略和语义。
 
-HarnessAdapter 使用 settle(context, status, error) 统一失败与取消的原生结清；AgentScope 将交互清理、真实结果应用、checkpoint 和 Turn 终态原子提交，失败写入不能提前确认 applied。该阶段的旧 cancel(HarnessContext) 方法直接替换，不保留转发入口。
+HarnessAdapter 使用 settle(context, status, error) 统一失败与取消的原生结清；AgentScope 将交互清理、真实结果应用、checkpoint 和 Turn 终态原子提交，失败写入不能提前确认 applied。
 
 ## 7. 一致性向量与 Harness 适配检查
 
@@ -290,7 +275,7 @@ HarnessAdapter 使用 settle(context, status, error) 统一失败与取消的原
 [vectors.json](vectors.json) 覆盖摘要/数字/身份；[projection-vector.json](projection-vector.json)
 覆盖恢复替代、迟到增量、大序号和公开用户消息。Java 本地与 HTTP 共用 UserApiContract；
 类型化控制竞争、交互、恢复和生命周期在同一契约套件验收。共用向量是其他语言实现的对齐目标，
-本轮未验证 TS 对新 Thread 协议的适配，不能声称已完成另一语言绑定。
+当前提供 Java 语言绑定；其他实现需要独立验证同一契约。
 
 | Harness 接入项 | AgentScope Java 对应实现/约束 |
 | --- | --- |

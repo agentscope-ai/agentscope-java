@@ -9,6 +9,22 @@ Durable 为已有 Agent 增加持久任务受理与恢复。Agent 保留自己�
 
 当前接口处于源码开发阶段，尚未发布制品。使用以下坐标前，请构建同一版本的源码。
 
+## 选择任务边界
+
+当任务需要跨越 HTTP 请求、观察连接或执行进程的生命周期时，使用 Durable。
+如果调用方自行管理执行和状态持久化，仍可直接调用 `ReActAgent` 或 `HarnessAgent`。
+
+| 资源 | 用途 |
+| --- | --- |
+| Session | 一次业务会话及其 Thread 目录、公共事件时间线 |
+| Thread | 一个 Agent 的持续上下文、固定定义和有序任务队列 |
+| Turn | 一次提交的任务；应用保存、观察和控制的对象 |
+| Run / Step | 排查一次真实调用及其中的推理、工具处理过程 |
+
+恢复保留 Session、Thread 和 Turn 身份。替换宿主发起调用时创建新的 Run 和 Step，
+不会新建用户任务。普通应用使用 Session 的主 Thread 即可；需要独立上下文或持久子 Agent
+时再创建其他 Thread，不要为每次重试或重连创建 Thread。
+
 ## Java 模块与部署边界
 
 库 JAR 位于 `durable-runtime`、`durable-worker` 和
@@ -67,6 +83,80 @@ runtime.start();
 公开 Binding 只提供定义、运行时上下文和 Durable workspace。Runtime 持有 Durable 租约和任务调度；
 ThreadJournal 负责 Agent 原生历史，Durable 调度仍由 Durable Runtime 负责。
 namespace 映射为 `RuntimeContext.userId`，身份限定在每次调用内。
+
+## 重连与控制任务
+
+### 重新打开原任务
+
+将 `SessionKey`、Thread ID 和 Turn ID 保存到应用的任务记录中。刷新页面或应用重启后，
+用这些身份查询原任务。以下 `runtime` 已连接原 Backend 或公共 HTTP 端点：
+
+```java
+var conversation = runtime.getSession(new SessionKey("application", "conversation-1"));
+var thread = conversation.getThread("main");
+var turn = thread.getTurn(savedTurnId);
+var current = turn.status();
+var history = thread.history(null, 100);
+```
+
+查询不会启动执行；推进未完成任务需要兼容的 Brain Runtime 正在运行。
+重新建立[观察订阅](#独立观察任务)可以获取快照与后续事件。等待超时或流断开不会取消 Turn。
+
+如果提交响应丢失，尚未保存 Turn ID，使用原 requestId 和原输入重试。
+requestId 在 Session 内去重；同一个 ID 改变目标 Thread、操作或输入会产生冲突。
+新动作使用新 ID，其他 Thread 上的动作也遵守此规则。
+
+### 排队跟进任务或修改当前任务
+
+以故障调查为例，将后续总结提交为新 Turn，用 `steer` 向正在执行的调查补充约束：
+
+```java
+var investigation = conversation.submit("investigate-1", "调查导出超时的原因");
+var summary = conversation.submit("summary-1", "总结调查结果");
+investigation.steer("constraint-1", "重点检查数据库访问，不要修改 API");
+summary.cancel("cancel-summary-1");
+```
+
+总结在主 Thread 中排在调查之后。队首 Turn 处于 WAITING 或 PAUSED 时也会阻挡后续任务。
+`steer` 和 `inject` 在安全边界向原 Turn 加入输入，不会在模型输出一半时强行打断，
+也不会撤销已发出的工具调用。`withdraw` 只能撤回尚未应用的输入。
+控制与任务完成发生竞争时，应重新读取 Turn，不能假定控制已生效。
+
+控制回执表示已受理；通过 `signal.applied` 或最终 Turn 状态确认后续处理。
+排队中的任务可以立即取消；活动任务需要结清外部操作，受理取消不代表远端进程已经停止。
+
+### 主动暂停和恢复
+
+调用 `turn.pause("pause-1")` 后，观察到 PAUSED 才能向用户确认 Agent 已停止推进。
+在之后的请求中，使用观察到的版本恢复：
+
+```java
+import io.agentscope.durable.DurableTypes.TurnStatus;
+
+var paused = turn.status();
+if (paused.status() == TurnStatus.PAUSED) {
+    turn.resume("resume-1", paused.revision());
+}
+```
+
+暂停不会取消已经派发的 Hands 操作；工具结果和交互答案仍可持久化。
+恢复只解除显式暂停，不会绕过审批、运行中的工具或 UNKNOWN 结果。
+终态 Turn 不能恢复；用户需要再次执行任务时，应提交新 Turn。
+
+### 用另一个 Thread 执行独立工作
+
+```java
+var research = conversation.createThread("research", "assistant");
+research.submit("research-1", "查找相关故障案例");
+// 后续请求复用这个 Agent 的上下文。
+conversation.getThread("research").submit("research-2", "比较这些案例的处理方案");
+```
+
+不同 Thread 可在宿主容量范围内并行运行，各自拥有历史、检查点和队列。
+能在 Session 事件中观察其他 Thread，不代表其对话会自动进入当前 Agent 的上下文。
+父 Agent 需要等待子任务结果时，使用 [Durable 子委派](#durable-子委派)。
+共享文件、凭据和 Sandbox 需要显式配置与授权；Thread 隔离不会将共享资源写入串行化。
+任务结清后再关闭 Thread 或 Session；存在未完成任务时，关闭操作会被拒绝，不会隐式取消任务。
 
 ## 统一用户 API
 
@@ -224,7 +314,7 @@ var receipt = runtime.getSession(session).submit("picture-1", input);
 
 支持文本、图片、音频、视频及 URL/base64 媒体源。任意原生对象会被拒绝。
 最终 Turn 输出使用公共 Message 格式，完成事件和快照保留结构化内容，排除原生推理。
-每个 Turn 有一个逻辑助手答复，新 attempt 或最终完成会替换临时文本。
+一个 Turn 可以包含多条助手消息；同一消息的恢复版本替换临时文本，不会创建重复消息。
 自定义事件使用 `x.<namespace>.<name>`；保留的生命周期、工具、消息和制品事件有载荷约束。
 
 ## Hands Worker 与 RocketMQ 执行
@@ -406,6 +496,13 @@ Backend 关闭自己拥有的记录存储访问；PostgreSQL 不关闭传入的 
 
 ## 调用失败与自动恢复
 
+需要宿主替换时，让兼容的 Brain 实例连接同一持久 Backend。原所有者租约到期后，
+另一实例可以认领未完成的 Thread，从已提交状态继续。宿主必须能解析 Thread 固定的
+Agent 定义和状态版本、工具绑定，并访问原工作区与外部操作。
+PostgreSQL 可提供跨宿主共享存储，各容器独立的 SQLite 文件不能。
+Fencing 拒绝过期所有者提交，定期扫描补偿丢失的唤醒通知，无需用户重新提交任务。
+如果所有 Brain 都已停止，需要进程管理器重新启动实例。
+
 调用失败由 Runtime 分类并交给 Backend 记录。默认对 I/O、超时及内部 UNAVAILABLE/CONFLICT
 进行有界重试，未知程序错误不自动重试；AgentScope adapter 使用 Core 的模型错误分类，
 429/5xx 和网络故障可重试，明确的客户端请求错误不可重试。模型自身的请求重试与这里的新 Run
@@ -507,18 +604,33 @@ SSE 查询支持 threadId/turnId/runId，Last-Event-ID 优先于 cursor 参数�
 认证、操作/Session 授权和阻塞 I/O 线程由宿主提供。
 租约、原生恢复点、结果接收和全局发现属于特权操作。
 
+## 排查任务为什么没有继续
+
+先查看 `turn.status()`、`turn.pendingInteractions()` 和 Thread 的有序 `listTurns` 结果。
+通过 `turn.listRuns` 和 `turn.listSteps` 查看调用明细；Run 停止并不一定代表 Turn 已结束。
+
+| 现象 | 检查或处理方式 |
+| --- | --- |
+| QUEUED，前面有 WAITING 或 PAUSED 任务 | 处理或取消队首 Turn；独立工作可以提交到另一个 Thread |
+| QUEUED，没有执行记录 | 确认 Brain 已调用 `start()`、有可用容量、能访问存储并解析 Thread 固定的定义 |
+| WAITING，等待审批或手动结果 | 读取原 interaction，通过 `turn.respond` 回答；自动 Hands 结果走 Executor 通道 |
+| 工具结果到达后仍然 PAUSED | 用户准备继续时，使用观察到的版本显式 resume |
+| 正在恢复退避 | 查看 `turn.status().recovery()`；替换宿主或发送信号不会重置重试次数 |
+| 外部结果 UNKNOWN 或取消一直未结束 | 查询并核实原 execution 的结果，不要重新提交有副作用的操作来推进队列 |
+| 观察连接断开或游标过期 | 重新观察，按需通过快照恢复，不要重新提交任务 |
+
 ## 恢复边界
 
 Thread 固定 Harness 和原生状态版本，重启需要匹配的工厂、工具绑定与执行环境。
-共享后端不意味着可以切换原生内核。本轮契约仅验证 Java 实现；其他语言的实验适配器
-需单独适配并通过相同协议验收，不能视为已经支持当前执行模型。
+共享后端不意味着可以切换原生内核。当前提供 Java 实现；其他语言接入需要自己的适配器和协议一致性检查。
 
 恢复需要活动 Runtime 和可访问的存储。关闭 Runtime 不会取消持久任务，
 也不会关闭调用方拥有的后端和 Provider。全部宿主停止后，需要外部进程管理器重新启动宿主。
 
-参考后端将一个 Session 保存在单条事务 JSON 记录中。大历史量和高吞吐需要容量评估、
-压缩或其他 Backend 实现。本地进程故障与 PostgreSQL 测试不能替代真实云 Sandbox
-和 RocketMQ Broker 验收。
+参考后端通过 Session 级事务保存分段记录。不同 Thread 可以并行执行，但短暂的状态提交
+仍共享这一事务范围。历史量较大或 Session 较繁忙时，需要测量事务竞争和存储增长。
+恢复不能重建已删除的工作区，也不能确认不可查询的外部效果。应在实际部署环境中验证
+Provider 的查询、取消能力和存储持久性。
 
 
 ## Java 平台接入能力
@@ -642,6 +754,8 @@ RocketMqWorker 还会等待已受理的 MQ 回调和待发布事件。宿主应�
 外部副作用。宿主回调需要响应中断或使用有界 IO；回调关闭自身宿主时不能等待自身线程。
 
 
+## 运行示例
+
 Java 示例位于 `agentscope-examples/durable`，归属 Examples Maven 聚合模块。
 Durable 的 `durable-standalone` profile 也显式纳入这些示例，用于独立构建和检查。
 每个场景的启动器位于 `agentscope-examples/durable/{integrated|brain-hands}/{scenario}/run.sh`。
@@ -663,11 +777,13 @@ Java 入口不接受 role 参数，也不使用角色枚举。启动器接受 `<
 
 需要 Java 17+ 与 Maven。正常检查使用 `make -C agentscope-durable check`；隔离依赖检查使用
 `make -C agentscope-durable independent`，另需 Python 3。真实队列执行需要 RocketMQ 5 服务及
-Topic/消费组配置，compile-only 不能提供该证据。`agentscope-durable/docs/verification` 保留原有
-历史结果；`agentscope-durable/docs/archive` 中的文档和导入文件仅用于来源追踪，历史链接与命令
-可能过时。本指南不新增构建或生产验收通过声明。
+Topic/消费组配置；`--compile-only` 只打包应用，不连接 Broker 或执行工具。
 
 ## Durable 子委派
+
+子任务需要跨重启恢复、独立观察或接受持续上下文中的后续请求时，使用持久委派。
+普通 Core/Harness 子 Agent 调用不会自动创建 Durable 子 Thread；
+将声明的工具路由到 `DelegationExecutor`，才能获得持久子任务调度和结果交接。
 
 `DelegationExecutor` 默认按父 executionId 创建同 Session 的独立子 Thread。需要连续复用子 Agent
 上下文时，用目标解析器显式指定已有 Thread；其 ThreadBinding 必须一致：
