@@ -342,6 +342,8 @@ HarnessAgent agent = HarnessAgent.builder()
     .build();
 ```
 
+Local `grep_files` searches only the requested file when `path` names a file, and recurses when it names a directory. The same scope applies to the Java fallback when ripgrep is unavailable.
+
 #### All configuration options
 
 ```java
