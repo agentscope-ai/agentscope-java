@@ -18,6 +18,8 @@ package io.agentscope.core;
 import com.fasterxml.jackson.databind.JsonNode;
 import io.agentscope.core.agent.AgentBase;
 import io.agentscope.core.agent.AgentRun;
+import io.agentscope.core.agent.CapabilityResolver;
+import io.agentscope.core.agent.CapabilitySurface;
 import io.agentscope.core.agent.Event;
 import io.agentscope.core.agent.ExecutionIdentity;
 import io.agentscope.core.agent.RunControl;
@@ -135,6 +137,7 @@ import io.agentscope.core.skill.SkillBox;
 import io.agentscope.core.skill.SkillFilter;
 import io.agentscope.core.skill.SkillHook;
 import io.agentscope.core.skill.repository.AgentSkillRepository;
+import io.agentscope.core.skill.util.SkillUtil;
 import io.agentscope.core.state.AgentState;
 import io.agentscope.core.state.AgentStateStore;
 import io.agentscope.core.state.ConcurrentSessionModificationException;
@@ -273,6 +276,13 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
     private final ExecutionConfig modelExecutionConfig;
     private final ExecutionConfig toolExecutionConfig;
     private final GenerateOptions generateOptions;
+
+    /**
+     * Resolves the per-request {@link CapabilitySurface} at each call entry and writes
+     * it to the rc; null = no trimming. Server-side only, never sourced from the
+     * caller-controlled ToolRequestConfig.
+     */
+    private final CapabilityResolver capabilityResolver;
 
     /**
      * Whether native structured-output responses are validated against the requested JSON Schema.
@@ -433,6 +443,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         this.modelExecutionConfig = builder.modelExecutionConfig;
         this.toolExecutionConfig = builder.toolExecutionConfig;
         this.generateOptions = builder.generateOptions;
+        this.capabilityResolver = builder.capabilityResolver;
         this.validateStructuredOutput = builder.validateStructuredOutput;
         this.toolExecutionContext = builder.toolExecutionContext;
         this.enablePendingToolRecovery = builder.enablePendingToolRecovery;
@@ -1059,9 +1070,93 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         ToolRequestConfig requestConfig = ctx.getToolRequestConfig();
         scope.toolRequestConfig = requestConfig != null ? requestConfig : ToolRequestConfig.NONE;
         scope.activeToolkit = this.toolkit;
+
+        // ==== Grant layer: capability surface, resolved server-side at call entry ====
+        // Independent of ToolRequestConfig (the caller-controlled external-tools channel);
+        // runs before the system prompt is assembled so skill filtering already sees it.
+        CapabilitySurface surface;
+        if (capabilityResolver != null) {
+            CapabilitySurface resolved;
+            try {
+                resolved = capabilityResolver.resolve(ctx, this);
+            } catch (RuntimeException e) {
+                // A throwing resolver is broken authorization infrastructure, not "no
+                // grants": abort the call (the Mono.defer wrapper turns this into a
+                // subscription-time error; run-control cleanup still runs). Developers
+                // wanting graceful degradation catch inside their resolver and return
+                // DENY_ALL themselves.
+                log.error(
+                        "CapabilityResolver failed; aborting the call (userId={}, agentId={})",
+                        ctx.getUserId(),
+                        getAgentId(),
+                        e);
+                throw e;
+            }
+            surface = resolved != null ? resolved : CapabilitySurface.ALLOW_ALL;
+        } else {
+            CapabilitySurface inherited = ctx.get(CapabilitySurface.class);
+            // No resolver: default to ALLOW_ALL only when the rc has no surface; keep
+            // inherited ones (sub-agents reuse the parent surface without re-resolving).
+            surface = inherited != null ? inherited : CapabilitySurface.ALLOW_ALL;
+        }
+        // Materialize activateOnSkill-bound groups of granted skills into the grant set.
+        // Idempotent: returns the same instance when nothing is added, so inherited
+        // surfaces are reused by reference across toolkits with identical bindings.
+        surface = expandSkillBoundGroups(surface, scope.activeToolkit);
+        if (ctx.get(CapabilitySurface.class) != surface) {
+            if (ctx.get(CapabilitySurface.class) != null) {
+                // SubAgentTool passes the parent rc instance: writing in place would
+                // pollute the parent chain. Write a derived copy and switch scope.rc
+                // (from() copies all typed attributes).
+                ctx = RuntimeContext.builder().from(ctx).build();
+                scope.rc = ctx;
+            }
+            ctx.put(CapabilitySurface.class, surface);
+        }
+
         scope.systemMsg = null;
         scope.interruption = control.interruption();
         return scope;
+    }
+
+    /**
+     * Materializes skill-bound tool groups into the grant set: every {@code
+     * SkillToolGroup} bound (activateOnSkill) to a granted skill joins {@code
+     * allowedToolGroups}. Mechanical enrichment done once at call entry — the surface
+     * stays pure data and every gate keeps consuming only the query methods.
+     *
+     * <p>Idempotent: returns the same instance when there is nothing to add, so
+     * sub-agent reference reuse is preserved when parent and child toolkits share the
+     * same bindings. Only a whitelist union is performed; groups bound to ungranted
+     * skills are ignored.
+     *
+     * @param surface the resolved or inherited grant set
+     * @param toolkit the agent's toolkit holding the skill bindings
+     * @return the enriched surface, or the same instance when nothing was added
+     */
+    private static CapabilitySurface expandSkillBoundGroups(
+            CapabilitySurface surface, Toolkit toolkit) {
+        Set<String> grantedSkills = surface.allowedSkills();
+        if (grantedSkills == null || grantedSkills.isEmpty()) {
+            return surface;
+        }
+        Set<String> boundGroups = new HashSet<>();
+        for (String entry : grantedSkills) {
+            // Entries are names (the recommended form); a full-skillId entry (name_source)
+            // resolves to its name part — bindings are name-keyed.
+            boundGroups.addAll(
+                    toolkit.findSkillToolGroupsByActivateOnSkill(SkillUtil.parseSkillName(entry)));
+        }
+        if (boundGroups.isEmpty()) {
+            return surface;
+        }
+        Set<String> existing = surface.allowedToolGroups();
+        if (existing != null && existing.containsAll(boundGroups)) {
+            return surface;
+        }
+        Set<String> merged = new HashSet<>(existing != null ? existing : Set.of());
+        merged.addAll(boundGroups);
+        return new CapabilitySurface(surface.allowedSkills(), merged, surface.allowedTools());
     }
 
     /**
@@ -1696,7 +1791,10 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                     List<String> activeGroups = scope.state.getToolContext().getActivatedGroups();
                     boolean hasTools =
                             !scope.activeToolkit
-                                    .getToolSchemas(activeGroups, scope.toolRequestConfig)
+                                    .getToolSchemas(
+                                            activeGroups,
+                                            scope.toolRequestConfig,
+                                            scope.rc.get(CapabilitySurface.class))
                                     .isEmpty();
                     // Probe the model actually serving this call (per-call modelId when set),
                     // not the build-time default: native structured-output support may differ.
@@ -2368,6 +2466,32 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                     ? Mono.error(
                                             new InterruptedException("Agent execution interrupted"))
                                     : Mono.empty());
+        }
+
+        /**
+         * Passes every streamed element through until this execution is interrupted.
+         *
+         * <p>{@link #checkInterrupted()} is only a read of the interruption flag wrapped in a
+         * {@code Mono}, so testing it per chunk through {@code concatMap} made every streamed chunk
+         * cross an asynchronous boundary to reach the same field access. {@code handle} performs
+         * that read in place: the element continues, or the stream ends with the same error the
+         * {@code Mono} raised. Ordering and backpressure are unchanged because {@code handle}
+         * processes elements one at a time, and the interruption still lands between two chunks
+         * rather than after the whole response.
+         *
+         * @param upstream the streamed elements
+         * @param <T> element type
+         * @return the same elements, or an {@link InterruptedException} once the flag is set
+         */
+        private <T> Flux<T> untilInterrupted(Flux<T> upstream) {
+            return upstream.handle(
+                    (item, sink) -> {
+                        if (interruption.isInterrupted()) {
+                            sink.error(new InterruptedException("Agent execution interrupted"));
+                            return;
+                        }
+                        sink.next(item);
+                    });
         }
 
         private Mono<Msg> doCallInner(List<Msg> msgs) {
@@ -3065,7 +3189,8 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                 List<ToolSchema> tools =
                                         activeToolkit.getToolSchemas(
                                                 state.getToolContext().getActivatedGroups(),
-                                                toolRequestConfig);
+                                                toolRequestConfig,
+                                                rc.get(CapabilitySurface.class));
                                 // Per-call structured-output tool: expose generate_response to the
                                 // model for this call only (not registered on the shared toolkit).
                                 if (soTool != null) {
@@ -3433,7 +3558,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                     () ->
                                             SessionModels.wrap(mci.model(), rc, "REASONING").stream(
                                                     mci.messages(), mci.tools(), mci.options()))
-                            .concatMap(chunk -> checkInterrupted().thenReturn(chunk))
+                            .transform(this::untilInterrupted)
                             .concatMap(
                                     chunk ->
                                             Flux.deferContextual(
@@ -3853,7 +3978,21 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                 String replyId,
                 AtomicReference<List<Map.Entry<ToolUseBlock, ToolResultBlock>>> resultHolder) {
 
-            return evaluatePermissions(toolCalls)
+            // Grant gate ordered before the permission pipeline: an ungranted backend call
+            // must not reach human confirmation — to the model it does not exist. Such calls
+            // are resolved here with the executor gate's byte-identical not-found wording;
+            // external (request-config) tools are caller-controlled and skip this gate.
+            GrantPartition batch = partitionByGrant(toolCalls);
+            List<ToolUseBlock> granted = batch.granted();
+            List<Map.Entry<ToolUseBlock, ToolResultBlock>> ungranted = batch.ungranted();
+            if (granted.isEmpty()) {
+                // Every call ungranted: resolve the whole batch without the permission
+                // pipeline (no confirmation can be requested for non-existent tools).
+                resultHolder.set(ungranted);
+                return ungrantedEvents(ungranted, replyId).doOnNext(this::publishEvent);
+            }
+
+            return evaluatePermissions(granted)
                     .flatMapMany(
                             gate -> {
                                 List<ToolUseBlock> pending = gate.pendingAsk();
@@ -3862,8 +4001,10 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                 // Mark ToolUseBlock.state in context for every gated tool. ALLOWED
                                 // calls run immediately; ASKING calls cause the agent to pause and
                                 // return; DENIED calls get DENIED ToolResultBlocks written below.
+                                // Ungranted calls were already resolved above and need no state
+                                // update (same rationale as DENIED).
                                 Map<String, ToolCallState> stateUpdates = new HashMap<>();
-                                for (ToolUseBlock tc : toolCalls) {
+                                for (ToolUseBlock tc : granted) {
                                     if (autoDenied.contains(tc.getId())) {
                                         // DENIED tools don't need a state change — they'll get a
                                         // DENIED ToolResultBlock and won't reappear in pending.
@@ -3885,7 +4026,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
 
                                 if (pending.isEmpty()) {
                                     return runToolBatch(
-                                            toolCalls, autoDenied, replyId, resultHolder);
+                                            granted, autoDenied, replyId, resultHolder, ungranted);
                                 }
 
                                 // Permission HITL: surface the pending tool calls, persist any
@@ -3896,7 +4037,12 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                 if (!autoDenied.isEmpty()) {
                                     // Write DENIED results in-place so they aren't re-evaluated on
                                     // resume.
-                                    writeAutoDeniedResults(toolCalls, autoDenied);
+                                    writeAutoDeniedResults(granted, autoDenied);
+                                }
+                                if (!ungranted.isEmpty()) {
+                                    // Same in-place stance as auto-denied results: ungranted
+                                    // calls are resolved now so resume does not see them pending.
+                                    writeUngrantedResults(ungranted);
                                 }
                                 // resultHolder may be inspected by the caller after stream
                                 // completion;
@@ -3905,14 +4051,19 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                 persistPendingRequestReplyId(
                                         Msg.METADATA_CONFIRM_REQUEST_REPLY_ID, replyId);
                                 Flux<AgentEvent> autoDeniedEvents =
-                                        Flux.fromIterable(toolCalls)
-                                                .filter(tc -> autoDenied.contains(tc.getId()))
-                                                .concatMapIterable(
-                                                        tc ->
-                                                                deniedToolResultEvents(
-                                                                        tc,
-                                                                        replyId,
-                                                                        PERMISSION_DENIED_BY_RULES));
+                                        ungrantedEvents(ungranted, replyId)
+                                                .concatWith(
+                                                        Flux.fromIterable(granted)
+                                                                .filter(
+                                                                        tc ->
+                                                                                autoDenied.contains(
+                                                                                        tc.getId()))
+                                                                .concatMapIterable(
+                                                                        tc ->
+                                                                                deniedToolResultEvents(
+                                                                                        tc,
+                                                                                        replyId,
+                                                                                        PERMISSION_DENIED_BY_RULES)));
                                 return autoDeniedEvents.concatWith(
                                         Flux.just(
                                                 new RequireUserConfirmEvent(replyId, pending),
@@ -3970,14 +4121,16 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         /**
          * Execute the given tool calls, synthesising DENIED results for any tool whose id is in
          * {@code deniedIds} (skipping toolkit invocation for those) and running the rest through
-         * {@link #executeToolCalls(List)}. The combined results are written to {@code resultHolder}
+         * {@link #executeToolCalls(List)}. The combined results — including the {@code ungranted}
+         * entries resolved before the permission pipeline — are written to {@code resultHolder}
          * and emitted as a stream of fine-grained {@link AgentEvent}s.
          */
         private Flux<AgentEvent> runToolBatch(
                 List<ToolUseBlock> toolCalls,
                 Set<String> deniedIds,
                 String replyId,
-                AtomicReference<List<Map.Entry<ToolUseBlock, ToolResultBlock>>> resultHolder) {
+                AtomicReference<List<Map.Entry<ToolUseBlock, ToolResultBlock>>> resultHolder,
+                List<Map.Entry<ToolUseBlock, ToolResultBlock>> ungranted) {
 
             List<Map.Entry<ToolUseBlock, ToolResultBlock>> deniedEntries = new ArrayList<>();
             List<ToolUseBlock> approved = new ArrayList<>();
@@ -3994,30 +4147,36 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             }
 
             Flux<AgentEvent> deniedEvents =
-                    Flux.fromIterable(deniedEntries)
-                            .concatMap(
-                                    entry -> {
-                                        ToolUseBlock use = entry.getKey();
-                                        ToolCallParam deniedParam =
-                                                ToolCallParam.builder()
-                                                        .toolUseBlock(use)
-                                                        .agent(ReActAgent.this)
-                                                        .runtimeContext(
-                                                                buildMergedRuntimeContext(rc))
-                                                        .build();
-                                        return ActionObservations.observe(
-                                                        deniedParam,
-                                                        () -> Mono.just(entry.getValue()))
-                                                .thenMany(
-                                                        Flux.fromIterable(
-                                                                deniedToolResultEvents(
-                                                                        use,
-                                                                        replyId,
-                                                                        PERMISSION_DENIED_BY_RULES)));
-                                    });
+                    ungrantedEvents(ungranted, replyId)
+                            .concatWith(
+                                    Flux.fromIterable(deniedEntries)
+                                            .concatMap(
+                                                    entry -> {
+                                                        ToolUseBlock use = entry.getKey();
+                                                        ToolCallParam deniedParam =
+                                                                ToolCallParam.builder()
+                                                                        .toolUseBlock(use)
+                                                                        .agent(ReActAgent.this)
+                                                                        .runtimeContext(
+                                                                                buildMergedRuntimeContext(
+                                                                                        rc))
+                                                                        .build();
+                                                        return ActionObservations.observe(
+                                                                        deniedParam,
+                                                                        () ->
+                                                                                Mono.just(
+                                                                                        entry
+                                                                                                .getValue()))
+                                                                .thenMany(
+                                                                        Flux.fromIterable(
+                                                                                deniedToolResultEvents(
+                                                                                        use,
+                                                                                        replyId,
+                                                                                        PERMISSION_DENIED_BY_RULES)));
+                                                    }));
 
             if (approved.isEmpty()) {
-                resultHolder.set(deniedEntries);
+                resultHolder.set(combineResolvedResults(ungranted, deniedEntries, List.of()));
                 return deniedEvents;
             }
 
@@ -4077,17 +4236,11 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                                                         })
                                                                 .subscribe(
                                                                         results -> {
-                                                                            List<
-                                                                                            Map
-                                                                                                            .Entry<
-                                                                                                    ToolUseBlock,
-                                                                                                    ToolResultBlock>>
-                                                                                    merged =
-                                                                                            new ArrayList<>(
-                                                                                                    deniedEntries);
-                                                                            merged.addAll(results);
                                                                             resultHolder.set(
-                                                                                    merged);
+                                                                                    combineResolvedResults(
+                                                                                            ungranted,
+                                                                                            deniedEntries,
+                                                                                            results));
                                                                             List<ToolUseBlock>
                                                                                     suspendedCalls =
                                                                                             getSuspendedToolCalls(
@@ -4203,6 +4356,140 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
 
         private record PermissionVerdict(ToolUseBlock use, PermissionBehavior behavior) {}
 
+        /**
+         * Grant check for the acting phase, ordered before the permission pipeline so an
+         * ungranted call never reaches human confirmation. Mirrors the executor gate ({@code
+         * ToolExecutor.requireToolGranted}) — same not-found wording, same external-tool and
+         * missing-surface bypasses; the executor gate stays as defense in depth.
+         *
+         * @param use the tool call to check
+         * @return the denial wording, or {@code null} when the call proceeds
+         */
+        private String grantDenialFor(ToolUseBlock use) {
+            // Same check as ToolExecutor's fromRequestConfig (overrides() is package-private
+            // there): a name shadowed by an external tool is caller-controlled, never
+            // grant-trimmed.
+            if (toolRequestConfig.externalTools().containsKey(use.getName())) {
+                return null;
+            }
+            CapabilitySurface surface = rc.get(CapabilitySurface.class);
+            if (surface == null) {
+                return null; // no surface on this path: unrestricted (trusted direct call)
+            }
+            AgentTool tool = activeToolkit.getTool(use.getName(), toolRequestConfig);
+            if (tool == null) {
+                return null; // unknown tool: the executor's not-found wording applies
+            }
+            if (surface.allowsTool(tool, activeToolkit.getToolGroupsOf(use.getName()))) {
+                return null;
+            }
+            log.warn(
+                    "Denied ungranted tool call (grant, pre-permission): tool='{}',"
+                            + " userId='{}', sessionId='{}', agentId='{}'",
+                    use.getName(),
+                    rc.getUserId(),
+                    rc.getSessionId(),
+                    getAgentId());
+            return "Tool not found: " + use.getName();
+        }
+
+        /** Pre-permission grant partition of one acting batch. */
+        private record GrantPartition(
+                List<ToolUseBlock> granted,
+                List<Map.Entry<ToolUseBlock, ToolResultBlock>> ungranted) {}
+
+        /**
+         * Split an acting batch by the grant gate. Ungranted backend calls are paired with a
+         * synthesized not-found result here; everything else proceeds to the permission
+         * pipeline.
+         */
+        private GrantPartition partitionByGrant(List<ToolUseBlock> toolCalls) {
+            List<ToolUseBlock> granted = new ArrayList<>(toolCalls.size());
+            List<Map.Entry<ToolUseBlock, ToolResultBlock>> ungranted = new ArrayList<>();
+            for (ToolUseBlock tc : toolCalls) {
+                String denial = grantDenialFor(tc);
+                if (denial != null) {
+                    ungranted.add(
+                            Map.entry(
+                                    tc,
+                                    ToolResultBlock.error(denial)
+                                            .withIdAndName(tc.getId(), tc.getName())));
+                } else {
+                    granted.add(tc);
+                }
+            }
+            return new GrantPartition(granted, ungranted);
+        }
+
+        /**
+         * Event stream for ungranted calls, observed through {@link ActionObservations} exactly
+         * like permission-denied calls so session recordings keep a complete action timeline
+         * for every resolved tool call.
+         */
+        private Flux<AgentEvent> ungrantedEvents(
+                List<Map.Entry<ToolUseBlock, ToolResultBlock>> entries, String replyId) {
+            return Flux.fromIterable(entries)
+                    .concatMap(
+                            entry -> {
+                                ToolUseBlock use = entry.getKey();
+                                ToolCallParam ungrantedParam =
+                                        ToolCallParam.builder()
+                                                .toolUseBlock(use)
+                                                .agent(ReActAgent.this)
+                                                .runtimeContext(buildMergedRuntimeContext(rc))
+                                                .build();
+                                return ActionObservations.observe(
+                                                ungrantedParam, () -> Mono.just(entry.getValue()))
+                                        .thenMany(
+                                                Flux.fromIterable(
+                                                        ungrantedToolResultEvents(entry, replyId)));
+                            });
+        }
+
+        /**
+         * Build the synthesized ERROR tool-result lifecycle for an ungranted call. The delta
+         * text is taken from the result block itself, so the event stream and the recorded
+         * result can never drift apart.
+         */
+        private List<AgentEvent> ungrantedToolResultEvents(
+                Map.Entry<ToolUseBlock, ToolResultBlock> entry, String replyId) {
+            ToolUseBlock use = entry.getKey();
+            String text = ((TextBlock) entry.getValue().getOutput().get(0)).getText();
+            return List.of(
+                    new ToolResultStartEvent(replyId, use.getId(), use.getName()),
+                    new ToolResultTextDeltaEvent(replyId, use.getId(), use.getName(), text),
+                    new ToolResultEndEvent(
+                            replyId, use.getId(), use.getName(), ToolResultState.ERROR));
+        }
+
+        /**
+         * Append ungranted results to the conversation context so a permission pause does not
+         * leave them pending on resume (the same in-place stance as {@code
+         * writeAutoDeniedResults}).
+         */
+        private void writeUngrantedResults(List<Map.Entry<ToolUseBlock, ToolResultBlock>> entries) {
+            for (Map.Entry<ToolUseBlock, ToolResultBlock> entry : entries) {
+                Msg msg =
+                        ToolResultMessageBuilder.buildToolResultMsg(
+                                entry.getValue(), entry.getKey(), getName());
+                state.contextMutable().add(msg);
+            }
+        }
+
+        /**
+         * Combine the resolved-before-execution results (ungranted, then permission-denied)
+         * with the executed results, preserving the batch's resolution order.
+         */
+        private static List<Map.Entry<ToolUseBlock, ToolResultBlock>> combineResolvedResults(
+                List<Map.Entry<ToolUseBlock, ToolResultBlock>> ungranted,
+                List<Map.Entry<ToolUseBlock, ToolResultBlock>> deniedEntries,
+                List<Map.Entry<ToolUseBlock, ToolResultBlock>> executed) {
+            List<Map.Entry<ToolUseBlock, ToolResultBlock>> merged = new ArrayList<>(ungranted);
+            merged.addAll(deniedEntries);
+            merged.addAll(executed);
+            return merged;
+        }
+
         private List<ToolUseBlock> getSuspendedToolCalls(
                 List<Map.Entry<ToolUseBlock, ToolResultBlock>> results) {
             return results.stream()
@@ -4226,7 +4513,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             private final reactor.util.context.ContextView parentContext;
 
             /** Results resolved before batch settlement, by call id. */
-            private final ConcurrentHashMap<String, ToolResultBlock> resolvedResults =
+            private final ConcurrentHashMap<String, ToolResultBlock> combineResolvedResults =
                     new ConcurrentHashMap<>();
 
             /** Ids of calls whose start has been published. */
@@ -4272,7 +4559,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             public void onResult(ToolUseBlock call, ToolResultBlock result) {
                 // Record before the suspended check so an earlier suspension survives the batch
                 // error fallback; only the first resolution publishes events.
-                if (resolvedResults.putIfAbsent(call.getId(), result) != null) return;
+                if (combineResolvedResults.putIfAbsent(call.getId(), result) != null) return;
                 if (result.isSuspended()) return;
                 Map<String, Object> metadata = result.getMetadata();
                 if (result.getOutput() != null) {
@@ -4300,7 +4587,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
 
             /** Result already resolved for {@code call}, or {@code null} if it never settled. */
             private ToolResultBlock resolvedResult(ToolUseBlock call) {
-                return resolvedResults.get(call.getId());
+                return combineResolvedResults.get(call.getId());
             }
         }
 
@@ -4908,7 +5195,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
 
             Flux<AgentEvent> modelEvents =
                     Flux.defer(() -> mci.model().stream(mci.messages(), mci.tools(), mci.options()))
-                            .concatMap(chunk -> checkInterrupted().thenReturn(chunk))
+                            .transform(this::untilInterrupted)
                             .concatMap(
                                     chunk ->
                                             Flux.deferContextual(
@@ -6181,6 +6468,9 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         private SkillFilter skillFilter;
         private boolean dynamicSkillsEnabled = true;
 
+        /** Computes the per-request grant set; null = no trimming (ALLOW_ALL at call entry). */
+        private CapabilityResolver capabilityResolver;
+
         /**
          * When true, {@link DynamicSkillMiddleware} toggles the prompt provider's code-execution
          * block (per-skill {@code <files-root>} listing + instructions). Off by default —
@@ -6218,6 +6508,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             copy.modelExecutionConfig = this.modelExecutionConfig;
             copy.toolExecutionConfig = this.toolExecutionConfig;
             copy.generateOptions = this.generateOptions;
+            copy.capabilityResolver = this.capabilityResolver;
             copy.validateStructuredOutput = this.validateStructuredOutput;
             copy.modelRequestPreparer = this.modelRequestPreparer;
             copy.actionObserver = this.actionObserver;
@@ -6453,7 +6744,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
          *
          * <p>When enabled, {@link #build()} registers a {@code todo_write} tool (operating on
          * {@link io.agentscope.core.state.AgentState#getTasksContext()} with full-list-replace
-         * semantics) and a {@link io.agentscope.core.middleware.TaskReminderMiddleware} that
+         * semantics) and a {@link TaskReminderMiddleware} that
          * re-surfaces the current list before every reasoning step. Default OFF.
          *
          * @param enabled true to enable the task list
@@ -6822,6 +7113,22 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         }
 
         /**
+         * Registers a capability resolver: run once per call entry; the resolved {@link
+         * io.agentscope.core.agent.CapabilitySurface} is carried on the {@link
+         * RuntimeContext} for the whole call chain. Sub-agents without their own
+         * resolver reuse the parent surface instance.
+         *
+         * <p>Only an all-null surface skips trimming; any explicit dimension makes the surface
+         * a complete grant enumeration (unset dimensions contribute no grants).
+         *
+         * <p>The rc is request-scoped: never share one instance across concurrent calls.
+         */
+        public Builder capabilityResolver(CapabilityResolver resolver) {
+            this.capabilityResolver = resolver;
+            return this;
+        }
+
+        /**
          * Enables the code-execution prompt block emitted by
          * {@link io.agentscope.core.skill.AgentSkillPromptProvider}. When on:
          * <ul>
@@ -7041,6 +7348,22 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                 middlewares.add(
                         new DynamicSkillMiddleware(
                                 List.copyOf(skillRepositories), skillCodeExecutionEnabled));
+            }
+
+            // skillRepositories with dynamic skills disabled renders no per-call skill prompt
+            // at all: a resolver here would trim nothing while appearing active. Fail the
+            // build explicitly — an authorization setting must never silently degrade. The
+            // skillBox(...) path is exempt: its SkillHook trims the injected prompt per call
+            // via the capability surface carried on the RuntimeContext.
+            if (capabilityResolver != null
+                    && !skillRepositories.isEmpty()
+                    && !dynamicSkillsEnabled) {
+                throw new IllegalStateException(
+                        "capabilityResolver cannot be combined with"
+                                + " dynamicSkillsEnabled=false: with the dynamic skill"
+                                + " middleware disabled there is no per-call skill prompt the"
+                                + " resolver could trim. Use skillRepositories(...) with the"
+                                + " dynamic skill path (default) for per-call skill trimming.");
             }
 
             // List.sort is stable: middlewares with equal order retain their registration order.

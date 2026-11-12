@@ -56,6 +56,8 @@ When the remote task stops to wait for the caller (`TASK_STATE_INPUT_REQUIRED` o
 
 Without streaming (the client config or the AgentCard does not stream), a reply that is a task still `SUBMITTED` or `WORKING` fails the call with an `IllegalStateException`, because `A2aAgent` does not poll tasks.
 
+Cancelling a call, for example by disposing the subscription or with a `timeout` upstream, also cancels its remote task (`tasks/cancel`) once the task id is known, and closes the event stream of the default JSON-RPC transport. Events that arrive after the cancel are dropped. Transports configured with `clientTransports` keep their own HTTP client, so their streams stay open until the remote ends the task.
+
 ```java
 remote.streamEvents(new UserMessage("Translate to English: 你好"))
     .doOnNext(event -> {
