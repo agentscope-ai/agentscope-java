@@ -233,6 +233,7 @@ class HttpSelfRegistrationTest {
     void heartbeatNonSuccessReRegistersSoTheControlPlaneKeepsTheInstance() throws Exception {
         AtomicInteger registrations = new AtomicInteger();
         AtomicInteger heartbeats = new AtomicInteger();
+        CountDownLatch recoveredHeartbeat = new CountDownLatch(1);
         AtomicReference<JsonNode> lastHeartbeatBody = new AtomicReference<>();
         HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
         server.createContext(
@@ -259,6 +260,7 @@ class HttpSelfRegistrationTest {
                         // control plane expires the instance within its heartbeat timeout.
                         respond(exchange, 401, "{\"error\":\"invalid internal token\"}");
                     } else {
+                        recoveredHeartbeat.countDown();
                         respond(exchange, 200, "{\"generation\":2,\"status\":\"ok\"}");
                     }
                 });
@@ -291,11 +293,9 @@ class HttpSelfRegistrationTest {
                     registrations.get() >= 2,
                     "A non-2xx heartbeat must re-register so the control plane keeps the"
                             + " instance; without this the agent silently turns unavailable");
-            deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
-            while (heartbeats.get() < 2 && System.nanoTime() < deadline) {
-                Thread.sleep(5);
-            }
-            assertTrue(heartbeats.get() >= 2, "Heartbeat should continue after recovery");
+            assertTrue(
+                    recoveredHeartbeat.await(5, TimeUnit.SECONDS),
+                    "Heartbeat should continue after recovery");
             assertEquals(
                     2,
                     lastHeartbeatBody.get().path("generation").asLong(),
