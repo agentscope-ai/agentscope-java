@@ -353,6 +353,7 @@ public final class GracefulShutdownManager {
             future.cancel(false);
         }
         state.set(ShutdownState.RUNNING);
+        config.set(GracefulShutdownConfig.DEFAULT);
         activeRequestsById.clear();
         stateSavers.clear();
         shutdownStartedAt.set(null);
