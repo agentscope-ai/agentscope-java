@@ -64,6 +64,7 @@ import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Function;
+import java.util.regex.Pattern;
 import java.util.stream.Stream;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -108,6 +109,16 @@ public class WorkspaceManager implements AutoCloseable {
                     .disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
     private static final TypeReference<Map<String, TaskRecord>> TASK_MAP_TYPE =
             new TypeReference<>() {};
+
+    /**
+     * Characters that a Windows/NTFS file-name segment rejects. {@code %} is included as well, so
+     * that {@link #safeSegment(String)} stays injective: an id already containing a literal
+     * {@code %} is escaped too and can never collide with the escaped form of a different id.
+     * Raw control characters (U+0000-U+001F, U+007F) are rejected by NTFS, so they are escaped
+     * even though they are legal in a POSIX file name.
+     */
+    private static final Pattern UNSAFE_SEGMENT_CHARS =
+            Pattern.compile("[<>:\"/\\\\|?*%\\x00-\\x1F\\x7F]");
 
     /**
      * Per-path locks for workspace-relative files to prevent concurrent read-modify-write races.
@@ -485,7 +496,9 @@ public class WorkspaceManager implements AutoCloseable {
      */
     @Deprecated
     public Path resolveSessionFile(RuntimeContext rc, String agentId, String sessionId) {
-        return getSessionDir(rc, agentId).resolve(sessionId + ".json");
+        // The id is caller-supplied and may carry characters NTFS rejects, so it has to be
+        // encoded here as well; see safeSegment for why the mapping has to be injective.
+        return getSessionDir(rc, agentId).resolve(safeSegment(sessionId) + ".json");
     }
 
     /**
@@ -905,8 +918,36 @@ public class WorkspaceManager implements AutoCloseable {
         }
     }
 
+    /**
+     * Percent-encodes every character of {@code raw} that cannot appear in a Windows file name, so
+     * a caller-supplied id such as {@code agent:abc:main} becomes a single legal path segment
+     * instead of raising {@link java.nio.file.InvalidPathException} when the path is resolved.
+     *
+     * <p>This is a pure function that leaves ordinary ids untouched, which keeps the mapping
+     * symmetric: writers ({@link #writeTaskRecord}) and readers ({@link #readTaskRecord},
+     * {@link #listTaskRecords}) derive the file name from the same id through the same helper, so
+     * a record written under an id containing a reserved character is still readable. Escaping
+     * {@code %} and the separator characters also means an id can never introduce a new path
+     * segment or climb out of the owning directory.
+     */
+    static String safeSegment(String raw) {
+        if (raw == null || raw.isEmpty()) {
+            return raw;
+        }
+        return UNSAFE_SEGMENT_CHARS
+                .matcher(raw)
+                .replaceAll(m -> String.format("%%%02X", (int) m.group().charAt(0)));
+    }
+
     private String taskRecordPath(String agentId, String sessionId) {
-        return AGENTS_DIR + "/" + agentId + "/" + TASKS_DIR + "/" + sessionId + ".json";
+        return AGENTS_DIR
+                + "/"
+                + agentId
+                + "/"
+                + TASKS_DIR
+                + "/"
+                + safeSegment(sessionId)
+                + ".json";
     }
 
     /**
