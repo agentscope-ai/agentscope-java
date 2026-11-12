@@ -440,10 +440,10 @@ require independent acceptance. Unqueryable or unverifiable external effects rem
 
 ## Design and verification
 
-- [docs/design](docs/design): [execution model](docs/design/execution-model-plan.en.md),
-  [multi-agent/Thread design](docs/design/multiagent-thread-design.en.md),
-  [Hands extensions](docs/design/hands-extension-plan.en.md), [queued Hands](docs/design/queued-hands-plan.en.md).
-- [docs/verification](docs/verification): [independent acceptance backlog](docs/verification/execution-model-acceptance.en.md),
-  [development progress](docs/verification/execution-model-progress.en.md),
-  [historical user API verification](docs/verification/user-api-verification.en.md), [historical verification](docs/verification/verification.en.md).
+- [docs/design](docs/design): [execution model](docs/design/execution-model-plan.md),
+  [multi-agent/Thread design](docs/design/multiagent-thread-design.md),
+  [Hands extensions](docs/design/hands-extension-plan.md), [queued Hands](docs/design/queued-hands-plan.md).
+- [docs/verification](docs/verification): [independent acceptance backlog](docs/verification/execution-model-acceptance.md),
+  [development progress](docs/verification/execution-model-progress.md),
+  [historical user API verification](docs/verification/user-api-verification.md), [historical verification](docs/verification/verification.md).
   Existing dates, results and commands are evidence for their recorded versions, not passing claims for the current tree.

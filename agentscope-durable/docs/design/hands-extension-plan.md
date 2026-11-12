@@ -1,64 +1,60 @@
-# 通用 Hands 扩展实施计划
+# Reusable Hands extensions implementation plan
 
-[English](hands-extension-plan.en.md)
+> Existing implementation results, numbers and commands remain historical evidence, not renewed acceptance of the current tree.
+> Historical platform/cross-language records are not current client support claims; see the [library README](../../README.md) for modules and checks.
+> The current Sandbox launcher is `agentscope-examples/durable/integrated/tool-in-sandbox/run.sh`, still running sequential start/resume phases; original class names and commands are retained for tracing only. See the [examples overview](../../../agentscope-examples/durable/README.en.md) for current names and independent Brain/Hands entry points.
 
-> 本文保留既有实施结果、数字和命令作为历史证据，不代表当前版本重新验收通过。
-> 历史平台与跨语言记录不是当前客户端支持声明；当前模块和检查入口见[库 README](../../README.md)。
-> Sandbox 示例的当前启动器为 `agentscope-durable/durable-examples/integrated/sandbox-hands/run.sh`；原命令仅供追踪。
+Status: Java / AgentScope implementation and local acceptance complete. Implement the approved Tool Worker extraction in Durable first, then reduce Managed Agents to platform adapters. Java / AgentScope only. No legacy protocols, duplicate state machines, mandatory service, or reverse platform dependency.
 
-状态：本轮 Java / AgentScope 改造与本地验收完成。依据用户确认的 Tool Worker 提炼分析，先完成通用 Durable 扩展，再收敛 Managed Agents。仅 Java / AgentScope；不恢复旧协议或重复状态机，不新增强制服务，不改变平台到框架的依赖方向。
+Work directly in `/Users/ken/agentscope-3/agentscope-java` (`automatic-acr-release-durable`) and `/Users/ken/agentcore/agentcore-managed-agents` (`durable-ma`). Preserve existing changes; ignore the duplicate agentscope-service; do not commit, push or deploy.
 
-工作目录为 `/Users/ken/agentscope-3/agentscope-java`（`automatic-acr-release-durable`）和 `/Users/ken/agentcore/agentcore-managed-agents`（`durable-ma`）。保留已有改动；忽略重复 agentscope-service；不提交、推送或部署。
-
-## 交付与验收
-
-| 编号 | 必须交付 | 验收证据 | 状态 |
+| ID | Required delivery | Acceptance | Status |
 | --- | --- | --- | --- |
-| H1 | 统一冻结工具绑定，Brain schema 与 Hands 目标校验，AgentScope 原生工具 Executor | 版本/目标变化拒绝、同一调用身份、原生结构化结果与权限集成测试 | 完成：框架与平台冻结绑定、原生结果应用验证通过 |
-| H2 | 可选 Sandbox 绑定扩展：持久创建/重连证据、保活、有界缓存、幂等清理和终止屏障 | 创建回包丢失不重建、接管原实例、并发创建/清理、停止进程不销毁环境 | 完成：通用扩展与平台适配、本地故障及跨进程接管通过；真实云验证单列 |
-| H3 | MCP 有界连接管理、冻结描述校验和显式恢复契约 | 凭据轮换/引用生命周期、原调用查询、能力漂移拒绝、未知结果不重试 | 完成：连接/恢复契约及平台发现、凭据适配测试通过 |
-| H4 | Worker builder、独立启动/恢复容量、退避、分阶段停机、状态与故障观测、无效 MQ 消息隔离 | 长调用不阻挡恢复、排空与强停、重启退避、隔离后 ACK、健康/积压可查询 | 完成：生命周期、隔离、排空、健康接线及真实进程验证通过 |
-| H5 | 有序及有界并行批次，稳定子调用、取消、输出关联和聚合 | 限流、部分完成接管、取消不新增调用、输出可重放、清单授权 | 完成：有序/并行、恢复、取消及平台输出转发验证通过 |
-| H6 | Managed Agents 仅保留配置、授权、凭据和环境策略适配，删除被替代代码/脚本 | 平台单一路径、构建及真实跨进程恢复测试 | 完成：平台 68 项测试、完整构建及真实三进程验收通过 |
-| H7 | 独立示例、协议/中英文文档、独立构建和部署验收 | Java 17、格式、依赖审计、BOM、SQLite/PG/MQ、故障与结果应用闭环 | 完成：本轮 Java 必选构建、协议、示例、文档及本地部署验收通过 |
+| H1 | Frozen tool bindings shared by Brain schemas and Hands targets; native AgentScope tool Executor | Reject definition drift, stable invocation identity, structured results and native permission integration | Complete: framework/platform frozen bindings and native result application verified |
+| H2 | Optional persistent Sandbox binding, attachment evidence, keepalive, bounded cache and terminal-gated cleanup | Lost creation response never recreates, original-instance recovery, concurrent creation/cleanup, process shutdown preserves environments | Complete: extension, platform policy, local failures and process recovery; real cloud validation remains separate |
+| H3 | Bounded MCP connections, frozen descriptor validation, explicit recovery contracts | Credential rotation/reference lifetime, original-call lookup, capability drift rejection, no uncertain retries | Complete: connection/recovery contracts and platform discovery/credential integration tested |
+| H4 | Worker builder, separate start/recovery capacity, backoff, staged shutdown, status/observability and MQ rejection quarantine | Recovery under saturated starts, drain/close, persistent backoff, durable quarantine before ACK, health/backlog inspection | Complete: lifecycle, isolation, draining, health wiring and real process acceptance |
+| H5 | Ordered and bounded parallel batches with stable child identities, cancellation, output attribution and aggregation | Capacity limits, partial recovery, no new work after cancellation, replayable output and manifest authorization | Complete: ordered/parallel recovery, cancellation and platform output forwarding verified |
+| H6 | Managed Agents retains configuration, authorization, credential and environment policies only; remove superseded implementations | Single execution path, platform build and real process recovery | Complete: 68 platform tests, full build and real three-process acceptance |
+| H7 | Independent examples, protocol/bilingual docs, isolated build and deployment verification | Java 17, formatting, dependency audit, BOM, SQLite/PG/MQ and failure-to-result-application coverage | Complete: required Java builds, protocol, examples, documentation and local deployment acceptance |
 
-验收必须覆盖：checkpoint+intent 原子性、持久受理后 ACK、稳定 executionId、原执行查询、连续输出封口、结果接收与恢复待办原子性、原生结果应用与 checkpoint 原子性。授权不能因取消/查询而跳过，也不能用新的执行权限撤销阻止旧操作收尾。MQ 和持久执行并发分别配置。
+Preserve atomic checkpoint/intent, durable admission before ACK, stable execution IDs, original-effect lookup, contiguous sealed output, atomic result acceptance/readiness and atomic native result application/checkpoint. Authorization must cover query/cancel without letting newly revoked execution permission prevent existing effects from settling. MQ admission and provider execution capacity are separate.
 
-self-hosted 出站领取协议仍作为后续可选方向，不在本轮必选交付中。真实云账号和生产负载验收必须单列，不能以本地 fixture 证明。
+A self-hosted outbound polling protocol remains an optional future direction, outside this delivery. Cloud accounts and production load require separate evidence; local fixtures do not prove them.
 
-## 实施记录
+## Progress
 
-- 2026-11-08：复核当前源码及构建布局，开始 H4。既有 BatchExecutor 是有序执行，不能以 Worker 并发配置声称批内并行；H5 将明确两种模式。
+- 2026-11-08: inspected current sources/build layout and started H4. Existing BatchExecutor is ordered; Worker concurrency does not provide parallel batch execution. H5 will expose both modes explicitly.
 
-- 2026-11-08：H1 已接通 AgentScope 原生工具。通过 Toolkit 执行，保留参数校验、预设参数和上下文；新增按调用选择的异常透传，覆盖注解工具同步/Mono/Future。正常返回按原生终态规则解释，UNKNOWN 不重复执行；结构化结果及冻结绑定接回原调用。
-- H3 新增 McpConnections 有界连接池、Lease 生命周期及配置轮换；McpExecutor 冻结主/控制描述，支持显式 McpRecovery 协议。启动、查询、取消共享稳定身份；原调用可在主工具变化后使用未变化的控制描述收尾。共用 Schema 已包含可选 MCP 契约。
-- 验证：Core `verify` 2635 项（2626 通过、9 跳过）；Durable standalone 全模块 `verify` 180 项（179 通过、1 个可选 Pi HTTP 集成跳过）。本次使用 JDK 21 编译 Java 17 目标；实际 JDK 17 验收仍待完成。日志：`/tmp/durable-hands-core-full.log`、`/tmp/durable-hands-framework-2.log`。中英文文档测试 16/16、validate、broken-links 和 BOM 同步检查通过。TypeScript 中仅同步协议字段，build/test 通过，不代表新增 Java 能力的跨语言实现已完成。
-- H2 已提供 SandboxBindings 和 LocalSandboxClient：持久创建身份、未知创建的证据核实、原实例重连、持久保活、有界缓存及终止屏障清理。解析配置失败不登记创建副作用；跨 namespace 绑定拒绝。查询/取消不创建资源，组件关闭不销毁资源；本地适配固定原目录，不支持以快照重建执行证据。真实云资源验收仍独立进行。
-- H4/H5 已有启动/恢复容量、退避、隔离和批次实现并随上述全量测试通过；关闭竞争、真实 PG/MQ 和最终运维验收仍纳入 H7。H6 尚未开始，Managed Agents 源码本轮未修改。完整独立重建、部署示例和最终依赖审计均待最终验收，不以当前通过项替代。
+- 2026-11-08: H1 now executes native tools through Toolkit, retaining validation, presets and context. Per-call error propagation covers synchronous/Mono/Future annotated tools. Native terminal interpretation, structured results, frozen bindings and uncertain-effect non-repetition are tested end to end.
+- H3 adds bounded McpConnections leases/rotation and frozen main/control descriptors in McpExecutor. Explicit McpRecovery uses stable identity for start/query/cancel; unchanged controls can settle old operations after the main descriptor changes. Shared Schema includes the optional MCP contract.
+- Validation: Core verify ran 2635 tests (2626 passed, 9 skipped); Durable standalone verify ran 180 (179 passed, 1 optional Pi HTTP integration skipped). These used JDK 21 targeting Java 17; execution on JDK 17 remains pending. Logs: `/tmp/durable-hands-core-full.log`, `/tmp/durable-hands-framework-2.log`. Bilingual docs tests 16/16, validate, broken-links and BOM sync passed. TypeScript changes only synchronize protocol fields; build/test passed, not evidence of cross-language implementation of new Java features.
+- H2 now provides SandboxBindings and LocalSandboxClient: persistent creation identity, verified uncertain-creation reconciliation, original-instance attachment, durable keepalive, bounded cache and terminal-gated cleanup. Configuration resolution failures do not record a creation attempt; cross-namespace binding is rejected. Query/cancel never create resources and component close never destroys them. Local execution pins the original directory and rejects snapshot reconstruction of execution evidence. Cloud resource acceptance remains separate.
+- H4/H5 implementation is included in the passing suite; shutdown races, real PG/MQ and operational acceptance remain in H7. H6 has not started; Managed Agents sources were not changed this turn. A fresh independent rebuild, deployment examples and final dependency audit remain required.
 
-- 2026-11-08：Sandbox 15 项测试通过，覆盖原实例接管、创建及删除丢回包、并发所有权、私有路径、配置解析失败和本地适配。Worker 11 项及 MQ 6 项通过，新增强停未运行队列任务释放容量、MQ 关闭等待回调及回调自关闭测试。日志 `/tmp/durable-hands-lifecycle-1.log`（Sandbox 通过，随后 Worker 编译命名冲突已修复）、`/tmp/durable-hands-lifecycle-2.log`。文档已说明五秒强停等待与宿主有界 IO 约束。H6 仍待执行；本记录不是整体验收完成声明。
+- 2026-11-08: Sandbox 15 tests passed, covering attachment, lost create/delete replies, concurrent ownership, private paths, configuration resolution failure and local execution. Worker 11 and MQ 6 tests passed, including queued-capacity release on forced stop, callback draining and callback-initiated close. Logs: `/tmp/durable-hands-lifecycle-1.log` (Sandbox passed; a subsequent Worker compile naming conflict was fixed), `/tmp/durable-hands-lifecycle-2.log`. Docs explain the five-second forced-close wait and bounded host IO requirement. H6 remains pending; this is not overall acceptance.
 
-- 实际 Java 17 验证：使用独立临时 JDK 17.0.21，`verify-independent.py --java-only` 从不含 AgentScope/Managed 缓存的仓库构建 Core/Harness 和全部 Durable Java 模块；195 项测试，194 通过、1 个可选 Pi HTTP 集成跳过，依赖审计通过。独立仓库 `/var/folders/b3/0cr5wc6n1rq5r7x3ts0xvt1c0000gn/T/agentscope-durable-maven-7r5sn1kw`；日志 `/tmp/durable-hands-independent-java17.log`。Core 单独 verify 2635 项（2626 通过、9 跳过），日志 `/tmp/durable-hands-core-java17.log`。
-- 新增 `SandboxHandsExample.java` 与 `run-sandbox-example.sh`：实际两个 JVM 接管同一分离执行、单次 fixture 副作用、输出封口及清理通过。嵌入式例子的重复受理检查通过；MQ 示例编译通过。日志 `/tmp/durable-hands-sandbox-example-java17.log`、`/tmp/durable-hands-embedded-example-java17.log`、`/tmp/durable-hands-queued-example-java17.log`。PostgreSQL 配置下 JDBC 与 MQ 故障 fixture 共 40 项通过（后者不是实际 Broker），日志 `/tmp/durable-hands-postgres-java17.log`。中英文文档 16 项、434 页检查、BOM 同步通过。
+- Actual Java 17 verification: temporary JDK 17.0.21 ran `verify-independent.py --java-only` from a cache excluding AgentScope/Managed artifacts, rebuilding Core/Harness and every Durable Java module. 195 tests: 194 passed, 1 optional Pi HTTP integration skipped; dependency audit passed. Repository: `/var/folders/b3/0cr5wc6n1rq5r7x3ts0xvt1c0000gn/T/agentscope-durable-maven-7r5sn1kw`; log: `/tmp/durable-hands-independent-java17.log`. Separate Core verify: 2635 tests, 2626 passed and 9 skipped (`/tmp/durable-hands-core-java17.log`).
+- Added `SandboxHandsExample.java` and `run-sandbox-example.sh`: two actual JVMs reattach one detached execution, verify one fixture effect, sealed output and cleanup. The embedded repeated-admission example passed; the MQ example compiled. Logs: `/tmp/durable-hands-sandbox-example-java17.log`, `/tmp/durable-hands-embedded-example-java17.log`, `/tmp/durable-hands-queued-example-java17.log`. JDBC and MQ fault fixtures ran 40 tests under PostgreSQL configuration (the latter is not a real broker), all passed: `/tmp/durable-hands-postgres-java17.log`. Bilingual docs 16 tests, 434-page checks and BOM synchronization passed.
 
-- 真实 RocketMQ 5.3.2 + JDK 17 的独立 Brain/Hands 示例完成调用、结果应用及重复受理；两次 Brain JVM 均返回 `run_22777fe7-fb23-4bc3-83a6-d813120d7b66` SUCCEEDED。原始日志与核验文件位于 `/tmp/durable-rocketmq-platform/hands-java17-example-lis1f1we`。临时验证器最初误按简写输出解析 Run，已按实际 RunView 输出核对原始两份日志；示例自身均正常退出。该验收是实际 Broker 冒烟与重复受理，不替代故障 fixture 或平台三进程恢复验收。
+- Real RocketMQ 5.3.2 and JDK 17 completed the standalone Brain/Hands handoff, native result application and repeated admission. Both Brain JVMs returned `run_22777fe7-fb23-4bc3-83a6-d813120d7b66` SUCCEEDED. Raw logs and verification: `/tmp/durable-rocketmq-platform/hands-java17-example-lis1f1we`. The temporary verifier initially expected abbreviated output; both original RunView logs were subsequently checked and both example processes exited normally. This proves real-broker smoke/repeated admission, not fault injection or the platform three-process recovery acceptance.
 
-- 框架源码、独立构建、协议、本地跨进程与 Broker 冒烟已有 Java 17 证据。H6 仍未实施：冻结目录接入、MCP Lease、Sandbox 策略适配、完整 batch 转发、旧脚本删除及 Managed 平台构建/进程验收均待完成。本轮未修改 Managed 源码。
+- Framework source/build/protocol/local-process and broker smoke gates now have Java 17 evidence. H6 remains unimplemented: frozen catalog integration, MCP leases, Sandbox policy adapter, complete batch forwarding, obsolete script removal and the Managed platform build/process acceptance are still required. No Managed source was changed in this turn.
 
-- Harness 在同一实际 JDK 17 与独立 Maven 仓库下完成 verify：1161 项测试，0 失败、0 错误、18 跳过；日志 `/tmp/durable-hands-harness-java17.log`。本地验证用 PostgreSQL、RocketMQ 和 Worker 已停止，测试磁盘已卸载。
+- Harness verify passed on the same actual JDK 17 and isolated cache: 1161 tests, 0 failures, 0 errors, 18 skipped; log `/tmp/durable-hands-harness-java17.log`. Local verification PostgreSQL, RocketMQ and Worker processes were stopped; the test disk was detached.
 
-- H6 已开始实际替换 Managed 源码：冻结绑定贯穿 Brain/准入/Hands，MCP 发现冻结恢复描述并使用连接 Lease；Sandbox 改用 SandboxBindings/LocalSandboxClient，删除重复 managed-tools.py；批次启用有界并行及输出转发，增加共享后代删除屏障和 Spring 排空接线。正在执行 Java 17 平台构建与新增故障测试；首轮构建在 Spring Boot Health API 包名处失败后已按当前依赖修正。本记录不代表平台验收完成。
+- H6 integration is now in progress in Managed sources: shared frozen bindings across Brain/admission/Hands; MCP recovery descriptor discovery and connection Leases; SandboxBindings/LocalSandboxClient replacing platform lifecycle code and managed-tools.py; bounded parallel batches with output forwarding; descendant deletion barriers and Spring draining. Java 17 platform builds and new regression tests are running. The first build exposed a Spring Boot Health package mismatch, corrected against the installed dependency. Platform acceptance is not yet complete.
 
-## 最终需求核验
+## Final requirement audit
 
-- H1：ToolBinding / AgentScopeToolExecutor / AgentScopeAdapter；框架定义漂移与原生结果测试，加上平台准入摘要、Hands 预校验、真实 HTTP 与 MQ 结果应用。平台摘要独立保存在权限记录中，不解密配置执行事务授权。
-- H2：SandboxBindings / LocalSandboxClient；框架 15 项 Sandbox 故障测试，平台共享环境、八层绑定、无创建查询/取消、关闭后接管、后代终止屏障和物理清理测试。
-- H3：McpConnections / McpExecutor / McpRecovery；框架 9 项测试，平台连接隔离/轮换、恢复描述冻结、控制工具隐藏及非法参数不借用连接测试。真实 MCP 服务和云账号的能力仍由目标部署另行验收。
-- H4：WorkerRuntime / RocketMqWorker；启动与恢复容量、持久退避、MQ 隔离、强停竞争、排空、状态接口均有框架测试；ManagedHandsLifecycle 与健康检查已接入，停机与重启经三 JVM 验证。
-- H5：BatchExecutor；框架有序/并行、部分恢复与取消测试；平台明确 PARALLEL，测试证明两个叶子在任一个完成前启动，输出关联、封口与绑定保留。
-- H6：ManagedSandboxes / ManagedHandsExecutors / ManagedMcpClients 只保留平台策略及组装，移除重复 managed-tools.py 和旧 settled HTTP 入口。九模块实际 Java 17 clean verify：68 项全部通过；43 项部署配置、5 项源码审计及命名/路由审计通过。
-- H7：上文独立 Java 17 构建 195 项（1 项可选 Pi 跳过）、依赖审计、PG 40 项、独立例子、真实 Broker，以及本轮平台三 JVM 均有原始日志。成功 Run `run_8a9272e3-f236-491e-95b4-ae7ca1bacdfd`，两次主模型、一次辅助、一次工具副作用、17 条初始公共事件；包含 SDK、checkpoint/fork 和删除等待清理。
+- H1: ToolBinding / AgentScopeToolExecutor / AgentScopeAdapter; framework drift/native-result tests plus platform admission digests, Hands preflight, real HTTP/MQ result application. Permission records retain binding digests without decrypting profiles inside admission transactions.
+- H2: SandboxBindings / LocalSandboxClient; 15 framework Sandbox failure tests plus platform sharing, eight-level ownership, no-create query/cancel, attachment after close, descendant barriers and physical cleanup.
+- H3: McpConnections / McpExecutor / McpRecovery; 9 framework tests plus platform isolation/rotation, frozen recovery descriptors, hidden controls and no lease acquisition for invalid arguments. Real MCP services/cloud accounts remain separate target-environment validation.
+- H4: WorkerRuntime / RocketMqWorker; framework tests cover separate capacity, persistent backoff, quarantine, forced-close races, drain and status. ManagedHandsLifecycle and health are wired; three JVMs validate shutdown/restart.
+- H5: BatchExecutor; framework ordered/parallel, partial-recovery and cancellation tests. Platform explicitly selects PARALLEL; tests prove both leaves start before either finishes and retain attributed/sealed output and bindings.
+- H6: ManagedSandboxes / ManagedHandsExecutors / ManagedMcpClients retain policy/composition. Duplicate managed-tools.py and the old settled HTTP operation are removed. Nine-module actual Java 17 clean verify: all 68 tests passed; 43 deployment/configuration tests, 5 source-audit tests and naming/routing audit passed.
+- H7: Above isolated Java 17 build (195 tests, one optional Pi skip), dependency audit, 40 PG tests, standalone examples and real broker have original evidence, as does the new three-JVM platform fixture. Run `run_8a9272e3-f236-491e-95b4-ae7ca1bacdfd`: two primary model calls, one auxiliary call, one tool effect, 17 initial public events; SDKs, checkpoint/fork and deletion barriers also passed.
 
-最新平台构建日志 `/tmp/durable-hands-platform-5.log`，独立格式检查 `/tmp/durable-hands-platform-spotless.log`，进程日志 `/tmp/durable-hands-platform-process.log`，原始进程证据目录 `/var/folders/b3/0cr5wc6n1rq5r7x3ts0xvt1c0000gn/T/managed-durable-process-h6ru0f8s`。目标生产云账号、Kubernetes/镜像和负载验收不在本轮必选范围，未以本地测试替代这些验证。未提交、推送或部署生产环境。
+Latest platform build: `/tmp/durable-hands-platform-5.log`; separate formatting: `/tmp/durable-hands-platform-spotless.log`; process log: `/tmp/durable-hands-platform-process.log`; original evidence: `/var/folders/b3/0cr5wc6n1rq5r7x3ts0xvt1c0000gn/T/managed-durable-process-h6ru0f8s`. Production cloud accounts, Kubernetes/image builds and load testing remain outside the required delivery; local fixtures do not substitute for them. No commits, pushes or production deployments.
 
-- 最终收尾：16 项文档测试、Mintlify validate/broken-links、BOM/shade 同步和两仓库 diff 检查通过；日志 `/tmp/durable-hands-final-doc-tests.log`、`/tmp/durable-hands-final-doc-validate.log`、`/tmp/durable-hands-final-doc-links.log`、`/tmp/durable-hands-final-bom.log`。本轮所有测试 JVM 已退出，PostgreSQL/RocketMQ 已停止，测试磁盘已卸载。
+- Final checks: 16 documentation tests, Mintlify validate/broken-links, BOM/shade sync and both repository diff checks passed. Logs: `/tmp/durable-hands-final-doc-tests.log`, `/tmp/durable-hands-final-doc-validate.log`, `/tmp/durable-hands-final-doc-links.log`, `/tmp/durable-hands-final-bom.log`. All fixture JVMs exited; PostgreSQL/RocketMQ stopped; the test volume was unmounted.

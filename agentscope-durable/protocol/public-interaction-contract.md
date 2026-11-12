@@ -3,7 +3,7 @@
 [English](public-interaction-contract.en.md)
 
 日期：2026-11-10。Java 执行模型改造中的当前契约；机器可执行格式见 [schema.json](schema.json)，
-整体目标与验收见 [统一执行模型计划](../docs/design/execution-model-plan.en.md)。只支持当前契约，不保留旧入口、
+整体目标与验收见 [统一执行模型计划](../docs/design/execution-model-plan.md)。只支持当前契约，不保留旧入口、
 格式转换、双协议或兼容分支。版本不匹配明确拒绝；幂等、fencing 与恢复保证不因此削弱。
 
 ## 1. 统一概念与生命周期

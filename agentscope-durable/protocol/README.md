@@ -24,8 +24,8 @@ Historical development formats are not migrated or supported through fallback pa
 
 See the [library README](../README.md) for modules, assembly, and build instructions,
 and the [examples](../../agentscope-examples/durable/README.md) for runnable applications.
-The [execution model design](../docs/design/execution-model-plan.en.md) explains
-design decisions; the [acceptance backlog](../docs/verification/execution-model-acceptance.en.md)
+The [execution model design](../docs/design/execution-model-plan.md) explains
+design decisions; the [acceptance backlog](../docs/verification/execution-model-acceptance.md)
 tracks verification still required. A schema, fixture, or documented operation is
 not evidence that independent integration acceptance has passed.
 
@@ -499,4 +499,4 @@ application, event pruning/resynchronization, and out-of-order execution deliver
 
 These checks do not establish real-broker, multi-process, external-provider, or
 production recovery acceptance. Track observed results and remaining gaps in the
-[verification backlog](../docs/verification/execution-model-acceptance.en.md).
+[verification backlog](../docs/verification/execution-model-acceptance.md).

@@ -1,53 +1,51 @@
-# 执行模型独立验收清单
+# Execution model independent acceptance backlog
 
-[English](execution-model-acceptance.en.md)
+Updated: 2026-11-10. See the [implementation plan](../design/execution-model-plan.md) and [development progress](execution-model-progress.md). The user prioritizes Durable implementation and defers heavy integration acceptance to a separate exercise. Managed Agents is outside this iteration.
 
-更新：2026-11-10。关联[实施计划](../design/execution-model-plan.md)与[开发进度](execution-model-progress.md)。用户要求优先完成 Durable 开发，重型集成验收后续单独执行；Managed Agents 不在本轮范围。
+## 1. Checks retained during development
 
-## 1. 开发阶段保留的检查
+- Compile affected modules and consumers; align Java types, schemas, examples and bilingual docs, with relevant Spotless checks.
+- Run focused tests for new/changed behavior, particularly atomic commits, identity, idempotency, fencing, recovery and UNKNOWN. Fix discovered implementation defects now rather than deferring them as acceptance work.
+- Use deterministic models, temporary local storage and existing shared contracts. Do not repeat every backend, example and full-repository test after each change.
+- Record commands, actual outcomes and uncovered scenarios. Interrupted/skipped checks, SDK mocks and passes on older sources do not establish acceptance of current real deployments.
 
-- 编译受影响模块和调用方；同步 Java 类型、schema、示例与双语文档，运行相关 Spotless 检查。
-- 新增/修改行为运行定向测试，尤其是原子提交、身份归属、幂等、fencing、恢复和 UNKNOWN。发现的实现缺陷立即修复，不移入验收延期项。
-- 使用确定性模型、临时本地存储与已有共享契约；不在每次改动后重复所有后端、所有示例和全仓测试。
-- 每次记录命令、实际结果和未覆盖场景。构建中止、跳过、SDK mock 和历史版本通过均不等于当前真实部署验收通过。
+## 2. Deferred independent acceptance
 
-## 2. 后续独立执行的验收
+Every item below is **pending independent acceptance**. Existing evidence helps identify scope but must be assessed against the final development sources. A numbers refer to plan section 12.
 
-以下各项均为**待独立验收**。已有证据可以帮助定位范围，但须在最终开发源码上核定适用性。A 编号对应实施计划第 12 节。
-
-| 项目 | 对应要求 | 场景与判定 | 已有证据 / 后续入口 |
+| Item | Requirements | Scenarios and criteria | Existing evidence / entry point |
 | --- | --- | --- | --- |
-| I1 完整构建与发布内容 | A16、A17、A18 | 所有保留框架模块 clean verify；类、资源、BOM 和示例无旧入口或漏打包 | 下方根 reactor 命令；本次全仓检查主动中止，不计通过；journal 资源修复有独立定向测试 |
-| I2 独立依赖构建 | A18 | 无 Managed/Service 源码或缓存制品仍能构建、测试、运行 Java 示例；检查解析后的依赖树 | `verify-independent.py`；此前阶段记录不能替代最终源码验证 |
-| I3 后端组合 | A1–A13、A17 | SQLite/PostgreSQL × 直连/HTTP 共用契约；提交响应丢失、存储故障、快照与过滤一致 | 已有共享 Backend/HTTP 契约；生命周期阶段真实 PG 124 项通过，其中 81 项为真实 PG 用例；最终源码需复核 |
-| I4 真实 MQ 与独立 Hands | A4、A8、A15、A17 | Broker/Proxy + Brain/Hands 独立进程，命令/结果重复、丢失唤醒、重启、取消、接管；executionId 不变，UNKNOWN 不被伪装成功 | 现有 RocketMQ 测试主要为 SDK mock；真实 Broker 驱动与失败注入夹具尚需补齐，不能记为已执行 |
-| I5 控制与接管竞争 | A2–A9、A15 | pause/resume/cancel 与模型返回、结果接收/应用、终态提交竞争；旧 owner 被拒，显式暂停不自动解除，同 Thread FIFO | 已有本地竞争/恢复测试；补最终源码下的独立 JVM 强制退出与租约接管组合 |
-| I6 用量与来源 | A5、A9、A10、A12 | 实际模型请求与已记录结果回放区分；重试/恢复不重复计费事实；Hands 原始 Run/Step 与结果应用 Run/Step 可区分 | 模型与 Hands 来源已实现并通过定向测试；多进程端到端核对仍待执行 |
-| I7 委派与资源隔离 | A3、A13、A14 | 默认独立子 Thread、显式复用、委派幂等；父暂停/取消边界、死锁拒绝；restore/fork 不带入可执行旧任务 | 隔离/复用、原子映射、取消先到/受理中取消、父暂停与依赖环拒绝已通过 SQLite/HTTP 契约和 AgentScope 恢复用例；后续覆盖父子进程分别退出的组合 |
-| I8 公共 API 与观察 | A1、A11、A12、A15 | 替换客户端找回对象；SSE 重连/过期/过滤空页；回调失败不确认；观察/断连/close 不驱动或取消任务 | 已有共享 User API/HTTP 契约与聊天示例检查；后续用真实 HTTP/SSE 客户端跑组合流程 |
-| I9 全部示例与部署形态 | A16–A18 | Java 示例、普通 call/stream、API-only、内嵌/独立 Hands、可选 MCP/Sandbox/Objects 配置和 EN/ZH 文档一致 | 编译与定向示例检查随开发；Docker、外部服务和全部部署形态留待此阶段 |
+| I1 Full build and packaged content | A16, A17, A18 | Clean verify for all retained framework modules; no obsolete classes/resources, missing packaging, BOM or example updates | Root reactor command below; the current broad run was deliberately stopped, not passed; journal resource repair has a focused test |
+| I2 Independent dependency build | A18 | Build, test and run Java examples without Managed/Service sources or cached artifacts; inspect resolved dependency trees | `verify-independent.py`; earlier stage records do not validate final sources |
+| I3 Backend combinations | A1–A13, A17 | SQLite/PostgreSQL × direct/HTTP contracts; lost commit responses, storage faults, snapshot/filter agreement | Existing Backend/HTTP contracts; lifecycle stage passed 124 tests including 81 actual PG cases; reassess final sources |
+| I4 Real MQ and separate Hands | A4, A8, A15, A17 | Broker/Proxy with separate Brain/Hands; duplicate commands/results, lost wakeups, restart, cancellation and takeover; stable executionId and truthful UNKNOWN | Current RocketMQ tests primarily mock the SDK; real-broker drivers/fault fixtures still need implementation and have not executed |
+| I5 Controls and takeover races | A2–A9, A15 | Pause/resume/cancel versus model return, result reception/application and final commit; reject stale owners, preserve explicit pause and Thread FIFO | Local race/recovery coverage exists; add independent JVM termination and lease-takeover combinations on final sources |
+| I6 Usage and provenance | A5, A9, A10, A12 | Distinguish real model requests from committed-result replay; no duplicated accounting facts; original Hands Run/Step distinct from result-application Run/Step | Model evidence and Hands provenance are implemented with focused tests; cross-process verification remains pending |
+| I7 Delegation and isolation | A3, A13, A14 | Isolated child Threads by default, explicit reuse and idempotency; parent pause/cancel boundaries and deadlock rejection; restore/fork cannot import executable old tasks | Isolation/reuse, atomic mappings, cancellation before/during admission, parent pause and cycle rejection pass SQLite/HTTP contracts and AgentScope recovery; later exercise independent parent/child exits |
+| I8 Public APIs and observation | A1, A11, A12, A15 | Recreated clients find resources; SSE reconnect/expiry/empty filtered pages; failed callbacks do not acknowledge; observation/disconnection/close cannot drive or cancel tasks | Shared User API/HTTP contracts and chat checks exist; later run combined flows with real HTTP/SSE clients |
+| I9 Examples and deployment forms | A16–A18 | Java examples, ordinary call/stream, API-only, embedded/separate Hands, optional MCP/Sandbox/Objects and bilingual documentation agree | Compilation and focused examples accompany development; Docker, external services and exhaustive deployment combinations follow here |
 
-## 3. 可复用执行入口
+## 3. Reusable execution entry points
 
-从仓库根目录执行，使用 Java 17 和 `-T1`。隔离环境中的真实模型凭据，默认使用本地夹具；需要真实服务的用例必须显式配置并确认没有跳过。
+Run from the repository root with Java 17 and `-T1`. Remove ambient real-model credentials and use local fixtures by default; explicitly configure real-service tests and confirm they do not skip.
 
 ```sh
-# 最终框架回归：按用户范围排除重复的 agentscope-service
+# Final framework regression excludes the duplicate agentscope-service by user scope
 mvn -B -T1 -Dagentscope.frameworkOnly=true clean verify
 
-# 独立缓存构建与依赖检查，不创建源码副本
+# Isolated dependency cache build/audit without a source checkout copy
 python3 agentscope-durable/scripts/verify-independent.py
 
-# 依赖/BOM 一致性
+# Dependency/BOM alignment
 bash .github/scripts/check-shade-and-bom-sync.sh
 ```
 
-真实 PostgreSQL 沿用 `-Ddurable.test.jdbcUrl=...` 契约入口，在隔离 schema 中运行。真实 RocketMQ 需记录 Broker/Proxy 版本、启动命令、进程退出点及可复现断言；目前不能提供一个未经验证的“一键验收”命令。文档最终检查为 `docs/` 下 `npm test`、`npm run validate`、`npm run broken-links`，无需每次纯 Java 改动重复运行。
+Real PostgreSQL uses the existing `-Ddurable.test.jdbcUrl=...` contract entry in isolated schemas. Real RocketMQ evidence must include Broker/Proxy versions, startup commands, process exit points and reproducible assertions; there is currently no verified one-command acceptance driver. Final documentation checks run `npm test`, `npm run validate` and `npm run broken-links` in `docs/`; do not repeat them for every Java-only edit.
 
-验收记录至少包括源码版本或工作区 diff 标识、环境、命令、通过/失败/跳过数、日志位置和未覆盖项。临时日志仅为阶段证据，后续独立验收需导出必要报告。验收发现缺陷回到实现修复，不降低断言，也不添加旧协议兼容路径。
+Each acceptance record includes the source revision or workspace diff identity, environment, commands, pass/failure/skip counts, log location and uncovered cases. Temporary logs are stage evidence; export necessary reports for independent acceptance. Fix discovered defects without weakening assertions or adding old-protocol compatibility.
 
-## 4. 当前执行决定
+## 4. Current execution decision
 
-`/tmp/durable-thread-journal-framework-final.log` 对应的全仓 Maven 已按最新快速开发要求主动停止，退出码 143。停止前 Core 2,686 项、Harness 1,162 项及 Durable 模块测试已完成；这不是全仓通过。原生 journal 资源不一致已修复，并用提交后的真实事件验证当前 schema 与旧/未来版本拒绝，结果记录在开发进度。
+The broad Maven run in `/tmp/durable-thread-journal-framework-final.log` was deliberately stopped under the latest rapid-development instruction, with exit code 143. Core's 2,686 tests, Harness's 1,162 tests and Durable module tests had completed before interruption; this is not a full-repository pass. The native journal resource mismatch is fixed, with a focused test validating an actually committed event against the current schema and rejecting old/future versions. Results are recorded in development progress.
 
-本清单中的待验收项不计作开发功能缺口，也不计作验收通过；开发功能缺口继续由进度文档跟踪。本轮不启动 Managed Agents 改造。
+Pending acceptance items are neither missing implementation nor passed acceptance. The progress ledger continues to track actual implementation gaps. Do not start Managed Agents adaptation in this iteration.

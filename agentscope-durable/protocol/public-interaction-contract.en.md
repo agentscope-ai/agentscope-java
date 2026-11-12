@@ -3,7 +3,7 @@
 [中文](public-interaction-contract.md)
 
 Date: 2026-11-10. Current contract during the Java execution-model refactor. Executable formats are in [schema.json](schema.json);
-the full target and acceptance are tracked in the [execution model plan](../docs/design/execution-model-plan.en.md).
+the full target and acceptance are tracked in the [execution model plan](../docs/design/execution-model-plan.md).
 Only the current contract is supported: no old entry points, conversion, dual protocol or
 compatibility paths. Reject version mismatches while preserving idempotency, fencing and recovery.
 
