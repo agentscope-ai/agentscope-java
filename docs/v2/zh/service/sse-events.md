@@ -73,7 +73,7 @@ Managed Session 快照使用运行时的资源数组，可以展示输入、子 
 
 ## 分页、断线与过期
 
-无需持续连接时，可以使用 `GET /events?after=...&limit=100` 分页读取。响应中的 `next_cursor` 用于下一页，`has_more` 表示当前还有可读事件。空页并不表示任务已完成；应用仍应读取 Turn 状态，或继续等待后续事件。
+无需持续连接时，可以使用 `GET /events?after=...&limit=100` 分页读取。响应中的 `data` 是事件数组，`next_cursor` 是下一页的游标，`has_more` 表示当前是否还有可读事件。`data` 为空时，应用仍应读取 Turn 状态或继续等待后续事件。
 
 ```bash
 EVENT_PAGE=$(
@@ -103,7 +103,7 @@ fi
 
 ## 用户离线后的 Webhook 通知
 
-业务后端可以在 Session 的 `/webhooks` 注册通知，覆盖该会话中的后续任务；如果只关心一个任务，则在对应 Turn 的 `/webhooks` 注册。应用凭据需要 `webhooks:write`。下面的目标地址应替换为你实际部署的 HTTPS 接收端：
+业务后端可以在 Session 的 `/webhooks` 注册该会话的通知。如果只关心一个任务，则在对应 Turn 的 `/webhooks` 注册。应用凭据需要 `webhooks:write`。下面的目标地址应替换为你实际部署的 HTTPS 接收端：
 
 ```bash
 WEBHOOKS_URL="$SESSION_URL/webhooks"
@@ -127,11 +127,11 @@ WEBHOOK_ID=$(jq -er '.webhook.id' <<< "$WEBHOOK_JSON")
 SIGNING_SECRET=$(jq -er '.signing_secret' <<< "$WEBHOOK_JSON")
 ```
 
-保存返回的 `signing_secret`，不要将它暴露给浏览器。接收端使用这个 secret，对 `时间戳 + '.' + 原始请求体` 计算 HMAC-SHA256，并与 `X-AgentScope-Signature: t=<秒>,v1=<hex>` 比较。同时检查时间窗口，并按事件 ID 去重。验签必须使用原始请求字节，不能先解析 JSON 再序列化。
+保存返回的 `signing_secret`，不要将它暴露给浏览器。接收端使用这个 secret，对 `时间戳 + '.' + 原始请求体` 计算 HMAC-SHA256，并与 `X-AgentScope-Signature: t=<秒>,v1=<hex>` 比较。同时检查时间窗口。验签必须使用原始请求字节，不能先解析 JSON 再序列化。
 
 如果只通知一个 Turn，在注册前改用 `WEBHOOKS_URL="$SESSION_URL/turns/$TURN_ID/webhooks"`。下面的管理请求继续使用注册时的 `WEBHOOKS_URL` 和返回的 `WEBHOOK_ID`。
 
-Webhook 是至少一次投递，因此同一个事件可能收到多次。接收端应先可靠保存通知，再返回成功，并按需要读取 Session 或 Turn 的最新状态。`GET /webhooks` 可检查投递状态；失败后可以调用 `POST /webhooks/{webhookId}/retry` 重试，或者通过 `DELETE` 撤销订阅。Webhook 不会替业务系统完成幂等处理，也不表示外部业务事务已经提交。
+新订阅可能收到注册前已记录、仍在保留范围内且符合筛选条件的事件。Webhook 是至少一次投递，接收端应对验签后的通知按 `X-AgentScope-Event-ID` 去重。先可靠保存通知，再返回成功，并按需要读取 Session 或 Turn 的最新状态。`GET /webhooks` 可检查投递状态；失败后可以调用 `POST /webhooks/{webhookId}/retry` 重试，或者通过 `DELETE` 撤销订阅。Webhook 不会替业务系统完成幂等处理，也不表示外部业务事务已经提交。
 
 <Accordion title="查看、重试与停用 Webhook">
 
