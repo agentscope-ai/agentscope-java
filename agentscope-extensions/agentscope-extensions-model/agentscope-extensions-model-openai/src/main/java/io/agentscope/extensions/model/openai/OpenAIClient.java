@@ -397,6 +397,7 @@ public class OpenAIClient {
             log.debug("OpenAI streaming request to {}: {}", url, requestBody);
 
             AtomicBoolean seenChunk = new AtomicBoolean(false);
+            AtomicBoolean sawFinishReason = new AtomicBoolean(false);
             Map<String, String> headers = buildHeaders(effectiveApiKey, options);
             // Ask the transport to fail the stream if the body ends before [DONE]: a clean
             // connection close is not proof of complete content (transports that do not honor
@@ -449,10 +450,23 @@ public class OpenAIClient {
                                             summaryChoice.setMessage(null);
                                         }
                                     }
+                                    if (response.getChoices() != null
+                                            && response.getChoices().stream()
+                                                    .anyMatch(
+                                                            choice ->
+                                                                    choice != null
+                                                                            && choice
+                                                                                            .getFinishReason()
+                                                                                    != null)) {
+                                        sawFinishReason.set(true);
+                                    }
                                     sink.next(response);
                                 }
                                 // If response is null (malformed chunk), skip it silently
                             })
+                    .onErrorResume(
+                            StreamTerminationException.class,
+                            ex -> sawFinishReason.get() ? Flux.empty() : Flux.error(ex))
                     .onErrorMap(
                             ex -> {
                                 if (ex instanceof StreamTerminationException) {

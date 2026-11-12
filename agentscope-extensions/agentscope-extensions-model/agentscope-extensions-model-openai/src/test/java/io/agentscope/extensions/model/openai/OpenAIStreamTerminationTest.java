@@ -17,15 +17,24 @@ package io.agentscope.extensions.model.openai;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
+import com.sun.net.httpserver.HttpServer;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.transport.HttpRequest;
 import io.agentscope.core.model.transport.HttpResponse;
 import io.agentscope.core.model.transport.HttpTransport;
+import io.agentscope.core.model.transport.HttpTransportConfig;
+import io.agentscope.core.model.transport.JdkHttpTransport;
+import io.agentscope.core.model.transport.OkHttpTransport;
 import io.agentscope.core.model.transport.StreamTerminationException;
 import io.agentscope.core.model.transport.TransportConstants;
 import io.agentscope.extensions.model.openai.dto.OpenAIMessage;
 import io.agentscope.extensions.model.openai.dto.OpenAIRequest;
 import io.agentscope.extensions.model.openai.exception.OpenAIException;
+import java.io.IOException;
+import java.io.OutputStream;
+import java.net.InetSocketAddress;
+import java.net.http.HttpClient;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
@@ -202,5 +211,51 @@ class OpenAIStreamTerminationTest {
                 .expectNextCount(1)
                 .expectComplete()
                 .verify(Duration.ofSeconds(5));
+    }
+
+    @Test
+    @DisplayName("JDK transport accepts finish_reason without [DONE]")
+    void jdkTransportAcceptsFinishReasonWithoutDoneSentinel() throws IOException {
+        assertFinishReasonWithoutDoneCompletes(
+                new JdkHttpTransport(HttpClient.newHttpClient(), HttpTransportConfig.defaults()));
+    }
+
+    @Test
+    @DisplayName("OkHttp transport accepts finish_reason without [DONE]")
+    void okHttpTransportAcceptsFinishReasonWithoutDoneSentinel() throws IOException {
+        assertFinishReasonWithoutDoneCompletes(new OkHttpTransport());
+    }
+
+    private static void assertFinishReasonWithoutDoneCompletes(HttpTransport transport)
+            throws IOException {
+        HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        server.createContext(
+                "/v1/chat/completions",
+                exchange -> {
+                    byte[] body =
+                            ("data: " + CHUNK_CONTENT + "\n\ndata: " + CHUNK_FINISH + "\n\n")
+                                    .getBytes(StandardCharsets.UTF_8);
+                    exchange.getResponseHeaders().set("Content-Type", "text/event-stream");
+                    exchange.sendResponseHeaders(200, body.length);
+                    try (OutputStream output = exchange.getResponseBody()) {
+                        output.write(body);
+                    }
+                });
+        server.start();
+        try {
+            StepVerifier.create(
+                            new OpenAIClient(transport)
+                                    .stream(
+                                            "test-key",
+                                            "http://127.0.0.1:" + server.getAddress().getPort(),
+                                            sampleRequest(),
+                                            GenerateOptions.builder().build()))
+                    .expectNextCount(2)
+                    .expectComplete()
+                    .verify(Duration.ofSeconds(5));
+        } finally {
+            transport.close();
+            server.stop(0);
+        }
     }
 }
