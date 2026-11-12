@@ -517,7 +517,7 @@ public abstract class AbstractBaseSandbox implements Sandbox {
         log.debug(
                 "[sandbox] Workspace projection applied: files={}, mode={}, hash={}",
                 currentPaths.size(),
-                manifest == null ? "rebuild" : "diff",
+                (manifest == null || force) ? "rebuild" : "diff",
                 currentHash);
     }
 

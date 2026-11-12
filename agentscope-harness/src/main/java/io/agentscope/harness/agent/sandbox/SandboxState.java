@@ -15,6 +15,7 @@
  */
 package io.agentscope.harness.agent.sandbox;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonTypeInfo;
 import io.agentscope.harness.agent.sandbox.snapshot.SandboxSnapshot;
@@ -43,7 +44,12 @@ public abstract class SandboxState {
     private SandboxSnapshot snapshot;
     private String workspaceProjectionHash;
 
-    /** Workspace-relative paths of the last applied projection; drives authoritative revocation. */
+    /**
+     * Workspace-relative paths of the last applied projection; drives authoritative
+     * revocation. Null for every deployment that never engages the grant layer — and
+     * omitted from JSON then, so their persisted state keeps the pre-grant shape exactly.
+     */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
     private List<String> projectedWorkspacePaths;
 
     private boolean workspaceRootReady = false;

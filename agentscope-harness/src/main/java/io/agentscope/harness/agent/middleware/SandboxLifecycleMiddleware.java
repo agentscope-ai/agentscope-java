@@ -331,12 +331,14 @@ public class SandboxLifecycleMiddleware implements HarnessRuntimeMiddleware {
         WorkspaceProjectionEntry narrowed = new WorkspaceProjectionEntry();
         narrowed.setSourceRoot(projection.getSourceRoot());
         narrowed.setEphemeral(projection.isEphemeral());
-        // The narrowing itself (per-skill cache subtrees) is the historic stager behaviour
-        // and applies to everyone. The managed marker — authoritative revocation and
-        // rebuild — is gated on the call running under a restricted capability surface:
-        // fixing the authorization boundary must not change projection semantics for
-        // deployments that never enable it. The revoke roots name the whole cache
-        // namespace so a managed pass that cannot trust its bookkeeping can rebuild it.
+        // The narrowing itself (per-skill cache subtrees of this call's enabled set) is
+        // the maintainer-requested per-call projection constraint ("需要约束当前调用
+        // 可访问/投影的文件集合") and applies whenever a stager is wired. The managed
+        // marker — authoritative revocation and rebuild — is additionally gated on the
+        // call running under a restricted capability surface: deployments that never
+        // enable the grant layer keep pure overlay semantics. The revoke roots name the
+        // whole cache namespace so a managed pass that cannot trust its bookkeeping can
+        // rebuild it.
         narrowed.setAuthorizationManaged(authorizationEngaged);
         if (authorizationEngaged) {
             narrowed.setRevokeRoots(List.of(MarketplaceStager.CACHE_DIR));
@@ -382,9 +384,15 @@ public class SandboxLifecycleMiddleware implements HarnessRuntimeMiddleware {
         if (root == null || root.isBlank()) {
             return false;
         }
-        return java.nio.file.Path.of(root)
-                .normalize()
-                .equals(java.nio.file.Path.of(MarketplaceStager.CACHE_DIR));
+        try {
+            return java.nio.file.Path.of(root)
+                    .normalize()
+                    .equals(java.nio.file.Path.of(MarketplaceStager.CACHE_DIR));
+        } catch (java.nio.file.InvalidPathException e) {
+            // A merely-configured root with platform-illegal characters is a non-match,
+            // not a call failure (it fails later in staging if it is ever used at all).
+            return false;
+        }
     }
 
     /**
