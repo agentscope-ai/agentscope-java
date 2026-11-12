@@ -611,6 +611,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                             } finally {
                                 write.complete(null);
                             }
+                            scope.loadedContextSize = toSave.getContext().size();
                         })
                 .subscribeOn(Schedulers.boundedElastic());
     }
@@ -749,6 +750,11 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                     throw new ConcurrentSessionModificationException(
                             userId, sessionId, "agent_state", latest.version());
                 }
+                // A later checkpoint in this execution must retain the merged history,
+                // rather than overwriting it with the pre-merge local context.
+                List<Msg> mergedContext = List.copyOf(baseline.getContext());
+                toSave.contextMutable().clear();
+                toSave.contextMutable().addAll(mergedContext);
                 slotVersions.put(slot, merged);
                 stateCache.put(slot, baseline);
                 log.info(
@@ -2323,7 +2329,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
          */
         long loadedVersion;
 
-        /** Context size at load time; used by {@link ConflictPolicy#APPEND_MERGE}. */
+        /** Context size at load or last successful save; used by {@link ConflictPolicy#APPEND_MERGE}. */
         int loadedContextSize;
 
         /** Guards {@link #stateWriteInFlight} and {@link #stateWritesClosed}. */
@@ -2915,10 +2921,18 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         }
 
         private void publishEvent(AgentEvent event) {
+            recordEvent(event);
+            emitEvent(event);
+        }
+
+        private void recordEvent(AgentEvent event) {
             if (event.getSource() == null || event.getSource().isBlank())
                 event.withExecution(executionIdentity);
             SessionRecorder recorder = SessionRecorder.from(rc);
             if (recorder != null) recorder.observe(event);
+        }
+
+        private void emitEvent(AgentEvent event) {
             FluxSink<AgentEvent> sink = eventSink;
             if (sink != null) {
                 sink.next(event);
@@ -4071,7 +4085,20 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                                         "permission asking",
                                                         GenerateReason.PERMISSION_ASKING)));
                             })
-                    .doOnNext(this::publishEvent);
+                    .concatMap(
+                            event -> {
+                                if (event instanceof RequireUserConfirmEvent) {
+                                    // Commit both the ASKING state/reply identity and the native
+                                    // interaction request before subscribers can see the prompt.
+                                    // Do not record it again when forwarding after the save.
+                                    recordEvent(event);
+                                    return saveStateToSession(this)
+                                            .thenReturn(event)
+                                            .doOnNext(this::emitEvent);
+                                }
+                                publishEvent(event);
+                                return Mono.just(event);
+                            });
         }
 
         /**
