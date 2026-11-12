@@ -69,10 +69,11 @@ class GatewayEventsWebSocketTest {
                                                     return response.status(403).send();
                                                 }
                                                 UPSTREAM_STATUS.set(101);
+                                                // Keep the hub open until its peer disconnects.
                                                 return response.sendWebsocket(
                                                         (in, out) ->
                                                                 out.sendString(Mono.just("ready"))
-                                                                        .then());
+                                                                        .then(in.receive().then()));
                                             }))
                     .bindNow();
 

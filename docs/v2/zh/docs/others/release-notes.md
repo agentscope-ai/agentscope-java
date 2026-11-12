@@ -14,6 +14,22 @@ en_link: /v2/en/docs/others/release-notes
 
 文件系统支持的 `WorkspaceMessageBus` 队列将以 `{id}.payload` 和 `{id}.ready` 发布条目，不再只使用单个 `{id}.json` 文件（[#3281](https://github.com/agentscope-ai/agentscope-java/pull/3281)）。旧版消费实例只扫描 `.json`，看不到新版条目。使用共享后端时，应先升级全部队列消费实例，再让新版生产实例发布消息；也可以在滚动升级期间暂停队列流量。
 
+### 媒体来源迁移说明
+
+- `MediaUtils.downloadUrlToBase64` 仅接受 HTTP(S)，不支持的协议现在会抛出 `IOException`。
+  本地路径可使用 `fileToBase64`；本地路径、`file:` URI 或 HTTP(S) 可使用
+  `urlToBase64DataUrl`（返回 data URL）或 `readUrlAsBytes`（返回原始字节）。这些读取方法
+  不支持 `jar:` 等其他协议；如有需要，请在应用代码中读取经过授权的内容。
+- 共享字节/base64 读取方法及 Gemini URL 来源会在读取过程中执行 50MB 上限，包括没有
+  `Content-Length` 的响应。HTTP(S) 下载最多跟随五次同协议重定向，超长重定向链及无效
+  重定向会抛出 `IOException`。应用必须对每个目标执行网络访问限制，仅检查初始 URL 并不足够。
+- Gemini 根据支持的 MIME 类型校验显式媒体提示，并将 `image/jpg` 规范化为 `image/jpeg`。
+  MIME 提示不会启用不支持的格式，也不能替代访问授权。
+
+模型提供方行为及应用职责请参阅
+[媒体来源处理](/v2/zh/docs/building-blocks/message-and-event#媒体来源处理)
+（[#3319](https://github.com/agentscope-ai/agentscope-java/pull/3319)）。
+
 ---
 
 ## 2.0.4

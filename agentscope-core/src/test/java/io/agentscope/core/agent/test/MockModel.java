@@ -30,6 +30,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.function.Function;
 import reactor.core.publisher.Flux;
 
@@ -45,7 +46,7 @@ public class MockModel implements Model {
     private Function<List<Msg>, List<ChatResponse>> responseGenerator;
     private int callCount = 0;
     private List<Msg> lastMessages;
-    private final List<List<Msg>> recordedMessages = new ArrayList<>();
+    private final List<List<Msg>> recordedMessages = new CopyOnWriteArrayList<>();
     private List<ToolSchema> lastTools;
     private GenerateOptions lastOptions;
     private boolean shouldThrowError = false;
