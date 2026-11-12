@@ -22,9 +22,12 @@ import io.agentscope.harness.agent.sandbox.SandboxException;
 import io.agentscope.harness.agent.sandbox.SandboxState;
 import io.agentscope.harness.agent.sandbox.WorkspaceSpec;
 import io.agentscope.harness.agent.sandbox.json.HarnessSandboxJacksonModule;
+import io.agentscope.harness.agent.sandbox.snapshot.RemoteSandboxSnapshot;
+import io.agentscope.harness.agent.sandbox.snapshot.RemoteSnapshotSpec;
 import io.agentscope.harness.agent.sandbox.snapshot.SandboxSnapshotSpec;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
+import java.util.Objects;
 import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -70,11 +73,12 @@ public class AgentRunSandboxClient implements SandboxClient<AgentRunSandboxClien
 
         String sessionId = UUID.randomUUID().toString();
         String sandboxId = deriveSandboxId(sessionId);
+        String workspaceRoot = resolveWorkspaceRoot(workspaceSpec, merged.getWorkspaceRoot());
 
         AgentRunSandboxState state = new AgentRunSandboxState();
         state.setSessionId(sessionId);
         state.setWorkspaceSpec(workspaceSpec);
-        state.setWorkspaceRoot(merged.getWorkspaceRoot());
+        state.setWorkspaceRoot(workspaceRoot);
         state.setTemplateName(merged.getTemplateName());
         state.setAccountId(merged.getAccountId());
         state.setRegion(merged.getRegion());
@@ -82,7 +86,7 @@ public class AgentRunSandboxClient implements SandboxClient<AgentRunSandboxClien
         state.setSandboxId(sandboxId);
         state.setSandboxOwned(true);
         state.setWorkspaceRootReady(false);
-        state.setWorkspaceOnNas(isWorkspaceUnderMounts(merged));
+        state.setWorkspaceOnNas(isWorkspaceUnderMounts(workspaceRoot, merged));
 
         if (snapshotSpec != null) {
             state.setSnapshot(snapshotSpec.build(sessionId));
@@ -102,7 +106,16 @@ public class AgentRunSandboxClient implements SandboxClient<AgentRunSandboxClien
             throw new IllegalArgumentException(
                     "Expected AgentRunSandboxState but got: " + state.getClass().getName());
         }
-        return build(ar, merge(null));
+        AgentRunSandboxClientOptions merged = merge(null);
+        String previousRoot = ar.getWorkspaceRoot();
+        String workspaceRoot = resolveWorkspaceRoot(ar.getWorkspaceSpec(), previousRoot);
+        if (!Objects.equals(previousRoot, workspaceRoot)) {
+            ar.setWorkspaceRootReady(false);
+            ar.setWorkspaceProjectionHash(null);
+            ar.setWorkspaceRoot(workspaceRoot);
+            ar.setWorkspaceOnNas(isWorkspaceUnderMounts(workspaceRoot, merged));
+        }
+        return build(ar, merged);
     }
 
     @Override
@@ -137,14 +150,27 @@ public class AgentRunSandboxClient implements SandboxClient<AgentRunSandboxClien
         }
     }
 
+    /**
+     * Restores the runtime storage client omitted from remote snapshot JSON while keeping the
+     * persisted archive id, matching the Docker and Kubernetes clients.
+     */
+    @Override
+    public SandboxState deserializeState(String json, SandboxSnapshotSpec snapshotSpec) {
+        SandboxState state = deserializeState(json);
+        if (snapshotSpec instanceof RemoteSnapshotSpec remoteSpec
+                && state.getSnapshot() instanceof RemoteSandboxSnapshot snapshot) {
+            state.setSnapshot(new RemoteSandboxSnapshot(remoteSpec.getClient(), snapshot.getId()));
+        }
+        return state;
+    }
+
     private Sandbox build(AgentRunSandboxState state, AgentRunSandboxClientOptions merged) {
         AgentRunDataPlaneHttp http = new AgentRunDataPlaneHttp(merged);
         AgentRunMcpChannel mcp = new AgentRunMcpChannel(merged);
         return new AgentRunSandbox(state, merged, http, mcp);
     }
 
-    private static boolean isWorkspaceUnderMounts(AgentRunSandboxClientOptions opt) {
-        String root = opt.getWorkspaceRoot();
+    private static boolean isWorkspaceUnderMounts(String root, AgentRunSandboxClientOptions opt) {
         if (root == null || root.isBlank()) {
             return false;
         }
@@ -163,6 +189,13 @@ public class AgentRunSandboxClient implements SandboxClient<AgentRunSandboxClien
             }
         }
         return false;
+    }
+
+    private static String resolveWorkspaceRoot(WorkspaceSpec spec, String fallback) {
+        if (spec != null && spec.getRoot() != null && !spec.getRoot().isBlank()) {
+            return spec.getRoot();
+        }
+        return fallback;
     }
 
     private AgentRunSandboxClientOptions merge(AgentRunSandboxClientOptions call) {
