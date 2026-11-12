@@ -20,6 +20,7 @@ import io.agentscope.harness.agent.sandbox.layout.WorkspaceEntry;
 import io.agentscope.harness.agent.sandbox.layout.WorkspaceProjectionEntry;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.security.MessageDigest;
@@ -107,7 +108,13 @@ public final class WorkspaceProjectionApplier {
 
         MessageDigest digest = MessageDigest.getInstance("SHA-256");
         ByteArrayOutputStream baos = new ByteArrayOutputStream();
-        try (TarArchiveOutputStream tar = new TarArchiveOutputStream(baos)) {
+        // Pin entry names to UTF-8: the platform default mangles non-ASCII names wherever
+        // it is not UTF-8 (JDK 17 on Windows follows the OS locale — cp1252 runners
+        // %U-escape CJK names), so the hydrated file would land under a different name
+        // than the revocation manifest records. UTF-8 also matches the reader side
+        // (WorkspaceArchiveExtractor) and container-side tar of every backend.
+        try (TarArchiveOutputStream tar =
+                new TarArchiveOutputStream(baos, StandardCharsets.UTF_8.name())) {
             tar.setLongFileMode(TarArchiveOutputStream.LONGFILE_POSIX);
             for (Map.Entry<String, Path> file : ordered) {
                 String rel = file.getKey();

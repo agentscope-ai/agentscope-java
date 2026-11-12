@@ -128,10 +128,10 @@ public abstract class AbstractBaseSandbox implements Sandbox {
                     workspaceSpecApplier.applyWorkspaceSpec(spec, false);
                 }
             }
-            // Snapshot restores may carry files from an earlier, wider projection: force the
-            // authoritative pass there so restored-but-unauthorized files are revoked even
-            // when the projection hash is unchanged. Branches A and D hold no surprise
-            // content, the hash check suffices.
+            // Snapshot restores are untrusted events for grant-managed projections: the
+            // archive can hold wider-era content no bookkeeping describes (persist-order
+            // skew, concurrent last-write-wins, backend snapshot rebinding), so a managed
+            // restore never hash-skips and always rebuilds the namespaces.
             applyWorkspaceProjectionIfChanged(spec, restoredFromSnapshot);
             state.setWorkspaceRootReady(true);
             running.set(true);
@@ -433,9 +433,10 @@ public abstract class AbstractBaseSandbox implements Sandbox {
      * behaviour for everyone else.
      *
      * @param spec the workspace spec carrying the projection entries
-     * @param force whether the workspace was just hydrated from a snapshot: the content
-     *     may carry files from an earlier, wider projection even when the hash is
-     *     unchanged, so a managed pass without a manifest still rebuilds
+     * @param force whether the workspace was just hydrated from a snapshot: restores are
+     *     untrusted events for managed projections — the archive can hold wider-era
+     *     content that no bookkeeping describes — so a managed restore never skips and
+     *     always rebuilds the namespaces, even with an intact manifest and unchanged hash
      */
     private void applyWorkspaceProjectionIfChanged(WorkspaceSpec spec, boolean force)
             throws Exception {
@@ -449,7 +450,7 @@ public abstract class AbstractBaseSandbox implements Sandbox {
         // this also restores the historic skip on snapshot restores). Managed specs
         // without a manifest still fall through — their projected content is unaccounted
         // and must be rebuilt, not skipped.
-        if (Objects.equals(currentHash, storedHash) && !(managed && manifest == null)) {
+        if (Objects.equals(currentHash, storedHash) && !(managed && (manifest == null || force))) {
             log.debug("[sandbox] Workspace projection unchanged, skipping");
             return;
         }
@@ -479,7 +480,11 @@ public abstract class AbstractBaseSandbox implements Sandbox {
         // scratch so no stale file of any earlier era survives (audit: resume-failure
         // carry-over, entry-less specs, pre-manifest upgrades all converge here).
         List<String> currentPaths = payload != null ? payload.paths() : List.of();
-        if (manifest == null) {
+        // Snapshot restores are untrusted events for managed projections: the archive can
+        // hold content from a wider era than any bookkeeping describes (persist-order
+        // skew, concurrent last-write-wins, backend snapshot rebinding), so a restore
+        // always rebuilds rather than diffing against possibly-stale bookkeeping.
+        if (manifest == null || force) {
             List<String> revokeRoots = WorkspaceProjectionApplier.managedRevokeRoots(spec);
             if (revokeRoots.isEmpty()) {
                 // A marked entry without rebuild scope cannot be made safe: fail closed

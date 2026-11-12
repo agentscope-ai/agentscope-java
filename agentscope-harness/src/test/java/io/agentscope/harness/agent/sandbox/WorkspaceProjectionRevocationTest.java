@@ -310,16 +310,55 @@ class WorkspaceProjectionRevocationTest {
         FakeSandbox sandbox = new FakeSandbox(state);
         sandbox.start();
         sandbox.stop();
-        // Manifest-less state with an UNCHANGED spec: the hash matches, so only the
-        // forced restore pass can rebuild — without force this start would skip.
-        state.setProjectedWorkspacePaths(null);
+        // Unchanged spec, intact manifest: the hash matches and the manifest is trusted,
+        // so ONLY the restore (force) semantics can justify a rebuild — without force
+        // this start would hash-skip. Pins the audit finding that restored archives are
+        // untrusted events (persist-order skew, snapshot rebinding).
         sandbox.wipeWorkspace();
         state.setWorkspaceRootReady(false);
         sandbox.start();
         assertTrue(
                 !sandbox.rootDeleteCommands().isEmpty(),
-                "a manifest-less managed restore must rebuild, not hash-skip");
+                "a managed restore must rebuild even with an intact manifest and equal hash");
         assertTrue(sandbox.exists(BETA), "the granted beta is re-projected after the wipe");
+    }
+
+    @Test
+    @DisplayName("legacy manifest-less state narrowed to empty rebuilds the cache away")
+    void legacyManifestLessStateNarrowedToEmptyRebuildsCacheAway() throws Exception {
+        FakeState state = new FakeState();
+        state.setWorkspaceSpec(specWithRoots(AGENTS, ".skills-cache/u1/market/beta"));
+        FakeSandbox sandbox = new FakeSandbox(state);
+        sandbox.start();
+        sandbox.stop();
+        state.setProjectedWorkspacePaths(null); // pre-manifest persisted state
+
+        // The reviewer's literal probe: narrow to EMPTY — nothing survives the rebuild.
+        state.setWorkspaceSpec(specWithRoots(AGENTS));
+        sandbox.start();
+        assertFalse(sandbox.exists(BETA), "narrowing to empty must revoke the whole cache");
+        assertTrue(sandbox.exists(AGENTS), "non-cache roots are re-projected");
+    }
+
+    @Test
+    @DisplayName("rebuild owns the cache namespace: foreign files under it are wiped")
+    void rebuildWipesForeignFilesUnderTheCacheNamespace() throws Exception {
+        FakeState state = new FakeState();
+        state.setWorkspaceSpec(specWithRoots(AGENTS, ".skills-cache/u1/market/beta"));
+        FakeSandbox sandbox = new FakeSandbox(state);
+        sandbox.start();
+        // A foreign (agent-authored) file inside the managed namespace: the namespace is
+        // exclusively grant-managed, so a rebuild clears it wholesale — pinned on purpose.
+        Files.createDirectories(sandbox.workspaceDir.resolve(".skills-cache/foreign"));
+        Files.writeString(sandbox.workspaceDir.resolve(".skills-cache/foreign/notes.txt"), "x");
+        sandbox.stop();
+        state.setProjectedWorkspacePaths(null);
+
+        state.setWorkspaceSpec(specWithRoots(AGENTS, ".skills-cache/u1/market/alpha"));
+        sandbox.start();
+        assertFalse(
+                sandbox.exists(".skills-cache/foreign/notes.txt"),
+                "the cache namespace is exclusively managed; rebuild clears it entirely");
     }
 
     @Test
@@ -568,7 +607,11 @@ class WorkspaceProjectionRevocationTest {
         @Override
         protected InputStream doPersistWorkspace() throws Exception {
             ByteArrayOutputStream baos = new ByteArrayOutputStream();
-            try (TarArchiveOutputStream tar = new TarArchiveOutputStream(baos);
+            // UTF-8 entry names to match WorkspaceArchiveExtractor (the reader of this
+            // archive) — the platform default would disagree with it on non-UTF-8 JVMs.
+            try (TarArchiveOutputStream tar =
+                            new TarArchiveOutputStream(
+                                    baos, java.nio.charset.StandardCharsets.UTF_8.name());
                     var walk = Files.walk(workspaceDir)) {
                 tar.setLongFileMode(TarArchiveOutputStream.LONGFILE_POSIX);
                 walk.filter(Files::isRegularFile)

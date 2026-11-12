@@ -16,10 +16,12 @@
 package io.agentscope.harness.agent.middleware;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 
+import io.agentscope.core.agent.CapabilitySurface;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.harness.agent.filesystem.sandbox.SandboxBackedFilesystem;
 import io.agentscope.harness.agent.sandbox.ExecResult;
@@ -36,6 +38,7 @@ import io.agentscope.harness.agent.sandbox.layout.WorkspaceEntry;
 import io.agentscope.harness.agent.sandbox.layout.WorkspaceProjectionEntry;
 import java.io.InputStream;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
 
@@ -165,6 +168,57 @@ class SandboxLifecycleMiddlewareProjectionNarrowingTest {
                 List.of("AGENTS.md", "skills"),
                 projectionRoots(captured.get()),
                 "an empty grant list must project nothing of the cache");
+    }
+
+    @Test
+    void managedMarkerIsGatedOnAuthorizationBeingEngaged() {
+        AtomicReference<SandboxContext> captured = new AtomicReference<>();
+        SandboxLifecycleMiddleware mw =
+                new SandboxLifecycleMiddleware(
+                        capturingManager(captured), new SandboxBackedFilesystem());
+        SandboxContext original =
+                contextWithProjection(List.of("AGENTS.md", "skills", ".skills-cache"));
+
+        // No capability surface on the context (authorization never engaged): narrowing
+        // still applies (historic stager behaviour), but the projection stays UNMANAGED —
+        // no revocation, no rebuild: the generic semantics for non-grant deployments.
+        RuntimeContext plainCtx =
+                RuntimeContext.builder()
+                        .sessionId("s1")
+                        .put(SandboxContext.class, original)
+                        .build();
+        mw.setProjectionAwareBeforeStart(rc -> List.of(".skills-cache/u1/market/alpha"));
+        mw.acquireForCall(plainCtx);
+        WorkspaceProjectionEntry unmanaged =
+                (WorkspaceProjectionEntry)
+                        captured.get()
+                                .getWorkspaceSpec()
+                                .getEntries()
+                                .get("__workspace_projection__");
+        assertFalse(unmanaged.isAuthorizationManaged(), "no surface engaged: unmanaged");
+        assertTrue(unmanaged.getRevokeRoots().isEmpty(), "no revoke roots without engagement");
+
+        // A restricted surface on the context: the same narrowing becomes managed.
+        RuntimeContext grantedCtx =
+                RuntimeContext.builder()
+                        .sessionId("s1")
+                        .put(SandboxContext.class, original)
+                        .put(
+                                CapabilitySurface.class,
+                                new CapabilitySurface(Set.of(), Set.of(), Set.of()))
+                        .build();
+        mw.acquireForCall(grantedCtx);
+        WorkspaceProjectionEntry managed =
+                (WorkspaceProjectionEntry)
+                        captured.get()
+                                .getWorkspaceSpec()
+                                .getEntries()
+                                .get("__workspace_projection__");
+        assertTrue(managed.isAuthorizationManaged(), "restricted surface: managed");
+        assertEquals(
+                List.of(".skills-cache"),
+                managed.getRevokeRoots(),
+                "the whole cache namespace is the rebuild scope");
     }
 
     @Test

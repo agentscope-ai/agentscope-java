@@ -15,6 +15,7 @@
  */
 package io.agentscope.harness.agent.middleware;
 
+import io.agentscope.core.agent.CapabilitySurface;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.harness.agent.filesystem.sandbox.PinnedSandboxFilesystem;
 import io.agentscope.harness.agent.filesystem.sandbox.SandboxBackedFilesystem;
@@ -183,13 +184,34 @@ public class SandboxLifecycleMiddleware implements HarnessRuntimeMiddleware {
                 }
             }
             if (cacheRoots != null) {
-                SandboxContext narrowed = narrowSkillsCacheProjection(sandboxContext, cacheRoots);
+                boolean authorizationEngaged = isAuthorizationEngaged(ctx);
+                SandboxContext narrowed =
+                        narrowSkillsCacheProjection(
+                                sandboxContext, cacheRoots, authorizationEngaged);
                 if (narrowed == sandboxContext) {
+                    if (cacheRoots.isEmpty()) {
+                        // Nothing granted, nothing narrowable — expected for cache-less specs.
+                        log.debug(
+                                "[sandbox-mw] no cache projection entry to narrow for this"
+                                        + " sandbox");
+                    } else {
+                        log.warn(
+                                "[sandbox-mw] projection-aware callback produced cache roots"
+                                        + " but the workspace spec has no .skills-cache"
+                                        + " projection entry; grant narrowing is NOT applied"
+                                        + " to this sandbox (external sandbox or misconfigured"
+                                        + " spec?)");
+                    }
+                } else if (authorizationEngaged
+                        && (sandboxContext.getExternalSandbox() != null
+                                || sandboxContext.getExternalSandboxState() != null)) {
+                    // The narrowed spec is silently discarded by the external-sandbox
+                    // acquire priorities — surface it instead of a silent unmanaged cache.
                     log.warn(
-                            "[sandbox-mw] projection-aware callback produced cache roots but"
-                                    + " the workspace spec has no .skills-cache projection"
-                                    + " entry; grant narrowing is NOT applied to this sandbox"
-                                    + " (external sandbox or misconfigured spec?)");
+                            "[sandbox-mw] grant narrowing derived for an external sandbox"
+                                    + " context; external sandboxes project by their own spec"
+                                    + " and ignore the narrowed workspaceSpec (no revocation"
+                                    + " applies)");
                 }
                 sandboxContext = narrowed;
             }
@@ -287,11 +309,15 @@ public class SandboxLifecycleMiddleware implements HarnessRuntimeMiddleware {
      * @param original the per-call sandbox context from the {@link RuntimeContext}
      * @param cacheRoots the granted {@code .skills-cache} subtrees (workspace-relative,
      *     forward slashes); an empty list removes the cache from projection entirely
+     * @param authorizationEngaged whether this call runs under a restricted capability
+     *     surface: managed (revoking) semantics are gated on authorization being engaged,
+     *     so deployments that never enable the grant layer keep the generic overlay
+     *     projection behaviour regardless of stager presence
      * @return a derived context with the narrowed projection, or {@code original} when nothing
      *     can (or needs to) be narrowed
      */
     private static SandboxContext narrowSkillsCacheProjection(
-            SandboxContext original, List<String> cacheRoots) {
+            SandboxContext original, List<String> cacheRoots, boolean authorizationEngaged) {
         WorkspaceSpec spec = original.getWorkspaceSpec();
         if (spec == null) {
             return original;
@@ -304,13 +330,17 @@ public class SandboxLifecycleMiddleware implements HarnessRuntimeMiddleware {
         WorkspaceSpec narrowedSpec = spec.copy();
         WorkspaceProjectionEntry narrowed = new WorkspaceProjectionEntry();
         narrowed.setSourceRoot(projection.getSourceRoot());
-        // This narrowing carries the grant decision for the cache subtree: mark it so the
-        // sandbox applies the projection authoritatively (revoking stale files). The
-        // revoke roots name the whole cache namespace so a managed pass that cannot trust
-        // its bookkeeping can rebuild it from scratch. Specs without the marker keep the
-        // generic overlay semantics.
-        narrowed.setAuthorizationManaged(true);
-        narrowed.setRevokeRoots(List.of(MarketplaceStager.CACHE_DIR));
+        narrowed.setEphemeral(projection.isEphemeral());
+        // The narrowing itself (per-skill cache subtrees) is the historic stager behaviour
+        // and applies to everyone. The managed marker — authoritative revocation and
+        // rebuild — is gated on the call running under a restricted capability surface:
+        // fixing the authorization boundary must not change projection semantics for
+        // deployments that never enable it. The revoke roots name the whole cache
+        // namespace so a managed pass that cannot trust its bookkeeping can rebuild it.
+        narrowed.setAuthorizationManaged(authorizationEngaged);
+        if (authorizationEngaged) {
+            narrowed.setRevokeRoots(List.of(MarketplaceStager.CACHE_DIR));
+        }
         List<String> roots =
                 new ArrayList<>(projection.getIncludeRoots().size() + cacheRoots.size());
         for (String root : projection.getIncludeRoots()) {
@@ -342,20 +372,28 @@ public class SandboxLifecycleMiddleware implements HarnessRuntimeMiddleware {
     }
 
     /**
-     * Variant-tolerant cache-root match: leading {@code ./} and trailing {@code /}
-     * spellings project the same tree and must not silently disable narrowing.
+     * Variant-tolerant cache-root match: any spelling that resolves to the same tree as
+     * the canonical {@code .skills-cache} (leading {@code ./}, trailing {@code /},
+     * interior {@code //} or {@code .} segments) counts, mirroring how
+     * {@code WorkspaceProjectionApplier} normalizes roots — a variant spelling must not
+     * silently disable narrowing.
      */
     private static boolean isCacheRoot(String root) {
-        if (root == null) {
+        if (root == null || root.isBlank()) {
             return false;
         }
-        String normalized = root;
-        while (normalized.startsWith("./")) {
-            normalized = normalized.substring(2);
-        }
-        while (normalized.endsWith("/")) {
-            normalized = normalized.substring(0, normalized.length() - 1);
-        }
-        return MarketplaceStager.CACHE_DIR.equals(normalized);
+        return java.nio.file.Path.of(root)
+                .normalize()
+                .equals(java.nio.file.Path.of(MarketplaceStager.CACHE_DIR));
+    }
+
+    /**
+     * Whether this call runs under an engaged authorization: a restricted capability
+     * surface on the context. Unrestricted (or absent) surfaces mean the grant layer is
+     * not in play and projections keep the generic overlay semantics.
+     */
+    private static boolean isAuthorizationEngaged(RuntimeContext ctx) {
+        CapabilitySurface surface = ctx != null ? ctx.get(CapabilitySurface.class) : null;
+        return surface != null && !surface.isUnrestricted();
     }
 }

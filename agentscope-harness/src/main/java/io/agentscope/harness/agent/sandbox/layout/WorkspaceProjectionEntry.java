@@ -39,9 +39,10 @@ public class WorkspaceProjectionEntry extends WorkspaceEntry {
     /**
      * Whole projection namespaces a managed rebuild must clear (e.g. {@code
      * .skills-cache}); set alongside {@link #setAuthorizationManaged(boolean)} by the
-     * grant-aware wiring.
+     * grant-aware wiring. These namespaces are exclusively managed — rebuild wipes them
+     * recursively, so agents must never store their own data under them.
      */
-    private List<String> revokeRoots = new ArrayList<>();
+    @JsonIgnore private List<String> revokeRoots = new ArrayList<>();
 
     /**
      * Absolute host-side workspace root used as source for projection.
