@@ -66,7 +66,21 @@ class GatewayEventsWebSocketTest {
                                                 if (origin != null
                                                         && !origin.equals("http://" + host)) {
                                                     UPSTREAM_STATUS.set(403);
-                                                    return response.status(403).send();
+                                                    // Close the rejected connection
+                                                    // explicitly. The gateway pools upstream
+                                                    // connections, and a keep-alive 403 on an
+                                                    // upgrade request leaves a dying socket in
+                                                    // the pool ("Connection prematurely closed
+                                                    // BEFORE opening handshake is complete")
+                                                    // that the next proxied socket can reuse
+                                                    // and die on silently — sameOrigin failed
+                                                    // that way twice on windows CI (#4072,
+                                                    // #4094: clean close, no frames, ~0.1s).
+                                                    // Connection: close makes the gateway's
+                                                    // pool discard the socket immediately.
+                                                    return response.status(403)
+                                                            .header(HttpHeaders.CONNECTION, "close")
+                                                            .send();
                                                 }
                                                 UPSTREAM_STATUS.set(101);
                                                 return response.sendWebsocket(
