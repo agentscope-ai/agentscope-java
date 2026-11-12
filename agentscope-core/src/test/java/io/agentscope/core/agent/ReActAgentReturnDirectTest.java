@@ -48,12 +48,14 @@ import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.ToolSchema;
 import io.agentscope.core.permission.PermissionContextState;
 import io.agentscope.core.permission.PermissionDecision;
+import io.agentscope.core.state.JsonFileAgentStateStore;
 import io.agentscope.core.tool.Tool;
 import io.agentscope.core.tool.ToolBase;
 import io.agentscope.core.tool.ToolCallParam;
 import io.agentscope.core.tool.ToolParam;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.core.util.JsonUtils;
+import java.nio.file.Path;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -62,6 +64,7 @@ import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Supplier;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 import reactor.core.publisher.Flux;
@@ -771,6 +774,149 @@ class ReActAgentReturnDirectTest {
     }
 
     // ==== External-resume closure (caller supplies results after TOOL_SUSPENDED) ====
+
+    @Test
+    void partialExternalResultsDoNotConsumeAnIteration() {
+        ScriptedModel model =
+                new ScriptedModel(
+                        List.of(
+                                () ->
+                                        Flux.just(
+                                                toolUseResponse("tc1", "ext", Map.of()),
+                                                toolUseResponse("tc2", "ext", Map.of())),
+                                () -> Flux.just(textResponse("all results received"))));
+        ReActAgent agent =
+                ReActAgent.builder()
+                        .name("asst")
+                        .model(model)
+                        .toolkit(toolkitWith(new TestTool("ext", false, null).suspended()))
+                        .maxIters(1)
+                        .build();
+        Msg first = agent.call(List.of()).block(Duration.ofSeconds(10));
+        assertNotNull(first);
+        assertEquals(GenerateReason.TOOL_SUSPENDED, first.getGenerateReason());
+        Msg partial =
+                agent.call(List.of(externalResultMsg(successResult("tc1", "ext", "one"))))
+                        .block(Duration.ofSeconds(10));
+        assertNotNull(partial);
+        assertEquals(GenerateReason.TOOL_SUSPENDED, partial.getGenerateReason());
+        assertEquals(1, model.callCount());
+
+        Msg completed =
+                agent.call(List.of(externalResultMsg(successResult("tc2", "ext", "two"))))
+                        .block(Duration.ofSeconds(10));
+        assertNotNull(completed);
+        assertEquals(GenerateReason.MAX_ITERATIONS, completed.getGenerateReason());
+        assertEquals(2, model.callCount());
+    }
+
+    @Test
+    void uninterruptedToolRoundsExhaustIterationBudget() {
+        ScriptedModel model =
+                new ScriptedModel(
+                        List.of(
+                                () -> Flux.just(toolUseResponse("tc1", "ext", Map.of())),
+                                () -> Flux.just(toolUseResponse("tc2", "ext", Map.of())),
+                                () -> Flux.just(textResponse("summary"))));
+        ReActAgent agent =
+                ReActAgent.builder()
+                        .name("asst")
+                        .model(model)
+                        .toolkit(
+                                toolkitWith(new TestTool("ext", false, ToolResultBlock.text("ok"))))
+                        .maxIters(2)
+                        .build();
+        Msg result = agent.call(List.of()).block(Duration.ofSeconds(10));
+        assertNotNull(result);
+        assertEquals(GenerateReason.MAX_ITERATIONS, result.getGenerateReason());
+        assertEquals(3, model.callCount(), "two ordinary reasoning calls plus summary");
+    }
+
+    @Test
+    void externalResumesShareIterationBudgetAndNewInputStartsFresh(@TempDir Path stateDir) {
+        ScriptedModel model =
+                new ScriptedModel(
+                        List.of(
+                                () -> Flux.just(toolUseResponse("tc1", "ext", Map.of())),
+                                () -> Flux.just(toolUseResponse("tc2", "ext", Map.of())),
+                                () -> Flux.just(textResponse("summary")),
+                                () -> Flux.just(textResponse("fresh reply"))));
+        ReActAgent agent =
+                ReActAgent.builder()
+                        .name("asst")
+                        .model(model)
+                        .toolkit(toolkitWith(new TestTool("ext", false, null).suspended()))
+                        .stateStore(new JsonFileAgentStateStore(stateDir))
+                        .maxIters(2)
+                        .build();
+
+        List<AgentEvent> firstEvents =
+                agent.streamEvents(List.of()).collectList().block(Duration.ofSeconds(10));
+        Msg first =
+                ((AgentResultEvent) firstEvents.get(indexOf(firstEvents, AgentResultEvent.class)))
+                        .getResult();
+        assertNotNull(first);
+        assertEquals(GenerateReason.TOOL_SUSPENDED, first.getGenerateReason());
+        assertEquals(1, model.callCount());
+
+        List<AgentEvent> secondEvents =
+                agent.streamEvents(List.of(externalResultMsg(successResult("tc1", "ext", "one"))))
+                        .collectList()
+                        .block(Duration.ofSeconds(10));
+        Msg second =
+                ((AgentResultEvent) secondEvents.get(indexOf(secondEvents, AgentResultEvent.class)))
+                        .getResult();
+        assertNotNull(second);
+        assertEquals(GenerateReason.TOOL_SUSPENDED, second.getGenerateReason());
+        assertEquals(2, model.callCount());
+
+        agent.clearStateCache();
+        List<AgentEvent> thirdEvents =
+                agent.streamEvents(List.of(externalResultMsg(successResult("tc2", "ext", "two"))))
+                        .collectList()
+                        .block(Duration.ofSeconds(10));
+        Msg third =
+                ((AgentResultEvent) thirdEvents.get(indexOf(thirdEvents, AgentResultEvent.class)))
+                        .getResult();
+        assertNotNull(third);
+        String firstRequestId =
+                ((RequireExternalExecutionEvent)
+                                firstEvents.get(
+                                        indexOf(firstEvents, RequireExternalExecutionEvent.class)))
+                        .getReplyId();
+        String secondRequestId =
+                ((RequireExternalExecutionEvent)
+                                secondEvents.get(
+                                        indexOf(secondEvents, RequireExternalExecutionEvent.class)))
+                        .getReplyId();
+        String firstResultId =
+                ((ExternalExecutionResultEvent)
+                                secondEvents.get(
+                                        indexOf(secondEvents, ExternalExecutionResultEvent.class)))
+                        .getReplyId();
+        String secondResultId =
+                ((ExternalExecutionResultEvent)
+                                thirdEvents.get(
+                                        indexOf(thirdEvents, ExternalExecutionResultEvent.class)))
+                        .getReplyId();
+        assertEquals(firstRequestId, firstResultId, "first resume must correlate to its request");
+        assertEquals(
+                secondRequestId, secondResultId, "second resume must correlate to its request");
+        assertEquals(GenerateReason.MAX_ITERATIONS, third.getGenerateReason());
+        assertEquals(3, model.callCount(), "two ordinary reasoning calls plus summary");
+
+        Msg fresh =
+                agent.call(
+                                List.of(
+                                        Msg.builder()
+                                                .role(MsgRole.USER)
+                                                .textContent("Start a new task")
+                                                .build()))
+                        .block(Duration.ofSeconds(10));
+        assertNotNull(fresh);
+        assertEquals(GenerateReason.MODEL_STOP, fresh.getGenerateReason());
+        assertEquals(4, model.callCount());
+    }
 
     @Test
     void externalResumeShortCircuitsReturnDirect() {

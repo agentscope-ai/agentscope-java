@@ -24,6 +24,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.event.AgentEvent;
+import io.agentscope.core.event.AgentResultEvent;
 import io.agentscope.core.event.ConfirmResult;
 import io.agentscope.core.event.RequestStopEvent;
 import io.agentscope.core.event.RequireUserConfirmEvent;
@@ -302,6 +303,60 @@ class ReActAgentHitlTest {
                 return;
             }
         }
+    }
+
+    @Test
+    void permissionResumesShareIterationBudget() {
+        ChatModelBase model =
+                new ScriptedModel(
+                        List.of(
+                                () -> Flux.just(toolUseResponse("tc1", "ask", "one")),
+                                () -> Flux.just(toolUseResponse("tc2", "ask", "two")),
+                                () -> Flux.just(textResponse("summary"))));
+        ReActAgent agent =
+                ReActAgent.builder()
+                        .name("asst")
+                        .model(model)
+                        .toolkit(toolkitWith(new AskingTool("ask")))
+                        .maxIters(2)
+                        .build();
+
+        Msg first = agent.call(List.of()).block();
+        assertNotNull(first);
+        assertEquals(GenerateReason.PERMISSION_ASKING, first.getGenerateReason());
+        assertFalse(first.getMetadata().containsKey("_agentscope_hitl_iteration"));
+        List<AgentEvent> secondEvents =
+                agent.streamEvents(
+                                List.of(
+                                        confirmMsg(
+                                                true,
+                                                first.getContentBlocks(ToolUseBlock.class).get(0))))
+                        .collectList()
+                        .block();
+        assertNotNull(secondEvents);
+        Msg second =
+                ((AgentResultEvent) secondEvents.get(indexOf(secondEvents, AgentResultEvent.class)))
+                        .getResult();
+        assertNotNull(second);
+        assertEquals(GenerateReason.PERMISSION_ASKING, second.getGenerateReason());
+        assertFalse(second.getMetadata().containsKey("_agentscope_hitl_iteration"));
+        assertTrue(second.getMetadata().containsKey(Msg.METADATA_CONFIRM_REQUEST_REPLY_ID));
+        Msg completed =
+                agent.call(
+                                List.of(
+                                        confirmMsg(
+                                                true,
+                                                second.getContentBlocks(ToolUseBlock.class)
+                                                        .get(0))))
+                        .block();
+        assertNotNull(completed);
+        assertEquals(GenerateReason.MAX_ITERATIONS, completed.getGenerateReason());
+        assertTrue(
+                agent.getAgentState().getContext().stream()
+                        .noneMatch(
+                                msg ->
+                                        msg.getMetadata()
+                                                .containsKey("_agentscope_hitl_iteration")));
     }
 
     @Test

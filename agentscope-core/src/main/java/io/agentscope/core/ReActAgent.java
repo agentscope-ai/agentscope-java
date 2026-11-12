@@ -2192,6 +2192,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
      * helpers directly. Built per-call by {@link #activateSlotForContext(RuntimeContext)}.
      */
     final class CallExecution {
+        private static final String HITL_ITERATION_METADATA_KEY = "_agentscope_hitl_iteration";
         private static final String PERMISSION_DENIED_BY_USER = "Permission denied by user";
         private static final String PERMISSION_DENIED_BY_RULES = "Permission denied by rules";
         private static final String OUTPUT_LIMIT_TOOL_ARGUMENTS =
@@ -2391,6 +2392,9 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                 return coreAgent();
             }
 
+            Integer suspendedIteration = resolveSuspendedIteration();
+            lastSessionIteration = suspendedIteration == null ? 0 : suspendedIteration;
+
             // Permission HITL: if any pending tool is ASKING, the caller MUST supply
             // ConfirmResults (via Msg.METADATA_CONFIRM_RESULTS) before we can proceed.
             List<ToolUseBlock> asking = askingToolCalls();
@@ -2406,6 +2410,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                 maybePatchPendingToolCalls(msgs, pendingIds);
                 pendingIds = MessageUtils.pendingToolUseIds(state.contextMutable());
                 if (pendingIds.isEmpty()) {
+                    clearLastAssistantMetadata(HITL_ITERATION_METADATA_KEY);
                     addToContext(msgs);
                     return coreAgent();
                 }
@@ -2455,9 +2460,12 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                     return settleSession(
                             Mono.just(finalizeReturnDirect(externalPairs, externalReplyId)));
                 }
-                return !MessageUtils.pendingToolUseIds(state.contextMutable()).isEmpty()
-                        ? resumeAgent()
-                        : coreAgent();
+                if (!MessageUtils.pendingToolUseIds(state.contextMutable()).isEmpty()) {
+                    return resumeAgent();
+                }
+                // The tool batch is now complete. Older checkpoints have no saved iteration.
+                return settleSession(
+                        executeIteration(suspendedIteration == null ? 0 : suspendedIteration + 1));
             }
 
             // Recovery was disabled and user did not provide tool results — unrecoverable.
@@ -2576,7 +2584,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                 log.warn("Missing confirmation reply id; generated fallback {}", replyId);
             }
             publishEvent(new UserConfirmResultEvent(replyId, normalized));
-            clearPendingRequestReplyId(Msg.METADATA_CONFIRM_REQUEST_REPLY_ID);
+            clearLastAssistantMetadata(Msg.METADATA_CONFIRM_REQUEST_REPLY_ID);
 
             applyConfirmResults(normalized, replyId);
         }
@@ -2591,40 +2599,53 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             return raw instanceof String s ? s : "";
         }
 
+        private Integer resolveSuspendedIteration() {
+            Msg requestMsg = MessageUtils.lastAssistantMessage(state.contextMutable());
+            if (requestMsg == null || requestMsg.getMetadata() == null) {
+                return null;
+            }
+            Object raw = requestMsg.getMetadata().get(HITL_ITERATION_METADATA_KEY);
+            return raw instanceof Number n ? n.intValue() : null;
+        }
+
         /**
-         * Persist the reply id for a pending HITL request on the live assistant message.
+         * Persist the reply id and iteration for a pending HITL request on the live assistant message.
          *
          * <p>The assistant message owns the paused {@link ToolUseBlock}s, so storing the correlation
          * metadata there lets the next call recover it from session state.
          */
-        private void persistPendingRequestReplyId(String metadataKey, String replyId) {
+        private void persistPendingHitlRequest(String metadataKey, String replyId) {
             Msg lastAssistant = MessageUtils.lastAssistantMessage(state.contextMutable());
             if (lastAssistant == null) {
                 return;
             }
             Map<String, Object> metadata = new HashMap<>(lastAssistant.getMetadata());
             metadata.put(metadataKey, replyId);
+            metadata.put(HITL_ITERATION_METADATA_KEY, lastSessionIteration);
             MessageUtils.replaceLastMessageByRole(
                     state.contextMutable(),
                     MsgRole.ASSISTANT,
                     lastAssistant.withMetadata(metadata));
         }
 
-        /** Remove HITL correlation metadata after the resume payload is accepted. */
-        private void clearPendingRequestReplyId(String metadataKey) {
+        private void clearLastAssistantMetadata(String metadataKey) {
             Msg lastAssistant = MessageUtils.lastAssistantMessage(state.contextMutable());
-            if (lastAssistant == null || lastAssistant.getMetadata() == null) {
-                return;
+            if (lastAssistant != null) {
+                Msg cleaned = withoutMetadata(lastAssistant, metadataKey);
+                if (cleaned != lastAssistant) {
+                    MessageUtils.replaceLastMessageByRole(
+                            state.contextMutable(), MsgRole.ASSISTANT, cleaned);
+                }
             }
-            if (!lastAssistant.getMetadata().containsKey(metadataKey)) {
-                return;
+        }
+
+        private Msg withoutMetadata(Msg message, String metadataKey) {
+            if (message.getMetadata() == null || !message.getMetadata().containsKey(metadataKey)) {
+                return message;
             }
-            Map<String, Object> metadata = new HashMap<>(lastAssistant.getMetadata());
+            Map<String, Object> metadata = new HashMap<>(message.getMetadata());
             metadata.remove(metadataKey);
-            MessageUtils.replaceLastMessageByRole(
-                    state.contextMutable(),
-                    MsgRole.ASSISTANT,
-                    lastAssistant.withMetadata(metadata));
+            return message.withMetadata(metadata);
         }
 
         /**
@@ -2881,7 +2902,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                     resolvePendingRequestReplyId(Msg.METADATA_EXTERNAL_EXECUTION_REQUEST_REPLY_ID);
             if (!replyId.isEmpty()) {
                 publishEvent(new ExternalExecutionResultEvent(replyId, results));
-                clearPendingRequestReplyId(Msg.METADATA_EXTERNAL_EXECUTION_REQUEST_REPLY_ID);
+                clearLastAssistantMetadata(Msg.METADATA_EXTERNAL_EXECUTION_REQUEST_REPLY_ID);
             }
             state.contextMutable().addAll(msgsToPersist);
         }
@@ -2961,7 +2982,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
          * jumps directly into the acting phase without another reasoning step.
          */
         private Mono<Msg> resumeAgent() {
-            return settleSession(acting(0));
+            return settleSession(acting(lastSessionIteration));
         }
 
         private int lastSessionIteration;
@@ -2969,6 +2990,11 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         private Mono<Msg> settleSession(Mono<Msg> work) {
             return work.flatMap(
                     result -> {
+                        if (resolveSuspendedIteration() != null
+                                && MessageUtils.pendingToolUseIds(state.contextMutable())
+                                        .isEmpty()) {
+                            clearLastAssistantMetadata(HITL_ITERATION_METADATA_KEY);
+                        }
                         SessionExecution execution = SessionExecution.from(rc);
                         if (execution == null
                                 || !SessionRecorder.outcome(result.getGenerateReason())
@@ -2987,6 +3013,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         }
 
         private Mono<Msg> executeIteration(int iter) {
+            clearLastAssistantMetadata(HITL_ITERATION_METADATA_KEY);
             return reasoning(iter, false);
         }
 
@@ -3759,8 +3786,12 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                                         state.contextMutable());
                                         if (lastAssistant != null) {
                                             return Mono.just(
-                                                    lastAssistant.withGenerateReason(
-                                                            GenerateReason.PERMISSION_ASKING));
+                                                    withoutMetadata(
+                                                                    lastAssistant,
+                                                                    HITL_ITERATION_METADATA_KEY)
+                                                            .withGenerateReason(
+                                                                    GenerateReason
+                                                                            .PERMISSION_ASKING));
                                         }
                                     }
                                     Msg stopMsg = buildStopMsg(results, rs.getGenerateReason());
@@ -3902,7 +3933,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                 // completion;
                                 // initialise it to empty since no successful execution happened.
                                 resultHolder.set(List.of());
-                                persistPendingRequestReplyId(
+                                persistPendingHitlRequest(
                                         Msg.METADATA_CONFIRM_REQUEST_REPLY_ID, replyId);
                                 Flux<AgentEvent> autoDeniedEvents =
                                         Flux.fromIterable(toolCalls)
@@ -4094,7 +4125,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                                                                                     results);
                                                                             if (!suspendedCalls
                                                                                     .isEmpty()) {
-                                                                                persistPendingRequestReplyId(
+                                                                                persistPendingHitlRequest(
                                                                                         Msg
                                                                                                 .METADATA_EXTERNAL_EXECUTION_REQUEST_REPLY_ID,
                                                                                         replyId);
@@ -4671,6 +4702,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
          */
         private Msg finalizeReturnDirect(
                 List<Map.Entry<ToolUseBlock, ToolResultBlock>> pairs, String replyId) {
+            clearLastAssistantMetadata(HITL_ITERATION_METADATA_KEY);
             Msg result = buildReturnDirectResultMsg(pairs);
             state.contextMutable().add(result);
             publishReturnDirectTextEvents(result, replyId);
