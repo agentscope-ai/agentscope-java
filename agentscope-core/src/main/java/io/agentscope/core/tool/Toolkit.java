@@ -547,14 +547,76 @@ public class Toolkit {
      */
     private List<ToolSchema> rewriteMetaToolSchema(
             List<ToolSchema> schemas, ToolRequestConfig config, CapabilitySurface surface) {
+        boolean unrestricted = surface.isUnrestricted();
         return schemas.stream()
                 .map(
-                        s ->
-                                "reset_equipped_tools".equals(s.getName())
-                                                && !config.overrides(s.getName())
-                                        ? rewriteResetToolSchema(s, surface)
-                                        : s)
+                        s -> {
+                            if ("reset_equipped_tools".equals(s.getName())
+                                    && !config.overrides(s.getName())) {
+                                return rewriteResetToolSchema(s, surface);
+                            }
+                            if (!unrestricted
+                                    && "load_skill_through_path".equals(s.getName())
+                                    && !config.overrides(s.getName())) {
+                                return rewriteSkillLoadToolSchema(s, surface);
+                            }
+                            return s;
+                        })
                 .toList();
+    }
+
+    /**
+     * Rebuilds the load_skill_through_path schema with the {@code skillId} enum narrowed to
+     * granted skills. The static skillBox path bakes the full registry into the enum at
+     * build time, so the grant layer narrows it at composition time; the dynamic path
+     * registers the tool from an already-filtered catalog and is unaffected (re-filtering
+     * is idempotent). String-based {@link CapabilitySurface#allowsSkill(String)} cannot see
+     * the {@code system} mark, so a system-marked skill is conservatively hidden from the
+     * enum while remaining loadable by id (the execution gate judges the full AgentSkill).
+     * An empty result removes the enum key (free-form string), matching the reset tool's
+     * empty-enum behaviour.
+     *
+     * @param schema the original load tool schema
+     * @param surface the per-request grant set (restricted)
+     * @return the schema with the skillId enum narrowed or removed
+     */
+    private ToolSchema rewriteSkillLoadToolSchema(ToolSchema schema, CapabilitySurface surface) {
+        Map<String, Object> parameters = deepCopyParameters(schema.getParameters());
+        if (parameters == null) {
+            return schema;
+        }
+        Object propertiesObj = parameters.get("properties");
+        if (!(propertiesObj instanceof Map<?, ?> properties)) {
+            return schema;
+        }
+        Object skillIdObj = properties.get("skillId");
+        if (!(skillIdObj instanceof Map<?, ?> skillId)) {
+            return schema;
+        }
+        Object enumObj = skillId.get("enum");
+        if (!(enumObj instanceof List<?> ids) || ids.isEmpty()) {
+            return schema;
+        }
+        List<String> granted =
+                ids.stream()
+                        .filter(id -> id instanceof String s && surface.allowsSkill(s))
+                        .map(id -> (String) id)
+                        .toList();
+        @SuppressWarnings("unchecked")
+        Map<String, Object> skillIdMutable = (Map<String, Object>) skillId;
+        if (granted.isEmpty()) {
+            skillIdMutable.remove("enum");
+        } else {
+            skillIdMutable.put("enum", granted);
+        }
+        return ToolSchema.builder()
+                .name(schema.getName())
+                .description(schema.getDescription())
+                .parameters(parameters)
+                .strict(schema.getStrict())
+                .deferLoading(schema.getDeferLoading())
+                .outputSchema(schema.getOutputSchema())
+                .build();
     }
 
     /** Rebuilds one reset_equipped_tools schema from only the activatable groups. */

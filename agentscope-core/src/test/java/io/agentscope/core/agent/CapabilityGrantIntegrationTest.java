@@ -411,6 +411,27 @@ class CapabilityGrantIntegrationTest {
         String seen = modelInputText(model);
         assertTrue(seen.contains("granted-one"), "the granted skill must stay visible");
         assertFalse(seen.contains("secret-one"), "the ungranted skill must not reach the model");
+        // Same guarantee on the tool-schema surface: the loader's skillId enum must not
+        // enumerate the ungranted skill either.
+        Object enumObj = loadToolSkillIdProperty(model).get("enum");
+        assertTrue(enumObj instanceof List<?>);
+        List<?> ids = (List<?>) enumObj;
+        assertTrue(
+                ids.stream().anyMatch(id -> String.valueOf(id).contains("granted-one")),
+                "the granted skill stays in the loader enum");
+        assertTrue(
+                ids.stream().noneMatch(id -> String.valueOf(id).contains("secret-one")),
+                "the ungranted skill must not be enumerated in the loader schema");
+    }
+
+    @Test
+    @DisplayName("null-argument skill prompt calls stay unambiguous (public source compat)")
+    void nullArgumentSkillPromptCallsRemainUnambiguous() {
+        // External-package view: only the public SkillFilter overload is visible here, so
+        // the documented "null = all" call must compile without a cast. Same-arity
+        // package-private overloads inside io.agentscope.core.skill are invisible outside.
+        SkillBox box = new SkillBox(new Toolkit());
+        assertEquals("", box.getSkillPrompt(null));
     }
 
     @Test
@@ -431,6 +452,8 @@ class CapabilityGrantIntegrationTest {
         ctx.put(CapabilitySurface.class, CapabilitySurface.DENY_ALL);
         assertNotNull(agent.call(userMsg("hi"), ctx).block(Duration.ofSeconds(10)));
         assertFalse(modelInputText(model).contains("<available_skills>"));
+        // The loader schema must not enumerate the catalog either: no skill is granted.
+        assertFalse(loadToolSkillIdProperty(model).containsKey("enum"));
     }
 
     @Test
@@ -466,6 +489,28 @@ class CapabilityGrantIntegrationTest {
             }
         }
         return sb.toString();
+    }
+
+    /** The skillId property map of the load tool schema sent to the model (empty if absent). */
+    private static Map<String, Object> loadToolSkillIdProperty(MockModel model) {
+        for (ToolSchema tool : model.getLastTools()) {
+            if (!"load_skill_through_path".equals(tool.getName())) {
+                continue;
+            }
+            Map<String, Object> params = tool.getParameters();
+            if (params == null || !(params.get("properties") instanceof Map<?, ?> properties)) {
+                return Map.of();
+            }
+            if (!(properties.get("skillId") instanceof Map<?, ?> skillId)) {
+                return Map.of();
+            }
+            Map<String, Object> typed = new HashMap<>();
+            for (Map.Entry<?, ?> entry : skillId.entrySet()) {
+                typed.put(String.valueOf(entry.getKey()), entry.getValue());
+            }
+            return typed;
+        }
+        return Map.of();
     }
 
     @Test

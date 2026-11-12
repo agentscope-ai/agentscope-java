@@ -163,6 +163,11 @@ public class SkillBox {
     /**
      * Gets the skill system prompt trimmed to the given capability grant surface.
      *
+     * <p>Package-private on purpose: this serves the static {@link SkillHook} injection path
+     * only. A public same-arity overload of {@code getSkillPrompt} would make the existing
+     * {@code getSkillPrompt(null)} call (null = all visible, a documented contract of the
+     * {@link SkillFilter} overload) ambiguous and break source compatibility.
+     *
      * <p>{@code null} and unrestricted ({@code ALLOW_ALL}-shaped) surfaces keep the
      * unfiltered prompt — byte-identical to {@link #getSkillPrompt()}. A restricted surface
      * renders only the skills it grants (system-marked skills always pass), through the same
@@ -175,7 +180,7 @@ public class SkillBox {
      * @param surface the per-call grant surface, or {@code null} for no trimming
      * @return The trimmed skill system prompt, or empty string if no skill passes
      */
-    public String getSkillPrompt(CapabilitySurface surface) {
+    String getSkillPrompt(CapabilitySurface surface) {
         if (surface == null || surface.isUnrestricted()) {
             return getSkillPrompt();
         }
