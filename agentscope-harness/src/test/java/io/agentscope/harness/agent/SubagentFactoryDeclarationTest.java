@@ -43,8 +43,10 @@ import io.agentscope.harness.agent.tool.AgentSpawnTool;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.EnumSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
@@ -130,6 +132,11 @@ class SubagentFactoryDeclarationTest {
         AtomicInteger factoryCalls = new AtomicInteger();
         MiddlewareBase privateMiddleware =
                 new MiddlewareBase() {
+                    @Override
+                    public Set<ExtensionPoint> activePoints() {
+                        return EnumSet.of(ExtensionPoint.ON_AGENT);
+                    }
+
                     @Override
                     public Flux<AgentEvent> onAgent(
                             Agent agent,
