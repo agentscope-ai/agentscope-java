@@ -31,6 +31,7 @@ public class WorkspaceProjectionEntry extends WorkspaceEntry {
 
     private String sourceRoot;
     private List<String> includeRoots = new ArrayList<>();
+    private boolean authorizationManaged = false;
 
     /**
      * Absolute host-side workspace root used as source for projection.
@@ -53,5 +54,19 @@ public class WorkspaceProjectionEntry extends WorkspaceEntry {
     public void setIncludeRoots(List<String> includeRoots) {
         this.includeRoots =
                 includeRoots != null ? new ArrayList<>(includeRoots) : new ArrayList<>();
+    }
+
+    /**
+     * Whether this projection was narrowed by the capability grant layer for the current
+     * call. Only marked specs run the authoritative (revoking) application inside
+     * {@code Sandbox#start()}; unmarked specs keep the generic overlay semantics — fixing
+     * the authorization boundary must not change projection behaviour for everyone else.
+     */
+    public boolean isAuthorizationManaged() {
+        return authorizationManaged;
+    }
+
+    public void setAuthorizationManaged(boolean authorizationManaged) {
+        this.authorizationManaged = authorizationManaged;
     }
 }

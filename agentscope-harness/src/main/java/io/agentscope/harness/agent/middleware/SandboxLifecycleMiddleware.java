@@ -297,6 +297,10 @@ public class SandboxLifecycleMiddleware implements HarnessRuntimeMiddleware {
         WorkspaceSpec narrowedSpec = spec.copy();
         WorkspaceProjectionEntry narrowed = new WorkspaceProjectionEntry();
         narrowed.setSourceRoot(projection.getSourceRoot());
+        // This narrowing carries the grant decision for the cache subtree: mark it so the
+        // sandbox applies the projection authoritatively (revoking stale files). Specs
+        // without the marker keep the generic overlay semantics.
+        narrowed.setAuthorizationManaged(true);
         List<String> roots =
                 new ArrayList<>(projection.getIncludeRoots().size() + cacheRoots.size());
         for (String root : projection.getIncludeRoots()) {

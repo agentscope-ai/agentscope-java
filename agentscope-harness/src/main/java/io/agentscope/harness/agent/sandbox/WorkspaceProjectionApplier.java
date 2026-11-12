@@ -45,6 +45,24 @@ public final class WorkspaceProjectionApplier {
     private WorkspaceProjectionApplier() {}
 
     /**
+     * Whether any projection entry in the spec is marked as managed by the capability
+     * grant layer. Only marked specs run the authoritative (revoking) application;
+     * unmarked specs keep the generic overlay semantics, so the authorization fix does
+     * not change projection behaviour for everyone else.
+     *
+     * @param spec the workspace spec to inspect ({@code null} counts as unmanaged)
+     * @return {@code true} when at least one projection entry is grant-managed
+     */
+    public static boolean isAuthorizationManaged(WorkspaceSpec spec) {
+        if (spec == null || spec.getEntries() == null) {
+            return false;
+        }
+        List<WorkspaceProjectionEntry> projections = new ArrayList<>();
+        collectProjectionEntries(spec.getEntries(), projections);
+        return projections.stream().anyMatch(WorkspaceProjectionEntry::isAuthorizationManaged);
+    }
+
+    /**
      * Builds projection payload from all {@link WorkspaceProjectionEntry} items in the spec.
      */
     public static ProjectionPayload build(WorkspaceSpec spec) throws Exception {
@@ -157,5 +175,19 @@ public final class WorkspaceProjectionApplier {
      *     files (authoritative replace, never overlay)
      */
     public record ProjectionPayload(
-            String hash, byte[] tarBytes, int fileCount, List<String> paths) {}
+            String hash, byte[] tarBytes, int fileCount, List<String> paths) {
+
+        /**
+         * Compatibility constructor for the pre-manifest three-component shape; the
+         * recorded path list defaults to empty (nothing revocable). Prefer the canonical
+         * constructor.
+         *
+         * @param hash deterministic hash over projected file paths and bytes
+         * @param tarBytes tar archive containing projected files
+         * @param fileCount number of projected files
+         */
+        public ProjectionPayload(String hash, byte[] tarBytes, int fileCount) {
+            this(hash, tarBytes, fileCount, List.of());
+        }
+    }
 }

@@ -40,6 +40,17 @@ class WorkspaceProjectionApplierTest {
     }
 
     @Test
+    void compatConstructorKeepsThePreManifestThreeArgumentShape() {
+        // Source and binary compatibility: the three-argument constructor predates the
+        // recorded path list and must keep compiling and linking for existing callers.
+        WorkspaceProjectionApplier.ProjectionPayload payload =
+                new WorkspaceProjectionApplier.ProjectionPayload("h", new byte[0], 0);
+        assertEquals("h", payload.hash());
+        assertEquals(0, payload.fileCount());
+        assertTrue(payload.paths().isEmpty());
+    }
+
+    @Test
     void build_producesDeterministicHashAndTar() throws Exception {
         Path source = tempDir.resolve("source");
         Files.createDirectories(source.resolve("skills/java"));

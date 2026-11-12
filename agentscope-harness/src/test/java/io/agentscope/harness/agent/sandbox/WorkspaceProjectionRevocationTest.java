@@ -156,16 +156,117 @@ class WorkspaceProjectionRevocationTest {
     }
 
     @Test
-    @DisplayName("tampered manifest path (shell metacharacters) fails closed")
-    void tamperedManifestPathFailsClosed() throws Exception {
+    @DisplayName("legal filenames (spaces, unicode, metacharacters) round-trip through revocation")
+    void legalFilenamesRoundTripThroughRevocation() throws Exception {
+        Files.createDirectories(hostSource.resolve("中文目录"));
+        Files.writeString(hostSource.resolve("user guide.md"), "guide");
+        Files.writeString(hostSource.resolve("中文目录/说明.md"), "zh");
+        Files.writeString(hostSource.resolve("a$(x)b`c`.md"), "meta");
+
+        FakeState state = new FakeState();
+        state.setWorkspaceSpec(specWithRoots("user guide.md", "中文目录", "a$(x)b`c`.md"));
+        FakeSandbox sandbox = new FakeSandbox(state);
+        sandbox.start();
+        assertTrue(sandbox.exists("user guide.md"));
+        assertTrue(sandbox.exists("中文目录/说明.md"));
+
+        sandbox.stop();
+        state.setWorkspaceSpec(specWithRoots());
+        sandbox.start(); // revocation must revoke legal names, not reject them
+
+        assertFalse(sandbox.exists("user guide.md"));
+        assertFalse(sandbox.exists("中文目录/说明.md"));
+        assertFalse(sandbox.exists("a$(x)b`c`.md"));
+    }
+
+    @Test
+    @DisplayName("boundary violations in the manifest (traversal, absolute) fail closed")
+    void boundaryViolationsInManifestFailClosed() throws Exception {
         FakeState state = new FakeState();
         state.setWorkspaceSpec(specWithRoots(AGENTS));
         FakeSandbox sandbox = new FakeSandbox(state);
-        // Persisted manifests are untrusted: command-substitution and backtick payloads
-        // must be rejected by the character whitelist before any command is built.
+        // Persisted manifests are untrusted: only boundary violations are rejected
+        // (traversal, absolute paths, backslashes); legal filenames always pass.
         assertThrows(
                 IllegalStateException.class,
-                () -> sandbox.doDeleteWorkspacePaths(List.of("x$(rm -rf /)y", "a`b`c")));
+                () -> sandbox.doDeleteWorkspacePaths(List.of("../escape.txt")));
+        assertThrows(
+                IllegalStateException.class,
+                () -> sandbox.doDeleteWorkspacePaths(List.of("/etc/x")));
+        assertThrows(
+                IllegalStateException.class, () -> sandbox.doDeleteWorkspacePaths(List.of("a\\b")));
+    }
+
+    @Test
+    @DisplayName("unmanaged projection keeps the generic overlay semantics (no deletion)")
+    void unmanagedProjectionKeepsGenericOverlaySemantics() throws Exception {
+        FakeState state = new FakeState();
+        state.setWorkspaceSpec(specWithRoots(false, AGENTS, ".skills-cache/u1/market/beta"));
+        FakeSandbox sandbox = new FakeSandbox(state);
+        sandbox.start();
+        assertTrue(sandbox.exists(BETA));
+
+        sandbox.stop();
+        // A narrower UNMANAGED projection (no grant layer engaged): the historic overlay
+        // behaviour — stale files stay, nothing is deleted, nothing refuses.
+        state.setWorkspaceSpec(specWithRoots(false, AGENTS, ".skills-cache/u1/market/alpha"));
+        sandbox.start();
+
+        assertTrue(sandbox.exists(ALPHA), "newly projected");
+        assertTrue(sandbox.exists(BETA), "generic semantics: unmanaged narrowing never deletes");
+    }
+
+    @Test
+    @DisplayName(
+            "legacy state (hash without manifest): unchanged managed projection still runs,"
+                    + " changed one refuses")
+    void legacyStateWithoutManifestRefusesChangedManagedProjection() throws Exception {
+        FakeState state = new FakeState();
+        state.setWorkspaceSpec(specWithRoots(AGENTS, ".skills-cache/u1/market/beta"));
+        FakeSandbox sandbox = new FakeSandbox(state);
+        sandbox.start();
+        sandbox.stop();
+        // Simulate an upgraded pre-manifest state: a projection hash was kept, the
+        // revocation manifest was not.
+        state.setProjectedWorkspacePaths(null);
+
+        // Unchanged projection: keeps working (upgrade compatibility).
+        sandbox.start();
+        assertTrue(sandbox.exists(BETA));
+        sandbox.stop();
+        state.setProjectedWorkspacePaths(null);
+
+        // Changed managed projection: missing metadata must not masquerade as completed
+        // isolation — refuse with a remediation instead of silently keeping stale files.
+        state.setWorkspaceSpec(specWithRoots(AGENTS, ".skills-cache/u1/market/alpha"));
+        assertThrows(
+                SandboxException.WorkspaceStartException.class,
+                sandbox::start,
+                "a changed grant-managed projection on a manifest-less state must refuse");
+    }
+
+    @Test
+    @DisplayName("unmanaged content change invalidates the manifest for the next managed pass")
+    void unmanagedChangeInvalidatesManifestForNextManagedPass() throws Exception {
+        FakeState state = new FakeState();
+        state.setWorkspaceSpec(specWithRoots(true, AGENTS, ".skills-cache/u1/market/beta"));
+        FakeSandbox sandbox = new FakeSandbox(state);
+        sandbox.start();
+        sandbox.stop();
+
+        // An unmanaged change overlays content outside managed bookkeeping.
+        state.setWorkspaceSpec(specWithRoots(false, ".skills-cache/u1/market/alpha"));
+        sandbox.start();
+        assertTrue(sandbox.exists(ALPHA));
+        sandbox.stop();
+
+        // The next managed pass must not trust the stale manifest: refuse rather than
+        // revoke against bookkeeping that no longer describes the workspace.
+        state.setWorkspaceSpec(specWithRoots(true, AGENTS, ".skills-cache/u1/market/alpha"));
+        assertThrows(
+                SandboxException.WorkspaceStartException.class,
+                sandbox::start,
+                "managed pass after an unmanaged overlay must refuse, not under-revoke");
     }
 
     @Test
@@ -198,10 +299,16 @@ class WorkspaceProjectionRevocationTest {
     // Fixtures
     // ------------------------------------------------------------------
 
+    /** Grant-managed spec by default — the scenario every revocation test exercises. */
     private WorkspaceSpec specWithRoots(String... includeRoots) {
+        return specWithRoots(true, includeRoots);
+    }
+
+    private WorkspaceSpec specWithRoots(boolean authorizationManaged, String... includeRoots) {
         WorkspaceProjectionEntry projection = new WorkspaceProjectionEntry();
         projection.setSourceRoot(hostSource.toString());
         projection.setIncludeRoots(List.of(includeRoots));
+        projection.setAuthorizationManaged(authorizationManaged);
         WorkspaceSpec spec = new WorkspaceSpec();
         spec.getEntries().put("__workspace_projection__", projection);
         return spec;

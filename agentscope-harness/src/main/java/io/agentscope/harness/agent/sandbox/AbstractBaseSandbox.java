@@ -300,10 +300,10 @@ public abstract class AbstractBaseSandbox implements Sandbox {
      * no longer authorizes. The deletion runs inside the sandbox via {@link
      * #doExec(RuntimeContext, String, int)} — remote backends expose no host-side file API,
      * so a shell command is the only universal channel, and it is safe here: every path is
-     * whitelist-validated and single-quoted, and a failed deletion fails the start rather
-     * than leaving unauthorized files behind. Backends with a native delete primitive may
-     * override; each sandbox owns its workspace root, so only this sandbox's own projected
-     * files are ever touched.
+     * boundary-validated and shell-quoted (any legal filename round-trips), and a failed
+     * deletion fails the start rather than leaving unauthorized files behind. Backends with
+     * a native delete primitive may override; each sandbox owns its workspace root, so only
+     * this sandbox's own projected files are ever touched.
      *
      * @param relativePaths workspace-relative POSIX paths previously projected
      * @throws Exception when a manifest path is invalid or deletion fails
@@ -317,11 +317,11 @@ public abstract class AbstractBaseSandbox implements Sandbox {
             List<String> chunk =
                     relativePaths.subList(
                             from, Math.min(from + DELETE_CHUNK_SIZE, relativePaths.size()));
-            // rm inside the sandbox: paths are whitelist-validated and single-quoted, so
-            // the command cannot expand or escape the projected file set.
+            // rm inside the sandbox: boundary-validated paths, shell-quoted — legal
+            // filenames round-trip and nothing can expand or escape the projected set.
             StringBuilder command = new StringBuilder("rm -f --");
             for (String path : chunk) {
-                command.append(" '").append(root).append('/').append(path).append('\'');
+                command.append(' ').append(shellQuote(root + "/" + path));
             }
             ExecResult result = doExec(null, command.toString(), PROBE_TIMEOUT_SECONDS);
             if (!result.ok()) {
@@ -367,7 +367,7 @@ public abstract class AbstractBaseSandbox implements Sandbox {
                     ordered.subList(from, Math.min(from + DELETE_CHUNK_SIZE, ordered.size()));
             StringBuilder command = new StringBuilder("rmdir --");
             for (String dir : chunk) {
-                command.append(" '").append(root).append('/').append(dir).append('\'');
+                command.append(' ').append(shellQuote(root + "/" + dir));
             }
             try {
                 doExec(null, command.toString(), PROBE_TIMEOUT_SECONDS);
@@ -378,22 +378,26 @@ public abstract class AbstractBaseSandbox implements Sandbox {
     }
 
     /**
-     * Validates one manifest path before it reaches a delete command. The manifest is
-     * persisted JSON — treat it as untrusted on read: absolute paths, {@code ..} segments,
-     * backslashes and quotes are rejected loudly instead of being sanitized into use.
+     * Validates one manifest path's boundaries before it reaches a delete command. The
+     * manifest is persisted JSON — treat it as untrusted on read: absolute paths, empty or
+     * {@code .}/{@code ..} segments, backslashes and NUL are rejected loudly. Everything
+     * else — spaces, unicode, even shell metacharacters — can be a legal filename and is
+     * passed through: command safety comes from {@link #shellQuote(String)}, never from
+     * restricting the charset, so revocation cannot break legal resource names.
      *
      * @param path the recorded workspace-relative POSIX path
      * @throws IllegalStateException when the path could target anything outside the
      *     projected file set
      */
     private static void requireSafeProjectedPath(String path) {
-        // Strict whitelist: projected paths are workspace-relative POSIX file paths and can
-        // never legitimately contain anything else — this rejects every shell metacharacter
-        // (quotes, $, backticks, whitespace) instead of enumerating the dangerous ones.
-        if (path == null || !path.matches("[A-Za-z0-9._/-]+")) {
+        if (path == null
+                || path.isBlank()
+                || path.startsWith("/")
+                || path.contains("\\")
+                || path.indexOf('\0') >= 0) {
             throw new IllegalStateException("unsafe projected path in manifest: " + path);
         }
-        for (String segment : path.split("/")) {
+        for (String segment : path.split("/", -1)) {
             if (segment.isEmpty() || segment.equals(".") || segment.equals("..")) {
                 throw new IllegalStateException("unsafe projected path in manifest: " + path);
             }
@@ -401,26 +405,74 @@ public abstract class AbstractBaseSandbox implements Sandbox {
     }
 
     /**
-     * Applies the workspace projection authoritatively: hydrates the current payload and
-     * revokes every file of the previously applied projection that the current one no
-     * longer authorizes (a narrowed projection must remove, not overlay). Only
-     * projection-managed paths are ever deleted — sandbox user files are untouched, which
-     * is also what keeps concurrent sandboxes sharing a host directory safe: each deletes
-     * only what it itself projected.
+     * POSIX single-quote wrapping for one shell operand. Any legal filename round-trips:
+     * the only character with meaning inside single quotes — a quote itself — is closed,
+     * escaped and reopened, so no expansion or injection is possible regardless of content.
+     */
+    private static String shellQuote(String value) {
+        return "'" + value.replace("'", "'\\''") + "'";
+    }
+
+    /**
+     * Applies the workspace projection. Specs carrying a grant-managed projection entry
+     * ({@link WorkspaceProjectionApplier#isAuthorizationManaged}) are applied
+     * authoritatively: the current payload is hydrated and every file of the previously
+     * applied projection that the current one no longer authorizes is revoked (a narrowed
+     * grant must remove, not overlay) — only projection-managed paths are ever deleted,
+     * sandbox user files are untouched, which is also what keeps concurrent sandboxes
+     * sharing a host directory safe. Unmarked specs keep the generic overlay semantics
+     * (hydrate only, never delete): fixing the authorization boundary must not change
+     * projection behaviour for everyone else.
      *
      * @param spec the workspace spec carrying the projection entries
      * @param force skip the hash short-circuit (snapshot-restore paths): the restored
      *     workspace may carry files from an earlier, wider projection even when the hash is
-     *     unchanged, so the revocation pass must run regardless
+     *     unchanged, so the authoritative pass must run regardless
      */
     private void applyWorkspaceProjectionIfChanged(WorkspaceSpec spec, boolean force)
             throws Exception {
         WorkspaceProjectionApplier.ProjectionPayload payload =
                 WorkspaceProjectionApplier.build(spec);
         String currentHash = payload != null ? payload.hash() : null;
-        if (!force && Objects.equals(currentHash, state.getWorkspaceProjectionHash())) {
+        String storedHash = state.getWorkspaceProjectionHash();
+        if (!force && Objects.equals(currentHash, storedHash)) {
             log.debug("[sandbox] Workspace projection unchanged, skipping");
             return;
+        }
+        if (!WorkspaceProjectionApplier.isAuthorizationManaged(spec)) {
+            // Generic path (grant layer not engaged): overlay hydration only — never
+            // delete, never refuse. Any content change here is outside managed
+            // bookkeeping, so the recorded manifest is invalidated: the next managed pass
+            // must not trust a manifest that no longer describes what it applied.
+            if (payload != null && payload.fileCount() > 0) {
+                try (InputStream archive = new ByteArrayInputStream(payload.tarBytes())) {
+                    doHydrateWorkspace(archive);
+                }
+            }
+            state.setWorkspaceProjectionHash(currentHash);
+            state.setProjectedWorkspacePaths(null);
+            log.debug(
+                    "[sandbox] Workspace projection applied (unmanaged): files={}",
+                    payload != null ? payload.fileCount() : 0);
+            return;
+        }
+        // Upgrade guard (managed only): a workspace projected by an older version has a
+        // hash but no revocation manifest, so what it put into the workspace is unknowable.
+        // Treating the missing manifest as "nothing to revoke" would let stale files
+        // survive a narrowed grant (review probe). An unchanged projection keeps working
+        // for compatibility; a changed managed projection is refused with a remediation —
+        // missing metadata must not masquerade as completed isolation.
+        if (storedHash != null && state.getProjectedWorkspacePaths() == null) {
+            throw new SandboxException.WorkspaceStartException(
+                    Path.of(getWorkspaceRoot()),
+                    new IllegalStateException(
+                            "this workspace was projected before the capability grant layer"
+                                    + " kept a revocation manifest (projectedWorkspacePaths"
+                                    + " missing from the persisted state), so a changed"
+                                    + " grant-managed projection cannot be applied"
+                                    + " authoritatively. Destroy and recreate the sandbox"
+                                    + " workspace (projected content is re-derived from its"
+                                    + " source on the next start) to continue."));
         }
         List<String> currentPaths = payload != null ? payload.paths() : List.of();
         List<String> previousPaths = state.getProjectedWorkspacePaths();
