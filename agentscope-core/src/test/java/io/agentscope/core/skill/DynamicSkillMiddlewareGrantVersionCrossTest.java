@@ -222,6 +222,10 @@ class DynamicSkillMiddlewareGrantVersionCrossTest {
         DynamicSkillMiddleware mw = new DynamicSkillMiddleware(List.of(repo), false);
         Toolkit toolkit = new Toolkit();
         mw.registerSkillTools(toolkit);
+        // TTL 0 forces the LATEST refresh pass on every call, so a broken PIN (an entry
+        // losing its pinned flag) would advance to the freshly published versions and
+        // redden the version assertions below.
+        DynamicSkillMiddleware.freshnessTtlMillis = 0;
 
         // Arrange: a narrow grant (alpha only) under a PIN policy that anchors at v1.
         RuntimeContext narrow =
@@ -233,9 +237,11 @@ class DynamicSkillMiddlewareGrantVersionCrossTest {
         assertEquals("v1", box.getSkill("alpha_fake").getVersion(), "at its PIN version");
         assertNull(box.getSkill("beta_fake"), "the denied name never enters the box");
 
-        // A later version of the granted name stays covered by the same name grant — and the
-        // pin keeps serving v1 anyway; the denied name remains absent.
+        // Both names advance to v2 while the grant stays narrow: the granted name stays
+        // covered by the same entry (one grant entry covers every version of the name) and
+        // the pin keeps serving v1 against the refresh.
         repo.publish("alpha", "v2", "# alpha v2");
+        repo.publish("beta", "v2", "# beta v2");
         RuntimeContext narrowAgain =
                 rcOf("u1", new CapabilitySurface(java.util.Set.of("alpha"), null, null));
         mw.onSystemPrompt(agent, narrowAgain, "").block();
@@ -243,10 +249,11 @@ class DynamicSkillMiddlewareGrantVersionCrossTest {
                 "v1",
                 narrowAgain.get(SkillBox.class).getSkill("alpha_fake").getVersion(),
                 "one grant entry covers every version; the pin anchors v1 against v2");
+        assertNull(narrowAgain.get(SkillBox.class).getSkill("beta_fake"));
 
-        // The denied name's anchor is provenance-only: it survived the deny (a later wide
-        // grant serves beta at its PINNED v1, not the version any refresh would move to) —
-        // while under the narrow grant its load is rejected with the not-found wording.
+        // The denied name's anchor is provenance-only and must have survived the deny
+        // untouched: with beta's latest now at v2, a dropped anchor would re-anchor wide at
+        // v2 and a moved one would follow the refresh — both must stay at the pinned v1.
         RuntimeContext wide =
                 rcOf("u1", new CapabilitySurface(java.util.Set.of("alpha", "beta"), null, null));
         mw.onSystemPrompt(agent, wide, "").block();
@@ -254,6 +261,7 @@ class DynamicSkillMiddlewareGrantVersionCrossTest {
                 "v1",
                 wide.get(SkillBox.class).getSkill("beta_fake").getVersion(),
                 "the deny neither dropped nor moved the anchor");
+        assertEquals("v1", wide.get(SkillBox.class).getSkill("alpha_fake").getVersion());
 
         String denied = load(toolkit, "beta_fake", narrowAgain);
         assertEquals(

@@ -135,8 +135,10 @@ class DynamicSkillMiddlewareTest {
     }
 
     /**
-     * Direct onSystemPrompt calls bypass the agent call() entry, so the grant layer's
-     * fail-closed skill filtering would cut every skill. Seed ALLOW_ALL explicitly.
+     * Direct onSystemPrompt calls bypass the agent call() entry, so no surface would ride the
+     * rc — the grant layer treats that as unrestricted (trusted assembler code; see {@link
+     * #directUseWithoutSurfaceKeepsVisibleSkills}). Seeding ALLOW_ALL keeps those tests on the
+     * surface-present path and states the trusted intent explicitly.
      */
     private static RuntimeContext grantRc() {
         RuntimeContext rc = RuntimeContext.empty();

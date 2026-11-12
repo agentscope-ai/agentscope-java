@@ -139,8 +139,10 @@ class MarketplaceStagerLazyRepositoryTest {
         AgentSkillRepository repo = new StubRepo(SOURCE_NS);
 
         // Arrange: two immutable origin trees for the same name — v1 and v2, as a mirror
-        // store serves them across a LATEST refresh (one materialized dir per token).
+        // store serves them across a LATEST refresh (one materialized dir per token). v1
+        // carries a file v2 no longer ships, pinning the rebuild's additive shape.
         Path v1Dir = writeOriginTree(tmp.resolve("origin-v1"), "body-v1");
+        Files.writeString(v1Dir.resolve("old-only.txt"), "v1 exclusive\n");
         Path v2Dir = writeOriginTree(tmp.resolve("origin-v2"), "body-v2");
         AgentSkill v1 = descriptorSkill(v1Dir, "tok-1");
         AgentSkill v2 = descriptorSkill(v2Dir, "tok-2");
@@ -148,9 +150,18 @@ class MarketplaceStagerLazyRepositoryTest {
         // Act + assert (first stage, same-token reuse, token-swap rebuild, swap back).
         stager.stage(List.of(new RepoBound(v1, repo)), Map.of(repo, SOURCE_NS), SCOPE);
         assertEquals("body-v1", stagedBody(workspace), "the first stage copies the v1 tree");
+        assertTrue(
+                Files.isRegularFile(stagedDir(workspace).resolve("old-only.txt")),
+                "v1's exclusive file is staged with the tree");
 
+        Path stagedManifest = stagedDir(workspace).resolve("SKILL.md");
+        java.nio.file.attribute.FileTime reusedAt = Files.getLastModifiedTime(stagedManifest);
         stager.stage(List.of(new RepoBound(v1, repo)), Map.of(repo, SOURCE_NS), SCOPE);
         assertEquals("body-v1", stagedBody(workspace), "a same-token pass is a pure reuse");
+        assertEquals(
+                reusedAt,
+                Files.getLastModifiedTime(stagedManifest),
+                "a pure reuse must not rewrite the staged manifest");
 
         stager.stage(List.of(new RepoBound(v2, repo)), Map.of(repo, SOURCE_NS), SCOPE);
         assertEquals(
@@ -158,6 +169,11 @@ class MarketplaceStagerLazyRepositoryTest {
                 stagedBody(workspace),
                 "a version swap must rebuild — the staged bytes follow the served version,"
                         + " not the first one ever staged under the name");
+        assertTrue(
+                Files.isRegularFile(stagedDir(workspace).resolve("old-only.txt")),
+                "the rebuild is additive: the superseded version's exclusive file stays —"
+                        + " concurrent sessions may still be pinned to v1, and the shared"
+                        + " staged tree is never deleted mid-flight");
 
         stager.stage(List.of(new RepoBound(v1, repo)), Map.of(repo, SOURCE_NS), SCOPE);
         assertEquals("body-v1", stagedBody(workspace), "the rebuild is symmetric (v2 → v1)");

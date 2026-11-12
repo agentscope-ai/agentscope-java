@@ -528,6 +528,9 @@ class CapabilityGrantIntegrationTest {
         // funnel reuses the inherited surface instead of re-resolving.
         RuntimeContext parentRc = rc(CapabilitySurface.DENY_ALL);
         callDirect(subAgentTool, Map.of("message", "do it"), parentRc);
+        assertTrue(
+                childModel.getCallCount() >= 1,
+                "liveness: the sub-agent's model must actually have been called");
 
         // Channel 1: the child's model input (system prompt included) mentions no skill.
         String childInput = modelInputText(childModel);
