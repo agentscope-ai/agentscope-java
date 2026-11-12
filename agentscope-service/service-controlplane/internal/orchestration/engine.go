@@ -544,12 +544,15 @@ func (e *Engine) convergeCompletedIssue(ctx context.Context, run *controlmodel.O
 
 // A Team may keep its Run waiting while its root is blocked on human input.
 // Once its coordinator and child decisions finish, resume the root lifecycle.
-// Historical completion must never advance a newer Run's blocked root.
+// Historical completion must never advance a newer Run's blocked root. The
+// freshness check only compares adaptive Runs: comment-driven direct Runs
+// never own the Issue lifecycle, so one created while the Team Run waits must
+// not strip it of resume eligibility.
 func (e *Engine) completedTeamCanResumeRoot(ctx context.Context, run *controlmodel.OrchestrationRun, issue *controlmodel.Issue) (bool, error) {
 	if run.Mode != controlmodel.RunModeAdaptive || issue.AssigneeType != controlmodel.AssigneeTeam || issue.ArchivedAt != nil {
 		return false, nil
 	}
-	latest, err := e.Store.Orchestration().ListRuns(ctx, store.OrchestrationRunFilter{Tenant: run.Tenant, Namespace: run.Namespace, RootIssueID: run.RootIssueID, Limit: 1})
+	latest, err := e.Store.Orchestration().ListRuns(ctx, store.OrchestrationRunFilter{Tenant: run.Tenant, Namespace: run.Namespace, RootIssueID: run.RootIssueID, Mode: controlmodel.RunModeAdaptive, Limit: 1})
 	if err != nil || len(latest) == 0 || latest[0].ID != run.ID {
 		return false, err
 	}

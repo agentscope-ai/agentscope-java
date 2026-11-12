@@ -43,6 +43,7 @@ type OrchestrationRunFilter struct {
 	Offset       int
 	IssueID      uuid.UUID
 	State        controlmodel.OrchestrationRunState
+	Mode         controlmodel.OrchestrationRunMode
 	ActiveOnly   bool
 	OldestFirst  bool
 	Limit        int
