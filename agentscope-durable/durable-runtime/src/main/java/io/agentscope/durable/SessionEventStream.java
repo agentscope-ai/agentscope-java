@@ -17,10 +17,14 @@ package io.agentscope.durable;
 
 import io.agentscope.durable.DurableTypes.EventFilter;
 import io.agentscope.durable.DurableTypes.EventPage;
+import io.agentscope.durable.DurableTypes.LiveEvent;
 import io.agentscope.durable.DurableTypes.PublicEvent;
 import io.agentscope.durable.DurableTypes.Snapshot;
 import java.time.Duration;
 import java.util.Objects;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
 
@@ -35,6 +39,9 @@ public final class SessionEventStream implements AutoCloseable {
     /** Event delivery callbacks. Only event handling is required for the common case. */
     @FunctionalInterface
     public interface Sink extends Consumer<PublicEvent> {
+        /** A best-effort live event with no durable cursor or replay guarantee. */
+        default void live(LiveEvent event) {}
+
         /** The committed Session cursor advanced, including past filtered-out events. */
         default void cursor(String cursor) {}
 
@@ -51,14 +58,82 @@ public final class SessionEventStream implements AutoCloseable {
     private final DurableSession session;
     private final EventFilter filter;
     private final EventPage firstPage;
+    private final ConcurrentLinkedQueue<LiveEvent> live = new ConcurrentLinkedQueue<>();
+    private final Set<String> completedMessages = ConcurrentHashMap.newKeySet();
+    private final Set<String> completedToolCalls = ConcurrentHashMap.newKeySet();
+    private final AutoCloseable liveSubscription;
     private final AtomicBoolean started = new AtomicBoolean();
     private final AtomicBoolean closed = new AtomicBoolean();
     private volatile SessionEventClient reader;
 
     SessionEventStream(DurableSession session, EventFilter filter, String cursor) {
+        this(session, filter, EventStreamOptions.legacy(cursor));
+    }
+
+    SessionEventStream(DurableSession session, EventFilter filter, EventStreamOptions options) {
         this.session = Objects.requireNonNull(session);
         this.filter = Objects.requireNonNull(filter);
-        this.firstPage = session.events(filter, cursor, PAGE_SIZE);
+        Objects.requireNonNull(options);
+        AutoCloseable subscription = () -> {};
+        if (!options.deltas().isEmpty()) {
+            try {
+                subscription =
+                        session.liveEvents()
+                                .subscribe(
+                                        event -> {
+                                            if (!closed.get()
+                                                    && filter.matches(event)
+                                                    && options.accepts(event)) live.add(event);
+                                        });
+            } catch (RuntimeException error) {
+                logLiveFailure(error);
+            }
+        }
+        try {
+            this.firstPage = session.listEvents(filter, options.cursor(), PAGE_SIZE);
+            this.liveSubscription = subscription;
+        } catch (RuntimeException error) {
+            close(subscription);
+            throw error;
+        }
+    }
+
+    /**
+     * Consume committed events, opted-in previews and snapshot resets as one typed stream. This is
+     * the preferred application-facing API; protocol adapters may continue to use {@link Sink}.
+     */
+    public void forEach(Consumer<SessionStreamEvent> events) {
+        forEach(events, null, DEFAULT_POLL_INTERVAL);
+    }
+
+    /** Consume the typed stream until the duration expires or the stream is closed. */
+    public void forEach(Consumer<SessionStreamEvent> events, Duration duration) {
+        forEach(events, duration, DEFAULT_POLL_INTERVAL);
+    }
+
+    /** Consume the typed stream with explicit bounds for hosts that manage connection lifetimes. */
+    public void forEach(
+            Consumer<SessionStreamEvent> events, Duration duration, Duration pollInterval) {
+        Objects.requireNonNull(events);
+        transferTo(
+                new Sink() {
+                    @Override
+                    public void accept(PublicEvent event) {
+                        events.accept(new SessionStreamEvent.Committed(event));
+                    }
+
+                    @Override
+                    public void live(LiveEvent event) {
+                        events.accept(SessionStreamEvent.from(event));
+                    }
+
+                    @Override
+                    public void reset(Snapshot snapshot) {
+                        events.accept(new SessionStreamEvent.SnapshotReset(snapshot));
+                    }
+                },
+                duration,
+                pollInterval);
     }
 
     /** Transfer events until the stream is closed. */
@@ -87,8 +162,10 @@ public final class SessionEventStream implements AutoCloseable {
         try {
             for (var event : firstPage.events()) {
                 if (closed.get()) return;
-                sink.accept(event);
+                durable(sink, event);
             }
+            boolean replayCaughtUp = Objects.equals(firstPage.cursor(), firstPage.highWatermark());
+            if (replayCaughtUp) drainLive(sink);
             if (filter.threadId() != null) sink.cursor(firstPage.cursor());
             if (closed.get() || expired(until)) return;
             var reset = new AtomicBoolean();
@@ -101,11 +178,13 @@ public final class SessionEventStream implements AutoCloseable {
                                 reset.set(true);
                                 sink.reset(snapshot);
                             },
-                            sink);
+                            event -> durable(sink, event));
             reader = current;
             if (closed.get()) return;
             while (!closed.get()) {
                 int delivered = current.poll();
+                replayCaughtUp = replayCaughtUp || current.replayCaughtUp();
+                if (replayCaughtUp) delivered += drainLive(sink);
                 if (reset.get()) return;
                 if (filter.threadId() != null) sink.cursor(current.cursor());
                 if (expired(until)) return;
@@ -121,8 +200,30 @@ public final class SessionEventStream implements AutoCloseable {
         } finally {
             reader = null;
             if (current != null) current.close();
+            close(liveSubscription);
             closed.set(true);
         }
+    }
+
+    private void durable(Sink sink, PublicEvent event) {
+        if ("message.completed".equals(event.type()))
+            completedMessages.add(event.data().path("messageId").asText());
+        if ("tool.call.updated".equals(event.type()))
+            completedToolCalls.add(event.data().path("callId").asText());
+        sink.accept(event);
+    }
+
+    private int drainLive(Sink sink) {
+        int delivered = 0;
+        for (LiveEvent event; (event = live.poll()) != null; ) {
+            String messageId = event.data().path("messageId").asText(null);
+            if (messageId != null && completedMessages.contains(messageId)) continue;
+            String toolCallId = event.data().path("toolCallId").asText(null);
+            if (toolCallId != null && completedToolCalls.contains(toolCallId)) continue;
+            sink.live(event);
+            delivered++;
+        }
+        return delivered;
     }
 
     private static boolean expired(long until) {
@@ -143,5 +244,26 @@ public final class SessionEventStream implements AutoCloseable {
         if (!closed.compareAndSet(false, true)) return;
         var current = reader;
         if (current != null) current.close();
+        close(liveSubscription);
+    }
+
+    private static void close(AutoCloseable resource) {
+        try {
+            resource.close();
+        } catch (Exception error) {
+            System.getLogger(SessionEventStream.class.getName())
+                    .log(
+                            System.Logger.Level.WARNING,
+                            "Live event subscription failed to close",
+                            error);
+        }
+    }
+
+    private static void logLiveFailure(RuntimeException error) {
+        System.getLogger(SessionEventStream.class.getName())
+                .log(
+                        System.Logger.Level.WARNING,
+                        "Live event subscription unavailable; durable streaming continues",
+                        error);
     }
 }

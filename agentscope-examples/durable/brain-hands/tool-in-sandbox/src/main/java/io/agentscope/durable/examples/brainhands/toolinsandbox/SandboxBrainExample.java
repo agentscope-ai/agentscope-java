@@ -32,8 +32,10 @@ import io.agentscope.durable.DurableRuntime;
 import io.agentscope.durable.DurableTypes.SessionKey;
 import io.agentscope.durable.DurableTypes.ThreadKey;
 import io.agentscope.durable.DurableTypes.TurnStatus;
+import io.agentscope.durable.EventStreamOptions;
 import io.agentscope.durable.Executor;
 import io.agentscope.durable.SessionBackend;
+import io.agentscope.durable.SessionStreamEvent;
 import io.agentscope.durable.agentscope.AgentScopeAdapter;
 import io.agentscope.extensions.durable.jdbc.LocalBackend;
 import io.agentscope.extensions.durable.rocketmq.RocketMqRemoteExecutor;
@@ -80,18 +82,21 @@ public final class SandboxBrainExample implements ApplicationRunner {
             var turn = session.submit(properties.getRequestId(), "Run the sandbox command");
             var completed = new CountDownLatch(1);
             try (var subscription =
-                    turn.observe(
-                            null,
-                            snapshot -> {
-                                if (snapshot.turns().stream()
-                                        .anyMatch(
-                                                value ->
-                                                        turn.turnId().equals(value.turnId())
-                                                                && value.status().terminal()))
-                                    completed.countDown();
-                            },
+                    turn.subscribeEvents(
+                            EventStreamOptions.defaults(),
                             event -> {
-                                if (terminalEvent(event.type())) completed.countDown();
+                                if (event instanceof SessionStreamEvent.SnapshotReset reset
+                                        && reset.snapshot().turns().stream()
+                                                .anyMatch(
+                                                        value ->
+                                                                turn.turnId().equals(value.turnId())
+                                                                        && value.status()
+                                                                                .terminal())) {
+                                    completed.countDown();
+                                } else if (event instanceof SessionStreamEvent.Committed committed
+                                        && terminalEvent(committed.event().type())) {
+                                    completed.countDown();
+                                }
                             })) {
                 runtime.start();
                 if (!completed.await(properties.getTimeout().toMillis(), TimeUnit.MILLISECONDS))

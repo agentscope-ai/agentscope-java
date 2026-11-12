@@ -34,6 +34,7 @@ import io.agentscope.durable.DurableTypes.EventInput;
 import io.agentscope.durable.DurableTypes.ExecutionRequest;
 import io.agentscope.durable.DurableTypes.ExecutionResult;
 import io.agentscope.durable.DurableTypes.ExecutionState;
+import io.agentscope.durable.DurableTypes.LiveEvent;
 import io.agentscope.durable.DurableTypes.SessionKey;
 import io.agentscope.durable.DurableTypes.SessionSpec;
 import io.agentscope.durable.DurableTypes.ThreadBinding;
@@ -523,6 +524,29 @@ class DurableHttpTest {
                     2,
                     output.toString(StandardCharsets.UTF_8).split("event: durable", -1).length - 1);
         }
+    }
+
+    @Test
+    void liveSseFrameNeverAdvancesTheDurableCursor() {
+        var output = new ByteArrayOutputStream();
+        var writer = new SseEventWriter(output);
+        writer.live(
+                new LiveEvent(
+                        "1",
+                        "live-1",
+                        key,
+                        "main",
+                        "turn",
+                        "run",
+                        "step",
+                        1,
+                        "message.delta",
+                        DurableJson.value(Map.of("messageId", "message", "text", "hello"))));
+
+        String frame = output.toString(StandardCharsets.UTF_8);
+        assertTrue(frame.contains("event: live"));
+        assertTrue(frame.contains("message.delta"));
+        assertFalse(frame.contains("id: "));
     }
 
     @Test

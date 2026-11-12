@@ -24,6 +24,7 @@ import io.agentscope.durable.DurableTypes.Failure;
 import io.agentscope.durable.DurableTypes.Frame;
 import io.agentscope.durable.DurableTypes.HarnessSelector;
 import io.agentscope.durable.DurableTypes.Lease;
+import io.agentscope.durable.DurableTypes.LiveEvent;
 import io.agentscope.durable.DurableTypes.PublicEvent;
 import io.agentscope.durable.DurableTypes.RecoveryPolicy;
 import io.agentscope.durable.DurableTypes.SessionKey;
@@ -100,6 +101,7 @@ public final class DurableRuntime implements AutoCloseable {
     private final BiConsumer<SessionKey, Throwable> errors;
     private final RecoveryPolicy recoveryPolicy;
     private final Predicate<Throwable> retryableFailure;
+    private final LiveEvents liveEvents;
     private final String owner = UUID.randomUUID().toString();
     private final ConcurrentHashMap<ThreadKey, Active> active = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<ThreadKey, Throwable> failures = new ConcurrentHashMap<>();
@@ -149,6 +151,7 @@ public final class DurableRuntime implements AutoCloseable {
         errors = b.errors;
         recoveryPolicy = b.recoveryPolicy;
         retryableFailure = b.retryableFailure;
+        liveEvents = b.liveEvents;
         if (pollInterval.toMillis() < 1
                 || leaseDuration.toMillis() < 100
                 || parallelism < 1
@@ -349,6 +352,10 @@ public final class DurableRuntime implements AutoCloseable {
         return backend == null ? Wakeups.none() : backend.wakeups();
     }
 
+    LiveEvents liveEvents() {
+        return liveEvents;
+    }
+
     CompletionStage<TurnView> await(DurableThread session, String turnId, Duration timeout) {
         ensureOpen();
         if (timeout.isNegative() || timeout.isZero())
@@ -401,6 +408,17 @@ public final class DurableRuntime implements AutoCloseable {
             boolean initialSnapshot,
             Consumer<Snapshot> snapshots,
             Consumer<PublicEvent> events) {
+        return observe(session, filter, cursor, initialSnapshot, snapshots, events, null);
+    }
+
+    SessionEventSubscription observe(
+            DurableSession session,
+            EventFilter filter,
+            String cursor,
+            boolean initialSnapshot,
+            Consumer<Snapshot> snapshots,
+            Consumer<PublicEvent> events,
+            Consumer<LiveEvent> liveEvents) {
         synchronized (subscriptions) {
             ensureOpen();
             var subscription =
@@ -411,6 +429,7 @@ public final class DurableRuntime implements AutoCloseable {
                             initialSnapshot,
                             snapshots,
                             events,
+                            liveEvents,
                             error -> reportError(session.key(), error),
                             observers,
                             pollInterval,
@@ -615,7 +634,8 @@ public final class DurableRuntime implements AutoCloseable {
                 if (frame.tools().stream().allMatch(t -> t.result().state().terminal()))
                     adapter(frame.definition())
                             .settle(
-                                    new HarnessContext(backend, lease, activeCall.stopped),
+                                    new HarnessContext(
+                                            backend, lease, activeCall.stopped, liveEvents),
                                     TurnStatus.CANCELLED,
                                     null);
                 return;
@@ -631,7 +651,7 @@ public final class DurableRuntime implements AutoCloseable {
                     && (wait.deadline() == 0 || wait.deadline() > frame.now())
                     && frame.signals().stream()
                             .noneMatch(signal -> signal.key().equals(wait.key()))) return;
-            var context = new HarnessContext(backend, lease, activeCall.stopped);
+            var context = new HarnessContext(backend, lease, activeCall.stopped, liveEvents);
             activeCall.invoking = true;
             adapter(frame.definition()).execute(context);
             activeCall.invoking = false;
@@ -699,7 +719,7 @@ public final class DurableRuntime implements AutoCloseable {
                 || frame.tools().stream().anyMatch(t -> !t.result().state().terminal())) return;
         adapter(frame.definition())
                 .settle(
-                        new HarnessContext(backend, lease, activeCall.stopped),
+                        new HarnessContext(backend, lease, activeCall.stopped, liveEvents),
                         TurnStatus.FAILED,
                         frame.turn().recovery().message());
     }
@@ -863,6 +883,7 @@ public final class DurableRuntime implements AutoCloseable {
         private Duration leaseDuration = Duration.ofSeconds(30);
         private RecoveryPolicy recoveryPolicy = RecoveryPolicy.defaults();
         private Predicate<Throwable> retryableFailure = DurableRuntime::transientFailure;
+        private LiveEvents liveEvents = LiveEvents.local();
         private int parallelism = 4;
         private int observerParallelism = 2;
         private BiConsumer<SessionKey, Throwable> errors =
@@ -914,6 +935,15 @@ public final class DurableRuntime implements AutoCloseable {
         /** Pure host classification, for example provider-specific transient model failures. */
         public Builder retryableFailure(Predicate<Throwable> value) {
             retryableFailure = Objects.requireNonNull(value);
+            return this;
+        }
+
+        /**
+         * Configure best-effort live presentation delivery. The process-local default requires no
+         * setup; split API/Brain deployments can provide a shared transport implementation.
+         */
+        public Builder liveEvents(LiveEvents value) {
+            liveEvents = Objects.requireNonNull(value);
             return this;
         }
 

@@ -27,9 +27,10 @@ Durable 为已有 Agent 增加持久任务受理与恢复。Agent 保留自己�
 
 ## Java 模块与部署边界
 
-库 JAR 位于 `durable-runtime`、`durable-worker` 和
-`durable-adapters/durable-adapter-harness-agentscope`；`agentscope-examples/durable` 是独立示例聚合模块。
-库由宿主打包，引入依赖不会自动启动服务。AgentScope adapter 依赖 runtime、Core 和 Harness；
+库 JAR 位于 `durable-runtime`、`durable-worker` 和 `durable-adapters`。adapter 聚合模块包含
+AgentScope Harness adapter、Claude Managed Agents 事件 adapter 与 AG-UI 事件 adapter；
+`agentscope-examples/durable` 是独立示例聚合模块。库由宿主打包，引入依赖不会自动启动服务。
+AgentScope adapter 依赖 runtime、Core 和 Harness；
 worker 仅依赖 runtime（以上不含测试依赖）。不再有独立的 codec 制品。
 
 - Brain 使用 `AgentScopeAdapter` 驱动原生 Agent，`DurableRuntime` 管理 Turn 调度与恢复。
@@ -166,10 +167,10 @@ conversation.getThread("research").submit("research-2", "比较这些案例的�
 | 对象 | 常用操作 |
 | --- | --- |
 | Runtime | `createSession(key, definition)`、`getSession(key)`、`listSessions(namespace, cursor, limit)`、`capabilities()` |
-| Session | `submit/call/stream` 与 `getTurn/listTurns/history` 默认操作主 Thread；`snapshot()` 聚合会话，`mainThread()`、`createThread(id, definition)`、`getThread(id)`、`listThreads(cursor, limit)` 用于显式 Thread |
+| Session | `submit/call` 与 `getTurn/listTurns/history` 默认操作主 Thread；`snapshot()` 聚合会话，`mainThread()`、`createThread(id, definition)`、`getThread(id)`、`listThreads(cursor, limit)` 用于显式 Thread |
 | Thread | `submit(requestId, Input)`、`getTurn(turnId)`、`listTurns(cursor, limit)`、`history(cursor, limit)`、`view()`、`close()` |
 | Turn | `status()`、`result()`、`await(timeout)`、`steer`、`inject`、`withdraw`、`cancel`、`pendingInteractions`、`respond`、`pause`、`resume` |
-| Session / Thread / Turn | `events(cursor, limit)`、`observe`；过滤不创建新事件序号 |
+| Session / Thread / Turn | `listEvents(cursor, limit)`、`streamEvents(options)`、`subscribeEvents(options, listener)`；过滤不创建新事件序号 |
 | Thread | `checkpoints(after, limit)`、`restore(position, expectedPosition, requestId)`、`fork(position, targetThreadKey, requestId)` |
 
 一个 DurableTurn 对应一次持久逻辑任务。原生 AgentRun 是一次进程内调用，与 Durable 的
@@ -220,17 +221,21 @@ var history = handle.history(null, 100);
 
 同一 Turn 可以产生多条 assistant 消息，不同推理轮次分别保留。消息的逻辑 ID 不随
 Run/Step 更换而改变；重新调用模型时增加 attempt，重放已提交模型结果时用 revision
-替换未完成文本，避免重连后重复拼接。公共增量来自 middleware 处理后的原生展示事实，
-与原生日志同事务提交，不公开模型私有推理。history 按首次公共 sequence 排序；
-直接读取 snapshot 的 messages 映射时也应使用 sequence，不能依赖对象字段顺序。
+替换未完成文本，避免重连后重复拼接。`message.completed` 是权威持久事实；
+`message.delta` 与 `tool.arguments.delta` 是由 middleware 处理后展示事实产生的尽力而为
+`LiveEvent` 预览，没有 sequence/cursor，也不进入 history、snapshot 或重放。模型私有推理
+仍不公开。history 按首次公共 sequence 排序；直接读取 snapshot 的 messages 映射时也应
+使用 sequence，不能依赖对象字段顺序。已有存储中的 `message.delta` 和
+`tool.call.arguments` 仍可读取，但 AgentScope 的新写入不再创建它们。
 
 工具调用统一保存在 snapshot 的 tools 投影中，按 Thread、Turn 和 callId 关联参数分片、
 进度与结果。参数分片可以省略尚未知晓的工具名称；最终完整参数到达后停止拼接。
 本地工具与远程 Hands 共用调用视图，只有真实外部执行携带 executionId。工具执行完成、
 结果接收和结果应用分别记录；恢复后仍展示真实工具输出，UNKNOWN 保留到结果被明确核实。
 
-`session.call(requestId, input, timeout)` 是 submit + await，返回 CompletionStage；
-`session.stream(requestId, input, onSnapshot, onEvent)` 是 submit + Turn 事件订阅。
+`session.call(requestId, input, timeout)` 是 submit + await，返回 CompletionStage。消费事件时应先
+订阅或打开事件流，再调用 `submit`，这样快速完成的 Agent 也不会漏掉实时预览。旧的
+submit-and-observe `stream(...)` 快捷方法因为名称含混且只能在受理后连接，现已 deprecated。
 同一 requestId 可安全重试；重复观察原 Turn 不重复提交。超时错误包含 Thread/Turn 身份。
 关闭订阅、取消 Future 或关闭 Runtime 都不会取消持久任务，只有显式 cancel 才会发起取消。
 这些短操作可能访问数据库/网络，Web 宿主须在非事件循环线程调用。
@@ -316,6 +321,47 @@ var receipt = runtime.getSession(session).submit("picture-1", input);
 最终 Turn 输出使用公共 Message 格式，完成事件和快照保留结构化内容，排除原生推理。
 一个 Turn 可以包含多条助手消息；同一消息的恢复版本替换临时文本，不会创建重复消息。
 自定义事件使用 `x.<namespace>.<name>`；保留的生命周期、工具、消息和制品事件有载荷约束。
+
+## 展示事件与协议 adapter
+
+Durable 内部区分两类事件存储语义，对 SDK 用户提供一条强类型事件流：
+
+| 交付类型 | 契约 | 常见用途 |
+| --- | --- | --- |
+| `PublicEvent` | 持久化、有序号、有游标、可重放 | 任务状态、完成消息、工具状态、审计与恢复 |
+| 内部 `LiveEvent` | 尽力而为、只在连接期间交付、无游标和重放 | 文本与工具参数预览 |
+
+应用统一消费 sealed `SessionStreamEvent`：`Committed` 包装持久 `PublicEvent`，
+`PreviewStarted` 表示预览开始，`EventDelta` 携带显式订阅的增量，`SnapshotReset` 用于游标
+失效后的状态替换。只有 `Committed` 包含 Durable cursor。每条连接通过
+`EventStreamOptions.deltas(...)` 显式启用消息或工具参数预览，默认只交付持久事实。
+
+```java
+import io.agentscope.durable.EventStreamOptions;
+import io.agentscope.durable.EventStreamOptions.EventDeltaType;
+
+var options = EventStreamOptions.builder()
+        .after(savedCursor)
+        .deltas(EventDeltaType.MESSAGE)
+        .build();
+
+try (var stream = session.streamEvents(options)) {
+    stream.forEach(event -> render(event));
+}
+```
+
+`listEvents(cursor, limit)` 永远只返回持久 `PublicEvent`。Durable 应用不需要消费
+Core/Harness 的 `AgentEvent`、`JournalEvent` 或内部实时传输类型。
+
+`agentscope-durable-adapter-claude` 将完成消息和显式订阅的实时消息增量映射为 Claude
+Managed Agents 事件格式。为当前连接启用 `EventDeltaType.MESSAGE` 后，可将
+`ClaudeEventStreamSink` 传给 `SessionEventStream.forEach`。`agentscope-durable-adapter-agui` 通过
+`DurableAguiEventStreamSink` 将同一规范化事件流映射到现有 AG-UI 1.0 `AguiEvent` 类型。
+这两个制品是事件 adapter，不是完整托管 HTTP API；认证、资源路由与传输封装仍由应用负责。
+
+默认 `LiveEvents.local()` 只连接同一个 Runtime 装配内的生产者与观察者。Brain/API 分离部署
+而且需要实时预览时，两侧必须配置同一个共享 `LiveEvents` 传输。即使该传输缺失或丢事件，
+Durable 执行、历史和最终结果仍保持正确。
 
 ## Hands Worker 与 RocketMQ 执行
 
@@ -533,20 +579,30 @@ AgentScope 在同一提交中保存原生清理状态、确认结果应用和 Tu
 
 ## 独立观察任务
 
-普通应用直接使用 Runtime 管理的事件订阅：
+普通应用直接使用 Runtime 管理的强类型事件订阅：
 
 ```java
+import io.agentscope.durable.EventStreamOptions;
 import io.agentscope.durable.EventProjection;
+import io.agentscope.durable.SessionStreamEvent;
 
 var projection = new EventProjection(session);
-var subscription = runtime.getSession(session).observe(projection::reset, projection::accept);
+var subscription = runtime.getSession(session).subscribeEvents(
+        EventStreamOptions.defaults(),
+        event -> {
+            if (event instanceof SessionStreamEvent.SnapshotReset reset) {
+                projection.reset(reset.snapshot());
+            } else if (event instanceof SessionStreamEvent.Committed committed) {
+                projection.accept(committed.event());
+            }
+        });
 // 无需编写轮询循环或配置观察线程。
 // 连接存在期间保留订阅，观察者断开时调用 subscription.close()。
 ```
 
-默认先交付一致性快照，再从对应游标继续事件。恢复消费进度时使用
-`runtime.getSession(session).observe(savedCursor, onSnapshot, onEvent)`；
-该重载传入 null 表示从保留日志开头重放。游标过期时重新交付快照。
+默认先重放保留的持久历史，再持续接收新事件。恢复消费进度时传入
+`EventStreamOptions.builder().after(savedCursor).build()`；游标过期时交付
+`SnapshotReset`。只有当前连接需要渲染预览时才在同一个 options 中启用 delta。
 
 创建和关闭 Session/Thread 会产生持久的 `session.created/closed`、`thread.created/closed`
 事件。创建 Session 同时创建主 Thread；重复相同操作不重复追加生命周期事件。
@@ -561,12 +617,12 @@ import io.agentscope.durable.DurableTypes.EventFilter;
 var filter = new EventFilter("main", turnId, runId);
 var scopedProjection = new EventProjection(session, filter);
 var scoped = runtime.getSession(session)
-        .observe(scopedProjection::reset, scopedProjection::accept, filter);
-// 从已有游标继续：sessionHandle.observe(filter, savedCursor, onSnapshot, onEvent)
+        .subscribeEvents(filter, EventStreamOptions.defaults(), event -> apply(event));
+// 从已有游标继续：EventStreamOptions.builder().after(savedCursor).build()
 ```
 
 turnId 必须有 threadId，runId 必须有 turnId；错误归属会被拒绝。
-`sessionHandle.events(filter, cursor, limit)` 和 `snapshot(filter)` 使用相同范围；
+`sessionHandle.listEvents(filter, cursor, limit)` 和 `snapshot(filter)` 使用相同范围；
 Thread/Turn 句柄的快捷方法也遵守这些规则，Turn 快照不包含其他任务。
 Thread 过滤只保留该 Thread 的资源视图；Turn/Run 过滤不包含资源生命周期事件或资源投影。
 过滤快照中的 `projection.session` 为 null，需要父资源当前状态时显式调用 `view()`。
@@ -590,6 +646,10 @@ highWatermark 判断本次是否追平。过滤流的 sequence 可以不连续�
 交付语义为至少一次，外部副作用需要幂等。
 需要自行管理轮询或执行器的高级宿主仍可使用 `SessionEventClient`。
 
+`turn.subscribeEvents(options, listener)` 会在同一串行观察线程交付持久事件和显式订阅的 delta。
+只有 `Committed` 会推进 `subscription.cursor()`；delta 断线后不重试，也不能用于更新持久
+投影。客户端即使遗漏部分或全部预览，最终 `message.completed` 仍是权威结果。
+
 通过 `runtime.getSession(session)` 重新取得会话句柄，再使用
 `mainThread().getTurn(turnId)` 获取主 Thread 的任务；查询、历史和事件均不认领或执行任务。
 快照包含 Turn 视图和公共投影，私有原生恢复点保留在后端内部。
@@ -600,7 +660,8 @@ HTTP 扩展提供 Backend/Executor 客户端与可挂载 handler。
 写入/flush 失败不确认该事件。初始游标过期返回 HTTP 410，
 流中途过期发送 `resync`，客户端重新获取同一过滤范围的快照后连接。
 SSE 查询支持 threadId/turnId/runId，Last-Event-ID 优先于 cursor 参数。过滤后的
-扫描位置通过 `cursor` 控制帧续传；只有 `durable` 帧是公共事件，才交给 EventProjection。
+扫描位置通过 `cursor` 控制帧续传。`durable` 帧是可重放公共事件，可交给 EventProjection；
+`live` 帧只携带预览且刻意不设置 SSE `id`，因此 Last-Event-ID 不会确认或请求它。
 认证、操作/Session 授权和阻塞 I/O 线程由宿主提供。
 租约、原生恢复点、结果接收和全局发现属于特权操作。
 

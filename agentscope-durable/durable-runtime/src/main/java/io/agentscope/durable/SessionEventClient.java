@@ -38,6 +38,9 @@ public final class SessionEventClient implements AutoCloseable {
     private final Consumer<Snapshot> snapshots;
     private final Consumer<PublicEvent> events;
     private volatile String cursor;
+    private volatile String replayHighWatermark;
+    private boolean replayBoundaryCaptured;
+    private volatile boolean replayCaughtUp;
     private final ArrayBlockingQueue<Boolean> changes = new ArrayBlockingQueue<>(1);
     private final AtomicBoolean closed = new AtomicBoolean();
     private final AutoCloseable subscription;
@@ -97,7 +100,7 @@ public final class SessionEventClient implements AutoCloseable {
                 session.wakeups(),
                 session.key(),
                 () -> session.snapshot(filter),
-                (after, limit) -> session.events(filter, after, limit),
+                (after, limit) -> session.listEvents(filter, after, limit),
                 cursor,
                 snapshots,
                 events,
@@ -153,12 +156,18 @@ public final class SessionEventClient implements AutoCloseable {
             resynchronize();
             return 0;
         }
+        if (!replayBoundaryCaptured) {
+            replayHighWatermark = page.highWatermark();
+            replayBoundaryCaptured = true;
+        }
         for (var event : page.events()) {
             if (closed.get()) return 0;
             events.accept(event);
             cursor = event.cursor();
+            if (Objects.equals(cursor, replayHighWatermark)) replayCaughtUp = true;
         }
         cursor = page.cursor();
+        if (Objects.equals(cursor, replayHighWatermark)) replayCaughtUp = true;
         return page.events().size();
     }
 
@@ -168,6 +177,13 @@ public final class SessionEventClient implements AutoCloseable {
         if (closed.get()) return;
         snapshots.accept(snapshot);
         cursor = snapshot.cursor();
+        replayHighWatermark = snapshot.cursor();
+        replayBoundaryCaptured = true;
+        replayCaughtUp = true;
+    }
+
+    boolean replayCaughtUp() {
+        return replayCaughtUp;
     }
 
     /**

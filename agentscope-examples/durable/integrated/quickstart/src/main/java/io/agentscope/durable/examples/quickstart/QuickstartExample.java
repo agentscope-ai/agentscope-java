@@ -28,6 +28,8 @@ import io.agentscope.durable.DurableTypes.SessionKey;
 import io.agentscope.durable.DurableTypes.ThreadKey;
 import io.agentscope.durable.DurableTypes.TurnStatus;
 import io.agentscope.durable.EventProjection;
+import io.agentscope.durable.EventStreamOptions;
+import io.agentscope.durable.SessionStreamEvent;
 import io.agentscope.durable.agentscope.AgentScopeAdapter;
 import io.agentscope.extensions.durable.jdbc.LocalBackend;
 import java.nio.file.Files;
@@ -95,16 +97,21 @@ public final class QuickstartExample implements ApplicationRunner {
             var projection = new EventProjection(key);
             var completed = new CountDownLatch(1);
             try (var observer =
-                    session.observe(
-                            snapshot -> {
-                                projection.reset(snapshot);
-                                if (snapshot.turns().stream()
-                                        .anyMatch(turn -> turn.status() == TurnStatus.SUCCEEDED))
-                                    completed.countDown();
-                            },
+                    session.subscribeEvents(
+                            EventStreamOptions.defaults(),
                             event -> {
-                                projection.accept(event);
-                                if ("turn.succeeded".equals(event.type())) completed.countDown();
+                                if (event instanceof SessionStreamEvent.SnapshotReset reset) {
+                                    projection.reset(reset.snapshot());
+                                    if (reset.snapshot().turns().stream()
+                                            .anyMatch(
+                                                    turn -> turn.status() == TurnStatus.SUCCEEDED))
+                                        completed.countDown();
+                                } else if (event
+                                        instanceof SessionStreamEvent.Committed committed) {
+                                    projection.accept(committed.event());
+                                    if ("turn.succeeded".equals(committed.event().type()))
+                                        completed.countDown();
+                                }
                             })) {
                 var turn = session.submit(properties.getRequestId(), "hello");
                 runtime.start();

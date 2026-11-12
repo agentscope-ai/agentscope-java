@@ -28,9 +28,11 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import io.agentscope.durable.DurableTypes.EventPage;
+import io.agentscope.durable.DurableTypes.PublicEvent;
 import io.agentscope.durable.DurableTypes.SessionKey;
 import java.time.Duration;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -108,5 +110,36 @@ class SessionEventClientTest {
         } finally {
             worker.shutdownNow();
         }
+    }
+
+    @Test
+    void replayBoundaryIsReachedEvenWhenTheNextPageAlsoContainsNewerEvents() {
+        var backend = mock(SessionBackend.class);
+        when(backend.wakeups()).thenReturn(Wakeups.none());
+        when(backend.events(eq(session), any(), eq(100)))
+                .thenReturn(
+                        new EventPage(List.of(event("1")), "1", "2"),
+                        new EventPage(List.of(event("2"), event("3")), "3", "3"));
+        try (var reader = new SessionEventClient(backend, session, null, s -> {}, e -> {})) {
+            assertEquals(1, reader.poll());
+            assertFalse(reader.replayCaughtUp());
+            assertEquals(2, reader.poll());
+            assertTrue(reader.replayCaughtUp());
+        }
+    }
+
+    private PublicEvent event(String cursor) {
+        return new PublicEvent(
+                "1",
+                "event-" + cursor,
+                session,
+                "main",
+                "turn",
+                null,
+                null,
+                cursor,
+                cursor,
+                "x.test.event",
+                DurableJson.value(Map.of()));
     }
 }

@@ -625,6 +625,56 @@ public final class DurableTypes {
             String type,
             JsonNode data) {}
 
+    /**
+     * Best-effort live presentation signal. Live events have no durable sequence or cursor and are
+     * never returned by event history or included in snapshots.
+     */
+    public record LiveEvent(
+            String schemaVersion,
+            String eventId,
+            SessionKey session,
+            String threadId,
+            String turnId,
+            String runId,
+            String stepId,
+            long occurredAt,
+            String type,
+            JsonNode data) {
+        public LiveEvent {
+            DurableJson.text(schemaVersion, "schemaVersion");
+            DurableJson.text(eventId, "eventId");
+            Objects.requireNonNull(session);
+            DurableJson.text(threadId, "threadId");
+            DurableJson.text(turnId, "turnId");
+            if (runId != null) DurableJson.text(runId, "runId");
+            if (stepId != null) DurableJson.text(stepId, "stepId");
+            if (occurredAt < 0) throw new IllegalArgumentException("Negative event timestamp");
+            DurableJson.text(type, "event type");
+            data = DurableJson.copy(data);
+        }
+    }
+
+    /** Invocation-local input used to publish a live event after its native commit succeeds. */
+    public record LiveEventInput(
+            String eventId,
+            long occurredAt,
+            String type,
+            JsonNode data,
+            String runId,
+            String stepId) {
+        public LiveEventInput {
+            DurableJson.text(eventId, "eventId");
+            if (occurredAt < 0) throw new IllegalArgumentException("Negative event timestamp");
+            DurableJson.text(type, "event type");
+            data = DurableJson.copy(data);
+            if (runId != null) DurableJson.text(runId, "runId");
+            if (stepId != null) {
+                DurableJson.text(stepId, "stepId");
+                if (runId == null) throw new IllegalArgumentException("Step requires a Run");
+            }
+        }
+    }
+
     public record EventPage(List<PublicEvent> events, String cursor, String highWatermark) {}
 
     /** A selection within one Session's committed stream, retaining its original cursor. */
@@ -643,6 +693,10 @@ public final class DurableTypes {
         }
 
         public boolean matches(PublicEvent event) {
+            return matches(event.threadId(), event.turnId(), event.runId());
+        }
+
+        public boolean matches(LiveEvent event) {
             return matches(event.threadId(), event.turnId(), event.runId());
         }
 

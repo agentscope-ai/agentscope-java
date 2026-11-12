@@ -21,6 +21,8 @@ import io.agentscope.durable.DurableProtocol;
 import io.agentscope.durable.DurableRuntime;
 import io.agentscope.durable.DurableTypes.EventFilter;
 import io.agentscope.durable.DurableTypes.SessionKey;
+import io.agentscope.durable.EventStreamOptions;
+import io.agentscope.durable.EventStreamOptions.EventDeltaType;
 import io.agentscope.durable.SessionEventStream;
 import io.agentscope.extensions.durable.http.DurableHttp;
 import java.io.UncheckedIOException;
@@ -92,7 +94,13 @@ final class HttpServerController {
                 new EventFilter(query.get("threadId"), query.get("turnId"), query.get("runId"));
         String cursor =
                 lastEventId == null || lastEventId.isBlank() ? query.get("cursor") : lastEventId;
-        var stream = handle.openEventStream(filter, cursor);
+        var stream =
+                handle.streamEvents(
+                        filter,
+                        EventStreamOptions.builder()
+                                .after(cursor)
+                                .deltas(EventDeltaType.values())
+                                .build());
         var emitter = new SseEmitter(Duration.ofSeconds(30).toMillis());
         emitter.onCompletion(stream::close);
         emitter.onTimeout(

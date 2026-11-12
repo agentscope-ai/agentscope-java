@@ -20,6 +20,7 @@ import io.agentscope.durable.DurableMessages.Input;
 import io.agentscope.durable.DurableTypes.EventFilter;
 import io.agentscope.durable.DurableTypes.EventPage;
 import io.agentscope.durable.DurableTypes.HistoryPage;
+import io.agentscope.durable.DurableTypes.LiveEvent;
 import io.agentscope.durable.DurableTypes.PublicEvent;
 import io.agentscope.durable.DurableTypes.SessionKey;
 import io.agentscope.durable.DurableTypes.SessionView;
@@ -28,6 +29,7 @@ import io.agentscope.durable.DurableTypes.ThreadPage;
 import io.agentscope.durable.DurableTypes.TurnPage;
 import io.agentscope.durable.DurableTypes.TurnView;
 import java.time.Duration;
+import java.util.Objects;
 import java.util.concurrent.CompletionStage;
 import java.util.function.Consumer;
 
@@ -47,6 +49,10 @@ public final class DurableSession {
 
     Wakeups wakeups() {
         return runtime.wakeups();
+    }
+
+    LiveEvents liveEvents() {
+        return runtime.liveEvents();
     }
 
     JsonNode call(String operation, Object... fields) {
@@ -92,46 +98,120 @@ public final class DurableSession {
         return DurableJson.convert(call("snapshot", "filter", filter), Snapshot.class);
     }
 
-    public EventPage events(String cursor, int limit) {
-        return events(EventFilter.all(), cursor, limit);
+    public EventPage listEvents(String cursor, int limit) {
+        return listEvents(EventFilter.all(), cursor, limit);
     }
 
     /** Limit bounds scanned Session events; an empty filtered page can still advance its cursor. */
-    public EventPage events(EventFilter filter, String cursor, int limit) {
+    public EventPage listEvents(EventFilter filter, String cursor, int limit) {
         return DurableJson.convert(
                 call("events", "filter", filter, "cursor", cursor, "limit", limit),
                 EventPage.class);
     }
 
+    /** @deprecated Use {@link #listEvents(String, int)}. */
+    @Deprecated(forRemoval = true)
+    public EventPage events(String cursor, int limit) {
+        return listEvents(cursor, limit);
+    }
+
+    /** @deprecated Use {@link #listEvents(EventFilter, String, int)}. */
+    @Deprecated(forRemoval = true)
+    public EventPage events(EventFilter filter, String cursor, int limit) {
+        return listEvents(filter, cursor, limit);
+    }
+
+    /** Open a typed event stream. Delta previews are disabled unless enabled in {@code options}. */
+    public SessionEventStream streamEvents(EventStreamOptions options) {
+        return streamEvents(EventFilter.all(), options);
+    }
+
+    /** Open a filtered typed event stream with per-connection delta options. */
+    public SessionEventStream streamEvents(EventFilter filter, EventStreamOptions options) {
+        return new SessionEventStream(this, filter, options);
+    }
+
+    /** @deprecated Use {@link #streamEvents(EventStreamOptions)}. */
+    @Deprecated(forRemoval = true)
     public SessionEventStream openEventStream(String cursor) {
         return openEventStream(EventFilter.all(), cursor);
     }
 
+    /** @deprecated Use {@link #streamEvents(EventFilter, EventStreamOptions)}. */
+    @Deprecated(forRemoval = true)
     public SessionEventStream openEventStream(EventFilter filter, String cursor) {
         return new SessionEventStream(this, filter, cursor);
     }
 
+    /**
+     * Subscribe to one typed event feed. A null cursor replays retained committed history; a saved
+     * cursor resumes after it. Deltas are opt-in per subscription.
+     */
+    public SessionEventSubscription subscribeEvents(
+            EventStreamOptions options, Consumer<SessionStreamEvent> events) {
+        return subscribeEvents(EventFilter.all(), options, events);
+    }
+
+    /** Subscribe to a filtered typed event feed. */
+    public SessionEventSubscription subscribeEvents(
+            EventFilter filter, EventStreamOptions options, Consumer<SessionStreamEvent> events) {
+        Objects.requireNonNull(options);
+        Objects.requireNonNull(events);
+        return runtime.observe(
+                this,
+                filter,
+                options.cursor(),
+                false,
+                snapshot -> events.accept(new SessionStreamEvent.SnapshotReset(snapshot)),
+                event -> events.accept(new SessionStreamEvent.Committed(event)),
+                options.deltas().isEmpty()
+                        ? null
+                        : event -> {
+                            if (options.accepts(event))
+                                events.accept(SessionStreamEvent.from(event));
+                        });
+    }
+
+    /** @deprecated Use {@link #subscribeEvents(EventStreamOptions, Consumer)}. */
+    @Deprecated(forRemoval = true)
     public SessionEventSubscription observe(
             Consumer<Snapshot> snapshots, Consumer<PublicEvent> events) {
         return observe(snapshots, events, EventFilter.all());
     }
 
+    /** @deprecated Use {@link #subscribeEvents(EventStreamOptions, Consumer)}. */
+    @Deprecated(forRemoval = true)
     public SessionEventSubscription observe(
             String cursor, Consumer<Snapshot> snapshots, Consumer<PublicEvent> events) {
         return observe(EventFilter.all(), cursor, snapshots, events);
     }
 
+    /** @deprecated Use {@link #subscribeEvents(EventFilter, EventStreamOptions, Consumer)}. */
+    @Deprecated(forRemoval = true)
     public SessionEventSubscription observe(
             Consumer<Snapshot> snapshots, Consumer<PublicEvent> events, EventFilter filter) {
         return runtime.observe(this, filter, null, true, snapshots, events);
     }
 
+    /** @deprecated Use {@link #subscribeEvents(EventFilter, EventStreamOptions, Consumer)}. */
+    @Deprecated(forRemoval = true)
     public SessionEventSubscription observe(
             EventFilter filter,
             String cursor,
             Consumer<Snapshot> snapshots,
             Consumer<PublicEvent> events) {
         return runtime.observe(this, filter, cursor, false, snapshots, events);
+    }
+
+    /** @deprecated Use {@link #subscribeEvents(EventFilter, EventStreamOptions, Consumer)}. */
+    @Deprecated(forRemoval = true)
+    public SessionEventSubscription observe(
+            EventFilter filter,
+            String cursor,
+            Consumer<Snapshot> snapshots,
+            Consumer<PublicEvent> events,
+            Consumer<LiveEvent> liveEvents) {
+        return runtime.observe(this, filter, cursor, false, snapshots, events, liveEvents);
     }
 
     /** Submit to the persisted primary Thread. */
@@ -162,11 +242,30 @@ public final class DurableSession {
         return mainThread().call(requestId, input, timeout);
     }
 
+    /**
+     * @deprecated Open {@link #subscribeEvents(EventStreamOptions, Consumer)} before calling
+     *     {@link #submit(String, Input)}.
+     */
+    @Deprecated(forRemoval = true)
     public SessionEventSubscription stream(
             String requestId,
             Input input,
             Consumer<Snapshot> snapshots,
             Consumer<PublicEvent> events) {
         return mainThread().stream(requestId, input, snapshots, events);
+    }
+
+    /**
+     * @deprecated Open {@link #subscribeEvents(EventStreamOptions, Consumer)} before calling
+     *     {@link #submit(String, Input)}.
+     */
+    @Deprecated(forRemoval = true)
+    public SessionEventSubscription stream(
+            String requestId,
+            Input input,
+            Consumer<Snapshot> snapshots,
+            Consumer<PublicEvent> events,
+            Consumer<LiveEvent> liveEvents) {
+        return mainThread().stream(requestId, input, snapshots, events, liveEvents);
     }
 }

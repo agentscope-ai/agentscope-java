@@ -20,6 +20,8 @@ import io.agentscope.durable.DurableTypes.Commit;
 import io.agentscope.durable.DurableTypes.CommitReceipt;
 import io.agentscope.durable.DurableTypes.Frame;
 import io.agentscope.durable.DurableTypes.Lease;
+import io.agentscope.durable.DurableTypes.LiveEvent;
+import io.agentscope.durable.DurableTypes.LiveEventInput;
 import io.agentscope.durable.DurableTypes.RunView;
 import java.util.List;
 import java.util.Objects;
@@ -31,13 +33,20 @@ public final class HarnessContext {
     private final SessionBackend backend;
     private final Lease lease;
     private final AtomicBoolean stopped;
+    private final LiveEvents liveEvents;
     private final String invocationRequest = UUID.randomUUID().toString();
     private RunView invocation;
 
     public HarnessContext(SessionBackend backend, Lease lease, AtomicBoolean stopped) {
+        this(backend, lease, stopped, LiveEvents.none());
+    }
+
+    HarnessContext(
+            SessionBackend backend, Lease lease, AtomicBoolean stopped, LiveEvents liveEvents) {
         this.backend = Objects.requireNonNull(backend);
         this.lease = Objects.requireNonNull(lease);
         this.stopped = Objects.requireNonNull(stopped);
+        this.liveEvents = Objects.requireNonNull(liveEvents);
     }
 
     public Lease lease() {
@@ -102,6 +111,35 @@ public final class HarnessContext {
                 // No further native writes or effects until a new owner reads authoritative state.
                 stopped.set(true);
                 throw unresolved;
+            }
+        }
+    }
+
+    /**
+     * Publish presentation signals only after the native commit that produced them succeeded.
+     * Delivery is best effort and can never change an acknowledged durable outcome.
+     */
+    public void publish(List<LiveEventInput> events) {
+        for (var input : List.copyOf(events)) {
+            try {
+                liveEvents.publish(
+                        new LiveEvent(
+                                "1",
+                                input.eventId(),
+                                lease.session(),
+                                lease.thread().threadId(),
+                                lease.turnId(),
+                                input.runId(),
+                                input.stepId(),
+                                input.occurredAt(),
+                                input.type(),
+                                input.data()));
+            } catch (RuntimeException error) {
+                System.getLogger(HarnessContext.class.getName())
+                        .log(
+                                System.Logger.Level.WARNING,
+                                "Live event delivery failed; durable execution continues",
+                                error);
             }
         }
     }

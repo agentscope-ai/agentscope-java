@@ -255,6 +255,18 @@
         </dependency>
         <dependency>
             <groupId>io.agentscope</groupId>
+            <artifactId>agentscope-durable-adapter-claude</artifactId>
+            <scope>compile</scope>
+            <optional>true</optional>
+        </dependency>
+        <dependency>
+            <groupId>io.agentscope</groupId>
+            <artifactId>agentscope-durable-adapter-agui</artifactId>
+            <scope>compile</scope>
+            <optional>true</optional>
+        </dependency>
+        <dependency>
+            <groupId>io.agentscope</groupId>
             <artifactId>agentscope-durable-worker</artifactId>
             <scope>compile</scope>
             <optional>true</optional>

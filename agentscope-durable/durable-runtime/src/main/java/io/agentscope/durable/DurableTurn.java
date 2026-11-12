@@ -23,6 +23,7 @@ import io.agentscope.durable.DurableTypes.ControlKind;
 import io.agentscope.durable.DurableTypes.EventFilter;
 import io.agentscope.durable.DurableTypes.EventPage;
 import io.agentscope.durable.DurableTypes.Interaction;
+import io.agentscope.durable.DurableTypes.LiveEvent;
 import io.agentscope.durable.DurableTypes.ModelCallPage;
 import io.agentscope.durable.DurableTypes.ModelCallView;
 import io.agentscope.durable.DurableTypes.PublicEvent;
@@ -201,16 +202,45 @@ public final class DurableTurn {
         return thread.session().snapshot(filter());
     }
 
-    public EventPage events(String cursor, int limit) {
-        return thread.session().events(filter(), cursor, limit);
+    public EventPage listEvents(String cursor, int limit) {
+        return thread.session().listEvents(filter(), cursor, limit);
     }
 
+    /** @deprecated Use {@link #listEvents(String, int)}. */
+    @Deprecated(forRemoval = true)
+    public EventPage events(String cursor, int limit) {
+        return listEvents(cursor, limit);
+    }
+
+    public SessionEventStream streamEvents(EventStreamOptions options) {
+        return thread.session().streamEvents(filter(), options);
+    }
+
+    /** @deprecated Use {@link #streamEvents(EventStreamOptions)}. */
+    @Deprecated(forRemoval = true)
     public SessionEventStream openEventStream(String cursor) {
         return thread.session().openEventStream(filter(), cursor);
     }
 
+    /** @deprecated Use {@link #subscribeEvents(EventStreamOptions, Consumer)}. */
+    @Deprecated(forRemoval = true)
     public SessionEventSubscription observe(
             String cursor, Consumer<Snapshot> snapshots, Consumer<PublicEvent> events) {
         return thread.session().observe(filter(), cursor, snapshots, events);
+    }
+
+    /** @deprecated Use {@link #subscribeEvents(EventStreamOptions, Consumer)}. */
+    @Deprecated(forRemoval = true)
+    public SessionEventSubscription observe(
+            String cursor,
+            Consumer<Snapshot> snapshots,
+            Consumer<PublicEvent> events,
+            Consumer<LiveEvent> liveEvents) {
+        return thread.session().observe(filter(), cursor, snapshots, events, liveEvents);
+    }
+
+    public SessionEventSubscription subscribeEvents(
+            EventStreamOptions options, Consumer<SessionStreamEvent> events) {
+        return thread.session().subscribeEvents(filter(), options, events);
     }
 }

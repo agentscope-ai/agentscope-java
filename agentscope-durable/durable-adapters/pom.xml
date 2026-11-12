@@ -31,5 +31,7 @@
 
     <modules>
         <module>durable-adapter-harness-agentscope</module>
+        <module>durable-adapter-claude</module>
+        <module>durable-adapter-agui</module>
     </modules>
 </project>

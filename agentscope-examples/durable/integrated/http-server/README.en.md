@@ -10,7 +10,7 @@ registration, or scenario runner.
 
 The controller handles only parameters, authorization, and the Spring `SseEmitter` lifecycle.
 Durable Core's `SessionEventStream` owns paging, wakeups, cursor advancement, and expired-cursor
-resynchronization. Application code opens it through `session.openEventStream(...)` instead of
+resynchronization. Application code opens it through `session.streamEvents(...)` instead of
 operating `SessionEventClient` directly.
 
 ```mermaid
@@ -28,6 +28,11 @@ execution hosts can connect to the same backend from other processes. `POST /api
 public Durable Runtime protocol. `GET /events` streams replayable SSE from the committed Session
 event log. Protocol JSON stays under `DurableJson` so Spring Boot 4's Jackson 3 does not alter the
 Jackson 2 nodes used by Durable.
+
+SSE names committed frames `durable` and includes their cursor as `id`. If this API host and a Brain
+share a `LiveEvents` transport, the same endpoint also emits best-effort `live` preview frames with
+no `id`; reconnects therefore replay only committed history. This API-only example has no local
+Brain producer, so it normally emits committed frames only.
 
 ## Run
 

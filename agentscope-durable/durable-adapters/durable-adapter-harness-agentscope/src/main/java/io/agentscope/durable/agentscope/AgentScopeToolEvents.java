@@ -48,18 +48,6 @@ final class AgentScopeToolEvents {
         var data = event.data();
         var result = new ArrayList<EventInput>();
         switch (event.type()) {
-            case "presentation/tool_arguments" -> {
-                var value = messages.presentationPosition(event);
-                if (value == null) break;
-                String callId = (String) data.get("toolCallId");
-                if (callId == null || callId.isBlank()) break;
-                value.put("callId", callId);
-                String name = (String) data.get("name");
-                if (name != null && !name.isBlank() && !name.startsWith("__"))
-                    value.put("name", name);
-                value.put("text", (String) data.get("text"));
-                result.add(event(event, "tool.call.arguments", value));
-            }
             case "tool/requested" -> {
                 var call =
                         JsonUtils.getJsonCodec().convertValue(data.get("call"), ToolUseBlock.class);

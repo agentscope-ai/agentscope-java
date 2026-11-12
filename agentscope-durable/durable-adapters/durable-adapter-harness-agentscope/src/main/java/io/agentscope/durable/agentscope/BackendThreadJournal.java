@@ -34,6 +34,7 @@ import io.agentscope.durable.DurableTypes.AppliedResult;
 import io.agentscope.durable.DurableTypes.Commit;
 import io.agentscope.durable.DurableTypes.EventInput;
 import io.agentscope.durable.DurableTypes.JournalAppend;
+import io.agentscope.durable.DurableTypes.LiveEventInput;
 import io.agentscope.durable.DurableTypes.RunChange;
 import io.agentscope.durable.DurableTypes.RunStatus;
 import io.agentscope.durable.DurableTypes.RunStepRef;
@@ -243,6 +244,7 @@ final class BackendThreadJournal implements ThreadJournal {
             throw new DurableException(DurableException.Code.CONFLICT, "Native sequence changed");
         var tools = new ArrayList<ToolCall>();
         var publicEvents = new ArrayList<EventInput>();
+        var liveEvents = new ArrayList<LiveEventInput>();
         var nextMessages = new AgentScopeMessageEvents(messages);
         var nextToolEvents = new AgentScopeToolEvents(toolEvents);
         RunChange runChange = null;
@@ -361,7 +363,8 @@ final class BackendThreadJournal implements ThreadJournal {
                                             : null);
             }
             var message = nextMessages.accept(event);
-            if (message != null) publicEvents.add(message);
+            if (message.durable() != null) publicEvents.add(message.durable());
+            liveEvents.addAll(message.live());
             publicEvents.addAll(nextToolEvents.accept(event, nextMessages));
             if (data.get("stepId") instanceof String stepId) {
                 for (int i = firstPublicEvent; i < publicEvents.size(); i++) {
@@ -425,6 +428,7 @@ final class BackendThreadJournal implements ThreadJournal {
         messages = nextMessages;
         toolEvents = nextToolEvents;
         if (hasCheckpoint) signalsToApply.clear();
+        context.publish(liveEvents);
         return result;
     }
 

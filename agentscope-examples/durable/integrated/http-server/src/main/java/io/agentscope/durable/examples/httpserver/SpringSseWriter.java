@@ -16,6 +16,7 @@
 package io.agentscope.durable.examples.httpserver;
 
 import io.agentscope.durable.DurableJson;
+import io.agentscope.durable.DurableTypes.LiveEvent;
 import io.agentscope.durable.DurableTypes.PublicEvent;
 import io.agentscope.durable.DurableTypes.Snapshot;
 import io.agentscope.durable.SessionEventStream;
@@ -42,6 +43,11 @@ final class SpringSseWriter implements SessionEventStream.Sink {
                         .name("durable")
                         .data(DurableJson.value(event).toString()));
         acknowledged = cursor;
+    }
+
+    @Override
+    public void live(LiveEvent event) {
+        send(SseEmitter.event().name("live").data(DurableJson.value(event).toString()));
     }
 
     @Override

@@ -9,7 +9,7 @@ Servlet 应用上下文；`HttpServerConfiguration` 通过普通 `@Bean` 创建 
 
 Controller 只负责参数、授权和 Spring `SseEmitter` 生命周期。事件分页、wakeup、cursor 推进和
 过期重同步由 Durable Core 的 `SessionEventStream` 统一处理，应用通过
-`session.openEventStream(...)` 打开事件流，无需直接操作 `SessionEventClient`。
+`session.streamEvents(...)` 打开事件流，无需直接操作 `SessionEventClient`。
 
 ```mermaid
 flowchart LR
@@ -25,6 +25,10 @@ flowchart LR
 进程中连接相同后端。`POST /api` 提供 Durable 公共 Runtime 协议；`GET /events` 从提交后的
 Session 事件日志输出可重放 SSE。协议 JSON 始终由 `DurableJson` 编解码，避免 Spring Boot 4
 的 Jackson 3 改变 Durable 使用的 Jackson 2 节点。
+
+SSE 将提交后的帧命名为 `durable`，并把 cursor 写入 `id`。如果 API 宿主和 Brain 共享同一个
+`LiveEvents` 传输，同一端点也会发送没有 `id` 的尽力而为 `live` 预览帧，因此重连只重放已提交
+历史。该示例是 API-only 宿主，没有本地 Brain 生产者，通常只会输出持久帧。
 
 ## 启动
 

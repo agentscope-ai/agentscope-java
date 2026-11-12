@@ -31,9 +31,10 @@ durable child Agents, not for every retry or reconnect.
 
 ## Java modules and deployment boundaries
 
-Library JARs live in `durable-runtime`, `durable-worker` and
-`durable-adapters/durable-adapter-harness-agentscope`; `agentscope-examples/durable` is a separate
-example aggregator. Hosts assemble the libraries; dependencies do not start services.
+Library JARs live in `durable-runtime`, `durable-worker` and `durable-adapters`. The adapter
+aggregator contains the AgentScope Harness adapter plus Claude Managed Agents event and AG-UI
+event adapters; `agentscope-examples/durable` is a separate example aggregator. Hosts assemble
+the libraries; dependencies do not start services.
 The AgentScope adapter depends on runtime, Core and Harness; worker depends only on
 runtime (excluding test dependencies). There is no separate codec artifact.
 
@@ -190,10 +191,10 @@ instance. The backend holds authoritative state; queries never start an Agent.
 | Object | Operations |
 | --- | --- |
 | Runtime | `createSession(key, definition)`, `getSession(key)`, `listSessions(namespace, cursor, limit)`, `capabilities()` |
-| Session | `submit/call/stream`, `getTurn/listTurns/history`, `snapshot()`, `close()` default to or aggregate the primary Thread as appropriate; `mainThread()`, `createThread(id, definition)`, `getThread(id)`, `listThreads(cursor, limit)` expose explicit Threads |
+| Session | `submit/call`, `getTurn/listTurns/history`, `snapshot()`, `close()` default to or aggregate the primary Thread as appropriate; `mainThread()`, `createThread(id, definition)`, `getThread(id)`, `listThreads(cursor, limit)` expose explicit Threads |
 | Thread | `submit(requestId, Input)`, `getTurn(turnId)`, `listTurns(cursor, limit)`, `history(cursor, limit)`, `view()`, `close()` |
 | Turn | `status()`, `result()`, `await(timeout)`, `steer`, `inject`, `withdraw`, `cancel`, `pendingInteractions`, `respond`, `pause`, `resume` |
-| Session / Thread / Turn | `events(cursor, limit)`, `observe`; filtering retains the Session sequence |
+| Session / Thread / Turn | `listEvents(cursor, limit)`, `streamEvents(options)`, `subscribeEvents(options, listener)`; filtering retains the Session sequence |
 | Thread | `checkpoints(after, limit)`, `restore(position, expectedPosition, requestId)`, `fork(position, targetThreadKey, requestId)` |
 
 DurableTurn represents a persistent logical task. Native AgentRun is one in-process
@@ -250,10 +251,13 @@ public projection, never private native logs. Event pruning preserves projected 
 A Turn can produce several assistant messages, with distinct reasoning rounds retained separately.
 Logical message IDs survive Run/Step changes. A new model request increments attempt; replaying a
 committed response replaces incomplete text through revision, preventing duplicated text after
-reconnection. Public deltas come from middleware-processed native presentation facts and commit
-atomically with the journal, without exposing private reasoning. History uses the first public
-sequence for ordering; consumers reading the snapshot messages map should also sort by sequence
-rather than relying on object field order.
+reconnection. `message.completed` is the authoritative durable fact. `message.delta` and
+`tool.arguments.delta` are best-effort `LiveEvent` previews produced from middleware-processed
+presentation facts; they have no sequence or cursor and never enter history, snapshots or replay.
+Private reasoning remains excluded. History uses the first public sequence for ordering; consumers
+reading the snapshot messages map should also sort by sequence rather than relying on object field
+order. Existing stored `message.delta` and `tool.call.arguments` events remain readable for
+development-data compatibility, but new AgentScope writes do not create them.
 
 The snapshot tools projection associates argument fragments, progress and results by Thread,
 Turn and callId. Fragments may omit an unknown tool name; full arguments end fragment assembly.
@@ -261,8 +265,10 @@ Local tools and remote Hands share a call view, while only external executions c
 Execution completion, result receipt and result application remain separate. Recovery preserves
 the actual output, and UNKNOWN remains until the outcome is explicitly reconciled.
 
-`session.call(requestId, input, timeout)` combines submit + await as a CompletionStage.
-`session.stream(requestId, input, onSnapshot, onEvent)` combines submit + Turn observation.
+`session.call(requestId, input, timeout)` combines submit + await as a CompletionStage. For event
+delivery, subscribe or open the event stream before `submit`; this preserves live previews even for
+a fast Agent. The old submit-and-observe `stream(...)` shortcut is deprecated because its name was
+ambiguous and it could only attach after admission.
 Retries use the same requestId; observing an existing Turn never resubmits. Timeout errors
 include Thread/Turn identity. Closing a subscription, cancelling a Future or closing
 Runtime never cancels durable work; cancellation is explicit. Short operations can
@@ -359,6 +365,50 @@ A Turn can contain multiple assistant messages. Replayed versions of the same me
 replace provisional text rather than creating another message. Custom events use
 `x.<namespace>.<name>`; reserved lifecycle, tool, message and artifact events have
 constrained payloads.
+
+## Presentation events and protocol adapters
+
+Durable stores two event classes internally and exposes one typed SDK stream:
+
+| Delivery | Contract | Typical use |
+| --- | --- | --- |
+| `PublicEvent` | Persisted, sequenced, cursor-addressable and replayable | task state, completed messages, tool state, audit and recovery |
+| internal `LiveEvent` | Best effort, connection-time only, no cursor or replay | text and tool-argument previews |
+
+Applications consume the sealed `SessionStreamEvent` union: `Committed` wraps a `PublicEvent`,
+`PreviewStarted` announces a preview, `EventDelta` carries an opted-in increment, and
+`SnapshotReset` replaces local durable state after resynchronization. Only `Committed` contains a
+Durable cursor. `EventStreamOptions.deltas(...)` enables message or tool-argument previews for one
+stream connection; the default delivers durable facts only.
+
+```java
+import io.agentscope.durable.EventStreamOptions;
+import io.agentscope.durable.EventStreamOptions.EventDeltaType;
+
+var options = EventStreamOptions.builder()
+        .after(savedCursor)
+        .deltas(EventDeltaType.MESSAGE)
+        .build();
+
+try (var stream = session.streamEvents(options)) {
+    stream.forEach(event -> render(event));
+}
+```
+
+`listEvents(cursor, limit)` always returns only persisted `PublicEvent` values. Durable applications
+do not consume Core/Harness `AgentEvent`, `JournalEvent` or the internal live transport type.
+
+`agentscope-durable-adapter-claude` maps completed messages and opted-in live message deltas to the
+Claude Managed Agents event shape. Enable `EventDeltaType.MESSAGE`, then pass a
+`ClaudeEventStreamSink` to `SessionEventStream.forEach`. `agentscope-durable-adapter-agui` maps the
+same typed stream to the existing AG-UI 1.0 `AguiEvent` types through
+`DurableAguiEventStreamSink`. These artifacts are event adapters, not complete hosted HTTP APIs;
+authentication, resource routes and transport framing remain application concerns.
+
+The default `LiveEvents.local()` bus connects producers and observers only inside one Runtime
+assembly. A split Brain/API deployment must provide the same shared `LiveEvents` transport to both
+sides when live previews are required. Durable execution, history and final results remain correct
+when that transport is absent or loses an event.
 
 
 ## Hands Workers and RocketMQ execution
@@ -602,21 +652,31 @@ last valid state after lease expiry.
 
 ## Observe independently
 
-Use Runtime-managed subscriptions for normal application integration:
+Use Runtime-managed typed subscriptions for normal application integration:
 
 ```java
+import io.agentscope.durable.EventStreamOptions;
 import io.agentscope.durable.EventProjection;
+import io.agentscope.durable.SessionStreamEvent;
 
 var projection = new EventProjection(session);
-var subscription = runtime.getSession(session).observe(projection::reset, projection::accept);
+var subscription = runtime.getSession(session).subscribeEvents(
+        EventStreamOptions.defaults(),
+        event -> {
+            if (event instanceof SessionStreamEvent.SnapshotReset reset) {
+                projection.reset(reset.snapshot());
+            } else if (event instanceof SessionStreamEvent.Committed committed) {
+                projection.accept(committed.event());
+            }
+        });
 // No polling loop or observer executor setup is needed.
 // Keep the subscription while connected; close it when the observer disconnects.
 ```
 
-The default subscription first delivers a consistent snapshot, then events after its
-cursor. To restore a saved consumer position, use
-`runtime.getSession(session).observe(savedCursor, onSnapshot, onEvent)`; a null cursor in that
-overload replays from the retained beginning. An expired cursor triggers a fresh snapshot.
+The default subscription replays retained committed history, then tails new events. To restore a
+saved consumer position, pass `EventStreamOptions.builder().after(savedCursor).build()`; an expired
+cursor emits a `SnapshotReset`. Enable deltas on the same options only when the connection renders
+previews.
 
 Creating or closing a Session/Thread produces persisted `session.created/closed` and
 `thread.created/closed` events. Session creation also creates its primary Thread; identical retries
@@ -632,12 +692,12 @@ import io.agentscope.durable.DurableTypes.EventFilter;
 var filter = new EventFilter("main", turnId, runId);
 var scopedProjection = new EventProjection(session, filter);
 var scoped = runtime.getSession(session)
-        .observe(scopedProjection::reset, scopedProjection::accept, filter);
-// Resume a saved cursor: sessionHandle.observe(filter, savedCursor, onSnapshot, onEvent)
+        .subscribeEvents(filter, EventStreamOptions.defaults(), event -> apply(event));
+// Resume a saved cursor with EventStreamOptions.builder().after(savedCursor).build()
 ```
 
 turnId requires threadId, and runId requires turnId; incorrect ownership is rejected.
-`sessionHandle.events(filter, cursor, limit)` and `snapshot(filter)` use the same scope,
+`sessionHandle.listEvents(filter, cursor, limit)` and `snapshot(filter)` use the same scope,
 as do Thread/Turn shortcuts. Turn snapshots exclude other tasks. Run snapshots retain the
 parent Turn's logical state and select projection records currently associated with that Run.
 A Thread filter retains only that Thread's resource view. Turn/Run filters exclude resource
@@ -666,6 +726,11 @@ inside the callback. External side effects need idempotency because delivery is 
 least once. `SessionEventClient` remains available for hosts needing manual polling
 or an externally managed executor.
 
+`turn.subscribeEvents(options, listener)` delivers committed events and opted-in deltas on the same
+serialized observer worker. Only a `Committed` item advances `subscription.cursor()`; deltas are
+not retried after disconnect and must not update a durable projection. A final
+`message.completed` remains authoritative if a client missed some or all previews.
+
 Rehydrate the Session with `runtime.getSession(session)`, then use
 `mainThread().getTurn(turnId)` to access a task in the primary Thread. Queries/history/events never claim or execute
 work. Snapshots contain Turn views and public projections; native checkpoints remain private.
@@ -676,8 +741,9 @@ The HTTP extension provides Backend/Executor clients and mountable handlers.
 leave the event unacknowledged. Initial cursor expiry returns HTTP 410; expiry during
 streaming emits `resync`, requiring a new snapshot with the same filter before reconnecting.
 SSE queries accept threadId/turnId/runId, with Last-Event-ID taking precedence over cursor.
-A `cursor` control frame advances the filtered scan position; only `durable` frames are
-public events to pass to EventProjection.
+A `cursor` control frame advances the filtered scan position. `durable` frames are replayable
+public events to pass to EventProjection; `live` frames carry previews and deliberately omit the
+SSE `id`, so reconnecting with Last-Event-ID never acknowledges or requests them.
 Hosts supply authentication, operation/session authorization and blocking-I/O threads.
 Claims, native checkpoints, result intake and global discovery are privileged operations.
 

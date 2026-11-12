@@ -22,6 +22,7 @@ import io.agentscope.durable.DurableTypes.CommitReceipt;
 import io.agentscope.durable.DurableTypes.EventFilter;
 import io.agentscope.durable.DurableTypes.EventPage;
 import io.agentscope.durable.DurableTypes.HistoryPage;
+import io.agentscope.durable.DurableTypes.LiveEvent;
 import io.agentscope.durable.DurableTypes.PublicEvent;
 import io.agentscope.durable.DurableTypes.Snapshot;
 import io.agentscope.durable.DurableTypes.ThreadKey;
@@ -103,10 +104,22 @@ public final class DurableThread {
         return new EventFilter(key.threadId(), null, null);
     }
 
-    public EventPage events(String cursor, int limit) {
-        return session.events(filter(), cursor, limit);
+    public EventPage listEvents(String cursor, int limit) {
+        return session.listEvents(filter(), cursor, limit);
     }
 
+    /** @deprecated Use {@link #listEvents(String, int)}. */
+    @Deprecated(forRemoval = true)
+    public EventPage events(String cursor, int limit) {
+        return listEvents(cursor, limit);
+    }
+
+    public SessionEventStream streamEvents(EventStreamOptions options) {
+        return session.streamEvents(filter(), options);
+    }
+
+    /** @deprecated Use {@link #streamEvents(EventStreamOptions)}. */
+    @Deprecated(forRemoval = true)
     public SessionEventStream openEventStream(String cursor) {
         return session.openEventStream(filter(), cursor);
     }
@@ -115,9 +128,26 @@ public final class DurableThread {
         return session.snapshot(filter());
     }
 
+    /** @deprecated Use {@link #subscribeEvents(EventStreamOptions, Consumer)}. */
+    @Deprecated(forRemoval = true)
     public SessionEventSubscription observe(
             String cursor, Consumer<Snapshot> snapshots, Consumer<PublicEvent> events) {
         return session.observe(filter(), cursor, snapshots, events);
+    }
+
+    /** @deprecated Use {@link #subscribeEvents(EventStreamOptions, Consumer)}. */
+    @Deprecated(forRemoval = true)
+    public SessionEventSubscription observe(
+            String cursor,
+            Consumer<Snapshot> snapshots,
+            Consumer<PublicEvent> events,
+            Consumer<LiveEvent> liveEvents) {
+        return session.observe(filter(), cursor, snapshots, events, liveEvents);
+    }
+
+    public SessionEventSubscription subscribeEvents(
+            EventStreamOptions options, Consumer<SessionStreamEvent> events) {
+        return session.subscribeEvents(filter(), options, events);
     }
 
     public List<CheckpointMetadata> checkpoints(long after, int limit) {
@@ -152,12 +182,31 @@ public final class DurableThread {
         return submit(requestId, input).await(timeout);
     }
 
+    /**
+     * @deprecated Subscribe with {@link #subscribeEvents(EventStreamOptions, Consumer)} before
+     *     calling {@link #submit(String, Input)}.
+     */
+    @Deprecated(forRemoval = true)
     public SessionEventSubscription stream(
             String requestId,
             Input input,
             Consumer<Snapshot> snapshots,
             Consumer<PublicEvent> events) {
         return submit(requestId, input).observe(null, snapshots, events);
+    }
+
+    /**
+     * @deprecated Subscribe with {@link #subscribeEvents(EventStreamOptions, Consumer)} before
+     *     calling {@link #submit(String, Input)}.
+     */
+    @Deprecated(forRemoval = true)
+    public SessionEventSubscription stream(
+            String requestId,
+            Input input,
+            Consumer<Snapshot> snapshots,
+            Consumer<PublicEvent> events,
+            Consumer<LiveEvent> liveEvents) {
+        return submit(requestId, input).observe(null, snapshots, events, liveEvents);
     }
 
     CompletionStage<TurnView> await(String turnId, Duration timeout) {

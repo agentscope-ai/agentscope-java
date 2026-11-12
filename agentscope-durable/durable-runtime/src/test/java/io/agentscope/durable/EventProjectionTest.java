@@ -277,12 +277,34 @@ class EventProjectionTest {
                 "turn-2",
                 "tool.call.updated",
                 Map.of("callId", "a", "status", "REQUESTED"));
+        emit(
+                projection,
+                key,
+                "main",
+                "turn",
+                "tool.call.updated",
+                Map.of(
+                        "callId",
+                        "c",
+                        "status",
+                        "REQUESTED",
+                        "arguments",
+                        Map.of("topic", "complete-only")));
         var data = projection.value().path("tools").path(a).path("data");
         assertEquals("SUCCEEDED", data.path("status").asText());
         assertEquals(1, data.path("progress").size());
         assertEquals("done", data.path("content").get(0).path("text").asText());
         assertFalse(data.has("executionId"));
-        assertEquals(3, projection.value().path("tools").size());
+        assertEquals(4, projection.value().path("tools").size());
+        assertEquals(
+                "{\"topic\":\"complete-only\"}",
+                projection
+                        .value()
+                        .path("tools")
+                        .path(EventProjection.toolId("main", "turn", "c"))
+                        .path("data")
+                        .path("argumentsText")
+                        .asText());
         assertEquals("1", projection.value().path("tools").path(a).path("sequence").asText());
         DurableProtocol.validate(
                 "snapshot",

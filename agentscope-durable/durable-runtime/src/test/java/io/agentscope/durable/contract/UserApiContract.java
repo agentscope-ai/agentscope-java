@@ -46,11 +46,12 @@ import io.agentscope.durable.DurableTypes.ThreadKey;
 import io.agentscope.durable.DurableTypes.TurnStatus;
 import io.agentscope.durable.DurableTypes.WaitCondition;
 import io.agentscope.durable.EventProjection;
+import io.agentscope.durable.EventStreamOptions;
 import io.agentscope.durable.HarnessAdapter;
 import io.agentscope.durable.HarnessContext;
 import io.agentscope.durable.SessionBackend;
 import io.agentscope.durable.SessionEventClient;
-import io.agentscope.durable.SessionEventStream;
+import io.agentscope.durable.SessionStreamEvent;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.ArrayList;
@@ -443,23 +444,17 @@ public abstract class UserApiContract {
     }
 
     @Test
-    void sessionHandleOpensAFilteredEventStreamWithoutExposingPaging() {
+    void sessionHandleStreamsTypedEventsWithoutExposingPagingOrLiveCursors() {
         var selected = session.submit("selected", "selected");
         session.submit("excluded", "excluded");
         var delivered = new ArrayList<PublicEvent>();
         var cursor = new AtomicReference<String>();
-        try (var stream = selected.openEventStream(null)) {
-            stream.transferTo(
-                    new SessionEventStream.Sink() {
-                        @Override
-                        public void accept(PublicEvent event) {
-                            delivered.add(event);
-                        }
-
-                        @Override
-                        public void cursor(String value) {
-                            cursor.set(value);
-                        }
+        try (var stream = selected.streamEvents(EventStreamOptions.defaults())) {
+            stream.forEach(
+                    event -> {
+                        var committed = assertInstanceOf(SessionStreamEvent.Committed.class, event);
+                        delivered.add(committed.event());
+                        cursor.set(committed.event().cursor());
                     },
                     Duration.ofMillis(20),
                     Duration.ofMillis(1));

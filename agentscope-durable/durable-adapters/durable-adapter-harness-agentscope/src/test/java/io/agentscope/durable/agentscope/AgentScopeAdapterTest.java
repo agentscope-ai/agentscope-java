@@ -75,6 +75,7 @@ import io.agentscope.durable.DurableTypes.ExecutionResult;
 import io.agentscope.durable.DurableTypes.ExecutionState;
 import io.agentscope.durable.DurableTypes.Failure;
 import io.agentscope.durable.DurableTypes.Lease;
+import io.agentscope.durable.DurableTypes.LiveEvent;
 import io.agentscope.durable.DurableTypes.ModelObservation;
 import io.agentscope.durable.DurableTypes.ModelStatus;
 import io.agentscope.durable.DurableTypes.RecoveryPolicy;
@@ -88,10 +89,14 @@ import io.agentscope.durable.DurableTypes.ThreadKey;
 import io.agentscope.durable.DurableTypes.ThreadSpec;
 import io.agentscope.durable.DurableTypes.TurnStatus;
 import io.agentscope.durable.EventProjection;
+import io.agentscope.durable.EventStreamOptions;
+import io.agentscope.durable.EventStreamOptions.EventDeltaType;
 import io.agentscope.durable.Executor;
 import io.agentscope.durable.HarnessContext;
+import io.agentscope.durable.LiveEvents;
 import io.agentscope.durable.SessionBackend;
 import io.agentscope.durable.SessionEventClient;
+import io.agentscope.durable.SessionStreamEvent;
 import io.agentscope.durable.TransactionalSessionBackend;
 import io.agentscope.durable.Wakeups;
 import io.agentscope.durable.codec.agentscope.AgentScopeCheckpointCodec;
@@ -114,6 +119,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.stream.StreamSupport;
 import org.junit.jupiter.api.Test;
@@ -204,12 +210,21 @@ class AgentScopeAdapterTest {
     }
 
     DurableRuntime runtime(SessionBackend backend, AgentScopeAdapter adapter, Executor executor) {
+        return runtime(backend, adapter, executor, LiveEvents.local());
+    }
+
+    DurableRuntime runtime(
+            SessionBackend backend,
+            AgentScopeAdapter adapter,
+            Executor executor,
+            LiveEvents liveEvents) {
         var builder =
                 DurableRuntime.builder()
                         .backend(backend)
                         .harness("agent", "v1", adapter)
                         .checkpoints("agent", AgentScopeCheckpoints::restore)
                         .recoveryPolicy(new RecoveryPolicy(3, 1, 4))
+                        .liveEvents(liveEvents)
                         .pollInterval(Duration.ofMillis(1));
         if (executor != null) builder.executor("jobs", executor);
         return builder.build();
@@ -1539,7 +1554,7 @@ class AgentScopeAdapterTest {
     }
 
     @Test
-    void committedTextCanBeReplayedWhileTheModelIsStillRunning() throws Exception {
+    void textDeltaIsLiveOnlyWhileTheModelIsStillRunning() throws Exception {
         var release = Sinks.<Void>empty();
         Model model =
                 new Model() {
@@ -1564,38 +1579,36 @@ class AgentScopeAdapterTest {
         var adapter =
                 AgentScopeAdapter.forReAct(
                         binding -> ReActAgent.builder().name("streaming").model(model), Map.of());
+        var liveEvents = LiveEvents.local();
+        var received = new CopyOnWriteArrayList<SessionStreamEvent>();
         try (var backend = LocalBackend.open(directory.resolve("streaming"));
-                var runtime = runtime(backend, adapter, null)) {
+                var runtime = runtime(backend, adapter, null, liveEvents)) {
             var turn = runtime.createSession(key, "agent").submit("stream", "hello");
-            runtime.start();
-            try {
+            try (var observation =
+                    turn.subscribeEvents(
+                            EventStreamOptions.builder().deltas(EventDeltaType.MESSAGE).build(),
+                            received::add)) {
+                runtime.start();
                 long until = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
-                while (backend.events(key, null, 100).events().stream()
-                                .noneMatch(e -> e.type().equals("message.delta"))
+                while (received.stream().noneMatch(SessionStreamEvent.EventDelta.class::isInstance)
                         && System.nanoTime() < until) Thread.sleep(10);
                 var delta =
-                        backend.events(key, null, 100).events().stream()
-                                .filter(e -> e.type().equals("message.delta"))
+                        received.stream()
+                                .filter(SessionStreamEvent.EventDelta.class::isInstance)
+                                .map(SessionStreamEvent.EventDelta.class::cast)
                                 .findFirst()
                                 .orElseThrow();
                 assertEquals(TurnStatus.RUNNING, turn.status().status());
-                var message =
+                assertEquals("visible prefix", delta.data().path("text").asText());
+                assertTrue(
+                        backend.events(key, null, 100).events().stream()
+                                .noneMatch(e -> e.type().equals("message.delta")));
+                assertTrue(
                         backend.snapshot(key)
                                 .projection()
                                 .path("messages")
-                                .path(delta.data().path("messageId").asText());
-                assertEquals("visible prefix", message.path("text").asText());
-                assertFalse(message.path("complete").asBoolean());
-                var projection = new EventProjection(key);
-                backend.events(key, null, 100).events().forEach(projection::accept);
-                assertEquals(
-                        "visible prefix",
-                        projection
-                                .value()
-                                .path("messages")
                                 .path(delta.data().path("messageId").asText())
-                                .path("text")
-                                .asText());
+                                .isMissingNode());
             } finally {
                 release.tryEmitEmpty();
             }
@@ -1603,7 +1616,36 @@ class AgentScopeAdapterTest {
     }
 
     @Test
-    void eachReasoningRoundKeepsItsOwnPublicMessageAndCommittedTransformedDeltas() {
+    void liveDeliveryFailureDoesNotChangeTheDurableOutcome() {
+        var failingLiveEvents =
+                new LiveEvents() {
+                    @Override
+                    public void publish(LiveEvent event) {
+                        throw new IllegalStateException("live transport unavailable");
+                    }
+
+                    @Override
+                    public AutoCloseable subscribe(Consumer<LiveEvent> listener) {
+                        return () -> {};
+                    }
+                };
+        var adapter = adapter(new ScriptedModel(false), PermissionMode.BYPASS, Map.of());
+        try (var backend = LocalBackend.open(directory.resolve("live-failure"));
+                var runtime = runtime(backend, adapter, null, failingLiveEvents)) {
+            var turn = runtime.createSession(key, "agent").submit("request", "hello");
+
+            runtime.tick(new ThreadKey(key, "main"));
+
+            assertNull(runtime.lastFailure(new ThreadKey(key, "main")));
+            assertEquals(TurnStatus.SUCCEEDED, turn.status().status());
+            assertTrue(
+                    backend.events(key, null, 100).events().stream()
+                            .anyMatch(event -> "message.completed".equals(event.type())));
+        }
+    }
+
+    @Test
+    void eachReasoningRoundKeepsItsOwnPublicMessageAndLiveTransformedDeltas() throws Exception {
         var calls = new AtomicInteger();
         Model model =
                 new Model() {
@@ -1711,8 +1753,11 @@ class AgentScopeAdapterTest {
                                             });
                         },
                         Map.of());
-        try (var backend = LocalBackend.open(directory.resolve("messages"));
-                var runtime = runtime(backend, adapter, null)) {
+        var liveEvents = LiveEvents.local();
+        var live = new CopyOnWriteArrayList<LiveEvent>();
+        try (var subscription = liveEvents.subscribe(live::add);
+                var backend = LocalBackend.open(directory.resolve("messages"));
+                var runtime = runtime(backend, adapter, null, liveEvents)) {
             var turn = runtime.createSession(key, "agent").submit("request", "hello");
             runtime.tick(new ThreadKey(key, "main"));
             assertNull(runtime.lastFailure(new ThreadKey(key, "main")));
@@ -1776,10 +1821,11 @@ class AgentScopeAdapterTest {
             var events = backend.events(key, null, 1000).events();
             var arguments =
                     events.stream().filter(e -> "tool.call.arguments".equals(e.type())).toList();
-            assertEquals(4, arguments.size());
-            assertEquals(2, arguments.stream().filter(e -> !e.data().has("name")).count());
-            arguments.forEach(event -> DurableProtocol.validate("event", event));
-            var deltas = events.stream().filter(e -> "message.delta".equals(e.type())).toList();
+            assertTrue(arguments.isEmpty());
+            assertEquals(
+                    4, live.stream().filter(e -> "tool.arguments.delta".equals(e.type())).count());
+            assertTrue(events.stream().noneMatch(e -> "message.delta".equals(e.type())));
+            var deltas = live.stream().filter(e -> "message.delta".equals(e.type())).toList();
             assertEquals(3, deltas.size());
             assertEquals(
                     List.of("shown 0", "shown 1", "shown 2"),

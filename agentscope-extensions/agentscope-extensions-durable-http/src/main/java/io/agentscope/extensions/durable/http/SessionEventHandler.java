@@ -22,6 +22,8 @@ import io.agentscope.durable.DurableException;
 import io.agentscope.durable.DurableRuntime;
 import io.agentscope.durable.DurableTypes.EventFilter;
 import io.agentscope.durable.DurableTypes.SessionKey;
+import io.agentscope.durable.EventStreamOptions;
+import io.agentscope.durable.EventStreamOptions.EventDeltaType;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.net.URLDecoder;
@@ -32,8 +34,8 @@ import java.util.Objects;
 import java.util.Set;
 
 /**
- * Reliable SSE from the same committed cursor log used for replay. No ephemeral live bus handoff.
- * Connections are bounded; clients reconnect using the last event ID. Closing one never cancels a Turn.
+ * Reliable committed SSE plus best-effort live presentation signals. Only committed events carry a
+ * reconnect cursor. Connections are bounded; closing one never cancels a Turn.
  */
 public final class SessionEventHandler implements HttpHandler {
     private final DurableRuntime runtime;
@@ -96,7 +98,13 @@ public final class SessionEventHandler implements HttpHandler {
                                 query.get("threadId"), query.get("turnId"), query.get("runId"));
                 String cursor = exchange.getRequestHeaders().getFirst("Last-Event-ID");
                 if (cursor == null || cursor.isBlank()) cursor = query.get("cursor");
-                var stream = handle.openEventStream(filter, cursor);
+                var stream =
+                        handle.streamEvents(
+                                filter,
+                                EventStreamOptions.builder()
+                                        .after(cursor)
+                                        .deltas(EventDeltaType.values())
+                                        .build());
                 exchange.getResponseHeaders()
                         .set("Content-Type", "text/event-stream; charset=utf-8");
                 exchange.getResponseHeaders().set("Cache-Control", "no-cache");

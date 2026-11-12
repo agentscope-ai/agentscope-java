@@ -17,6 +17,7 @@
 package io.agentscope.extensions.durable.http;
 
 import io.agentscope.durable.DurableJson;
+import io.agentscope.durable.DurableTypes.LiveEvent;
 import io.agentscope.durable.DurableTypes.PublicEvent;
 import io.agentscope.durable.DurableTypes.Snapshot;
 import io.agentscope.durable.SessionEventStream;
@@ -46,6 +47,11 @@ public final class SseEventWriter implements SessionEventStream.Sink {
             throw new IllegalArgumentException("Invalid SSE cursor");
         write("id: " + cursor + "\nevent: durable\ndata: " + DurableJson.value(event) + "\n\n");
         acknowledged = cursor;
+    }
+
+    @Override
+    public void live(LiveEvent event) {
+        write("event: live\ndata: " + DurableJson.value(event) + "\n\n");
     }
 
     /** Advance past filtered-out events without inventing a committed public event. */

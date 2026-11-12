@@ -298,6 +298,8 @@ public final class EventProjection {
         } else {
             var oldContent = data.get("content");
             data.setAll((ObjectNode) incoming);
+            if (incoming.has("arguments") && !data.has("argumentsText"))
+                data.put("argumentsText", incoming.path("arguments").toString());
             if (event.type().equals("tool.requested")) {
                 var call = incoming.path("call");
                 for (String field : List.of("callId", "name", "arguments", "origin"))
