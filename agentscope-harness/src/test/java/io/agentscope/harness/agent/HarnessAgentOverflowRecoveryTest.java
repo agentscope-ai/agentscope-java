@@ -17,6 +17,7 @@ package io.agentscope.harness.agent;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.agent.RuntimeContext;
@@ -40,6 +41,7 @@ import io.agentscope.harness.agent.memory.compaction.CompactionConfig;
 import io.agentscope.harness.agent.testing.HarnessQuiescence;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -126,10 +128,85 @@ class HarnessAgentOverflowRecoveryTest {
         assertEquals(1, toolResults(model.lastMainInput(), "probe-call"));
     }
 
+    @Test
+    void emergencyCompactionUsesFallbackWhenTheDefaultSummaryModelFails() {
+        AgentStateStore store = new JsonFileAgentStateStore(stateDir);
+        ScriptedModel primary = new ScriptedModel("primary");
+        ScriptedModel fallback = new ScriptedModel("fallback");
+        HarnessAgent agent = newAgent(primary, fallback, store, new Toolkit());
+        RuntimeContext ctx = runPriorTurns(agent);
+        primary.failAuxiliary = true;
+        primary.script(overflow());
+        fallback.script(overflow());
+
+        Msg input = userMsg("final question");
+        Msg reply = agent.call(input, ctx).block(Duration.ofSeconds(30));
+
+        assertNotNull(reply);
+        assertEquals("ok", reply.getTextContent());
+        List<Msg> persisted = persistedContext(store);
+        Msg summary =
+                persisted.stream()
+                        .filter(
+                                msg ->
+                                        "fallback"
+                                                .equals(
+                                                        msg.getMetadata()
+                                                                .get("context.summary_model")))
+                        .findFirst()
+                        .orElseThrow();
+        assertTrue(summary.getTextContent().contains("<summary>"));
+        assertEquals(1, fallback.mainInputs.size());
+        assertTrue(
+                fallback.script.isEmpty(), "reasoning fallback must also overflow before recovery");
+        assertEquals(1, fallback.auxiliaryInputs.size());
+        assertEquals(1, count(persisted, input));
+        assertEquals(1, count(primary.lastMainInput(), input));
+    }
+
+    @Test
+    void emergencyCompactionPreservesHistoryWhenBothSummaryModelsFail() {
+        AgentStateStore store = new JsonFileAgentStateStore(stateDir);
+        ScriptedModel primary = new ScriptedModel("primary");
+        ScriptedModel fallback = new ScriptedModel("fallback");
+        HarnessAgent agent = newAgent(primary, fallback, store, new Toolkit());
+        RuntimeContext ctx = runPriorTurns(agent);
+        primary.failAuxiliary = true;
+        fallback.failAuxiliary = true;
+        primary.script(overflow());
+        fallback.script(overflow());
+        Msg input = userMsg("final question");
+        List<Msg> expected = new ArrayList<>(persistedContext(store));
+        expected.add(input);
+
+        RuntimeException failure =
+                assertThrows(
+                        RuntimeException.class,
+                        () -> agent.call(input, ctx).block(Duration.ofSeconds(30)));
+
+        assertTrue(failure.getMessage().contains("summary provider unavailable"));
+        List<Msg> persisted = persistedContext(store);
+        assertEquals(
+                expected.stream().map(Msg::getId).toList(),
+                persisted.stream().map(Msg::getId).toList());
+        assertEquals(
+                expected.stream().map(Msg::getTextContent).toList(),
+                persisted.stream().map(Msg::getTextContent).toList());
+        assertEquals(PRIOR_TURNS + 1, primary.mainInputs.size());
+        assertEquals(1, fallback.mainInputs.size());
+        assertEquals(1, fallback.auxiliaryInputs.size());
+    }
+
     private HarnessAgent newAgent(Model model, AgentStateStore store, Toolkit toolkit) {
+        return newAgent(model, null, store, toolkit);
+    }
+
+    private HarnessAgent newAgent(
+            Model model, Model fallback, AgentStateStore store, Toolkit toolkit) {
         return HarnessAgent.builder()
                 .name("overflow-agent")
                 .model(model)
+                .fallbackModel(fallback)
                 .workspace(workspace)
                 .toolkit(toolkit)
                 // Overflow recovery only runs on the legacy state-store path.
@@ -213,8 +290,19 @@ class HarnessAgentOverflowRecoveryTest {
      */
     private static final class ScriptedModel implements Model {
 
+        private final String name;
         private final Queue<Flux<ChatResponse>> script = new ConcurrentLinkedQueue<>();
         private final List<List<Msg>> mainInputs = new CopyOnWriteArrayList<>();
+        private final List<List<Msg>> auxiliaryInputs = new CopyOnWriteArrayList<>();
+        private boolean failAuxiliary;
+
+        private ScriptedModel() {
+            this("scripted-model");
+        }
+
+        private ScriptedModel(String name) {
+            this.name = name;
+        }
 
         @SafeVarargs
         final void script(Flux<ChatResponse>... responses) {
@@ -227,7 +315,7 @@ class HarnessAgentOverflowRecoveryTest {
 
         @Override
         public String getModelName() {
-            return "scripted-model";
+            return name;
         }
 
         @Override
@@ -239,10 +327,15 @@ class HarnessAgentOverflowRecoveryTest {
                 if (scripted != null) {
                     return scripted;
                 }
+            } else {
+                auxiliaryInputs.add(List.copyOf(messages));
+                if (failAuxiliary) {
+                    return Flux.error(new IllegalStateException("summary provider unavailable"));
+                }
             }
             return Flux.just(
                     new ChatResponse(
-                            "scripted-model",
+                            name,
                             List.of(TextBlock.builder().text("ok").build()),
                             null,
                             Map.of(),

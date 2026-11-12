@@ -71,6 +71,7 @@ Harness 默认启用上下文压缩，下面的配置用于调整触发和保留
 HarnessAgent agent = HarnessAgent.builder()
     .name("MyAgent")
     .model(model)
+    .fallbackModel(fallbackModel) // 压缩摘要调用失败时也使用该备用模型
     .workspace(workspace)
     .compaction(CompactionConfig.builder()
         .triggerMessages(30)     // 消息条数到 30 触发
@@ -91,6 +92,12 @@ HarnessAgent agent = HarnessAgent.builder()
 | `flushBeforeCompact` | `true` | 压缩前先把新事实写入日流水账（路径 2） |
 | `summaryPrompt` | 见 `DEFAULT_SUMMARY_PROMPT` | 路径 3 的摘要 prompt（必须含 `{messages}` 占位符） |
 | `model` | `null`（使用 agent 主模型） | 压缩摘要使用的独立模型 |
+
+所选摘要模型耗尽自身已有的 Provider 重试后仍调用失败，对话压缩会切换到 agent 的 `fallbackModel` 一次；显式配置了独立压缩模型时也适用。备用模型使用同一份输入重新生成完整摘要，失败模型已输出的片段会被丢弃。每个模型都在实际调用前校验自己的上下文预算。未配置备用模型，或备用与摘要模型为同一实例时，不增加调用；下一次压缩仍从原先选定的摘要模型开始。
+
+空摘要、工具调用输出及输出 token 截断继续使用原有校验规则，不因此切换备用模型。取消（含被外层异常包装的取消）、中断和 Session Log 故障不会启动备用调用；框架原生会话钩子注入的准入、记录或计费失败也不触发切换。自定义 `ManagedModel` 只能在其公开流边界观察错误，框架无法区分该第三方包装器内部引入的失败。自动压缩中主备均失败时保留原历史，由最终请求预算校验决定是否还能继续推理。
+
+摘要调用和切换使用 Session Log 的 `SUMMARY` 用途和 `model/retry` 事件。已经通过 `SessionModels.wrap` 包装的模型保留原先的记录用途和上下文。`model/retry` 表示尝试切换，备用请求仍可能在 Provider 调用前被预算校验拒绝。`context.summary_model` 记录真正生成已采纳摘要的模型。这类对话压缩切换不调用 ReActAgent 托管调用使用的 `FailoverListener`；长期记忆提取与整合保留各自的模型调用行为。
 
 **上下文溢出自动恢复**：模型返回 `context_length_exceeded` 等错误时，只要没有禁用压缩，框架就会尝试强制压缩。默认的 `EVENT_LOG` 执行模式会在本次执行内重试当前推理一次，无需手工调用 `.compaction(...)` 开启；如果仍然溢出，错误会返回调用方。
 

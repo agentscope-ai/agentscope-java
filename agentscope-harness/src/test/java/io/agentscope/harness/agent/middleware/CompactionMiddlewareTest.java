@@ -36,6 +36,7 @@ import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.ToolSchema;
 import io.agentscope.core.session.InMemorySessionLogStore;
+import io.agentscope.core.session.SessionEvent;
 import io.agentscope.core.state.AgentState;
 import io.agentscope.core.util.JsonUtils;
 import io.agentscope.harness.agent.memory.compaction.CompactionConfig;
@@ -250,6 +251,95 @@ class CompactionMiddlewareTest {
         assertEquals(1, facts.stream().filter(e -> e.type().equals("run/end")).count());
         assertTrue(facts.stream().allMatch(e -> run.runId().equals(e.executionRunId())));
         assertTrue(facts.stream().filter(e -> e.type().equals("model/end")).count() >= 2);
+    }
+
+    @Test
+    void nativeOverflowRecoveryUsesAgentFallbackForTheFailedSummary() {
+        AtomicInteger calls = new AtomicInteger();
+        ChatModelBase execution =
+                new ChatModelBase() {
+                    public String getModelName() {
+                        return "overflow-primary";
+                    }
+
+                    protected Flux<ChatResponse> doStream(
+                            List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
+                        if (calls.getAndIncrement() == 0)
+                            return Flux.error(new IllegalStateException("context_length_exceeded"));
+                        return Flux.just(
+                                ChatResponse.builder()
+                                        .content(
+                                                List.of(TextBlock.builder().text("answer").build()))
+                                        .build());
+                    }
+                };
+        AtomicInteger fallbackCalls = new AtomicInteger();
+        ChatModelBase fallback =
+                new ChatModelBase() {
+                    public String getModelName() {
+                        return "summary-fallback";
+                    }
+
+                    protected Flux<ChatResponse> doStream(
+                            List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
+                        if (fallbackCalls.getAndIncrement() == 0)
+                            return Flux.error(new IllegalStateException("context_length_exceeded"));
+                        return Flux.just(
+                                ChatResponse.builder()
+                                        .content(
+                                                List.of(
+                                                        TextBlock.builder()
+                                                                .text("summary")
+                                                                .build()))
+                                        .build());
+                    }
+                };
+        CompactionMiddleware recovery =
+                new CompactionMiddleware(
+                        null,
+                        new FailingSummaryModel(new IllegalStateException("summary unavailable")),
+                        fixedConfig());
+        ReActAgent agent =
+                ReActAgent.builder()
+                        .name("overflow-fallback-test")
+                        .model(execution)
+                        .fallbackModel(fallback)
+                        .sessionLogStore(new InMemorySessionLogStore())
+                        .middleware(recovery.overflowRecovery())
+                        .build();
+        RuntimeContext ctx = context("user", "overflow-fallback-session");
+        AgentRun<Msg> run =
+                agent.prepareCall(
+                        List.of(userMessage("old context" + PAD), userMessage("latest request")),
+                        ctx);
+
+        assertEquals("answer", run.stream().blockLast(Duration.ofSeconds(10)).getTextContent());
+        assertEquals(AgentRun.Status.COMPLETED, run.status());
+        assertEquals(2, calls.get());
+        assertEquals(2, fallbackCalls.get());
+        assertEquals(
+                "summary-fallback",
+                agent.getAgentState(ctx)
+                        .getContext()
+                        .get(0)
+                        .getMetadata()
+                        .get("context.summary_model"));
+        List<SessionEvent> facts = agent.sessionLog(ctx).readAfter(0, 1000);
+        assertEquals(1, facts.stream().filter(e -> "run/start".equals(e.type())).count());
+        assertEquals(1, facts.stream().filter(e -> "run/end".equals(e.type())).count());
+        assertEquals(
+                List.of("failing-summary", "summary-fallback"),
+                facts.stream()
+                        .filter(e -> "model/end".equals(e.type()))
+                        .filter(e -> "SUMMARY".equals(e.data().get("purpose")))
+                        .map(e -> e.data().get("model"))
+                        .toList());
+        assertEquals(
+                1,
+                facts.stream()
+                        .filter(e -> "model/retry".equals(e.type()))
+                        .filter(e -> "SUMMARY".equals(e.data().get("purpose")))
+                        .count());
     }
 
     /** An ordinary compaction failure skips compaction and invokes original reasoning once. */
