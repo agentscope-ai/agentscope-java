@@ -237,7 +237,7 @@ func sandboxMode(cfg configuration) string {
 func runAppServerSession(client *appServerClient, request provider.Request, cfg configuration) (*provider.Result, error) {
 	if err := client.call("initialize", map[string]any{
 		"clientInfo":   map[string]string{"name": "agentscope-runtime-host", "version": "1"},
-		"capabilities": map[string]any{},
+		"capabilities": map[string]any{"experimentalApi": true},
 	}, nil); err != nil {
 		return nil, err
 	}
