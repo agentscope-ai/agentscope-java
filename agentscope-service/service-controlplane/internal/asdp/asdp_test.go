@@ -57,6 +57,9 @@ func (s *testEventSink) HandleConnect(tenant, namespace, agentID, bindingID, age
 func (s *testEventSink) HandleDisconnect(tenant, namespace, agentID, bindingID, instanceKey string, generation int64) {
 }
 
+func (s *testEventSink) HandleHeartbeat(identity asdp.ReportIdentity) {
+}
+
 type capturedSessionReport struct {
 	Tenant     string
 	Namespace  string
