@@ -13,11 +13,13 @@ en_link: /v2/en/integration/protocol/agui
 
 多模态输入支持 image/audio/video/document。document part 会转换为 `DocumentBlock`；无法消费文档的模型提供方会返回错误，而不是静默丢弃内容。
 
-`RUN_STARTED.input` 会保留原始请求，记录日志或转发事件的使用方需要自行对敏感输入脱敏。
+`RUN_STARTED.input` 保留原始请求，包括文档内容。记录日志或转发事件的使用方需要自行对敏感输入脱敏。
 
 `AguiMessageConverter.toAguiMessageList()` 会把包含多个 `ToolResultBlock` 的 TOOL `Msg` 展开成每个 tool result 一条 AG-UI tool message。`toAguiMessage()` 仅用于最多一个 tool result 的消息，多结果时会拒绝；需要展开结果时请使用 `toAguiMessages()`。
 
 出站方向会把带 URL 的 `ImageBlock` / `AudioBlock` / `VideoBlock` / `DocumentBlock` 序列化为 AG-UI `MessageContent.Blocks`（`image` / `audio` / `video` / `document`），带 URL 的 `DataBlock` 会按解析出的 MIME 类型路由。目前出站会跳过 Base64 媒体来源。
+
+当助手消息包含推理和受支持的 URL 媒体、但没有文本时，`toAguiMessages()` 和 `toAguiMessageList()` 会同时保留两部分，依次生成推理消息和包含媒体的助手消息。
 
 ## 何时使用
 
@@ -73,6 +75,30 @@ Flux<AguiEvent> events = Flux.using(
 ```
 
 `RunAgentInput` 由前端传入，包含 `threadId`、`runId`、`messages`、`tools`、`state`等。适配器内部完成消息转换、调用 Agent 流式 API，再把事件映射到 AG-UI。
+
+## 自定义请求处理器
+
+手动配置 Spring MVC 或 WebFlux 时，可以传入 `AguiRequestProcessor`，使用自定义 Agent 解析器和请求处理配置：
+
+```java
+import io.agentscope.core.agui.processor.AguiRequestProcessor;
+import io.agentscope.spring.boot.agui.mvc.AguiMvcController;
+import io.agentscope.spring.boot.agui.webflux.AguiWebFluxHandler;
+
+AguiRequestProcessor processor = AguiRequestProcessor.builder()
+    .agentResolver(customAgentResolver)
+    .build();
+
+AguiMvcController controller = AguiMvcController.builder()
+    .requestProcessor(processor)
+    .build();
+
+AguiWebFluxHandler handler = AguiWebFluxHandler.builder()
+    .requestProcessor(processor)
+    .build();
+```
+
+配置自定义处理器后，MVC 控制器和 WebFlux Handler 不再要求 Agent 注册表。它们 Builder 的 `agentRegistry`、`sessionManager`、`serverSideMemory`、`config`、`adapterFactory` 和 `runtimeContextResolver` 选项会被忽略，请在传入的处理器上配置相应行为。MVC 的 `sseTimeout`，以及两者共有的 `agentIdHeader` 和 `interruptOnDisconnect` 等传输层选项仍然生效。不设置 `requestProcessor`（或传入 `null`）时，继续使用默认处理器并要求提供注册表。
 
 ## 事件映射
 

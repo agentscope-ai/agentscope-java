@@ -215,6 +215,14 @@ public class SandboxException extends RuntimeException {
         }
     }
 
+    /** Command submission was attempted, but its completion and exit code cannot be confirmed. */
+    public static class ExecStatusUnknownException extends SandboxException {
+
+        public ExecStatusUnknownException(String message, Throwable cause) {
+            super(SandboxErrorCode.EXEC_STATUS_UNKNOWN, message, cause);
+        }
+    }
+
     /**
      * Thrown when a sandbox command exits with a non-zero exit code.
      */
@@ -223,6 +231,7 @@ public class SandboxException extends RuntimeException {
         private final int exitCode;
         private final String stdout;
         private final String stderr;
+        private final boolean timedOut;
 
         /**
          * Creates an exec exception.
@@ -232,12 +241,17 @@ public class SandboxException extends RuntimeException {
          * @param stderr captured standard error
          */
         public ExecException(int exitCode, String stdout, String stderr) {
+            this(exitCode, stdout, stderr, false);
+        }
+
+        public ExecException(int exitCode, String stdout, String stderr, boolean timedOut) {
             super(
                     SandboxErrorCode.EXEC_NONZERO,
                     "Command exited with code " + exitCode + ": " + stderr);
             this.exitCode = exitCode;
             this.stdout = stdout;
             this.stderr = stderr;
+            this.timedOut = timedOut;
         }
 
         /**
@@ -265,6 +279,10 @@ public class SandboxException extends RuntimeException {
          */
         public String getStderr() {
             return stderr;
+        }
+
+        public boolean isTimedOut() {
+            return timedOut;
         }
     }
 

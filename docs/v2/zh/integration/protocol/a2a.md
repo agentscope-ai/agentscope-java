@@ -56,6 +56,8 @@ Msg result = remote.call(new UserMessage("Translate to English: 你好")).block(
 
 不走流式时（客户端配置或 AgentCard 不支持流式），如果返回的任务仍是 `SUBMITTED` 或 `WORKING`，调用会以 `IllegalStateException` 失败，因为 `A2aAgent` 不轮询任务。
 
+取消一次调用时（比如取消订阅，或上游的 `timeout` 触发），如果已经拿到任务 id，会同时取消远端任务（`tasks/cancel`），并关闭默认 JSON-RPC 传输的事件流；取消之后再到的事件会被丢弃。通过 `clientTransports` 配置的传输使用自己的 HTTP 客户端，它们的事件流会一直开着，直到远端结束任务。
+
 ```java
 remote.streamEvents(new UserMessage("Translate to English: 你好"))
     .doOnNext(event -> {
