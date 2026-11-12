@@ -457,18 +457,31 @@ func (s *Server) publicSessionState(c *gin.Context, status string) {
 	if !ok {
 		return
 	}
-	err := s.store.WithSessionLock(c, "public-session:"+v.ID.String(), func(ctx context.Context) error {
-		// Terminal states are projected lazily on read; refresh active turns first
-		// so a finished cancellation does not block archiving or deleting.
-		active, e := s.store.Endpoints().ListInvocations(ctx, store.EndpointInvocationFilter{EndpointID: v.ID, ActiveOnly: true, Limit: 100})
-		if e != nil {
-			return e
+	// Refresh outside the Session lock because Managed projection may call the
+	// data plane. The final active count is rechecked under the lock below.
+	// Page through the full Turn collection so projecting terminal states cannot
+	// shrink an ActiveOnly result set and skip candidates at the next offset.
+	for offset := 0; ; {
+		turns, err := s.store.Endpoints().ListInvocations(c, store.EndpointInvocationFilter{EndpointID: v.ID, Limit: 100, Offset: offset, OldestFirst: true})
+		if err != nil {
+			s.writeControlPlaneError(c, err)
+			return
 		}
-		for _, inv := range active {
-			if _, e = s.refreshServiceInvocation(ctx, inv.ID); e != nil {
-				return e
+		for _, inv := range turns {
+			if serviceapi.Terminal(inv.Status) {
+				continue
+			}
+			if _, err = s.refreshServiceInvocation(c, inv.ID); err != nil {
+				s.writeControlPlaneError(c, err)
+				return
 			}
 		}
+		offset += len(turns)
+		if len(turns) < 100 {
+			break
+		}
+	}
+	err := s.store.WithSessionLock(c, "public-session:"+v.ID.String(), func(ctx context.Context) error {
 		count, e := s.store.Endpoints().CountActiveInvocations(ctx, store.EndpointInvocationFilter{EndpointID: v.ID})
 		if e != nil {
 			return e
@@ -492,7 +505,7 @@ func (s *Server) publicSessionState(c *gin.Context, status string) {
 		return nil
 	})
 	if err != nil {
-		c.JSON(409, ErrorResponse{Error: err.Error()})
+		s.writeControlPlaneError(c, err)
 	}
 }
 func (s *Server) archivePublicSession(c *gin.Context) { s.publicSessionState(c, "archived") }

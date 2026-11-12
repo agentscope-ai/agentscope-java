@@ -17,11 +17,14 @@
 package httpapi
 
 import (
+	"bufio"
 	"bytes"
+	"context"
 	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -386,5 +389,241 @@ func TestPublicSessionDeleteRefreshesFinishedCancellation(t *testing.T) {
 	}
 	if inv.Status != model.EndpointInvocationCancelled {
 		t.Fatal("cancel_requested Turn was not finalized", inv.Status)
+	}
+}
+
+func TestPublicSessionDeleteRefreshesAllFinishedCancellations(t *testing.T) {
+	s, st, a := sessionTestFixture(t)
+	session := decodeSessionTest(t, sessionTestRequest(s, "POST", "/api/v1/agent-sessions", `{"target":{"type":"agent","id":"`+a.ID.String()+`"}}`, "", ""), 201)
+	base := "/api/v1/agent-sessions/" + session["id"].(string)
+	turn := decodeSessionTest(t, sessionTestRequest(s, "POST", base+"/turns", `{"message":"Report"}`, "turn", ""), 202)
+	inv, err := st.Endpoints().GetInvocation(t.Context(), uuid.MustParse(turn["id"].(string)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	run, err := st.Orchestration().CreateRun(t.Context(), &model.OrchestrationRun{Tenant: "t", Namespace: "n", RootIssueID: uuid.New(), State: model.RunCancelled, Mode: model.RunModeDirect})
+	if err != nil {
+		t.Fatal(err)
+	}
+	inv.RunID = &run.ID
+	inv.Status = model.EndpointInvocationCancelRequested
+	if _, err = st.Endpoints().UpdateInvocation(t.Context(), inv); err != nil {
+		t.Fatal(err)
+	}
+	for i := 1; i < 101; i++ {
+		candidate := *inv
+		candidate.ID = uuid.New()
+		candidate.IdempotencyKey = uuid.NewString()
+		if _, created, createErr := st.Endpoints().ReserveInvocation(t.Context(), &candidate); createErr != nil || !created {
+			t.Fatalf("create cancelled Turn %d: created=%v err=%v", i, created, createErr)
+		}
+	}
+	decodeSessionTest(t, sessionTestRequest(s, "DELETE", base, "", "", ""), 200)
+	count, err := st.Endpoints().CountActiveInvocations(t.Context(), store.EndpointInvocationFilter{EndpointID: uuid.MustParse(session["id"].(string))})
+	if err != nil || count != 0 {
+		t.Fatalf("active Turns after DELETE: count=%d err=%v", count, err)
+	}
+}
+
+func TestPublicSessionDeleteRefreshFailureIsNotConflict(t *testing.T) {
+	s, st, a := sessionTestFixture(t)
+	session := decodeSessionTest(t, sessionTestRequest(s, "POST", "/api/v1/agent-sessions", `{"target":{"type":"agent","id":"`+a.ID.String()+`"}}`, "", ""), 201)
+	base := "/api/v1/agent-sessions/" + session["id"].(string)
+	turn := decodeSessionTest(t, sessionTestRequest(s, "POST", base+"/turns", `{"message":"Report"}`, "turn", ""), 202)
+	issue, err := st.Collaboration().CreateIssue(t.Context(), &model.Issue{Tenant: "t", Namespace: "n", Title: "Managed cancellation", AssigneeType: model.AssigneeAgent, AssigneeRef: a.ID.String()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	tasks, err := st.Collaboration().ListAgentTasks(t.Context(), store.AgentTaskFilter{IssueID: issue.ID, Limit: 1})
+	if err != nil || len(tasks) != 1 {
+		t.Fatalf("tasks=%v err=%v", tasks, err)
+	}
+	run, err := st.Orchestration().GetRun(t.Context(), tasks[0].OrchestrationRunID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	run, err = st.Orchestration().TransitionRun(t.Context(), run.ID, run.Version, model.RunCancelling, nil, "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	run, err = st.Orchestration().TransitionRun(t.Context(), run.ID, run.Version, model.RunCancelled, nil, "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = st.ExecutionAttempts().Create(t.Context(), &model.ExecutionAttempt{AgentTaskID: tasks[0].ID, AgentID: a.ID, RunID: run.ID, Tenant: "t", Namespace: "n", BackendKind: model.DataPlaneManaged, State: model.ExecutionCancelled, SessionID: "managed-session"}); err != nil {
+		t.Fatal(err)
+	}
+	inv, err := st.Endpoints().GetInvocation(t.Context(), uuid.MustParse(turn["id"].(string)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	inv.RunID = &run.ID
+	inv.Status = model.EndpointInvocationCancelRequested
+	if _, err = st.Endpoints().UpdateInvocation(t.Context(), inv); err != nil {
+		t.Fatal(err)
+	}
+	decodeSessionTest(t, sessionTestRequest(s, "DELETE", base, "", "", ""), 500)
+	current, err := sessionapi.Get(t.Context(), st, "t", uuid.MustParse(session["id"].(string)))
+	if err != nil || current.Status != "active" {
+		t.Fatalf("Session changed after refresh failure: %+v err=%v", current, err)
+	}
+}
+
+type sessionStateTestStore struct {
+	store.Store
+	endpoints    store.EndpointRepository
+	lockAcquired chan struct{}
+}
+
+func (s *sessionStateTestStore) Endpoints() store.EndpointRepository { return s.endpoints }
+
+func (s *sessionStateTestStore) WithSessionLock(ctx context.Context, key string, fn func(context.Context) error) error {
+	return s.Store.WithSessionLock(ctx, key, func(ctx context.Context) error {
+		if s.lockAcquired != nil {
+			select {
+			case s.lockAcquired <- struct{}{}:
+			default:
+			}
+		}
+		return fn(ctx)
+	})
+}
+
+type sessionStateTestEndpoints struct {
+	store.EndpointRepository
+	listStarted chan struct{}
+	releaseList chan struct{}
+}
+
+func (r *sessionStateTestEndpoints) ListInvocations(ctx context.Context, filter store.EndpointInvocationFilter) ([]*model.EndpointInvocation, error) {
+	if r.listStarted != nil && filter.Limit == 100 {
+		close(r.listStarted)
+		select {
+		case <-r.releaseList:
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+	}
+	return r.EndpointRepository.ListInvocations(ctx, filter)
+}
+
+func TestPublicSessionDeleteRechecksTurnsSubmittedDuringRefresh(t *testing.T) {
+	s, st, a := sessionTestFixture(t)
+	session := decodeSessionTest(t, sessionTestRequest(s, "POST", "/api/v1/agent-sessions", `{"target":{"type":"agent","id":"`+a.ID.String()+`"}}`, "", ""), 201)
+	base := "/api/v1/agent-sessions/" + session["id"].(string)
+	endpoints := &sessionStateTestEndpoints{EndpointRepository: st.Endpoints(), listStarted: make(chan struct{}), releaseList: make(chan struct{})}
+	gated := &sessionStateTestStore{Store: st, endpoints: endpoints}
+	s.store = gated
+	deleteDone := make(chan *httptest.ResponseRecorder, 1)
+	go func() { deleteDone <- sessionTestRequest(s, "DELETE", base, "", "", "") }()
+	select {
+	case <-endpoints.listStarted:
+	case <-time.After(2 * time.Second):
+		t.Fatal("DELETE did not start listing Turns")
+	}
+	gated.lockAcquired = make(chan struct{}, 1)
+	postDone := make(chan *httptest.ResponseRecorder, 1)
+	go func() {
+		postDone <- sessionTestRequest(s, "POST", base+"/turns", `{"message":"concurrent"}`, "concurrent", "")
+	}()
+	select {
+	case <-gated.lockAcquired:
+	case <-time.After(2 * time.Second):
+		close(endpoints.releaseList)
+		<-deleteDone
+		<-postDone
+		t.Fatal("new Turn was blocked by the DELETE refresh")
+	}
+	if w := <-postDone; w.Code != 202 {
+		t.Fatal("concurrent Turn was not accepted", w.Code, w.Body)
+	}
+	close(endpoints.releaseList)
+	if w := <-deleteDone; w.Code != 409 {
+		t.Fatal("DELETE missed a Turn submitted during refresh", w.Code, w.Body)
+	}
+}
+
+func TestPublicSessionStreamsOutliveServerWriteTimeout(t *testing.T) {
+	s, st, a := sessionTestFixture(t)
+	session := decodeSessionTest(t, sessionTestRequest(s, "POST", "/api/v1/agent-sessions", `{"target":{"type":"agent","id":"`+a.ID.String()+`"}}`, "", ""), 201)
+	sessionID := uuid.MustParse(session["id"].(string))
+	base := "/api/v1/agent-sessions/" + sessionID.String()
+	turn := decodeSessionTest(t, sessionTestRequest(s, "POST", base+"/turns", `{"message":"Report"}`, "turn", ""), 202)
+	turnID := turn["id"].(string)
+	sessionEvents := decodeSessionTest(t, sessionTestRequest(s, "GET", base+"/events", "", "", ""), 200)
+	turnEvents := decodeSessionTest(t, sessionTestRequest(s, "GET", base+"/turns/"+turnID+"/events", "", "", ""), 200)
+	sessionValue, err := sessionapi.Get(t.Context(), st, "t", sessionID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	inv, err := st.Endpoints().GetInvocation(t.Context(), uuid.MustParse(turnID))
+	if err != nil {
+		t.Fatal(err)
+	}
+	contract, err := serviceapi.ReadContract(inv.Contract)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tests := []struct {
+		name    string
+		path    string
+		marker  string
+		publish func() error
+	}{
+		{name: "Session", path: base + "/events/stream?after=" + sessionEvents["next_cursor"].(string), marker: "session-after-deadline", publish: func() error {
+			_, err := s.sessionJournal(sessionValue).Append(t.Context(), "write-timeout-test", "session.test", map[string]any{"marker": "session-after-deadline"})
+			return err
+		}},
+		{name: "Turn", path: base + "/turns/" + turnID + "/events/stream?after=" + turnEvents["next_cursor"].(string), marker: "turn-after-deadline", publish: func() error {
+			_, err := serviceJournal(st, &contract.Endpoint, inv).Append(t.Context(), "write-timeout-test", "turn.test", map[string]any{"marker": "turn-after-deadline"})
+			return err
+		}},
+	}
+	testServer := httptest.NewUnstartedServer(s.router)
+	testServer.Config.WriteTimeout = 50 * time.Millisecond
+	testServer.Start()
+	defer testServer.Close()
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
+			defer cancel()
+			req, err := http.NewRequestWithContext(ctx, http.MethodGet, testServer.URL+test.path, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			req.Header.Set("Authorization", "Bearer console")
+			resp, err := testServer.Client().Do(req)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer resp.Body.Close()
+			if resp.StatusCode != http.StatusOK {
+				t.Fatalf("status=%d", resp.StatusCode)
+			}
+			time.Sleep(100 * time.Millisecond)
+			if err := test.publish(); err != nil {
+				t.Fatal(err)
+			}
+			scanner := bufio.NewScanner(resp.Body)
+			for scanner.Scan() {
+				line := scanner.Text()
+				if !strings.HasPrefix(line, "data: ") {
+					continue
+				}
+				var event map[string]any
+				if err := json.Unmarshal([]byte(strings.TrimPrefix(line, "data: ")), &event); err != nil {
+					t.Fatal(err)
+				}
+				data := event["data"].(map[string]any)
+				if data["marker"] != test.marker {
+					t.Fatalf("unexpected event after write timeout: %+v", event)
+				}
+				return
+			}
+			if err := scanner.Err(); err != nil {
+				t.Fatalf("stream closed at the server write timeout: %v", err)
+			}
+			t.Fatal("stream closed before the event published after the server write timeout")
+		})
 	}
 }
