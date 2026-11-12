@@ -503,6 +503,48 @@ class CapabilityGrantIntegrationTest {
         assertTrue(seen.contains("granted-one") && seen.contains("secret-one"));
     }
 
+    @Test
+    @DisplayName(
+            "probe: a static-skillBox sub-agent inheriting DENY_ALL leaks no skill via prompt"
+                    + " or schema")
+    void staticSkillBoxSubAgentInheritsDenyAllWithoutLeakage() {
+        Toolkit childToolkit = new Toolkit();
+        SkillBox skillBox = new SkillBox(childToolkit);
+        skillBox.registerSkill(skill("secret-one"));
+        skillBox.registerSkillLoadTool();
+        MockModel childModel = new MockModel("child done");
+        ReActAgent child =
+                ReActAgent.builder()
+                        .name("child")
+                        .model(childModel)
+                        .toolkit(childToolkit)
+                        .skillBox(skillBox)
+                        .build();
+        SubAgentTool subAgentTool =
+                new SubAgentTool(
+                        (SubAgentProvider<ReActAgent>) () -> child, SubAgentConfig.defaults());
+
+        // The parent carries DENY_ALL; the child has no resolver of its own, so its call
+        // funnel reuses the inherited surface instead of re-resolving.
+        RuntimeContext parentRc = rc(CapabilitySurface.DENY_ALL);
+        callDirect(subAgentTool, Map.of("message", "do it"), parentRc);
+
+        // Channel 1: the child's model input (system prompt included) mentions no skill.
+        String childInput = modelInputText(childModel);
+        assertFalse(
+                childInput.contains("secret-one"),
+                "no skill name may reach the sub-agent's prompt");
+        assertFalse(childInput.contains("<available_skills>"), "no skills block under DENY_ALL");
+        // Channel 2: the loader schema is present (emptiness guard) yet carries no enum —
+        // nothing is granted, so nothing is enumerable.
+        assertFalse(
+                loadToolSkillIdProperty(childModel).isEmpty(),
+                "the loader schema itself must still be delivered (system capability)");
+        assertFalse(
+                loadToolSkillIdProperty(childModel).containsKey("enum"),
+                "the loader schema must not enumerate any skill under the inherited DENY_ALL");
+    }
+
     /** Concatenates every text block the model received, across rounds (system included). */
     private static String modelInputText(MockModel model) {
         StringBuilder sb = new StringBuilder();

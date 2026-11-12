@@ -98,6 +98,38 @@ class WorkspaceProjectionRevocationTest {
     }
 
     @Test
+    @DisplayName("probe: run.sh projected by a wider call is unreadable in the reused sandbox")
+    void reusedSandboxRunShFromWiderCallIsUnreadableAfterNarrowing() throws Exception {
+        String alphaRun = ".skills-cache/u1/market/alpha/run.sh";
+        String betaRun = ".skills-cache/u1/market/beta/run.sh";
+        Files.writeString(hostSource.resolve(alphaRun), "#!/bin/sh\necho alpha\n");
+        Files.writeString(hostSource.resolve(betaRun), "#!/bin/sh\necho beta\n");
+
+        // Call 1 (wide grant): both subtrees project; beta's run.sh is readable inside.
+        FakeState state = new FakeState();
+        state.setWorkspaceSpec(
+                specWithRoots(
+                        AGENTS, ".skills-cache/u1/market/alpha", ".skills-cache/u1/market/beta"));
+        FakeSandbox sandbox = new FakeSandbox(state);
+        sandbox.start();
+        assertTrue(sandbox.exists(betaRun), "run.sh is readable after the wide call");
+        assertTrue(sandbox.exists(BETA), "beta's manifest is readable after the wide call");
+
+        // Call 2 (narrowed grant, reused workspace): the difference set is revoked.
+        sandbox.stop();
+        state.setWorkspaceSpec(specWithRoots(AGENTS, ".skills-cache/u1/market/alpha"));
+        sandbox.start();
+
+        assertFalse(
+                sandbox.exists(betaRun),
+                "the first call's run.sh must be unreadable — reading it in the sandbox"
+                        + " would fail");
+        assertFalse(sandbox.exists(BETA), "the whole denied subtree is revoked");
+        assertTrue(sandbox.exists(alphaRun), "the still-granted run.sh stays readable");
+        assertTrue(sandbox.exists(ALPHA), "the still-granted manifest stays readable");
+    }
+
+    @Test
     @DisplayName("traversal entry in the manifest aborts the start (end-to-end fail-closed)")
     void traversalManifestEntryFailsTheStartClosed() throws Exception {
         FakeState state = new FakeState();
