@@ -17,9 +17,14 @@ package io.agentscope.builder;
 
 import io.agentscope.core.state.AgentStateStore;
 import io.agentscope.core.state.InMemoryAgentStateStore;
+import io.agentscope.extensions.channel.feishu.FeishuCallbackController;
+import io.agentscope.extensions.channel.github.GitHubWebhookController;
+import io.agentscope.extensions.channel.gitlab.GitLabWebhookController;
+import io.agentscope.extensions.channel.wecom.WeComCallbackController;
 import io.agentscope.harness.agent.filesystem.remote.store.BaseStore;
 import io.agentscope.harness.agent.filesystem.remote.store.InMemoryStore;
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Bean;
@@ -53,8 +58,26 @@ import org.springframework.test.context.TestPropertySource;
         })
 class SchedulerAppContextLoadTest {
 
+    @Autowired private FeishuCallbackController feishuCallbackController;
+
+    @Autowired private WeComCallbackController weComCallbackController;
+
+    @Autowired private GitHubWebhookController gitHubWebhookController;
+
+    @Autowired private GitLabWebhookController gitLabWebhookController;
+
     @Test
     void contextLoads() {}
+
+    @Test
+    void channelCallbackControllersAreRegistered() {
+        // The advertised /api/channels/... callback paths answer 404 with no trace unless the
+        // extensions packages are component-scanned; assert the controllers are beans.
+        org.junit.jupiter.api.Assertions.assertNotNull(feishuCallbackController);
+        org.junit.jupiter.api.Assertions.assertNotNull(weComCallbackController);
+        org.junit.jupiter.api.Assertions.assertNotNull(gitHubWebhookController);
+        org.junit.jupiter.api.Assertions.assertNotNull(gitLabWebhookController);
+    }
 
     @TestConfiguration
     static class StubConfig {

@@ -119,10 +119,7 @@ public final class ChatSessions implements AutoCloseable {
 
     public ChatHistory.Snapshot snapshot(String id) {
         var session = session(id);
-        var head = session.log().head();
-        String active = head.leaseUntil() > System.currentTimeMillis() ? head.owner() : null;
-        return ChatHistory.snapshot(
-                id, session.log(), active, session.executionError(), session.tasks());
+        return ChatHistory.snapshot(id, session.log(), session.executionError(), session.tasks());
     }
 
     public AgentSession.Task submit(String session, String requestId, String text) {

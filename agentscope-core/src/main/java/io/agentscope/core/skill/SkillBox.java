@@ -15,7 +15,9 @@
  */
 package io.agentscope.core.skill;
 
+import io.agentscope.core.agent.CapabilitySurface;
 import io.agentscope.core.skill.util.SkillFileSystemHelper;
+import io.agentscope.core.skill.util.SkillUtil;
 import io.agentscope.core.tool.AgentTool;
 import io.agentscope.core.tool.ExtendedModel;
 import io.agentscope.core.tool.ToolCallParam;
@@ -30,8 +32,8 @@ import java.nio.file.Path;
 import java.util.Base64;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -54,7 +56,47 @@ public class SkillBox {
     private SkillFileFilter fileFilter;
     private boolean autoUploadSkill = true;
 
-    private static final ConcurrentHashMap<String, Object> FILE_LOCKS = new ConcurrentHashMap<>();
+    /**
+     * Number of lock stripes guarding concurrent {@code uploadSkillFiles} writes. A fixed stripe
+     * table replaces the former per-path lock map, which accumulated one lock object per
+     * materialised path and never released them in long-lived processes. Mutual exclusion for a
+     * given path does not depend on this value (same path always maps to the same stripe); a
+     * collision only serialises one extra file write. 256 keeps worst-case stripe occupancy —
+     * storm-level materialisation bursts over digit-heavy path families, whose 31-polynomial
+     * hashes cluster more at smaller power-of-two moduli — below one waiting writer, with room
+     * for the longer write critical sections the planned temp-file-plus-rename convergence will
+     * introduce; the table costs a few KB.
+     */
+    static final int FILE_LOCK_STRIPES = 256;
+
+    private static final Object[] FILE_LOCK_TABLE = createFileLockTable();
+
+    private static Object[] createFileLockTable() {
+        Object[] table = new Object[FILE_LOCK_STRIPES];
+        for (int i = 0; i < FILE_LOCK_STRIPES; i++) {
+            table[i] = new Object();
+        }
+        return table;
+    }
+
+    /**
+     * Returns the lock stripe guarding writes to the given target path. The stripe index is
+     * {@code floorMod(pathHash, FILE_LOCK_STRIPES)}, so a given path always maps to the same
+     * stripe (mutual exclusion for that path is preserved) while the table stays fixed-size no
+     * matter how many distinct paths are written; unrelated paths colliding on a stripe are
+     * merely serialised behind each other, which does not affect correctness.
+     *
+     * <p>Callers must not hold more than one stripe at a time: acquire the stripe, finish the
+     * write, and release it before locking another path. Nested stripe acquisitions in
+     * differing orders can deadlock, and stripe collisions between unrelated paths only widen
+     * that hazard.
+     *
+     * @param path the target file path being written
+     * @return the stripe object to {@code synchronized} on for that path
+     */
+    static Object fileLockFor(Path path) {
+        return FILE_LOCK_TABLE[Math.floorMod(path.hashCode(), FILE_LOCK_STRIPES)];
+    }
 
     public SkillBox(Toolkit toolkit) {
         this(toolkit, null);
@@ -73,8 +115,8 @@ public class SkillBox {
     }
 
     private SkillBox(SkillBox source, Toolkit toolkit) {
-        for (String id : source.getAllSkillIds()) {
-            skillRegistry.registerSkill(id, source.getSkill(id));
+        for (String skillId : source.getAllSkillIds()) {
+            skillRegistry.registerSkill(skillId, source.getSkill(skillId));
         }
         skillPromptProvider = source.skillPromptProvider.copyFor(skillRegistry);
         skillToolFactory = new SkillToolFactory(skillRegistry, toolkit);
@@ -116,6 +158,33 @@ public class SkillBox {
      */
     public String getSkillPrompt(SkillFilter filter) {
         return skillPromptProvider.getSkillSystemPrompt(filter);
+    }
+
+    /**
+     * Gets the skill system prompt trimmed to the given capability grant surface.
+     *
+     * <p>Package-private on purpose: this serves the static {@link SkillHook} injection path
+     * only. A public same-arity overload of {@code getSkillPrompt} would make the existing
+     * {@code getSkillPrompt(null)} call (null = all visible, a documented contract of the
+     * {@link SkillFilter} overload) ambiguous and break source compatibility.
+     *
+     * <p>{@code null} and unrestricted ({@code ALLOW_ALL}-shaped) surfaces keep the
+     * unfiltered prompt — byte-identical to {@link #getSkillPrompt()}. A restricted surface
+     * renders only the skills it grants (system-marked skills always pass), through the same
+     * provider pipeline as every other render — a single renderer, no second format. The
+     * per-skill decision is the surface's own {@code allowsSkill} predicate, the same one
+     * the dynamic skill middleware applies, so full-skillId (exact-copy) grant entries keep
+     * their precision. When nothing is granted the result is an empty string, which callers
+     * skip injecting.
+     *
+     * @param surface the per-call grant surface, or {@code null} for no trimming
+     * @return The trimmed skill system prompt, or empty string if no skill passes
+     */
+    String getSkillPrompt(CapabilitySurface surface) {
+        if (surface == null || surface.isUnrestricted()) {
+            return getSkillPrompt();
+        }
+        return skillPromptProvider.getSkillSystemPrompt(surface::allowsSkill);
     }
 
     /**
@@ -186,10 +255,10 @@ public class SkillBox {
      *
      * <p><b>Usage example:</b>
      * <pre>{@code
-     * AgentSkill mySkill = new AgentSkill("my_skill", "Description", "Content", null);
+     * AgentSkill mySkill = new AgentSkill("my-skill", "Description", "Content", null);
      *
      * skillBox.registerSkill(mySkill);
-     * skillBox.registerSkill(my_skill); // do nothing
+     * skillBox.registerSkill(mySkill); // do nothing
      * }</pre>
      *
      * @param skill The agent skill to register
@@ -232,7 +301,11 @@ public class SkillBox {
             throw new IllegalArgumentException("Missing or empty required parameter: path");
         }
         return skillToolFactory.loadSkillResourceImpl(
-                skillId, path, skillToolFactory.resolveToolContext(param));
+                skillId,
+                path,
+                skillToolFactory.resolveToolContext(param),
+                // Not gated here: the single decision lives in loadSkillResourceImpl.
+                param.getRuntimeContext());
     }
 
     /**
@@ -688,6 +761,12 @@ public class SkillBox {
      *   <li>Otherwise, use workDir/skills (workDir may be a temporary directory).</li>
      * </ul>
      *
+     * <p>Security gate: the skill directory (derived from the skill id, whose source part is
+     * free-form) and every resource path must pass {@link SkillUtil#resolveContainedPath(Path,
+     * String)} — an absolute or traversal-shaped segment would otherwise resolve outside the
+     * upload directory and is skipped with a warning. Skill names themselves are already
+     * validated at construction.
+     *
      * <p>If a file already exists, it will be overwritten.
      *
      */
@@ -712,7 +791,15 @@ public class SkillBox {
                 continue;
             }
 
-            Path skillDir = targetDir.resolve(skillId);
+            Optional<Path> skillDir = SkillUtil.resolveContainedPath(targetDir, skillId);
+            if (skillDir.isEmpty()) {
+                logger.warn(
+                        "Refusing to materialize skill '{}': resolved directory escapes the"
+                                + " target directory '{}'",
+                        skillId,
+                        targetDir);
+                continue;
+            }
 
             for (String resourcePath : resourcePaths) {
                 if (!filter.accept(resourcePath)) {
@@ -725,21 +812,20 @@ public class SkillBox {
                     continue;
                 }
 
-                Path targetPath = skillDir.resolve(resourcePath).normalize();
-
-                // Security check: Prevent path traversal attacks
-                if (!targetPath.startsWith(skillDir)) {
+                Optional<Path> containedPath =
+                        SkillUtil.resolveContainedPath(skillDir.get(), resourcePath);
+                if (containedPath.isEmpty()) {
                     logger.warn("Skipping file with invalid path: {}", resourcePath);
                     continue;
                 }
+                Path targetPath = containedPath.get();
 
                 try {
                     if (targetPath.getParent() != null) {
                         Files.createDirectories(targetPath.getParent());
                     }
 
-                    Object lock =
-                            FILE_LOCKS.computeIfAbsent(targetPath.toString(), k -> new Object());
+                    Object lock = fileLockFor(targetPath);
                     synchronized (lock) {
                         if (content.startsWith(BASE64_PREFIX)) {
                             String encoded = content.substring(BASE64_PREFIX.length());

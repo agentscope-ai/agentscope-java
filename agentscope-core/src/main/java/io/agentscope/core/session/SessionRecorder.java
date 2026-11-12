@@ -27,11 +27,13 @@ import io.agentscope.core.message.GenerateReason;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.ToolResultBlock;
+import io.agentscope.core.message.ToolResultMessage;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.middleware.ModelCallInput;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.state.AgentState;
 import io.agentscope.core.util.JsonUtils;
+import io.agentscope.core.util.MessageUtils;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.ArrayList;
@@ -58,6 +60,7 @@ public final class SessionRecorder {
     public static final String CONTEXT_KEY = "agentscope.session.recorder";
     public static final String PARENT_KEY = "agentscope.session.parent";
     private final AtomicBoolean exporting = new AtomicBoolean();
+    private final AtomicBoolean exportRequested = new AtomicBoolean();
     public static final String TURN_ID_KEY = "agentscope.session.turnId";
     private static final Duration LEASE = Duration.ofMinutes(2);
     private final SessionLog log;
@@ -76,6 +79,7 @@ public final class SessionRecorder {
     private String stepId;
     private String batchId;
     private final Map<String, String> actionIds = new ConcurrentHashMap<>();
+    private final Map<String, ToolResultBlock> completedToolResults = new LinkedHashMap<>();
     private final Map<String, String> messageModelCalls = new ConcurrentHashMap<>();
     private String previousState;
     private List<String> previousMessages = List.of();
@@ -227,6 +231,14 @@ public final class SessionRecorder {
         SessionEventTypes.validate(accepted);
         pending.add(accepted);
         pendingBytes += byteLength;
+        if (type.equals("action/end")
+                && accepted.data().get("result") instanceof Map<?, ?> result) {
+            var frozenResult = new LinkedHashMap<Object, Object>(result);
+            frozenResult.putIfAbsent("type", "tool_result");
+            completedToolResults.put(
+                    (String) accepted.data().get("toolCallId"),
+                    JsonUtils.getJsonCodec().convertValue(frozenResult, ToolResultBlock.class));
+        }
         return seq;
     }
 
@@ -247,7 +259,33 @@ public final class SessionRecorder {
     }
 
     public Mono<Void> flush() {
-        return Mono.<Void>fromRunnable(this::flushNow).subscribeOn(Schedulers.boundedElastic());
+        return uninterruptible(this::flushNow);
+    }
+
+    /**
+     * Runs storage work on the elastic pool without letting a downstream cancellation interrupt
+     * it.
+     *
+     * <p>{@code Mono.fromRunnable(work).subscribeOn(Schedulers.boundedElastic())} cancels the
+     * scheduled task when the subscription is disposed, and cancelling a running task interrupts
+     * its thread. A {@code renew} or {@code commit} interrupted in flight leaves the durable
+     * outcome unknown, and retrying a partially applied commit is not safe. The work is therefore
+     * submitted in a way that only the signal can be cancelled: the write always runs to
+     * completion.
+     */
+    private static Mono<Void> uninterruptible(Runnable work) {
+        return Mono.<Void>create(
+                sink ->
+                        Schedulers.boundedElastic()
+                                .schedule(
+                                        () -> {
+                                            try {
+                                                work.run();
+                                                sink.success();
+                                            } catch (Throwable error) {
+                                                sink.error(error);
+                                            }
+                                        }));
     }
 
     public synchronized void flushNow() {
@@ -270,18 +308,27 @@ public final class SessionRecorder {
 
     private void exportCommitted() {
         if (exporter == null) return;
+        exportRequested.set(true);
         if (!exporting.compareAndSet(false, true)) return;
         Schedulers.boundedElastic()
                 .schedule(
                         () -> {
                             try {
-                                exporter.drain();
+                                // A commit that arrives while a drain runs must not be
+                                // dropped: keep draining until no request is left, or the
+                                // last events of a run wait for a retry after the heartbeat
+                                // is gone.
+                                while (exportRequested.compareAndSet(true, false)) {
+                                    exporter.drain();
+                                }
                             } catch (RuntimeException error) {
+                                exportRequested.set(false);
                                 LOGGER.warn(
                                         "Committed session export pending retry: {}",
                                         error.toString());
                             } finally {
                                 exporting.set(false);
+                                if (exportRequested.get()) exportCommitted();
                             }
                         });
     }
@@ -465,7 +512,11 @@ public final class SessionRecorder {
         return Mono.defer(
                         () -> {
                             synchronized (this) {
-                                captureState(state, "run_" + status);
+                                captureState(
+                                        "cancelled".equals(status)
+                                                ? cancellationState(state)
+                                                : state,
+                                        "run_" + status);
                                 String terminal =
                                         "completed".equals(status) && resultStatus != null
                                                 ? resultStatus
@@ -495,12 +546,27 @@ public final class SessionRecorder {
                             }
                             return flush();
                         })
-                .then(Mono.<Void>fromRunnable(this::close).subscribeOn(Schedulers.boundedElastic()))
-                .onErrorResume(
-                        error ->
-                                Mono.<Void>fromRunnable(this::close)
-                                        .subscribeOn(Schedulers.boundedElastic())
-                                        .then(Mono.error(error)));
+                .then(uninterruptible(this::close))
+                .onErrorResume(error -> uninterruptible(this::close).then(Mono.error(error)));
+    }
+
+    private AgentState cancellationState(AgentState state) {
+        // A parallel batch publishes completed actions before adding its results to context.
+        // Keep those facts in the cancellation checkpoint, without changing live context or
+        // overwriting the batch's final (possibly rewritten) results.
+        Set<String> pendingIds = MessageUtils.pendingToolUseIds(state.getContext());
+        AgentState snapshot = null;
+        for (var entry : completedToolResults.entrySet()) {
+            if (!pendingIds.contains(entry.getKey()) || entry.getValue().isSuspended()) continue;
+            if (snapshot == null) snapshot = AgentState.fromJsonString(state.toJson());
+            snapshot.contextMutable()
+                    .add(
+                            ToolResultMessage.builder()
+                                    .id("recovered_" + entry.getKey())
+                                    .result(entry.getValue())
+                                    .build());
+        }
+        return snapshot == null ? state : snapshot;
     }
 
     public synchronized void close() {

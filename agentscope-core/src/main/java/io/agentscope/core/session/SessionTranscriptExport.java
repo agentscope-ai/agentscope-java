@@ -15,6 +15,9 @@
  */
 package io.agentscope.core.session;
 
+import io.agentscope.core.formatter.DocumentReferenceRenderer;
+import io.agentscope.core.message.ContentBlock;
+import io.agentscope.core.message.DocumentBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
@@ -28,6 +31,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 /** Read-time export for clients that still consume flat transcript entries. Never writes a log. */
 public final class SessionTranscriptExport {
@@ -49,14 +53,15 @@ public final class SessionTranscriptExport {
         List<Entry> entries = new ArrayList<>();
         for (Msg message : transcript.messages()) {
             long timestamp = timestampMillis(message.getTimestamp());
-            String text = message.getTextContent();
+            // Tool results are exported as their own entries below.
+            String text = DocumentReferenceRenderer.renderMessageText(message, false);
             boolean hasTools =
                     message.getContent().stream()
                             .anyMatch(
                                     block ->
                                             block instanceof ToolUseBlock
                                                     || block instanceof ToolResultBlock);
-            if ((text != null && !text.isBlank()) || !hasTools) {
+            if (!text.isBlank() || !hasTools) {
                 entries.add(
                         new Entry(
                                 message.getId(),
@@ -81,19 +86,65 @@ public final class SessionTranscriptExport {
                                     use.getInput(),
                                     null));
                 } else if (block instanceof ToolResultBlock result) {
-                    String output =
-                            result.getOutput().stream().allMatch(TextBlock.class::isInstance)
-                                    ? Msg.builder()
-                                            .content(result.getOutput())
-                                            .build()
-                                            .getTextContent()
-                                    : JsonUtils.getJsonCodec().toJson(result.getOutput());
+                    String output = toolResultText(result);
                     entries.add(
                             new Entry(id, "TOOL", "", timestamp, result.getName(), null, output));
                 }
             }
         }
         return List.copyOf(entries);
+    }
+
+    /**
+     * Renders a tool result for a flat transcript.
+     *
+     * <p>Text and document blocks become readable text. Anything else (images, audio) keeps the
+     * existing JSON representation, because the flat entry has no place for a block - but a
+     * document among them still collapses to its reference, so a mixed result never embeds the
+     * document's base64 payload into the transcript.
+     */
+    private static String toolResultText(ToolResultBlock result) {
+        List<ContentBlock> outputs = result.getOutput();
+        boolean textual =
+                outputs.stream()
+                        .allMatch(
+                                block ->
+                                        block instanceof TextBlock
+                                                || block instanceof DocumentBlock);
+        if (!textual) {
+            boolean hasDocument =
+                    outputs.stream().anyMatch(block -> block instanceof DocumentBlock);
+            if (!hasDocument) {
+                return JsonUtils.getJsonCodec().toJson(outputs);
+            }
+            return JsonUtils.getJsonCodec()
+                    .toJson(
+                            outputs.stream()
+                                    .map(SessionTranscriptExport::referenceOrSelf)
+                                    .toList());
+        }
+        // Joining with "\n" mirrors Msg.getTextContent(): every block occupies one line, so a
+        // blank text keeps its line and leading, trailing, and consecutive blanks all survive.
+        return outputs.stream()
+                .map(
+                        block ->
+                                block instanceof TextBlock text
+                                        ? text.getText()
+                                        : DocumentReferenceRenderer.render((DocumentBlock) block))
+                .collect(Collectors.joining("\n"));
+    }
+
+    /**
+     * Replaces a document block with its one-line reference, leaving every other block alone.
+     *
+     * @param block the block to render
+     * @return a text block carrying the reference, or the block itself
+     */
+    private static ContentBlock referenceOrSelf(ContentBlock block) {
+        if (block instanceof DocumentBlock document) {
+            return TextBlock.builder().text(DocumentReferenceRenderer.render(document)).build();
+        }
+        return block;
     }
 
     public static String jsonl(SessionViews.Transcript transcript) {

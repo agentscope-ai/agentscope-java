@@ -21,6 +21,7 @@ import com.anthropic.models.messages.Message;
 import com.anthropic.models.messages.MessageParam;
 import com.anthropic.models.messages.TextBlockParam;
 import io.agentscope.core.message.DataBlock;
+import io.agentscope.core.message.DocumentBlock;
 import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
@@ -206,10 +207,20 @@ public class AnthropicMultiAgentFormatter extends AnthropicBaseFormatter {
                 }
             } else if (block instanceof DataBlock db) {
                 try {
-                    ImageBlockParam imageParam = mediaConverter.convertDataBlock(db);
-                    contentBlocks.add(ContentBlockParam.ofImage(imageParam));
+                    contentBlocks.add(
+                            ContentBlockParam.ofImage(mediaConverter.convertDataBlock(db)));
                 } catch (Exception e) {
                     log.warn("Failed to process DataBlock in multi-agent conversation: {}", e);
+                }
+            } else if (block instanceof DocumentBlock db) {
+                try {
+                    contentBlocks.add(
+                            ContentBlockParam.ofDocument(mediaConverter.convertDocumentBlock(db)));
+                } catch (Exception e) {
+                    throw new IllegalArgumentException(
+                            "Failed to process DocumentBlock in multi-agent conversation: "
+                                    + db.getId(),
+                            e);
                 }
             }
         }

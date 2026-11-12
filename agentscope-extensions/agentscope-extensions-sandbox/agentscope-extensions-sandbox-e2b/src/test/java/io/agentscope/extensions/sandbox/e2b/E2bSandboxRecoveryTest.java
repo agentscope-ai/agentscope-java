@@ -17,9 +17,13 @@ package io.agentscope.extensions.sandbox.e2b;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.agentscope.harness.agent.sandbox.SandboxErrorCode;
+import io.agentscope.harness.agent.sandbox.SandboxException;
 import io.agentscope.harness.agent.sandbox.WorkspaceSpec;
 import io.agentscope.harness.agent.sandbox.snapshot.SandboxSnapshot;
 import java.io.ByteArrayInputStream;
@@ -28,6 +32,10 @@ import java.io.InputStream;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.TimeUnit;
+import okhttp3.mockwebserver.Dispatcher;
 import okhttp3.mockwebserver.MockResponse;
 import okhttp3.mockwebserver.MockWebServer;
 import okhttp3.mockwebserver.RecordedRequest;
@@ -93,16 +101,16 @@ class E2bSandboxRecoveryTest {
     }
 
     @Test
-    void startSkipsSnapshotRetryAfterTemplateFallback() throws Exception {
+    void startFallsBackToTemplateWhenNativeSnapshotIsMissing() throws Exception {
         server.enqueue(new MockResponse().setResponseCode(500).setBody("connect failed"));
-        server.enqueue(new MockResponse().setResponseCode(500).setBody("snapshot unavailable"));
+        server.enqueue(new MockResponse().setResponseCode(404).setBody("snapshot not found"));
         server.enqueue(sandboxResponse("fresh-sandbox"));
         server.enqueue(envdStartResponse());
         E2bSandboxState state = stateForResumeWithNativeSnapshot("snap-123");
 
         new E2bSandbox(state, startOptions()).start();
 
-        assertEquals(4, server.getRequestCount(), "start must not retry the failed snapshot");
+        assertEquals(4, server.getRequestCount());
         RecordedRequest connect = server.takeRequest();
         RecordedRequest snapshotCreate = server.takeRequest();
         RecordedRequest templateCreate = server.takeRequest();
@@ -118,10 +126,30 @@ class E2bSandboxRecoveryTest {
     }
 
     @Test
-    void startSkipsSnapshotRetryAfterPeekFailure() throws Exception {
+    void startFailsOnSnapshotCreateServerErrorWithoutTemplateFallback() throws Exception {
         server.enqueue(new MockResponse().setResponseCode(500).setBody("connect failed"));
-        server.enqueue(sandboxResponse("fresh-sandbox"));
-        server.enqueue(envdStartResponse());
+        server.enqueue(new MockResponse().setResponseCode(500).setBody("snapshot unavailable"));
+        E2bSandboxState state = stateForResumeWithNativeSnapshot("snap-123");
+
+        SandboxException.SandboxRuntimeException failure =
+                assertThrows(
+                        SandboxException.SandboxRuntimeException.class,
+                        () -> new E2bSandbox(state, startOptions()).start());
+
+        assertEquals(SandboxErrorCode.SNAPSHOT_RESTORE_ERROR, failure.getErrorCode());
+        assertTrue(failure.getMessage().contains("snap-123"));
+        assertNotNull(failure.getCause());
+        assertEquals(2, server.getRequestCount());
+        assertEquals("/sandboxes/old-sandbox/connect", server.takeRequest().getPath());
+        assertEquals("/sandboxes", server.takeRequest().getPath());
+        assertEquals("old-sandbox", state.getSandboxId());
+        assertTrue(state.isWorkspaceRootReady());
+        assertEquals("old-projection", state.getWorkspaceProjectionHash());
+    }
+
+    @Test
+    void startFailsWhenSnapshotArchiveCannotBeRestoredWithoutTemplateFallback() throws Exception {
+        server.enqueue(new MockResponse().setResponseCode(500).setBody("connect failed"));
         E2bSandboxState state = stateForResumeWithNativeSnapshot("snap-123");
         state.setSnapshot(
                 new FakeSnapshot(nativeArchive("snap-123"), true) {
@@ -131,18 +159,188 @@ class E2bSandboxRecoveryTest {
                     }
                 });
 
+        SandboxException.SandboxRuntimeException failure =
+                assertThrows(
+                        SandboxException.SandboxRuntimeException.class,
+                        () -> new E2bSandbox(state, startOptions()).start());
+
+        assertEquals(SandboxErrorCode.SNAPSHOT_RESTORE_ERROR, failure.getErrorCode());
+        assertTrue(failure.getMessage().contains("fake-snapshot"));
+        assertEquals(1, server.getRequestCount());
+        assertEquals("/sandboxes/old-sandbox/connect", server.takeRequest().getPath());
+        assertEquals("old-sandbox", state.getSandboxId());
+        assertTrue(state.isWorkspaceRootReady());
+        assertEquals("old-projection", state.getWorkspaceProjectionHash());
+    }
+
+    @Test
+    void startFailsWhenSnapshotRestorabilityCheckFailsWithoutTemplateFallback() throws Exception {
+        server.enqueue(new MockResponse().setResponseCode(500).setBody("connect failed"));
+        E2bSandboxState state = stateForResumeWithNativeSnapshot("snap-123");
+        state.setSnapshot(
+                new FakeSnapshot(nativeArchive("snap-123"), true) {
+                    @Override
+                    public boolean isRestorable() throws Exception {
+                        throw new IOException("snapshot store unreachable");
+                    }
+                });
+
+        SandboxException.SandboxRuntimeException failure =
+                assertThrows(
+                        SandboxException.SandboxRuntimeException.class,
+                        () -> new E2bSandbox(state, startOptions()).start());
+
+        assertEquals(SandboxErrorCode.SNAPSHOT_RESTORE_ERROR, failure.getErrorCode());
+        assertTrue(failure.getMessage().contains("fake-snapshot"));
+        assertEquals(1, server.getRequestCount());
+        assertEquals("/sandboxes/old-sandbox/connect", server.takeRequest().getPath());
+        assertEquals("old-sandbox", state.getSandboxId());
+        assertTrue(state.isWorkspaceRootReady());
+        assertEquals("old-projection", state.getWorkspaceProjectionHash());
+    }
+
+    @Test
+    void startFailsWhenNativeSnapshotReferenceIsCorruptWithoutTemplateFallback() throws Exception {
+        server.enqueue(new MockResponse().setResponseCode(500).setBody("connect failed"));
+        E2bSandboxState state = stateForResumeWithNativeSnapshot("snap-123");
+        byte[] corruptArchive =
+                (new String(E2bSnapshotRefs.MAGIC_PREFIX, StandardCharsets.UTF_8)
+                                + "{\"snapshot_id\":\"\"}")
+                        .getBytes(StandardCharsets.UTF_8);
+        state.setSnapshot(new FakeSnapshot(corruptArchive, true));
+
+        SandboxException.SandboxRuntimeException failure =
+                assertThrows(
+                        SandboxException.SandboxRuntimeException.class,
+                        () -> new E2bSandbox(state, startOptions()).start());
+
+        assertEquals(SandboxErrorCode.SNAPSHOT_RESTORE_ERROR, failure.getErrorCode());
+        assertTrue(failure.getMessage().contains("fake-snapshot"));
+        assertEquals(1, server.getRequestCount());
+        assertEquals("/sandboxes/old-sandbox/connect", server.takeRequest().getPath());
+        assertEquals("old-sandbox", state.getSandboxId());
+        assertTrue(state.isWorkspaceRootReady());
+        assertEquals("old-projection", state.getWorkspaceProjectionHash());
+    }
+
+    @Test
+    void startFallsBackToTemplateWhenSnapshotIsConfirmedNotRestorable() throws Exception {
+        server.enqueue(new MockResponse().setResponseCode(500).setBody("connect failed"));
+        server.enqueue(sandboxResponse("fresh-sandbox"));
+        server.enqueue(envdStartResponse());
+        E2bSandboxState state = stateForResumeWithNativeSnapshot("snap-123");
+        state.setSnapshot(new FakeSnapshot(nativeArchive("snap-123"), false));
+
         new E2bSandbox(state, startOptions()).start();
 
-        assertEquals(3, server.getRequestCount(), "peek failure must not retry the snapshot");
-        RecordedRequest connect = server.takeRequest();
+        assertEquals(3, server.getRequestCount());
+        assertEquals("/sandboxes/old-sandbox/connect", server.takeRequest().getPath());
         RecordedRequest templateCreate = server.takeRequest();
-        RecordedRequest setupWorkspace = server.takeRequest();
-        assertEquals("/sandboxes/old-sandbox/connect", connect.getPath());
         assertEquals("/sandboxes", templateCreate.getPath());
         assertTrue(templateCreate.getBody().readUtf8().contains("\"base\""));
-        assertEquals("/process.Process/Start", setupWorkspace.getPath());
+        RecordedRequest workspaceSetup = server.takeRequest();
+        assertEquals("/process.Process/Start", workspaceSetup.getPath());
+        assertTrue(envdCommand(workspaceSetup).contains("mkdir -p"));
+        assertEquals("fresh-sandbox", state.getSandboxId());
+    }
+
+    @Test
+    void missingSnapshotForcesColdStartWhenPreviousWorkspaceWasReady() throws Exception {
+        server.enqueue(new MockResponse().setResponseCode(404).setBody("snapshot not found"));
+        server.enqueue(sandboxResponse("fresh-sandbox"));
+        server.enqueue(envdStartResponse());
+        E2bSandboxState state = stateWithNativeSnapshot("snap-123");
+        state.setWorkspaceRootReady(true);
+        state.setWorkspaceProjectionHash("old-projection");
+
+        new E2bSandbox(state, startOptions()).start();
+
+        assertEquals(3, server.getRequestCount());
+        RecordedRequest snapshotCreate = server.takeRequest();
+        assertEquals("/sandboxes", snapshotCreate.getPath());
+        assertTrue(snapshotCreate.getBody().readUtf8().contains("snap-123"));
+        assertEquals("/sandboxes", server.takeRequest().getPath());
+        RecordedRequest workspaceSetup = server.takeRequest();
+        assertEquals("/process.Process/Start", workspaceSetup.getPath());
+        assertTrue(envdCommand(workspaceSetup).contains("mkdir -p"));
         assertEquals("fresh-sandbox", state.getSandboxId());
         assertTrue(state.isWorkspaceRootReady());
+        assertNull(state.getWorkspaceProjectionHash());
+    }
+
+    /**
+     * The TAR path has no native snapshot to restore from, so a sandbox created from the template
+     * must hydrate the persisted archive — even though the persisted state still marked the old
+     * workspace ready. Skipping it would silently start on an empty workspace and overwrite the
+     * good archive on the next stop.
+     */
+    @Test
+    void tarResumeHydratesSnapshotWhenPreviousWorkspaceWasReady() throws Exception {
+        server.setDispatcher(
+                new Dispatcher() {
+                    @Override
+                    public MockResponse dispatch(RecordedRequest request) {
+                        if ("/sandboxes".equals(request.getPath())) {
+                            return sandboxResponse("fresh-sandbox");
+                        }
+                        if (request.getPath().startsWith("/files")) {
+                            return new MockResponse().setResponseCode(200);
+                        }
+                        return envdStartResponse();
+                    }
+                });
+        E2bSandboxState state = stateWithTarSnapshot("tar-bytes".getBytes(StandardCharsets.UTF_8));
+        state.setWorkspaceRootReady(true);
+        state.setWorkspaceProjectionHash("old-projection");
+
+        new E2bSandbox(state, startOptions()).start();
+
+        List<RecordedRequest> requests = recordedRequests();
+        assertFalse(requests.isEmpty(), "start() must create a sandbox");
+        RecordedRequest templateCreate = requests.get(0);
+        assertEquals("/sandboxes", templateCreate.getPath());
+        assertTrue(templateCreate.getBody().readUtf8().contains("\"base\""));
+        List<String> paths = requests.stream().map(RecordedRequest::getPath).toList();
+        // Hydrated: the archive was uploaded to the fresh sandbox and unpacked.
+        assertTrue(paths.stream().anyMatch(p -> p.startsWith("/files?path=")), "paths: " + paths);
+        List<String> commands =
+                requests.stream()
+                        .filter(r -> "/process.Process/Start".equals(r.getPath()))
+                        .map(
+                                r -> {
+                                    try {
+                                        return envdCommand(r);
+                                    } catch (Exception e) {
+                                        throw new IllegalStateException(e);
+                                    }
+                                })
+                        .toList();
+        assertTrue(
+                commands.stream().anyMatch(c -> c.contains("mkdir -p")), "commands: " + commands);
+        assertTrue(commands.stream().anyMatch(c -> c.contains("tar -xf")), "commands: " + commands);
+        // Not the pre-fix symptom: no "workspace preserved" probe, i.e. Branch A was not taken.
+        assertFalse(
+                commands.stream().anyMatch(c -> c.contains("test -d")), "commands: " + commands);
+        assertEquals("fresh-sandbox", state.getSandboxId());
+        assertTrue(state.isWorkspaceRootReady());
+    }
+
+    @Test
+    void startPropagatesConfigurationFailureWithoutRelabelingItAsSnapshotLoss() throws Exception {
+        E2bSandboxState state = stateForResumeWithNativeSnapshot("snap-123");
+        E2bSandboxClientOptions noApiKey = startOptions();
+        noApiKey.setApiKey("  ");
+
+        SandboxException.SandboxConfigurationException failure =
+                assertThrows(
+                        SandboxException.SandboxConfigurationException.class,
+                        () -> new E2bSandbox(state, noApiKey).start());
+
+        assertEquals(SandboxErrorCode.CONFIGURATION_ERROR, failure.getErrorCode());
+        assertEquals(0, server.getRequestCount(), "a missing key fails before any HTTP call");
+        assertEquals("old-sandbox", state.getSandboxId());
+        assertTrue(state.isWorkspaceRootReady());
+        assertEquals("old-projection", state.getWorkspaceProjectionHash());
     }
 
     @Test
@@ -242,6 +440,26 @@ class E2bSandboxRecoveryTest {
                                 + "\"envdAccessToken\":\"new-token\"}");
     }
 
+    /** Extracts the shell script from a recorded envd {@code process.Process/Start} request. */
+    private static String envdCommand(RecordedRequest request) throws Exception {
+        Buffer body = request.getBody();
+        body.readByte();
+        long payloadLength = body.readInt() & 0xffffffffL;
+        return body.readUtf8(payloadLength);
+    }
+
+    /**
+     * Collects the requests the server has received. {@code start()} issues every request
+     * synchronously, so the server-side count is already final and no waiting is needed.
+     */
+    private List<RecordedRequest> recordedRequests() throws Exception {
+        List<RecordedRequest> requests = new ArrayList<>();
+        for (int i = 0, count = server.getRequestCount(); i < count; i++) {
+            requests.add(server.takeRequest(1, TimeUnit.SECONDS));
+        }
+        return requests;
+    }
+
     private static MockResponse envdStartResponse() {
         byte[] payload = "{\"event\":{\"end\":{\"exitCode\":0}}}".getBytes(StandardCharsets.UTF_8);
         Buffer body =
@@ -308,6 +526,17 @@ class E2bSandboxRecoveryTest {
         return state;
     }
 
+    /** A fresh session (no sandbox id) whose persisted TAR archive is restorable. */
+    private static E2bSandboxState stateWithTarSnapshot(byte[] archive) {
+        E2bSandboxState state = new E2bSandboxState();
+        state.setWorkspaceSpec(new WorkspaceSpec());
+        state.setSandboxId(null);
+        state.setWorkspaceRootReady(false);
+        state.setPersistenceMode(E2bPersistenceMode.TAR);
+        state.setSnapshot(new FakeSnapshot(archive, true));
+        return state;
+    }
+
     private static byte[] nativeArchive(String snapshotId) throws Exception {
         return E2bSnapshotRefs.encodeSnapshotId(snapshotId);
     }
@@ -349,7 +578,7 @@ class E2bSandboxRecoveryTest {
         }
 
         @Override
-        public boolean isRestorable() {
+        public boolean isRestorable() throws Exception {
             return restorable;
         }
 

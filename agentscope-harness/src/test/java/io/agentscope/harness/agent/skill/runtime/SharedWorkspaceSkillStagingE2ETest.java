@@ -34,6 +34,8 @@ import io.agentscope.core.skill.repository.AgentSkillRepository;
 import io.agentscope.core.skill.repository.AgentSkillRepositoryInfo;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.harness.agent.HarnessAgent;
+import io.agentscope.harness.agent.context.ContextItem;
+import io.agentscope.harness.agent.context.WorkspaceContextMaterials;
 import io.agentscope.harness.agent.filesystem.local.LocalFilesystem;
 import io.agentscope.harness.agent.middleware.HarnessSkillMiddleware;
 import io.agentscope.harness.agent.skill.curator.SkillVisibilityFilter;
@@ -124,7 +126,7 @@ class SharedWorkspaceSkillStagingE2ETest {
                                         // handed over. Checking at the end would only observe
                                         // whichever caller happened to stage last.
                                         assertNotNull(prompt);
-                                        Matcher m = FILES_ROOT.matcher(prompt);
+                                        Matcher m = FILES_ROOT.matcher(skillsBlockOf(ctx));
                                         int seen = 0;
                                         while (m.find()) {
                                             Path advertised =
@@ -169,10 +171,11 @@ class SharedWorkspaceSkillStagingE2ETest {
         RuntimeContext alice =
                 RuntimeContext.builder().sessionId("s-alice").userId("alice").build();
 
-        // Bob can see "beta", so his call stages it and his prompt points the model at it.
+        // Bob can see "beta", so his call stages it and the skills material points the model
+        // at it.
         String bobPrompt = middleware.onSystemPrompt(null, bob, "").block();
         assertNotNull(bobPrompt);
-        assertTrue(bobPrompt.contains("<name>beta</name>"), "bob should see beta");
+        assertTrue(skillsBlockOf(bob).contains("<name>beta</name>"), "bob should see beta");
         // Scoped by userId: bob's subtree is one alice's call cannot reach at all, which is
         // what turns "must not delete" from a timing property into a structural one.
         Path betaDir =
@@ -211,6 +214,17 @@ class SharedWorkspaceSkillStagingE2ETest {
                 perUser,
                 new MarketplaceStager(workspace),
                 ShellPathPolicy.localWithShell(workspace));
+    }
+
+    /** Returns the runtime skills catalog advertised to the model. */
+    private static String skillsBlockOf(RuntimeContext ctx) {
+        WorkspaceContextMaterials materials = ctx.get(WorkspaceContextMaterials.class);
+        assertNotNull(materials);
+        return materials.items().stream()
+                .filter(item -> "harness:skills".equals(item.sourceId()))
+                .map(ContextItem::content)
+                .findFirst()
+                .orElseThrow();
     }
 
     private static List<Throwable> runConcurrently(int rounds, HarnessAgent... agents)

@@ -90,6 +90,13 @@ Deny 规则与危险路径检查是**不可绕过的** —— 即使在 `BYPASS`
 </Note>
 
 
+### 拦截器与权限引擎
+
+对单次调用的具体参数做业务规则(沙箱、租户隔离、审计)→ [工具调用拦截器](/v2/zh/docs/building-blocks/tool#工具调用拦截器)(`ToolkitConfig.interceptor(...)`);人审策略(ALLOW/ASK/DENY)→ 权限引擎。
+
+两层协同:权限引擎判定模型原始输入(ASK 确认框展示的也是原始参数);拦截器随后作用于最终参数,因此改写发生在用户批准*之后* —— 若安全敏感参数(路径、SQL、URL)改写后的最终值需要用户确认,应在拦截器中挂起人审而非静默改写。拦截器拒绝一个已获批准的调用属预期行为:拒绝结果直接回馈模型,不触发二次人审。
+
+
 ## Permission Mode
 
 `PermissionMode` 枚举（`io.agentscope.core.permission.PermissionMode`）支持以下模式，分别适配不同的部署场景：
@@ -213,6 +220,24 @@ ConfirmResult result =
 ```
 
 完整可运行示例：`agentscope-examples/documentation/.../tool/PermissionContextExample.java`、`hitl/PermissionHITLExample.java`。
+
+### 权限上下文与已存在的会话
+
+非空的 `permissionContext` 会在当前 agent 实例第一次加载某个会话槽位时，替换该槽位已持久化的权限上下文。传入 `null` 时，已有槽位的上下文保持不变。
+
+重建 agent 并复用同一个 state store 时，这个规则同样适用。如果希望保留运行时的权限状态，请先读取旧上下文，再基于它构造新的上下文：
+
+```java
+PermissionContextState old =
+        agent.getAgentState(userId, sessionId).getPermissionContext();
+PermissionContextState next =
+        PermissionContextState.builder()
+                .mode(old.getMode())
+                // 按需保留工作目录和规则
+                .build();
+```
+
+非空的 `PermissionContextState.builder().build()` 是合法的 trivial context，不是“空”或“不做任何事”：它会用默认 mode 和空规则替换旧上下文。若希望保持旧上下文不变，请传 `null`。
 
 ## Built-in Checks
 
@@ -365,6 +390,8 @@ if (result != null && result.getGenerateReason() == GenerateReason.PERMISSION_AS
 ### Streaming 模式
 
 使用 `streamEvents()` 时，不需要从返回的 `Msg` 提取 `ToolUseBlock` —— 通过事件流直接获得 `RequireUserConfirmEvent`，它携带了待确认的工具调用列表：
+
+配置状态存储或原生会话日志后，agent 会先保存待确认工具状态和确认请求的 replyId，再发布该事件；原生会话日志还会在同一边界提交待确认请求记录。如果保存失败，本次调用会报错，不发布授权提示。跨进程重启恢复需要持久化后端，内存后端不提供这一保证。此顺序不保证保存完成后订阅者断开连接时仍能收到提示。
 
 ```java
 import io.agentscope.core.event.AgentEvent;

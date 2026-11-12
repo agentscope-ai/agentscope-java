@@ -52,9 +52,11 @@ import io.agentscope.extensions.model.dashscope.DashScopeChatModel;
 import io.agentscope.extensions.model.dashscope.formatter.DashScopeChatFormatter;
 import io.agentscope.spring.boot.agui.common.AguiAgentRegistryCustomizer;
 import jakarta.annotation.PostConstruct;
+import java.util.EnumSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.function.Function;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
@@ -390,6 +392,11 @@ public class AgentConfiguration {
 
     private static MiddlewareBase exampleCustomEventMiddleware() {
         return new MiddlewareBase() {
+            @Override
+            public Set<ExtensionPoint> activePoints() {
+                return EnumSet.of(ExtensionPoint.ON_AGENT);
+            }
+
             @Override
             public Flux<AgentEvent> onAgent(
                     Agent agent,

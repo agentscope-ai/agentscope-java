@@ -36,18 +36,20 @@ import org.junit.jupiter.api.Test;
 class AgentSpawnToolRemoteHelpersTest {
 
     @Test
-    void buildRemoteSourcePath_joinsParentSessionAndAgentId() {
+    void buildRemoteSourcePath_joinsParentSessionAgentIdAndTaskId() {
         assertEquals(
-                "parent-sess/worker",
-                AgentSpawnTool.buildRemoteSourcePath("parent-sess", "worker"));
+                "parent-sess/worker/task_123",
+                AgentSpawnTool.buildRemoteSourcePath("parent-sess", "worker", "task_123"));
     }
 
     @Test
     void buildRemoteSourcePath_defaultsBlankParts() {
-        assertEquals("main/remote", AgentSpawnTool.buildRemoteSourcePath(null, null));
-        assertEquals("main/remote", AgentSpawnTool.buildRemoteSourcePath("  ", ""));
-        assertEquals("sess/remote", AgentSpawnTool.buildRemoteSourcePath("sess", null));
-        assertEquals("main/agent", AgentSpawnTool.buildRemoteSourcePath(null, "agent"));
+        assertEquals("main/remote/task", AgentSpawnTool.buildRemoteSourcePath(null, null, null));
+        assertEquals("main/remote/task", AgentSpawnTool.buildRemoteSourcePath("  ", "", "  "));
+        assertEquals(
+                "sess/remote/task_1", AgentSpawnTool.buildRemoteSourcePath("sess", null, "task_1"));
+        assertEquals(
+                "main/agent/task_2", AgentSpawnTool.buildRemoteSourcePath(null, "agent", "task_2"));
     }
 
     @Test

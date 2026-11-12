@@ -110,6 +110,10 @@ class WorkspaceTaskRepositoryRemoteStreamingTest {
         assertTrue(
                 !awaitingSnapshots.isEmpty() || statusCalls.get() >= 2,
                 "expected at least one awaiting_confirm poll before success");
+        // The poller persists the terminal record before firing the completion callback; the
+        // terminal record can be observed in the gap between those two steps, so wait for the
+        // callback to land instead of asserting it has already run.
+        awaitCondition(() -> completedResult.get() != null);
         assertEquals("remote-ok", completedResult.get());
         assertTrue(transport.submitCalled);
     }
