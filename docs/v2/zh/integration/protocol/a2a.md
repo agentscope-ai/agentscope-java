@@ -193,6 +193,35 @@ AgentScopeA2aServer server = AgentScopeA2aServer.builder()
 
 这项映射只填充 Runner 的请求参数，不会自动启用会话持久化。自定义 Runner 可以使用这些标识配置运行上下文或状态存储。
 
+### 工具确认（`input-required`）
+
+Agent 停下来等用户确认工具调用时（见[用户确认](/v2/zh/docs/building-blocks/agent#用户确认)），任务进入 `TASK_STATE_INPUT_REQUIRED`，不再被标记为完成。状态消息里每个待确认的工具调用是一个 data part：data 是工具入参，part 的 metadata 带 `_agentscope_tool_call_id` 和 `_agentscope_tool_name`。阻塞请求直接返回这个任务；流式请求发出状态更新，由于任务尚未结束，流会保持打开，直到客户端自己断开。
+
+继续执行时，用同一个 `taskId` 和 `contextId` 再发一条消息，把确认结果放在 AgentScope 消息 metadata 的 `agentscope_confirm_results` 下：
+
+```java
+Message confirmation = Message.builder()
+    .role(Message.Role.ROLE_USER)
+    .taskId(pausedTaskId)
+    .contextId(contextId)
+    .parts(new TextPart("approved", Map.of("_agentscope_msg_id", "m1")))
+    .metadata(Map.of("m1", Map.of("agentscope_confirm_results", List.of(
+        Map.of(
+            "confirmed", true,   // false 表示拒绝
+            "toolCall", Map.of(
+                "type", "tool_use",
+                "id", toolCallId,
+                "name", toolName,
+                "input", toolInput))))))
+    .build();
+```
+
+服务端每个请求都新建一个 Agent，暂停的那次运行靠 Agent 的状态存储按 `(userId, sessionId)` 恢复。需要在 agent builder 上设置 `stateStore(...)`（见 [AgentStateStore](/v2/zh/docs/building-blocks/agent#配置状态持久化agentstatestore)）；没有配置时，内置 Runner 会在运行 Agent 之前让任务失败。自定义 `AgentRunner` 需要自己恢复暂停的运行。
+
+不带确认结果的后续消息，或者确认的不是待确认工具调用的消息，都不会运行 Agent：任务保持 `input-required`，并重新发出待确认的请求。续接运行时出现的其他错误会让任务失败。
+
+请在暂停的那个任务上发送确认。在同一 context 里以新任务发送确认也能续接运行，但原来暂停的任务会一直保持 `input-required`。取消暂停的任务不会清除状态存储里暂停的运行。因外部执行工具而停下的运行，目前还不会报告为 `input-required`。
+
 ### 可选组件
 
 - `TaskStore` / `QueueManager`：任务和事件队列存储，默认是内存实现，生产可换成持久化版本。

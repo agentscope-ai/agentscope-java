@@ -194,6 +194,35 @@ Priority: resolver (transport-verified) &gt; envelope-asserted user id &gt; none
 
 This mapping supplies the runner's request options; it does not automatically enable session persistence. A custom runner can use the identifiers when setting up its runtime context or state store.
 
+### Tool confirmation (`input-required`)
+
+When the agent stops to ask the user to confirm a tool call ([User confirmation](/v2/en/docs/building-blocks/agent#user-confirmation)), the task goes to `TASK_STATE_INPUT_REQUIRED` instead of being completed. The status message carries each pending tool call as a data part: the data is the tool input, and the part metadata holds `_agentscope_tool_call_id` and `_agentscope_tool_name`. A blocking request returns the task. A streaming request sends the status update and, because the task is not finished, keeps the stream open until the client leaves it.
+
+To continue, send a message with the same `taskId` and `contextId`, and put the confirmation into the metadata of the AgentScope message under `agentscope_confirm_results`:
+
+```java
+Message confirmation = Message.builder()
+    .role(Message.Role.ROLE_USER)
+    .taskId(pausedTaskId)
+    .contextId(contextId)
+    .parts(new TextPart("approved", Map.of("_agentscope_msg_id", "m1")))
+    .metadata(Map.of("m1", Map.of("agentscope_confirm_results", List.of(
+        Map.of(
+            "confirmed", true,   // false denies the call
+            "toolCall", Map.of(
+                "type", "tool_use",
+                "id", toolCallId,
+                "name", toolName,
+                "input", toolInput))))))
+    .build();
+```
+
+The server builds a new agent for every request, so the paused run is restored from the agent's state store by `(userId, sessionId)`. Set `stateStore(...)` on the agent builder ([AgentStateStore](/v2/en/docs/building-blocks/agent#configuring-state-persistence-agentstatestore)); without one, the built-in runners fail the task before the agent runs. A custom `AgentRunner` has to restore the paused run itself.
+
+A follow-up without a confirmation, or with a confirmation for other tool calls, does not run the agent: the task stays `input-required` and the pending request is sent again. Any other error while the run resumes fails the task.
+
+Send the confirmation on the paused task. A confirmation sent as a new task in the same context also resumes the run, but the paused task stays `input-required`. Cancelling a paused task does not clear the paused run from the state store. Runs that stop for external tool execution are not reported as `input-required` yet.
+
 ### Optional components
 
 - `TaskStore` / `QueueManager`: task and event queue stores; in-memory by default, swap for persistent versions in production.
