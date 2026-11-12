@@ -228,7 +228,10 @@ public abstract class AbstractBaseSandbox implements Sandbox {
     protected boolean probeWorkspaceRootForPreservedResume() {
         try {
             ExecResult result =
-                    doExec(null, "test -d " + getWorkspaceRoot(), PROBE_TIMEOUT_SECONDS);
+                    doExec(
+                            null,
+                            "test -d " + shellQuote(getWorkspaceRoot()),
+                            PROBE_TIMEOUT_SECONDS);
             return result.ok();
         } catch (Exception e) {
             log.warn(
@@ -420,14 +423,19 @@ public abstract class AbstractBaseSandbox implements Sandbox {
      * applied projection that the current one no longer authorizes is revoked (a narrowed
      * grant must remove, not overlay) — only projection-managed paths are ever deleted,
      * sandbox user files are untouched, which is also what keeps concurrent sandboxes
-     * sharing a host directory safe. Unmarked specs keep the generic overlay semantics
-     * (hydrate only, never delete): fixing the authorization boundary must not change
-     * projection behaviour for everyone else.
+     * sharing a host directory safe. When the recorded manifest is missing, the
+     * workspace's projected content is unaccounted (pre-manifest upgrade, state loss with
+     * a carried-over snapshot, an unmanaged overlay since the last managed pass): instead
+     * of treating that as "nothing to revoke" or refusing, the managed namespaces are
+     * rebuilt from scratch — wiped via {@link #doDeleteWorkspaceRoots}, then re-projected
+     * with a fresh manifest. Unmarked specs keep the generic overlay semantics (hydrate
+     * only, never delete): fixing the authorization boundary must not change projection
+     * behaviour for everyone else.
      *
      * @param spec the workspace spec carrying the projection entries
-     * @param force skip the hash short-circuit (snapshot-restore paths): the restored
-     *     workspace may carry files from an earlier, wider projection even when the hash is
-     *     unchanged, so the authoritative pass must run regardless
+     * @param force whether the workspace was just hydrated from a snapshot: the content
+     *     may carry files from an earlier, wider projection even when the hash is
+     *     unchanged, so a managed pass without a manifest still rebuilds
      */
     private void applyWorkspaceProjectionIfChanged(WorkspaceSpec spec, boolean force)
             throws Exception {
@@ -435,16 +443,26 @@ public abstract class AbstractBaseSandbox implements Sandbox {
                 WorkspaceProjectionApplier.build(spec);
         String currentHash = payload != null ? payload.hash() : null;
         String storedHash = state.getWorkspaceProjectionHash();
-        if (!force && Objects.equals(currentHash, storedHash)) {
+        boolean managed = WorkspaceProjectionApplier.isAuthorizationManaged(spec);
+        List<String> manifest = state.getProjectedWorkspacePaths();
+        // Identical content: nothing to hydrate, nothing to revoke (for unmanaged specs
+        // this also restores the historic skip on snapshot restores). Managed specs
+        // without a manifest still fall through — their projected content is unaccounted
+        // and must be rebuilt, not skipped.
+        if (Objects.equals(currentHash, storedHash) && !(managed && manifest == null)) {
             log.debug("[sandbox] Workspace projection unchanged, skipping");
             return;
         }
-        if (!WorkspaceProjectionApplier.isAuthorizationManaged(spec)) {
+        if (!managed) {
             // Generic path (grant layer not engaged): overlay hydration only — never
-            // delete, never refuse. Any content change here is outside managed
-            // bookkeeping, so the recorded manifest is invalidated: the next managed pass
-            // must not trust a manifest that no longer describes what it applied.
-            if (payload != null && payload.fileCount() > 0) {
+            // delete, never refuse. A content change is outside managed bookkeeping, so
+            // the manifest is invalidated (the hash is kept): the next managed pass
+            // rebuilds against bookkeeping it can no longer trust. A spec without any
+            // projection entry changes nothing and leaves all bookkeeping untouched.
+            if (payload == null) {
+                return;
+            }
+            if (payload.fileCount() > 0) {
                 try (InputStream archive = new ByteArrayInputStream(payload.tarBytes())) {
                     doHydrateWorkspace(archive);
                 }
@@ -453,39 +471,36 @@ public abstract class AbstractBaseSandbox implements Sandbox {
             state.setProjectedWorkspacePaths(null);
             log.debug(
                     "[sandbox] Workspace projection applied (unmanaged): files={}",
-                    payload != null ? payload.fileCount() : 0);
+                    payload.fileCount());
             return;
         }
-        // Upgrade guard (managed only): a workspace projected by an older version has a
-        // hash but no revocation manifest, so what it put into the workspace is unknowable.
-        // Treating the missing manifest as "nothing to revoke" would let stale files
-        // survive a narrowed grant (review probe). An unchanged projection keeps working
-        // for compatibility; a changed managed projection is refused with a remediation —
-        // missing metadata must not masquerade as completed isolation.
-        if (storedHash != null && state.getProjectedWorkspacePaths() == null) {
-            throw new SandboxException.WorkspaceStartException(
-                    Path.of(getWorkspaceRoot()),
-                    new IllegalStateException(
-                            "this workspace was projected before the capability grant layer"
-                                    + " kept a revocation manifest (projectedWorkspacePaths"
-                                    + " missing from the persisted state), so a changed"
-                                    + " grant-managed projection cannot be applied"
-                                    + " authoritatively. Destroy and recreate the sandbox"
-                                    + " workspace (projected content is re-derived from its"
-                                    + " source on the next start) to continue."));
-        }
+        // Managed path. Without a trusted manifest the workspace's projected content is
+        // unaccounted — never "nothing to revoke". Rebuild the managed namespaces from
+        // scratch so no stale file of any earlier era survives (audit: resume-failure
+        // carry-over, entry-less specs, pre-manifest upgrades all converge here).
         List<String> currentPaths = payload != null ? payload.paths() : List.of();
-        List<String> previousPaths = state.getProjectedWorkspacePaths();
-        // Set lookup: manifests can hold thousands of paths and every start diffs them.
-        Set<String> currentPathSet = new HashSet<>(currentPaths);
-        List<String> stale =
-                previousPaths == null
-                        ? List.of()
-                        : previousPaths.stream()
-                                .filter(path -> !currentPathSet.contains(path))
-                                .toList();
-        if (!stale.isEmpty()) {
-            doDeleteWorkspacePaths(stale);
+        if (manifest == null) {
+            List<String> revokeRoots = WorkspaceProjectionApplier.managedRevokeRoots(spec);
+            if (revokeRoots.isEmpty()) {
+                // A marked entry without rebuild scope cannot be made safe: fail closed
+                // rather than assume the workspace holds nothing foreign.
+                throw new SandboxException.WorkspaceStartException(
+                        Path.of(getWorkspaceRoot()),
+                        new IllegalStateException(
+                                "grant-managed projection without revokeRoots cannot be"
+                                        + " rebuilt safely; the workspace content is"
+                                        + " unaccounted. Configure the managed projection"
+                                        + " namespaces (revokeRoots) to continue."));
+            }
+            doDeleteWorkspaceRoots(revokeRoots);
+        } else {
+            // Set lookup: manifests can hold thousands of paths and every start diffs them.
+            Set<String> currentPathSet = new HashSet<>(currentPaths);
+            List<String> stale =
+                    manifest.stream().filter(path -> !currentPathSet.contains(path)).toList();
+            if (!stale.isEmpty()) {
+                doDeleteWorkspacePaths(stale);
+            }
         }
         if (payload != null && payload.fileCount() > 0) {
             try (InputStream archive = new ByteArrayInputStream(payload.tarBytes())) {
@@ -495,9 +510,51 @@ public abstract class AbstractBaseSandbox implements Sandbox {
         state.setWorkspaceProjectionHash(currentHash);
         state.setProjectedWorkspacePaths(currentPaths);
         log.debug(
-                "[sandbox] Workspace projection applied: files={}, revoked={}, hash={}",
-                payload != null ? payload.fileCount() : 0,
-                stale.size(),
+                "[sandbox] Workspace projection applied: files={}, mode={}, hash={}",
+                currentPaths.size(),
+                manifest == null ? "rebuild" : "diff",
                 currentHash);
+    }
+
+    /**
+     * Rebuild primitive: clears whole projection namespaces ({@code revokeRoots} of the
+     * managed entries, e.g. the {@code .skills-cache} tree) so a workspace with missing
+     * or untrusted bookkeeping can be re-projected from scratch. Unlike {@link
+     * #doDeleteWorkspacePaths} this is recursive by design: the roots come from the
+     * trusted current spec (grant-aware wiring), never from a persisted manifest, are
+     * boundary-validated and shell-quoted like every generated command, and a failure
+     * fails the start (fail-closed). Only these spec-declared namespaces are ever
+     * touched — sandbox user files outside them are unaffected.
+     *
+     * @param revokeRoots workspace-relative namespaces to clear
+     * @throws Exception when a root is invalid or the deletion fails
+     */
+    protected void doDeleteWorkspaceRoots(List<String> revokeRoots) throws Exception {
+        if (revokeRoots == null || revokeRoots.isEmpty()) {
+            return;
+        }
+        for (String root : revokeRoots) {
+            requireSafeProjectedPath(root);
+        }
+        String workspaceRoot = getWorkspaceRoot();
+        for (int from = 0; from < revokeRoots.size(); from += DELETE_CHUNK_SIZE) {
+            List<String> chunk =
+                    revokeRoots.subList(
+                            from, Math.min(from + DELETE_CHUNK_SIZE, revokeRoots.size()));
+            StringBuilder command = new StringBuilder("rm -rf --");
+            for (String root : chunk) {
+                command.append(' ').append(shellQuote(workspaceRoot + "/" + root));
+            }
+            ExecResult result = doExec(null, command.toString(), PROBE_TIMEOUT_SECONDS);
+            if (!result.ok()) {
+                throw new SandboxException.WorkspaceStartException(
+                        Path.of(workspaceRoot),
+                        new IllegalStateException(
+                                "failed to clear projected namespaces for rebuild (exit "
+                                        + result.exitCode()
+                                        + "): "
+                                        + result.combinedOutput()));
+            }
+        }
     }
 }

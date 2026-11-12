@@ -15,6 +15,7 @@
  */
 package io.agentscope.harness.agent.sandbox;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -30,8 +31,6 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 import org.apache.commons.compress.archivers.tar.TarArchiveEntry;
 import org.apache.commons.compress.archivers.tar.TarArchiveOutputStream;
 import org.junit.jupiter.api.BeforeEach;
@@ -156,19 +155,23 @@ class WorkspaceProjectionRevocationTest {
     }
 
     @Test
-    @DisplayName("legal filenames (spaces, unicode, metacharacters) round-trip through revocation")
+    @DisplayName(
+            "legal filenames (spaces, unicode, metacharacters, apostrophes) round-trip"
+                    + " through revocation")
     void legalFilenamesRoundTripThroughRevocation() throws Exception {
         Files.createDirectories(hostSource.resolve("中文目录"));
         Files.writeString(hostSource.resolve("user guide.md"), "guide");
         Files.writeString(hostSource.resolve("中文目录/说明.md"), "zh");
         Files.writeString(hostSource.resolve("a$(x)b`c`.md"), "meta");
+        Files.writeString(hostSource.resolve("it's.md"), "apostrophe");
 
         FakeState state = new FakeState();
-        state.setWorkspaceSpec(specWithRoots("user guide.md", "中文目录", "a$(x)b`c`.md"));
+        state.setWorkspaceSpec(specWithRoots("user guide.md", "中文目录", "a$(x)b`c`.md", "it's.md"));
         FakeSandbox sandbox = new FakeSandbox(state);
         sandbox.start();
         assertTrue(sandbox.exists("user guide.md"));
         assertTrue(sandbox.exists("中文目录/说明.md"));
+        assertTrue(sandbox.exists("it's.md"));
 
         sandbox.stop();
         state.setWorkspaceSpec(specWithRoots());
@@ -177,6 +180,7 @@ class WorkspaceProjectionRevocationTest {
         assertFalse(sandbox.exists("user guide.md"));
         assertFalse(sandbox.exists("中文目录/说明.md"));
         assertFalse(sandbox.exists("a$(x)b`c`.md"));
+        assertFalse(sandbox.exists("it's.md"), "the '\\''-escaped name must be revoked too");
     }
 
     @Test
@@ -195,6 +199,10 @@ class WorkspaceProjectionRevocationTest {
                 () -> sandbox.doDeleteWorkspacePaths(List.of("/etc/x")));
         assertThrows(
                 IllegalStateException.class, () -> sandbox.doDeleteWorkspacePaths(List.of("a\\b")));
+        assertThrows(
+                IllegalStateException.class, () -> sandbox.doDeleteWorkspacePaths(List.of("a/")));
+        assertThrows(
+                IllegalStateException.class, () -> sandbox.doDeleteWorkspacePaths(List.of("a//b")));
     }
 
     @Test
@@ -218,9 +226,9 @@ class WorkspaceProjectionRevocationTest {
 
     @Test
     @DisplayName(
-            "legacy state (hash without manifest): unchanged managed projection still runs,"
-                    + " changed one refuses")
-    void legacyStateWithoutManifestRefusesChangedManagedProjection() throws Exception {
+            "legacy state (hash without manifest): managed projection rebuilds the namespace"
+                    + " instead of trusting missing bookkeeping")
+    void legacyStateWithoutManifestRebuildsOnManagedProjection() throws Exception {
         FakeState state = new FakeState();
         state.setWorkspaceSpec(specWithRoots(AGENTS, ".skills-cache/u1/market/beta"));
         FakeSandbox sandbox = new FakeSandbox(state);
@@ -230,23 +238,20 @@ class WorkspaceProjectionRevocationTest {
         // revocation manifest was not.
         state.setProjectedWorkspacePaths(null);
 
-        // Unchanged projection: keeps working (upgrade compatibility).
-        sandbox.start();
-        assertTrue(sandbox.exists(BETA));
-        sandbox.stop();
-        state.setProjectedWorkspacePaths(null);
-
-        // Changed managed projection: missing metadata must not masquerade as completed
-        // isolation — refuse with a remediation instead of silently keeping stale files.
+        // Changed managed projection: the unaccounted workspace is rebuilt from scratch —
+        // the cache namespace is wiped and re-projected, no stale file survives, no refusal.
         state.setWorkspaceSpec(specWithRoots(AGENTS, ".skills-cache/u1/market/alpha"));
-        assertThrows(
-                SandboxException.WorkspaceStartException.class,
-                sandbox::start,
-                "a changed grant-managed projection on a manifest-less state must refuse");
+        sandbox.start();
+        assertFalse(sandbox.exists(BETA), "unaccounted beta must not survive the rebuild");
+        assertTrue(sandbox.exists(ALPHA), "newly granted alpha is re-projected");
+        assertTrue(sandbox.exists(AGENTS), "non-cache roots are re-projected too");
+        assertTrue(
+                !sandbox.rootDeleteCommands().isEmpty(),
+                "the rebuild must clear the managed namespaces");
     }
 
     @Test
-    @DisplayName("unmanaged content change invalidates the manifest for the next managed pass")
+    @DisplayName("unmanaged content change invalidates the manifest; next managed pass rebuilds")
     void unmanagedChangeInvalidatesManifestForNextManagedPass() throws Exception {
         FakeState state = new FakeState();
         state.setWorkspaceSpec(specWithRoots(true, AGENTS, ".skills-cache/u1/market/beta"));
@@ -260,13 +265,100 @@ class WorkspaceProjectionRevocationTest {
         assertTrue(sandbox.exists(ALPHA));
         sandbox.stop();
 
-        // The next managed pass must not trust the stale manifest: refuse rather than
-        // revoke against bookkeeping that no longer describes the workspace.
+        // The next managed pass must not trust the stale manifest: rebuild, so no
+        // under-revocation against bookkeeping that no longer describes the workspace.
         state.setWorkspaceSpec(specWithRoots(true, AGENTS, ".skills-cache/u1/market/alpha"));
+        sandbox.start();
+        assertFalse(sandbox.exists(BETA), "beta must not survive the rebuild");
+        assertTrue(sandbox.exists(ALPHA), "alpha is re-projected");
+        assertTrue(sandbox.exists(AGENTS), "non-cache roots survive via re-projection");
+    }
+
+    @Test
+    @DisplayName(
+            "resume-failure carry-over: fresh state + old snapshot rebuilds, stale files"
+                    + " cannot survive (audit S1)")
+    void resumeCarryOverRebuildsUnaccountedWorkspace() throws Exception {
+        InMemorySnapshot snapshot = new InMemorySnapshot();
+        FakeState wide = new FakeState();
+        wide.setSnapshot(snapshot);
+        wide.setWorkspaceSpec(specWithRoots(AGENTS, ".skills-cache/u1/market/beta"));
+        FakeSandbox first = new FakeSandbox(wide);
+        first.start();
+        first.stop(); // the snapshot now contains the wide-era cache
+
+        // The manager's resume-failure fallback: a FRESH state (no hash, no manifest)
+        // pointed at the OLD snapshot, with the grant narrowed.
+        FakeState fresh = new FakeState();
+        fresh.setSnapshot(snapshot);
+        fresh.setWorkspaceRootReady(false);
+        fresh.setWorkspaceSpec(specWithRoots(AGENTS, ".skills-cache/u1/market/alpha"));
+        FakeSandbox second = new FakeSandbox(fresh);
+        second.start(); // Branch C restores wide-era beta, then the rebuild wipes the cache
+
+        assertFalse(second.exists(BETA), "carried-over beta must not survive the narrowed call");
+        assertTrue(second.exists(ALPHA), "the newly granted alpha is projected");
+    }
+
+    @Test
+    @DisplayName("snapshot restore with an unchanged projection still rebuilds (force is pinned)")
+    void snapshotRestoreWithUnchangedProjectionStillRebuilds() throws Exception {
+        InMemorySnapshot snapshot = new InMemorySnapshot();
+        FakeState state = new FakeState();
+        state.setSnapshot(snapshot);
+        state.setWorkspaceSpec(specWithRoots(AGENTS, ".skills-cache/u1/market/beta"));
+        FakeSandbox sandbox = new FakeSandbox(state);
+        sandbox.start();
+        sandbox.stop();
+        // Manifest-less state with an UNCHANGED spec: the hash matches, so only the
+        // forced restore pass can rebuild — without force this start would skip.
+        state.setProjectedWorkspacePaths(null);
+        sandbox.wipeWorkspace();
+        state.setWorkspaceRootReady(false);
+        sandbox.start();
+        assertTrue(
+                !sandbox.rootDeleteCommands().isEmpty(),
+                "a manifest-less managed restore must rebuild, not hash-skip");
+        assertTrue(sandbox.exists(BETA), "the granted beta is re-projected after the wipe");
+    }
+
+    @Test
+    @DisplayName("managed projection without revokeRoots fails closed")
+    void managedProjectionWithoutRevokeRootsFailsClosed() throws Exception {
+        FakeState state = new FakeState();
+        WorkspaceProjectionEntry entry = new WorkspaceProjectionEntry();
+        entry.setSourceRoot(hostSource.toString());
+        entry.setIncludeRoots(List.of(".skills-cache/u1/market/alpha"));
+        entry.setAuthorizationManaged(true); // marked, but no rebuild scope declared
+        WorkspaceSpec spec = new WorkspaceSpec();
+        spec.getEntries().put("__workspace_projection__", entry);
+        state.setWorkspaceSpec(spec);
+        state.setWorkspaceProjectionHash("stale-hash");
+        state.setProjectedWorkspacePaths(null);
+        FakeSandbox sandbox = new FakeSandbox(state);
         assertThrows(
                 SandboxException.WorkspaceStartException.class,
                 sandbox::start,
-                "managed pass after an unmanaged overlay must refuse, not under-revoke");
+                "a marked entry without rebuild scope must fail closed, not assume empty");
+    }
+
+    @Test
+    @DisplayName("revocation beyond the chunk size splits into multiple commands")
+    void revocationBeyondChunkSizeSplitsIntoChunks() throws Exception {
+        Path dir = hostSource.resolve("many");
+        Files.createDirectories(dir);
+        for (int i = 0; i < 51; i++) {
+            Files.writeString(dir.resolve("f" + i + ".txt"), "x");
+        }
+        FakeState state = new FakeState();
+        state.setWorkspaceSpec(specWithRoots("many"));
+        FakeSandbox sandbox = new FakeSandbox(state);
+        sandbox.start();
+        sandbox.stop();
+        state.setWorkspaceSpec(specWithRoots());
+        sandbox.start();
+        assertEquals(2, sandbox.deleteCommands().size(), "51 paths must split into 2 chunks");
+        assertFalse(sandbox.exists("many/f50.txt"));
     }
 
     @Test
@@ -309,6 +401,9 @@ class WorkspaceProjectionRevocationTest {
         projection.setSourceRoot(hostSource.toString());
         projection.setIncludeRoots(List.of(includeRoots));
         projection.setAuthorizationManaged(authorizationManaged);
+        if (authorizationManaged) {
+            projection.setRevokeRoots(List.of(".skills-cache"));
+        }
         WorkspaceSpec spec = new WorkspaceSpec();
         spec.getEntries().put("__workspace_projection__", projection);
         return spec;
@@ -356,8 +451,7 @@ class WorkspaceProjectionRevocationTest {
     private static final class FakeSandbox extends AbstractBaseSandbox {
         private final Path workspaceDir;
         private final List<String> deleteCommands = new ArrayList<>();
-        // Matches the single-quoted operands the base class emits ('...' — no escaping).
-        private static final Pattern QUOTED = Pattern.compile("'([^']+)'");
+        private final List<String> rootDeleteCommands = new ArrayList<>();
 
         FakeSandbox(SandboxState state) throws Exception {
             super(state);
@@ -378,6 +472,10 @@ class WorkspaceProjectionRevocationTest {
             return deleteCommands;
         }
 
+        List<String> rootDeleteCommands() {
+            return rootDeleteCommands;
+        }
+
         @Override
         protected ExecResult doExec(
                 RuntimeContext runtimeContext, String command, int timeoutSeconds) {
@@ -388,25 +486,27 @@ class WorkspaceProjectionRevocationTest {
             }
             if (command.startsWith("rm -f --")) {
                 deleteCommands.add(command);
-                Matcher quoted = QUOTED.matcher(command);
-                while (quoted.find()) {
-                    String absolute = quoted.group(1);
-                    String relative = absolute.substring("/workspace/".length());
+                for (String operand : parseQuotedOperands(command)) {
                     try {
-                        Files.deleteIfExists(workspaceDir.resolve(relative));
+                        Files.deleteIfExists(workspaceDir.resolve(toRelative(operand)));
                     } catch (Exception e) {
                         return new ExecResult(1, "", e.getMessage(), false);
                     }
                 }
                 return new ExecResult(0, "", "", false);
             }
+            if (command.startsWith("rm -rf --")) {
+                rootDeleteCommands.add(command);
+                for (String operand : parseQuotedOperands(command)) {
+                    deleteRecursively(workspaceDir.resolve(toRelative(operand)));
+                }
+                return new ExecResult(0, "", "", false);
+            }
             if (command.startsWith("rmdir --")) {
-                Matcher quoted = QUOTED.matcher(command);
-                while (quoted.find()) {
-                    String relative = quoted.group(1).substring("/workspace/".length());
+                for (String operand : parseQuotedOperands(command)) {
                     try {
                         // deleteIfExists succeeds only for empty directories, like rmdir
-                        Files.deleteIfExists(workspaceDir.resolve(relative));
+                        Files.deleteIfExists(workspaceDir.resolve(toRelative(operand)));
                     } catch (Exception ignored) {
                         // non-empty directories stay, mirroring rmdir semantics
                     }
@@ -414,6 +514,55 @@ class WorkspaceProjectionRevocationTest {
                 return new ExecResult(0, "", "", false);
             }
             return new ExecResult(1, "", "unsupported command: " + command, false);
+        }
+
+        /**
+         * Parses the shell single-quoted operands the base class emits, including the
+         * {@code '\''} escape sequence: closing quotes may be followed by more quoting of
+         * the same operand. Everything unquoted is the command prefix and is ignored.
+         */
+        private static List<String> parseQuotedOperands(String command) {
+            List<String> operands = new ArrayList<>();
+            StringBuilder current = new StringBuilder();
+            boolean inQuote = false;
+            boolean any = false;
+            for (int i = 0; i < command.length(); i++) {
+                char c = command.charAt(i);
+                if (inQuote) {
+                    if (c == '\'') {
+                        inQuote = false; // the operand may continue with more quoting
+                    } else {
+                        current.append(c);
+                    }
+                } else if (c == '\'') {
+                    inQuote = true;
+                    any = true;
+                } else if (c == '\\' && any) {
+                    current.append(++i < command.length() ? command.charAt(i) : c);
+                } else if (c == ' ' && any) {
+                    operands.add(current.toString());
+                    current.setLength(0);
+                    any = false;
+                }
+            }
+            if (any) {
+                operands.add(current.toString());
+            }
+            return operands;
+        }
+
+        private static String toRelative(String operand) {
+            return operand.startsWith("/workspace/")
+                    ? operand.substring("/workspace/".length())
+                    : operand;
+        }
+
+        private void deleteRecursively(Path target) {
+            try (var walk = Files.walk(target)) {
+                walk.sorted(Comparator.reverseOrder()).forEach(p -> p.toFile().delete());
+            } catch (Exception ignored) {
+                // missing paths are fine
+            }
         }
 
         @Override

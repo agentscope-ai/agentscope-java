@@ -26,8 +26,10 @@ import java.security.MessageDigest;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import org.apache.commons.compress.archivers.tar.TarArchiveEntry;
 import org.apache.commons.compress.archivers.tar.TarArchiveOutputStream;
 
@@ -60,6 +62,30 @@ public final class WorkspaceProjectionApplier {
         List<WorkspaceProjectionEntry> projections = new ArrayList<>();
         collectProjectionEntries(spec.getEntries(), projections);
         return projections.stream().anyMatch(WorkspaceProjectionEntry::isAuthorizationManaged);
+    }
+
+    /**
+     * Merged {@code revokeRoots} of the managed projection entries: the whole projection
+     * namespaces a rebuild must clear (e.g. the {@code .skills-cache} tree) so that no
+     * stale file of any earlier era survives. Empty when the spec is unmanaged or no
+     * managed entry declared its roots.
+     *
+     * @param spec the workspace spec to inspect
+     * @return the deduplicated, order-preserving namespace roots to clear on rebuild
+     */
+    public static List<String> managedRevokeRoots(WorkspaceSpec spec) {
+        if (spec == null || spec.getEntries() == null) {
+            return List.of();
+        }
+        List<WorkspaceProjectionEntry> projections = new ArrayList<>();
+        collectProjectionEntries(spec.getEntries(), projections);
+        Set<String> roots = new LinkedHashSet<>();
+        for (WorkspaceProjectionEntry entry : projections) {
+            if (entry.isAuthorizationManaged() && entry.getRevokeRoots() != null) {
+                roots.addAll(entry.getRevokeRoots());
+            }
+        }
+        return List.copyOf(roots);
     }
 
     /**

@@ -183,7 +183,15 @@ public class SandboxLifecycleMiddleware implements HarnessRuntimeMiddleware {
                 }
             }
             if (cacheRoots != null) {
-                sandboxContext = narrowSkillsCacheProjection(sandboxContext, cacheRoots);
+                SandboxContext narrowed = narrowSkillsCacheProjection(sandboxContext, cacheRoots);
+                if (narrowed == sandboxContext) {
+                    log.warn(
+                            "[sandbox-mw] projection-aware callback produced cache roots but"
+                                    + " the workspace spec has no .skills-cache projection"
+                                    + " entry; grant narrowing is NOT applied to this sandbox"
+                                    + " (external sandbox or misconfigured spec?)");
+                }
+                sandboxContext = narrowed;
             }
             SandboxAcquireResult result = sandboxManager.acquire(sandboxContext, ctx);
             Sandbox sandbox = result.getSandbox();
@@ -290,21 +298,25 @@ public class SandboxLifecycleMiddleware implements HarnessRuntimeMiddleware {
         }
         WorkspaceEntry entry =
                 spec.getEntries().get(SandboxFilesystemSpec.WORKSPACE_PROJECTION_ENTRY_KEY);
-        if (!(entry instanceof WorkspaceProjectionEntry projection)
-                || !projection.getIncludeRoots().contains(MarketplaceStager.CACHE_DIR)) {
+        if (!(entry instanceof WorkspaceProjectionEntry projection) || !hasCacheRoot(projection)) {
             return original;
         }
         WorkspaceSpec narrowedSpec = spec.copy();
         WorkspaceProjectionEntry narrowed = new WorkspaceProjectionEntry();
         narrowed.setSourceRoot(projection.getSourceRoot());
         // This narrowing carries the grant decision for the cache subtree: mark it so the
-        // sandbox applies the projection authoritatively (revoking stale files). Specs
-        // without the marker keep the generic overlay semantics.
+        // sandbox applies the projection authoritatively (revoking stale files). The
+        // revoke roots name the whole cache namespace so a managed pass that cannot trust
+        // its bookkeeping can rebuild it from scratch. Specs without the marker keep the
+        // generic overlay semantics.
         narrowed.setAuthorizationManaged(true);
+        narrowed.setRevokeRoots(List.of(MarketplaceStager.CACHE_DIR));
         List<String> roots =
                 new ArrayList<>(projection.getIncludeRoots().size() + cacheRoots.size());
         for (String root : projection.getIncludeRoots()) {
-            if (!MarketplaceStager.CACHE_DIR.equals(root)) {
+            // Variant spellings of the cache root (leading ./, trailing /) project the
+            // same tree; normalize the match so narrowing is never silently disabled.
+            if (!isCacheRoot(root)) {
                 roots.add(root);
             }
         }
@@ -322,5 +334,28 @@ public class SandboxLifecycleMiddleware implements HarnessRuntimeMiddleware {
                 .externalSandboxState(original.getExternalSandboxState())
                 .isolationScope(original.getIsolationScope())
                 .build();
+    }
+
+    private static boolean hasCacheRoot(WorkspaceProjectionEntry projection) {
+        return projection.getIncludeRoots().stream()
+                .anyMatch(SandboxLifecycleMiddleware::isCacheRoot);
+    }
+
+    /**
+     * Variant-tolerant cache-root match: leading {@code ./} and trailing {@code /}
+     * spellings project the same tree and must not silently disable narrowing.
+     */
+    private static boolean isCacheRoot(String root) {
+        if (root == null) {
+            return false;
+        }
+        String normalized = root;
+        while (normalized.startsWith("./")) {
+            normalized = normalized.substring(2);
+        }
+        while (normalized.endsWith("/")) {
+            normalized = normalized.substring(0, normalized.length() - 1);
+        }
+        return MarketplaceStager.CACHE_DIR.equals(normalized);
     }
 }
