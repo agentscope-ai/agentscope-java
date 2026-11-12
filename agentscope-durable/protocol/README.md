@@ -23,7 +23,7 @@ Historical development formats are not migrated or supported through fallback pa
   and [verification guidance](#verification) to check wire and behavioral conformance.
 
 See the [library README](../README.md) for modules, assembly, and build instructions,
-and the [examples](../durable-examples/README.md) for runnable applications.
+and the [examples](../../agentscope-examples/durable/README.md) for runnable applications.
 The [execution model design](../docs/design/execution-model-plan.en.md) explains
 design decisions; the [acceptance backlog](../docs/verification/execution-model-acceptance.en.md)
 tracks verification still required. A schema, fixture, or documented operation is

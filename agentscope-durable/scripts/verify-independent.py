@@ -42,7 +42,8 @@ def run(arguments):
 
 print("Isolated Maven repository:", repository, flush=True)
 for pom in ["agentscope-dependencies-bom/pom.xml", "agentscope-distribution/agentscope-bom/pom.xml",
-            "pom.xml", "agentscope-extensions/pom.xml", "agentscope-extensions/agentscope-extensions-protocol/pom.xml"]:
+            "pom.xml", "agentscope-examples/pom.xml", "agentscope-extensions/pom.xml",
+            "agentscope-extensions/agentscope-extensions-protocol/pom.xml"]:
     run(["-N", "-f", pom, "-DskipTests", "install"])
 for pom in ["agentscope-core/pom.xml",
             "agentscope-extensions/agentscope-extensions-protocol/agentscope-extensions-agui/pom.xml",
@@ -51,7 +52,8 @@ for pom in ["agentscope-core/pom.xml",
 run(["-f", "agentscope-durable/pom.xml", "-Pdurable-standalone", "clean", "install"])
 run(["-f", "agentscope-durable/pom.xml", "-Pdurable-standalone", "dependency:tree",
      "-DoutputFile=target/durable-dependencies.txt"])
-areas = [ROOT / "agentscope-durable", *ROOT.joinpath("agentscope-extensions").glob("agentscope-extensions-durable-*")]
+areas = [ROOT / "agentscope-durable", ROOT / "agentscope-examples/durable",
+         *ROOT.joinpath("agentscope-extensions").glob("agentscope-extensions-durable-*")]
 for area in areas:
     for tree in area.glob("**/target/durable-dependencies.txt"):
         content = tree.read_text()

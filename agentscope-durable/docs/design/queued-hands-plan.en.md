@@ -1,9 +1,7 @@
 # Brain–Hands queued execution
 
-[中文](queued-hands-plan.md)
-
 Implemented in the Java Durable framework. The current cross-repository scope is recorded in the
-[implementation plan](../archive/platform-implementation-plan.en.md) and [verification](../verification/verification.en.md).
+implementation plan (`../archive/platform-implementation-plan.en.md`, retained in Git history) and [verification](../verification/verification.en.md).
 
 - Runtime, HarnessAdapter, SessionBackend and Executor remain the four primary concepts.
 - Hands uses an embeddable WorkerRuntime engine. An in-process Brain connects through
@@ -15,7 +13,11 @@ Implemented in the Java Durable framework. The current cross-repository scope is
 - Brain and Hands may use separate stores. Worker replicas share their ledger; Brain replicas share delivery records and Backend. SDK clients, stores and providers remain host-owned.
 - SQLite/HTTP/PostgreSQL contracts, SDK fault tests and real RocketMQ Broker/Proxy plus independent JVM recovery have passed. Production cloud/cluster/load acceptance remains separate.
 
-See the [standalone echo example](../../durable-examples/queued/queued-hands/README.en.md) and
-[queued Sandbox Hands example](../../durable-examples/queued/sandbox-hands/README.en.md). No Managed Agents dependency is required.
+See the [standalone echo-tool example](../../../agentscope-examples/durable/brain-hands/echo-tool/README.en.md) and
+[standalone tool-in-sandbox example](../../../agentscope-examples/durable/brain-hands/tool-in-sandbox/README.en.md). No Managed Agents dependency is required.
+Each module packages `${artifact}-brain.jar` and `${artifact}-hands.jar` with separate Java main
+classes and runners, without a role argument or enum. `run.sh --compile-only` remains the packaging
+entry; use `run.sh <brain|hands> <endpoint> [data-directory]` to select the JAR at launch.
+There is no `worker` alias.
 Offline protocol tests and real-broker acceptance of the new Sandbox example are recorded separately;
 the existing framework acceptance above does not establish that the new example has been broker-tested.

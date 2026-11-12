@@ -1,0 +1,16 @@
+spring:
+  application:
+    name: agentscope-durable-example-echo-tool
+  main:
+    banner-mode: "off"
+    log-startup-info: false
+logging:
+  level:
+    root: warn
+durable:
+  echo-tool:
+    endpoint: localhost:8081
+    namespace: demo
+    session-id: conversation
+    request-id: request-1
+    timeout: 15s

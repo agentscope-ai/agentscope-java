@@ -1,7 +1,5 @@
 # Execution model independent acceptance backlog
 
-[中文](execution-model-acceptance.md)
-
 Updated: 2026-11-10. See the [implementation plan](../design/execution-model-plan.en.md) and [development progress](execution-model-progress.en.md). The user prioritizes Durable implementation and defers heavy integration acceptance to a separate exercise. Managed Agents is outside this iteration.
 
 ## 1. Checks retained during development

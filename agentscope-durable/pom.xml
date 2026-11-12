@@ -34,7 +34,6 @@
         <module>durable-runtime</module>
         <module>durable-adapters</module>
         <module>durable-worker</module>
-        <module>durable-examples</module>
     </modules>
 
     <properties>
@@ -62,6 +61,7 @@
                 <module>../agentscope-extensions/agentscope-extensions-durable-rocketmq</module>
                 <module>../agentscope-extensions/agentscope-extensions-durable-objects</module>
                 <module>../agentscope-extensions/agentscope-extensions-durable-mcp</module>
+                <module>../agentscope-examples/durable</module>
             </modules>
         </profile>
     </profiles>

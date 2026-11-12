@@ -1,9 +1,8 @@
 # Unified execution model implementation progress
 
-[中文](execution-model-progress.md)
-
-> Original development results, numbers and commands remain historical evidence; links and example paths use the current layout.
-> Updating paths does not mean checks were rerun or passed. Historical commands are not current check instructions; see the [library README](../../README.en.md).
+> Original development results, numbers and commands remain historical evidence; current entry links use the existing layout.
+> Updating paths does not mean checks were rerun or passed. Historical commands are not current check instructions; see the [library README](../../README.md).
+> EmbeddedExample, embedded/Sandbox smoke tests, the integrated/queued layout and five-JAR checks below retain their historical names and scope. See the [examples overview](../../../agentscope-examples/durable/README.en.md) for renamed scenarios and independent Brain/Hands JARs; those new entry points are not verified by the historical checks.
 
 Updated: 2026-11-10. Under the latest user instruction, this iteration completes Durable framework development in the [execution model plan](../design/execution-model-plan.en.md), and **development is complete; independent integration acceptance is pending**. P7 Managed Agents moves to a later iteration; do not modify the platform now. Work remains in `/Users/ken/agentscope-3/agentscope-java` on `automatic-acr-release-durable`. Existing workspace changes are preserved; nothing was committed, pushed or deployed.
 

@@ -32,7 +32,7 @@ verification. Development checks are distinct from production acceptance.
 - Application integration: [Java usage guide](../docs/v2/en/docs/harness/durable.md).
 - User operations, messages and events: [public interaction contract](protocol/public-interaction-contract.en.md).
 - Authoritative schema and shared fixtures: [protocol entry](protocol/README.md).
-- Host wiring and launch instructions: [Spring Boot examples](durable-examples/README.en.md).
+- Host wiring and launch instructions: [Spring Boot examples](../agentscope-examples/durable/README.en.md).
 
 ## Where Durable fits
 
@@ -141,10 +141,10 @@ the HTTP response was lost.
 For a complete example without model credentials, run:
 
 ```sh
-bash agentscope-durable/durable-examples/integrated/quickstart/run.sh
+bash agentscope-examples/durable/integrated/quickstart/run.sh
 ```
 
-The [quickstart](durable-examples/integrated/quickstart/README.en.md) launches two
+The [quickstart](../agentscope-examples/durable/integrated/quickstart/README.en.md) launches two
 JVMs against the same temporary data directory. Its expected output is the same
 successful Turn in both runs, with `modelInvocations=1` on the first and `0` on the
 second. This demonstrates persistent identity and reuse of a completed result;
@@ -262,19 +262,19 @@ Choose the execution topology that matches the tool:
 | Direct remote Executor | A Sandbox or job service with independent execution and operation lookup | Existing execution service and persistent Backend |
 | Independent Hands Workers | Separate tool dependencies, permissions, capacity, or deployment lifecycle | Workers and their durable ledger; RocketMQ is an available transport |
 
-The [integrated Sandbox example](durable-examples/integrated/tool-in-sandbox/README.en.md)
+The [integrated Sandbox example](../agentscope-examples/durable/integrated/tool-in-sandbox/README.en.md)
 uses sequential `start` and `resume` JVMs with shared persistent data. The first exits
 with the Turn waiting and a detached command running; the second reconnects the
 original execution, applies its result, and finishes the same Turn. The fixture
 checks that its controlled file effect happens once:
 
 ```sh
-bash agentscope-durable/durable-examples/integrated/tool-in-sandbox/run.sh
+bash agentscope-examples/durable/integrated/tool-in-sandbox/run.sh
 ```
 
 For separate Brain and Hands processes, start with the
-[RocketMQ echo example](durable-examples/brain-hands/echo-tool/README.en.md), then
-the [queued Sandbox example](durable-examples/brain-hands/tool-in-sandbox/README.en.md).
+[RocketMQ echo example](../agentscope-examples/durable/brain-hands/echo-tool/README.en.md), then
+the [queued Sandbox example](../agentscope-examples/durable/brain-hands/tool-in-sandbox/README.en.md).
 Brain–Hands separation is optional; it does not require every tool to become a
 remote service.
 
@@ -344,7 +344,7 @@ The same durable-control model supports application signals for external events.
 
 An API-only Runtime can submit, query, observe, and control work without a local
 model or Agent factory. It does not call `start()` or claim work. See the
-[HTTP example](durable-examples/integrated/http-server/README.en.md) for hosting
+[HTTP example](../agentscope-examples/durable/integrated/http-server/README.en.md) for hosting
 public operations and SSE separately from Brain execution.
 
 ### What determines the recovery guarantee?
@@ -374,7 +374,7 @@ recovery procedures aligned with the guarantees your application needs.
 | `durable-runtime` | Public APIs, scheduling/recovery, transactional state machine, messages and events |
 | `durable-worker` | Caller-side reliable delivery, Hands execution ledger, recovery and batching |
 | `durable-adapters/durable-adapter-harness-agentscope` | Native ReActAgent/HarnessAgent adapter and checkpoint codec |
-| `durable-examples` | Separate integrated/brain-hands host examples, not library runtime dependencies |
+| `agentscope-examples/durable` | Separate integrated/brain-hands host examples, not library runtime dependencies |
 
 Java groupId is `io.agentscope`. Native integration uses
 `agentscope-durable-adapter-harness-agentscope`; there is no separate codec artifact.
@@ -402,11 +402,11 @@ credentials, resource authorization and host lifecycle.
 Run from the repository root; launchers live alongside each scenario:
 
 ```sh
-bash agentscope-durable/durable-examples/integrated/quickstart/run.sh
-bash agentscope-durable/durable-examples/integrated/http-server/run.sh
-bash agentscope-durable/durable-examples/integrated/tool-in-sandbox/run.sh
-bash agentscope-durable/durable-examples/brain-hands/echo-tool/run.sh --compile-only
-bash agentscope-durable/durable-examples/brain-hands/tool-in-sandbox/run.sh --compile-only
+bash agentscope-examples/durable/integrated/quickstart/run.sh
+bash agentscope-examples/durable/integrated/http-server/run.sh
+bash agentscope-examples/durable/integrated/tool-in-sandbox/run.sh
+bash agentscope-examples/durable/brain-hands/echo-tool/run.sh --compile-only
+bash agentscope-examples/durable/brain-hands/tool-in-sandbox/run.sh --compile-only
 ```
 
 `integrated` includes quickstart, API-only http-server and colocated tool-in-sandbox.
@@ -438,7 +438,7 @@ multi-process fault matrices, backend combinations and production capacity still
 require independent acceptance. Unqueryable or unverifiable external effects remain
 `UNKNOWN`; arbitrary external operations are not promised exactly-once execution.
 
-## Design, verification and provenance
+## Design and verification
 
 - [docs/design](docs/design): [execution model](docs/design/execution-model-plan.en.md),
   [multi-agent/Thread design](docs/design/multiagent-thread-design.en.md),
@@ -447,8 +447,3 @@ require independent acceptance. Unqueryable or unverifiable external effects rem
   [development progress](docs/verification/execution-model-progress.en.md),
   [historical user API verification](docs/verification/user-api-verification.en.md), [historical verification](docs/verification/verification.en.md).
   Existing dates, results and commands are evidence for their recorded versions, not passing claims for the current tree.
-- [docs/archive](docs/archive): [migration plan](docs/archive/migration-plan.en.md),
-  [platform boundaries](docs/archive/platform-boundaries.en.md), [platform implementation](docs/archive/platform-implementation-plan.en.md),
-  [previous API plan](docs/archive/user-api-and-runtime-plan.en.md), [upstream notes](docs/archive/UPSTREAM.en.md),
-  [source manifest](docs/archive/source-manifest.json), [extraction record](docs/archive/extraction-record.json),
-  [upstream Makefile](docs/archive/Makefile.upstream). Provenance only: historical links and commands may no longer work and are not current build instructions.

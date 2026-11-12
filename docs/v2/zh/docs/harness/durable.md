@@ -12,7 +12,7 @@ Durable 为已有 Agent 增加持久任务受理与恢复。Agent 保留自己�
 ## Java 模块与部署边界
 
 库 JAR 位于 `durable-runtime`、`durable-worker` 和
-`durable-adapters/durable-adapter-harness-agentscope`；`durable-examples` 是独立示例聚合模块。
+`durable-adapters/durable-adapter-harness-agentscope`；`agentscope-examples/durable` 是独立示例聚合模块。
 库由宿主打包，引入依赖不会自动启动服务。AgentScope adapter 依赖 runtime、Core 和 Harness；
 worker 仅依赖 runtime（以上不含测试依赖）。不再有独立的 codec 制品。
 
@@ -642,18 +642,24 @@ RocketMqWorker 还会等待已受理的 MQ 回调和待发布事件。宿主应�
 外部副作用。宿主回调需要响应中断或使用有界 IO；回调关闭自身宿主时不能等待自身线程。
 
 
-Java 示例位于独立的 `agentscope-durable/durable-examples` Maven 聚合模块，随 Durable reactor 编译。
-每个场景的启动器位于 `agentscope-durable/durable-examples/{integrated|queued}/{scenario}/run.sh`。
-integrated 包含 embedded、http-server 和 sandbox-hands；queued 包含 queued-hands 与 sandbox-hands。
+Java 示例位于 `agentscope-examples/durable`，归属 Examples Maven 聚合模块。
+Durable 的 `durable-standalone` profile 也显式纳入这些示例，用于独立构建和检查。
+每个场景的启动器位于 `agentscope-examples/durable/{integrated|brain-hands}/{scenario}/run.sh`。
+integrated 包含 quickstart、http-server 和 tool-in-sandbox；brain-hands 包含 echo-tool 与 tool-in-sandbox。
 从仓库根目录运行：
 
 ```sh
-bash agentscope-durable/durable-examples/integrated/embedded/run.sh
-bash agentscope-durable/durable-examples/integrated/http-server/run.sh
-bash agentscope-durable/durable-examples/integrated/sandbox-hands/run.sh
-bash agentscope-durable/durable-examples/queued/queued-hands/run.sh --compile-only
-bash agentscope-durable/durable-examples/queued/sandbox-hands/run.sh --compile-only
+bash agentscope-examples/durable/integrated/quickstart/run.sh
+bash agentscope-examples/durable/integrated/http-server/run.sh
+bash agentscope-examples/durable/integrated/tool-in-sandbox/run.sh
+bash agentscope-examples/durable/brain-hands/echo-tool/run.sh --compile-only
+bash agentscope-examples/durable/brain-hands/tool-in-sandbox/run.sh --compile-only
 ```
+
+一体式 tool-in-sandbox 启动器依次运行 `start`、`resume` 两个 JVM，每个 JVM 内同时装配 Brain 和 Hands。
+每个 brain-hands 模块打包 `${artifact}-brain.jar` 与 `${artifact}-hands.jar`，分别使用独立 Java main 和 runner，
+Java 入口不接受 role 参数，也不使用角色枚举。启动器接受 `<brain|hands> <endpoint> [data-directory]` 来选择 JAR，
+不支持 `worker` 别名；先启动 Hands，再在另一终端启动 Brain。
 
 需要 Java 17+ 与 Maven。正常检查使用 `make -C agentscope-durable check`；隔离依赖检查使用
 `make -C agentscope-durable independent`，另需 Python 3。真实队列执行需要 RocketMQ 5 服务及

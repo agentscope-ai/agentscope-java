@@ -1,12 +1,10 @@
 # Unified AgentScope and Durable execution model: implementation plan
 
-[中文](execution-model-plan.md)
-
 Date: 2026-11-09; development audit: 2026-11-10. Status: **Durable development for this iteration is complete; independent integration acceptance remains pending**. Section 11.2 records current delivery; the [progress ledger](../verification/execution-model-progress.en.md) maps requirements to implementation and actual tests. P7 Managed Agents is outside this iteration. Development completion is not production acceptance.
 
 **Latest execution agreement, 2026-11-10: this iteration completes the Durable framework only. P7 Managed Agents adaptation moves to a later iteration; do not modify the platform repository. Prioritize implementation, retaining affected-module compilation, formatting and focused behavior/protocol tests. Real MQ, multi-process faults, full backend combinations and repeated full-repository regression move to the [independent acceptance backlog](../verification/execution-model-acceptance.en.md). This supersedes the earlier full-P6 prerequisite and current-iteration P7 scheduling below. A1–A18 correctness objectives remain; record development completion separately from independent acceptance. Deferred checks are not passes.**
 
-This plan records the agreed Session / Thread / Turn / Run / Step model and assigns responsibilities to ReActAgent, HarnessAgent and Durable. It supersedes the future design decisions in the [previous user API plan](../archive/user-api-and-runtime-plan.en.md) that excluded Turn, assigned different meanings to the two Run layers, and retained a separate AgentSession scheduler. That implementation and its [verification record](../verification/user-api-verification.en.md) describe the earlier version; they are not evidence that this plan is complete.
+This plan records the agreed Session / Thread / Turn / Run / Step model and assigns responsibilities to ReActAgent, HarnessAgent and Durable. It supersedes the future design decisions in the previous user API plan (`../archive/user-api-and-runtime-plan.en.md`, retained in Git history) that excluded Turn, assigned different meanings to the two Run layers, and retained a separate AgentSession scheduler. That implementation and its [verification record](../verification/user-api-verification.en.md) describe the earlier version; they are not evidence that this plan is complete.
 
 The current [public interaction contract](../../protocol/public-interaction-contract.en.md) changes alongside the implementation. A documented contract is not evidence of verified implementation; section 11.2 records the current source and verification gaps. Replace the contract and its consumers together, without presenting planned capabilities as available today.
 
@@ -241,7 +239,7 @@ JDBC / HTTP / RocketMQ / Sandbox / MCP / Objects → relevant runtime, worker or
 Applications / Managed Agents → these libraries
 ```
 
-runtime stays Harness-neutral. The codec is part of `durable-adapters/durable-adapter-harness-agentscope`, not a separate artifact. Validation/restore/fork do not construct or start an Agent, but the adapter artifact brings in Harness/Core/runtime. Worker has no Core/Harness dependency. Examples live in `durable-examples`; do not create five Maven modules for the five concepts.
+runtime stays Harness-neutral. The codec is part of `durable-adapters/durable-adapter-harness-agentscope`, not a separate artifact. Validation/restore/fork do not construct or start an Agent, but the adapter artifact brings in Harness/Core/runtime. Worker has no Core/Harness dependency. Examples live in `agentscope-examples/durable`; do not create five Maven modules for the five concepts.
 
 Runtime remains an instance and the unified assembly, business-operation and lifecycle entry. API-only processes need no model/Agent/Executor and claim no tasks. Brain explicitly calls `start()`. Hands may be embedded or separate. Closing Runtime stops the host and its subscriptions, without cancelling durable Turns or destroying borrowed connections/Sandboxes.
 
@@ -571,7 +569,7 @@ Parent cancellation cancels the corresponding child Turn through the delegation 
 | SessionLog / SessionRecorder / native keys | Rename/define as Thread journals and invocation recording, updating providers, codec, tests and consumers |
 | RunExecutor child Session per invocation | Child Thread + Turn within a Session with durable delegation references |
 
-Consumers include `agentscope-examples/agents/agentscope-chat`, every example in Durable `durable-examples`, Harness subagent management, state-store extensions and their tests. Do not rename the AgentRun cloud product's Sandbox provider; it is unrelated to `io.agentscope.core.agent.AgentRun`.
+Consumers include `agentscope-examples/agents/agentscope-chat`, every example in `agentscope-examples/durable`, Harness subagent management, state-store extensions and their tests. Do not rename the AgentRun cloud product's Sandbox provider; it is unrelated to `io.agentscope.core.agent.AgentRun`.
 
 The later Managed Agents stage updates agent-service Session/Thread/Turn controllers and projections, Brain execution context, tool-worker ownership/result protocol, and their actual SDK, console and regression consumers. The platform retains tenancy, authorization, definition resolution, provisioning and business features without rebuilding Thread queues or recovery. Unchanged platform tests cannot establish support for the new contract.
 
@@ -590,7 +588,7 @@ The original handoff inventory found 17 Java files referencing AgentSession, Ses
 | Steering during the final model call in AgentSessionTest | Require accepted input to be applied or withdrawn before Turn success. Continue the same Run if its safe boundary remains available; create a new Run after the invocation has ended. Do not preserve a dispatcher or reuse runId across invocations to satisfy an old assertion |
 | HarnessExternalToolProcessRecoveryTest | Move background multi-JVM continuation into adapter tests. Verify same Turn/new Run, stable tool identity, rejection of applied results and model call counts. Tests must not introduce Harness → Durable dependencies |
 | agentscope-chat ChatSessions, ChatHistory and affected ChatItems, Controller, frontend and tests | Use LocalBackend + Runtime, explicit Session create/lookup, primary-Thread submission, Turn controls and public snapshots/messages/cursors. Stop inferring task state from native journals or parsing old cursors |
-| Durable durable-examples, documentation examples and docs/v2 EN/ZH | Show direct invocation and Durable usage consistently; update old entries in agent, context, message-and-event, harness architecture/session-log/durable, quickstart/index and session-chat guides |
+| agentscope-examples/durable, documentation examples and docs/v2 EN/ZH | Show direct invocation and Durable usage consistently; update old entries in agent, context, message-and-event, harness architecture/session-log/durable, quickstart/index and session-chat guides |
 
 Remove old implementations once native replacement boundaries work, behavior tests pass in the owning layer, and consumers are updated; then remove old classes and exclusive DTOs together. Do not simply delete failing tests or retain both implementations as a long-lived transition. Audit source, schemas, event names, build dependencies and examples together. Historical design/provenance records may remain explicitly historical, without providing a runnable compatibility protocol.
 
@@ -623,7 +621,7 @@ The framework path is P0 → P1/P2 → P3 → P4/P5 → P6. P1/P2 can be divided
 | P3 | AgentScopeAdapter, AgentScopeExecutionHost, BackendSessionLog, AgentScopeCheckpointCodec | One Run ID, atomic commits, recovery phases and structured native outcomes; do not restore the removed standalone control middleware/finalization classes |
 | P4 | DurableRuntime/Session/Thread/Turn, RunView/StepView, DurableMessages, EventProjection, HTTP extension and native API consumers | Complete Thread/Turn API, Run/Step queries and uniform messages/events; remove task Run and AgentSession scheduling code |
 | P5 | worker, DelegationExecutor, RocketMQ/MCP/Sandbox/Objects extensions | Identity across Brain–Hands and subagents; repeatable multi-process fault fixtures |
-| P6 | durable-examples, other affected examples, docs/v2 EN/ZH, independent build scripts and BOM | Build/test inventory for all supported modules, dependency trees and acceptance evidence |
+| P6 | agentscope-examples/durable, other affected examples, docs/v2 EN/ZH, independent build scripts and BOM | Build/test inventory for all supported modules, dependency trees and acceptance evidence |
 | P7 | Platform repository managed-agents/agent-service, agent-harness-runtime, tool-worker, SDK and console consumers | Business assembly using only public framework contracts, with platform regression |
 
 Tests accompanied each development stage. The old dispatcher is removed and affected consumers use the new flow. P6 independent acceptance retains cross-module, real-backend and combined-fault scenarios; it does not require compatibility wrappers or another migration of completed consumers.
@@ -714,14 +712,21 @@ mvn -B -T1 -f agentscope-durable/pom.xml -Pdurable-standalone spotless:check cle
 # Compile/test the affected ordinary chat example too
 mvn -B -T1 -Dagentscope.frameworkOnly=true -pl agentscope-examples/agents/agentscope-chat -am verify
 
-bash agentscope-durable/durable-examples/integrated/embedded/run.sh
-bash agentscope-durable/durable-examples/integrated/http-server/run.sh
-bash agentscope-durable/durable-examples/integrated/sandbox-hands/run.sh
-bash agentscope-durable/durable-examples/queued/queued-hands/run.sh --compile-only
-bash agentscope-durable/durable-examples/queued/sandbox-hands/run.sh --compile-only
-# Follow agentscope-durable/durable-examples/queued/sandbox-hands/README.en.md for real two-process Sandbox acceptance
+bash agentscope-examples/durable/integrated/quickstart/run.sh
+bash agentscope-examples/durable/integrated/http-server/run.sh
+bash agentscope-examples/durable/integrated/tool-in-sandbox/run.sh
+bash agentscope-examples/durable/brain-hands/echo-tool/run.sh --compile-only
+bash agentscope-examples/durable/brain-hands/tool-in-sandbox/run.sh --compile-only
+# Follow agentscope-examples/durable/brain-hands/tool-in-sandbox/README.en.md for real two-process Sandbox Brain/Hands acceptance
 bash .github/scripts/check-shade-and-bom-sync.sh
 ```
+
+These example commands use current names, not verification claimed to have run after renaming.
+Integrated tool-in-sandbox still runs sequential start/resume phases. Each brain-hands example
+provides separate Java main classes/runners and Brain/Hands executable JARs. Its launcher selects
+the JAR with `<brain|hands> <endpoint> [data-directory]`; Java accepts no role argument or enum,
+and `worker` is not an alias. See the [examples overview](../../../agentscope-examples/durable/README.en.md)
+for configuration and complete launch instructions.
 
 Use the existing `-Ddurable.test.jdbcUrl=...` entry for real PostgreSQL, with the local fixture supplying its address rather than embedding credentials here. RocketMQ acceptance needs real Broker/Proxy and multi-process Brain/Hands failure injection, not only SDK mocks or example compilation. Record reproducible persisted data and process-exit boundaries for A3/A4/A6/A8.
 

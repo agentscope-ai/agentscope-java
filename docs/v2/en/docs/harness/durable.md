@@ -14,7 +14,7 @@ build the matching checkout before using the coordinates below.
 ## Java modules and deployment boundaries
 
 Library JARs live in `durable-runtime`, `durable-worker` and
-`durable-adapters/durable-adapter-harness-agentscope`; `durable-examples` is a separate
+`durable-adapters/durable-adapter-harness-agentscope`; `agentscope-examples/durable` is a separate
 example aggregator. Hosts assemble the libraries; dependencies do not start services.
 The AgentScope adapter depends on runtime, Core and Harness; worker depends only on
 runtime (excluding test dependencies). There is no separate codec artifact.
@@ -738,19 +738,26 @@ Host callbacks must honor interruption or use bounded IO. A callback closing its
 cannot wait for itself.
 
 
-Java examples live in the separate `agentscope-durable/durable-examples` Maven aggregator,
-compiled by the Durable reactor. Each scenario has its own launcher at
-`agentscope-durable/durable-examples/{integrated|queued}/{scenario}/run.sh`.
-Integrated scenarios are embedded, http-server and sandbox-hands; queued scenarios are
-queued-hands and sandbox-hands. Run from the repository root:
+Java examples live in `agentscope-examples/durable`, under the Examples Maven
+aggregator. Durable's `durable-standalone` profile also includes them for standalone
+builds and checks. Each scenario has its own launcher at
+`agentscope-examples/durable/{integrated|brain-hands}/{scenario}/run.sh`.
+Integrated scenarios are quickstart, http-server and tool-in-sandbox; brain-hands scenarios are
+echo-tool and tool-in-sandbox. Run from the repository root:
 
 ```sh
-bash agentscope-durable/durable-examples/integrated/embedded/run.sh
-bash agentscope-durable/durable-examples/integrated/http-server/run.sh
-bash agentscope-durable/durable-examples/integrated/sandbox-hands/run.sh
-bash agentscope-durable/durable-examples/queued/queued-hands/run.sh --compile-only
-bash agentscope-durable/durable-examples/queued/sandbox-hands/run.sh --compile-only
+bash agentscope-examples/durable/integrated/quickstart/run.sh
+bash agentscope-examples/durable/integrated/http-server/run.sh
+bash agentscope-examples/durable/integrated/tool-in-sandbox/run.sh
+bash agentscope-examples/durable/brain-hands/echo-tool/run.sh --compile-only
+bash agentscope-examples/durable/brain-hands/tool-in-sandbox/run.sh --compile-only
 ```
+
+The integrated tool-in-sandbox launcher runs sequential `start` and `resume` JVMs, each
+colocating Brain and Hands. Each brain-hands module packages `${artifact}-brain.jar` and
+`${artifact}-hands.jar` with separate Java main classes and runners, without a Java role
+argument or enum. Its launcher accepts `<brain|hands> <endpoint> [data-directory]` to
+select the JAR; `worker` is not an alias. Start Hands first, then Brain in another terminal.
 
 Java 17+ and Maven are required. Use `make -C agentscope-durable check` for normal checks
 and `make -C agentscope-durable independent` for isolated dependency checking, which also

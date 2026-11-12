@@ -1,9 +1,8 @@
 # Durable Java verification
 
-[中文](verification.md)
-
 > Original dates, results, numbers and commands remain evidence for that historical version, not current acceptance claims.
-> Historical platform-repository and live-service checks have not been rerun here; see the [library README](../../README.en.md) for current checks.
+> Historical platform-repository and live-service checks have not been rerun here; see the [library README](../../README.md) for current checks.
+> The former queued/queued-hands example now lives at brain-hands/echo-tool. See the [examples overview](../../../agentscope-examples/durable/README.en.md) for current names and independent Brain/Hands JAR entry points; historical verification does not establish that those new entries pass.
 
 Verified on 2026-11-08 in `/Users/ken/agentscope-3/agentscope-java`, branch `automatic-acr-release-durable`. Managed Agents is implemented separately in `/Users/ken/agentcore/agentcore-managed-agents`, branch `durable-ma`. No checkout copy, commit, push or deployment was made. Imported source manifests are provenance, not the current module list.
 
@@ -35,7 +34,7 @@ mvn -B -ntp -T1 -f agentscope-durable/pom.xml -Pdurable-standalone \
 bash .github/scripts/check-shade-and-bom-sync.sh
 ```
 
-See [queued Hands example](../../durable-examples/queued/queued-hands/README.en.md) and [implementation plan](../archive/platform-implementation-plan.en.md). Managed process fixture: `managed-agents/tests/durable-platform/run.py` in the platform repository. Use only isolated test databases/brokers.
+See the [echo-tool example (current location of the former queued Hands example)](../../../agentscope-examples/durable/brain-hands/echo-tool/README.en.md) and implementation plan (`../archive/platform-implementation-plan.en.md`, retained in Git history). Managed process fixture: `managed-agents/tests/durable-platform/run.py` in the platform repository. Use only isolated test databases/brokers.
 
 ## Limits
 
@@ -45,7 +44,7 @@ No real cloud Sandbox, OSS/S3 account, Kubernetes deployment, production failove
 
 ## Incremental acceptance for this design review
 
-The [review matrix](../archive/platform-implementation-plan.en.md#review-against-the-original-design-2026-11-08)
+The review matrix (`../archive/platform-implementation-plan.en.md#review-against-the-original-design-2026-11-08`, retained in Git history)
 maps requirements to implementation. This review adds 19 behavioral checks (including the
 shared Backend contract exercised through SQLite and HTTP). The complete Java reactor reports
 161 tests, 160 passed, with only the optional Pi HTTP test skipped.

@@ -1,7 +1,5 @@
 # Durable Thread Evolution for Multi-Agent Orchestration
 
-[中文](multiagent-thread-design.md)
-
 Date: 2026-11-10. Status: **design reference, not a claim of current capability**.
 
 This document combines the current AgentScope Session / Thread / Turn / Run / Step execution

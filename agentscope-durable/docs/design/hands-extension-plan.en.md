@@ -1,10 +1,8 @@
 # Reusable Hands extensions implementation plan
 
-[中文](hands-extension-plan.md)
-
 > Existing implementation results, numbers and commands remain historical evidence, not renewed acceptance of the current tree.
-> Historical platform/cross-language records are not current client support claims; see the [library README](../../README.en.md) for modules and checks.
-> The current Sandbox launcher is `agentscope-durable/durable-examples/integrated/sandbox-hands/run.sh`; original commands are retained for tracing only.
+> Historical platform/cross-language records are not current client support claims; see the [library README](../../README.md) for modules and checks.
+> The current Sandbox launcher is `agentscope-examples/durable/integrated/tool-in-sandbox/run.sh`, still running sequential start/resume phases; original class names and commands are retained for tracing only. See the [examples overview](../../../agentscope-examples/durable/README.en.md) for current names and independent Brain/Hands entry points.
 
 Status: Java / AgentScope implementation and local acceptance complete. Implement the approved Tool Worker extraction in Durable first, then reduce Managed Agents to platform adapters. Java / AgentScope only. No legacy protocols, duplicate state machines, mandatory service, or reverse platform dependency.
 

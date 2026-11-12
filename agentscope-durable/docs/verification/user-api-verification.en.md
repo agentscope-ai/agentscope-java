@@ -1,11 +1,9 @@
 # Durable user API implementation and verification
 
-[简体中文](user-api-verification.md)
-
 > Original dates, results, numbers and commands remain evidence for that historical version, not current acceptance claims.
-> Historical cross-language tests do not establish current clients in other languages; see the [library README](../../README.en.md) for current checks.
+> Historical cross-language tests do not establish current clients in other languages; see the [library README](../../README.md) for current checks.
 
-Date: 2026-11-09. Covers P1–P7 of the [user API and autonomous runtime plan](../archive/user-api-and-runtime-plan.en.md).
+Date: 2026-11-09. Covers P1–P7 of the user API and autonomous runtime plan (`../archive/user-api-and-runtime-plan.en.md`, retained in Git history).
 Checkout: `/Users/ken/agentscope-3/agentscope-java`, branch `automatic-acr-release-durable`.
 Changes are in the current checkout; no commit, push or deployment.
 
