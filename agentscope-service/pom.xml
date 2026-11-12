@@ -33,14 +33,14 @@
     <name>Managed Agents</name>
     <description>Agent service platform: Go control plane with orchestration and scheduling, Java execution services</description>
 
-    <modules>
-        <module>java-client</module>
-        <module>common</module>
-        <module>agent-service</module>
-        <module>tool-worker</module>
-        <module>gateway</module>
-        <module>agent-harness-runtime/java</module>
-    </modules>
+<!--    <modules>-->
+<!--        <module>java-client</module>-->
+<!--        <module>common</module>-->
+<!--        <module>agent-service</module>-->
+<!--        <module>tool-worker</module>-->
+<!--        <module>gateway</module>-->
+<!--        <module>agent-harness-runtime/java</module>-->
+<!--    </modules>-->
 
     <properties>
         <spring.boot.version>4.0.4</spring.boot.version>
