@@ -194,16 +194,16 @@ AGENTS.md 不需要 XML 标签。注入时适用说明位于规则正文首行�
 
 ### 两层读架构（filesystem-first + 本地兜底）
 
-对所有"被注入到 prompt 的关键文件"（`AGENTS.md` / `MEMORY.md` / `knowledge/KNOWLEDGE.md` / `additionalContextFile`），`WorkspaceManager.readWithOverride()` 都走**两层读**：
+读操作先问配置的 `AbstractFilesystem`（路径按 caller 命名空间解析，用户级副本优先），未命中再落本地磁盘；兜底落点取决于数据归谁：
 
-```
-1. 问当前配置的 AbstractFilesystem：有没有这个 relative path？
-   ├─ 有 → 返回该内容（"覆盖"层）
-   └─ 没有 → 走第 2 步
-2. 读本地磁盘 workspace.resolve(relativePath)
-```
+| 数据 | filesystem 层 | 本地兜底 |
+|---|---|---|
+| `AGENTS.md` / `knowledge/KNOWLEDGE.md` / `additionalContextFile` / `tools.json` | `<namespace>/<path>` | `workspace/<path>`（共享模板） |
+| `MEMORY.md` / `memory/*.md` / task records | `<namespace>/<path>` | `<namespace>/<path>` |
 
-写入永远走第 1 层（filesystem 后端），从不直接落到本地磁盘。
+共享配置的根副本是任何 caller 都能读的模板，因此兜底到根；按身份数据的根副本不属于任何身份，只在 caller 命名空间内兜底——根级遗留不再服务已识别 caller，升级时挪进命名空间目录。没有命名空间或未配置 filesystem 时，两者仍读根。
+
+写入永远走 filesystem 后端，不直接落本地磁盘。
 
 这套两层读的价值在**共享存储模式**最明显：第一个副本启动时本地磁盘上有团队 git 同步过来的 `AGENTS.md` 模板，立刻可用；之后任何节点对 `AGENTS.md` 的覆盖（例如管理台编辑）会写到共享 KV，所有副本下一次 `call()` 就读到最新版本。模板是 fallback，远端覆盖是事实。
 
@@ -333,7 +333,7 @@ workspace/
 
 读取路径：
 
-- 框架自动读 `MEMORY.md`（两层读，filesystem 优先）；
+- 框架自动读当前 caller 命名空间下的 `MEMORY.md`（两层读，filesystem 优先）；
 - agent 可主动调 `memory_search` / `memory_get` 找老内容（详见 [记忆](/v2/zh/docs/harness/memory)）。
 
 ### 命名空间隔离怎么落到路径上

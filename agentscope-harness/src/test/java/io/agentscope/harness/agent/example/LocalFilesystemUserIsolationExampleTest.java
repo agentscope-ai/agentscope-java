@@ -28,6 +28,8 @@ import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.ToolResultBlock;
+import io.agentscope.core.message.ToolResultState;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.Model;
 import io.agentscope.harness.agent.HarnessAgent;
@@ -37,6 +39,8 @@ import io.agentscope.harness.agent.filesystem.model.GlobResult;
 import io.agentscope.harness.agent.filesystem.model.GrepResult;
 import io.agentscope.harness.agent.filesystem.model.ReadResult;
 import io.agentscope.harness.agent.testing.HarnessQuiescence;
+import io.agentscope.harness.agent.tool.MemoryGetTool;
+import io.agentscope.harness.agent.workspace.WorkspaceManager;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -423,6 +427,96 @@ class LocalFilesystemUserIsolationExampleTest {
         }
     }
 
+    /**
+     * Reads are anchored to the caller's namespace too: naming a sibling user's directory must
+     * not resolve to that user's file, neither through {@code memory_get} nor through the
+     * workspace manager's read path.
+     */
+    @Test
+    void memoryRead_doesNotCrossIntoSiblingNamespace() throws Exception {
+        Files.createDirectories(workspace);
+        Files.writeString(workspace.resolve("AGENTS.md"), "# Test\n");
+
+        try (HarnessAgent agent =
+                HarnessAgent.builder()
+                        .name("assistant")
+                        .model(stubModel("done"))
+                        // The async memory pipeline (flush + consolidation) reuses the stub
+                        // model, so its fixed "done" response would land in MEMORY.md and
+                        // race these namespace assertions. These tests target isolation,
+                        // not flush behaviour.
+                        .disableMemoryHooks()
+                        .workspace(workspace)
+                        .build()) {
+
+            agent.call(userMsg("hi"), ctx("s1", "alice")).block();
+            WorkspaceManager wm = agent.getWorkspaceManager();
+            wm.writeUtf8WorkspaceRelative(ctx("s1", "alice"), "MEMORY.md", "alice-private-note");
+
+            assertEquals("alice-private-note", wm.readMemoryMd(ctx("s1", "alice")));
+            assertEquals("", wm.readMemoryMd(ctx("s2", "bob")));
+            assertEquals("", wm.readMemoryFileUtf8(ctx("s2", "bob"), "alice/MEMORY.md"));
+            // The './' spelling reaches the same file once normalized.
+            assertEquals("", wm.readMemoryFileUtf8(ctx("s2", "bob"), "./alice/MEMORY.md"));
+
+            ToolResultBlock viaTool =
+                    new MemoryGetTool(wm).memoryGet(ctx("s2", "bob"), "alice/MEMORY.md", 1, 5);
+            ToolResultBlock dotted =
+                    new MemoryGetTool(wm).memoryGet(ctx("s2", "bob"), "./alice/MEMORY.md", 1, 5);
+            // The manager's normalization ignores leading whitespace and slashes, so this is
+            // still a '..' traversal — it must fail as a tool error, not as a failed turn.
+            ToolResultBlock padded =
+                    new MemoryGetTool(wm).memoryGet(ctx("s2", "bob"), "  ../alice/MEMORY.md", 1, 5);
+            // Every spelling fails as a tool error and never echoes the sibling's content.
+            for (ToolResultBlock blocked : List.of(viaTool, dotted, padded)) {
+                assertEquals(
+                        ToolResultState.ERROR,
+                        blocked.getState(),
+                        "memory_get must not read across the namespace boundary");
+                assertFalse(
+                        toolErrorText(blocked).contains("alice-private-note"),
+                        "memory_get must not leak alice's content in its output");
+            }
+        }
+    }
+
+    /**
+     * A root-level {@code MEMORY.md} is either a pre-namespace leftover or an explicitly shared
+     * file. An identified caller must not be served it — {@code memory_search} cannot see it
+     * either, so reading it would advertise content the tool surface cannot find again — while
+     * an identity-less read keeps the historical single-tenant behaviour.
+     */
+    @Test
+    void memoryRead_ignoresUnnamespacedRootCopyForIdentifiedCaller() throws Exception {
+        Files.createDirectories(workspace);
+        Files.writeString(workspace.resolve("AGENTS.md"), "# Test\n");
+        Files.writeString(workspace.resolve("MEMORY.md"), "legacy-root-note");
+
+        try (HarnessAgent agent =
+                HarnessAgent.builder()
+                        .name("assistant")
+                        .model(stubModel("done"))
+                        // Same as above: keep the async flush/consolidation out of the race.
+                        .disableMemoryHooks()
+                        .workspace(workspace)
+                        .build()) {
+
+            agent.call(userMsg("hi"), ctx("s1", "alice")).block();
+            WorkspaceManager wm = agent.getWorkspaceManager();
+
+            assertEquals("", wm.readMemoryMd(ctx("s1", "alice")));
+            assertEquals("", wm.readMemoryMd(ctx("s2", "bob")));
+            assertFalse(
+                    wm.listMemoryFilePaths(ctx("s1", "alice")).contains("MEMORY.md"),
+                    "the root-level leftover must not be listed for an identified caller");
+            assertEquals("legacy-root-note", wm.readMemoryMd(RuntimeContext.empty()));
+
+            wm.writeUtf8WorkspaceRelative(ctx("s1", "alice"), "MEMORY.md", "alice-fact");
+            assertEquals("alice-fact", wm.readMemoryMd(ctx("s1", "alice")));
+            assertEquals("", wm.readMemoryMd(ctx("s2", "bob")));
+        }
+    }
+
     // -------------------------------------------------------------------------
     // Helpers
     // -------------------------------------------------------------------------
@@ -436,6 +530,16 @@ class LocalFilesystemUserIsolationExampleTest {
                 .role(MsgRole.USER)
                 .content(TextBlock.builder().text(text).build())
                 .build();
+    }
+
+    /** First text block of a tool result, or the empty string. */
+    private static String toolErrorText(ToolResultBlock result) {
+        return result.getOutput().stream()
+                .filter(TextBlock.class::isInstance)
+                .map(TextBlock.class::cast)
+                .map(TextBlock::getText)
+                .findFirst()
+                .orElse("");
     }
 
     private static Model stubModel(String text) {
