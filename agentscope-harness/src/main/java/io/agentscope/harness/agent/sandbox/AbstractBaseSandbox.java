@@ -21,6 +21,7 @@ import java.io.ByteArrayInputStream;
 import java.io.InputStream;
 import java.nio.file.Path;
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
@@ -423,11 +424,13 @@ public abstract class AbstractBaseSandbox implements Sandbox {
         }
         List<String> currentPaths = payload != null ? payload.paths() : List.of();
         List<String> previousPaths = state.getProjectedWorkspacePaths();
+        // Set lookup: manifests can hold thousands of paths and every start diffs them.
+        Set<String> currentPathSet = new HashSet<>(currentPaths);
         List<String> stale =
                 previousPaths == null
                         ? List.of()
                         : previousPaths.stream()
-                                .filter(path -> !currentPaths.contains(path))
+                                .filter(path -> !currentPathSet.contains(path))
                                 .toList();
         if (!stale.isEmpty()) {
             doDeleteWorkspacePaths(stale);

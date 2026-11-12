@@ -28,6 +28,7 @@ import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -85,12 +86,13 @@ class WorkspaceProjectionRevocationTest {
                 sandbox.exists(BETA),
                 "beta was staged under an earlier, wider grant and must be revoked");
         // Containment shape, pinned: the generated commands are file-only deletions with
-        // quoted paths — a future edit back to recursive rm or unquoted paths fails here.
+        // single-quoted paths (no shell expansion) — a future edit back to recursive rm,
+        // unquoted or double-quoted paths fails here.
         assertTrue(
                 !sandbox.deleteCommands().isEmpty()
                         && sandbox.deleteCommands().stream()
-                                .allMatch(c -> c.startsWith("rm -f -- \"")),
-                "deletion commands must be 'rm -f --' with quoted absolute paths");
+                                .allMatch(c -> c.startsWith("rm -f -- '")),
+                "deletion commands must be 'rm -f --' with single-quoted absolute paths");
         assertTrue(
                 sandbox.deleteCommands().stream().noneMatch(c -> c.startsWith("rm -r")),
                 "recursive deletion must never be generated");
@@ -261,7 +263,7 @@ class WorkspaceProjectionRevocationTest {
 
         void wipeWorkspace() throws Exception {
             try (var walk = Files.walk(workspaceDir)) {
-                walk.sorted(java.util.Comparator.reverseOrder()).forEach(p -> p.toFile().delete());
+                walk.sorted(Comparator.reverseOrder()).forEach(p -> p.toFile().delete());
             }
         }
 

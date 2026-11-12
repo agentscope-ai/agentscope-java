@@ -453,6 +453,9 @@ class CapabilityGrantIntegrationTest {
         assertNotNull(agent.call(userMsg("hi"), ctx).block(Duration.ofSeconds(10)));
         assertFalse(modelInputText(model).contains("<available_skills>"));
         // The loader schema must not enumerate the catalog either: no skill is granted.
+        // The emptiness guard keeps the assertion honest if the loader schema were
+        // ever absent entirely (the helper returns Map.of() then).
+        assertFalse(loadToolSkillIdProperty(model).isEmpty());
         assertFalse(loadToolSkillIdProperty(model).containsKey("enum"));
     }
 
