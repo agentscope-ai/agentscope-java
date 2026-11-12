@@ -16,6 +16,7 @@
 package io.agentscope.core.skill;
 
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.TreeSet;
 import java.util.concurrent.ConcurrentHashMap;
@@ -78,7 +79,7 @@ class SkillRegistry {
     static boolean isAmbiguousIdCollision(AgentSkill existing, AgentSkill incoming) {
         return existing != null
                 && (!existing.getName().equals(incoming.getName())
-                        || !existing.getSource().equals(incoming.getSource()));
+                        || !Objects.equals(existing.getSource(), incoming.getSource()));
     }
 
     // ==================== Query Operations ====================
@@ -90,7 +91,7 @@ class SkillRegistry {
      * @return The skill instance, or null if not found
      */
     AgentSkill getSkill(String skillId) {
-        return skills.get(skillId);
+        return skillId == null ? null : skills.get(skillId);
     }
 
     /**
@@ -109,7 +110,7 @@ class SkillRegistry {
      * @return true if the skill exists, false otherwise
      */
     boolean exists(String skillId) {
-        return skills.containsKey(skillId);
+        return skillId != null && skills.containsKey(skillId);
     }
 
     // ==================== Removal Operations ====================
@@ -120,6 +121,8 @@ class SkillRegistry {
      * @param skillId The skill ID (must not be null)
      */
     void removeSkill(String skillId) {
-        skills.remove(skillId);
+        if (skillId != null) {
+            skills.remove(skillId);
+        }
     }
 }

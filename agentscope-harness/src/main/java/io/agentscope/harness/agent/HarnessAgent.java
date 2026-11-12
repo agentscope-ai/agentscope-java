@@ -20,6 +20,8 @@ import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.AgentBase;
 import io.agentscope.core.agent.AgentRun;
+import io.agentscope.core.agent.CapabilityResolver;
+import io.agentscope.core.agent.CapabilitySurface;
 import io.agentscope.core.agent.Event;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.agent.StreamOptions;
@@ -161,7 +163,6 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.BiFunction;
 import java.util.function.Consumer;
 import java.util.function.Function;
-import java.util.function.Supplier;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Flux;
@@ -213,6 +214,10 @@ public class HarnessAgent implements Agent, AutoCloseable {
     private final SandboxContext defaultSandboxContext;
     private final CompactionMiddleware compactionHook;
     private final SandboxLifecycleMiddleware sandboxLifecycleMw;
+
+    /** Per-user grant resolver; {@code null} = no trimming at the harness layer. */
+    private final CapabilityResolver capabilityResolver;
+
     private final List<AgentSkillRepository> skillRepositories;
     private final PlanModeManager planModeManager;
     // Skill self-learning — null unless enableSkillManageTool / enableSkillCurator.
@@ -246,6 +251,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
             SandboxContext defaultSandboxContext,
             CompactionMiddleware compactionHook,
             SandboxLifecycleMiddleware sandboxLifecycleMw,
+            CapabilityResolver capabilityResolver,
             List<AgentSkillRepository> skillRepositories,
             PlanModeManager planModeManager,
             SkillPromoter skillPromoter,
@@ -265,6 +271,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
         this.defaultSandboxContext = defaultSandboxContext;
         this.compactionHook = compactionHook;
         this.sandboxLifecycleMw = sandboxLifecycleMw;
+        this.capabilityResolver = capabilityResolver;
         this.skillRepositories =
                 skillRepositories != null ? List.copyOf(skillRepositories) : List.of();
         this.planModeManager = planModeManager;
@@ -785,7 +792,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
     @Deprecated(since = "2.2.0")
     @Override
     public Mono<Msg> call(List<Msg> msgs) {
-        return wrappedCall(msgs, RuntimeContext.empty(), () -> delegate.call(msgs));
+        return wrappedCall(msgs, RuntimeContext.empty(), eff -> delegate.call(msgs, eff));
     }
 
     /**
@@ -795,7 +802,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
     @Override
     public Mono<Msg> call(List<Msg> msgs, Class<?> structuredModel) {
         return wrappedCall(
-                msgs, RuntimeContext.empty(), () -> delegate.call(msgs, structuredModel));
+                msgs, RuntimeContext.empty(), eff -> delegate.call(msgs, structuredModel, eff));
     }
 
     /**
@@ -804,7 +811,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
     @Deprecated(since = "2.2.0")
     @Override
     public Mono<Msg> call(List<Msg> msgs, JsonNode schema) {
-        return wrappedCall(msgs, RuntimeContext.empty(), () -> delegate.call(msgs, schema));
+        return wrappedCall(msgs, RuntimeContext.empty(), eff -> delegate.call(msgs, schema, eff));
     }
 
     public Mono<Msg> call(Msg msg, RuntimeContext ctx) {
@@ -825,19 +832,19 @@ public class HarnessAgent implements Agent, AutoCloseable {
     public Mono<Msg> call(List<Msg> msgs, RuntimeContext ctx) {
         RuntimeContext effective =
                 ensureSessionDefaults(ctx != null ? ctx : RuntimeContext.empty());
-        return wrappedCall(msgs, effective, () -> delegate.call(msgs, effective));
+        return wrappedCall(msgs, effective, eff -> delegate.call(msgs, eff));
     }
 
     public Mono<Msg> call(List<Msg> msgs, Class<?> structuredModel, RuntimeContext ctx) {
         RuntimeContext effective =
                 ensureSessionDefaults(ctx != null ? ctx : RuntimeContext.empty());
-        return wrappedCall(msgs, effective, () -> delegate.call(msgs, structuredModel, effective));
+        return wrappedCall(msgs, effective, eff -> delegate.call(msgs, structuredModel, eff));
     }
 
     public Mono<Msg> call(List<Msg> msgs, JsonNode schema, RuntimeContext ctx) {
         RuntimeContext effective =
                 ensureSessionDefaults(ctx != null ? ctx : RuntimeContext.empty());
-        return wrappedCall(msgs, effective, () -> delegate.call(msgs, schema, effective));
+        return wrappedCall(msgs, effective, eff -> delegate.call(msgs, schema, eff));
     }
 
     /**
@@ -847,7 +854,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
     @Deprecated(since = "2.0.0", forRemoval = true)
     @Override
     public Flux<Event> stream(List<Msg> msgs, StreamOptions options) {
-        return wrappedStream(RuntimeContext.empty(), () -> delegate.stream(msgs, options));
+        return wrappedStream(RuntimeContext.empty(), eff -> delegate.stream(msgs, options, eff));
     }
 
     /**
@@ -858,7 +865,8 @@ public class HarnessAgent implements Agent, AutoCloseable {
     @Override
     public Flux<Event> stream(List<Msg> msgs, StreamOptions options, Class<?> structuredModel) {
         return wrappedStream(
-                RuntimeContext.empty(), () -> delegate.stream(msgs, options, structuredModel));
+                RuntimeContext.empty(),
+                eff -> delegate.stream(msgs, options, structuredModel, eff));
     }
 
     /**
@@ -868,7 +876,8 @@ public class HarnessAgent implements Agent, AutoCloseable {
     @Deprecated(since = "2.0.0", forRemoval = true)
     @Override
     public Flux<Event> stream(List<Msg> msgs, StreamOptions options, JsonNode schema) {
-        return wrappedStream(RuntimeContext.empty(), () -> delegate.stream(msgs, options, schema));
+        return wrappedStream(
+                RuntimeContext.empty(), eff -> delegate.stream(msgs, options, schema, eff));
     }
 
     /**
@@ -894,7 +903,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
     public Flux<Event> stream(List<Msg> msgs, StreamOptions options, RuntimeContext ctx) {
         RuntimeContext effective =
                 ensureSessionDefaults(ctx != null ? ctx : RuntimeContext.empty());
-        return wrappedStream(effective, () -> delegate.stream(msgs, options, effective));
+        return wrappedStream(effective, eff -> delegate.stream(msgs, options, eff));
     }
 
     /**
@@ -906,7 +915,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
         RuntimeContext effective =
                 ensureSessionDefaults(ctx != null ? ctx : RuntimeContext.empty());
         return wrappedStream(
-                effective, () -> delegate.stream(msgs, options, structuredModel, effective));
+                effective, eff -> delegate.stream(msgs, options, structuredModel, eff));
     }
 
     /**
@@ -917,7 +926,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
             List<Msg> msgs, StreamOptions options, JsonNode schema, RuntimeContext ctx) {
         RuntimeContext effective =
                 ensureSessionDefaults(ctx != null ? ctx : RuntimeContext.empty());
-        return wrappedStream(effective, () -> delegate.stream(msgs, options, schema, effective));
+        return wrappedStream(effective, eff -> delegate.stream(msgs, options, schema, eff));
     }
 
     /**
@@ -1011,7 +1020,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
     public Flux<AgentEvent> streamEvents(List<Msg> msgs, RuntimeContext ctx) {
         RuntimeContext effective =
                 ensureSessionDefaults(ctx != null ? ctx : RuntimeContext.empty());
-        return wrappedStreamEvents(effective, () -> delegate.streamEvents(msgs, effective));
+        return wrappedStreamEvents(effective, eff -> delegate.streamEvents(msgs, eff));
     }
 
     @Override
@@ -1031,16 +1040,17 @@ public class HarnessAgent implements Agent, AutoCloseable {
     // ==================== Call/stream wrappers ====================
 
     private Mono<Msg> wrappedCall(
-            List<Msg> msgs, RuntimeContext effective, Supplier<Mono<Msg>> inner) {
+            List<Msg> msgs, RuntimeContext effective, Function<RuntimeContext, Mono<Msg>> inner) {
         Mono<Msg> base =
                 Mono.using(
                         () -> {
+                            RuntimeContext eff = prepareCapabilitySurface(effective);
                             if (sandboxLifecycleMw != null) {
-                                sandboxLifecycleMw.acquireForCall(effective);
+                                sandboxLifecycleMw.acquireForCall(eff);
                             }
-                            return effective;
+                            return eff;
                         },
-                        eff -> inner.get(),
+                        eff -> inner.apply(eff),
                         eff -> {
                             if (sandboxLifecycleMw != null) {
                                 sandboxLifecycleMw.releaseForCall(eff);
@@ -1060,18 +1070,20 @@ public class HarnessAgent implements Agent, AutoCloseable {
 
     /**
      * @deprecated since 2.0.0, for removal alongside the {@link #stream(List, StreamOptions)}
-     *     family. Replaced by {@link #wrappedStreamEvents(RuntimeContext, Supplier)}.
+     *     family. Replaced by {@link #wrappedStreamEvents(RuntimeContext, Function)}.
      */
     @Deprecated(since = "2.0.0", forRemoval = true)
-    private Flux<Event> wrappedStream(RuntimeContext effective, Supplier<Flux<Event>> inner) {
+    private Flux<Event> wrappedStream(
+            RuntimeContext effective, Function<RuntimeContext, Flux<Event>> inner) {
         return Flux.using(
                 () -> {
+                    RuntimeContext eff = prepareCapabilitySurface(effective);
                     if (sandboxLifecycleMw != null) {
-                        sandboxLifecycleMw.acquireForCall(effective);
+                        sandboxLifecycleMw.acquireForCall(eff);
                     }
-                    return effective;
+                    return eff;
                 },
-                eff -> inner.get(),
+                eff -> inner.apply(eff),
                 eff -> {
                     if (sandboxLifecycleMw != null) {
                         sandboxLifecycleMw.releaseForCall(eff);
@@ -1080,20 +1092,62 @@ public class HarnessAgent implements Agent, AutoCloseable {
     }
 
     private Flux<AgentEvent> wrappedStreamEvents(
-            RuntimeContext effective, Supplier<Flux<AgentEvent>> inner) {
+            RuntimeContext effective, Function<RuntimeContext, Flux<AgentEvent>> inner) {
         return Flux.using(
                 () -> {
+                    RuntimeContext eff = prepareCapabilitySurface(effective);
                     if (sandboxLifecycleMw != null) {
-                        sandboxLifecycleMw.acquireForCall(effective);
+                        sandboxLifecycleMw.acquireForCall(eff);
                     }
-                    return effective;
+                    return eff;
                 },
-                eff -> inner.get(),
+                eff -> inner.apply(eff),
                 eff -> {
                     if (sandboxLifecycleMw != null) {
                         sandboxLifecycleMw.releaseForCall(eff);
                     }
                 });
+    }
+
+    /**
+     * Resolves the capability surface for this call, mirroring the core funnel rules: with no
+     * resolver any inherited surface is kept as-is (sub-agents reuse the parent's without
+     * re-resolving); a configured resolver resolves fresh per call, and when the rc already
+     * carries a surface (this harness running as a sub-agent) the result goes into a derived
+     * copy so the parent chain is never written in place.
+     *
+     * <p>Runs in the sandbox-acquire resource phase deliberately BEFORE {@code acquireForCall}:
+     * the pre-start callback stages marketplace skill files into {@code .skills-cache} for
+     * sandbox projection, so the grant set must already be on the rc — otherwise ungranted
+     * skill files would be materialised and readable from the sandbox shell. The inner delegate
+     * is built without a resolver and therefore keeps this surface by reference.
+     */
+    private RuntimeContext prepareCapabilitySurface(RuntimeContext effective) {
+        if (capabilityResolver == null) {
+            return effective;
+        }
+        CapabilitySurface resolved;
+        try {
+            resolved = capabilityResolver.resolve(effective, this);
+        } catch (RuntimeException e) {
+            // Same policy as the core funnel: broken authorization infrastructure is not
+            // "no grants" — abort the call instead of silently trimming nothing.
+            log.error(
+                    "CapabilityResolver failed; aborting the call (userId={}, agentId={})",
+                    effective.getUserId(),
+                    getName(),
+                    e);
+            throw e;
+        }
+        CapabilitySurface surface = resolved != null ? resolved : CapabilitySurface.ALLOW_ALL;
+        CapabilitySurface present = effective.get(CapabilitySurface.class);
+        if (present == surface) {
+            return effective;
+        }
+        RuntimeContext target =
+                present == null ? effective : RuntimeContext.builder().from(effective).build();
+        target.put(CapabilitySurface.class, surface);
+        return target;
     }
 
     /**
@@ -1193,6 +1247,8 @@ public class HarnessAgent implements Agent, AutoCloseable {
                                                         + " result"));
                             }
                             List<Msg> compacted = opt.get();
+                            // Re-prepare: the retry must carry the grant surface too (the
+                            // wrapped resource phase is not re-entered on this path).
                             return Mono.fromRunnable(
                                             () ->
                                                     delegate.updateAgentState(
@@ -1204,7 +1260,13 @@ public class HarnessAgent implements Agent, AutoCloseable {
                                                                         .addAll(compacted);
                                                             }))
                                     .subscribeOn(Schedulers.boundedElastic())
-                                    .then(Mono.defer(() -> delegate.call(retryInput, ctx)));
+                                    .then(
+                                            Mono.defer(
+                                                    () ->
+                                                            delegate.call(
+                                                                    retryInput,
+                                                                    prepareCapabilitySurface(
+                                                                            ctx))));
                         });
     }
 
@@ -1420,6 +1482,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
         TaskRepository taskRepository;
         Object externalSubagentTool;
         Function<String, Model> modelResolver;
+        CapabilityResolver capabilityResolver;
         final List<String> additionalContextFiles = new ArrayList<>();
         int maxContextTokens = 8000;
 
@@ -2301,6 +2364,22 @@ public class HarnessAgent implements Agent, AutoCloseable {
         /** Sets a resolver for model name strings to {@link Model} instances for subagents. */
         public Builder modelResolver(Function<String, Model> resolver) {
             this.modelResolver = resolver;
+            return this;
+        }
+
+        /**
+         * Registers a capability resolver computing the per-user grant set at call entry. The
+         * harness resolves before the sandbox acquire/prestage phase, so marketplace skill
+         * staging materialises granted-only files; the inner delegate carries the resolved
+         * {@link CapabilitySurface} without re-resolving, and harness sub-agents reuse it
+         * (inherited surface).
+         *
+         * <p>Only an all-null surface skips trimming; any explicit dimension makes the surface
+         * a complete grant enumeration (unset dimensions contribute no grants). A throwing
+         * resolver aborts the call — authorization infrastructure failure is not "no grants".
+         */
+        public Builder capabilityResolver(CapabilityResolver resolver) {
+            this.capabilityResolver = resolver;
             return this;
         }
 
@@ -3303,10 +3382,13 @@ public class HarnessAgent implements Agent, AutoCloseable {
                 inner.dynamicSkillsEnabled(false);
 
                 // Wire pre-start staging so sandbox projection picks up .skills-cache content
-                // that MarketplaceStager materialises from database-backed repositories.
+                // that MarketplaceStager materialises from database-backed repositories. The
+                // projection-aware variant also narrows the projected cache subtree to this
+                // call's granted skills — residue staged under earlier, wider grants stays on
+                // disk but no longer enters the sandbox.
                 if (sandboxLifecycleMw != null && stager != null) {
-                    sandboxLifecycleMw.setBeforeStartCallback(
-                            skillMiddleware::prestageMarketplaceSkills);
+                    sandboxLifecycleMw.setProjectionAwareBeforeStart(
+                            skillMiddleware::prestageForProjection);
                 }
             } else if (disableDynamicSkills) {
                 // No composed repositories exist, but preserve the explicit core opt-out.
@@ -3353,6 +3435,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
                     defaultSandboxContext,
                     compactionHook,
                     sandboxLifecycleMw,
+                    capabilityResolver,
                     orderedSkillRepos,
                     planModeManager,
                     pendingSkillPromoter,
