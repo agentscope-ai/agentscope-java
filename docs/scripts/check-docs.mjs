@@ -89,7 +89,10 @@ export function checkSite(docs) {
   const patterns = fs.existsSync(ignoreFile) ? fs.readFileSync(ignoreFile, 'utf8').split(/\r?\n/).map((line) => line.trim()) : [];
   const excluded = ignore().add(patterns);
   const routes = navigationPages(config.navigation);
-  for (const file of ['v1', 'v2'].flatMap((version) => pageFiles(path.join(docs, version)))) {
+  const versionDirectories = fs.readdirSync(docs, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory() && /^v\d+(?:\.\d+)*$/.test(entry.name))
+    .map((entry) => path.join(docs, entry.name));
+  for (const file of versionDirectories.flatMap(pageFiles)) {
     if (excluded.ignores(path.relative(docs, file).split(path.sep).join('/'))) continue;
     const route = '/' + path.relative(docs, file).replace(/\.mdx?$/, '').split(path.sep).join('/');
     try {
@@ -103,7 +106,7 @@ export function checkSite(docs) {
   for (const route of published) if (!pages.has(route)) errors.push(`Missing navigation page: ${route}`);
   for (const route of pages.keys()) if (!published.has(route)) errors.push(`Page missing from navigation: ${route}`);
   for (const [route, page] of pages) {
-    const match = route.match(/^\/(v[12])\/(en|zh)(\/.*)$/);
+    const match = route.match(/^\/(v\d+(?:\.\d+)*)\/(en|zh)(\/.*)$/);
     if (!match) continue;
     const [, version, language, suffix] = match;
     const counterpartLanguage = language === 'en' ? 'zh' : 'en';

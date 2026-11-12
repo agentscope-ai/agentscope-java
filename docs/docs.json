@@ -35,7 +35,8 @@
         "default": true,
         "versions": [
           {
-            "version": "v2",
+            "version": "2.0",
+            "default": true,
             "tabs": [
               {
                 "tab": "Home",
@@ -496,7 +497,8 @@
         "language": "zh",
         "versions": [
           {
-            "version": "v2",
+            "version": "2.0",
+            "default": true,
             "tabs": [
               {
                 "tab": "首页",

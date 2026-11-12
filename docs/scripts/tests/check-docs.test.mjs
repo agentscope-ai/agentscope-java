@@ -66,6 +66,41 @@ test('legacy HTML redirects preserve valid fragments', (t) => {
   assert.deepEqual(result.errors, []);
 });
 
+test('minor and future versions coexist and validate links within their own translation pair', (t) => {
+  const dir = fixture(t);
+  const config = JSON.parse(fs.readFileSync(path.join(dir, 'docs.json'), 'utf8'));
+  config.navigation.languages[0].versions[0].version = '2.0';
+  config.navigation.languages.push({ language: 'zh', versions: [] });
+  for (const version of ['2.1', '3']) {
+    for (const language of ['en', 'zh']) {
+      const other = language === 'en' ? 'zh' : 'en';
+      const route = `v${version}/${language}/intro`;
+      fs.mkdirSync(path.join(dir, `v${version}/${language}`), { recursive: true });
+      fs.writeFileSync(path.join(dir, route + '.md'),
+        `---\ntitle: Home\n${other}_link: /v${version}/${other}/intro\n---\n[Previous version](/v2/en/intro#setup)\n`);
+      config.navigation.languages.find((item) => item.language === language)
+        .versions.push({ version, pages: [route] });
+    }
+  }
+  fs.writeFileSync(path.join(dir, 'docs.json'), JSON.stringify(config));
+  const result = checkSite(dir);
+  assert.deepEqual(result.errors, []);
+  assert.equal(result.pageCount, 5);
+
+  fs.writeFileSync(path.join(dir, 'v2.1/en/intro.md'),
+    '---\ntitle: Home\nzh_link: /v3/zh/intro\n---\n[Missing](/v2.1/en/missing)\n');
+  const errors = checkSite(dir).errors;
+  assert(errors.includes('/v2.1/en/intro: zh_link must be /v2.1/zh/intro'));
+  assert(errors.includes('/v2.1/en/intro: missing local target /v2.1/en/missing'));
+});
+
+test('new version directories cannot bypass navigation checks', (t) => {
+  const dir = fixture(t);
+  fs.mkdirSync(path.join(dir, 'v2.1/en'), { recursive: true });
+  fs.writeFileSync(path.join(dir, 'v2.1/en/intro.md'), '---\ntitle: Home\n---\n');
+  assert(checkSite(dir).errors.includes('Page missing from navigation: /v2.1/en/intro'));
+});
+
 test('redirect cycles and duplicate sources fail', (t) => {
   const result = checkSite(fixture(t, { redirects: [{ source: '/a', destination: '/b' }, { source: '/b', destination: '/a' }, { source: '/a', destination: '/b' }] }));
   assert(result.errors.some((e) => e.includes('Duplicate redirect')));

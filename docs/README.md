@@ -1,7 +1,7 @@
 # AgentScope Java documentation · Mintlify
 
 This directory is the complete Mintlify source for the AgentScope Java site. It includes
-v1 and v2 documentation in English and Chinese, the landing pages, SDK guides,
+legacy v1 and current 2.0 documentation in English and Chinese, the landing pages, SDK guides,
 Service, integrations, blog posts, and community pages. Java/Maven is not required
 to preview or publish the documentation.
 
@@ -26,7 +26,7 @@ npm run validate
 npm run broken-links
 ```
 
-`npm run check` verifies all published v1/v2 pages are reachable from navigation, every page
+`npm run check` verifies all published versioned pages are reachable from navigation, every page
 has a title, local images/links/anchors exist, and redirects have valid targets. It follows
 `.mintignore`, as Mintlify does. Public navigation and links to excluded files fail validation.
 Keep this directory focused on user guides and reference documentation. Research and development
@@ -35,6 +35,43 @@ belong outside the source repository, under `~/agentscope-3/docs`. Do not add th
 unpublished drafts or hide them with `.mintignore`.
 `npm run validate` also runs Mintlify's strict build validation. The GitHub Actions
 workflow runs these checks on documentation PRs and pushes to `main` or `Mintlify`.
+
+## Documentation versions
+
+Mintlify's native version selector is configured under
+`navigation.languages[].versions` in `docs.json`. Each language has the same release
+choices. The current `2.0` entry is explicitly the default and uses the existing
+`v2/{en,zh}/` files and URLs. The legacy `v1` entry remains available. Version labels
+and page paths are independent, so relabeling the current release does not move pages
+or break `/v2/...` links.
+
+To publish a future 2.1 release:
+
+1. Add the release's user documentation under `v2.1/en/` and `v2.1/zh/`. Keep the
+   `v2/` content as the 2.0 documentation. Copy only the pages needed for the new release
+   and update their examples, dependency versions and behavior descriptions.
+2. Add a `"version": "2.1"` entry to **both** language `versions` arrays, with tabs,
+   groups and page paths pointing to `v2.1/...`. Keep 2.0's `default: true` until 2.1
+   should become the landing version. At that point move `default: true` to 2.1 in
+   both languages; only one version per language should be the default.
+3. Update links in the new pages, including `en_link`, `zh_link`, cards and any
+   version-specific downloads, so they target 2.1. Shared assets can retain their
+   existing paths. Link explicitly to 2.0 when a comparison or migration guide needs it.
+4. Add landing redirects for `/v2.1`, `/v2.1/en` and `/v2.1/zh` to the corresponding
+   intro pages. When making 2.1 the default, also update the existing `/` redirect;
+   it currently points to `/v2/en/intro`. Keep `/v2/...` and legacy redirects serving
+   their original versions rather than redirecting every old page to 2.1.
+5. Run `npm test`, `npm run validate` and `npm run broken-links`, then publish through
+   the Git branch connected to the existing Mintlify project. One site can host all
+   versions; a separate Mintlify project or deployment per release is unnecessary.
+
+The local checker discovers `v1`, `v2`, `v2.1`, `v3` and other numeric version
+directories automatically, including unlisted pages. It checks translation links
+within each version. Add a version to the selector when its pages are ready; no
+empty 2.1 entry is published in advance.
+
+See [Mintlify's version navigation reference](https://www.mintlify.com/docs/organize/navigation#versions)
+for the selector and default-version fields.
 
 ## Refresh Service screenshots
 
@@ -166,7 +203,7 @@ and fixture-based screenshots do not establish end-to-end success.
 ### Site conventions
 
 - `docs.json` is the single source of truth for navigation, versions, languages,
-  branding and redirects. Default navigation is English v2.
+  branding and redirects. Default navigation is English 2.0, served from `v2/`.
 - `v1/{en,zh}/` and `v2/{en,zh}/` contain the existing pages. `.md` files support
   Mintlify's MDX components; keeping the extension preserves GitHub source links.
 - Keep English and Chinese documentation aligned. Add pages to the corresponding
