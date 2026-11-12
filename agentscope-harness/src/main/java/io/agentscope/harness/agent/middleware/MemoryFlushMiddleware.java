@@ -89,7 +89,7 @@ import reactor.core.scheduler.Schedulers;
  */
 public class MemoryFlushMiddleware implements HarnessRuntimeMiddleware {
 
-    /** Service executions finish extraction while their native writer and authorization remain valid. */
+    /** Hosted executions finish extraction while their native writer and authorization remain valid. */
     public static final String INLINE_CONTEXT_KEY = "agentscope.memory.inlineFlush";
 
     private static final Logger log = LoggerFactory.getLogger(MemoryFlushMiddleware.class);

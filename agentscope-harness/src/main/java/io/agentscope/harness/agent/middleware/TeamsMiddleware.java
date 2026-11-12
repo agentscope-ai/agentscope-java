@@ -518,7 +518,7 @@ public final class TeamsMiddleware implements HarnessRuntimeMiddleware {
         return sb.toString();
     }
 
-    /** Renders the system-prompt team section (also used by BYO {@code team_join} kickoff). */
+    /** Renders the system-prompt team section. */
     public static String renderTeamSection(TeamContext ctx) {
         StringBuilder sb = new StringBuilder();
         sb.append("\n## Agent Team\n\n");

@@ -73,7 +73,7 @@ Where snapshots land is decided by `snapshotSpec`:
 | `LocalSnapshotSpec` | Host local file (single-machine long-running) |
 | `OssSnapshotSpec` | OSS / S3-compatible (multi-replica) |
 | `RedisSnapshotSpec` | Redis (low latency, small workspaces) |
-| `JdbcSnapshotSpec` | JDBC BLOB (existing relational DB) |
+| `JdbcSnapshotSpec` | MySQL / JDBC BLOB (existing relational DB) |
 
 ```java
 .filesystem(new DockerFilesystemSpec()
@@ -299,6 +299,3 @@ To integrate a non-Docker isolation environment (self-hosted remote executor, co
 - [Filesystem](/v2/en/docs/harness/filesystem) — three declarative modes compared
 - [Workspace](/v2/en/docs/harness/workspace) — which files under `workspace/` sync into the sandbox
 - [Architecture](/v2/en/docs/harness/architecture) — where sandbox acquire / release sits in the call() timeline
-
-
-An external Sandbox coordinator can set `E2bSandboxClientOptions.setRecreateOnConnectFailure(false)` to prevent an unsuccessful reconnect from creating another provider instance. The standalone default remains enabled. `setEnvdBaseUrl(...)` optionally selects an envd proxy instead of provider DNS. `setMaxCapturedBytes(...)` bounds each captured output stream; exceeding the limit fails the call so a partial Workspace archive is never treated as complete. Zero retains the existing capture behavior. AgentScope Service platform Hands uses coordinated creation, disables implicit recreation and provider create retries, and sets finite transport and capture limits.

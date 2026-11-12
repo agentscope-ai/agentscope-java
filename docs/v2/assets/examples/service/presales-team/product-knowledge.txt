@@ -1,0 +1,17 @@
+File: product/capabilities.md
+Version: product-v1
+This is a fictional product catalogue for the Northstar exercise, not a claim
+about AgentScope Service's built-in product features.
+Supported in the exercise: web portal integration, source-grounded knowledge answers,
+read-only order lookup through an authenticated API, and human handoff through a ticket API.
+Requires integration: order API authentication, ticket system, and customer identity.
+Not offered in this exercise: voice calls or an offline mobile application.
+Data residency and SSO support must be confirmed for the target deployment.
+Reference: CAT-01
+
+File: product/reference-case.md
+Version: case-v1
+A fictional pilot used 100 curated questions and a test order service.
+It validated source links and handoff records in a test environment.
+It did not establish a production accuracy percentage or a guaranteed response time.
+Reference: CASE-01

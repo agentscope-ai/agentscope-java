@@ -92,13 +92,6 @@
                 <version>${project.version}</version>
             </dependency>
 
-            <!-- Public Service application client -->
-            <dependency>
-                <groupId>io.agentscope</groupId>
-                <artifactId>agentscope-service-client</artifactId>
-                <version>${project.version}</version>
-            </dependency>
-
             <!-- Durable: neutral runtime, native adapter and optional providers -->
             <dependency>
                 <groupId>io.agentscope</groupId>
@@ -354,13 +347,6 @@
             <dependency>
                 <groupId>io.agentscope</groupId>
                 <artifactId>agentscope-extensions-skill-git-repository</artifactId>
-                <version>${project.version}</version>
-            </dependency>
-
-            <!-- AgentScope controlplane BYO data-plane SDK -->
-            <dependency>
-                <groupId>io.agentscope</groupId>
-                <artifactId>agentscope-extensions-controlplane</artifactId>
                 <version>${project.version}</version>
             </dependency>
 

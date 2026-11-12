@@ -1,383 +1,114 @@
 ---
-title: "Work, approvals, and acceptance"
+title: "Create console Issues and assign tasks"
 zh_link: /v2/zh/service/issues
 ---
 
 <Note>
-This page uses the `2.1.0-BETA1` prerelease.
+This is preview documentation. The official release is not yet available.
 </Note>
 
-An Issue keeps the objective, owner, discussion, executions, and deliverables for a piece of work. An application can create “analyze these logs,” assign an Agent, show progress, and ask the user to accept the report—all through APIs.
+An Issue holds a work objective, owner, discussion, execution records and deliverables. It remains traceable across failed executions and service restarts. Use Issues for work that must be completed and accepted, such as a report or a bug fix.
 
-This applies to registered, task-capable Agents across Managed, External, and Hosted runtimes. See [Agent creation and registration](/v2/en/service/api-reference#agents). If an application only needs to submit tasks, follow execution, and retrieve results, create a Session targeting an Agent, Team, or Workflow through the [Session API](/v2/en/service/service-api), without creating an Issue yourself first. Follow this guide when you need to manage assignees, discussion, and acceptance at the business level through the Issue API.
+## Interface tour
 
-<span id="understand-status-and-review-results"></span>
+<Frame caption="Current console UI with fixed demonstration data.">
+  <img src="/v2/assets/imgs/service/issues.png" alt="Issue list with priority, owner and status" />
+</Frame>
 
-## Create your first work item
+Filter with **Active**, **In review** or **Done**, then compare priority, owner and status in each row. Open an issue title for its discussion and result. Start a new piece of work with **New issue** at the top right.
 
-The examples use Bash, `curl`, and `jq`. Set `BASE_URL` to your Service address, and `TENANT` / `NAMESPACE` to the default scope; see [API authentication](/v2/en/service/api-reference). Run the following steps in the same Bash terminal:
+## Create work
 
-```bash
-set -euo pipefail
+Open **WORK → Issues → New issue**. Write an outcome-oriented title, such as “Analyze sample logs and deliver an error report.” Include input locations, boundaries and expected deliverables in the description.
+
+Choose **Sharing**: Private for yourself, or Namespace members for the shared scope. You can add individual collaborators later. Sharing includes execution records and attachments, so review it before adding material.
+
+Choose an Agent, Team or Human owner, or a Workflow execution target. A Workflow starts its latest published revision and records the actual revision used; publish it first if no revision exists. Ownership can be assigned later. After creation, check **Executions** rather than assuming that a saved Issue means an Agent is already running.
+
+## Define acceptance
+
+Add Acceptance criteria in the detail view, for example:
+
+```text
+- Read only sample.log; do not access production logs.
+- Deliver report.md with error categories, counts and three line-numbered examples.
+- Mark unconfirmed causes as hypotheses.
 ```
 
+Priority communicates importance; Due date communicates a deadline. Neither replaces the task description. Split large work into child Issues with their own owners and deliverables, then review the combined outcome in the parent.
 
-Set `AGENT_ID` to a task-capable Agent in the same namespace. Including an assignee creates work for asynchronous dispatch. A successful response means the work was accepted; query its state to follow execution.
-
-```bash
-ISSUE_JSON=$(
-  curl -sS --fail-with-body "$BASE_URL/api/v1/issues" \
-    -H "Content-Type: application/json" \
-    --data-binary @- <<JSON
-{
-  "tenant": "$TENANT",
-  "namespace": "$NAMESPACE",
-  "title": "Analyze sample logs and classify errors",
-  "description": "Read sample.log in the Workspace, produce report.md and identify unconfirmed causes.",
-  "acceptanceCriteria": [
-    "Include error categories and counts",
-    "Cite line-numbered evidence for each category"
-  ],
-  "assigneeType": "agent",
-  "assigneeRef": "$AGENT_ID",
-  "access": {
-    "mode": "private"
-  }
-}
-JSON
-)
-ISSUE_ID=$(jq -er '.issue.id' <<< "$ISSUE_JSON")
-TASK_ID=$(jq -r '.agentTask.id // empty' <<< "$ISSUE_JSON")
-```
-
-`issue.id` identifies the business work; `agentTask.id` identifies work assigned to an Agent. Retries, collaboration, and follow-up input can introduce additional tasks, so build the full work view around the Issue. For a Team, use `assigneeType:"team"` and its ID in `assigneeRef`; for a person, use `human`. Omit the assignee to save the work before assigning it.
-
-Local mode bypasses work access checks; see the [production access guide](/v2/en/service/access) for sharing scopes. The Agent still needs the actual Workspace and file tools to read `sample.log`.
-
-## Assign existing work and add input
-
-Read the latest `version` and send it as `expectedVersion` before changing existing work. This avoids overwriting another participant's changes. For example, assign an existing Issue to a Team:
-
-```bash
-ISSUE_JSON=$(
-  curl -sS --fail-with-body "$BASE_URL/api/v1/issues/$ISSUE_ID"
-)
-ISSUE_VERSION=$(jq -er '.issue.version' <<< "$ISSUE_JSON")
-```
-
-```bash
-curl -sS --fail-with-body "$BASE_URL/api/v1/issues/$ISSUE_ID/assign" \
-  -H "Content-Type: application/json" \
-  --data-binary @- <<JSON
-{
-  "assigneeType": "team",
-  "assigneeRef": "$TEAM_ID",
-  "expectedVersion": $ISSUE_VERSION
-}
-JSON
-```
-
-Normal scheduling does not require an extra `dispatch` call. Inspect the returned `agentTask` and its subsequent state. Assigning a human owner does not create an Agent execution.
-
-During execution, add a comment with new information or requested changes. Use structured `mentions` when addressing an Agent explicitly:
-
-```bash
-curl -sS --fail-with-body "$BASE_URL/api/v1/issues/$ISSUE_ID/comments" \
-  -H "Content-Type: application/json" \
-  --data-binary @- <<JSON
-{
-  "content": "Also count timeout errors and distinguish confirmed from unconfirmed causes.",
-  "mentions": [
-    {
-      "type": "agent",
-      "ref": "$AGENT_ID"
-    }
-  ]
-}
-JSON
-```
-
-The response's `routes` explain whether input was queued, merged into existing work, or blocked by policy. Comments can trigger work. For an informational progress record, use `type:"progress"` without mentions. Include `parentId` to reply to a comment. Submit the same body to `POST /api/v1/issues/{issueId}/comments/preview-routing` to preview routing before posting.
-
-An AgentTask can retain up to 8,192 comment input records. If a queued task is full, the comment is saved and its route reports `blocked` with `reasonCode:"task_input_capacity"`; inspect routes before treating a comment as delivered. Re-delivery of an existing comment/version stays idempotent. A retry of a worker in an active Team remains in that Team's completion scope. Input-history reads have a 16 MiB payload budget, while cancellation can proceed without reading history. Long delivery errors are explicitly marked diagnostic previews with their original length and SHA-256; this field is not the complete error log.
-
-Each new comment supports up to 128 mentions and 128 routing targets. Corrections retain routing history, capped at 4,096 combined mention/route records and 4 MiB per comment. The serialized body and base fields have a separate budget of approximately 12 MiB; escaped characters count toward it. If a write exceeds capacity, the whole comment or correction is rejected, preserving the previous version and input records. Large deliverables should use artifacts. A Team summary that exceeds its publication budget links to the retained execution details.
-
-## Read progress and deliverables
-
-When a page opens again, read the Issue and its tasks, comments, and artifacts to reconstruct the work view:
-
-```bash
-curl -sS --fail-with-body "$BASE_URL/api/v1/issues/$ISSUE_ID"
-```
-
-```bash
-curl -sS --fail-with-body -G "$BASE_URL/api/v1/agent-tasks" \
-  --data-urlencode "tenant=$TENANT" \
-  --data-urlencode "namespace=$NAMESPACE" \
-  --data-urlencode "issueId=$ISSUE_ID"
-```
-
-```bash
-curl -sS --fail-with-body -G "$BASE_URL/api/v1/issues/$ISSUE_ID/comments" \
-  --data-urlencode "limit=50"
-```
+## Discuss and exchange files
 
-```bash
-curl -sS --fail-with-body "$BASE_URL/api/v1/issues/$ISSUE_ID/artifacts"
-```
+Add information in comments, reply to threads or mention an Agent that should participate. Check routing outcomes and execution records to see whether a message caused follow-up work. Resolving a comment thread does not accept the Issue.
 
-```bash
-curl -sS --fail-with-body -G "$BASE_URL/api/v1/issues/$ISSUE_ID/activity" \
-  --data-urlencode "limit=50"
-```
+Use Artifacts for files and deliverables. Subscribe to updates without changing access permissions. The Source area identifies the originating Chat, Channel or other entry point.
 
-Task results, errors, and execution references support result displays and diagnostics. Continue comment pagination with the returned `nextCursor`. Artifact listings provide IDs; use `POST /api/v1/artifacts/{artifactId}/download` for download information. Upload through `POST /api/v1/artifacts/uploads`; see the [API reference](/v2/en/service/api-reference) for fields.
+## Read the status
 
-The platform work notification endpoint, `GET /api/v1/events?tenant=...&namespace=...`, uses **WebSocket** to signal that an application should refresh its data. It does not replay missed events. Refresh REST state after reconnecting. Requests made through a Session API can instead follow their Turn's [SSE stream](/v2/en/service/sse-events); these streams serve different purposes.
+| State | What to check |
+| --- | --- |
+| Backlog / Todo | Complete requirements and assign responsibility |
+| In progress | Review current execution, discussion and artifacts |
+| Blocked | Identify missing information, authorization or dependencies |
+| In review | Compare results and child Issues with acceptance criteria |
+| Done | Work has completed according to its completion policy |
+| Cancelled | Work was cancelled; retain its reason for reference |
 
-## Status, outcomes, and acceptance
+A successful Run is not itself Issue acceptance. The `review` policy requires human acceptance, `automatic` permits automatic completion rules, and `external` leaves completion to the corresponding external process. Check Policy and the current Issue state.
 
-An Issue moves from pending work into execution and may enter `in_review` for acceptance or `blocked` when input is missing. A successful AgentTask or Run means that execution ended. Business completion follows the Issue's completion policy. The ordinary Issue creation API currently uses `review`, requiring acceptance before `done`.
+## Accept or request changes
 
-<span id="managed-harness-task-outcomes"></span>
-<span id="read-outcomes-and-send-feedback"></span>
-<span id="outcomes"></span>
-<span id="child-work-and-deliverables"></span>
-<span id="recovery-and-acceptance"></span>
-<span id="example-evaluate-a-presales-deliverable"></span>
+In **Inbox → Review result**, inspect the latest result, files and child Issues. **Accept result** completes the Issue. **Request changes** records specific feedback and returns it to In progress. Returning work does not automatically start another execution; arrange the follow-up explicitly. See [Inbox](/v2/en/service/inbox).
 
-The following Outcomes are runtime reports, not Issue states that clients may PATCH freely. Turn completed, native turn completed, Run succeeded, and Issue accepted belong to different resources and are not interchangeable.
+When execution fails, inspect the node, Attempt and error before retrying. A new execution preserves earlier failure evidence. Completed work can be reopened when needed; archive it to organize history.
 
-| Outcome | Meaning | Next action |
-| --- | --- | --- |
-| succeeded | A deliverable exists and execution can finish | Inspect artifacts and follow Issue acceptance policy |
-| waiting | A real, tracked dependency is outstanding | Inspect its ID and state |
-| blocked | Information or conditions are missing; partial work is retained | Supply specific input and continue the work flow |
-| failed | Execution failed | Read errors and partial results before retrying |
+## Discuss before assigning
 
-Text such as “I will continue later” is not success. Outstanding background work or abnormal termination cannot establish completion either. Runtime budgets bound automatic continuation and dependency waiting.
+Use Chat to clarify a request, then use an Issue for ownership, collaboration and acceptance. The full conversation workflow follows; you can also create an Issue directly using the steps above.
 
-Child tasks use separate context and return through durable task records. Creating a subagent does not grant missing tools, network access or permissions. Unknown dependencies should produce an error rather than an indefinite wait.
+### Chat interface tour
 
-The Lead should bring child results into the parent Issue and Artifacts, identifying partial output, failures and uncertain facts. Truncated file-search output requires narrower follow-up searches before claiming complete evidence.
+<Frame caption="Current console UI with fixed demonstration data.">
+  <img src="/v2/assets/imgs/service/chat.png" alt="Chat conversation and the Create issue action" />
+</Frame>
 
-<span id="inbox"></span>
-<span id="find-actionable-items"></span>
-<span id="review-a-deliverable"></span>
+Use the list on the left to reopen conversations. Read replies in **Conversation** and inspect execution events in **Events**. Use **Create issue** at the top right when the discussion is ready for an owner, a deliverable and acceptance criteria.
 
-Continue with the `ISSUE_ID` created above. Load the result and confirm the Issue is currently `in_review`:
+### Start a conversation
 
-```bash
-review=$(
-  curl -sS --fail-with-body "$BASE_URL/api/v1/issues/$ISSUE_ID"
-)
-```
+1. Open **WORK → Chat** and select **New chat**.
+2. Choose an Agent. The picker reflects conversation availability; capability messages explain why a runtime cannot currently participate.
+3. Send a small request such as “Describe your responsibilities before changing any files.”
+4. Continue in the same Chat. Refresh and reopen it from the list to confirm that history is available.
 
-```bash
-curl -sS --fail-with-body "$BASE_URL/api/v1/issues/$ISSUE_ID/artifacts"
-```
+The Agent uses its assigned execution environment. A path on your browser's computer is not automatically accessible to the Agent. Put required material in a Workspace the Agent can access.
 
-```bash
-curl -sS --fail-with-body -G "$BASE_URL/api/v1/issues/$ISSUE_ID/comments" \
-  --data-urlencode "limit=50"
-printf '%s\n' "$review" | jq '.issue | {title,status,version,acceptanceCriteria}'
-```
+### Follow execution
 
-Let the user inspect the acceptance criteria, final report, and relevant child results. Once they accept, submit the version they reviewed:
+The conversation displays replies and tool events supplied by the runtime. For a confirmation request, review the operation and its arguments before deciding. If streaming disconnects, reopen the existing Chat and check its state before sending the same work again.
 
-```bash
-ISSUE_VERSION=$(jq -er '.issue.version' <<< "$review")
-```
+A Chat is the user conversation; a Session holds its runtime context. Operators can use Session diagnostics when needed. Conversation persistence, recovery and tool confirmation depend on the selected Agent's capabilities.
 
-```bash
-curl -sS --fail-with-body "$BASE_URL/api/v1/issues/$ISSUE_ID/accept" \
-  -H "Content-Type: application/json" \
-  --data-binary @- <<JSON
-{
-  "expectedVersion": $ISSUE_VERSION,
-  "reason": "Verified the report and evidence against the acceptance criteria."
-}
-JSON
-```
+### Turn a discussion into an Issue
 
-For requested changes, use `/reject` with `expectedVersion` and an explicit `reason`. Rejection returns work to `in_progress` without automatically executing it again. Follow the [comment and assignment flow](/v2/en/service/issues#assign-existing-work-and-add-input) to ask the owner to continue. Viewing a child or resolving a comment thread does not accept the current Issue.
+Select **Create issue**, review the suggested title and description, and add the objective, deliverables and acceptance requirements. Choose an owner and sharing scope before creating it. The Issue records its Chat source; write the relevant conclusions into the description rather than assuming that collaborators can read the entire private conversation.
 
-On a version conflict, reload the result and let the user reconsider. Do not silently substitute the latest version and repeat an old review decision.
+For example, after discussing release-note structure, create an Issue with the input versions, expected output file and fact-checking requirements.
 
-## How Agents report progress
+### Organize history
 
-Managed Agents and integrated runtimes report progress, results, and errors through their execution adapters. Applications read those records. Custom runtimes can use task protocol endpoints such as `/agent-tasks/{taskId}/progress`, `/respond`, `/complete`, and `/fail`. These require an **AgentTask token** issued with the execution context, rather than a user's token. See the [runtime protocol](/v2/en/service/external-agent#external-agent-execution).
+| Action | Effect |
+| --- | --- |
+| Pin / Unpin | Keep a frequent conversation easy to find |
+| Archive | Move it to Archived; restore it to continue |
+| Delete chat | Move it to Deleted; Restore chat remains available and execution diagnostics are retained |
 
-To clarify requirements in a conversation first, use the [Agent API chat flow](/v2/en/service/agent-api-chat), then write the agreed objective into an Issue. Console creation, discussion, files, and Chat-to-Issue actions are covered in [Console: tasks and feedback](/v2/en/service/console/index#console-tasks).
+Archiving or deleting history is not a cancellation operation for running work.
 
+### If no reply appears
 
-## Inbox notifications and approvals
+Check Agent availability, model credentials, the Environment and Runtime Host status. Check your account and scope when an existing Chat is inaccessible. Use a new Chat to verify configuration changes. Give an administrator the Chat ID, time and visible error without sharing credentials.
 
-Inbox belongs to the authenticated user; a request parameter cannot turn it into another person's Inbox. Query it with a user identity:
+Next: [Team collaboration](/v2/en/service/team-collaboration) · [Execution reference](/v2/en/service/sessions).
 
-```bash
-curl -sS --fail-with-body -G "$BASE_URL/api/v1/inbox" \
-  --data-urlencode "tenant=$TENANT" \
-  --data-urlencode "namespace=$NAMESPACE" \
-  --data-urlencode 'view=action' \
-  --data-urlencode 'limit=50'
-```
-
-```bash
-curl -sS --fail-with-body -G "$BASE_URL/api/v1/inbox/summary" \
-  --data-urlencode "tenant=$TENANT" \
-  --data-urlencode "namespace=$NAMESPACE"
-```
-
-The list returns `items`, `hasMore`, and `nextCursor`. Pass `cursor` for the next page. Use `view=action` for unresolved decisions, `unread` for unread items, `attention` for items needing attention, or `all` for all unarchived items. Add `archived=true` to read archived notifications.
-
-Read a selected item with `GET /api/v1/inbox/{inboxId}`, then follow its work or approval reference. Show the actual object, current result, and version before asking the user to decide.
-
-### Decide an execution approval
-
-Read the current user’s pending approvals in this scope, review the target and requested operation, then select the actual APPROVAL_ID before proceeding.
-
-```bash
-curl -sS --fail-with-body -G "$BASE_URL/api/v1/approvals" \
-  --data-urlencode "tenant=$TENANT" \
-  --data-urlencode "namespace=$NAMESPACE" \
-  --data-urlencode "status=pending" \
-  --data-urlencode "limit=25"
-```
-
-```bash
-APPROVAL_ID="APPROVAL_ID_FROM_LIST"
-```
-
-An approval may originate from a Workflow's human gate or a runtime operation. Obtain `APPROVAL_ID` from the notification reference or query `GET /api/v1/approvals?tenant=...&namespace=...`. Read the requester, target, and reason first. Only the designated approver may decide:
-
-```bash
-approval=$(
-  curl -sS --fail-with-body "$BASE_URL/api/v1/approvals/$APPROVAL_ID"
-)
-printf '%s\n' "$approval" | jq .
-```
-
-After the user chooses to approve:
-
-```bash
-APPROVAL_VERSION=$(jq -er '.approval.version' <<< "$approval")
-```
-
-```bash
-curl -sS --fail-with-body "$BASE_URL/api/v1/approvals/$APPROVAL_ID/decide" \
-  -H "Content-Type: application/json" \
-  --data-binary @- <<JSON
-{
-  "expectedVersion": $APPROVAL_VERSION,
-  "status": "approved",
-  "decision": {
-    "reason": "Verified the requested operation and its scope."
-  }
-}
-JSON
-```
-
-Reject with `status:"rejected"`. The decision may resume or fail waiting execution; it does not accept the final deliverable. Reload expired requests or requests that no longer match the current execution.
-
-Sessions invoked directly through Agent API may use pending session inputs for tool confirmations; see [session input and confirmation](/v2/en/service/session-event-log). Not every session confirmation is an Inbox Approval.
-
-### Reading, archiving, and refreshing
-
-Mark a notification read with `POST /api/v1/inbox/{inboxId}/read`. Archive it with `/archive` when it no longer belongs in the current list. These actions do not delete Issues, cancel execution, or replace decisions. Refresh counts through `/inbox/summary`.
-
-Poll Inbox or refresh it when platform WebSocket notifications arrive. Inbox is a view of the user's pending work, not a complete execution log. Use [SSE and state APIs](/v2/en/service/sse-events) for execution streaming and reconnection.
-
-For the platform UI workflow, see [Console: tasks and feedback](/v2/en/service/console/index#console-tasks).
-
-
-Retry failed tasks with `POST /api/v1/agent-tasks/{taskId}/retry`; cancel with `/cancel`. Read the failure and current state first. Retries retain old records and may repeat external effects.
-
-<span id="curl-management"></span>
-
-## Handle rejection, retries and notifications
-
-Use the local URL and default scope variables from [API setup](/v2/en/service/create-managed-agent#api-setup).
-
-<Accordion title="Reject a delivery">
-
-When review finds an unmet criterion, read the current version and reject with revision instructions. This is an alternative to acceptance, not its next step.
-
-```bash
-ISSUE_JSON=$(
-  curl -sS --fail-with-body "$BASE_URL/api/v1/issues/$ISSUE_ID"
-)
-ISSUE_VERSION=$(jq -er '.issue.version' <<< "$ISSUE_JSON")
-```
-
-```bash
-curl -sS --fail-with-body "$BASE_URL/api/v1/issues/$ISSUE_ID/reject" \
-  -H "Content-Type: application/json" \
-  --data-binary @- <<JSON
-{
-  "expectedVersion": $ISSUE_VERSION,
-  "reason": "Add line-numbered evidence for every error category."
-}
-JSON
-```
-
-</Accordion>
-
-<Accordion title="Cancel or retry an AgentTask">
-
-Take TASK_ID from the work detail or task list; it is distinct from Issue ID. Cancel uses the current task version. Retrying a failed task creates a new task record and requires no expectedVersion. Inspect state and failure first; these are alternative operations.
-
-```bash
-TASK_JSON=$(
-  curl -sS --fail-with-body "$BASE_URL/api/v1/agent-tasks/$TASK_ID"
-)
-TASK_VERSION=$(jq -er '.task.version' <<< "$TASK_JSON")
-```
-
-<Tabs>
-<Tab title="Cancel">
-
-```bash
-curl -sS --fail-with-body "$BASE_URL/api/v1/agent-tasks/$TASK_ID/cancel" \
-  -H "Content-Type: application/json" \
-  --data-binary @- <<JSON
-{
-  "expectedVersion": $TASK_VERSION
-}
-JSON
-```
-
-</Tab>
-<Tab title="Retry failed task">
-
-```bash
-curl -sS --fail-with-body -X POST "$BASE_URL/api/v1/agent-tasks/$TASK_ID/retry"
-```
-
-</Tab>
-</Tabs>
-
-</Accordion>
-
-<Accordion title="Read and organize the Inbox">
-
-Select INBOX_ID from the list. Reading or archiving organizes the current user’s notification; it does not approve a request or cancel work.
-
-```bash
-INBOX_ID="INBOX_ID_FROM_LIST"
-```
-
-```bash
-curl -sS --fail-with-body "$BASE_URL/api/v1/inbox/$INBOX_ID"
-```
-
-```bash
-curl -sS --fail-with-body -X POST "$BASE_URL/api/v1/inbox/$INBOX_ID/read"
-```
-
-```bash
-curl -sS --fail-with-body -X POST "$BASE_URL/api/v1/inbox/$INBOX_ID/archive"
-```
-
-</Accordion>
+The [engineering case](/v2/en/service/cases/sdlc-team) ties GitHub requirements, base branch, tests, PR, and merge scope to one work item.

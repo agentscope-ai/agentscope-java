@@ -4,11 +4,11 @@ description: 运行 agentscope-chat，体验聊天历史、SSE 续传、用户�
 en_link: /v2/en/blogs/best-practices/session-chat
 ---
 
-完整源代码位于仓库 [agentscope-chat](https://github.com/agentscope-ai/agentscope-java/tree/main/agentscope-examples/agents/agentscope-chat)。
+历史源码见 [v2.1.0-BETA1 的 agentscope-chat](https://github.com/agentscope-ai/agentscope-java/tree/v2.1.0-BETA1/agentscope-examples/agents/agentscope-chat)。本共享文章描述的是后来尚未发布的 DurableRuntime 实现；tag 中的示例使用 AgentSession，两种实现均不包含在 v2.0.4 中。
 
 一个使用 HarnessAgent 和 agentscope-durable 的本地聊天应用。它演示持久任务、排队、暂停恢复、交互回答，以及公共消息和工具进度的 SSE 续传。
 
-普通单次问答仍可使用 Agent 的 `call` / `streamEvents`。本例需要在浏览器关闭或应用重启后继续任务，因此通过 `DurableRuntime` 装配本地后端与 AgentScope adapter，业务请求统一使用 `runtime`。概念与通用 API 见 [Durable 持久任务](/v2/zh/docs/harness/durable)。
+普通单次问答仍可使用 Agent 的 `call` / `streamEvents`。本例需要在浏览器关闭或应用重启后继续任务，因此通过 `DurableRuntime` 装配本地后端与 AgentScope adapter，业务请求统一使用 `runtime`。概念与通用 API 见 [Durable 持久任务](/dev/zh/docs/harness/durable)。
 
 ## 启动
 

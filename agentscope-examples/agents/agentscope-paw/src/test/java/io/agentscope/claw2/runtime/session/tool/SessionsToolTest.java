@@ -28,7 +28,7 @@ import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.ArgumentMatchers.same;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.timeout;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -51,16 +51,11 @@ class SessionsToolTest {
     @TempDir Path root;
 
     @Test
-    void spawnedTaskIsImmediatelyQueryableOnlyFromParentAndDoesNotWakeDefaultChat()
-            throws Exception {
+    void spawnedTaskIsImmediatelyQueryableOnlyFromParentAndAnnouncesCompletion() throws Exception {
         var manager = mock(SessionAgentManager.class);
-        var context =
-                RuntimeContext.builder()
-                        .sessionId("assigned-session")
-                        .put("agentTaskManaged", true)
-                        .build();
-        when(manager.requesterKeyForSession("assigned-session")).thenReturn("assigned-session");
-        when(manager.registerSession("researcher", null, "assigned-session", 0))
+        var context = RuntimeContext.builder().sessionId("parent-session").build();
+        when(manager.requesterKeyForSession("parent-session")).thenReturn("parent-session");
+        when(manager.registerSession("researcher", null, "parent-session", 0))
                 .thenReturn(
                         new SpawnResult(
                                 "run", "child-key", "child-id", "", "researcher", "ok", null));
@@ -89,7 +84,7 @@ class SessionsToolTest {
                             .orElseThrow()
                             .substring(8)
                             .trim();
-            var task = repo.getTask(context, "assigned-session", id);
+            var task = repo.getTask(context, "parent-session", id);
             assertNotNull(task);
             assertNull(repo.getTask(context, "another-session", id));
             assertTrue(new TaskTool(repo).taskOutput(context, id, false, 0L).contains("running"));
@@ -98,7 +93,8 @@ class SessionsToolTest {
             assertEquals("EV evidence", task.getResult());
             assertTrue(
                     new TaskTool(repo).taskOutput(context, id, false, 0L).contains("EV evidence"));
-            verify(manager, never()).announceCompletion(any(), any(), any());
+            verify(manager, timeout(5000))
+                    .announceCompletion(eq("child-key"), eq("EV evidence"), isNull());
             assertThrows(
                     IllegalArgumentException.class,
                     () -> new TaskTool(repo).taskOutput(context, "missing", false, 0L));

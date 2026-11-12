@@ -1,8 +1,0 @@
-{
-  "version": 1,
-  "sessionId": "session-1",
-  "source": "managed",
-  "eventId": "fact-1",
-  "sourceSequence": 1,
-  "publicSequence": 2
-}

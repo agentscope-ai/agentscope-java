@@ -213,10 +213,6 @@ agent_send label="pr-reviewer" message="顺便也看下 schema 变更"
 
 开启后，框架会根据 `(parentSessionId, agentId, label)` 生成确定性的 key。如果再次 spawn 同样的组合，就会复用已存在的 agent 实例——对话历史和状态都保留。
 
-服务宿主可以在 `RuntimeContext` 中注入 `SubagentExecution` 来接管子执行。其 `childSessionId` 钩子同时适用于新建和持久 spawn；返回 `null` 时保留框架默认 ID。对于同一持久身份，宿主应返回稳定的 ID。宿主子执行抛出的 `JournalException` 会继续传递给父调用，避免持久存储失败或内部挂起被转换成普通工具结果文本。
-
-可选的 `ownsChildState()` 默认返回 `false`。返回 `true` 的宿主负责持久化子 Agent 的权限与计划状态；Harness 在委派前不会读取或修改本机原型的状态。已有宿主继续使用默认的本机状态传播行为。
-
 ## 向用户暴露子 Agent
 
 通常子 agent 对用户是不可见的——它们在幕后作为父 agent 的内部工具运行。通过 `expose_to_user=true`，父 agent 可以把子 agent 暴露为**用户可直接交互的入口**：

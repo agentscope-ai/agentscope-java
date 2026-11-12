@@ -73,7 +73,7 @@ agent.call(msg, RuntimeContext.builder()
 | `LocalSnapshotSpec` | 宿主本地文件（单机长期运行） |
 | `OssSnapshotSpec` | OSS / S3 兼容存储（多副本） |
 | `RedisSnapshotSpec` | Redis（低延迟、小工作区） |
-| `JdbcSnapshotSpec` | JDBC BLOB（已有关系型数据库） |
+| `JdbcSnapshotSpec` | MySQL / JDBC BLOB（已有关系型数据库） |
 
 ```java
 .filesystem(new DockerFilesystemSpec()
@@ -298,6 +298,3 @@ Sandbox 内对文件的修改不会反向同步回宿主——你想取沙箱里
 - [文件系统](/v2/zh/docs/harness/filesystem) — 三种声明式模式对比
 - [工作区](/v2/zh/docs/harness/workspace) — `workspace/` 下哪些文件会同步进沙箱
 - [架构](/v2/zh/docs/harness/architecture) — 沙箱 acquire / release 在 call() 时序中的位置
-
-
-外部 Sandbox 协调器可设置 `E2bSandboxClientOptions.setRecreateOnConnectFailure(false)`，防止连接已有实例失败时创建另一台供应商实例；standalone 默认仍允许该恢复行为。`setEnvdBaseUrl(...)` 可选用 envd 代理替代供应商 DNS，`setMaxCapturedBytes(...)` 限制每路输出流的捕获大小；超限会使调用失败，避免把截断的 Workspace 归档当作完整文件。零值保留原有捕获行为。AgentScope Service 托管 Hands 使用共享创建协调，关闭隐式重建及供应商创建请求重试，并配置有限的传输和捕获上限。

@@ -24,10 +24,6 @@
 !**/.env.example
 **/test-results
 **/playwright-report
-agentscope-service/docs/test-reports
-agentscope-service/release/dist
-agentscope-service/service-controlplane/bin
-agentscope-service/service-controlplane/ui
 docs/_build
 **/*.ppt
 **/*.pptx

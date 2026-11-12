@@ -3,7 +3,7 @@
 [中文](public-interaction-contract.md)
 
 Executable formats are in [schema.json](schema.json); the
-[Java usage guide](../../docs/v2/en/docs/harness/durable.md) covers application integration.
+[Java usage guide](../../docs/dev/en/docs/harness/durable.md) covers application integration.
 Only the current contract is supported: no old entry points, conversion, dual protocol or
 compatibility paths. Reject version mismatches while preserving idempotency, fencing and recovery.
 

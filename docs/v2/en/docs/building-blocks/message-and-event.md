@@ -309,7 +309,7 @@ Events are grouped below; unless noted otherwise, every event also carries `getR
     |--------|------|-------------|
     | `getReplyId()` | `String` | Reply message ID |
     | `getToolCallId()` | `String` | The matching tool call ID |
-    | `getState()` | `ToolResultState` | Final state: `SUCCESS`, `ERROR`, `INTERRUPTED`, `DENIED`, `RUNNING`, `SUSPENDED` |
+    | `getState()` | `ToolResultState` | Final state: `SUCCESS`, `ERROR`, `INTERRUPTED`, `DENIED`, `RUNNING` |
 
 </Accordion>
 
@@ -334,7 +334,7 @@ Events are grouped below; unless noted otherwise, every event also carries `getR
     | `getReplyId()` | `String` | Reply message ID |
     | `getToolCalls()` | `List<ToolUseBlock>` | Tool calls awaiting confirmation |
 
-    **RequireExternalExecutionEvent** — agent pauses for external execution. A suspended call produces no `ToolResult*` events: the tool has not executed, and the real result is supplied by the caller and surfaced through `ExternalExecutionResultEvent`.
+    **RequireExternalExecutionEvent** — agent pauses for external execution.
 
     | Method | Type | Description |
     |--------|------|-------------|
@@ -417,7 +417,7 @@ agent.streamEvents(userMsg)
 
 <Tip>
 
-For live output within the current request, adapt AgentEvent to SSE. `streamEvents()` starts execution and has no durable cursor; do not execute the request again to catch up after a disconnect. Harness also saves logs for direct calls by default. See [Thread journals](/v2/en/docs/harness/session-log) for native history and [Durable](/v2/en/docs/harness/durable) for background tasks, public snapshots and events. Hosted frontends use [Agent API snapshot plus SSE](/v2/en/service/session-event-log).
+This decoupling makes deployments flexible: the backend pushes the event stream over SSE, and the frontend reconstructs the message client-side. Even if the connection drops, replaying events from any checkpoint restores the message state precisely.
 
 </Tip>
 
@@ -476,9 +476,3 @@ How messages are stored and persisted
 
 
 </CardGroup>
-
-## Relationship to durable SessionEvent
-
-AgentEvent is a typed live event; SessionEvent is an immutable durable fact, not a one-to-one copy. Standard execution exposes agentId/sessionId/turnId/runId through event.getExecution(). runId matches native executionRunId. Forwarded children keep their own identity. Live event IDs, native seq and public SSE cursors remain independent; receiving a live event is not a commit acknowledgment.
-
-A logical turn may span multiple executions. AgentEndEvent only ends the current invocation. See [Session operations, events and recovery](/v2/en/docs/harness/session-log).

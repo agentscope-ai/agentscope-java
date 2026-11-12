@@ -90,7 +90,7 @@ export function checkSite(docs) {
   const excluded = ignore().add(patterns);
   const routes = navigationPages(config.navigation);
   const versionDirectories = fs.readdirSync(docs, { withFileTypes: true })
-    .filter((entry) => entry.isDirectory() && /^v\d+(?:\.\d+)*$/.test(entry.name))
+    .filter((entry) => entry.isDirectory() && /^(?:dev|v\d+(?:\.\d+)*)$/.test(entry.name))
     .map((entry) => path.join(docs, entry.name));
   for (const file of versionDirectories.flatMap(pageFiles)) {
     if (excluded.ignores(path.relative(docs, file).split(path.sep).join('/'))) continue;
@@ -106,7 +106,7 @@ export function checkSite(docs) {
   for (const route of published) if (!pages.has(route)) errors.push(`Missing navigation page: ${route}`);
   for (const route of pages.keys()) if (!published.has(route)) errors.push(`Page missing from navigation: ${route}`);
   for (const [route, page] of pages) {
-    const match = route.match(/^\/(v\d+(?:\.\d+)*)\/(en|zh)(\/.*)$/);
+    const match = route.match(/^\/(dev|v\d+(?:\.\d+)*)\/(en|zh)(\/.*)$/);
     if (!match) continue;
     const [, version, language, suffix] = match;
     const counterpartLanguage = language === 'en' ? 'zh' : 'en';
@@ -180,7 +180,12 @@ export function checkSite(docs) {
       errors.push(`${from}: missing local target ${link}`);
     }
   }
-  for (const [route, page] of pages) for (const link of page.links) checkLink(route, link);
+  for (const [route, page] of pages) for (const link of page.links) {
+    checkLink(route, link);
+    if (/^\/v\d/.test(route) && /^https:\/\/(?:github\.com\/agentscope-ai\/agentscope-java\/(?:blob|tree)|raw\.githubusercontent\.com\/agentscope-ai\/agentscope-java)\/(?:main|master|HEAD|Mintlify|dev)(?:\/|$)/i.test(link)) {
+      errors.push(`${route}: historical source link must use a release tag or commit ${link}`);
+    }
+  }
   for (const [source] of redirects) {
     if (!source.includes('*')) checkLink(source, source);
   }

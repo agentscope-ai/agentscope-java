@@ -371,4 +371,4 @@ AgentScope 2.0 is positioned for enterprise-grade distributed scenarios. It can 
 
 + Docs: [https://java.agentscope.io](https://java.agentscope.io)
 + GitHub: [https://github.com/agentscope-ai/agentscope-java](https://github.com/agentscope-ai/agentscope-java)
-+ AgentScope Builder: [https://github.com/agentscope-ai/agentscope-java/tree/main/agentscope-service](https://github.com/agentscope-ai/agentscope-java/tree/main/agentscope-service)
++ AgentScope Builder: [https://github.com/agentscope-ai/agentscope-java/tree/v2.0.4/agentscope-service](https://github.com/agentscope-ai/agentscope-java/tree/v2.0.4/agentscope-service)

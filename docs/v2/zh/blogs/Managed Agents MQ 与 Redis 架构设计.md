@@ -478,7 +478,7 @@ Resume 只唤醒已挂起的 T1，不是新用户 Turn。原 T1 尚未 ACK，恢
 
 四条通道必须从已有最早进度连续消费，首次消费不能从最后一条开始。当前官方 Broker 5.5.1 的 Lite 首次取位点路径使用 MAX；`consumeFromMinEnable=true` 不能据此保证 Lite 从最早位置开始。原始 SDK 5.2.2 的独立实测中，对 100 个新 LiteTopic 各发送 first / next，有 49 个只收到 next；Broker 的 `initPopOffsetByCheckMsgInMem=true` 已开启。该问题会影响所有事件前缀，不能只验证单条 Turn 能收到。
 
-这是官方版本的起始策略与本方案前缀要求之间的能力差异，不能凭组配置或流程图视为已经满足。已增加显式本地测试修正版，让 Lite 初次位点遵循消费组的 MIN 配置；关闭热内存捷径后，100 组即时消费、消费者离线积压后重启再首次读取 200 条消息，以及 MAX 对照均通过。修正版不是上游发行，正式部署仍需验证所选 Broker 的同等能力。不得放宽顺序断言或隐式切换 Mock 来掩盖首条缺失；具体失败证据、源码定位与处理进展见[实施记录](../../../../agentscope-service/docs/managed-mq-redis-refactoring-plan.md)。[官方 Lite 取位点源码](https://github.com/apache/rocketmq/blob/rocketmq-all-5.5.1/broker/src/main/java/org/apache/rocketmq/broker/processor/PopLiteMessageProcessor.java)
+这是官方版本的起始策略与本方案前缀要求之间的能力差异，不能凭组配置或流程图视为已经满足。已增加显式本地测试修正版，让 Lite 初次位点遵循消费组的 MIN 配置；关闭热内存捷径后，100 组即时消费、消费者离线积压后重启再首次读取 200 条消息，以及 MAX 对照均通过。修正版不是上游发行，正式部署仍需验证所选 Broker 的同等能力。不得放宽顺序断言或隐式切换 Mock 来掩盖首条缺失；具体失败证据、源码定位与处理进展见`agentscope-service/docs/managed-mq-redis-refactoring-plan.md`（实施记录未包含在 v2.0.4 或其他现有 tag 中）。[官方 Lite 取位点源码](https://github.com/apache/rocketmq/blob/rocketmq-all-5.5.1/broker/src/main/java/org/apache/rocketmq/broker/processor/PopLiteMessageProcessor.java)
 
 ### 4.2 按 MQ 接收顺序受理
 
@@ -1224,7 +1224,7 @@ sequenceDiagram
 
 ### 6.6 源码核对位置与实现边界
 
-下表中的完整路径相对于项目根目录。缩写 Core、Harness、Service Common 分别使用 `agentscope-core/src/main/java/io/agentscope/core/`、`agentscope-harness/src/main/java/io/agentscope/harness/`、`agentscope-service/service-common/src/main/java/io/agentscope/builder/` 前缀；Session Portal 使用 `agentscope-service/service-session-portal/` 前缀。它们指向当前工作区源码，文档示例本身不构成独立协议实现。
+下表中的完整路径相对于项目根目录。缩写 Core、Harness、Service Common 分别使用 [`agentscope-core/src/main/java/io/agentscope/core/`](https://github.com/agentscope-ai/agentscope-java/tree/v2.0.4/agentscope-core/src/main/java/io/agentscope/core)、[`agentscope-harness/src/main/java/io/agentscope/harness/`](https://github.com/agentscope-ai/agentscope-java/tree/v2.0.4/agentscope-harness/src/main/java/io/agentscope/harness)、[`agentscope-service/service-common/src/main/java/io/agentscope/builder/`](https://github.com/agentscope-ai/agentscope-java/tree/v2.0.4/agentscope-service/service-common/src/main/java/io/agentscope/builder) 前缀；Session Portal 使用 `agentscope-service/service-session-portal/` 前缀。链接仅提供 v2.0.4 的历史源码入口；下表的 Managed runtime、Session Portal、Hands、Core session 与 ExecutionIdentity/ActionObservations 路径属于后续开发记录，不存在于该 tag，保留为源码导读文本而不生成发布版链接。文档示例本身不构成独立协议实现。
 
 | 核对对象 | 关键源码位置 |
 | --- | --- |
@@ -1239,7 +1239,7 @@ sequenceDiagram
 | 公开历史、SSE 与输入 | Session Portal `src/main/java/io/agentscope/builder/portal/session/ManagedSessionTurnsApi.java`；Service Common `runtime/managed/ManagedRuntimeInputMiddleware.java` |
 
 以下为 2026-10-15 工作区的实施状态；完整证据与未完成项另见
-[改造实施记录](../../../../agentscope-service/docs/managed-mq-redis-refactoring-plan.md)。
+`agentscope-service/docs/managed-mq-redis-refactoring-plan.md`（改造实施记录未包含在 v2.0.4 或其他现有 tag 中）。
 这是源码进展说明，不改变前文的目标协议，也不以局部验证代替整体验收。
 
 - `RocketMqManagedMessageBus` 已切换为四个 Lite 父 Topic 的 `LitePushConsumer` 全量订阅，

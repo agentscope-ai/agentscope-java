@@ -1,6 +1,0 @@
-[build]
-jobs = 3
-
-[env]
-# codex-core's debug futures exceed the platform's 2 MiB test-thread stack.
-RUST_MIN_STACK = { value = "16777216", force = false }

@@ -100,61 +100,9 @@ ReActAgent agent =
                 .build();
 ```
 
-### 流式调度与并发配置
-
-模型请求准备、阻塞式流读取和响应交付分别使用三个独立、按需创建的 AgentScope 线程池，
-不再使用 Reactor 共享的 `boundedElastic` 池。JDK transport 在专用流线程中同步发送流式请求，
-避免 JDK `sendAsync` 完成通知对 commonPool 的依赖。JDK 和 OkHttp transport 都在独立响应
-调度器上按顺序交付 chunk，并限制预取数量，默认每个订阅 32 个 chunk。
-
-以下 JVM 属性必须在**对应线程池第一次使用之前**设置：
-
-| 属性 | 默认值 | 含义 |
-| --- | --- | --- |
-| `agentscope.model.requestThreadCap` | `max(64, availableProcessors × 10)` | 请求准备与阻塞式非流模型调用 |
-| `agentscope.model.streamThreadCap` | `max(64, availableProcessors × 10)` | 阻塞式流连接与读取 |
-| `agentscope.model.responseThreadCap` | `max(64, availableProcessors × 10)` | 响应交付 |
-| `agentscope.model.taskQueueCapacity` | `256` | 各池中**每个底层线程**允许排队的任务数 |
-
-所有值必须为正数。这些限制作用于同一个 JVM 内的共享池，不是单个模型或 HTTP 连接池的限制。
-线程是守护线程，空闲 60 秒后释放。组件不得自行关闭 `ModelSchedulers` 返回的共享调度器。
-
-如果需要按业务隔离，`JdkHttpTransport.builder()` 和 `OkHttpTransport.builder()` 都支持
-`streamScheduler` 和 `responseScheduler`：
-
-```java
-import io.agentscope.core.model.transport.HttpTransportConfig;
-import io.agentscope.core.model.transport.JdkHttpTransport;
-import reactor.core.scheduler.Scheduler;
-import reactor.core.scheduler.Schedulers;
-
-Scheduler reads = Schedulers.newBoundedElastic(128, 256, "my-model-reads");
-Scheduler responses = Schedulers.newBoundedElastic(32, 256, "my-model-responses");
-JdkHttpTransport transport = JdkHttpTransport.builder()
-        .streamScheduler(reads)
-        .responseScheduler(responses)
-        .config(HttpTransportConfig.builder().responsePrefetch(16).build())
-        .build();
-
-// OpenAIChatModel.builder().httpTransport(transport)...
-// DashScopeChatModel.builder().httpTransport(transport)...
-// On application shutdown: transport.close(); reads.dispose(); responses.dispose();
-```
-
-注入的调度器由调用方管理：关闭 transport 不会关闭这些调度器。建议在多个模型实例间复用
-transport，在所有使用者停止后再释放自定义调度器。`HttpTransportConfig.responsePrefetch`
-必须为正数，只限制 transport 读取与交付之间的 chunk 数，不限制字节数，也不限制应用操作符
-额外引入的缓冲区。示例中的数字不是所有部署场景的推荐容量。
-
-阻塞式读取在等待数据期间会占用流线程。容量应按同时活跃的流（含子 agent）评估，并分别度量
-调度等待、首 chunk 耗时和 chunk 处理耗时。预取耗尽后，慢消费者仍会拖慢自己的有序流；
-回调应保持简短，耗时业务处理应使用有界并发隔离。原有首 chunk、流空闲超时和重试规则继续
-生效。调度队列饱和时会返回错误，不会无限创建线程。这些 transport 配置适用于使用 JDK/OkHttp
-transport 的提供商；基于其他 SDK 的模型扩展使用共享 AgentScope 调度器。
-
 ### Spring Boot 应用
 
-Spring Boot 场景下，优先使用特定模型提供商的 starter，例如 `agentscope-openai-spring-boot-starter`、`agentscope-openai-official-spring-boot-starter`、`agentscope-dashscope-spring-boot-starter`、`agentscope-gemini-spring-boot-starter`、`agentscope-anthropic-spring-boot-starter`、`agentscope-ollama-spring-boot-starter`。这些 starter 直接依赖对应模型扩展模块，创建 Spring 管理的 `Model` bean，通用的 `agentscope-spring-boot-starter` 继续负责 AgentScope 的公共基础设施。它们不会通过静态 `ModelRegistry` 创建模型；高级用户始终可以自定义 `Model` bean。
+Spring Boot 场景下，优先使用特定模型提供商的 starter，例如 `agentscope-openai-spring-boot-starter`、`agentscope-dashscope-spring-boot-starter`、`agentscope-gemini-spring-boot-starter`、`agentscope-anthropic-spring-boot-starter`、`agentscope-ollama-spring-boot-starter`。这些 starter 直接依赖对应模型扩展模块，创建 Spring 管理的 `Model` bean，通用的 `agentscope-spring-boot-starter` 继续负责 AgentScope 的公共基础设施。它们不会通过静态 `ModelRegistry` 创建模型；高级用户始终可以自定义 `Model` bean。
 
 OpenAI 示例：
 
@@ -177,7 +125,6 @@ formatter、默认生成参数、代理/client 配置，或其他提供商专属
 | Starter | Customizer 类型 |
 |---------|-----------------|
 | `agentscope-openai-spring-boot-starter` | `OpenAIChatModelBuilderCustomizer` |
-| `agentscope-openai-official-spring-boot-starter` | `OpenAIResponsesChatModelBuilderCustomizer` |
 | `agentscope-dashscope-spring-boot-starter` | `DashScopeChatModelBuilderCustomizer` |
 | `agentscope-gemini-spring-boot-starter` | `GeminiChatModelBuilderCustomizer` |
 | `agentscope-anthropic-spring-boot-starter` | `AnthropicChatModelBuilderCustomizer` |
@@ -421,7 +368,7 @@ Msg msg =
 WeatherInfo info = msg.getStructuredData(WeatherInfo.class);
 ```
 
-实现细节：框架会基于目标 Class 合成强制结构化的工具调用，再校验并修复模型输出，最后把结果挂到 `Msg.metadata` 的 `_structured_output` 字段，供 `getStructuredData(Class)` 直接反序列化。完整示例：`agentscope-examples/documentation/.../structuredoutput/StructuredOutputExample.java`。
+实现细节：框架会基于目标 Class 合成强制结构化的工具调用，再校验并修复模型输出，最后把结果挂到 `Msg.metadata` 的 `structured_output` 字段，供 `getStructuredData(Class)` 直接反序列化。完整示例：`agentscope-examples/documentation/.../structuredoutput/StructuredOutputExample.java`。
 
 #### 结构化输出路径选择
 
@@ -433,9 +380,6 @@ WeatherInfo info = msg.getStructuredData(WeatherInfo.class);
 | **Fallback**（默认） | `supportsNativeStructuredOutput() = false` | 注入 `generate_response` 合成工具，模型通过 tool call 返回结构化数据 |
 
 当 native 路径失败（如模型返回 400），框架会**自动降级**到 fallback 路径，无需用户干预。
-
-Native structured output 默认不会强制 schema 进入 strict 模式。OpenAI 与 OpenAI Official
-厂商可以通过 `strictJsonSchema(true)` 显式开启；schema 内的 `strict` 值优先。
 
 #### 各模型提供商默认行为
 

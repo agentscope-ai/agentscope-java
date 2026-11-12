@@ -25,8 +25,6 @@ target/
 /nbdist/
 /.nb-gradle/
 build/
-!agentscope-service/frontend/src/features/build/
-!agentscope-service/frontend/src/features/build/**
 !**/src/main/**/build/
 !**/src/test/**/build/
 ### VS Code ###
@@ -95,32 +93,6 @@ agentscope-examples/agentscope-copilotkit/src/main/resources/static/
 
 .dev-stack/
 
-# controlplane local build artifacts
-agentscope-service/service-controlplane/bin/
-agentscope-service/service-controlplane/service-controlplane
-agentscope-service/service-controlplane/service-controlplane.exe
-agentscope-service/service-controlplane/*.test
-agentscope-service/service-controlplane/cover.out
-agentscope-service/service-controlplane/coverage.*
-agentscope-service/service-controlplane/.idea/
-agentscope-service/.dev-stack/
-
-# AgentScope Service release hygiene (reports remain local / CI artifacts).
-/agentscope-service/docs/test-reports/
-/agentscope-service/service-controlplane/ui/*
-!/agentscope-service/service-controlplane/ui/.gitkeep
-/agentscope-service/frontend/test-results/
-/agentscope-service/frontend/playwright-report/
-/agentscope-service/release/dist/
-/agentscope-service/deploy/.env
-/agentscope-service/deploy/*.env
-/agentscope-service/deploy/*.local.yaml
-/agentscope-service/service-controlplane/sdk/dsh/node_modules/
-/agentscope-service/service-controlplane/sdk/dsh/dist/
-/agentscope-service/service-controlplane/sdk/dsh/*.tgz
-/agentscope-service/service-controlplane/sdk/python/dist/
-/agentscope-service/service-controlplane/sdk/python/.pytest_cache/
-
 # Mintlify documentation dependencies and local preview
 /docs/node_modules/
 /docs/.mintlify/
@@ -168,12 +140,3 @@ playwright-report/
 !.env.example
 !.env.sample
 !.env.template
-
-# Reorganized Service binaries and generated acceptance reports
-/agentscope-service/control-plane/bin/
-/agentscope-service/control-plane/ui/*
-!/agentscope-service/control-plane/ui/.gitkeep
-/agentscope-service/tests/general-agent-eval/reports/
-/agentscope-service/tests/pts/report-*
-/agentscope-service/tests/session-protocol/verification.json
-/agentscope-service/tests/session-protocol/verification.md

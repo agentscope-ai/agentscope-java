@@ -362,18 +362,6 @@
 
     <profiles>
         <profile>
-            <id>service-modules</id>
-            <activation>
-                <property>
-                    <name>agentscope.frameworkOnly</name>
-                    <value>!true</value>
-                </property>
-            </activation>
-            <modules>
-                <module>agentscope-service</module>
-            </modules>
-        </profile>
-        <profile>
             <id>release</id>
             <build>
                 <plugins>
@@ -401,7 +389,6 @@
                             <excludeArtifacts>
                                 <artifact>agentscope-examples</artifact>
                                 <artifact>documentation</artifact>
-                                <artifact>agentscope-service</artifact>
                                 <artifact>agentscope-codingagent</artifact>
                                 <artifact>agentscope-dataagent</artifact>
                                 <artifact>agentscope-paw</artifact>

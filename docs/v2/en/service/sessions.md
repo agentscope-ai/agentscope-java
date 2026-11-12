@@ -3,50 +3,15 @@ title: "Execution reference: Sessions, Runs and Attempts"
 zh_link: /v2/zh/service/sessions
 ---
 
-In the current Portal reconstruction, Managed execution keeps full native identities
-while storing journal paths under fixed-length keys in a Service-private store
-partition. Use a fresh runtime data space for this version. A fail-fast Run first
-drains sibling work in durable batches, preserving the original failure; node
-timeouts also wait for outstanding obligations to drain. Public Turn completion
-still waits for physical stop proofs before releasing concurrency reservations.
-
 <Note>
-This page uses the `2.1.0-BETA1` prerelease.
+This is preview documentation. The official release is not yet available.
 </Note>
 
-Applications submit work through Agent API sessions, Issues, or Session API. This reference follows the request through Runs, Tasks, Attempts, and Sessions. Namespace, work-level, and operational permissions apply to diagnostic APIs.
-
-In the source MQ/Redis deployment, a Managed Console Chat registers a native Session before
-its first message. Chat and Session diagnostics use `/v1/sessions/{id}` snapshots, Turns and
-cursor-based events. A long tool suspends and resumes the same logical Turn; later Turns wait
-for it to finish. Deleting a Chat requires no pending Turn and removes the personal list entry
-while retaining its native Session and execution evidence. Archived Chats remain readable.
-
-Managed AgentTask dispatch in the source refactor uses a durable Outbox and one native Session
-per Attempt. An uncertain admission response retries the original input and request key;
-it does not create a replacement Attempt. The control plane observes native Turn state,
-and cancellation remains pending until native execution confirms it stopped. Private task tool
-credentials remain bound to the current Attempt and Session across suspension and Resume;
-each use checks current execution and resource authority. A configured execution timeout requests
-native cancellation and records failure after stop confirmation. Additional caller-source and
-failure-recovery acceptance is still in progress.
-
-For a standalone Managed task, retrying a lost terminal MCP reply can read the already committed
-outcome while its original native Turn remains active. It cannot replace that result or perform
-new work. Other external tool side effects require their own idempotency and recovery contract.
-
-The source refactor removes the old Managed start, heartbeat and event-report callbacks.
-Managed results wait for the original native Turn's durable terminal state before the public
-Invocation closes. An observation failure keeps the result pending. Hosted and External runtimes
-retain their own execution and approval protocols.
-
-Managed task progress in shared Run diagnostics reads native events with a separate cursor per
-Attempt. Native required-action replies keep the original Attempt and Turn; receipt retries reuse
-the same command. Cancelling an Attempt prevents a later tool decision from releasing it.
+Use Chat for conversation and Issues for work. Sessions and Executions are diagnostic views whose availability depends on operational permissions.
 
 ## Trace work
 
-Query the Runs associated with an Issue. Inspect input, mode and actual target, followed by nodes, AgentTasks and the latest Attempt. Session holds model or provider context. Retain these IDs for diagnosis rather than relying on reusable display names.
+Open a Run from an Issue's Executions. Inspect input, mode and actual target, followed by nodes, AgentTasks and the latest Attempt. Session holds model or provider context. Retain these IDs for diagnosis rather than relying on reusable display names.
 
 | Run mode | Shape |
 | --- | --- |
@@ -55,126 +20,11 @@ Query the Runs associated with an Issue. Inspect input, mode and actual target, 
 | declared | Pinned Workflow revision |
 | subrun | Child process invoked by a parent node |
 
-## Execution query APIs
-
-Call directly in local mode. List requests also require explicit `tenant` and `namespace`. See [Workflow APIs](/v2/en/service/workflows) and [task APIs](/v2/en/service/issues) for complete requests.
-
-| Operation | API | Query / response |
-| --- | --- | --- |
-| Find Runs | `GET /api/v1/orchestration-runs` | `issueId`, `definitionId`, `state`, `active`, `offset`, `limit`; returns `{runs}` |
-| Read Run | `GET /api/v1/orchestration-runs/{runId}` | `{run}` with `state`, `input`, `output`, `waitReason`, and failure information |
-| Read graph | `GET /api/v1/orchestration-runs/{runId}/graph` | `run`, `nodes`, `edges`, `tasks`, `attempts`, optional `childRuns` |
-| Read event history | `GET /api/v1/orchestration-runs/{runId}/events` | `after` sequence cursor and `limit`; returns `{events}` |
-| Read task | `GET /api/v1/agent-tasks/{taskId}` | `{task,inputSummaries}` with results and input summaries |
-| Find attempts | `GET /api/v1/execution-attempts` | `taskId`, `state`, `limit`; returns `{attempts}` |
-| Read attempt | `GET /api/v1/execution-attempts/{attemptId}` | `{attempt}` with backend, execution state, result, and Session links |
-
-`RunEvent.sequence` supports incremental reads within its Run. `type` identifies the event; `nodeId`, `agentTaskId`, and `attemptId` identify affected records. This events endpoint returns JSON rather than SSE. Published-service callers should prefer their Turn's returned statusUrl / eventsUrl; see [unified service APIs](/v2/en/service/service-api).
-
-Use the platform identity and scope variables from [API setup](/v2/en/service/create-managed-agent#api-setup). Use resource IDs returned by creation or lookup.
-
-Take ISSUE_ID from the actual work record. The list can contain multiple Runs. Inspect runs before selecting RUN_ID; do not assume the first item is the target.
-
-```bash
-ISSUE_ID="YOUR_ISSUE_ID"
-
-curl -sS --fail-with-body -G "$BASE_URL/api/v1/orchestration-runs" \
-  --data-urlencode "tenant=$TENANT" \
-  --data-urlencode "namespace=$NAMESPACE" \
-  --data-urlencode "issueId=$ISSUE_ID" \
-  --data-urlencode "limit=25"
-```
-
-```bash
-RUN_ID="RUN_ID_FROM_LIST"
-
-curl -sS --fail-with-body "$BASE_URL/api/v1/orchestration-runs/$RUN_ID/graph"
-```
-
-```bash
-curl -sS --fail-with-body -G "$BASE_URL/api/v1/orchestration-runs/$RUN_ID/events" \
-  --data-urlencode "after=0" \
-  --data-urlencode "limit=50"
-```
-
-Select TASK_ID from the graph’s tasks, inspect the task and its attempts, then choose ATTEMPT_ID from the actual execution state.
-
-```bash
-TASK_ID="TASK_ID_FROM_GRAPH"
-
-curl -sS --fail-with-body "$BASE_URL/api/v1/agent-tasks/$TASK_ID"
-```
-
-```bash
-curl -sS --fail-with-body -G "$BASE_URL/api/v1/execution-attempts" \
-  --data-urlencode "tenant=$TENANT" \
-  --data-urlencode "namespace=$NAMESPACE" \
-  --data-urlencode "taskId=$TASK_ID" \
-  --data-urlencode "limit=25"
-```
-
-```bash
-ATTEMPT_ID="ATTEMPT_ID_FROM_LIST"
-
-curl -sS --fail-with-body "$BASE_URL/api/v1/execution-attempts/$ATTEMPT_ID"
-```
-
 ## States and controls
 
 planned has not started, running is progressing and waiting awaits a condition, signal or external result. paused prevents new dispatch; cancelling awaits cancellation convergence. Terminal states are cancelled, succeeded, partial_succeeded and failed.
 
 Pause does not freeze existing external processes. Cancel does not roll back files or external actions, nor accept the Issue. Inspect final node and Attempt states to confirm cancellation.
-
-Control Runs with `POST /api/v1/orchestration-runs/{runId}/pause`, `/resume`, or `/cancel`, using `{}` and receiving `{run}`. After a terminal state, `/rerun` accepts required `idempotencyKey` and optional `input`. It returns a new `{run}` with `rerunOfRunId` lineage.
-
-Cancel a task through `POST /api/v1/agent-tasks/{taskId}/cancel` with its current `expectedVersion`; retry through `/retry`. Do not pass Task IDs to Run endpoints or directly rewrite Attempt state to cancel work.
-
-<Accordion title="Control a Run when needed">
-
-These are alternative operational choices. Pause stops new scheduling; cancel requests termination of the Run. GET the Run afterward to confirm its state. Rerun creates a new Run rather than restoring an Attempt.
-
-<Tabs>
-<Tab title="Pause">
-
-```bash
-curl -sS --fail-with-body -X POST "$BASE_URL/api/v1/orchestration-runs/$RUN_ID/pause"
-```
-
-</Tab>
-<Tab title="Resume">
-
-```bash
-curl -sS --fail-with-body -X POST "$BASE_URL/api/v1/orchestration-runs/$RUN_ID/resume"
-```
-
-</Tab>
-<Tab title="Cancel">
-
-```bash
-curl -sS --fail-with-body -X POST "$BASE_URL/api/v1/orchestration-runs/$RUN_ID/cancel"
-```
-
-</Tab>
-<Tab title="Rerun">
-
-```bash
-curl -sS --fail-with-body "$BASE_URL/api/v1/orchestration-runs/$RUN_ID/rerun" \
-  -H "Content-Type: application/json" \
-  --data-binary @- <<'JSON'
-{
-  "idempotencyKey": "report-rerun-001"
-}
-JSON
-```
-
-</Tab>
-</Tabs>
-
-```bash
-curl -sS --fail-with-body "$BASE_URL/api/v1/orchestration-runs/$RUN_ID"
-```
-
-</Accordion>
 
 ## Three retry levels
 
@@ -186,51 +36,15 @@ Explicit fresh fallback allows policy-driven reconstruction on another candidate
 
 Read waitReason/error to identify needed human input, Host, Worker, credentials or capacity. A Session in `requires_action` can be waiting for tool results rather than human approval.
 
-Tool events, final replies, Attempt success and Issue acceptance are separate evidence. Review deliverables through the [review APIs](/v2/en/service/issues#inbox); see [Managed outcomes](/v2/en/service/issues#managed-harness-task-outcomes) for their semantics.
+Tool events, final replies, Attempt success and Issue acceptance are separate evidence. Review deliverables in [Inbox](/v2/en/service/inbox); see [Managed outcomes](/v2/en/service/managed-harness-task-outcomes) for their semantics.
 
 ## Reconnect
 
 Reopen the original work and query saved events and current state. SSE ending is not proof of failure. Proxies should forward events promptly. Do not submit duplicate work with a new idempotency key merely because the frontend disconnected.
 
-## Session diagnostics
-
-```bash
-curl -sS --fail-with-body -G "$BASE_URL/api/v1/sessions" \
-  --data-urlencode "tenant=$TENANT" \
-  --data-urlencode "namespace=$NAMESPACE" \
-  --data-urlencode "limit=25"
-```
-
-Use the UUID in `sessions[].session.id`. This identifies a runtime diagnostic record and is distinct from the business Session ID under `/agent-sessions`.
-
-```bash
-DIAGNOSTIC_SESSION_ID="SESSION_UUID_FROM_LIST"
-
-curl -sS --fail-with-body -G "$BASE_URL/api/v1/sessions/$DIAGNOSTIC_SESSION_ID" \
-  --data-urlencode "tenant=$TENANT" \
-  --data-urlencode "namespace=$NAMESPACE"
-```
-
-`GET /api/v1/sessions` lists authorized sessions; `GET /api/v1/sessions/{sessionRef}` reads one. Prefer the Attempt's `sessionRef` control-plane record ID. Do not interchange it with a runtime `sessionId` or `providerSessionId`. Include the correct tenant/namespace.
-
-Diagnostic endpoints include `/messages` (`offset`, `limit`, `fromEnd`), `/context`, `/events`, `/events/stream`, and `/turns`. Availability depends on the runtime's observation and query capabilities. Registering an Agent does not imply full context access or recovery support. For business-facing session management, use the Agent API below.
-
-## Managed Session log and recovery entry points
-
-Native Managed execution uses `/v1/sessions/{sessionId}`. Its `turn_id` identifies work inside
-that Session; an internal execution run is separate from an orchestration Run. A snapshot contains
-bounded pages under `resources` and a public `as_of` cursor. Continue observing through the Session
-stream and read the admitted Turn ID for its current status.
-
-Full native logs and checkpoint objects are private recovery records. Public callers read projected
-events and checkpoint metadata; the old privileged trace/recovery routes are unavailable here.
-Reconnect without submitting another task. Long tools resume automatically; answer an actual
-required action through a Turn Input. Current native capabilities do not enable explicit failed-Turn
-resume, checkpoint restore or Fork. See [Session logs and recovery](/v2/en/service/session-event-log).
-
 ## What to record during diagnosis
 
-Practice with the [incident repair case](/v2/en/service/cases/incident-to-pr): query the parent Issue's Run graph, when using a Hosted target, locate its task and inspect the latest Attempt, and correlate its Session, logs, and files.
+Practice with the [engineering case](/v2/en/service/cases/sdlc-team): open the Run from the parent Issue, locate the Hosted member in Task map, inspect its latest Attempt, and correlate its Session, logs, and files.
 
 | Record | Purpose |
 | --- | --- |
@@ -242,27 +56,3 @@ Practice with the [incident repair case](/v2/en/service/cases/incident-to-pr): q
 | Artifacts and test logs | Evaluate delivery against requirements instead of status labels alone |
 
 If a second Attempt succeeds, retain the first failure and associate delivery with the successful execution's files. For an SSE disconnect, resume observation of the original invocation with its cursor using the [SSE guide](/v2/en/service/sse-events); do not create another business task.
-
-For execution-graph UI navigation, see [Console: Teams and orchestration](/v2/en/service/console/index#console-orchestration).
-
-<span id="managed-agent-execution"></span>
-<span id="building-runtime-context"></span>
-<span id="model-and-tool-loop"></span>
-<span id="persistence-and-recovery"></span>
-<span id="observe-a-published-service-through-unified-apis"></span>
-<span id="integrate-a-managed-agent-through-agent-api"></span>
-<span id="execution-and-acceptance"></span>
-
-## Managed execution and persistence
-
-The control plane resolves the definition version, environment, knowledge and credential references. Dataplane materializes definition files in a session directory, builds Harness and connects persistent state. Definition snapshots, execution files and shared resources have different lifecycles: saving an Agent does not reconfigure every running instance.
-
-Workspace holds capability definitions, Environment chooses where files and commands execute, Memory Store holds shared knowledge, and Vault resolves tool credentials. Their Managed usage is described in this category's resource pages.
-
-Harness uses an explicit Model or the deployment default, reasons from instructions, requests tools and consumes results. `maxIters` limits iterations and tool policy controls operations. Execution can wait for user approval; resubmitting the same work while it waits can create additional execution.
-
-Local tools execute in Dataplane, sandbox uses E2B, remote uses shared file storage, and self_hosted delegates tool work to a Worker. The model still runs in Dataplane for self_hosted environments; the Worker receives tool operations and returns results.
-
-Session state, events and coordination records use the deployment's persistent stores. Coordination leases constrain execution across replicas. Recovery still depends on the database, working files, chosen environment and external tools. Restarting a service does not reverse an external side effect from a completed tool call.
-
-Shared Memory is live platform knowledge accessed on demand, not a full copy inserted into every prompt. Maintain it as shared knowledge; an Agent definition version does not freeze all external knowledge.

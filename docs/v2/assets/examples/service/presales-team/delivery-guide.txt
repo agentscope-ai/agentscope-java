@@ -1,0 +1,13 @@
+File: delivery/poc-guide.md
+Version: delivery-v1
+Suggested four-week PoC after prerequisites are met:
+1. Confirm scope, access, test data, and acceptance metrics with the customer.
+2. Connect knowledge and the read-only order API; keep source and request identifiers.
+3. Evaluate correct answers, missing facts, stale order data, permission failures,
+   unavailable dependencies, and handoff behavior.
+4. Demonstrate, document gaps, and obtain customer acceptance of the PoC.
+Do not promise production go-live at the end of the PoC.
+Deliverables: proposal.md, requirements.csv, poc-plan.md, open-questions.md.
+Every proposed metric needs an agreed target; unspecified targets remain TBD.
+Every critical claim cites a document path and version or a real API response.
+Reference: DELIVERY-01

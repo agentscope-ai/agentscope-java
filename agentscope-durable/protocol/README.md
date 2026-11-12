@@ -24,7 +24,7 @@ Historical development formats are not migrated or supported through fallback pa
 
 See the [library README](../README.md) for modules, assembly, and build instructions,
 and the [examples](../../agentscope-examples/durable/README.md) for runnable applications.
-The [Java usage guide](../../docs/v2/en/docs/harness/durable.md) explains task controls,
+The [Java usage guide](../../docs/dev/en/docs/harness/durable.md) explains task controls,
 deployment choices and recovery limits.
 
 ## Authoritative files and packaging

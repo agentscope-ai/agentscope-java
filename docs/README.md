@@ -1,8 +1,8 @@
 # AgentScope Java documentation · Mintlify
 
 This directory is the complete Mintlify source for the AgentScope Java site. It includes
-legacy v1 and current 2.0 documentation in English and Chinese, the landing pages, SDK guides,
-Service, integrations, blog posts, and community pages. Java/Maven is not required
+legacy v1, stable 2.0 and dev documentation in English and Chinese, the landing pages, SDK guides,
+integrations, blog posts, and community pages. Java/Maven is not required
 to preview or publish the documentation.
 
 ## Local development
@@ -39,77 +39,49 @@ workflow runs these checks on documentation PRs and pushes to `main` or `Mintlif
 ## Documentation versions
 
 Mintlify's native version selector is configured under
-`navigation.languages[].versions` in `docs.json`. Each language has the same release
-choices. The current `2.0` entry is explicitly the default and uses the existing
-`v2/{en,zh}/` files and URLs. The legacy `v1` entry remains available. Version labels
-and page paths are independent, so relabeling the current release does not move pages
-or break `/v2/...` links.
+`navigation.languages[].versions` in `docs.json`. Both languages offer:
+
+| Selector | Source and scope | Page paths |
+| --- | --- | --- |
+| **2.0** (default) | Published user documentation from the `v2.0.4` tag | `v2/{en,zh}/` |
+| **dev** | Current development APIs and user guides | `dev/{en,zh}/` |
+| **v1** | Legacy documentation | `v1/{en,zh}/` |
+
+Home, SDK/Harness, Integration and JEV are versioned. In 2.0, JEV has its own tab. In dev, its English and Chinese guides live under Harness → JEV, in `dev/{en,zh}/docs/harness/jev/`. Blog and Community
+remain shared under `v2/{en,zh}/blogs/` and `v2/{en,zh}/community/`; dev navigation
+omits articles about removed modules. Their content is not a release snapshot,
+but repository source links still use the appropriate release tag or commit.
+The root redirect `/` opens `/v2/en/intro`; each language's 2.0 entry explicitly
+sets `default: true`.
+
+Edit `dev/` when changing the current source APIs. Keep 2.0 consistent with the
+`v2.0.4` code; only apply corrections appropriate to that release. Its SDK quickstart
+uses Maven version `2.0.4`, and repository source links are pinned to the tag.
+Historical guides retain the modules and availability limitations documented at
+that tag, even when those modules are no longer part of the current source tree.
+Release-specific images and downloads are preserved under `v2/assets/`. Current
+dev pages use `imgs/` and `examples/`; refreshing them does not alter stable examples.
 
 To publish a future 2.1 release:
 
-1. Add the release's user documentation under `v2.1/en/` and `v2.1/zh/`. Keep the
-   `v2/` content as the 2.0 documentation. Copy only the pages needed for the new release
-   and update their examples, dependency versions and behavior descriptions.
-2. Add a `"version": "2.1"` entry to **both** language `versions` arrays, with tabs,
-   groups and page paths pointing to `v2.1/...`. Keep 2.0's `default: true` until 2.1
-   should become the landing version. At that point move `default: true` to 2.1 in
-   both languages; only one version per language should be the default.
-3. Update links in the new pages, including `en_link`, `zh_link`, cards and any
-   version-specific downloads, so they target 2.1. Shared assets can retain their
-   existing paths. Link explicitly to 2.0 when a comparison or migration guide needs it.
-4. Add landing redirects for `/v2.1`, `/v2.1/en` and `/v2.1/zh` to the corresponding
-   intro pages. When making 2.1 the default, also update the existing `/` redirect;
-   it currently points to `/v2/en/intro`. Keep `/v2/...` and legacy redirects serving
-   their original versions rather than redirecting every old page to 2.1.
-5. Run `npm test`, `npm run validate` and `npm run broken-links`, then publish through
-   the Git branch connected to the existing Mintlify project. One site can host all
-   versions; a separate Mintlify project or deployment per release is unnecessary.
+1. Snapshot the released user-facing pages from `dev/` into `v2.1/{en,zh}/` and
+   pin examples, dependencies, source links and changed assets to that release.
+   Do not copy development plans, test reports or acceptance-only data.
+2. Add a `"version": "2.1"` entry to both language arrays. Update its page paths,
+   internal links, `en_link` and `zh_link` to `v2.1/...`. Keep Blog and Community
+   pointing to their shared pages. Leave dev available for ongoing development.
+3. Add `/v2.1`, `/v2.1/en` and `/v2.1/zh` landing redirects and any legacy `.html`
+   aliases. Preserve existing stable URLs. If 2.1 becomes the default, move
+   `default: true` to it in both languages and update the `/` redirect.
+4. Run `npm test`, `npm run validate` and `npm run broken-links`, then publish
+   through the branch connected to Mintlify. One project hosts all versions.
 
-The local checker discovers `v1`, `v2`, `v2.1`, `v3` and other numeric version
-directories automatically, including unlisted pages. It checks translation links
-within each version. Add a version to the selector when its pages are ready; no
-empty 2.1 entry is published in advance.
+The local checker discovers `dev`, `v1`, `v2`, `v2.1`, `v3` and other numeric
+version directories, including unlisted pages. It checks translation links within
+each version. Do not publish an empty version entry ahead of its documentation.
 
 See [Mintlify's version navigation reference](https://www.mintlify.com/docs/organize/navigation#versions)
 for the selector and default-version fields.
-
-## Refresh Service screenshots
-
-Agent and task management guides, including resource pages, share screenshots under `imgs/service/`. They are
-captured from the current React console with synthetic API fixtures; names, task
-results, channel status and credential metadata are examples, not a live deployment
-or an end-to-end execution result. Keep this distinction in each page's caption.
-
-From the repository root, with Node.js 22 installed:
-
-```bash
-cd agentscope-service/frontend
-npm ci
-npx playwright install chromium
-npm run docs:screenshots
-```
-
-The script starts Vite on `127.0.0.1:5188`, opens a fresh Chromium context, captures
-13 images of 12 pages at 1440 pixels wide (960 or 1120 pixels high, depending on
-the page), then stops both processes. Port 5188 must be available.
-It intercepts backend API calls with fixed documentation fixtures, so PostgreSQL,
-Java services, model credentials and an existing console login are unnecessary.
-It does not read or write your running Service database. Screenshot text retains
-the current console's English control labels; both documentation languages reuse
-the same images with translated explanations and alternative text.
-
-Capture steps and readiness assertions live in
-`agentscope-service/frontend/scripts/docs/capture.mjs`; example API responses live
-beside it in `fixtures.mjs`. Update these when the UI or API changes. An unexpected
-API call, page exception or visible alert fails the capture. Images are staged in
-a temporary directory and copied to the documentation only after all captures
-succeed. Review every image for loading states, clipping and readable text before
-submitting it; never substitute screenshots containing real credentials or private
-work. Playwright/Chromium and platform font updates may change the rendered pixels.
-
-After capture, run the documentation checks above and inspect the Chinese and
-English guides with `npm run dev` from `docs/`. Commit the PNG files with the
-corresponding guides and script changes; do not commit browser traces or caches.
 
 ## Authoring
 
@@ -121,36 +93,7 @@ through `mintlify:navigate` and the History API for older clients, since client-
 navigation does not reload the script. Repeated notifications for the same URL are ignored.
 Keep this integration in the global script rather than copying it into individual pages.
 
-### Service content and scenario standards
-
-The primary Service journey is **self-host deployment → first Managed Agent →
-capability configuration → Session API application integration → collaboration
-and operations**. Managed Agents use the AgentScope HarnessAgent core. Explain
-whole-platform self-hosting separately from a self_hosted tool Worker and a Hosted
-Runtime Host. Existing deployments can skip installation. Preserve standalone
-External/Hosted onboarding while introducing them as collaboration extensions.
-
-Use Session, Turn and Events as the sole application execution model for Agents,
-Teams and Workflows. Keep three Getting started pages: overview, deployment and
-first Managed Agent. Explain core concepts in the overview. Application credentials
-belong to Applications and grant explicit target resources. Do not reintroduce a
-separate Endpoint publication path. Write connected paragraphs explaining the
-meaning, reason and next action instead of terse lists of features or nouns.
-Keep one guide per user task: tool permissions belong with tools, Skills with
-Workspaces, budgets with sessions, and Webhooks with events. Console operations
-share one guide; SDK and runtime parameters stay in focused references. Avoid
-restoring separate overview/capability/execution pages for every Agent type. Moving a section must
-preserve its existing route/anchor and link to the new guide. Keep both languages
-and navigation aligned. Keep the five onboarding pages directly visible and group
-advanced topics in collapsible navigation. Document current limits instead of implying parity
-with a referenced hosted product.
-
-Service guides should explain the user goal, prerequisites, exact console or API
-steps, observable success criteria, failure recovery, and the next relevant guide.
-Reference pages should describe defaults, allowed values, configuration scope,
-when changes take effect, and limits that affect the documented operation. Check
-these against the current console, control plane, and runtime implementation.
-Avoid adding identical sections to every page when a precise cross-link suffices.
+### Content standards
 
 Write explanatory prose for readers learning the product. Each paragraph should
 develop one clear idea through complete sentences with explicit subjects,
@@ -165,46 +108,11 @@ the material's natural structure rather than forcing every section into the same
 template or requiring an example to carry every explanation. Apply this standard
 to both language versions and future edits.
 
-Scenario tutorials live in `v2/{en,zh}/service/cases/`; downloadable inputs live in
-`examples/service/`. Code and JSON inputs use a final `.txt` extension so Mintlify
-serves them as static downloads; guides specify the executable or JSON filename
-to use after saving. Each case must have fixed inputs, explicit acceptance criteria,
-and a distinction between expected output and observed execution. Keep both
-languages and the functional-guide links aligned. The use-case entry page organizes
-application patterns around triggers, API calls, delivery, and acceptance: in-product
-file generation, code repair, document verification, conversations, recurring work,
-and specialist services called by other Agents. Each pattern has its own detailed
-bilingual tutorial and fixed request data. Managed,
-External, Hosted, Team, and Workflow remain implementation choices. Distinguish
-industry evidence, expected fixture outputs, and actual AgentScope execution records.
-Retired team-oriented tutorial URLs redirect to the corresponding new case or the
-use-case index; do not restore those tutorials as a second scenario taxonomy.
-
-From `docs/`, validate the local code and JSON fixtures with Python 3 and JDK 17+:
-
-```bash
-python3 scripts/check-service-examples.py
-```
-
-The incident-repair Java fixture intentionally fails three of five acceptance checks.
-The checker compiles it in a temporary directory, verifies the baseline, applies a
-reference repair only in that copy, and checks the repaired result. It also checks
-six API request fixtures, source versions, the document-verification contradiction,
-conversation ownership data, and Bash syntax in all twelve case pages. It does not
-execute network commands or run models, GitHub, business APIs, or Service. Do not
-fix the published starting code or commit generated classes and logs.
-
-For an actual scenario walkthrough, record Service and SDK/provider versions,
-configuration choices, input data, Session/Turn and diagnostic Issue/Run IDs, artifacts, observed
-results, deviations, and cleanup. Include the idempotency/filtering or failure
-branch described by the case. Preserve logs from real execution; generated prose
-and fixture-based screenshots do not establish end-to-end success.
-
 ### Site conventions
 
 - `docs.json` is the single source of truth for navigation, versions, languages,
   branding and redirects. Default navigation is English 2.0, served from `v2/`.
-- `v1/{en,zh}/` and `v2/{en,zh}/` contain the existing pages. `.md` files support
+- `v1/{en,zh}/`, `v2/{en,zh}/` and `dev/{en,zh}/` contain versioned pages. `.md` files support
   Mintlify's MDX components; keeping the extension preserves GitHub source links.
 - Keep English and Chinese documentation aligned. Add pages to the corresponding
   language/version/tab in `docs.json`.
@@ -215,7 +123,7 @@ and fixture-based screenshots do not establish end-to-end success.
 - Use fenced `mermaid` blocks for diagrams. MyST/Sphinx directives such as
   `:::{note}`, `{raw}` and `{mermaid}` are no longer supported.
 - Use root-relative internal links without file extensions, for example
-  `/v2/zh/service/quickstart`. Put images under `imgs/` and reference `/imgs/...`.
+  `/dev/zh/docs/quickstart` for dev. Put current images under `imgs/` and reference `/imgs/...`; preserve stable assets under their version.
 - Put literal Java generics, placeholders, and shell expressions in code spans or
   fenced code blocks so MDX does not interpret them as JSX or JavaScript.
 - Landing page styles and interactions are scoped in `style.css` and `landing.js`.
@@ -237,8 +145,8 @@ and fixture-based screenshots do not establish end-to-end success.
    | Branch | `Mintlify` to deploy this migration branch; `main` after merging |
    | Documentation directory | `docs` |
 
-4. Open the URL provided by **Overview** and verify both languages, both versions,
-   landing page interactions, Service pages, diagrams, and links. The hosted build
+4. Open the URL provided by **Overview** and verify both languages, all versions,
+   landing page interactions, diagrams, and links. The hosted build
    may expose configuration differences that local preview cannot verify.
 5. Add `java.agentscope.io` in **Custom domain setup** when ready to replace the
    existing site. Add the exact TXT verification records shown in the dashboard;
@@ -281,22 +189,3 @@ Official references:
 - https://www.mintlify.com/docs/deploy/github
 - https://www.mintlify.com/docs/organize/navigation
 - https://www.mintlify.com/docs/customize/custom-domain
-
-## Helm repository route
-
-`chickenlj/helm-charts` is the independent public repository for packaged Charts.
-Its Pages workflow serves `index.yaml`, immutable archives and versioned deployment
-examples at `https://chickenlj.github.io/helm-charts`. Run its `publish.yml` workflow
-with a Chart version to import the exact upstream GitHub Release asset; publication
-checks its SHA256 and preserves older index entries.
-
-`docs.json` redirects `/helm/index.yaml` to that index and `/helm` to its landing
-page, with temporary redirects (`permanent: false`). Archive URLs are absolute,
-so the intended alias only needs to redirect the index request. Production
-verification after merging found that `/helm` redirects but `/helm/index.yaml`
-returns 404, so installation guides use the verified direct Pages URL:
-`helm repo add agentscope https://chickenlj.github.io/helm-charts`. Do not announce
-the website alias until both `helm repo add` and a pinned `helm pull` pass against
-it. The local Mintlify redirect check alone does not establish production behavior.
-Do not assign `java.agentscope.io` as the standalone
-repository's Pages custom domain, which would replace the documentation site.

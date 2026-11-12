@@ -14,21 +14,48 @@
   ~ See the License for the specific language governing permissions and
   ~ limitations under the License.
 -->
-<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
-  <modelVersion>4.0.0</modelVersion>
-  <parent>
-    <groupId>io.agentscope</groupId>
-    <artifactId>agentscope-durable-adapters</artifactId>
-    <version>${revision}</version>
-    <relativePath>../pom.xml</relativePath>
-  </parent>
-  <artifactId>agentscope-durable-adapter-harness-agentscope</artifactId>
-  <dependencies>
-    <dependency><groupId>io.agentscope</groupId><artifactId>agentscope-durable-runtime</artifactId><version>${revision}</version></dependency>
-    <dependency><groupId>io.agentscope</groupId><artifactId>agentscope-core</artifactId></dependency>
-    <dependency><groupId>io.agentscope</groupId><artifactId>agentscope-harness</artifactId></dependency>
-    <dependency><groupId>io.agentscope</groupId><artifactId>agentscope-extensions-durable-jdbc</artifactId><version>${revision}</version><scope>test</scope></dependency>
-    <dependency><groupId>io.agentscope</groupId><artifactId>agentscope-extensions-durable-sandbox</artifactId><version>${revision}</version><scope>test</scope></dependency>
-    <dependency><groupId>io.agentscope</groupId><artifactId>agentscope-durable-worker</artifactId><version>${revision}</version><scope>test</scope></dependency>
-  </dependencies>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <parent>
+        <groupId>io.agentscope</groupId>
+        <artifactId>agentscope-durable-adapters</artifactId>
+        <version>${revision}</version>
+        <relativePath>../pom.xml</relativePath>
+    </parent>
+    <artifactId>agentscope-durable-adapter-harness-agentscope</artifactId>
+    <dependencies>
+        <dependency>
+            <groupId>io.agentscope</groupId>
+            <artifactId>agentscope-durable-runtime</artifactId>
+            <version>${revision}</version>
+        </dependency>
+        <dependency>
+            <groupId>io.agentscope</groupId>
+            <artifactId>agentscope-core</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.agentscope</groupId>
+            <artifactId>agentscope-harness</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.agentscope</groupId>
+            <artifactId>agentscope-extensions-durable-jdbc</artifactId>
+            <version>${revision}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>io.agentscope</groupId>
+            <artifactId>agentscope-extensions-durable-sandbox</artifactId>
+            <version>${revision}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>io.agentscope</groupId>
+            <artifactId>agentscope-durable-worker</artifactId>
+            <version>${revision}</version>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
 </project>

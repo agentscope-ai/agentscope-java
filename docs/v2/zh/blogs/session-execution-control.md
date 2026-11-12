@@ -68,5 +68,5 @@ Session/Thread/Turn 的 snapshot、history 和事件接口恢复，不应解析�
 AgentScope 2.0 的 `agent_state` 会自然映射到 `main` Thread。空的主 Thread 首次运行时导入
 该状态，之后每个已提交 checkpoint 都镜像回同一 2.0 状态项；命名 Thread 不读取或覆盖它。
 
-完整的日志、恢复和 Durable 配置见[Thread 执行日志与恢复](/v2/zh/docs/harness/session-log)
-和 [Durable 指南](/v2/zh/docs/harness/durable)。
+完整的日志、恢复和 Durable 配置见[Thread 执行日志与恢复](/dev/zh/docs/harness/session-log)
+和 [Durable 指南](/dev/zh/docs/harness/durable)。

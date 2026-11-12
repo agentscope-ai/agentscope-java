@@ -1,5 +1,0 @@
-# Python >= 3.12; use an isolated environment, separate from AppWorld.
-# Preserve the resolved pip report and full lock with each frozen batch.
-harbor==0.25.0
-kubernetes==32.0.1
-mcp==1.26.0

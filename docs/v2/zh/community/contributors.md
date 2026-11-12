@@ -100,4 +100,4 @@ AgentScope 的成长离不开社区的每一份投入。感谢大家通过代码
   </li>
 </ul>
 
-欢迎一起参与。你可以从 [贡献指南](https://github.com/agentscope-ai/agentscope-java/blob/main/CONTRIBUTING_zh.md) 开始；如需更新本页信息，请提交 Pull Request 修改 `docs/v2/zh/community/contributors.md`。
+欢迎一起参与。你可以从 [贡献指南](https://github.com/agentscope-ai/agentscope-java/blob/v2.0.4/CONTRIBUTING_zh.md) 开始；如需更新本页信息，请提交 Pull Request 修改 `docs/v2/zh/community/contributors.md`。

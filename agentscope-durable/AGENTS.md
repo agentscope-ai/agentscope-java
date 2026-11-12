@@ -27,7 +27,6 @@ User decisions recorded on 2026-11-07:
   stable execution identity during recovery, truthful UNKNOWN outcomes and reliable
   result/event handoff. These are distinct from compatibility with old platform
   formats. Respect native Harness recovery boundaries and declared version support.
-- Ignore the duplicate `agentscope-java/agentscope-service` implementation.
 - Complete and validate Durable first. The user subsequently authorized adapting
   `/Users/ken/agentcore/agentcore-managed-agents` in the same task once Durable is
   ready. Replace superseded platform execution/recovery code directly, without

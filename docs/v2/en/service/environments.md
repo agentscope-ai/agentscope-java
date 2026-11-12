@@ -1,182 +1,99 @@
 ---
-title: "Execution environments"
-description: "Run Session tools in Hands, Service-managed ACS sandboxes, or user-owned instances."
+title: "Environments: execution locations"
 zh_link: /v2/zh/service/environments
 ---
 
-Environment selects where a Managed Agent's file and shell tools run. HarnessAgent reasons in Dataplane; Hands executes the tools and returns their results to the same Turn. Worker credentials authorize access to an Environment, while `config.type` selects execution. Platform Hands and customer Environment Workers have separate deployment roles.
+<Note>
+This is preview documentation. The official release is not yet available.
+</Note>
 
-## Choose an execution mode
+**Resources → Environments** defines where Managed Agents execute file, Shell and other tools. It is separate from a definition Workspace and from a Hosted Agent's Runtime Host.
 
-| `config.type` | Execution | Resource ownership |
-| --- | --- | --- |
-| `local` | Shell and file tools run in the Hands container or host | No remote Sandbox is created |
-| `cloud` | Hands creates and reuses an ACS Sandbox for each Session | Service manages creation, TTL renewal and cleanup |
-| `self_hosted` | Hands connects to an existing E2B-compatible instance | User manages creation, lifetime and deletion |
-| `remote` | Existing distributed filesystem integration | Filesystem only; outside this Hands workflow |
+## Interface tour
 
-Local has a separate directory per Session, but shares the Hands operating system. An administrator must enable `BUILDER_ALLOW_LOCAL_ENVIRONMENT=true`. Cloud supports ACS native E2B routing first; `/kruise/...` private routing is not supported by this workflow. Prepare SandboxManager, a template, DNS/TLS and a tenant API key using the [ACS setup guide](https://help.aliyun.com/zh/cs/user-guide/connect-to-agent-sandbox-using-the-e2b-sdk). Templates need `/bin/bash`, `python3` and `tar` for Hands tools and workspace archives.
+<Frame caption="Current console UI with fixed demonstration data.">
+  <img src="/v2/assets/imgs/service/environments.png" alt="Local and self_hosted environment examples" />
+</Frame>
 
-For self_hosted, Hands must be able to reach the user's SandboxManager and execution endpoint. The user supplies the Sandbox API key in this Environment; platform cloud credentials are never used as its fallback. Connecting uses instance lookup and does not renew its TTL, recreate it, restore an archive over it, or delete it. The user must keep the instance alive. A borrowed instance is reserved for one Session; deleting an idle Session releases this reservation without deleting the instance. Hands does not automatically stage Agent definition files into a user-owned workspace. Reuse that Session for later Turns rather than binding the same instance to a second Session.
+Choose an environment according to where execution should happen. **Local development** represents local execution, while **Research worker** is an example self_hosted configuration. Creating the record still requires starting and connecting its Worker.
 
-## 1. Create an Environment
+## Choose a type
 
-Use the Gateway URL of your deployment; the existing local portal stack uses port 18081. These examples assume local development without API authentication. For an authenticated installation, also include your authorized user or application headers in each public API call.
-
-```bash
-export BASE_URL="http://localhost:18080"
-curl -sS --fail-with-body "$BASE_URL/actuator/health"
-```
-
-Create a local Environment after enabling Local in the control plane:
-
-```bash
-ENVIRONMENT_JSON=$(curl -sS --fail-with-body "$BASE_URL/api/environments" \
-  -H 'Content-Type: application/json' \
-  -d '{"name":"Hands local demo","config":{"type":"local"}}') || exit 1
-export ENVIRONMENT_ID=$(jq -er '.id' <<< "$ENVIRONMENT_JSON")
-export ENVIRONMENT_KEY=$(jq -er '.apiKey' <<< "$ENVIRONMENT_JSON")
-```
-
-For cloud, use this body instead. `templateId` is the ACS SandboxSet template name. `apiBaseUrl` defaults to `https://api.<domain>` when omitted. Set `config.apiKey`, or configure the Service's cloud fallback `BUILDER_E2B_API_KEY` before starting Dataplane.
-
-```json
-{
-  "name": "ACS cloud",
-  "config": {
-    "type": "cloud",
-    "provider": "acs",
-    "domain": "sandbox.example.com",
-    "templateId": "code-interpreter",
-    "workspaceRoot": "/home/user",
-    "sandboxTimeoutSeconds": 300
-  }
-}
-```
-
-For self_hosted, use your own connection settings and key. This is the Sandbox provider key, distinct from the Environment key returned by Service.
-
-```json
-{
-  "name": "User Sandbox",
-  "config": {
-    "type": "self_hosted",
-    "provider": "e2b",
-    "apiBaseUrl": "https://api.user-sandbox.example.com",
-    "domain": "user-sandbox.example.com",
-    "apiKey": "USER_SANDBOX_TENANT_KEY",
-    "workspaceRoot": "/home/user"
-  }
-}
-```
-
-You may set `config.sandboxId` for a dedicated instance, or pass `agentscope.sandbox_id` when creating its Session. A Session value takes precedence. `provider: acs` is also accepted for a user-owned ACS instance. Direct credential configuration is an AgentScope extension; access to Environment configuration must be restricted to authorized operators.
-
-## 2. Start Hands
-
-Current Compose and Helm installations already start platform Hands as a required HTTP/MQ
-service on internal port 8085. It consumes authorized Execute/Control commands and stores
-physical execution facts in PostgreSQL. It has no fixed Environment ID, `hands.enabled`
-flag or private Worker journal volume. To restart this component from source:
-
-```bash
-docker compose --env-file deploy/.env up -d --wait hands
-docker compose --env-file deploy/.env logs --tail=100 hands
-```
-
-Run from `agentscope-service` with the same project/configuration as your installation.
-Image-only bundles use `docker compose up -d --wait hands` from their extracted directory.
-Helm scales the required Deployment with `hands.replicas`. Shared Workspace/Artifact storage
-is needed when user files are enabled; checkpoints and large private objects use PostgreSQL.
-Customer Workers below are separate optional processes, not a replacement for platform Hands.
-
-A customer-side Worker can use an Environment key to execute local or self_hosted tasks. It cannot claim cloud tasks or obtain platform cloud credentials. Start it in a network that can reach the user instance:
-
-```bash
-java -jar agentscope-service/service-hands/target/service-hands-2.1.0-SNAPSHOT.jar \
-  --base-url "$BASE_URL" --environment-id "$ENVIRONMENT_ID" \
-  --environment-key "$ENVIRONMENT_KEY" \
-  --hands-root /tmp/agentscope-hands-demo --max-concurrency 4
-```
-
-Replace the JAR version with the artifact produced by your build. Each Worker uses one Environment ID. Different Worker processes need separate journals; the local workspace remains pinned to its Worker. Platform Hands coordinates these Workers through the same durable tool protocol.
-
-## 3. Create an Agent and Session
-
-Create a Managed Agent using [your first Agent](/v2/en/service/create-managed-agent), select this Environment and enable the `bash`, `read` and `write` tool configurations. These toolset names project to the execute, read_file and write_file calls used by Hands. Save its ID as `AGENT_ID`.
-
-```bash
-SESSION_JSON=$(jq -n --arg agent "$AGENT_ID" --arg environment "$ENVIRONMENT_ID" \
-  '{target:{type:"agent",id:$agent}}' \
-  | curl -sS --fail-with-body "$BASE_URL/v1/sessions" \
-      -H 'Content-Type: application/json' --data-binary @-) || exit 1
-export SESSION_ID=$(jq -er '.id' <<< "$SESSION_JSON")
-export SESSION_URL="$BASE_URL/v1/sessions/$SESSION_ID"
-```
-
-For a self_hosted Environment without `config.sandboxId`, add this extension to the create body:
-
-```json
-"agentscope": { "sandbox_id": "EXISTING_SANDBOX_ID" }
-```
-
-Creating the Environment does not prove that Hands is connected or the provider is reachable. Creating a self_hosted Session reserves the instance; duplicate reservations return 409. Execution configuration is frozen for the Session, so Environment edits apply to new Sessions.
-
-## 4. Test tools, long tasks and interruption
-
-In another terminal, open the stream using the same `SESSION_URL` and authentication:
-
-```bash
-curl -N -sS --fail-with-body "$SESSION_URL/events/stream"
-```
-
-Send a task that writes and reads a file:
-
-```bash
-curl -sS --fail-with-body "$SESSION_URL/events" \
-  -H 'Content-Type: application/json' -H 'Idempotency-Key: sandbox-file-001' \
-  -d '{"events":[{"type":"user.message","content":[{"type":"text","text":"Use execute to run uname -a. Write the result to platform.txt, read it back, and report the contents."}]}]}' | jq
-```
-
-Confirm tool calls, their results and the final answer in the stream or event history. In local mode, inspect `/data/hands/workspaces` inside Hands. In cloud or self_hosted mode, inspect the selected remote instance; the command must execute there.
-
-Read the authorized tool-task view to locate the cloud or borrowed instance ID:
-
-```bash
-curl -sS --fail-with-body "$BASE_URL/v1/sessions/$SESSION_ID/tool-tasks" \
-  | jq '.data[] | {task_id, environment_type, sandbox_id, status}'
-```
-
-Use a new idempotency key to send: `Run execute with command sleep 60; printf done and timeout 120. Wait for completion and report the output.` A silent command must not fail after 15 seconds. The tool execution deadline controls the streaming request; short management HTTP timeouts remain separate.
-
-For interruption, send a longer command, wait for its tool call, then:
-
-```bash
-curl -sS --fail-with-body "$SESSION_URL/events" \
-  -H 'Content-Type: application/json' -H 'Idempotency-Key: sandbox-stop-001' \
-  -d '{"events":[{"type":"user.interrupt"}]}' | jq
-```
-
-Check the remote process list or a test heartbeat file to confirm execution stopped. Hands sends a process termination request and checks its absence; it does not delete a user instance. If termination cannot be confirmed, the task remains unknown and its execution binding stays fenced for recovery. A disconnected stream does not establish that a process exited.
-
-Send another user.message with a new key to continue in a new Turn using the same Session and workspace. Automatic tool results continue the original waiting Turn. Reusing the same batch key retries acceptance rather than submitting another message.
-
-## Configuration and recovery limits
-
-| Field | Scope and behavior |
+| Type | Execution model |
 | --- | --- |
-| `config.type` | local, cloud or self_hosted; top-level type is accepted but must agree |
-| `provider` | cloud: acs; self_hosted: e2b or acs |
-| `domain` / `apiBaseUrl` | Native E2B execution domain / management API |
-| `envdBaseUrl` | Optional fixed execution proxy using Sandbox ID headers |
-| `templateId` | Required for cloud; supplied by ACS configuration |
-| `sandboxId` | Optional existing instance for self_hosted |
-| `workspaceRoot` | Remote working directory, default /home/user |
-| `runUser` / `codec` | Remote user and Connect stream codec, default user / PROTO |
-| `readTimeoutSeconds` | Management/client setting; process streaming uses its execution deadline |
-| `sandboxTimeoutSeconds` | cloud TTL, bounded to 120–3600 seconds by Hands |
-| `sandboxIdleTimeoutSeconds` / `sandboxMaxLifetimeSeconds` | cloud cleanup thresholds, default 300 / 3600 seconds |
+| local | Runs with the Dataplane; requires Local to be enabled by an administrator |
+| sandbox | Isolated Shell/filesystem execution through E2B |
+| remote | Shared BaseStore filesystem without Shell execution |
+| self_hosted | Execution supplied by a Worker you operate |
 
-Cloud currently archives the workspace as TAR after a known tool result. Provider memory snapshots and pause/resume are not enabled by setting `persistenceMode`. A recovered archive restores files, not a running process. Unconfirmed writes and remote executions are not automatically rerun. A Worker restart retries saved results independently of execution.
+In Docker, Local means inside the Dataplane container, not arbitrary access to the host filesystem. Choose a backend according to production isolation and networking requirements.
 
-The upgrade migrates previous sandbox Environments to cloud and previous local-execution self_hosted Environments to local. Old encrypted runtime snapshots are normalized when read. Back up the database and stop old Workers before running the migration jobs; then start all updated planes and Hands. The local compose override enables Local for development. This source/configuration update does not itself upgrade your running containers.
+## Configure and verify
+
+Create an Environment with a name and type, then edit its backend-specific JSON connection settings. Type is read-only after creation. Credentials and capabilities must match the selected backend; Runtime Host enrollment credentials are not Worker credentials.
+
+Open a Managed Agent in **DESIGN → Agents** and select **Runtime → Session defaults → Default environment**, saved as `defaultEnvironmentId`. The creation form also exposes the choice in Advanced settings. A Session API request can use `environmentId` to select an environment for that Session.
+
+After saving, start a new Chat and verify the connection, working directory and permissions with a read-only file operation, then check writes or commands. This binding selects tool execution; Managed model inference remains in the Dataplane even with self_hosted execution.
+
+## Self-hosted execution
+
+A self-hosted Worker connects using an Environment API key. Save the key when created and supply it through the Worker's connection configuration. Check online status and a real tool call after connection. Workers execute Managed tools; Runtime Hosts run Coding Agent providers. They are not interchangeable processes.
+
+## Diagnose tool failures
+
+Check Environment availability, network and authentication, directory mounts, required executables and permissions. A successful model reply does not prove that file tools work. Verify configuration changes with new work and update every consumer after key rotation.
+
+Next: [Managed Agents](/v2/en/service/managed-agent) · [Configuration](/v2/en/service/configuration).
+
+## E2B sandbox example
+
+An administrator supplies `BUILDER_E2B_API_KEY` through deployment configuration. Create a sandbox Environment and use this Config:
+
+```json
+{
+  "templateId": "base",
+  "isolationScope": "SESSION",
+  "sandboxTimeoutSeconds": 300
+}
+```
+
+Select a custom E2B template for additional executables. `workspaceRoot` controls the sandbox path; `persistenceMode` can be `TAR` or `NATIVE_SNAPSHOT`. Verify save/restore with the chosen template and backend. The remote type is filesystem-only, not a remote Shell Worker.
+
+### Sandbox parameters
+
+Set these fields in the Environment's Config. Omitted E2B connection settings inherit administrator deployment configuration.
+
+| Field | Meaning and fallback |
+| --- | --- |
+| `templateId` | E2B template; `base` without a deployment override |
+| `workspaceRoot` | Sandbox working path; `/home/user` without a deployment override |
+| `sandboxTimeoutSeconds` | Sandbox lifetime timeout in seconds; 300 without a deployment override |
+| `isolationScope` | Harness filesystem isolation scope; defaults to `SESSION` |
+| `persistenceMode` | `TAR` or `NATIVE_SNAPSHOT`; defaults to TAR unless overridden in deployment |
+| `apiBaseUrl` / `domain` | Custom E2B endpoint settings; usually inherited from deployment |
+| `apiKey` | Per-environment E2B credential override; usually configured centrally |
+
+Adding `packages`, Docker image or network fields to Config does not install dependencies or enforce network restrictions. Prepare programs in the E2B template and apply network policy in the actual backend. These sandbox settings do not configure local or self_hosted containers.
+
+## Run a self-hosted Worker from the published image
+
+Create a self_hosted Environment and save its API key. Set `SCHEDULER_IMAGE` to the full scheduler image reference from the manifest, `BASE_URL` to a Gateway URL reachable from the Worker, and `ENVIRONMENT_ID`/`ENVIRONMENT_KEY` to the new Environment's values.
+
+```bash
+docker run --rm \
+  --name agentscope-hands \
+  -v agentscope-hands:/data \
+  --entrypoint java "$SCHEDULER_IMAGE" \
+  -Dloader.main=io.agentscope.builder.worker.HandsWorkerMain \
+  -cp /app.jar org.springframework.boot.loader.launch.PropertiesLauncher \
+  --base-url "$BASE_URL" \
+  --environment-id "$ENVIRONMENT_ID" \
+  --environment-key "$ENVIRONMENT_KEY" \
+  --hands-root /data/hands \
+  --worker-id hands-1
+```
+
+The Worker makes outbound Gateway requests without exposing an inbound port. Bind a Managed Agent to this Environment, request a small file read/write and observe tool suspension followed by Worker results and resumed execution. Working files persist in the named volume. Preinstall task-specific programs in your Worker image.
+
+Use your process/container manager for restarts and distinct worker IDs for multiple Workers. Inspect claimed work before stopping; process shutdown is not business-task cancellation.

@@ -11,9 +11,7 @@ zh_link: /v2/zh/integration/protocol/agui
 
 `AguiMessage.content` is represented as typed message content. For text-only code paths, use `getTextContent()`.
 
-Multimodal input supports text, image, audio, and video. Document input is not supported yet: the adapter rejects it with `RUN_ERROR` and code `INVALID_INPUT_ERROR`, without including the document source or metadata in the error message.
-
-This protection applies only to the `RUN_ERROR` message, not to the entire event stream. The preceding `RUN_STARTED.input` retains the original request, including rejected document content. Consumers that log or forward events must redact sensitive input themselves.
+Multimodal input is supported, but document types are not supported yet.
 
 `AguiMessageConverter.toAguiMessage()` currently preserves text and tool-call fields only; image, audio, video, and document content blocks are not serialized back into AG-UI message content.
 
@@ -47,15 +45,11 @@ Spring Boot applications can use the starter:
 
 ## Quickstart
 
-Configure a shared `HarnessAgent.Builder agentBuilder` as in the [Quickstart](/v2/en/docs/quickstart). Build an Agent for each request and close it when the SSE stream ends or is cancelled:
-
 ```java
 import io.agentscope.core.agui.adapter.AguiAdapterConfig;
 import io.agentscope.core.agui.adapter.AguiAgentAdapter;
 import io.agentscope.core.agui.event.AguiEvent;
 import io.agentscope.core.agui.model.RunAgentInput;
-import io.agentscope.harness.agent.HarnessAgent;
-import java.time.Duration;
 import reactor.core.publisher.Flux;
 
 AguiAdapterConfig config = AguiAdapterConfig.builder()
@@ -64,10 +58,10 @@ AguiAdapterConfig config = AguiAdapterConfig.builder()
     .runTimeout(Duration.ofMinutes(5))
     .build();
 
-Flux<AguiEvent> events = Flux.using(
-    agentBuilder::build,
-    agent -> new AguiAgentAdapter(agent, config).run(runAgentInput),
-    HarnessAgent::close);
+AguiAgentAdapter adapter = new AguiAgentAdapter(agent, config);
+
+// Events you'd ship to the front end via SSE
+Flux<AguiEvent> events = adapter.run(runAgentInput);
 ```
 
 The front end provides `RunAgentInput`, including `threadId`, `runId`, `messages`, `tools`, `state`, and related fields. The adapter converts AG-UI messages to AgentScope `Msg` objects, invokes v2 `streamEvents(...)`, and converts each `AgentEvent` to AG-UI events.
@@ -208,7 +202,7 @@ When enabled, every `ModelCallEndEvent` with usage emits a `CUSTOM` event: `delt
 | `agui.forwardedProps` | `RunAgentInput.forwardedProps` |
 | `agui.resume` | `RunAgentInput.resume` |
 
-`sessionId` comes from `threadId`. With the same user, thread and persistent storage configuration, a new instance can continue the conversation; different threads use separate session identities.
+Because `sessionId` always comes from `threadId`, the same agent instance remains isolated across AG-UI threads.
 
 ## Spring Boot Integration
 
@@ -350,12 +344,12 @@ The front end does not need to echo `metadata` in `resume[]`; it only sends `int
 
 ## Example Project
 
-See the complete example at [agentscope-examples/documentation](https://github.com/agentscope-ai/agentscope-java/tree/main/agentscope-examples/documentation):
+See the complete example at [agentscope-examples/agui](https://github.com/agentscope-ai/agentscope-java/tree/v2.0.4/agentscope-examples/agui):
 
 ```bash
 export DASHSCOPE_API_KEY=your-key
-cd agentscope-examples/documentation
-mvn spring-boot:run -Dspring-boot.run.mainClass=io.agentscope.examples.documentation2.agui.AguiExampleApplication
+cd agentscope-examples/agui
+mvn spring-boot:run
 ```
 
 Visit http://localhost:8080 after startup. The example demonstrates multi-agent routing, custom converters, custom enrichers, token usage, and HITL interrupts.

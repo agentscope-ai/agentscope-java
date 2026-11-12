@@ -17,15 +17,6 @@ en_link: /v2/en/integration/session/overview
 - `sessionId`——非空、非空白，标识一次会话 / session。
 - `userId`——可空。`null` 表示匿名 / 单租户调用方（CLI、测试等）。
 
-## AgentStateStore 与 Thread 日志
-
-本页是 `AgentStateStore` 接口参考。启用日志时，`HarnessAgent` 通过
-`ThreadJournalStore` 恢复；只替换 `stateStore` 不会迁移或共享 Thread 日志。主 Thread
-会读取 AgentScope 2.0 写入的状态，并在 checkpoint 提交后将最新状态镜像回 2.0 的
-`agent_state` 位置，以支持回滚读取；命名 Thread 使用独立状态项。Workspace 的
-BaseStore 能保存文件，也不等于具备日志要求的 CAS 和 writer fencing。详见
-[Thread 执行日志与恢复](/v2/zh/docs/harness/session-log)。
-
 ## 可用实现
 
 | 实现 | 模块 | 适合场景 |
@@ -33,7 +24,7 @@ BaseStore 能保存文件，也不等于具备日志要求的 CAS 和 writer fen
 | `InMemoryAgentStateStore` | `agentscope-core` | 单元测试 |
 | `JsonFileAgentStateStore` | `agentscope-core` | 单机开发（**HarnessAgent 默认**） |
 | `RedisAgentStateStore` | `agentscope-extensions-redis` | [多副本生产首选](/v2/zh/integration/distributed/redis) |
-| `JdbcAgentStateStore` | `agentscope-extensions-jdbc` | [已有数据库的场景](/v2/zh/integration/distributed/jdbc) |
+| `MysqlAgentStateStore` | `agentscope-extensions-mysql` | [已有数据库的场景](/v2/zh/integration/distributed/mysql) |
 | `OssAgentStateStore` | `agentscope-extensions-oss` | [阿里云生态](/v2/zh/integration/distributed/oss) |
 
 ## 单独配置
@@ -49,5 +40,5 @@ ReActAgent agent = ReActAgent.builder()
 详细用法和代码示例请参阅各后端的文档：
 
 - [Redis](/v2/zh/integration/distributed/redis#1-redisagentstatestore)
-- [JDBC](/v2/zh/integration/distributed/jdbc#1-jdbcagentstatestore)
+- [MySQL](/v2/zh/integration/distributed/mysql#1-mysqlagentstatestore)
 - [OSS](/v2/zh/integration/distributed/oss#1-ossagentstatestore)

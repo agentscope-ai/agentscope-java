@@ -32,7 +32,6 @@ VERSION_TAG = re.compile(
     r"v(\d+\.\d+\.\d+(?:-[A-Za-z0-9]+(?:[.-][A-Za-z0-9]+)*)?)"
 )
 EXCLUDED_MODULES = {
-    "agentscope-service",
     "agentscope-examples",
     "agentscope-extensions/agentscope-extensions-model/agentscope-extensions-model-e2e-tests",
 }

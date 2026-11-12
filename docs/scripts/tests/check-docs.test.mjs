@@ -66,18 +66,19 @@ test('legacy HTML redirects preserve valid fragments', (t) => {
   assert.deepEqual(result.errors, []);
 });
 
-test('minor and future versions coexist and validate links within their own translation pair', (t) => {
+test('stable, future and dev versions validate links within their own translation pair', (t) => {
   const dir = fixture(t);
   const config = JSON.parse(fs.readFileSync(path.join(dir, 'docs.json'), 'utf8'));
   config.navigation.languages[0].versions[0].version = '2.0';
   config.navigation.languages.push({ language: 'zh', versions: [] });
-  for (const version of ['2.1', '3']) {
+  for (const version of ['2.1', '3', 'dev']) {
+    const directory = version === 'dev' ? version : `v${version}`;
     for (const language of ['en', 'zh']) {
       const other = language === 'en' ? 'zh' : 'en';
-      const route = `v${version}/${language}/intro`;
-      fs.mkdirSync(path.join(dir, `v${version}/${language}`), { recursive: true });
+      const route = `${directory}/${language}/intro`;
+      fs.mkdirSync(path.join(dir, `${directory}/${language}`), { recursive: true });
       fs.writeFileSync(path.join(dir, route + '.md'),
-        `---\ntitle: Home\n${other}_link: /v${version}/${other}/intro\n---\n[Previous version](/v2/en/intro#setup)\n`);
+        `---\ntitle: Home\n${other}_link: /${directory}/${other}/intro\n---\n[Previous version](/v2/en/intro#setup)\n`);
       config.navigation.languages.find((item) => item.language === language)
         .versions.push({ version, pages: [route] });
     }
@@ -85,13 +86,43 @@ test('minor and future versions coexist and validate links within their own tran
   fs.writeFileSync(path.join(dir, 'docs.json'), JSON.stringify(config));
   const result = checkSite(dir);
   assert.deepEqual(result.errors, []);
-  assert.equal(result.pageCount, 5);
+  assert.equal(result.pageCount, 7);
 
   fs.writeFileSync(path.join(dir, 'v2.1/en/intro.md'),
     '---\ntitle: Home\nzh_link: /v3/zh/intro\n---\n[Missing](/v2.1/en/missing)\n');
   const errors = checkSite(dir).errors;
   assert(errors.includes('/v2.1/en/intro: zh_link must be /v2.1/zh/intro'));
   assert(errors.includes('/v2.1/en/intro: missing local target /v2.1/en/missing'));
+
+  fs.writeFileSync(path.join(dir, 'dev/en/intro.md'),
+    '---\ntitle: Dev\nzh_link: /v2/zh/intro\n---\n[Missing](/dev/en/missing)\n');
+  const devErrors = checkSite(dir).errors;
+  assert(devErrors.includes('/dev/en/intro: zh_link must be /dev/zh/intro'));
+  assert(devErrors.includes('/dev/en/intro: missing local target /dev/en/missing'));
+});
+
+test('historical source links reject moving branches and allow release tags', (t) => {
+  const dir = fixture(t, { body: [
+    '[Source](https://github.com/agentscope-ai/agentscope-java/blob/main/pom.xml)',
+    '<Card href="https://github.com/agentscope-ai/agentscope-java/tree/Mintlify/agentscope-core" />',
+    '[Raw](https://raw.githubusercontent.com/agentscope-ai/agentscope-java/HEAD/pom.xml)',
+    '[Tagged](https://github.com/agentscope-ai/agentscope-java/blob/v2.0.4/pom.xml)',
+    '[Legacy](https://github.com/agentscope-ai/agentscope-java/tree/v1.0.11/agentscope-core)',
+    '[Other project](https://github.com/agentscope-ai/agentscope/blob/main/README.md)',
+  ].join('\n\n') });
+  const errors = checkSite(dir).errors;
+  assert.equal(errors.length, 3);
+  assert(errors.every((error) => error.includes('historical source link must use a release tag or commit')));
+});
+
+test('dev source links may follow the current branch', (t) => {
+  const dir = fixture(t);
+  fs.mkdirSync(path.join(dir, 'dev/en'), { recursive: true });
+  fs.writeFileSync(path.join(dir, 'dev/en/intro.md'), '---\ntitle: Dev\n---\n[Source](https://github.com/agentscope-ai/agentscope-java/blob/main/pom.xml)\n');
+  const config = JSON.parse(fs.readFileSync(path.join(dir, 'docs.json'), 'utf8'));
+  config.navigation.languages[0].versions.push({ version: 'dev', pages: ['dev/en/intro'] });
+  fs.writeFileSync(path.join(dir, 'docs.json'), JSON.stringify(config));
+  assert.deepEqual(checkSite(dir).errors, []);
 });
 
 test('new version directories cannot bypass navigation checks', (t) => {
@@ -99,6 +130,9 @@ test('new version directories cannot bypass navigation checks', (t) => {
   fs.mkdirSync(path.join(dir, 'v2.1/en'), { recursive: true });
   fs.writeFileSync(path.join(dir, 'v2.1/en/intro.md'), '---\ntitle: Home\n---\n');
   assert(checkSite(dir).errors.includes('Page missing from navigation: /v2.1/en/intro'));
+  fs.mkdirSync(path.join(dir, 'dev/en'), { recursive: true });
+  fs.writeFileSync(path.join(dir, 'dev/en/intro.md'), '---\ntitle: Dev\n---\n');
+  assert(checkSite(dir).errors.includes('Page missing from navigation: /dev/en/intro'));
 });
 
 test('redirect cycles and duplicate sources fail', (t) => {

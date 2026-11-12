@@ -55,19 +55,18 @@
 
 AgentScope Java 2.0 is a production-ready framework for building distributed, enterprise-grade agents, providing essential abstractions that work with rising model capability and built-in support for long-running, safely-controlled agent execution.
 
-- [**Event System** →](https://java.agentscope.io/v2/en/docs/building-blocks/message-and-event.html) A unified event stream with 31 typed events for real-time frontend rendering and human-in-the-loop.
-- [**Permission System** →](https://java.agentscope.io/v2/en/docs/building-blocks/permission-system.html) Tool-call gating: allow / require user approval / deny.
-- [**Middleware** →](https://java.agentscope.io/v2/en/docs/building-blocks/middleware.html) AOP-style hook interception for flexibly extending the reasoning-acting loop.
-- [**Workspace & Sandbox** →](https://java.agentscope.io/v2/en/docs/harness/workspace.html) Run tools in isolated environments — local, Docker, Kubernetes, or AgentRun cloud sandbox.
-- [**Multi-Agent Orchestration** →](https://java.agentscope.io/v2/en/docs/harness/subagent.html) Multiple subagent definition patterns with `agent_spawn` / `agent_send` and real-time event forwarding.
-- [**Distributed Deployment** →](https://java.agentscope.io/v2/en/docs/others/going-to-production.html) True distributed session and memory management (Redis / MySQL / PostgreSQL / OSS / COS) with cross-replica session recovery.
+- [**Event System** →](https://java.agentscope.io/dev/en/docs/building-blocks/message-and-event.html) A unified event stream with 31 typed events for real-time frontend rendering and human-in-the-loop.
+- [**Permission System** →](https://java.agentscope.io/dev/en/docs/building-blocks/permission-system.html) Tool-call gating: allow / require user approval / deny.
+- [**Middleware** →](https://java.agentscope.io/dev/en/docs/building-blocks/middleware.html) AOP-style hook interception for flexibly extending the reasoning-acting loop.
+- [**Workspace & Sandbox** →](https://java.agentscope.io/dev/en/docs/harness/workspace.html) Run tools in isolated environments — local, Docker, Kubernetes, or AgentRun cloud sandbox.
+- [**Multi-Agent Orchestration** →](https://java.agentscope.io/dev/en/docs/harness/subagent.html) Multiple subagent definition patterns with `agent_spawn` / `agent_send` and real-time event forwarding.
+- [**Distributed Deployment** →](https://java.agentscope.io/dev/en/docs/others/going-to-production.html) True distributed session and memory management (Redis / MySQL / PostgreSQL / OSS / COS) with cross-replica session recovery.
 - [**Agent Evolution** →](https://help.aliyun.com/zh/document_detail/3042583.html) Provides Agent observability and auditing, Agent evaluation and experimentation, and Agent asset management and continuous optimization.
 
 <img src="./docs/imgs/landscape.png" alt="agentscope" width="100%"/>
 
 ## News
 <!-- BEGIN NEWS -->
-- **[2026-08] [AgentScope Service](./agentscope-service):** A self-hostable Agent as a Service platform with HarnessAgent-based Managed Agents, Session APIs for business applications, and multi-agent collaboration.
 - **[2026-07] `v2.0.0 GA`:** First production-ready release! Dual-layer agent architecture, event stream, permission system, middleware, workspace sandbox, multi-agent orchestration, and distributed deployment all ready. [Docs](https://java.agentscope.io/) | [Release Notes](https://github.com/agentscope-ai/agentscope-java/releases/tag/v2.0.0)
 - **[2026-07] `v2.0.0-RC5`:** Model provider modularization; unified DataBlock multimodal support; native structured output; Channel IM integration; Tencent Cloud COS state persistence. [Release Notes](https://github.com/agentscope-ai/agentscope-java/releases/tag/v2.0.0-RC5)
 - **[2026-06] `v2.0.0-RC4`:** Async tool execution and scheduled wakeup dispatching; subagent cross-replica routing and session recovery. [Release Notes](https://github.com/agentscope-ai/agentscope-java/releases/tag/v2.0.0-RC4)
@@ -111,7 +110,7 @@ Model providers are shipped as separate extension modules in 2.0. Add the one yo
 </dependency>
 ```
 
-Other options: `agentscope-extensions-model-openai`, `agentscope-extensions-model-anthropic`, `agentscope-extensions-model-gemini`, `agentscope-extensions-model-ollama`. See the [Model docs](https://java.agentscope.io/v2/en/docs/building-blocks/model.html) for details.
+Other options: `agentscope-extensions-model-openai`, `agentscope-extensions-model-anthropic`, `agentscope-extensions-model-gemini`, `agentscope-extensions-model-ollama`. See the [Model docs](https://java.agentscope.io/dev/en/docs/building-blocks/model.html) for details.
 
 To use the reasoning and tool APIs of `ReActAgent` and compose application capabilities yourself, depend on `agentscope-core` and your model extension.
 
@@ -163,24 +162,7 @@ public class FirstAgent {
 }
 ```
 
-Start with `call` / `streamEvents` for ordinary replies, multi-turn chat and workflow steps; follow the [Quick Start](https://java.agentscope.io/v2/en/docs/quickstart). Both also record Harness conversation history by default. Introduce [AgentSession](https://java.agentscope.io/v2/en/docs/harness/session-log) when work must continue after a page closes, queue while busy or resume after interruption. The [recoverable chat example](./agentscope-examples/agents/agentscope-chat/README.md) shows the full integration.
-
-## AgentScope Service
-
-**[AgentScope Service](./agentscope-service)** is a self-hostable **Agent as a Service** platform. Its **Managed Agents** use the same HarnessAgent core as the SDK: configure instructions, models and tools through Console or APIs, and let Service manage Agent runtimes, Sessions, background execution and recovery. Application teams can share these capabilities without operating a separate Agent runtime for each product.
-
-Applications create a **Session** for an Agent, Team or Workflow, submit tasks as **Turns**, and follow Session state and **Events** to show progress, handle human input and retrieve results. Users stay inside the existing business product, which retains responsibility for data authorization and result acceptance. Start with one Managed Agent; add Teams, Workflows, External Agents or Hosted Coding Agents as collaboration requires.
-
-```mermaid
-flowchart TB
-    App["Business application"] -->|"Session / Turn / Events"| Service["AgentScope Service"]
-    Console["Console / Management API"] -->|"Configure capabilities"| Service
-    Service --> Managed["Managed Agents: HarnessAgent"]
-    Managed --> Resources["Models / Tools / Execution environments"]
-    Service --> Collaboration["Teams / Workflows / External and Hosted Agents"]
-```
-
-[Deploy Service](https://java.agentscope.io/v2/en/service/quickstart) → [Create your first Managed Agent](https://java.agentscope.io/v2/en/service/create-managed-agent) → [Integrate through the Session API](https://java.agentscope.io/v2/en/service/claude-session-api). Already have a deployment? Start with Agent creation. See [Use cases](https://java.agentscope.io/v2/en/service/usecases) for application designs.
+Start with `call` / `streamEvents` for ordinary replies, multi-turn chat and workflow steps; follow the [Quick Start](https://java.agentscope.io/dev/en/docs/quickstart). Both also record Harness conversation history by default. Introduce [AgentSession](https://java.agentscope.io/dev/en/docs/harness/session-log) when work must continue after a page closes, queue while busy or resume after interruption. The [recoverable chat example](./agentscope-examples/agents/agentscope-chat/README.md) shows the full integration.
 
 ## Key Design
 
@@ -214,7 +196,7 @@ Messages, events, and the extension model are smaller, more orthogonal — HITL 
 - **Middleware** — `onAgent` / `onReasoning` / `onActing` / `onModelCall` / `onSystemPrompt` / `onAgentStateReady` six stages replace v1's flat hooks
 - **HITL first class** — confirm tool arguments, approve sensitive actions, hand off to external systems, agent pauses and resumes exactly
 
-For the complete architecture overview, see the [documentation](https://java.agentscope.io/v2/en/docs/index.html).
+For the complete architecture overview, see the [documentation](https://java.agentscope.io/dev/en/docs/index.html).
 
 ## Contributing
 

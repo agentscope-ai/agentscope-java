@@ -118,8 +118,7 @@ class BuilderBootstrapSmokeTest {
             var agent = bootstrap.mainAgent();
             var context =
                     io.agentscope.core.agent.RuntimeContext.builder()
-                            .sessionId("assigned-issue-session")
-                            .put("agentTaskManaged", true)
+                            .sessionId("chat-session")
                             .build();
             var output =
                     agent.getToolkit()

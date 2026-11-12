@@ -20,9 +20,8 @@ import io.agentscope.claw2.runtime.config.ChannelConfigEntry;
 import io.agentscope.claw2.web.scaffold.WorkspaceScaffolder;
 import io.agentscope.claw2.web.toolbus.ToolEventBus;
 import io.agentscope.claw2.web.toolbus.ToolNotificationMiddleware;
-import io.agentscope.core.model.Model;
 import io.agentscope.core.journal.ThreadJournalStore;
-import io.agentscope.extensions.controlplane.adapter.AgentScopeAdapter;
+import io.agentscope.core.model.Model;
 import io.agentscope.extensions.model.dashscope.DashScopeChatModel;
 import io.agentscope.harness.agent.filesystem.local.LocalFilesystem;
 import io.agentscope.harness.agent.gateway.channel.ChannelConfig;
@@ -122,7 +121,6 @@ public class BuilderConfig {
     public ClawBootstrap builderBootstrap(
             Optional<Model> modelOpt,
             ToolEventBus toolEventBus,
-            Optional<AgentScopeAdapter> controlPlaneAdapter,
             Optional<ThreadJournalStore> threadJournalStore)
             throws IOException {
         Path home = resolveClawHome();
@@ -151,12 +149,6 @@ public class BuilderConfig {
 
         threadJournalStore.ifPresent(
                 store -> builder.configureAllAgents(b -> b.threadJournalStore(store)));
-
-        // A ReActAgent's middleware list is fixed at build time, so controlplane has to be wired in
-        // here
-        // rather than when the bridge attaches — without it there is no session to observe.
-        controlPlaneAdapter.ifPresent(
-                adapter -> builder.configureAllAgents(b -> b.middleware(adapter.middleware())));
 
         ClawBootstrap bootstrap = builder.build();
 

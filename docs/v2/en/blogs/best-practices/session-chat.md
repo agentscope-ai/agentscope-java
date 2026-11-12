@@ -4,11 +4,11 @@ description: Run agentscope-chat to explore history, SSE replay, user input and 
 zh_link: /v2/zh/blogs/best-practices/session-chat
 ---
 
-Full source: [agentscope-chat](https://github.com/agentscope-ai/agentscope-java/tree/main/agentscope-examples/agents/agentscope-chat).
+Historical source: [agentscope-chat at v2.1.0-BETA1](https://github.com/agentscope-ai/agentscope-java/tree/v2.1.0-BETA1/agentscope-examples/agents/agentscope-chat). This shared post describes a later, unreleased DurableRuntime implementation; the tagged example uses AgentSession instead. Neither implementation is included in v2.0.4.
 
 A local chat application built with HarnessAgent and agentscope-durable. It demonstrates persistent tasks, queuing, pause/resume, interaction answers, and SSE replay of public messages and tool progress.
 
-Ordinary single-request applications can still use Agent `call` / `streamEvents`. This example must continue after browser disconnects or application restarts, so `DurableRuntime` assembles the local backend and AgentScope adapter while business requests use `runtime`. See [Durable tasks](/v2/en/docs/harness/durable) for the concepts and general APIs.
+Ordinary single-request applications can still use Agent `call` / `streamEvents`. This example must continue after browser disconnects or application restarts, so `DurableRuntime` assembles the local backend and AgentScope adapter while business requests use `runtime`. See [Durable tasks](/dev/en/docs/harness/durable) for the concepts and general APIs.
 
 ## Run
 

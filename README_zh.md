@@ -8,7 +8,7 @@
 
 <span align="center">
 
-[**English Homepage**](https://github.com/agentscope-ai/agentscope-java/blob/main/README.md) | [**文档**](https://java.agentscope.io/v2/zh/intro.html)
+[**English Homepage**](https://github.com/agentscope-ai/agentscope-java/blob/main/README.md) | [**文档**](https://java.agentscope.io/dev/zh/intro.html)
 
 </span>
 
@@ -55,19 +55,18 @@
 
 AgentScope Java 2.0 是面向企业级、分布式、生产环境的智能体框架，提供与模型能力相匹配的核心 Harness 抽象，可支持长期、稳定、安全可控的智能体任务执行。
 
-- [**事件系统** →](https://java.agentscope.io/v2/zh/docs/building-blocks/message-and-event.html) 统一的事件流，31 种类型化事件，服务于前端实时渲染与 human-in-the-loop。
-- [**权限系统** →](https://java.agentscope.io/v2/zh/docs/building-blocks/permission-system.html) 工具调用决策机制：允许 / 用户审批 / 拒绝。
-- [**Middleware** →](https://java.agentscope.io/v2/zh/docs/building-blocks/middleware.html) 基于 AOP 模式的 hook 事件拦截机制，灵活扩展推理-行动循环。
-- [**Workspace 与沙箱** →](https://java.agentscope.io/v2/zh/docs/harness/workspace.html) 在隔离环境中执行工具 —— 本地、Docker、Kubernetes 或 AgentRun 云沙箱。
-- [**多智能体编排** →](https://java.agentscope.io/v2/zh/docs/harness/subagent.html) 多种子智能体定义模式，`agent_spawn` / `agent_send` + 事件流实时转发。
-- [**分布式部署** →](https://java.agentscope.io/v2/zh/docs/others/going-to-production.html) 真正的分布式 session 与 memory 管理（Redis / MySQL / PostgreSQL / OSS / COS），跨副本 session 恢复。
+- [**事件系统** →](https://java.agentscope.io/dev/zh/docs/building-blocks/message-and-event.html) 统一的事件流，31 种类型化事件，服务于前端实时渲染与 human-in-the-loop。
+- [**权限系统** →](https://java.agentscope.io/dev/zh/docs/building-blocks/permission-system.html) 工具调用决策机制：允许 / 用户审批 / 拒绝。
+- [**Middleware** →](https://java.agentscope.io/dev/zh/docs/building-blocks/middleware.html) 基于 AOP 模式的 hook 事件拦截机制，灵活扩展推理-行动循环。
+- [**Workspace 与沙箱** →](https://java.agentscope.io/dev/zh/docs/harness/workspace.html) 在隔离环境中执行工具 —— 本地、Docker、Kubernetes 或 AgentRun 云沙箱。
+- [**多智能体编排** →](https://java.agentscope.io/dev/zh/docs/harness/subagent.html) 多种子智能体定义模式，`agent_spawn` / `agent_send` + 事件流实时转发。
+- [**分布式部署** →](https://java.agentscope.io/dev/zh/docs/others/going-to-production.html) 真正的分布式 session 与 memory 管理（Redis / MySQL / PostgreSQL / OSS / COS），跨副本 session 恢复。
 - [**智能体进化** →](https://help.aliyun.com/zh/document_detail/3042583.html) 提供 Agent 全栈观测与审计、Agent 评估与实验、Agent 资产管理与持续优化等能力。
 
 <img src="./docs/imgs/landscape.png" alt="agentscope" width="100%"/>
 
 ## 新闻
 <!-- BEGIN NEWS -->
-- **[2026-08] [AgentScope Service](./agentscope-service/README_zh.md)：** 可自托管的 Agent as a Service 平台，提供基于 HarnessAgent 的 Managed Agents、面向业务应用的 Session API 和多 Agent 协作。
 - **[2026-07] `v2.0.0 GA`：** 首个正式版本发布！双层 Agent 架构、事件流、权限系统、Middleware、Workspace 沙箱、多智能体编排、分布式部署全面就绪。 [文档](https://java.agentscope.io/) | [Release Notes](https://github.com/agentscope-ai/agentscope-java/releases/tag/v2.0.0)
 - **[2026-07] `v2.0.0-RC5`：** 模型提供商模块化拆分；统一 DataBlock 多模态支持；原生结构化输出；Channel IM 平台接入；腾讯云 COS 状态持久化。 [Release Notes](https://github.com/agentscope-ai/agentscope-java/releases/tag/v2.0.0-RC5)
 - **[2026-06] `v2.0.0-RC4`：** 异步工具执行与定时唤醒调度；子 agent 跨副本路由与 session 恢复。 [Release Notes](https://github.com/agentscope-ai/agentscope-java/releases/tag/v2.0.0-RC4)
@@ -111,7 +110,7 @@ AgentScope Java 2.0 是面向企业级、分布式、生产环境的智能体框
 </dependency>
 ```
 
-其他可选：`agentscope-extensions-model-openai`、`agentscope-extensions-model-anthropic`、`agentscope-extensions-model-gemini`、`agentscope-extensions-model-ollama`。详见[模型文档](https://java.agentscope.io/v2/zh/docs/building-blocks/model.html)。
+其他可选：`agentscope-extensions-model-openai`、`agentscope-extensions-model-anthropic`、`agentscope-extensions-model-gemini`、`agentscope-extensions-model-ollama`。详见[模型文档](https://java.agentscope.io/dev/zh/docs/building-blocks/model.html)。
 
 如果希望直接使用 `ReActAgent` 的推理和工具 API、自行组合工程能力，可依赖 `agentscope-core` 和所需模型扩展。
 
@@ -163,24 +162,7 @@ public class FirstAgent {
 }
 ```
 
-普通问答、多轮对话和工作流节点从 `call` / `streamEvents` 开始，详见[快速开始](https://java.agentscope.io/v2/zh/docs/quickstart)。两者默认也会记录 Harness 会话历史。需要关闭页面后继续执行、任务排队或中断后续做时，再引入 [AgentSession](https://java.agentscope.io/v2/zh/docs/harness/session-log)；[可恢复聊天示例](./agentscope-examples/agents/agentscope-chat/README_zh.md)提供完整接入流程。
-
-## AgentScope Service
-
-**[AgentScope Service](./agentscope-service/README_zh.md)** 是可自托管的 **Agent as a Service** 平台。其 **Managed Agents** 与 SDK 使用相同的 HarnessAgent 内核：通过 Console 或 API 配置指令、模型和工具，由 Service 管理 Agent 运行时、Session、后台执行与恢复。应用团队可以共享这些能力，无需为每个产品单独运维 Agent 运行服务。
-
-应用为 Agent、Team 或 Workflow 创建 **Session**，以 **Turn** 提交任务，通过 Session 状态与 **Events** 展示进度、处理人工输入并获取结果。用户留在原有业务产品中，业务应用继续负责数据授权与结果验收。先用一个 Managed Agent 验证交付，再按协作需要增加 Team、Workflow、External Agent 或 Hosted Coding Agent。
-
-```mermaid
-flowchart TB
-    App["业务应用"] -->|"Session / Turn / Events"| Service["AgentScope Service"]
-    Console["Console / 管理 API"] -->|"配置能力"| Service
-    Service --> Managed["Managed Agents: HarnessAgent"]
-    Managed --> Resources["模型 / 工具 / 执行环境"]
-    Service --> Collaboration["Team / Workflow / External 与 Hosted Agent"]
-```
-
-[部署 Service](https://java.agentscope.io/v2/zh/service/quickstart) → [创建第一个 Managed Agent](https://java.agentscope.io/v2/zh/service/create-managed-agent) → [通过 Session API 接入应用](https://java.agentscope.io/v2/zh/service/claude-session-api)。已有平台时，从创建 Agent 开始；业务接入设计见[场景案例](https://java.agentscope.io/v2/zh/service/usecases)。
+普通问答、多轮对话和工作流节点从 `call` / `streamEvents` 开始，详见[快速开始](https://java.agentscope.io/dev/zh/docs/quickstart)。两者默认也会记录 Harness 会话历史。需要关闭页面后继续执行、任务排队或中断后续做时，再引入 [AgentSession](https://java.agentscope.io/dev/zh/docs/harness/session-log)；[可恢复聊天示例](./agentscope-examples/agents/agentscope-chat/README_zh.md)提供完整接入流程。
 
 ## 核心设计
 
@@ -214,7 +196,7 @@ AgentScope Java 2.0 从"构建一个智能体"的工具箱，迈向**面向生�
 - **Middleware** —— `onAgent` / `onReasoning` / `onActing` / `onModelCall` / `onSystemPrompt` / `onAgentStateReady` 六阶段取代 v1 扁平 hook
 - **HITL 一等公民** —— 确认工具参数、审批敏感操作、交给外部系统执行，智能体在暂停点精确恢复
 
-完整架构概览请参阅[文档](https://java.agentscope.io/v2/zh/docs/index.html)。
+完整架构概览请参阅[文档](https://java.agentscope.io/dev/zh/docs/index.html)。
 
 ## 贡献
 

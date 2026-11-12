@@ -3,7 +3,7 @@
 [English](public-interaction-contract.en.md)
 
 机器可执行格式见 [schema.json](schema.json)，应用接入见
-[Java 使用指南](../../docs/v2/zh/docs/harness/durable.md)。只支持当前契约，不保留旧入口、
+[Java 使用指南](../../docs/dev/zh/docs/harness/durable.md)。只支持当前契约，不保留旧入口、
 格式转换、双协议或兼容分支。版本不匹配明确拒绝；幂等、fencing 与恢复保证不因此削弱。
 
 ## 1. 统一概念与生命周期

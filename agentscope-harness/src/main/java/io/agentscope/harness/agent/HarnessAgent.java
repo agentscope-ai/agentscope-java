@@ -1417,8 +1417,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
         /**
          * Enables AgentTeams mode: attaches {@link
          * io.agentscope.harness.agent.middleware.TeamsMiddleware} and registers the role-clipped
-         * {@code team} tool. Used for both Managed resolve({@code teamContext}) and Entry-B lead
-         * sessions that declare a roster template.
+         * {@code team} tool for the supplied team context.
          */
         public Builder teamsMode(
                 io.agentscope.harness.agent.team.TeamClient teamClient,
@@ -1429,7 +1428,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
         /**
          * Same as {@link #teamsMode(io.agentscope.harness.agent.team.TeamClient,
          * io.agentscope.harness.agent.team.TeamContext)} but also binds the middleware to {@code
-         * sessionId} so control-plane TeamEvents addressed at that session reach this agent.
+         * sessionId} so team wakeups addressed at that session reach this agent.
          */
         public Builder teamsMode(
                 io.agentscope.harness.agent.team.TeamClient teamClient,

@@ -152,12 +152,14 @@ function App() {
 
 ## Example Project
 
-See complete example at [agentscope-examples/documentation](https://github.com/agentscope-ai/agentscope-java/tree/main/agentscope-examples/documentation):
+See complete example at [agentscope-examples/agui](https://github.com/agentscope-ai/agentscope-java/tree/v1.0.11/agentscope-examples/agui):
+
+Run from a repository checkout at `v1.0.11`:
 
 ```bash
 export DASHSCOPE_API_KEY=your-key
-cd agentscope-examples/documentation
-mvn spring-boot:run -Dspring-boot.run.mainClass=io.agentscope.examples.documentation2.agui.AguiExampleApplication
+cd agentscope-examples/agui
+mvn spring-boot:run -Dspring-boot.run.mainClass=io.agentscope.examples.agui.AguiExampleApplication
 ```
 
 Visit http://localhost:8080 to see the demo.

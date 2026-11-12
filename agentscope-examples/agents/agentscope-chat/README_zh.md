@@ -2,7 +2,7 @@
 
 一个使用 HarnessAgent 和 agentscope-durable 的本地聊天应用。它演示持久任务、排队、暂停恢复、交互回答，以及公共消息和工具进度的 SSE 续传。
 
-普通单次问答仍可使用 Agent 的 `call` / `streamEvents`。本例需要在浏览器关闭或应用重启后继续任务，因此通过 `DurableRuntime` 装配本地后端与 AgentScope adapter，业务请求统一使用 `runtime`。概念与通用 API 见 [Durable 持久任务](https://java.agentscope.io/v2/zh/docs/harness/durable)。
+普通单次问答仍可使用 Agent 的 `call` / `streamEvents`。本例需要在浏览器关闭或应用重启后继续任务，因此通过 `DurableRuntime` 装配本地后端与 AgentScope adapter，业务请求统一使用 `runtime`。概念与通用 API 见 [Durable 持久任务](https://java.agentscope.io/dev/zh/docs/harness/durable)。
 
 ## 启动
 
@@ -11,7 +11,7 @@
 在仓库根目录运行：
 
 ```bash
-mvn -B -T1 -Dagentscope.frameworkOnly=true -pl agentscope-examples/agents/agentscope-chat -am package -DskipTests
+mvn -B -T1 -pl agentscope-examples/agents/agentscope-chat -am package -DskipTests
 java -jar agentscope-examples/agents/agentscope-chat/target/agentscope-chat.jar
 ```
 
@@ -93,7 +93,7 @@ java -jar agentscope-examples/agents/agentscope-chat/target/agentscope-chat.jar
 这是本机、单用户示例。生产应用可以使用相同 Client 和协议装配其他 Backend、独立 Brain 与 Hands，再由业务层提供鉴权和资源策略。Durable 不依赖 Managed Agents 平台。本例使用本地工具；独立队列 Worker 的完整流程见 Durable 的 Java examples。
 
 ```bash
-mvn -B -T1 -Dagentscope.frameworkOnly=true -pl agentscope-examples/agents/agentscope-chat -am test \
+mvn -B -T1 -pl agentscope-examples/agents/agentscope-chat -am test \
   -Dtest=ChatSessionsTest,ChatControllerTest -Dsurefire.failIfNoSpecifiedTests=false
 node --test agentscope-examples/agents/agentscope-chat/src/test/js/*.test.mjs
 ```

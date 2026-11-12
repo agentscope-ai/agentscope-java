@@ -1284,7 +1284,7 @@ sequenceDiagram
 
 ### 6.6 源码核对位置与实现边界
 
-下表中的完整路径相对于项目根目录。缩写 Core、Harness、Service Common 分别使用 `agentscope-core/src/main/java/io/agentscope/core/`、`agentscope-harness/src/main/java/io/agentscope/harness/`、`agentscope-service/service-common/src/main/java/io/agentscope/builder/` 前缀；Session Portal 使用 `agentscope-service/service-session-portal/` 前缀。它们指向当前工作区源码，文档示例本身不构成独立协议实现。
+下表中的完整路径相对于项目根目录。缩写 Core、Harness、Service Common 分别使用 [`agentscope-core/src/main/java/io/agentscope/core/`](https://github.com/agentscope-ai/agentscope-java/tree/v2.0.4/agentscope-core/src/main/java/io/agentscope/core)、[`agentscope-harness/src/main/java/io/agentscope/harness/`](https://github.com/agentscope-ai/agentscope-java/tree/v2.0.4/agentscope-harness/src/main/java/io/agentscope/harness)、[`agentscope-service/service-common/src/main/java/io/agentscope/builder/`](https://github.com/agentscope-ai/agentscope-java/tree/v2.0.4/agentscope-service/service-common/src/main/java/io/agentscope/builder) 前缀；Session Portal 使用 `agentscope-service/service-session-portal/` 前缀。链接仅提供 v2.0.4 的历史源码入口；下表的 Managed runtime、Session Portal、Hands、Core session 与 ExecutionIdentity/ActionObservations 路径属于后续开发记录，不存在于该 tag，保留为源码导读文本而不生成发布版链接。文档示例本身不构成独立协议实现。
 
 | 核对对象 | 关键源码位置 |
 | --- | --- |

@@ -199,12 +199,7 @@ public class SessionsTool {
                                                     return requireReply(r);
                                                 }))
                                 .whenComplete(
-                                        (value, error) ->
-                                                announce(
-                                                        runtimeContext,
-                                                        e.sessionKey(),
-                                                        value,
-                                                        error));
+                                        (value, error) -> announce(e.sessionKey(), value, error));
                         return resumeInfo
                                 + "\n"
                                 + String.format(BG_RESULT_TEMPLATE, taskId, taskId);
@@ -264,9 +259,7 @@ public class SessionsTool {
                                                         runtimeContext);
                                         return requireReply(r);
                                     }))
-                    .whenComplete(
-                            (value, error) ->
-                                    announce(runtimeContext, spawnedSessionKey, value, error));
+                    .whenComplete((value, error) -> announce(spawnedSessionKey, value, error));
             return spawnedInfo + "\n" + String.format(BG_RESULT_TEMPLATE, taskId, taskId);
         }
 
@@ -372,9 +365,7 @@ public class SessionsTool {
                                                         runtimeContext);
                                         return requireReply(r);
                                     }))
-                    .whenComplete(
-                            (value, error) ->
-                                    announce(runtimeContext, capturedTarget, value, error));
+                    .whenComplete((value, error) -> announce(capturedTarget, value, error));
             return String.format(BG_RESULT_TEMPLATE, taskId, taskId);
         }
 
@@ -597,12 +588,8 @@ public class SessionsTool {
         return SessionConstants.resolveRequesterKey(parentSessionKey);
     }
 
-    private void announce(RuntimeContext context, String key, String value, Throwable error) {
-        // AgentTaskStarter owns continuation and completion for managed work. Ordinary chat
-        // sessions retain gateway wakeups, after durable task state has been written.
-        if (context == null || !Boolean.TRUE.equals(context.get("agentTaskManaged"))) {
-            sessionAgentManager.announceCompletion(key, value, error);
-        }
+    private void announce(String key, String value, Throwable error) {
+        sessionAgentManager.announceCompletion(key, value, error);
     }
 
     private static String requireReply(SendResult result) {

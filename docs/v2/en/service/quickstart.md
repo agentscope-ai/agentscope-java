@@ -1,77 +1,95 @@
 ---
-title: "Deploy AgentScope Service"
-description: "Start AgentScope Service with Docker Compose, sign in to the console, and run your first Agent."
+title: "Local installation"
 zh_link: /v2/zh/service/quickstart
 ---
 
-Start Service locally with Docker Compose, then open Console or call the APIs directly. Local development automatically uses one developer identity and the default namespace, without sign-in, user tokens, application keys, or grant configuration.
-
-Prepare Git, OpenSSL, Docker Engine or Docker Desktop with Compose v2, a DashScope API key, and container-reachable Redis and RocketMQ Cluster Proxy endpoints. Initialize the [five business Lite Topics and groups](/v2/en/service/kubernetes#prepare-rocketmq) before starting Service. Docker supplies the Java, Go, and Node.js tools needed to build the services on the first start.
-
 <Note>
-Unauthenticated local mode requires a source build containing this feature. Published `2.1.0-BETA1` images do not support it. See [production deployment](/v2/en/service/kubernetes) for published images, Helm installation, and identity configuration.
+This is preview documentation. The official release is not yet available.
 </Note>
 
-## 1. Prepare the source and model
+This guide is for local developers. Use Docker Compose to start the complete AgentScope Service without building source. The published package includes Gateway, Control, Dataplane, Scheduler and PostgreSQL for evaluation, feature development and integration work. For Kubernetes/Helm deployments, see [production installation](/v2/en/service/kubernetes).
+
+## Prepare
+
+Install Docker Engine or Docker Desktop, Compose v2 and OpenSSL. Check `docker info` and `docker compose version`. Provide your own model credentials. Reserve persistent disk space for database and work files; CPU and memory depend on concurrency and tool load.
+
+Download `agentscope-service-VERSION-compose.tar.gz` and `SHA256SUMS` from the selected [Release](https://github.com/agentscope-ai/agentscope-java/releases). Compare the archive's SHA-256 with its manifest entry using `sha256sum` on Linux or `shasum -a 256` on macOS. Use the Release's VERSION and REGISTRY/NAMESPACE below; the registry path has no `https://` prefix.
+
+## 1. Start
 
 ```bash
-git clone https://github.com/agentscope-ai/agentscope-java.git
-cd agentscope-java/agentscope-service
-export DASHSCOPE_API_KEY="YOUR_DASHSCOPE_API_KEY"
+tar -xzf agentscope-service-VERSION-compose.tar.gz
+cd agentscope-service
+./init-env.sh VERSION REGISTRY/NAMESPACE
+docker compose pull
+docker compose up -d --wait --wait-timeout 600
 ```
 
-With an existing checkout, enter its `agentscope-service` directory and set the model credential.
+Initialization creates a mode-`600` `.env` with database, JWT, internal-token, Vault and initial administrator secrets. Running the script again preserves the file rather than changing versions or resetting passwords.
 
-## 2. Start Service
+## 2. Sign in
 
 ```bash
-./deploy/init-env.sh 2.1.0-local agentscope-local
-# Edit deploy/.env with reachable Redis/MQ endpoints and optional MQ authentication/TLS.
-export BUILDER_LOCAL_DEV=true
-export BUILDER_ALLOW_LOCAL_ENVIRONMENT=true
-docker compose --env-file deploy/.env config --quiet
-docker compose --env-file deploy/.env up -d --build --wait --wait-timeout 600
+docker compose ps
+curl -fsS http://localhost:18080/actuator/health
 ```
 
-These explicit development settings enable one developer identity and Local tool execution; source Compose binds Gateway to loopback. Local tools run in the Hands container. PostgreSQL starts with Compose; Redis and RocketMQ are operated separately. Four migration jobs initialize `cp/rt`, `portal`, `dp` and `ma`, then business-role grants run before services start. Checkpoints and oversized objects are stored in PostgreSQL. Model and external tool providers still require their own credentials.
+After the entire stack is healthy, open `http://localhost:18080`. Sign in with `admin` and `AISTIO_BOOTSTRAP_PASSWORD` from `.env`, then change the password in Profile. Bootstrap creates an administrator only in an empty user database; restarts do not reset accounts.
 
-The first build may take several minutes. On failure, inspect `docker compose --env-file deploy/.env ps -a`, then `docker compose --env-file deploy/.env logs --tail=100`.
+## 3. Configure execution
 
-## 3. Start using it directly
+For a trusted local evaluation, edit `.env`:
 
-Open [http://localhost:18080](http://localhost:18080). Console automatically enters with the development identity.
+```dotenv
+BUILDER_ALLOW_LOCAL_ENVIRONMENT=true
+DASHSCOPE_API_KEY=YOUR_MODEL_CREDENTIAL
+```
 
-Open **Design → Agents → New agent**, enter a name and **Instructions**, select **AgentScope Managed**, then click **Create & open agent**. Leave **Model** empty to use the default model.
+Supply the real credential and repeat `docker compose up -d --wait --wait-timeout 600`. Local tools execute inside Dataplane, without automatically mounting host files. Follow [quickstart](/v2/en/service/first-session) to create a Managed Agent.
 
-Continue with [your first Managed Agent](/v2/en/service/create-managed-agent) to configure an Environment, create a native Session, submit a `user.message` through `/events` and inspect the resulting Turn. This walkthrough uses the current `/v1/sessions` contract; the compatibility API for other backends is a separate path.
+Alternatively, connect an existing Coding Agent through [Hosted execution](/v2/en/service/hosted-agent). Keep Local disabled and configure an appropriate Environment when tool isolation is needed.
 
-You can also call the API without authentication headers:
+## Network surfaces
+
+| Component | Container port | Exposure |
+| --- | --- | --- |
+| Gateway | 8080 | Host `127.0.0.1:18080` by default |
+| Control | 8081 | Internal network |
+| Dataplane | 8082 | Internal network |
+| Scheduler | 8083 | Internal network |
+| PostgreSQL | 5432 | Internal network |
+
+A same-host reverse proxy can use `127.0.0.1:18080`. In another container, localhost refers to that proxy container; configure a shared network or reachable host address. Expose Gateway to users and keep internal components and PostgreSQL private.
+
+## Enable remote access
+
+Use this section when accessing your local service from another device or testing public OAuth/Channel callbacks. Prepare a domain and TLS certificate, then proxy HTTPS to Gateway. Set `BUILDER_OAUTH_PUBLIC_URL=https://agentscope.example.com` in `.env`. Adjust `BIND_ADDRESS` and `GATEWAY_PORT` if needed, then recreate containers.
+
+The proxy must forward SSE promptly, avoid event-stream caching and allow sufficiently long read timeouts. Verify login, long replies, reconnection and OAuth/Channel callbacks, not just the home page.
+
+## Persist data
+
+Named volumes store PostgreSQL, shared Workspaces and Artifacts. Locate project volumes with `docker volume ls` and back them up according to your storage policy. Preserve the Vault master key from `.env` with encrypted data.
+
+For host directories, configure explicit mounts and access for container user `65532:65532`. An Agent instruction containing a local path does not make it readable inside the container. File access must match the selected Environment.
+
+## Change configuration or version
+
+After editing `.env`:
 
 ```bash
-curl -sS --fail-with-body http://localhost:18080/api/v1/agents
+docker compose up -d --wait --wait-timeout 600
+docker compose ps
 ```
 
-Next, [run your first Managed Agent through the API](/v2/en/service/create-managed-agent). Stop with `docker compose --env-file deploy/.env down`; data volumes remain. See [production deployment](/v2/en/service/kubernetes#production-api-access) for authentication and authorization, and [operations](/v2/en/service/operations) for backups and upgrades.
+Pull new images before an upgrade. `init-env.sh` preserves existing configuration, so edit `SERVICE_VERSION` to change versions. Coordinate secret changes across consumers; Vault master keys cannot be casually replaced.
 
-<span id="1-start"></span>
-<span id="prepare"></span>
-<span id="1-initialize-deployment-and-configure-a-model"></span>
-<span id="2-start-and-sign-in"></span>
-<span id="2-sign-in"></span>
-<span id="3-configure-execution"></span>
-<span id="self-hosting"></span>
-<span id="three-deployment-boundaries"></span>
-<span id="choose-a-deployment-path"></span>
-<span id="hand-over-a-usable-platform"></span>
-<span id="operate-the-platform"></span>
-<span id="3-prepare-api-identity-and-namespace"></span>
-<span id="4-prepare-tool-execution"></span>
-<span id="5-check-readiness"></span>
-<span id="deployment-boundaries-and-production-planning"></span>
-<span id="network-surfaces"></span>
-<span id="enable-remote-access"></span>
-<span id="persist-data"></span>
-<span id="change-configuration-or-version"></span>
-<span id="stop-resume-and-diagnose"></span>
-<span id="1-download-and-configure"></span>
-<span id="3-sign-in-and-start-using-service"></span>
+Complete Compose runs standalone HTTP. ASDP-dependent SDKs need the [corresponding External integration deployment](/v2/en/service/external-agent). See [production installation](/v2/en/service/kubernetes) for production deployments and rehearse [recovery](/v2/en/service/operations) before upgrading.
+
+## Stop, resume and diagnose
+
+`docker compose down` stops services while preserving volumes. Repeat the startup command to resume. Do not add `-v` for ordinary shutdown; it deletes data volumes.
+
+For startup failure, inspect `docker compose ps -a` and `docker compose logs --tail=100` for image, database and component errors. Resolve a port conflict by changing `GATEWAY_PORT` and the corresponding `BUILDER_OAUTH_PUBLIC_URL` in `.env`, then recreate containers.
+
+Next: [Quickstart](/v2/en/service/first-session) · [Production installation](/v2/en/service/kubernetes).

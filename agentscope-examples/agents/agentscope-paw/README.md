@@ -15,10 +15,8 @@ ping it from a DM or @-mention it on an issue instead of opening yet another
 browser tab.
 
 paw deliberately doesn't try to be more than that. There's no login, no
-multi-tenant isolation, no Docker sandbox, no horizontal scaling. If you need
-any of those — host paw-style agents for a team, or run untrusted code in
-isolation — the sister projects [agentscope-service](../../../agentscope-service/)
-and [agentscope-dataagent](../agentscope-dataagent/) cover those use cases.
+multi-tenant isolation, no Docker sandbox, no horizontal scaling. For an
+assistant with sandbox isolation, see [agentscope-dataagent](../agentscope-dataagent/).
 
 ### At a glance
 
@@ -577,30 +575,20 @@ Recognised properties (all under `paw.*`, with matching `PAW_*` env vars):
 If you provide your own `Model` Spring bean (for example by importing another
 `@Configuration`), the auto-wired DashScope model is skipped.
 
-## Operate / Control Plane BYO and native history
+## Native session history
 
-Harness records the native Thread journal in the Workspace Filesystem's private partition. `AgentSessionHistorySource` serves messages through `threadTranscript()`, and Paw history pages read the same facts. TranscriptMiddleware, segmented transcripts and duplicate `.log.jsonl` writes have been removed; existing archives are not deleted.
+Harness records the native Thread journal in the Workspace Filesystem's private partition. Paw history pages read these records through `threadTranscript()`. Read native files through the ThreadJournal API, not a JSONL parser.
 
 ```bash
-export CLAW_CONTROLPLANE_ENABLED=true
-export CONTROL_PLANE_HTTP=http://localhost:8081
-export CLAW_CONTROLPLANE_AGENT_NAME=default
 # Optional shared native-log root; unset uses each agent's Workspace backend.
 export CLAW_SESSION_LOG_ROOT=/data/paw-session-history
 ```
 
-Operate history requires a reachable agent message contract; it no longer relies on service-controlplane reading a shared transcript tree. Keep the registered agent name aligned with the published agent. Native files have a version prefix: read them through the ThreadJournal API, not a JSONL parser.
-
 | Property | Environment | Default |
 | --- | --- | --- |
-| `claw.controlplane.enabled` | `CLAW_CONTROLPLANE_ENABLED` | `false` |
-| `claw.controlplane.control-http` | `CONTROL_PLANE_HTTP` | `http://localhost:8081` |
-| `claw.controlplane.agent-name` | `CLAW_CONTROLPLANE_AGENT_NAME` | `default` |
-| `claw.controlplane.namespace` | `CLAW_CONTROLPLANE_NAMESPACE` | `default` |
-| `claw.controlplane.contract-port` | `CLAW_CONTROLPLANE_CONTRACT_PORT` | `18090` |
 | `claw.session-log.root` | `CLAW_SESSION_LOG_ROOT` | Empty: Workspace backend |
 
-Remove old `claw.transcript.*` / `CLAW_TRANSCRIPT_*` settings. A custom `ThreadJournalStore` Spring Bean applies to built-in and dynamic agents. See [session logs and recovery](../../../../docs/v2/en/docs/harness/session-log.md) for storage, restoration and SSE integration.
+A custom `ThreadJournalStore` Spring Bean applies to built-in and dynamic agents. See [session logs and recovery](../../../docs/dev/en/docs/harness/session-log.md) for storage, restoration and SSE integration.
 
 ## What this fork is _not_
 

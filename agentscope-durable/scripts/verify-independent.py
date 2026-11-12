@@ -57,7 +57,7 @@ areas = [ROOT / "agentscope-durable", ROOT / "agentscope-examples/durable",
 for area in areas:
     for tree in area.glob("**/target/durable-dependencies.txt"):
         content = tree.read_text()
-        if any(name in content for name in ("managed-agents", "io.agentcore", "agentscope-service")):
+        if any(name in content for name in ("managed-agents", "io.agentcore")):
             raise SystemExit("Forbidden dependency: " + str(tree))
 for forbidden in ["io/agentcore", "io/agentscope/managed-agents-common"]:
     if (repository / forbidden).exists():

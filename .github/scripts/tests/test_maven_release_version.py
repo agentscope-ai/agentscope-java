@@ -54,8 +54,8 @@ class MavenReleaseVersionTest(unittest.TestCase):
     def test_reject_snapshot_and_unrelated_tags(self):
         for tag in (
             "v2.1.0-SNAPSHOT", "v2.1.0-snapshot", "2.1.0-BETA2", "v2.1",
-            "agentscope-service-v2.1.0-BETA2",
-            "agentscope-service/service-controlplane/v2.1.0-BETA2",
+            "library-v2.1.0-BETA2",
+            "library/component/v2.1.0-BETA2",
             "v2.1.0-BETA2\n", "v2.1.0;echo hello",
         ):
             with self.subTest(tag=tag), self.assertRaises(ValueError):
@@ -75,12 +75,11 @@ class MavenReleaseVersionTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "must use"):
             release.check_version(self.root, "v2.1.0-BETA2")
 
-    def test_exclude_entire_service_and_examples_trees(self):
+    def test_exclude_entire_examples_and_model_e2e_trees(self):
         self.write_poms("2.1.0-BETA2")
         (self.root / "pom.xml").write_text(
             '<project xmlns="http://maven.apache.org/POM/4.0.0"><modules>'
-            '<module>library</module><module>agentscope-service</module>'
-            '<module>agentscope-examples</module>'
+            '<module>library</module><module>agentscope-examples</module>'
             '<module>agentscope-extensions/agentscope-extensions-model</module>'
             '</modules></project>'
         )

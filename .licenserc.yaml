@@ -130,11 +130,6 @@ header:
     # Generated sources (controller-gen / protoc output)
     - '**/zz_generated.*.go'
     - '**/*.pb.go'
-    - 'agentscope-service/service-controlplane/sdk/python/agentscope_service/proto/**'
-    # Kubernetes manifests / Helm chart / built frontend assets
-    - 'agentscope-service/service-controlplane/config/**'
-    - 'agentscope-service/service-controlplane/helm/**'
-    - 'agentscope-service/service-controlplane/ui/**'
   comment: on-failure
 
   license-location-threshold: 130

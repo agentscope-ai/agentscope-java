@@ -1,58 +1,114 @@
 ---
-title: "Session history and live events"
-description: "Open and buffer a live stream, read history, then deduplicate stable Event IDs."
+title: "SSE format and task feedback"
 zh_link: /v2/zh/service/sse-events
 ---
 
-This page applies to the Managed Draft 3 first release. See [Session Event API](/v2/en/service/claude-session-api).
-Only ordinary live SSE is enabled; reliable resume is a separate future capability.
+<Note>
+This is preview documentation. The official release is not yet available.
+</Note>
 
-GET /v1/sessions/{session}/events/stream follows events after its connection boundary. The Service
-captures a durable position before flushing the connected comment, and reads committed facts after it.
-Notifications are not the only source of truth.
+After submitting work through an Endpoint, subscribe to the returned `eventsUrl` and query `statusUrl` for results. Follow [Endpoint integration](/v2/en/service/endpoints) to publish and submit requests. Console users handle notifications, approvals and acceptance in [Inbox](/v2/en/service/inbox).
+
+## Submit, subscribe and query
+
+1. Submit a Conversation or Job request. Save `invocationId`, `eventsUrl` and `statusUrl`; Conversation also returns identifiers such as `conversationId` and `turnId`.
+2. GET `eventsUrl` with the same credential and `Accept: text/event-stream`.
+3. Parse SSE frames, persist processed cursors and update the UI according to event type.
+4. Query `statusUrl` when the stream ends or disconnects to determine the invocation's status and result.
+
+`202 Accepted` acknowledges submission. SSE transports events; receiving an event or observing a closed connection does not by itself prove successful completion.
+
+## SSE frames
+
+Each business event contains `id`, `event` and JSON `data`, terminated by a blank line. This Conversation example uses demonstration identifiers, timestamps and content:
 
 ```text
-event: agent.message
-data: {"id":"evt_answer","type":"agent.message","content":[{"type":"text","text":"Done."}],"processed_at":"2026-10-19T07:01:36Z"}
+id: 7
+event: assistant.message
+data: {"id":145,"sessionFk":"11111111-1111-4111-8111-111111111111","seq":7,"eventType":"assistant.message","role":"assistant","content":"The action list is ready.","occurredAt":"2026-09-10T09:00:00Z"}
 
-: keepalive
 ```
 
-The first release rejects after, Last-Event-ID, preview and event_deltas. The official SDK beta=true
-transport flag is accepted. A Turn ending keeps the stream open; disconnecting does not cancel work.
-AgentScope-Extensions: turn-inputs-v1 adds platform fields and Turn/Input notifications. Standard-only
-streams contain standard types. Checkpoints, private thinking, leases and credentials remain private.
+| Field | Handling |
+| --- | --- |
+| SSE `id` | Ordered stream cursor for resumption, not the invocation ID |
+| SSE `event` | Event type; dispatch by type and tolerate unknown types |
+| SSE `data` | A JSON event object; parse Conversation and Job structures separately |
+| Blank line | End of a frame; a network chunk need not contain exactly one complete frame |
 
-Recovery order:
+While waiting for events, the service may send a `: heartbeat` comment. Ignore it rather than parsing it as JSON or treating it as work progress.
 
-1. Open a new live stream and buffer its events.
-2. Read /events?limit=100&order=asc, following next_page.
-3. Apply history and buffered events, deduplicating stable Event IDs.
-4. Continue consuming the stream; repeat after another disconnect.
+```text
+: heartbeat
 
-Reading history before opening a future-only stream leaves a gap. Pending admitted inputs are visible
-with processed_at=null; processing updates the same logical Event ID. History freezes its upper bound
-and projection versions, with types[] and processed_at time filters.
+```
 
-For results without observation, poll the Turn to terminal and page /turns/{turn}/output. This requires
-no SSE, snapshot or durable capability. Terminal without output returns empty data and its actual status.
-Handshake errors use HTTP JSON. A transport failure after opening disconnects the observer and does not
-fail execution. Read permission is rechecked periodically. Keepalive is not completion or a resume cursor.
+The transport uses standard SSE framing. Business events are Service Session or orchestration events, so do not assume a model vendor's token-delta payload or a fixed `[DONE]` marker.
 
-Reliable delivery, snapshots, preview and the new Managed Webhook protocol remain disabled. Other
-backends retain their own observation contracts; their cursors are not Managed history pages.
+## Conversation and Job payloads
 
-### Managed tool output and operation progress
+| | Conversation | Job |
+| --- | --- | --- |
+| Source | Runtime Session events | Run orchestration events |
+| Field corresponding to SSE `id` | `seq` | `sequence` |
+| Type field | `eventType` | `type` |
+| Correlation | `sessionFk`; runtimes may supply `frameworkMeta` | `runId`, with optional `nodeId`, `agentTaskId`, `attemptId` |
+| Common content | `role`, `content`, `toolName`, `toolInput`, `toolOutput` | `actor`, `payload`, `occurredAt` |
+| Example types | `assistant.message`, `turn.completed`, `turn.failed` | `run.started`, `node.succeeded`, `node.failed` |
 
-Use `agent.tool_use`, `agent.mcp_tool_use` and their result events to display tool activity. Merge updates by stable Event identity and read the targeted Turn/Input resources for execution and settlement. Tool output does not by itself prove that a Turn completed; final output is queried independently. Private checkpoints and execution leases are not public progress fields.
+Fields and event types depend on the execution path; providers need not emit the same types or granularity. Optional fields may be absent. Conversation JSON `id` identifies a stored record; resume using SSE `id` / `seq`. A Job JSON `id` likewise cannot replace `sequence`.
 
-## Webhooks
+Example Job event fields:
 
-The new Managed Draft 3 Webhook protocol remains disabled; `/capabilities` is authoritative and earlier native `/v1/sessions/{id}/webhooks` registration examples do not apply. Observe the Session event stream or query Turn/output resources instead. Hosted and External backends retain their separate `/api/v1/agent-sessions/{id}/webhooks` contract and existing delivery behavior. Automation inbound Webhooks remain a separate trigger mechanism; see [Automation](/v2/en/service/automation).
+```text
+id: 1
+event: run.started
+data: {"id":"22222222-2222-4222-8222-222222222222","runId":"33333333-3333-4333-8333-333333333333","tenant":"default","namespace":"default","sequence":1,"type":"run.started","actor":{"type":"system","ref":"endpoint:example"},"occurredAt":"2026-09-10T09:00:00Z"}
 
-{/* Preserve earlier anchors; current capability limits supersede the old examples. */}
-<span id="restore-a-snapshot-before-applying-events"></span>
-<span id="interpret-events-and-status"></span>
-<span id="pagination-reconnects-and-expiration"></span>
-<span id="notify-a-backend-while-users-are-offline"></span>
-<span id="managed-runtime-contract"></span>
+```
+
+Conversation events are read by Session cursor. The returned URL's `invocationId` associates stream termination with the current invocation; it does not filter Session history to that turn. Starting at cursor 0 can replay earlier events. Preserve processed cursors and use available correlation such as `frameworkMeta.turnId` to distinguish turns rather than displaying old output as a new reply.
+
+## Subscribe and resume
+
+Set `BASE_URL` to the Gateway origin, `ENDPOINT_TOKEN` to the credential used for submission, and `EVENTS_PATH` to the full returned relative `eventsUrl`, including query parameters:
+
+```bash
+curl -N --fail-with-body "$BASE_URL$EVENTS_PATH" \
+  -H "X-API-Key: $ENDPOINT_TOKEN" \
+  -H 'Accept: text/event-stream'
+```
+
+For `platform` authentication, replace the authentication header with `Authorization: Bearer $ENDPOINT_TOKEN`. Use an absolute returned URL directly instead of prefixing BASE_URL.
+
+Save the SSE `id` after successfully processing a frame. Query status after disconnection, then resubscribe if events are still needed. Use the same URL and credential; set `LAST_EVENT_ID` to the last processed cursor:
+
+```bash
+curl -N --fail-with-body "$BASE_URL$EVENTS_PATH" \
+  -H "X-API-Key: $ENDPOINT_TOKEN" \
+  -H 'Accept: text/event-stream' \
+  -H "Last-Event-ID: $LAST_EVENT_ID"
+```
+
+Both interfaces also accept an `after` query parameter. When both are present, they use the greater valid value and read subsequent events. Scope cursors to the corresponding Session or Run; never reuse them across unrelated streams. A client can disconnect after processing but before saving its cursor, so deduplicate by stream identity and SSE ID to avoid repeated notifications or business actions.
+
+Resubscription does not resubmit work. Use the original Idempotency-Key when retrying submission. Resolve authentication or authorization errors before reconnecting after 401/403. Proxies must forward events promptly, disable event-stream buffering and allow sufficiently long read timeouts.
+
+## Retrieve results and files
+
+Set `STATUS_PATH` to the submission response's `statusUrl`:
+
+```bash
+curl --fail-with-body "$BASE_URL$STATUS_PATH" \
+  -H "X-API-Key: $ENDPOINT_TOKEN"
+```
+
+- **Conversation**: the response contains `conversation` and `turns`. Match a returned turn's `id` to the submitted `invocationId` and inspect its status and error. Session events provide reply content.
+- **Job**: inspect `invocation.status`. Read `invocation.result` after `completed`, or `errorCode` and `errorMessage` on failure. The response may also include `run` and `issue` summaries.
+- **Deliverable files**: GET `/invoke/v1/jobs/{invocationId}/artifacts`, then download using the returned `downloadUrl` and the same credential.
+
+`accepted`, `dispatching`, `running` and `waiting` are nonterminal. `completed` indicates invocation completion; `failed`, `cancelled` and `timed_out` are unsuccessful terminal outcomes. One successful node does not complete a Run. Check Job results against the published output schema and business criteria, including whether partial success is sufficient.
+
+Handle human approvals or deliverable acceptance in [console Inbox](/v2/en/service/inbox) according to work policy. Reading SSE does not approve operations or accept deliverables.
+
+Use a Job from the [fulfillment case](/v2/en/service/cases/order-fulfillment) to practice progress subscription, cursor persistence, and final-result queries. Resume the original invocation with its own cursor.

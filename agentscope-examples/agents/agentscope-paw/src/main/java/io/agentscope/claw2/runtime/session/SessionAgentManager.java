@@ -532,10 +532,6 @@ public class SessionAgentManager {
                                                         io.agentscope.harness.agent.subagent.task
                                                                 .TaskRepository
                                                                 .SUPPRESS_COMPLETION_CALLBACK)))
-                        .put(
-                                "agentTaskManaged",
-                                parent != null
-                                        && Boolean.TRUE.equals(parent.get("agentTaskManaged")))
                         .build();
         Agent agent =
                 agentCache.computeIfAbsent(

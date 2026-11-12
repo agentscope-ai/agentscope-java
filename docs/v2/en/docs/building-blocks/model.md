@@ -100,68 +100,9 @@ ReActAgent agent =
                 .build();
 ```
 
-### Streaming scheduling and concurrency
-
-Model request preparation, blocking stream reads, and response delivery use three separate,
-lazily created AgentScope pools. They do not use Reactor's shared `boundedElastic` pool.
-The JDK transport sends streaming requests synchronously on its stream worker, avoiding the
-common-pool completion dependency of JDK `sendAsync`. Both JDK and OkHttp transports deliver
-chunks in order on a separate response scheduler, with bounded read-ahead (32 chunks by default).
-
-Set these JVM properties **before the corresponding pool is first used**:
-
-| Property | Default | Meaning |
-| --- | --- | --- |
-| `agentscope.model.requestThreadCap` | `max(64, availableProcessors × 10)` | Request preparation and blocking non-streaming model calls |
-| `agentscope.model.streamThreadCap` | `max(64, availableProcessors × 10)` | Blocking stream connections and reads |
-| `agentscope.model.responseThreadCap` | `max(64, availableProcessors × 10)` | Response delivery |
-| `agentscope.model.taskQueueCapacity` | `256` | Maximum queued tasks **per backing thread**, in each pool |
-
-All values must be positive. These limits apply to the shared pools within one JVM, not to
-individual models or HTTP connection pools. Threads are daemon threads; idle threads expire
-after 60 seconds. Shared schedulers returned by `ModelSchedulers` must not be disposed by
-individual components.
-
-For workload-specific isolation, both `JdkHttpTransport.builder()` and
-`OkHttpTransport.builder()` accept `streamScheduler` and `responseScheduler`:
-
-```java
-import io.agentscope.core.model.transport.HttpTransportConfig;
-import io.agentscope.core.model.transport.JdkHttpTransport;
-import reactor.core.scheduler.Scheduler;
-import reactor.core.scheduler.Schedulers;
-
-Scheduler reads = Schedulers.newBoundedElastic(128, 256, "my-model-reads");
-Scheduler responses = Schedulers.newBoundedElastic(32, 256, "my-model-responses");
-JdkHttpTransport transport = JdkHttpTransport.builder()
-        .streamScheduler(reads)
-        .responseScheduler(responses)
-        .config(HttpTransportConfig.builder().responsePrefetch(16).build())
-        .build();
-
-// OpenAIChatModel.builder().httpTransport(transport)...
-// DashScopeChatModel.builder().httpTransport(transport)...
-// On application shutdown: transport.close(); reads.dispose(); responses.dispose();
-```
-
-Injected schedulers are caller-owned: closing a transport does not dispose them. Reuse the
-transport across model instances, and dispose custom schedulers only after all their users
-have stopped. `HttpTransportConfig.responsePrefetch` must be positive; it bounds chunks
-between transport reads and delivery, not bytes or buffers added by application operators.
-The numbers above are examples, not recommended capacities for every deployment.
-
-A blocking read occupies one stream thread while waiting for data. Size this pool for active
-streams, including subagents, and measure scheduling delay, time to first chunk, and chunk
-processing time separately. A slow consumer still slows its own ordered stream once the
-prefetch is exhausted; keep callbacks short or isolate expensive application work with bounded
-concurrency. Existing first-chunk/idle timeouts and retry rules remain in effect. Scheduler
-queue saturation is reported as an error rather than creating unlimited worker threads.
-These transport overrides apply to providers using the JDK/OkHttp transport; SDK-based model
-extensions use the shared AgentScope schedulers instead.
-
 ### Spring Boot applications
 
-For Spring Boot, prefer provider-specific starters such as `agentscope-openai-spring-boot-starter`, `agentscope-openai-official-spring-boot-starter`, `agentscope-dashscope-spring-boot-starter`, `agentscope-gemini-spring-boot-starter`, `agentscope-anthropic-spring-boot-starter`, and `agentscope-ollama-spring-boot-starter`. These starters directly depend on the matching model extension, create Spring-managed `Model` beans, and leave the generic starter focused on common AgentScope infrastructure. They do not create models through the static `ModelRegistry`; advanced users can always provide their own `Model` bean.
+For Spring Boot, prefer provider-specific starters such as `agentscope-openai-spring-boot-starter`, `agentscope-dashscope-spring-boot-starter`, `agentscope-gemini-spring-boot-starter`, `agentscope-anthropic-spring-boot-starter`, and `agentscope-ollama-spring-boot-starter`. These starters directly depend on the matching model extension, create Spring-managed `Model` beans, and leave the generic starter focused on common AgentScope infrastructure. They do not create models through the static `ModelRegistry`; advanced users can always provide their own `Model` bean.
 
 OpenAI example:
 
@@ -185,7 +126,6 @@ default generation options, proxy/client settings, or provider-specific flags.
 | Starter | Customizer type |
 |---------|-----------------|
 | `agentscope-openai-spring-boot-starter` | `OpenAIChatModelBuilderCustomizer` |
-| `agentscope-openai-official-spring-boot-starter` | `OpenAIResponsesChatModelBuilderCustomizer` |
 | `agentscope-dashscope-spring-boot-starter` | `DashScopeChatModelBuilderCustomizer` |
 | `agentscope-gemini-spring-boot-starter` | `GeminiChatModelBuilderCustomizer` |
 | `agentscope-anthropic-spring-boot-starter` | `AnthropicChatModelBuilderCustomizer` |
@@ -430,7 +370,7 @@ Msg msg =
 WeatherInfo info = msg.getStructuredData(WeatherInfo.class);
 ```
 
-How it works: the framework synthesizes a forced structured tool call from the target class, validates and repairs the model output, and writes the result into `Msg.metadata` under the `_structured_output` key, so `getStructuredData(Class)` can deserialize it directly. Complete example: `agentscope-examples/documentation/.../structuredoutput/StructuredOutputExample.java`.
+How it works: the framework synthesizes a forced structured tool call from the target class, validates and repairs the model output, and writes the result into `Msg.metadata` under the `structured_output` key, so `getStructuredData(Class)` can deserialize it directly. Complete example: `agentscope-examples/documentation/.../structuredoutput/StructuredOutputExample.java`.
 
 #### Structured output path selection
 
@@ -442,10 +382,6 @@ The framework provides two structured output paths:
 | **Fallback** (default) | `supportsNativeStructuredOutput() = false` | Injects a `generate_response` synthetic tool; model returns structured data via tool call |
 
 If the native path fails (e.g. model returns HTTP 400), the framework **automatically falls back** to the synthetic tool path — no user intervention needed.
-
-Native structured output does not force a schema to strict mode. OpenAI and OpenAI Official
-manufacturer can enable it explicitly with `strictJsonSchema(true)`; a schema-level `strict` value
-always takes precedence.
 
 #### Default behavior per provider
 

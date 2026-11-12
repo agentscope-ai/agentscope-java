@@ -1,6 +1,6 @@
 # AgentScope Durable
 
-[Chinese usage guide](../docs/v2/zh/docs/harness/durable.md)
+[Chinese usage guide](../docs/dev/zh/docs/harness/durable.md)
 
 **AgentScope Durable is an embeddable framework for running Agent tasks across
 client disconnects, application restarts, and execution-host replacement.** It gives
@@ -29,7 +29,7 @@ verification.
 
 ## Start here
 
-- Application integration: [Java usage guide](../docs/v2/en/docs/harness/durable.md).
+- Application integration: [Java usage guide](../docs/dev/en/docs/harness/durable.md).
 - User operations, messages and events: [public interaction contract](protocol/public-interaction-contract.en.md).
 - Authoritative schema and shared fixtures: [protocol entry](protocol/README.md).
 - Host wiring and launch instructions: [Spring Boot examples](../agentscope-examples/durable/README.en.md).
@@ -440,7 +440,7 @@ operations are not promised exactly-once execution.
 
 ## Usage and reference
 
-- [Java usage guide](../docs/v2/en/docs/harness/durable.md): reconnect, control tasks,
+- [Java usage guide](../docs/dev/en/docs/harness/durable.md): reconnect, control tasks,
   configure independent Threads and diagnose recovery.
 - [Public interaction contract](protocol/public-interaction-contract.en.md): lifecycle,
   controls, messages and events.

@@ -2,7 +2,7 @@
 
 A local chat application built with HarnessAgent and agentscope-durable. It demonstrates persistent tasks, queuing, pause/resume, interaction answers, and SSE replay of public messages and tool progress.
 
-Ordinary single-request applications can still use Agent `call` / `streamEvents`. This example must continue after browser disconnects or application restarts, so `DurableRuntime` assembles the local backend and AgentScope adapter while business requests use `runtime`. See [Durable tasks](https://java.agentscope.io/v2/en/docs/harness/durable) for the concepts and general APIs.
+Ordinary single-request applications can still use Agent `call` / `streamEvents`. This example must continue after browser disconnects or application restarts, so `DurableRuntime` assembles the local backend and AgentScope adapter while business requests use `runtime`. See [Durable tasks](https://java.agentscope.io/dev/en/docs/harness/durable) for the concepts and general APIs.
 
 ## Run
 
@@ -11,7 +11,7 @@ Requires JDK 17+ and Maven. The default offline model needs no API key, database
 From the repository root:
 
 ```bash
-mvn -B -T1 -Dagentscope.frameworkOnly=true -pl agentscope-examples/agents/agentscope-chat -am package -DskipTests
+mvn -B -T1 -pl agentscope-examples/agents/agentscope-chat -am package -DskipTests
 java -jar agentscope-examples/agents/agentscope-chat/target/agentscope-chat.jar
 ```
 
@@ -93,7 +93,7 @@ Read ChatSessions.java for Runtime/factory assembly, ChatController.java for thi
 This is a local, single-user example. Production applications can use the same Client and protocol with other Backends and independent Brain/Hands processes, adding business authorization and resource policies. Durable does not depend on Managed Agents. This example uses local tools; Durable Java examples demonstrate queued Workers.
 
 ```bash
-mvn -B -T1 -Dagentscope.frameworkOnly=true -pl agentscope-examples/agents/agentscope-chat -am test \
+mvn -B -T1 -pl agentscope-examples/agents/agentscope-chat -am test \
   -Dtest=ChatSessionsTest,ChatControllerTest -Dsurefire.failIfNoSpecifiedTests=false
 node --test agentscope-examples/agents/agentscope-chat/src/test/js/*.test.mjs
 ```

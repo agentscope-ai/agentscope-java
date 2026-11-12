@@ -24,9 +24,8 @@ The same JAR runs as a single process for one team's monorepo or scales
 across replicas behind a load balancer — the dispatcher, queue and dedup
 store can be shared so any replica can pick up any conversation.
 
-Compared to its siblings: it's more locked-down than [claw] (claw runs on
-your shell) and more single-purpose than [builder] (Builder hosts arbitrary
-agents). codingagent is the one that **writes the code**.
+Compared to [claw], it's more locked-down (claw runs on your shell).
+codingagent is the one that **writes the code**.
 
 ### What it does
 
@@ -98,7 +97,6 @@ created on first use and reused across turns.
 ```
 
 [claw]: ../agentscope-paw/
-[builder]: ../../../agentscope-service/
 
 ---
 
@@ -174,7 +172,7 @@ You> /exit
 ```
 
 Workspace, chat history, and config are isolated from your project tree and from other harness
-apps (builder, dataagent, claw):
+apps (dataagent, claw):
 
 - **Workspace** (skills/memory/sessions/files the agent reads/writes): `~/.agentscope/codingagent/workspace/`
 - **Chat history** (per-thread SQLite): `./.agentscope/codingagent.db` (relative to where you ran `mvn`)

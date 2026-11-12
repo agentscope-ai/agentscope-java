@@ -292,8 +292,8 @@ java -jar agentscope-examples/agents/agentscope-builder/target/agentscope-builde
 
 服务起在 8080 端口，用 `admin/admin`、`bob/bob` 或 `alice/alice` 登录就能进入完整的 UI。生产部署相关的内容（数据库切换、沙箱镜像、分布式后端）见 [Builder README]。
 
-[Claw README]: https://github.com/agentscope-ai/agentscope-java/tree/main/agentscope-examples/agents/agentscope-paw
-[Builder README]: https://github.com/agentscope-ai/agentscope-java/tree/main/agentscope-service
+[Claw README]: https://github.com/agentscope-ai/agentscope-java/tree/v2.0.0-RC1/agentscope-examples/agents/agentscope-claw
+[Builder README]: https://github.com/agentscope-ai/agentscope-java/tree/v2.0.0-RC1/agentscope-examples/agents/agentscope-builder
 
 ---
 

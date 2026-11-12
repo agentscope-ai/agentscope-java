@@ -37,7 +37,6 @@ AI coding instructions for AgentScope Java.
 - `agentscope-core/` — core agent APIs, ReAct loop, messages, events, tools, middleware, state.
 - `agentscope-harness/` — workspace, memory, subagents, channels, `HarnessAgent`.
 - `agentscope-extensions/` — model, storage, protocol, channel, sandbox, framework integrations.
-- `agentscope-service/` — Java services; `service-controlplane/` is Go, `frontend/` is React.
 - `agentscope-examples/` — runnable examples.
 - `agentscope-dependencies-bom/` — third-party versions.
 - `agentscope-distribution/` — published BOM and aggregate distribution.
@@ -46,9 +45,8 @@ AI coding instructions for AgentScope Java.
 ### Read when relevant
 
 - Contribution rules: [CONTRIBUTING.md](CONTRIBUTING.md).
-- Harness behavior: [docs/v2/en/docs/harness/architecture.md](docs/v2/en/docs/harness/architecture.md).
+- Harness behavior: [docs/dev/en/docs/harness/architecture.md](docs/dev/en/docs/harness/architecture.md).
 - Channel vocabulary: [CONTEXT.md](CONTEXT.md).
-- Service work: [agentscope-service/README.md](agentscope-service/README.md).
 - Documentation work: [docs/README.md](docs/README.md).
 - POMs, manifests, and workflows are the source of truth for commands and versions.
 
@@ -57,10 +55,9 @@ AI coding instructions for AgentScope Java.
 ### Boundaries
 
 - Reusable agent behavior belongs in `agentscope-core`; higher-level capabilities belong in Harness.
-- Provider-specific code belongs in `agentscope-extensions`; application wiring belongs in examples or Service.
+- Provider-specific code belongs in `agentscope-extensions`; application wiring belongs in examples.
 - Library modules must not depend on `agentscope-examples/*`.
-- Keep core independent of Harness, Service, and concrete extensions.
-- Keep Service gateway, control plane, dataplane, and scheduler responsibilities separate.
+- Keep core independent of Harness and concrete extensions.
 - Keep transport handlers thin: decode → call → map.
 - New extension → update parent module, distribution, and BOM; run `.github/scripts/check-shade-and-bom-sync.sh`.
 
@@ -82,7 +79,6 @@ AI coding instructions for AgentScope Java.
 - Prefer JUnit 5, Mockito, Reactor `StepVerifier`, fakes, and local fixtures.
 - Use temporary directories and portable paths; do not use real credentials or provider services.
 - Do not weaken assertions for Windows-only flakes; mirror the production guard in the test.
-- Edit UI source in `agentscope-service/frontend/`; do not hand-edit generated `agentscope-service/service-controlplane/ui/`.
 - Keep English and Chinese docs aligned; follow `.editorconfig`.
 - Keep repository documentation user-facing. Store research/development plans, implementation and test progress, validation reports, and data used solely for test acceptance outside the source repository, under `~/agentscope-3/docs`. Do not add these as repository documentation or unpublished site drafts.
 
@@ -96,10 +92,8 @@ AI coding instructions for AgentScope Java.
 - Format: `mvn -T1 -pl <module> -am spotless:check`.
 - Full check: `mvn -B -T1 clean verify`.
 
-### Service and docs
+### Docs
 
-- UI: `cd agentscope-service/frontend; npm test; npm run lint; npm run build`.
-- Go: `cd agentscope-service/service-controlplane; make build; make test`.
 - Docs: `cd docs; npm test; npm run validate; npm run broken-links`.
 - Packaging/deployment: run the relevant release and source checks too.
 
@@ -108,7 +102,7 @@ AI coding instructions for AgentScope Java.
 - Inspect `git status` and relevant code first.
 - Clarify public behavior, compatibility, and scope before coding.
 - Implement → test → inspect the complete diff.
-- User-visible behavior change → update matching `docs/v2` EN and ZH pages and affected examples.
+- User-visible behavior change → update matching `docs/dev` EN and ZH pages and affected examples.
 - Run the relevant §4 check; cross-module or public-contract changes require the full check.
 - Check for unrelated files, generated output, format errors, and secrets.
 - Do not commit or push without user authorization.

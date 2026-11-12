@@ -35,6 +35,16 @@
   color: inherit;
 }
 
+.agentscope-landing .hs-version-note {
+  margin: 0 0 16px;
+  font-size: 0.875rem;
+}
+
+.agentscope-landing .hs-version-note a {
+  color: var(--hs-accent);
+  text-decoration: underline;
+}
+
 /* ================================================================
    Hero
    ================================================================ */
@@ -807,6 +817,13 @@
 /* ================================================================
    Responsive
    ================================================================ */
+@media (max-width: 1023px) {
+  /* Leave room for Mintlify's sticky mobile navigation above custom pages. */
+  .agentscope-landing {
+    padding-top: 48px;
+  }
+}
+
 @media (max-width: 1100px) {
   .hs-hero {
     grid-template-columns: 1fr !important;

@@ -1,7 +1,0 @@
-{
-  "version": 1,
-  "sessionId": "session-1",
-  "commandId": "command-1",
-  "configurationRevision": "revision-1",
-  "configurationDigest": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
-}

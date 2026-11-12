@@ -1,8 +1,0 @@
-# Apply after values-best-effort-10000.yaml; local configuration only, not a deployment.
-# 1024 bounds short blocking work, not the number of outstanding tool executions.
-tool-worker:
-  toolConcurrency: 1024
-  toolCallbacks: 16
-  toolRenewalThreads: 16
-  mcpWorkerThreads: 128
-  mcpCachedClients: 1024

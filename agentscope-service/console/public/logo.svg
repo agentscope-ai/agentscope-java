@@ -1,8 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64" fill="none">
-  <title>Managed Agents</title>
-  <rect width="64" height="64" rx="16" fill="#102A43"/>
-  <path d="M16 46V20L32 36L48 20V46" stroke="#5EEAD4" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
-  <circle cx="16" cy="20" r="4" fill="#E6FFFA"/>
-  <circle cx="32" cy="36" r="4" fill="#E6FFFA"/>
-  <circle cx="48" cy="20" r="4" fill="#E6FFFA"/>
-</svg>
