@@ -30,6 +30,7 @@ import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.event.AgentStartEvent;
 import io.agentscope.core.event.CustomEvent;
 import io.agentscope.core.middleware.AgentInput;
+import io.agentscope.core.middleware.InputMessageDeduplicationMiddleware;
 import io.agentscope.core.middleware.MiddlewareBase;
 import io.agentscope.core.model.ToolSchema;
 import io.agentscope.core.permission.PermissionBehavior;
@@ -203,6 +204,9 @@ public class AgentConfiguration {
                 .enableTaskList()
                 .permissionContext(workbenchPermissionContext())
                 .middleware(new WorkbenchEventMiddleware(workbenchStateRegistry))
+                // CopilotKit resends the full history every turn while this agent's context
+                // persists across calls: strip the overlapping prefix.
+                .middleware(new InputMessageDeduplicationMiddleware())
                 .maxIters(16)
                 .build();
     }
@@ -296,6 +300,9 @@ public class AgentConfiguration {
                                 .build())
                 .toolkit(toolkit)
                 //                .middleware(exampleCustomEventMiddleware())
+                // Full-history client resend × persisted agent context: deduplicate at
+                // the call boundary.
+                .middleware(new InputMessageDeduplicationMiddleware())
                 .maxIters(10)
                 .build();
     }
@@ -342,6 +349,7 @@ public class AgentConfiguration {
                                 .formatter(new DashScopeChatFormatter())
                                 .build())
                 .middleware(exampleCustomEventMiddleware())
+                .middleware(new InputMessageDeduplicationMiddleware())
                 .maxIters(1)
                 .build();
     }
@@ -371,6 +379,7 @@ public class AgentConfiguration {
                                 .build())
                 .toolkit(toolkit)
                 .middleware(exampleCustomEventMiddleware())
+                .middleware(new InputMessageDeduplicationMiddleware())
                 .maxIters(5)
                 .build();
     }
