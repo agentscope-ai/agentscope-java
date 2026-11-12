@@ -71,7 +71,6 @@ import org.a2aproject.sdk.spec.AgentInterface;
 import org.a2aproject.sdk.spec.TaskNotFoundError;
 import org.a2aproject.sdk.spec.TaskStatusUpdateEvent;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -323,6 +322,34 @@ class A2aHttpEndToEndTest {
     }
 
     @Test
+    void streamingCallReturnsFinalResultWithoutDeltas() {
+        runner.script(messages -> reply("final-only answer"));
+
+        Msg result = newAgent(null).call(userMsg("hi")).block(TIMEOUT);
+
+        assertThat(result).isNotNull();
+        assertThat(result.getTextContent()).isEqualTo("final-only answer");
+    }
+
+    @Test
+    void streamingEventsReturnFinalResultWithoutDeltas() {
+        runner.script(messages -> reply("final-only answer"));
+
+        List<AgentEvent> events =
+                newAgent(null).streamEvents(userMsg("hi")).collectList().block(TIMEOUT);
+
+        assertThat(events).isNotNull();
+        assertThat(events)
+                .filteredOn(AgentResultEvent.class::isInstance)
+                .extracting(event -> ((AgentResultEvent) event).getResult().getTextContent())
+                .containsExactly("final-only answer");
+        assertThat(events)
+                .filteredOn(TextBlockDeltaEvent.class::isInstance)
+                .extracting(event -> ((TextBlockDeltaEvent) event).getDelta())
+                .containsExactly("final-only answer");
+    }
+
+    @Test
     void streamingCallDeliversToolResults() {
         runner.script(
                 messages ->
@@ -413,10 +440,6 @@ class A2aHttpEndToEndTest {
     }
 
     @Test
-    @Disabled(
-            "AgentScopeAgentExecutor.cancel() cancels the upstream subscription, so the blocking"
-                    + " execution never receives a terminal signal and stays blocked; re-enable"
-                    + " once cancellation releases the execution (#3546)")
     void interruptCancelsRemoteTask() throws Exception {
         Sinks.Empty<Void> release = Sinks.empty();
         runner.script(

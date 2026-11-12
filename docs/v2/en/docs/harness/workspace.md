@@ -201,16 +201,16 @@ for message examples, dynamic sources and budgeting.
 
 ### Two-layer reads (filesystem-first + local fallback)
 
-For every "file injected into the prompt" (`AGENTS.md` / `MEMORY.md` / `knowledge/KNOWLEDGE.md` / `additionalContextFile`), `WorkspaceManager.readWithOverride()` does a **two-layer read**:
+Reads ask the configured `AbstractFilesystem` first — the path resolves inside the caller's namespace, so a per-caller copy wins — then fall back to local disk. Where the fallback lands depends on who owns the data:
 
-```
-1. Ask the configured AbstractFilesystem: do you have this relative path?
-   ├─ yes → return that content (the "override" layer)
-   └─ no  → fall through to step 2
-2. Read local disk at workspace.resolve(relativePath)
-```
+| Data | Filesystem layer | Local fallback |
+|---|---|---|
+| `AGENTS.md` / `knowledge/KNOWLEDGE.md` / `additionalContextFile` / `tools.json` | `<namespace>/<path>` | `workspace/<path>` (shared template) |
+| `MEMORY.md` / `memory/*.md` / task records | `<namespace>/<path>` | `<namespace>/<path>` |
 
-Writes always go through layer 1 (the filesystem store), never directly to local disk.
+The root copy of shared configuration is a template any caller may read, so it serves as the fallback. The root copy of per-identity data belongs to no identity, so that data falls back inside the caller's namespace only; a root-level leftover is no longer served to identified callers — move it into the namespace directory when upgrading. Contexts without a namespace or a configured filesystem keep the root read for both.
+
+Writes always go through the filesystem store, never directly to local disk.
 
 This pattern earns its keep in **shared-store mode**: the first replica starts with the team-git-synced `AGENTS.md` template available on local disk, so it works immediately; later any override (e.g. from an admin console editor) lands in the shared KV, and every replica's next `call()` reads the latest version. Template is fallback, remote override is truth.
 
@@ -340,7 +340,7 @@ Write path:
 
 Read path:
 
-- Framework reads `MEMORY.md` itself (two-layer; filesystem first).
+- The framework reads the caller's namespaced `MEMORY.md` itself (two-layer; filesystem first).
 - Agent can actively call `memory_search` / `memory_get` for older entries. See [Memory](/v2/en/docs/harness/memory).
 
 ### How namespace isolation maps to physical location
@@ -433,6 +433,19 @@ A JSON file at the workspace root, read once during `build()`:
       "command": "python",
       "args": ["mcp_servers/my_server.py"],
       "env": {"PYTHONUNBUFFERED": "1"}
+    },
+    "untrusted-3p": {
+      // connection-level cut-off: no session metadata ever leaves the process
+      "transport": "http",
+      "url": "https://third-party.example.com/mcp",
+      "propagateMeta": false
+    },
+    "internal": {
+      // registration-level default, with a per-tool re-enable
+      "transport": "http",
+      "url": "https://internal.example.com/mcp",
+      "propagateMetaDefault": false,
+      "propagateMetaOverrides": {"send_callback": true}
     }
   }
 }
@@ -441,6 +454,7 @@ A JSON file at the workspace root, read once during `build()`:
 Behavior notes:
 
 - **MCP servers are registered into the toolkit once at build time**; the agent sees the tools they expose.
+- **Meta propagation to MCP servers is controlled by three optional fields**, mirroring the three-level switches of the core MCP client: `propagateMeta` (connection level — a deployment cut-off; core evaluates it live on every call, but Harness currently exposes no runtime handle to flip it, so treat it as build-time configuration), `propagateMetaDefault` (registration level — every tool from this server is registered silent by default), and `propagateMetaOverrides` (per tool — a tool name that is not registered from this server fails the registration loudly, so an override is never lost; a per-tool `true` cannot overrule a `false` connection-level switch). When all are absent, the core default applies (metadata is propagated).
 - **`allow` / `deny` are applied after every tool has been registered** — including Harness built-ins (`read_file` / `memory_search` / `agent_spawn` / …). **When you use `allow` to whitelist, list the built-ins you want to keep too**, otherwise they get filtered out alongside everything else.
 - `${ENV_VAR}` syntax substitutes environment variables; missing variables warn and substitute the empty string.
 - Don't want a file? Pass `builder.toolsConfig(ToolsConfig.builder()...)` directly, or fully disable reading with `disableToolsConfig()`.

@@ -364,11 +364,18 @@ import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.middleware.AgentInput;
 import io.agentscope.core.middleware.MiddlewareBase;
+import java.util.EnumSet;
+import java.util.Set;
 import java.util.function.Function;
 import reactor.core.publisher.Flux;
 
 /** Log user / request id and propagate a trace id for downstream tools. */
 public class RequestContextMiddleware implements MiddlewareBase {
+
+    @Override
+    public Set<ExtensionPoint> activePoints() {
+        return EnumSet.of(ExtensionPoint.ON_AGENT);
+    }
 
     @Override
     public Flux<AgentEvent> onAgent(
@@ -407,6 +414,11 @@ MiddlewareBase lowerPriority = new MiddlewareBase() {
     @Override
     public int order() {
         return 0;
+    }
+
+    @Override
+    public Set<ExtensionPoint> activePoints() {
+        return EnumSet.noneOf(ExtensionPoint.class);  // no hooks, zero participation
     }
 };
 ```
@@ -449,21 +461,17 @@ Use `onActing` to manipulate the event stream, gate a whole batch of tool calls,
 
 ### Extension point participation (`activePoints()`)
 
-`MiddlewareBase.activePoints()` declares at which extension points the middleware is active. It is a **participation switch**, not a statement about which methods are overridden:
+**Implement `activePoints()` in every middleware you write and return the exact set of points it hooks.** This is the expected practice for application code, libraries, and AI-generated middlewares alike; the `null` default below exists only for API compatibility. `MiddlewareBase.activePoints()` is a **participation switch**, not a statement about which methods are overridden:
 
-| Declaration | Method overridden | Behavior |
-|-------------|-------------------|----------|
-| Point included | Yes | Participates normally |
-| Point included | No | Runs the default (pass-through) — legal redundancy |
-| Point omitted | Yes | The method is never invoked — an intentional opt-out |
-| Point omitted | No | The middleware does not exist at this point |
+- Including a point means participating there; without an overridden method, the default pass-through runs — legal redundancy.
+- Omitting a point means the middleware does not exist there: it takes no slot in the chain, and even an overridden method is never invoked (an intentional opt-out).
 
 Key semantics:
 
-- **Default is active everywhere.** Middlewares that do not override `activePoints()` keep today's behavior unchanged, including at extension points added in future releases.
-- **Overriding means taking over.** Once overridden, the active set is exactly the returned set. A point you forgot to declare is silently inactive even though its method is overridden.
+- **Declare exactly the points you hook.** Every middleware should override `activePoints()` with exactly the set it hooks — `EnumSet.allOf(ExtensionPoint.class)` declares participation at every point. The declaration is authoritative: read once at agent construction, it beats auto-detection below.
+- **The `null` default exists for API compatibility only — do not rely on it.** The default implementation returns `null` so that middlewares written before this contract keep compiling and running unchanged. Today `null` resolves through auto-detection: the middleware participates exactly at the points whose hook methods its class implements (inherited implementations count), computed once per class and cached. Auto-detection is a legacy fallback, not a substitute for declaring intent — it cannot express an intentional opt-out, and it lights up points for hooks overridden only by pass-through base classes. Its behavior may change in future releases, so always implement `activePoints()` in new code.
 - **Empty set is legal.** `EnumSet.noneOf(ExtensionPoint.class)` disables the middleware at every point while keeping its registration — useful as a runtime switch.
-- **Frozen at construction.** The agent reads declarations once when it is built; later changes to the returned set have no effect on an already-built agent.
+- **Frozen at construction.** The agent resolves participation once when it is built; later changes to the returned set have no effect on an already-built agent.
 - **Orthogonal to `order()`.** The declaration only answers *whether* a middleware participates at a point, never *in what order* — participants keep the usual `order()` semantics.
 
 ```java
@@ -481,9 +489,11 @@ MiddlewareBase timingOnly =
         };
 ```
 
-**Recommended practice:** define `activePoints()` accurately for every middleware you write. Precise declarations let the framework skip non-participants entirely — an extension point with no participants builds no wrapper at all (zero wrapper layers, no pipeline assembly), which keeps chains short and the effective execution plan visible at build time. Not declaring keeps the fully compatible default (active everywhere), so adding the declaration later never breaks behavior — it only narrows participation.
+Precise declarations keep chains short: an extension point with no participants builds no wrapper at all (zero wrapper layers, no pipeline assembly), and the effective execution plan is visible at build time. `middlewaresAt(point)` contains the declared (or detected) participants — never middlewares with no logic at the point. Do not lean on auto-detection just because it works today: detection behavior may change in a future release, while an explicit declaration is a stable contract.
 
-The same applies when subclassing a built-in middleware: shipped classes declare exactly the points they hook, so a subclass that overrides an additional hook (e.g. adding `onModelCall` to `TaskReminderMiddleware`) must extend the inherited `activePoints()` — otherwise the new hook is silently skipped.
+The same applies when subclassing a built-in middleware: shipped classes declare exactly the points they hook, so a subclass that overrides an additional hook (e.g. adding `onModelCall` to `TaskReminderMiddleware`) must extend the inherited `activePoints()` — otherwise the new hook is never invoked.
+
+Adding a new extension point follows one review rule: a point whose activation has side effects beyond the participating middleware itself (for example, changing global event routing) must never be activated through auto-detection alone — activation with global effects requires an explicit declaration or an explicit switch, never `!middlewaresAt(point).isEmpty()`.
 
 ## Practical examples
 
@@ -496,10 +506,18 @@ import io.agentscope.core.agent.Agent;
 import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.middleware.MiddlewareBase;
 import io.agentscope.core.middleware.ModelCallInput;
+import java.util.EnumSet;
+import java.util.Set;
 import java.util.function.Function;
 import reactor.core.publisher.Flux;
 
 public class TimingMiddleware implements MiddlewareBase {
+
+    @Override
+    public Set<ExtensionPoint> activePoints() {
+        return EnumSet.of(ExtensionPoint.ON_MODEL_CALL);
+    }
+
     @Override
     public Flux<AgentEvent> onModelCall(
             Agent agent, ModelCallInput input, Function<ModelCallInput, Flux<AgentEvent>> next) {
@@ -524,6 +542,8 @@ import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.middleware.MiddlewareBase;
 import io.agentscope.core.middleware.ModelCallInput;
 import java.time.Duration;
+import java.util.EnumSet;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Function;
 import reactor.core.publisher.Flux;
@@ -536,6 +556,11 @@ public class RateLimitMiddleware implements MiddlewareBase {
 
     public RateLimitMiddleware(Duration minInterval) {
         this.minIntervalMs = minInterval.toMillis();
+    }
+
+    @Override
+    public Set<ExtensionPoint> activePoints() {
+        return EnumSet.of(ExtensionPoint.ON_MODEL_CALL);
     }
 
     @Override
@@ -558,6 +583,8 @@ Inject runtime context into the system prompt. Or reuse the example `middleware/
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.middleware.MiddlewareBase;
 import java.time.Instant;
+import java.util.EnumSet;
+import java.util.Set;
 import java.util.function.Supplier;
 import reactor.core.publisher.Mono;
 
@@ -567,6 +594,11 @@ public class DynamicContextMiddleware implements MiddlewareBase {
 
     public DynamicContextMiddleware(Supplier<String> contextFn) {
         this.contextFn = contextFn;
+    }
+
+    @Override
+    public Set<ExtensionPoint> activePoints() {
+        return EnumSet.of(ExtensionPoint.ON_SYSTEM_PROMPT);
     }
 
     @Override
@@ -589,6 +621,8 @@ import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.middleware.MiddlewareBase;
 import io.agentscope.core.middleware.ModelCallInput;
 import io.agentscope.core.model.Model;
+import java.util.EnumSet;
+import java.util.Set;
 import java.util.function.Function;
 import reactor.core.publisher.Flux;
 
@@ -598,6 +632,11 @@ public class ModelFallbackMiddleware implements MiddlewareBase {
 
     public ModelFallbackMiddleware(Model fallback) {
         this.fallback = fallback;
+    }
+
+    @Override
+    public Set<ExtensionPoint> activePoints() {
+        return EnumSet.of(ExtensionPoint.ON_MODEL_CALL);
     }
 
     @Override
@@ -639,10 +678,17 @@ import io.agentscope.core.event.RequestStopEvent;
 import io.agentscope.core.message.GenerateReason;
 import io.agentscope.core.middleware.ActingInput;
 import io.agentscope.core.middleware.MiddlewareBase;
+import java.util.EnumSet;
+import java.util.Set;
 import java.util.function.Function;
 import reactor.core.publisher.Flux;
 
 public class StopOnAllDeniedMiddleware implements MiddlewareBase {
+
+    @Override
+    public Set<ExtensionPoint> activePoints() {
+        return EnumSet.of(ExtensionPoint.ON_ACTING);
+    }
 
     @Override
     public Flux<AgentEvent> onActing(

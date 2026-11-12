@@ -20,6 +20,9 @@ import java.io.BufferedReader;
 import java.io.BufferedWriter;
 import java.io.IOException;
 import java.io.OutputStreamWriter;
+import java.nio.ByteBuffer;
+import java.nio.CharBuffer;
+import java.nio.channels.FileChannel;
 import java.nio.charset.CharsetEncoder;
 import java.nio.charset.CodingErrorAction;
 import java.nio.charset.StandardCharsets;
@@ -36,6 +39,9 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
+import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.locks.ReentrantLock;
 import java.util.regex.Pattern;
 import java.util.stream.Stream;
 import reactor.core.publisher.Mono;
@@ -65,6 +71,12 @@ import reactor.core.scheduler.Schedulers;
  *
  * <p>Features: atomic file operations, UTF-8 encoding, graceful handling of missing
  * sessions, hash-based append-or-rewrite for list state.
+ *
+ * <p>Concurrency: operations on a session share a JVM-wide lock for that session directory.
+ * The root is resolved to its real path, so stores opened through root aliases share locks. The
+ * locks do not span processes: a session must be owned by one process at a time. File locks are
+ * advisory and unreliable on network file systems such as NFS, so deployments that share sessions
+ * across processes should use a database-backed {@link AgentStateStore} instead.
  */
 public class JsonFileAgentStateStore implements AgentStateStore {
 
@@ -73,6 +85,10 @@ public class JsonFileAgentStateStore implements AgentStateStore {
 
     /** Pattern for file-system safe characters: alphanumeric, underscore, hyphen, dot. */
     private static final Pattern SAFE_FILENAME_PATTERN = Pattern.compile("^[a-zA-Z0-9_\\-.]+$");
+
+    // Keep locks after session deletion so queued operations and later saves use the same lock.
+    private static final ConcurrentHashMap<Path, ReentrantLock> SESSION_LOCKS =
+            new ConcurrentHashMap<>();
 
     private final Path rootDirectory;
 
@@ -90,34 +106,45 @@ public class JsonFileAgentStateStore implements AgentStateStore {
      * @param rootDirectory root directory under which user / session sub-directories live
      */
     public JsonFileAgentStateStore(Path rootDirectory) {
-        this.rootDirectory = rootDirectory;
         try {
             Files.createDirectories(rootDirectory);
+            this.rootDirectory = rootDirectory.toRealPath();
         } catch (IOException e) {
-            throw new RuntimeException("Failed to create root directory: " + rootDirectory, e);
+            throw new RuntimeException("Failed to initialize root directory: " + rootDirectory, e);
         }
     }
 
     @Override
     public void save(String userId, String sessionId, String key, State value) {
-        Path file = getStatePath(userId, sessionId, key);
-        ensureDirectoryExists(file.getParent());
+        Path sessionDir = getSessionDir(userId, sessionId);
+        Path file = getStatePath(sessionDir, key);
+        String json = JsonUtils.getJsonCodec().toPrettyJson(value);
+        ReentrantLock lock = lockFor(sessionDir);
+        lock.lock();
         try {
-            String json = JsonUtils.getJsonCodec().toPrettyJson(value);
+            ensureDirectoryExists(file.getParent());
             atomicWriteString(file, json);
         } catch (IOException e) {
             throw new RuntimeException("Failed to save state: " + key, e);
+        } finally {
+            lock.unlock();
         }
     }
 
     @Override
     public void save(String userId, String sessionId, String key, List<? extends State> values) {
-        Path file = getListPath(userId, sessionId, key);
-        Path hashFile = getHashPath(userId, sessionId, key);
-        ensureDirectoryExists(file.getParent());
+        Path sessionDir = getSessionDir(userId, sessionId);
+        Path file = getListPath(sessionDir, key);
+        Path hashFile = getHashPath(sessionDir, key);
+        String currentHash = ListHashUtil.computeHash(values);
 
+        // The whole read-hash-count + append/rewrite sequence must run under the session lock:
+        // two concurrent list saves would otherwise append the same tail twice, or interleave
+        // an append with a rewrite.
+        ReentrantLock lock = lockFor(sessionDir);
+        lock.lock();
         try {
-            String currentHash = ListHashUtil.computeHash(values);
+            ensureDirectoryExists(file.getParent());
             String storedHash = readHashFile(hashFile);
             long existingCount = countLines(file);
             boolean needsFullRewrite =
@@ -132,32 +159,57 @@ public class JsonFileAgentStateStore implements AgentStateStore {
             writeHashFile(hashFile, currentHash);
         } catch (IOException e) {
             throw new RuntimeException("Failed to save list: " + key, e);
+        } finally {
+            lock.unlock();
         }
     }
 
     private void rewriteEntireList(Path file, List<? extends State> values) throws IOException {
-        Path tmp = file.resolveSibling(file.getFileName() + ".tmp");
-        try (BufferedWriter writer =
-                newUtf8ReplacingWriter(
-                        tmp,
-                        StandardOpenOption.CREATE,
-                        StandardOpenOption.TRUNCATE_EXISTING,
-                        StandardOpenOption.WRITE)) {
-            for (State item : values) {
-                writer.write(JsonUtils.getJsonCodec().toJson(item));
-                writer.newLine();
+        Path tmp = uniqueTmpSibling(file);
+        try {
+            try (BufferedWriter writer =
+                    newUtf8ReplacingWriter(
+                            tmp,
+                            StandardOpenOption.CREATE,
+                            StandardOpenOption.TRUNCATE_EXISTING,
+                            StandardOpenOption.WRITE)) {
+                for (State item : values) {
+                    writer.write(JsonUtils.getJsonCodec().toJson(item));
+                    writer.newLine();
+                }
             }
+            Files.move(
+                    tmp, file, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
+        } finally {
+            // toJson can throw a RuntimeException mid-write; the finally keeps unique tmp
+            // names (never reclaimed by a later write) from piling up. No-op after a
+            // successful move.
+            deleteQuietly(tmp);
         }
-        Files.move(tmp, file, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
     }
 
     private void appendToList(Path file, List<? extends State> items) throws IOException {
-        try (BufferedWriter writer =
-                newUtf8ReplacingWriter(
-                        file, StandardOpenOption.CREATE, StandardOpenOption.APPEND)) {
-            for (State item : items) {
-                writer.write(JsonUtils.getJsonCodec().toJson(item));
-                writer.newLine();
+        // Serialize before touching the file and undo a write that fails part-way, so a failed
+        // save never leaves part of its tail behind.
+        StringBuilder lines = new StringBuilder();
+        for (State item : items) {
+            lines.append(JsonUtils.getJsonCodec().toJson(item)).append(System.lineSeparator());
+        }
+        ByteBuffer bytes = utf8ReplacingEncoder().encode(CharBuffer.wrap(lines));
+        try (FileChannel channel =
+                FileChannel.open(file, StandardOpenOption.CREATE, StandardOpenOption.APPEND)) {
+            long originalSize = channel.size();
+            try {
+                while (bytes.hasRemaining()) {
+                    channel.write(bytes);
+                }
+            } catch (IOException e) {
+                try {
+                    channel.truncate(originalSize);
+                } catch (IOException rollbackFailure) {
+                    e.addSuppressed(rollbackFailure);
+                }
+                throw e;
             }
         }
     }
@@ -165,65 +217,105 @@ public class JsonFileAgentStateStore implements AgentStateStore {
     @Override
     public <T extends State> Optional<T> get(
             String userId, String sessionId, String key, Class<T> type) {
-        Path file = getStatePath(userId, sessionId, key);
-        if (!Files.exists(file)) {
-            return Optional.empty();
-        }
+        Path sessionDir = getSessionDir(userId, sessionId);
+        Path file = getStatePath(sessionDir, key);
+        // Readers take the session lock too: on Windows an open read handle blocks another
+        // thread's replace of the same file (AccessDeniedException), so reads and writes must
+        // be mutually exclusive.
+        ReentrantLock lock = lockFor(sessionDir);
+        lock.lock();
         try {
-            String json = Files.readString(file, StandardCharsets.UTF_8);
-            return Optional.of(JsonUtils.getJsonCodec().fromJson(json, type));
-        } catch (IOException e) {
-            throw new RuntimeException("Failed to load state: " + key, e);
+            if (!Files.exists(file)) {
+                return Optional.empty();
+            }
+            try {
+                String json = Files.readString(file, StandardCharsets.UTF_8);
+                return Optional.of(JsonUtils.getJsonCodec().fromJson(json, type));
+            } catch (IOException e) {
+                throw new RuntimeException("Failed to load state: " + key, e);
+            }
+        } finally {
+            lock.unlock();
         }
     }
 
     @Override
     public <T extends State> List<T> getList(
             String userId, String sessionId, String key, Class<T> itemType) {
-        Path file = getListPath(userId, sessionId, key);
-        if (!Files.exists(file)) {
-            return List.of();
-        }
+        Path sessionDir = getSessionDir(userId, sessionId);
+        Path file = getListPath(sessionDir, key);
+        ReentrantLock lock = lockFor(sessionDir);
+        lock.lock();
         try {
-            List<T> result = new ArrayList<>();
-            try (BufferedReader reader = Files.newBufferedReader(file, StandardCharsets.UTF_8)) {
-                String line;
-                while ((line = reader.readLine()) != null) {
-                    if (!line.isBlank()) {
-                        result.add(JsonUtils.getJsonCodec().fromJson(line, itemType));
+            if (!Files.exists(file)) {
+                return List.of();
+            }
+            try {
+                List<T> result = new ArrayList<>();
+                try (BufferedReader reader =
+                        Files.newBufferedReader(file, StandardCharsets.UTF_8)) {
+                    String line;
+                    while ((line = reader.readLine()) != null) {
+                        if (!line.isBlank()) {
+                            result.add(JsonUtils.getJsonCodec().fromJson(line, itemType));
+                        }
                     }
                 }
+                return result;
+            } catch (IOException e) {
+                throw new RuntimeException("Failed to load list: " + key, e);
             }
-            return result;
-        } catch (IOException e) {
-            throw new RuntimeException("Failed to load list: " + key, e);
+        } finally {
+            lock.unlock();
         }
     }
 
     @Override
     public boolean exists(String userId, String sessionId) {
-        return Files.exists(getSessionDir(userId, sessionId));
-    }
-
-    @Override
-    public void delete(String userId, String sessionId) {
         Path dir = getSessionDir(userId, sessionId);
-        if (Files.exists(dir)) {
-            deleteDirectory(dir);
+        ReentrantLock lock = lockFor(dir);
+        lock.lock();
+        try {
+            return Files.exists(dir);
+        } finally {
+            lock.unlock();
         }
     }
 
     @Override
+    public void delete(String userId, String sessionId) {
+        deleteSession(getSessionDir(userId, sessionId));
+    }
+
+    @Override
     public void delete(String userId, String sessionId, String key) {
+        Path sessionDir = getSessionDir(userId, sessionId);
+        ReentrantLock lock = lockFor(sessionDir);
+        lock.lock();
         try {
-            Files.deleteIfExists(getStatePath(userId, sessionId, key));
+            Files.deleteIfExists(getStatePath(sessionDir, key));
+            Files.deleteIfExists(getListPath(sessionDir, key));
+            Files.deleteIfExists(getHashPath(sessionDir, key));
+            if (Files.exists(sessionDir)) {
+                boolean empty;
+                try (Stream<Path> files = Files.list(sessionDir)) {
+                    empty = files.findAny().isEmpty();
+                }
+                if (empty) {
+                    Files.delete(sessionDir);
+                }
+            }
         } catch (IOException e) {
             throw new RuntimeException("Failed to delete state: " + key, e);
+        } finally {
+            lock.unlock();
         }
     }
 
     @Override
     public Set<String> listSessionIds(String userId) {
+        // Only reads directory entries, never a session's files, so it takes no session lock;
+        // a session created or deleted concurrently may or may not be listed.
         Path userDir = rootDirectory.resolve(safeSegment(normalizeUser(userId)));
         if (!Files.isDirectory(userDir)) {
             return Set.of();
@@ -239,7 +331,7 @@ public class JsonFileAgentStateStore implements AgentStateStore {
         }
     }
 
-    /** Returns the configured root directory (for diagnostics). */
+    /** Returns the real root directory (for diagnostics). */
     public Path getRootDirectory() {
         return rootDirectory;
     }
@@ -264,8 +356,9 @@ public class JsonFileAgentStateStore implements AgentStateStore {
                                                     (Iterable<Path>)
                                                             sessionDirs.filter(Files::isDirectory)
                                                                     ::iterator) {
-                                                deleteDirectory(sessionDir);
-                                                deletedCount++;
+                                                if (deleteSession(sessionDir)) {
+                                                    deletedCount++;
+                                                }
                                             }
                                         }
                                     }
@@ -288,16 +381,16 @@ public class JsonFileAgentStateStore implements AgentStateStore {
                 .resolve(safeSegment(requireSessionId(sessionId)));
     }
 
-    private Path getStatePath(String userId, String sessionId, String key) {
-        return getSessionDir(userId, sessionId).resolve(key + ".json");
+    private static Path getStatePath(Path sessionDir, String key) {
+        return sessionDir.resolve(key + ".json");
     }
 
-    private Path getListPath(String userId, String sessionId, String key) {
-        return getSessionDir(userId, sessionId).resolve(key + ".jsonl");
+    private static Path getListPath(Path sessionDir, String key) {
+        return sessionDir.resolve(key + ".jsonl");
     }
 
-    private Path getHashPath(String userId, String sessionId, String key) {
-        return getSessionDir(userId, sessionId).resolve(key + ".hash");
+    private static Path getHashPath(Path sessionDir, String key) {
+        return sessionDir.resolve(key + ".hash");
     }
 
     private String readHashFile(Path hashFile) {
@@ -316,16 +409,43 @@ public class JsonFileAgentStateStore implements AgentStateStore {
     }
 
     private static void atomicWriteString(Path file, String content) throws IOException {
-        Path tmp = file.resolveSibling(file.getFileName() + ".tmp");
-        try (BufferedWriter writer =
-                newUtf8ReplacingWriter(
-                        tmp,
-                        StandardOpenOption.CREATE,
-                        StandardOpenOption.TRUNCATE_EXISTING,
-                        StandardOpenOption.WRITE)) {
-            writer.write(content);
+        Path tmp = uniqueTmpSibling(file);
+        try {
+            try (BufferedWriter writer =
+                    newUtf8ReplacingWriter(
+                            tmp,
+                            StandardOpenOption.CREATE,
+                            StandardOpenOption.TRUNCATE_EXISTING,
+                            StandardOpenOption.WRITE)) {
+                writer.write(content);
+            }
+            Files.move(
+                    tmp, file, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
+        } finally {
+            deleteQuietly(tmp);
         }
-        Files.move(tmp, file, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
+    }
+
+    private static ReentrantLock lockFor(Path sessionDir) {
+        return SESSION_LOCKS.computeIfAbsent(
+                sessionDir.toAbsolutePath().normalize(), ignored -> new ReentrantLock());
+    }
+
+    // Unique tmp names are never overwritten by a later write, so a failed one must be
+    // removed explicitly or it stays on disk forever.
+    private static void deleteQuietly(Path file) {
+        try {
+            Files.deleteIfExists(file);
+        } catch (IOException ignored) {
+            // best-effort cleanup while propagating the original failure
+        }
+    }
+
+    // A fixed ".tmp" sibling races when two threads persist the same state concurrently: one
+    // thread's move consumes the file the other is still writing, surfacing as
+    // NoSuchFileException and potentially persisting interleaved (corrupt) content.
+    private static Path uniqueTmpSibling(Path file) {
+        return file.resolveSibling(file.getFileName() + "." + UUID.randomUUID() + ".tmp");
     }
 
     private static BufferedWriter newUtf8ReplacingWriter(Path file, StandardOpenOption... options)
@@ -362,22 +482,31 @@ public class JsonFileAgentStateStore implements AgentStateStore {
         }
     }
 
-    private void deleteDirectory(Path dir) {
+    private boolean deleteSession(Path sessionDir) {
+        ReentrantLock lock = lockFor(sessionDir);
+        lock.lock();
         try {
-            if (Files.exists(dir)) {
-                try (Stream<Path> paths = Files.walk(dir)) {
-                    paths.sorted(Comparator.reverseOrder())
-                            .forEach(
-                                    path -> {
-                                        try {
-                                            Files.delete(path);
-                                        } catch (IOException e) {
-                                            throw new RuntimeException(
-                                                    "Failed to delete: " + path, e);
-                                        }
-                                    });
-                }
+            if (!Files.exists(sessionDir)) {
+                return false;
             }
+            deleteDirectory(sessionDir);
+            return true;
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    private void deleteDirectory(Path dir) {
+        try (Stream<Path> paths = Files.walk(dir)) {
+            paths.sorted(Comparator.reverseOrder())
+                    .forEach(
+                            path -> {
+                                try {
+                                    Files.delete(path);
+                                } catch (IOException e) {
+                                    throw new RuntimeException("Failed to delete: " + path, e);
+                                }
+                            });
         } catch (IOException e) {
             throw new RuntimeException("Failed to delete directory: " + dir, e);
         }

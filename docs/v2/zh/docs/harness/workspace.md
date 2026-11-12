@@ -194,16 +194,16 @@ AGENTS.md 不需要 XML 标签。注入时适用说明位于规则正文首行�
 
 ### 两层读架构（filesystem-first + 本地兜底）
 
-对所有"被注入到 prompt 的关键文件"（`AGENTS.md` / `MEMORY.md` / `knowledge/KNOWLEDGE.md` / `additionalContextFile`），`WorkspaceManager.readWithOverride()` 都走**两层读**：
+读操作先问配置的 `AbstractFilesystem`（路径按 caller 命名空间解析，用户级副本优先），未命中再落本地磁盘；兜底落点取决于数据归谁：
 
-```
-1. 问当前配置的 AbstractFilesystem：有没有这个 relative path？
-   ├─ 有 → 返回该内容（"覆盖"层）
-   └─ 没有 → 走第 2 步
-2. 读本地磁盘 workspace.resolve(relativePath)
-```
+| 数据 | filesystem 层 | 本地兜底 |
+|---|---|---|
+| `AGENTS.md` / `knowledge/KNOWLEDGE.md` / `additionalContextFile` / `tools.json` | `<namespace>/<path>` | `workspace/<path>`（共享模板） |
+| `MEMORY.md` / `memory/*.md` / task records | `<namespace>/<path>` | `<namespace>/<path>` |
 
-写入永远走第 1 层（filesystem 后端），从不直接落到本地磁盘。
+共享配置的根副本是任何 caller 都能读的模板，因此兜底到根；按身份数据的根副本不属于任何身份，只在 caller 命名空间内兜底——根级遗留不再服务已识别 caller，升级时挪进命名空间目录。没有命名空间或未配置 filesystem 时，两者仍读根。
+
+写入永远走 filesystem 后端，不直接落本地磁盘。
 
 这套两层读的价值在**共享存储模式**最明显：第一个副本启动时本地磁盘上有团队 git 同步过来的 `AGENTS.md` 模板，立刻可用；之后任何节点对 `AGENTS.md` 的覆盖（例如管理台编辑）会写到共享 KV，所有副本下一次 `call()` 就读到最新版本。模板是 fallback，远端覆盖是事实。
 
@@ -333,7 +333,7 @@ workspace/
 
 读取路径：
 
-- 框架自动读 `MEMORY.md`（两层读，filesystem 优先）；
+- 框架自动读当前 caller 命名空间下的 `MEMORY.md`（两层读，filesystem 优先）；
 - agent 可主动调 `memory_search` / `memory_get` 找老内容（详见 [记忆](/v2/zh/docs/harness/memory)）。
 
 ### 命名空间隔离怎么落到路径上
@@ -426,6 +426,19 @@ tools: [read_file, grep_files]   # 可选；继承工具的白名单
       "command": "python",
       "args": ["mcp_servers/my_server.py"],
       "env": {"PYTHONUNBUFFERED": "1"}
+    },
+    "untrusted-3p": {
+      // 连接级一刀切：会话 meta 整体不出进程
+      "transport": "http",
+      "url": "https://third-party.example.com/mcp",
+      "propagateMeta": false
+    },
+    "internal": {
+      // 注册级默认静默，再对个别工具细粒度放行
+      "transport": "http",
+      "url": "https://internal.example.com/mcp",
+      "propagateMetaDefault": false,
+      "propagateMetaOverrides": {"send_callback": true}
     }
   }
 }
@@ -434,6 +447,7 @@ tools: [read_file, grep_files]   # 可选；继承工具的白名单
 行为细节：
 
 - **MCP server 在构建期一次性注册到 toolkit**，agent 看到的就是这些 server 暴露的工具。
+- **meta 透传由三个可选字段控制**，与 core MCP client 的三级开关一一对应：`propagateMeta`（连接级——部署态一刀切；core 每次调用实时判定该开关，但 Harness 当前不提供运行时取回入口，按构建期配置对待）、`propagateMetaDefault`（注册级——该 server 注册的所有工具默认静默）、`propagateMetaOverrides`（工具级——放行个别工具；写错的工具名会让本次注册直接失败，绝不静默丢失；工具级 `true` 压不过连接级 `false`，连接级始终是实时天花板）。三个都不写时保持 core 默认行为（meta 全部透传）。
 - **`allow` / `deny` 在所有工具注册完之后才应用**——所以也会过滤掉 Harness 的内置工具（`read_file` / `memory_search` / `agent_spawn` 等）。**用 `allow` 列白名单时务必把要保留的内置工具一并列出**，否则会一起被砍掉。
 - `${ENV_VAR}` 语法做环境变量替换；未设置时给 warning 并替换成空字符串。
 - 不想用文件？直接 `builder.toolsConfig(ToolsConfig.builder()...)` 编程注入；要完全关掉读取用 `disableToolsConfig()`。

@@ -55,6 +55,8 @@ HarnessAgent agent = HarnessAgent.builder()
 | `addSharedPrefix(String)` | 额外的工作区相对路径前缀也路由到 KV（例如 `"prompts/"` / `"configs/"`） | 无 |
 | `workspaceIndex(WorkspaceIndex)` | 加速远端 ls/glob/grep 的 SQLite 索引 | 不加索引，走全量扫描 |
 
+可选的本地索引无法初始化时（例如 `.index/workspace.db` 已损坏），`WorkspaceIndex.open(workspaceRoot)` 返回 `null`，并关闭本次尝试中已经获取的连接。调用方可以回退到远端扫描，不会保留这条初始化失败的连接。成功返回的索引会持有连接，直到调用 `close()`。
+
 #### 内置路由规则
 
 框架自动把以下路径路由到共享 KV，每个路径段各自独立命名空间，不会互相污染：
@@ -358,6 +360,9 @@ HarnessAgent agent = HarnessAgent.builder()
 | `addRoot(Path)` | 额外允许访问的宿主目录 | 无 |
 | `additionalRoots(Collection)` | 批量设置额外目录 | 无 |
 | `projectWritable(boolean)` | 文件工具写项目文件时直接落到项目目录，而非 workspace | `false` |
+| `namespaceBoundary(Boolean)` | 覆盖命名空间边界开关（绝对路径只能落到 workspace 下调用者自己的命名空间内，参见[隔离维度](#isolationscope--多用户与多副本怎么分桶)）；传 `true`/`false` 强制开关，不传则取默认 | `ROOTED` 时开启 |
+
+> **升级提示 — workspace 根目录下的绝对路径：** `ROOTED` workspace 默认启用命名空间边界后，形如 `<workspace>/skills/tool.md` 的绝对路径无法再触及 workspace 根目录下的共享内容（此前任一会话都可以借绝对路径访问其他会话的目录）。共享内容仍然可以通过 workspace 相对路径访问（overlay 会将其解析到只读的项目层）；经过安全评估的单租户 workspace 如需保留旧行为，传 `.namespaceBoundary(false)` 即可。
 
 #### 路径解析策略（`LocalFsMode`）
 
@@ -510,7 +515,9 @@ workspace/
 
 所有文件工具都通过 `AbstractFilesystem` 接口调用，每次操作传入当前 `RuntimeContext`，由文件系统后端决定实际读写位置。agent 代码完全感知不到模式差异。
 
-`read_file` 默认每次最多返回 16,000 个 Unicode 码点，即使省略 `limit` 或单行内容很长也受此限制。可选参数 `max_chars` 可调整每页大小，硬上限为 32,000。`offset` 和 `limit` 仍按行选择内容；`char_offset` 从零开始，在**同一行范围返回的文本内**按字符分页。发生截断时，结果会给出下一页的 `char_offset`，继续读取时保持 path、`offset` 和 `limit` 不变。分页不会拆开 Unicode 代理对。拼接多页时应保持文件不变，偏移量不代表不可变快照。
+`read_file` 默认每次最多返回 16,000 个 Unicode 码点，即使省略 `limit` 或单行内容很长也受此限制。可选参数 `max_chars` 可调整每页大小，请求值不会超过应用配置的上限（默认 32,000）。`offset` 和 `limit` 仍按行选择内容；`char_offset` 从零开始，在**同一行范围返回的文本内**按字符分页。发生截断时，结果会给出下一页的 `char_offset`，继续读取时保持 path、`offset` 和 `limit` 不变。分页不会拆开 Unicode 代理对。拼接多页时应保持文件不变，偏移量不代表不可变快照。
+
+通过 `HarnessAgent.Builder.readFileMaxChars(int)` 配置上限。例如，`.readFileMaxChars(64_000)` 允许工具调用请求最多 64,000 个码点。配置值不得小于 16,000，更小的值会抛出 `IllegalArgumentException`。自动创建的通用子 Agent 和声明式子 Agent 均继承此配置。提高上限后，省略 `max_chars` 时的默认读取量仍为 16,000。直接使用 `FilesystemTool` 时，可通过 `(filesystem, pathNormalizer, readFileMaxChars)` 构造器传入上限；现有构造器继续使用默认上限。
 
 转存后的工具结果文件也受此限制。这是适用于所有文件系统后端的工具输出上限，不限制后端读取所选内容时的内存分配和 I/O。二进制文件按编码后的文本分页，需拼接完整内容后再解码。
 
@@ -540,7 +547,9 @@ workspace/
 
 ## 工作区里的两层读取
 
-`AGENTS.md`、`MEMORY.md`、`KNOWLEDGE.md` 等关键文件在读取时有"两层兜底"：先看你配的文件系统后端，没有再退回本地磁盘。这对**模式 1（共享存储）下的"模板文件"** 很有用：第一个副本启动时本地有 `AGENTS.md` 模板，立刻可用；后续副本会从共享存储读出最新版本。
+`AGENTS.md`、`KNOWLEDGE.md` 等关键文件在读取时有"两层兜底"：先看你配的文件系统后端，没有再退回本地磁盘。这对**模式 1（共享存储）下的"模板文件"** 很有用：第一个副本启动时本地有 `AGENTS.md` 模板，立刻可用；后续副本会从共享存储读出最新版本。
+
+按身份的运行时数据（`MEMORY.md`、`memory/*.md`、task records）兜底落在 **caller 命名空间内**，不会回退到 workspace 根。规则见 [workspace](/v2/zh/docs/harness/workspace#两层读架构filesystem-first--本地兜底)。
 
 写入永远走配置的文件系统后端。
 

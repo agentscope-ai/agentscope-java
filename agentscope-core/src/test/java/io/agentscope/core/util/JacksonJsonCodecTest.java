@@ -273,4 +273,20 @@ class JacksonJsonCodecTest {
         assertEquals(original.author.age, deserialized.author.age);
         assertEquals(original.tags, deserialized.tags);
     }
+
+    @Test
+    void roundTripsStringsLongerThanJacksonDefaultReadLimit() {
+        // Jackson's default StreamReadConstraints reject any single string value above
+        // 20,000,000 characters on read, while toJson imposes no cap. Every AgentStateStore
+        // persists through this codec and inline Base64 media routinely exceeds that, so a
+        // state that saved successfully must stay loadable: what the codec writes, it reads.
+        String value = "a".repeat(20_000_001);
+        SimpleModel original = new SimpleModel(value, 1);
+
+        String json = codec.toJson(original);
+        SimpleModel deserialized = codec.fromJson(json, SimpleModel.class);
+
+        assertEquals(value.length(), deserialized.name.length());
+        assertEquals(value, deserialized.name);
+    }
 }

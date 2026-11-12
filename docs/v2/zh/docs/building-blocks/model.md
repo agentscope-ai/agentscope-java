@@ -28,14 +28,14 @@ CredentialBase/
 
 特定模型提供商的实现已经从 `agentscope-core` 迁移到独立扩展模块中。每个模型适配模块自己维护 chat model、credential、formatter、DTO、异常、SDK/API client 等。
 
-| 提供商 | Maven artifact | 主要包名 |
-|--------|----------------|----------|
-| OpenAI | `agentscope-extensions-model-openai` | `io.agentscope.extensions.model.openai` |
+| 提供商          | Maven artifact                                | 主要包名                                        |
+| --------------- | --------------------------------------------- | ----------------------------------------------- |
+| OpenAI          | `agentscope-extensions-model-openai`          | `io.agentscope.extensions.model.openai`         |
 | OpenAI Official | `agentscope-extensions-model-openai-official` | `io.agentscope.extensions.model.openaiofficial` |
-| DashScope | `agentscope-extensions-model-dashscope` | `io.agentscope.extensions.model.dashscope` |
-| Gemini | `agentscope-extensions-model-gemini` | `io.agentscope.extensions.model.gemini` |
-| Anthropic | `agentscope-extensions-model-anthropic` | `io.agentscope.extensions.model.anthropic` |
-| Ollama | `agentscope-extensions-model-ollama` | `io.agentscope.extensions.model.ollama` |
+| DashScope       | `agentscope-extensions-model-dashscope`       | `io.agentscope.extensions.model.dashscope`      |
+| Gemini          | `agentscope-extensions-model-gemini`          | `io.agentscope.extensions.model.gemini`         |
+| Anthropic       | `agentscope-extensions-model-anthropic`       | `io.agentscope.extensions.model.anthropic`      |
+| Ollama          | `agentscope-extensions-model-ollama`          | `io.agentscope.extensions.model.ollama`         |
 
 ### 迁移步骤
 
@@ -63,17 +63,54 @@ CredentialBase/
 
 ## 选择模型创建方式
 
+### 模型标识符
+
+五个名词覆盖全部词汇。它们是注册表层的规范术语——不随消费 API 变化而漂移——当前与未来的任何接口都应精确取用对应名词，而不是让一个词承载多种含义：
+
+| 术语                                                     | 示例                               | 含义                                                                                                                                                                                               |
+| -------------------------------------------------------- | ---------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `providerId`                                             | `dashscope`                        | 路由键，`modelId` 的前缀                                                                                                                                                                           |
+| `modelId`                                                | `dashscope:qwen-max`               | 配方 `providerId + ":" + modelName`（发往上游 API 的裸目录名）——"造什么"，注册表路由层的路由参数                                                                                                   |
+| `modelCreationContextId`<br/>（方法参数名：`contextId`） | `mytokenplan01`                    | 说白了，就是给一个经 `ModelRegistry.registerCreationContext` 注册的 `ModelCreationContext` 起的注册名——命名一套凭据/端点（"用什么造"）；`getCreationContext(name)` 取回它，`name@modelId` 用它解析 |
+| `modelInstanceId`                                        | `my-prod-model-01`                 | 说白了，就是给一个完整 `Model` 对象实例起的注册名——`register` / `unregister` / `getRegistered` 三件套，`resolve(name)` 原样返回该实例                                                              |
+| `modelIdentity`                                          | `mytokenplan01@dashscope:qwen-max` | 模型选择串——`ModelRegistry.resolve` 的解析入参，也是 agent 级 `model(String)` 的惰性引用：组合形式 `contextId@modelId`，或裸 `modelId`                                                             |
+
+```text
+modelId       = providerId + ":" + modelName
+modelIdentity = modelCreationContextId + "@" + modelId   （组合形式；裸 modelId 也是合法身份串）
+```
+
+**`modelId` 与 `modelIdentity` 的区别**——近形词，两个层面：
+
+- `modelId` 回答"造什么"：配方串，不含凭据维度。它是注册表路由层的词——`ModelRegistry.resolve`、`registerFactory`、provider 的 `supports` 说的都是 modelId。
+- `modelIdentity` 回答"用哪个模型"：选择串——`ModelRegistry.resolve(...)` 的入参，也是 agent 级 `model(String)` 的惰性引用。路由不可信选择的场景由应用自行掌握认证/白名单，并把解析出的实例钉定到 context 上。裸形式就是 modelId（凭据来自 provider 标准环境变量）；组合形式经 `modelCreationContextId` 补上凭据/端点维度，正确的（凭据, 模型）配对随一个字符串携带。
+- 保留字符 `@` 是身份串内 `modelCreationContextId` 与 `modelId` 的可见分界；modelId 本身不含 `@`。
+
+`ModelRegistry.resolve("provider:model")` 按完整 id 路由。`ModelRegistry.register(modelInstanceId, model)` 还可以用你选定的 id 注册一个完整实例：`resolve(modelInstanceId)`（单参形式）会精确返回该实例，并遮蔽同一字符串的工厂与 SPI 路由。同 id 重注册即替换注册；`getRegistered(modelInstanceId)` 只查表、不创建。实例 id 与 model id 共享同一个字符串命名空间，工厂/SPI 路由请优先使用规范的 `provider:model` id。
+
 ### 字符串 model id
 
 简单的非 Spring 应用可以使用 `dashscope:qwen-plus`、`openai:gpt-4.1-mini`、`deepseek:deepseek-v4-flash` 这样的字符串 id。引入对应模型扩展模块，设置模型提供商的标准环境变量，例如 `DASHSCOPE_API_KEY`、`OPENAI_API_KEY` 或 `DEEPSEEK_API_KEY`，然后直接把 id 传给 agent：
 
 ```java
+// 裸 modelId：provider 扩展模块读取标准环境变量
 ReActAgent agent =
         ReActAgent.builder()
                 .name("assistant")
-                .model("dashscope:qwen-plus") // 底层由 ModelRegistry.resolve(modelId) 解析
+                .model("dashscope:qwen-plus")
+                .build();
+
+// 组合身份 contextId@modelId：凭据/端点来自命名创建上下文
+ModelRegistry.registerCreationContext("mytokenplan01",
+        ModelCreationContext.builder().apiKey(System.getenv("DASHSCOPE_API_KEY")).build());
+ReActAgent tenantAgent =
+        ReActAgent.builder()
+                .name("assistant")
+                .model("mytokenplan01@dashscope:qwen-plus")
                 .build();
 ```
+
+该字符串是模型身份串（model identity），以惰性引用形式保存：在本 run 入口经 `ModelRegistry.resolve` 解析一次（在 boundedElastic 调度器上执行，慢速 factory 不会阻塞订阅线程），注册表重注册对之后开始的 run 生效，无法解析的身份串会在 run 入口以 `IllegalArgumentException` 失败而不是静默回退。它接受组合形式 `contextId@modelId`（例如 `mytokenplan01@dashscope:qwen-plus`），即用注册在 `contextId` 下的[命名创建上下文](#命名创建上下文)解析模型——凭据/端点配对随身份串本身携带。`@` 字符为该形式保留：包含 `@` 的实例 id 与 contextId 会在注册时被拒绝，因此组合身份永远不会被遮蔽。按调用选择时，把实例钉定到调用的 context 上（`ctx.put(Model.class, model)`），其优先级高于 agent 的设置。这个槽位有意就是 `RuntimeContext` 的通用 typed 通道，而不是框架私有标志：Middleware 或工具同样可以在 run 中途通过同一个 `ctx.put(Model.class, ...)` 替换生效模型，以适配逐请求的业务需要。框架自身的保证要窄一些——只在 run 入口解析一次，之后绝不会自行在 response 中途切换模型。
 
 扩展模块会通过 Java SPI 被自动发现。模型提供商会读取自己的标准环境变量，例如 `DASHSCOPE_API_KEY`、`OPENAI_API_KEY`、`GLM_API_KEY`、`DEEPSEEK_API_KEY`、`ANTHROPIC_API_KEY`、`GEMINI_API_KEY`。Ollama 会在存在时读取 `OLLAMA_BASE_URL`，否则默认使用本地 Ollama endpoint。
 
@@ -122,14 +159,14 @@ agentscope:
 `application.yml` 已覆盖常见配置、但仍需要设置 builder 专属能力的场景，例如自定义
 formatter、默认生成参数、代理/client 配置，或其他提供商专属开关。
 
-| Starter | Customizer 类型 |
-|---------|-----------------|
-| `agentscope-openai-spring-boot-starter` | `OpenAIChatModelBuilderCustomizer` |
+| Starter                                          | Customizer 类型                             |
+| ------------------------------------------------ | ------------------------------------------- |
+| `agentscope-openai-spring-boot-starter`          | `OpenAIChatModelBuilderCustomizer`          |
 | `agentscope-openai-official-spring-boot-starter` | `OpenAIResponsesChatModelBuilderCustomizer` |
-| `agentscope-dashscope-spring-boot-starter` | `DashScopeChatModelBuilderCustomizer` |
-| `agentscope-gemini-spring-boot-starter` | `GeminiChatModelBuilderCustomizer` |
-| `agentscope-anthropic-spring-boot-starter` | `AnthropicChatModelBuilderCustomizer` |
-| `agentscope-ollama-spring-boot-starter` | `OllamaChatModelBuilderCustomizer` |
+| `agentscope-dashscope-spring-boot-starter`       | `DashScopeChatModelBuilderCustomizer`       |
+| `agentscope-gemini-spring-boot-starter`          | `GeminiChatModelBuilderCustomizer`          |
+| `agentscope-anthropic-spring-boot-starter`       | `AnthropicChatModelBuilderCustomizer`       |
+| `agentscope-ollama-spring-boot-starter`          | `OllamaChatModelBuilderCustomizer`          |
 
 这些 customizer 会在 starter 属性绑定之后、调用 `builder.build()` 之前执行。可以注册多个
 customizer，并通过 Spring 的 `@Order` 或 `Ordered` 控制执行顺序。
@@ -159,7 +196,7 @@ class ModelCustomizerConfiguration {
 
 ## ModelRegistry 与 ModelCreationContext
 
-`ModelRegistry` 是一个用于模型实例创建与查找的全局注册中心，支持多种解析策略。解析时按优先级依次尝试：通过 `ModelRegistry.register(name, model)` 直接注册的命名模型实例、通过 `registerFactory(regex, factory)` 注册的自定义工厂，以及通过 Java SPI 机制自动发现的扩展模块提供的 `ModelProvider` 实现。
+`ModelRegistry` 是一个用于模型实例创建与查找的全局注册中心，支持多种解析策略。`resolve(String)` 按优先级依次尝试：通过 `ModelRegistry.register(modelInstanceId, model)` 直接注册的实例、已缓存的工厂产物、通过 `registerFactory(regex, factory)` 注册的自定义工厂，以及通过 Java SPI 机制自动发现的扩展模块提供的 `ModelProvider` 实现。带非空 context 的 `resolve(String, ModelCreationContext)` 完全不查询实例注册——实例 id 声明的是完整实例，context 声明的是创建输入，两者混用可能把一个租户的凭据交给另一方。
 
 简单场景推荐使用 `provider:model` 格式的 id 和模型提供商的标准环境变量；需要精细控制时，优先使用显式的模型 Builder。`ModelCreationContext` 主要面向需要动态解析模型的集成层代码。
 
@@ -195,32 +232,67 @@ Model model = ModelRegistry.resolve("openai:gpt-4.1-mini", context);
 
 `ModelRegistry` 会缓存简单`provider:model`解析出的模型。带 context（`ModelCreationContext`）解析出的模型默认不缓存，避免不同租户的 API key、base URL 或 stream 配置复用到同一个模型实例。
 
-| 策略 | 行为 |
-|------|------|
-| `DEFAULT` | `resolve(String)` 保持按 model id 缓存的旧行为；`resolve(String, nonEmptyContext)` 默认不缓存。 |
-| `DISABLED` | 永不缓存，每次解析都会创建新的模型实例。 |
-| `ENABLED` | 显式开启缓存。建议用 `cacheId(...)` 表达租户或配置维度的身份。 |
+| 策略       | 行为                                                                                            |
+| ---------- | ----------------------------------------------------------------------------------------------- |
+| `DEFAULT`  | `resolve(String)` 保持按 model id 缓存的旧行为；`resolve(String, nonEmptyContext)` 默认不缓存。 |
+| `DISABLED` | 永不缓存，每次解析都会创建新的模型实例。                                                        |
+| `ENABLED`  | 显式开启缓存。建议用 `cacheId(...)` 表达租户或配置维度的身份。                                  |
 
-如果 `CachePolicy.ENABLED` 搭配 `option(...)` 或 `component(...)` 使用，用户必须提供 `cacheId`。
+如果 `CachePolicy.ENABLED` 搭配 `option(...)` 或 `component(...)` 使用，用户必须提供 `cacheId`。手工构造的 `cacheId` 由你亲自声明身份、具有权威性：同一 `cacheId` 以不同凭据字段解析只会记录一次漂移告警，仍返回缓存实例。不要通过手工 `cacheId` 变换凭据——凭据轮换请使用 `registerCreationContext`。手工 `cacheId` 不得包含 `#`：该字符为注册表附加在命名创建上下文上的轮换代数后缀保留，正是这一保留保证了手工 id 与命名 context 的各代身份互不碰撞。
+
+标准字段全空的 `ENABLED` context 与空 context 表达的是同一套创建输入，两者解析到同一个缓存实例（共享 legacy 桶）。以相同显式 `cacheId` 但不同标准字段解析时会记录一次漂移告警——`cacheId` 始终是权威身份——轮换 context 请使用下面的重注册机制。
 
 调用 `registerFactory` 会清掉 model id 与新正则匹配的缓存实例，之后再解析这些 id 就会使用新工厂。被清掉的实例不会被关闭，因为调用方可能仍在使用。同一个可缓存 id 的并发首次解析只会创建一次，所有调用方拿到同一个实例。
+
+### 命名创建上下文
+
+多租户配置可以把完整的创建上下文注册成一个 `contextId`，而不必到处传递 `ModelCreationContext` 对象：
+
+```java
+ModelRegistry.registerCreationContext("tenant-a",
+        ModelCreationContext.builder().apiKey(tenantApiKey).baseUrl(tenantBaseUrl).build());
+
+Model model = ModelRegistry.resolve("openai:gpt-4.1-mini",
+        ModelRegistry.getCreationContext("tenant-a"));
+```
+
+注册时会把 context 规范化为 `CachePolicy.ENABLED` 且带代数后缀的 `cacheId = contextId#<generation>`（每次重注册代数递增），因此同一次注册内经它解析的所有调用共享每个 model id 一个的缓存实例（`explicit:<contextId>#<generation>` 身份）。`#` 字符为该后缀保留——包含 `#` 的 contextId 会在注册时被拒绝，从而保证一个 id 的各代身份永远不会与其他 id 的条目碰撞或互相过度清除。同名重注册即开启新代并轮换凭据：之前各代的缓存条目被清除，重注册之后**开始**的解析使用新 context。`unregisterCreationContext(contextId)` 移除注册、清除其缓存条目并返回被移除的 context。两个不同 contextId 解析同一 model id 得到不同实例。已创建的 `Model` 实例不受影响：它们永久持有创建时刻的凭据。`getCreationContext(contextId)` 在该 id 未注册时以 `IllegalArgumentException` 快速失败；`hasCreationContext(contextId)` 是不抛异常的探测方法（`null`、空白或未注册的 id 均返回 `false`），可用于在上述两步组合前做防护。注册的 context 与组合模型身份形式 `contextId@modelId`（例如 `mytokenplan01@dashscope:qwen-plus`）天然配套，`ModelRegistry.resolve(...)` 接受该形式。
+
+### 注册中心生命周期
+
+`unregister(modelInstanceId)` 移除 `register(modelInstanceId, model)` 创建的注册，返回被移除的实例；id 从未注册过则返回 `null`；`getRegistered(modelInstanceId)` 是纯查询。
+
+这两个方法只改变注册中心的映射：调用方已持有的实例不受影响、继续可用，注册中心也不会关闭它们。
+
+`evictResolvedCache(ModelCreationContext, String modelId)` 清除 `resolve(...)` 缓存的实例：`context` 为 `null` 匹配所有缓存身份，`modelId` 为 `null`（或空白）匹配该身份下的所有 id，两者都提供时精确清除一条，两者都缺席则抛出异常。
+
+`reloadProviders()` 按当前类加载器上下文重新发现 SPI provider，并清除只可能来自 SPI provider 的缓存条目；用户工厂产出的条目会保留。
+
+```java
+Model removed = ModelRegistry.unregister("my-gpt4o"); // 从未注册过则返回 null
+ModelRegistry.evictResolvedCache((ModelCreationContext) null, "openai:gpt-4.1-mini"); // modelId 相等的所有条目
+ModelRegistry.evictResolvedCache(context, null); // 该 context 下的所有缓存条目
+ModelRegistry.evictResolvedCache(context, "openai:gpt-4.1-mini"); // 精确一条
+```
 
 ### ModelProvider SPI
 
 模型提供商扩展模块通过 Java SPI 暴露 `META-INF/services/io.agentscope.core.model.spi.ModelProvider`，由 `ModelRegistry` 自动发现。新的模型提供商可以实现 `supports(String, ModelCreationContext)` 和 `create(String, ModelCreationContext)` 来消费 context。简单模型提供商仍可只实现原有的 `supports(String)` 和 `create(String)`，因为 context-aware 方法提供了兼容默认实现。
 
+provider 接收的是完整 model id（含 `providerId` 前缀），必须剥掉前缀得到裸模型名。不带 context 的创建必须由进程环境变量加 model id 决定论地导出——这是 `resolve(String)` 缓存安全的前提。当多个已发现的 provider 声明支持同一 model id 时，解析会抛出 `IllegalArgumentException` 并列出全部候选，而不是静默取第一个。
+
 ## Chat Model
 
 **Chat Model** 是驱动 agent 对话与工具调用的 LLM，输入输出可以是文本之外的多模态内容。AgentScope Java 当前提供以下 Chat Model 类：
 
-| 提供商 | 模型类 | 说明 |
-|--------|--------|------|
-| OpenAI | `OpenAIChatModel` | Chat Completions API，兼容 vLLM 与 OpenAI 兼容端点（含 DeepSeek、Kimi 等） |
-| OpenAI Official | `OpenAIResponsesChatModel` | Responses API（官方 SDK）；推理、结构化输出 |
-| Anthropic | `AnthropicChatModel` | Claude 模型，支持 prompt 缓存与 thinking |
-| DashScope | `DashScopeChatModel` | Qwen 模型，多模态（视觉/音频/视频）、推理 |
-| Gemini | `GeminiChatModel` | Google Gemini 模型，支持多模态 |
-| Ollama | `OllamaChatModel` | 本地 LLM 托管，凭证可选 |
+| 提供商          | 模型类                     | 说明                                                                       |
+| --------------- | -------------------------- | -------------------------------------------------------------------------- |
+| OpenAI          | `OpenAIChatModel`          | Chat Completions API，兼容 vLLM 与 OpenAI 兼容端点（含 DeepSeek、Kimi 等） |
+| OpenAI Official | `OpenAIResponsesChatModel` | Responses API（官方 SDK）；推理、结构化输出                                |
+| Anthropic       | `AnthropicChatModel`       | Claude 模型，支持 prompt 缓存与 thinking                                   |
+| DashScope       | `DashScopeChatModel`       | Qwen 模型，多模态（视觉/音频/视频）、推理                                  |
+| Gemini          | `GeminiChatModel`          | Google Gemini 模型，支持多模态                                             |
+| Ollama          | `OllamaChatModel`          | 本地 LLM 托管，凭证可选                                                    |
 
 模型提供商凭证类随对应模型扩展模块提供，例如 `OpenAICredential`、`OpenAIOfficialCredential`、`AnthropicCredential`、`DashScopeCredential`、`GeminiCredential`、`OllamaCredential`。OpenAI 兼容提供商的 `DeepSeekCredential`、`KimiCredential`、`XAICredential` 仍在 core 模块中可用。
 
@@ -302,14 +374,14 @@ DashScopeChatModel model =
 
 各 Chat Model 的 builder 共享的字段大致相同：
 
-| 字段 | 类型 | 说明 |
-|------|------|------|
-| `apiKey` | `String` | API key（部分提供商也支持 `credential(...)` 方式注入） |
-| `modelName` | `String` | 模型标识符（如 `"qwen-plus"`） |
-| `stream` | `boolean` | 是否流式输出 |
+| 字段             | 类型              | 说明                                                                                       |
+| ---------------- | ----------------- | ------------------------------------------------------------------------------------------ |
+| `apiKey`         | `String`          | API key（部分提供商也支持 `credential(...)` 方式注入）                                     |
+| `modelName`      | `String`          | 模型标识符（如 `"qwen-plus"`）                                                             |
+| `stream`         | `boolean`         | 是否流式输出                                                                               |
 | `defaultOptions` | `GenerateOptions` | 提供商专属生成参数（`temperature`、`maxTokens`、`thinkingBudget`、`parallelToolCalls` 等） |
-| `formatter` | `Formatter` | 覆盖默认的消息 formatter |
-| `baseUrl` | `String` | 自定义服务端点（如 OpenAI 兼容的反代） |
+| `formatter`      | `Formatter`       | 覆盖默认的消息 formatter                                                                   |
+| `baseUrl`        | `String`          | 自定义服务端点（如 OpenAI 兼容的反代）                                                     |
 
 ### 调用 Chat Model
 
@@ -341,6 +413,8 @@ model.stream(
 ```
 
 `ChatResponse` 包含若干 content block（`TextBlock`、`ThinkingBlock`、`ToolUseBlock`、`DataBlock`）以及记录 token 数与耗时的 `ChatUsage`。
+
+**参数优先级：**传给 `stream(messages, tools, options)` 的单次调用选项优先于 builder 的 `defaultOptions`；单次调用未设置的字段回退到模型默认值。这同样适用于 `toolChoice`：默认配置如 `Specific("get_weather")` 会约束每一次调用，只有调用方显式设置自己的 `toolChoice`（例如 `None`）才会覆盖。对 Gemini 而言，只要请求声明了工具，有效的 toolChoice 就会投影为请求中的 `toolConfig`（`Specific` → `mode=ANY` 加 `allowedFunctionNames`；`None` → `mode=NONE`），因此默认配置与同值的单次配置产生一致的请求。
 
 实际开发中通常不需要直接调模型，而是通过 `ReActAgent` 调度；要直连模型做轻量调用时，推荐参考 `agentscope-examples/documentation/.../model/ModelRegistryExample.java`。
 
@@ -377,9 +451,9 @@ WeatherInfo info = msg.getStructuredData(WeatherInfo.class);
 
 框架提供两条结构化输出路径：
 
-| 路径 | 条件 | 机制 |
-|------|------|------|
-| **Native** | `supportsNativeStructuredOutput() = true` | 通过 `response_format` + `json_schema` 让模型直接输出合规 JSON |
+| 路径                 | 条件                                       | 机制                                                                 |
+| -------------------- | ------------------------------------------ | -------------------------------------------------------------------- |
+| **Native**           | `supportsNativeStructuredOutput() = true`  | 通过 `response_format` + `json_schema` 让模型直接输出合规 JSON       |
 | **Fallback**（默认） | `supportsNativeStructuredOutput() = false` | 注入 `generate_response` 合成工具，模型通过 tool call 返回结构化数据 |
 
 当 native 路径失败（例如提供商拒绝请求，或输出为空、不是合法 JSON、不符合 schema）时，框架会**自动降级**到 fallback 路径，无需用户干预。被拒绝的 native 响应不会保留在会话上下文中。
@@ -400,15 +474,15 @@ session 持久化以及后续调用都只会看到调用方真实写入的消息
 
 #### 各模型提供商默认行为
 
-| 模型提供商                           | `supportsNativeStructuredOutput` | `supportsNativeStructuredOutputWithTools` | 说明                                                         |
-|---------------------------------|----------------------------------|------------------------------------------|------------------------------------------------------------|
-| OpenAI (Chat Completions API)   | `true` | `true` | 原生支持 `json_schema`，与工具调用兼容                                 |
-| OpenAI Official (Responses API) | `true` | `true` | 原生支持 `json_schema`，与工具调用兼容                                 |
-| Kimi formatter                  | `true` | `false` | 原生支持 `json_schema`；`response_format` 会压制工具调用，带工具时走 fallback |
-| DeepSeek/GLM/MiniMax formatter  | `false` | `false` | —                                                          |
-| DashScope                       | `false` | `false` | 部分模型不支持 `json_schema`                                      |
-| Anthropic                       | `false` | `false` | —                                                          |
-| Gemini                          | `false` | `false` | —                                                          |
+| 模型提供商                      | `supportsNativeStructuredOutput` | `supportsNativeStructuredOutputWithTools` | 说明                                                                          |
+| ------------------------------- | -------------------------------- | ----------------------------------------- | ----------------------------------------------------------------------------- |
+| OpenAI (Chat Completions API)   | `true`                           | `true`                                    | 原生支持 `json_schema`，与工具调用兼容                                        |
+| OpenAI Official (Responses API) | `true`                           | `true`                                    | 原生支持 `json_schema`，与工具调用兼容                                        |
+| Kimi formatter                  | `true`                           | `false`                                   | 原生支持 `json_schema`；`response_format` 会压制工具调用，带工具时走 fallback |
+| DeepSeek/GLM/MiniMax formatter  | `false`                          | `false`                                   | —                                                                             |
+| DashScope                       | `false`                          | `false`                                   | 部分模型不支持 `json_schema`                                                  |
+| Anthropic                       | `false`                          | `false`                                   | —                                                                             |
+| Gemini                          | `false`                          | `false`                                   | —                                                                             |
 
 > **DashScope 用户注意**：DashScope 部分模型思考模式（`enableThinking(true)`）不支持结构化输出，框架会强制走 fallback 路径。
 
@@ -456,10 +530,10 @@ OpenAIChatModel model = OpenAIChatModel.builder()
 
 **Formatter** 负责把 AgentScope 的 `Msg` 对象转换为各提供商 API 期望的请求载荷。它通过 Chat Model builder 的 `formatter(...)` 字段配置。每个提供商内置两种 formatter：
 
-| 类型 | 适用场景 |
-|------|----------|
+| 类型                      | 适用场景                                                                                                 |
+| ------------------------- | -------------------------------------------------------------------------------------------------------- |
 | **ChatFormatter**（默认） | 标准的单 agent 对话。每条 `Msg` 1:1 映射为一条 API 消息，保留原始角色（`USER`、`ASSISTANT`、`SYSTEM`）。 |
-| **MultiAgentFormatter** | 多 agent 场景，例如辩论、moderator。连续的 agent 消息会被聚合，并标注发送者名字。 |
+| **MultiAgentFormatter**   | 多 agent 场景，例如辩论、moderator。连续的 agent 消息会被聚合，并标注发送者名字。                        |
 
 切换到多 agent 模式只需传入 MultiAgent 变体，无需修改 agent 代码：
 
@@ -478,14 +552,14 @@ DashScopeChatModel model =
 
 各模型提供商的 formatter 类现在随对应模型扩展模块一起提供：
 
-| 模型提供商 | Chat | MultiAgent |
-|---|---|---|
-| DashScope | `DashScopeChatFormatter` | `DashScopeMultiAgentFormatter` |
-| OpenAI | `OpenAIChatFormatter` | `OpenAIMultiAgentFormatter` |
-| OpenAI Official | — | `ResponsesMultiAgentFormatter` |
-| Anthropic | `AnthropicChatFormatter` | `AnthropicMultiAgentFormatter` |
-| Gemini | `GeminiChatFormatter` | `GeminiMultiAgentFormatter` |
-| Ollama | `OllamaChatFormatter` | `OllamaMultiAgentFormatter` |
+| 模型提供商      | Chat                     | MultiAgent                     |
+| --------------- | ------------------------ | ------------------------------ |
+| DashScope       | `DashScopeChatFormatter` | `DashScopeMultiAgentFormatter` |
+| OpenAI          | `OpenAIChatFormatter`    | `OpenAIMultiAgentFormatter`    |
+| OpenAI Official | —                        | `ResponsesMultiAgentFormatter` |
+| Anthropic       | `AnthropicChatFormatter` | `AnthropicMultiAgentFormatter` |
+| Gemini          | `GeminiChatFormatter`    | `GeminiMultiAgentFormatter`    |
+| Ollama          | `OllamaChatFormatter`    | `OllamaMultiAgentFormatter`    |
 
 如果提供商的载荷格式不属于以上几种，开发者可以实现 `Formatter<TReq, TResp, TParams>` 接口（位于 `io.agentscope.core.formatter`），并通过同一个 `formatter(...)` 字段传入。
 
@@ -584,11 +658,11 @@ ModelRegistry.registerFactory(
 
 当前 `ModelCard` 是一个最小化的 record，包含：
 
-| 字段 | 类型 | 说明 |
-|------|------|------|
-| `modelName()` | `String` | 模型标识符（例如 `"claude-sonnet-4-6"`） |
-| `displayName()` | `String` | 用于展示的可读名称（例如 `"Claude Sonnet 4.6"`） |
-| `contextSize()` | `Integer` | 最大上下文窗口（token 数） |
+| 字段            | 类型      | 说明                                             |
+| --------------- | --------- | ------------------------------------------------ |
+| `modelName()`   | `String`  | 模型标识符（例如 `"claude-sonnet-4-6"`）         |
+| `displayName()` | `String`  | 用于展示的可读名称（例如 `"Claude Sonnet 4.6"`） |
+| `contextSize()` | `Integer` | 最大上下文窗口（token 数）                       |
 
 
 <Note>

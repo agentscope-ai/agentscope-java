@@ -288,8 +288,10 @@ public class GeminiChatModel extends ChatModelBase {
 
         if (tools != null && !tools.isEmpty()) {
             formatter.applyTools(configBuilder, tools);
-            if (options != null && options.getToolChoice() != null) {
-                formatter.applyToolChoice(configBuilder, options.getToolChoice());
+            GenerateOptions effectiveOptions =
+                    GenerateOptions.mergeOptions(options, defaultOptions);
+            if (effectiveOptions.getToolChoice() != null) {
+                formatter.applyToolChoice(configBuilder, effectiveOptions.getToolChoice());
             }
         }
 
@@ -422,7 +424,7 @@ public class GeminiChatModel extends ChatModelBase {
     public static class Builder {
         private String apiKey;
         private String baseUrl;
-        private String modelName = "gemini-2.5-flash";
+        private String modelName = "gemini-3.8-flash";
         private boolean streamEnabled = true;
         private String project;
         private String location;
@@ -462,7 +464,7 @@ public class GeminiChatModel extends ChatModelBase {
         /**
          * Sets the model name.
          *
-         * @param modelName the model name (default: "gemini-2.5-flash")
+         * @param modelName the model name (default: "gemini-3.8-flash")
          * @return this builder
          */
         public Builder modelName(String modelName) {

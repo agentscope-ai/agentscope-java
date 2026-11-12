@@ -81,20 +81,22 @@ public class AguiMvcController {
 
     private AguiMvcController(Builder builder) {
         this.processor =
-                AguiRequestProcessor.builder()
-                        .agentResolver(
-                                DefaultAgentResolver.builder()
-                                        .registry(builder.registry)
-                                        .sessionManager(builder.sessionManager)
-                                        .serverSideMemory(builder.serverSideMemory)
-                                        .build())
-                        .config(
-                                builder.config != null
-                                        ? builder.config
-                                        : AguiAdapterConfig.defaultConfig())
-                        .adapterFactory(builder.adapterFactory)
-                        .runtimeContextResolver(builder.runtimeContextResolver)
-                        .build();
+                builder.requestProcessor != null
+                        ? builder.requestProcessor
+                        : AguiRequestProcessor.builder()
+                                .agentResolver(
+                                        DefaultAgentResolver.builder()
+                                                .registry(builder.registry)
+                                                .sessionManager(builder.sessionManager)
+                                                .serverSideMemory(builder.serverSideMemory)
+                                                .build())
+                                .config(
+                                        builder.config != null
+                                                ? builder.config
+                                                : AguiAdapterConfig.defaultConfig())
+                                .adapterFactory(builder.adapterFactory)
+                                .runtimeContextResolver(builder.runtimeContextResolver)
+                                .build();
         this.encoder = new AguiEventEncoder();
         this.agentIdHeader =
                 builder.agentIdHeader != null ? builder.agentIdHeader : DEFAULT_AGENT_ID_HEADER;
@@ -376,6 +378,23 @@ public class AguiMvcController {
         private boolean interruptOnDisconnect = true;
         private AguiRuntimeContextResolver runtimeContextResolver;
         private AguiAgentAdapterFactory adapterFactory;
+        private AguiRequestProcessor requestProcessor;
+
+        /**
+         * Set a custom request processor instead of constructing the default processor.
+         *
+         * <p>When set, {@link #agentRegistry}, {@link #sessionManager}, {@link #serverSideMemory},
+         * {@link #config}, {@link #adapterFactory}, and {@link #runtimeContextResolver} are ignored;
+         * configure their equivalents on the supplied processor. A registry is not required.
+         * Passing {@code null} restores default processor construction.
+         *
+         * @param requestProcessor The custom processor, or {@code null} to use the default
+         * @return This builder
+         */
+        public Builder requestProcessor(AguiRequestProcessor requestProcessor) {
+            this.requestProcessor = requestProcessor;
+            return this;
+        }
 
         /**
          * Set the agent registry.
@@ -480,10 +499,10 @@ public class AguiMvcController {
          * Build the controller.
          *
          * @return The built controller
-         * @throws IllegalStateException if registry is not set
+         * @throws IllegalStateException if neither a custom processor nor a registry is set
          */
         public AguiMvcController build() {
-            if (registry == null) {
+            if (requestProcessor == null && registry == null) {
                 throw new IllegalStateException("Agent registry must be set");
             }
             return new AguiMvcController(this);
