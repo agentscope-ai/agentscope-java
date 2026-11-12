@@ -145,9 +145,9 @@ public class SandboxLifecycleMiddleware implements HarnessRuntimeMiddleware {
     }
 
     /**
-     * Acquires the sandbox for the current call. Called from
-     * {@code ReActAgent.beforeAgentExecution()} to ensure the sandbox is available
-     * for both the {@code call()} and {@code streamEvents()} paths.
+     * Acquires the sandbox for the current call. Runs on the harness call path (before
+     * the agent's reasoning begins) so the sandbox is available for both the
+     * {@code call()} and {@code streamEvents()} flows.
      *
      * @param ctx the per-call RuntimeContext (must not be null)
      */
