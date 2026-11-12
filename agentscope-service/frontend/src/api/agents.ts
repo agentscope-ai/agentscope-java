@@ -200,10 +200,33 @@ export async function getAgent(id: string): Promise<AgentDefinition> {
   return mergeCatalogDefinition(catalogBody.agent, definitionBody.definition, bindings);
 }
 
-export async function createAgent(req: AgentCreateRequest): Promise<AgentDefinition> {
-  const agentKey = req.agentKey || (req.name || 'agent').trim().toLowerCase()
+/**
+ * Converts a display name into a slug-style agent key fragment.
+ *
+ * Non-ASCII characters (for example a fully Chinese name) are stripped by the
+ * slug rule, which yields an empty string; callers are expected to fall back
+ * to a readable generated key in that case.
+ */
+export function slugifyAgentKey(name: string): string {
+  return (name || '').trim().toLowerCase()
     .replace(/[^a-z0-9_-]+/g, '-')
-    .replace(/^-+|-+$/g, '') + `-${crypto.randomUUID().slice(0, 8)}`;
+    .replace(/^-+|-+$/g, '');
+}
+
+/**
+ * Resolves the stable agent key: an explicit key wins, otherwise the slugified
+ * name plus a short random suffix, with a readable `agent-` fallback when the
+ * name contains no ASCII slug characters (e.g. a fully Chinese name).
+ */
+export function resolveAgentKey(name: string | undefined, explicitKey?: string): string {
+  const trimmed = (explicitKey || '').trim();
+  if (trimmed) return trimmed;
+  const slug = slugifyAgentKey(name || 'agent');
+  return `${slug || 'agent'}-${crypto.randomUUID().slice(0, 8)}`;
+}
+
+export async function createAgent(req: AgentCreateRequest): Promise<AgentDefinition> {
+  const agentKey = resolveAgentKey(req.name, req.agentKey);
   const runtimeKind = req.runtimeKind ?? 'managed';
   const configuration = runtimeKind === 'hosted-runtime'
     ? { runtimeProfileId: req.runtimeProfileId, runtimePoolId: req.runtimePoolId }
