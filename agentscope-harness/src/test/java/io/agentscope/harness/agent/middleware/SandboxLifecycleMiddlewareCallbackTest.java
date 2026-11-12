@@ -23,7 +23,6 @@ import io.agentscope.core.agent.CapabilitySurface;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.skill.AgentSkill;
 import io.agentscope.core.skill.SkillFilter;
-import io.agentscope.core.skill.repository.AgentSkillRepository;
 import io.agentscope.core.skill.repository.AgentSkillRepositoryInfo;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.harness.agent.skill.runtime.MarketplaceStager;
@@ -255,8 +254,13 @@ class SandboxLifecycleMiddlewareCallbackTest {
                         + " narrows");
     }
 
-    /** Minimal repository stub that returns a fixed skill list. */
-    private static final class StubSkillRepository implements AgentSkillRepository {
+    /**
+     * Minimal repository stub that returns a fixed skill list. Context-scoped so the harness
+     * middleware enumerates it per request (plain repositories are never enumerated without
+     * an explicit selection).
+     */
+    private static final class StubSkillRepository
+            implements io.agentscope.core.skill.repository.RuntimeContextSkillRepository {
 
         /** Latest pull serves the stored skill; any explicit version answers {@code null}
          * (no version capability on this stub). */
@@ -285,6 +289,11 @@ class SandboxLifecycleMiddlewareCallbackTest {
 
         @Override
         public List<AgentSkill> getAllSkills() {
+            return skills;
+        }
+
+        @Override
+        public List<AgentSkill> getAllSkills(io.agentscope.core.agent.RuntimeContext context) {
             return skills;
         }
 

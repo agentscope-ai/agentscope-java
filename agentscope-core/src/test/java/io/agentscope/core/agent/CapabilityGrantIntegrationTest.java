@@ -38,7 +38,6 @@ import io.agentscope.core.model.ToolSchema;
 import io.agentscope.core.skill.AgentSkill;
 import io.agentscope.core.skill.DynamicSkillMiddleware;
 import io.agentscope.core.skill.SkillBox;
-import io.agentscope.core.skill.repository.AgentSkillRepository;
 import io.agentscope.core.skill.repository.AgentSkillRepositoryInfo;
 import io.agentscope.core.state.AgentState;
 import io.agentscope.core.state.ToolContextState;
@@ -200,12 +199,30 @@ class CapabilityGrantIntegrationTest {
         }
     }
 
-    /** Minimal in-memory skill repository stub. */
-    private static final class StubRepo implements AgentSkillRepository {
+    /**
+     * Minimal in-memory skill repository stub. Context-scoped so the middleware enumerates it
+     * per request (plain repositories are never enumerated without an explicit selection).
+     */
+    private static final class StubRepo
+            implements io.agentscope.core.skill.repository.RuntimeContextSkillRepository {
         private final List<AgentSkill> skills;
 
         StubRepo(List<AgentSkill> skills) {
             this.skills = skills;
+        }
+
+        /** Serving primitive: a null version answers by name; any version answers null. */
+        @Override
+        public AgentSkill getSkill(String name, String version) {
+            if (name == null || version != null) {
+                return null;
+            }
+            for (AgentSkill skill : skills) {
+                if (skill != null && name.equals(skill.getName())) {
+                    return skill;
+                }
+            }
+            return null;
         }
 
         @Override
@@ -220,6 +237,11 @@ class CapabilityGrantIntegrationTest {
 
         @Override
         public List<AgentSkill> getAllSkills() {
+            return skills;
+        }
+
+        @Override
+        public List<AgentSkill> getAllSkills(io.agentscope.core.agent.RuntimeContext context) {
             return skills;
         }
 
@@ -991,11 +1013,16 @@ class CapabilityGrantIntegrationTest {
                         .skillContent("# market")
                         .source("market")
                         .build();
-        // Standard merge semantics: same name keeps the later entry, so the catalog holds
-        // exactly the market copy whose skillId is "alpha_market" (no coexistence).
+        // Standard merge semantics: same name across two repositories keeps the later
+        // (higher-priority) repo's entry, so the catalog holds exactly the market copy
+        // whose skillId is "alpha_market" (no coexistence). Two repositories, not two
+        // entries in one: the version contract's serving primitive is name-addressed, so
+        // the documented later-wins merge is a cross-repository rule.
         DynamicSkillMiddleware mw =
                 new DynamicSkillMiddleware(
-                        List.of(new StubRepo(List.of(alphaCustom, alphaMarket))));
+                        List.of(
+                                new StubRepo(List.of(alphaCustom)),
+                                new StubRepo(List.of(alphaMarket))));
 
         // The grant vocabulary is the name: one entry grants the merged (winning) copy.
         String prompt =

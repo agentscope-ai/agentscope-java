@@ -32,7 +32,6 @@ import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.Model;
 import io.agentscope.core.model.ToolSchema;
 import io.agentscope.core.skill.AgentSkill;
-import io.agentscope.core.skill.repository.AgentSkillRepository;
 import io.agentscope.core.skill.repository.AgentSkillRepositoryInfo;
 import io.agentscope.core.tool.AgentTool;
 import io.agentscope.core.tool.Toolkit;
@@ -255,14 +254,28 @@ class HarnessAgentCapabilityResolverTest {
                 "ungranted skill files must NOT be materialised into .skills-cache");
     }
 
-    /** Minimal repository stub serving a fixed skill list from one source. */
-    private static final class StubRepo implements AgentSkillRepository {
+    /**
+     * Minimal repository stub serving a fixed skill list from one source. Context-scoped so
+     * the harness middleware enumerates it per request (plain repositories are never
+     * enumerated without an explicit selection).
+     */
+    private static final class StubRepo
+            implements io.agentscope.core.skill.repository.RuntimeContextSkillRepository {
         private final List<AgentSkill> skills;
         private final String source;
 
         StubRepo(List<AgentSkill> skills, String source) {
             this.skills = skills;
             this.source = source;
+        }
+
+        /** Serving primitive: a null version answers by name; any version answers null. */
+        @Override
+        public AgentSkill getSkill(String name, String version) {
+            if (version != null) {
+                return null;
+            }
+            return skills.stream().filter(s -> s.getName().equals(name)).findFirst().orElse(null);
         }
 
         @Override
@@ -277,6 +290,11 @@ class HarnessAgentCapabilityResolverTest {
 
         @Override
         public List<AgentSkill> getAllSkills() {
+            return skills;
+        }
+
+        @Override
+        public List<AgentSkill> getAllSkills(io.agentscope.core.agent.RuntimeContext context) {
             return skills;
         }
 

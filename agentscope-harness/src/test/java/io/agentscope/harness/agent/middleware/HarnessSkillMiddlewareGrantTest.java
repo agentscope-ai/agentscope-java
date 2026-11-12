@@ -26,7 +26,6 @@ import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.skill.AgentSkill;
-import io.agentscope.core.skill.repository.AgentSkillRepository;
 import io.agentscope.core.skill.repository.AgentSkillRepositoryInfo;
 import io.agentscope.core.tool.AgentTool;
 import io.agentscope.core.tool.ToolCallParam;
@@ -48,12 +47,31 @@ import org.junit.jupiter.api.Test;
 @DisplayName("Harness skill chain grant coverage")
 class HarnessSkillMiddlewareGrantTest {
 
-    /** In-memory repository stub serving a fixed skill list. */
-    private static final class StubRepo implements AgentSkillRepository {
+    /**
+     * In-memory repository stub serving a fixed skill list. Context-scoped so the harness
+     * middleware enumerates it per request (plain repositories are never enumerated
+     * without an explicit selection).
+     */
+    private static final class StubRepo
+            implements io.agentscope.core.skill.repository.RuntimeContextSkillRepository {
         private final List<AgentSkill> skills;
 
         StubRepo(List<AgentSkill> skills) {
             this.skills = skills;
+        }
+
+        /** Serving primitive: a null version answers by name; any version answers null. */
+        @Override
+        public AgentSkill getSkill(String name, String version) {
+            if (name == null || version != null) {
+                return null;
+            }
+            for (AgentSkill skill : skills) {
+                if (skill != null && name.equals(skill.getName())) {
+                    return skill;
+                }
+            }
+            return null;
         }
 
         @Override
@@ -68,6 +86,11 @@ class HarnessSkillMiddlewareGrantTest {
 
         @Override
         public List<AgentSkill> getAllSkills() {
+            return skills;
+        }
+
+        @Override
+        public List<AgentSkill> getAllSkills(io.agentscope.core.agent.RuntimeContext context) {
             return skills;
         }
 
