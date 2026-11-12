@@ -1,0 +1,1 @@
+In the /workspace/quotes directory, there are several small quote files. Which file most likely contains a quote by Grace Hopper? Reply with the file path only. Be efficient: list the directory, then read the quote files in parallel to decide. Do not use grep.

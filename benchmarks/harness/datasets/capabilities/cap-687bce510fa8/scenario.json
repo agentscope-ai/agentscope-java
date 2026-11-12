@@ -1,0 +1,7 @@
+{
+  "category": "capabilities/conversation",
+  "capabilities": true,
+  "variant": 0,
+  "adaptation": "Original output constraints and deterministic scorer; native reasoning loop, no injected RubricMiddleware or extra feedback loop.",
+  "system_context": ""
+}

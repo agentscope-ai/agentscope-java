@@ -1,0 +1,11 @@
+{
+  "agent_steps": 3,
+  "tool_call_requests": 2,
+  "tool_calls": [
+    {
+      "kind": "tool_call",
+      "args": [],
+      "name": "write_todos"
+    }
+  ]
+}

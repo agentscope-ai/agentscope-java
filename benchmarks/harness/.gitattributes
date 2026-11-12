@@ -1,0 +1,2 @@
+# Preserve the exact text and line counts of the migrated summarization fixtures.
+datasets/capabilities/*/environment/summarization.py whitespace=-blank-at-eof

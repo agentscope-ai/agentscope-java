@@ -1,0 +1,6 @@
+{
+  "category": "capabilities/unit_test",
+  "capabilities": true,
+  "variant": 0,
+  "system_context": "Your name is Foo Bar."
+}

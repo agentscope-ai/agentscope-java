@@ -1,0 +1,42 @@
+[
+  {
+    "kind": "final_text_contains",
+    "args": [
+      "Checkout Experience"
+    ]
+  },
+  {
+    "kind": "required_fixture_calls",
+    "args": [
+      [
+        {
+          "kind": "tool_call",
+          "args": [],
+          "name": "find_services_by_name",
+          "step": 1,
+          "args_contains": {
+            "name": "checkout-web"
+          }
+        },
+        {
+          "kind": "tool_call",
+          "args": [],
+          "name": "get_service_team",
+          "step": 2,
+          "args_contains": {
+            "service_id": 8514
+          }
+        },
+        {
+          "kind": "tool_call",
+          "args": [],
+          "name": "get_team_name",
+          "step": 3,
+          "args_contains": {
+            "team_id": 562
+          }
+        }
+      ]
+    ]
+  }
+]

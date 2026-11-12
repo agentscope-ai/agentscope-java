@@ -1,0 +1,26 @@
+[
+  {
+    "kind": "final_text_contains",
+    "args": [
+      "crash on login"
+    ],
+    "case_insensitive": true
+  },
+  {
+    "kind": "required_fixture_calls",
+    "args": [
+      [
+        {
+          "kind": "tool_call",
+          "args": [],
+          "name": "linear_create_issue"
+        },
+        {
+          "kind": "tool_call",
+          "args": [],
+          "name": "github_create_issue"
+        }
+      ]
+    ]
+  }
+]

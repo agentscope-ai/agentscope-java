@@ -1,0 +1,15 @@
+[
+  {
+    "kind": "file_contains",
+    "args": [
+      "/workspace/foo.md",
+      "Foo Bar"
+    ]
+  },
+  {
+    "kind": "final_text_contains",
+    "args": [
+      "Foo Bar"
+    ]
+  }
+]

@@ -1,0 +1,33 @@
+{
+  "agent_steps": 2,
+  "tool_call_requests": 3,
+  "tool_calls": [
+    {
+      "kind": "tool_call",
+      "args": [],
+      "name": "get_incident_severity",
+      "step": 1,
+      "args_contains": {
+        "incident_id": 41017
+      }
+    },
+    {
+      "kind": "tool_call",
+      "args": [],
+      "name": "get_repo_default_branch",
+      "step": 1,
+      "args_contains": {
+        "repo_id": 9217
+      }
+    },
+    {
+      "kind": "tool_call",
+      "args": [],
+      "name": "get_environment_region",
+      "step": 1,
+      "args_contains": {
+        "environment_id": 442
+      }
+    }
+  ]
+}

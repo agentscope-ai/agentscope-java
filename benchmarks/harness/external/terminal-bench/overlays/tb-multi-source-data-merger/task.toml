@@ -1,0 +1,44 @@
+schema_version = "1.1"
+artifacts = [ "/app", "/data",]
+
+[task]
+name = "terminal-bench/multi-source-data-merger"
+description = "Evaluates an agent's ability to merge multi-format data sources (JSON, CSV, Parquet) with inconsistent schemas, applying field mappings and priority-based conflict resolution to produce standardized outputs."
+keywords = [ "data-processing", "etl", "schema-mapping", "conflict-resolution", "pandas", "parquet",]
+[[task.authors]]
+name = "Xin Lan"
+email = "xl2681@columbia.edu"
+
+[metadata]
+author_name = "Xin Lan"
+author_email = "xl2681@columbia.edu"
+difficulty = "medium"
+category = "data-processing"
+tags = [ "data-processing", "etl", "schema-mapping", "conflict-resolution", "pandas", "parquet",]
+estimated_duration_sec = 1800.0
+expert_time_estimate_min = 30.0
+junior_time_estimate_min = 120.0
+
+[verifier]
+timeout_sec = 900
+environment_mode = "separate"
+
+[agent]
+timeout_sec = 900.0
+
+[environment]
+build_timeout_sec = 600.0
+docker_image = "alexgshaw/multi-source-data-merger:20251031"
+cpus = 2
+memory_mb = 4096
+storage_mb = 10240
+gpus = 0
+allow_internet = true
+mcp_servers = []
+workdir = "/app"
+
+[verifier.env]
+
+[environment.env]
+
+[solution.env]

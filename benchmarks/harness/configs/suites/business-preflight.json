@@ -1,0 +1,44 @@
+{
+  "schema_version": 1,
+  "suite": "business-preflight",
+  "model": "qwen3.8-max",
+  "model_base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+  "model_snapshot_locked": false,
+  "monetary_budget_limit": null,
+  "agents": [
+    {
+      "name": "agentscope",
+      "version": "1.2.0",
+      "profile": "local-project-writable",
+      "api": "chat_completions"
+    },
+    {
+      "name": "codex",
+      "version": "0.167.0",
+      "api": "responses"
+    },
+    {
+      "name": "pi",
+      "version": "1.5.0",
+      "api": "chat_completions"
+    }
+  ],
+  "tasks": [
+    "tau-airline-0",
+    "tau-retail-0",
+    "appworld-23cf851_1",
+    "appworld-68ee2c9_1"
+  ],
+  "rollouts": 1,
+  "concurrency": 2,
+  "trial_timeout_seconds": 1800,
+  "job_timeout_seconds": 7200,
+  "max_turns": 60,
+  "retry_attempts": 0,
+  "harbor": {
+    "version": "0.25.0",
+    "source_revision": "fdba28fc411e47e8765420a1a063b4918fce3def"
+  },
+  "environment_start_timeout_seconds": 900,
+  "framework_contract_tests": "AgentSessionTest,SessionInboxCrashRecoveryTest,SessionExecutionIdentityTest,WorkspaceSessionLogStoreTest,MemoryMiddlewareThrottleIsolationTest,MemoryBackgroundContextPropagationTest,MemoryFlushMiddlewareTriggerTest,MemoryFlushMiddlewareAsyncFlushTest,CompactionMiddlewareTest,ToolResultEvictionMiddlewareTest,SubAgentToolCancellationTest,SubAgentToolSessionTest,AgentSpawnToolResultStateTest,SubagentPendingToolRecoveryTest,PermissionBehaviorTest,PlanModeContextStatePersistenceTest,PlanModeMiddlewareTest,AgentSpawnToolPermissionTest,AgentSpawnToolPlanModeTest,LocalFilesystemModeTest,RemoteFilesystemCASTest,CompositeFilesystemTest,LocalFilesystemSpecSharedWorkspaceTest,DynamicSkillMiddlewareTest,SkillFilterTest,McpNamespacedToolTest,McpToolMetaPropagationTest"
+}

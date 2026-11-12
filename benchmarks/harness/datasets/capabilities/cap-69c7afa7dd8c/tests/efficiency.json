@@ -1,0 +1,30 @@
+{
+  "agent_steps": 4,
+  "tool_call_requests": 3,
+  "tool_calls": [
+    {
+      "kind": "tool_call",
+      "args": [],
+      "name": "get_current_user_id",
+      "step": 1
+    },
+    {
+      "kind": "tool_call",
+      "args": [],
+      "name": "get_user_location",
+      "step": 2,
+      "args_contains": {
+        "user_id": 35
+      }
+    },
+    {
+      "kind": "tool_call",
+      "args": [],
+      "name": "get_city_for_location",
+      "step": 3,
+      "args_contains": {
+        "location_id": 3
+      }
+    }
+  ]
+}

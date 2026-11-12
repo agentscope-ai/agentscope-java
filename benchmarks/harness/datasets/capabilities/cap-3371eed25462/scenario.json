@@ -1,0 +1,12 @@
+{
+  "category": "capabilities/tool_use",
+  "capabilities": true,
+  "variant": 0,
+  "fixture_tools": {
+    "module": "builtin",
+    "names": [
+      "write_todos"
+    ]
+  },
+  "system_context": ""
+}

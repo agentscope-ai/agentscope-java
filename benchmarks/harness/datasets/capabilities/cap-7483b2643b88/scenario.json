@@ -1,0 +1,19 @@
+{
+  "category": "capabilities/tool_use",
+  "capabilities": true,
+  "variant": 0,
+  "fixture_tools": {
+    "module": "test_tool_selection.py",
+    "names": [
+      "slack_send_dm",
+      "slack_post_channel",
+      "github_create_issue",
+      "github_create_pr",
+      "linear_create_issue",
+      "gmail_send_email",
+      "web_search",
+      "calendar_create_event"
+    ]
+  },
+  "system_context": ""
+}

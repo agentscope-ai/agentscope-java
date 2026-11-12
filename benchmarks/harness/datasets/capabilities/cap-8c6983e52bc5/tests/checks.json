@@ -1,0 +1,14 @@
+[
+  {
+    "kind": "final_text_contains",
+    "args": [
+      "Bob"
+    ]
+  },
+  {
+    "kind": "all_text_excludes",
+    "args": [
+      "Alice"
+    ]
+  }
+]

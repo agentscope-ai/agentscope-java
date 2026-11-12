@@ -1,0 +1,14 @@
+[
+  {
+    "kind": "final_text_contains",
+    "args": [
+      "cobalt-otter-17"
+    ]
+  },
+  {
+    "kind": "final_text_excludes",
+    "args": [
+      "MAGIC_PHRASE"
+    ]
+  }
+]

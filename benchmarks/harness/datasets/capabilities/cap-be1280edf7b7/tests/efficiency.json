@@ -1,0 +1,14 @@
+{
+  "agent_steps": 2,
+  "tool_call_requests": 1,
+  "tool_calls": [
+    {
+      "kind": "tool_call",
+      "args": [],
+      "name": "slack_send_dm",
+      "args_contains": {
+        "user_id": "U12345"
+      }
+    }
+  ]
+}

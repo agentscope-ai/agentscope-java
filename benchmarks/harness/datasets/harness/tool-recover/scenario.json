@@ -1,0 +1,22 @@
+{
+  "category": "tool",
+  "evidence": "trusted_fixture",
+  "score_version": "task-outcome-v1",
+  "release_core": true,
+  "fixture_tools": {
+    "module": "release-core",
+    "names": [
+      "operate"
+    ]
+  },
+  "trusted_calls": [
+    {
+      "op": "validate",
+      "schema_version": 1
+    },
+    {
+      "op": "validate",
+      "schema_version": 2
+    }
+  ]
+}

@@ -1,0 +1,12 @@
+{
+  "category": "memory",
+  "turns": [
+    "This is a new session. If you have no durable saved tracking code, write unknown into answer.txt; do not invent one."
+  ],
+  "new_session_at": [
+    1
+  ],
+  "evidence": "no_temporary_memory",
+  "score_version": "task-outcome-v1",
+  "release_core": true
+}

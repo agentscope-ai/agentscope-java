@@ -1,0 +1,10 @@
+[
+  {
+    "kind": "llm_judge",
+    "args": [
+      "The agent should ask about the preferred summary format or level of detail.",
+      "The agent should assume summaries apply to all emails and should NOT ask which emails to summarize.",
+      "The followup questions should remain concise and directly relevant."
+    ]
+  }
+]

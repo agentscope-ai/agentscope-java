@@ -1,0 +1,13 @@
+{
+  "category": "skills",
+  "requires": [
+    "dynamic_tool_policy"
+  ],
+  "evidence": "dynamic_permission",
+  "skills": true,
+  "java": {
+    "deny_tool": "execute"
+  },
+  "score_version": "task-outcome-v1",
+  "release_core": true
+}

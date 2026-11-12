@@ -1,0 +1,141 @@
+{
+  "version": "framework-contract-v1",
+  "description": "Production framework tests with mocks/local fixtures; no external model. Missing or skipped contracts fail admission.",
+  "tests": [
+    {
+      "class": "AgentSessionTest",
+      "source": "agentscope-harness/src/test/java/io/agentscope/harness/agent/session/AgentSessionTest.java",
+      "capability": "session-recovery"
+    },
+    {
+      "class": "SessionInboxCrashRecoveryTest",
+      "source": "agentscope-core/src/test/java/io/agentscope/core/session/SessionInboxCrashRecoveryTest.java",
+      "capability": "session-recovery"
+    },
+    {
+      "class": "SessionExecutionIdentityTest",
+      "source": "agentscope-core/src/test/java/io/agentscope/core/session/SessionExecutionIdentityTest.java",
+      "capability": "session-recovery"
+    },
+    {
+      "class": "WorkspaceSessionLogStoreTest",
+      "source": "agentscope-harness/src/test/java/io/agentscope/harness/agent/session/WorkspaceSessionLogStoreTest.java",
+      "capability": "session-recovery"
+    },
+    {
+      "class": "MemoryMiddlewareThrottleIsolationTest",
+      "source": "agentscope-harness/src/test/java/io/agentscope/harness/agent/middleware/MemoryMiddlewareThrottleIsolationTest.java",
+      "capability": "memory-isolation"
+    },
+    {
+      "class": "MemoryBackgroundContextPropagationTest",
+      "source": "agentscope-harness/src/test/java/io/agentscope/harness/agent/middleware/MemoryBackgroundContextPropagationTest.java",
+      "capability": "memory-isolation"
+    },
+    {
+      "class": "MemoryFlushMiddlewareTriggerTest",
+      "source": "agentscope-harness/src/test/java/io/agentscope/harness/agent/middleware/MemoryFlushMiddlewareTriggerTest.java",
+      "capability": "memory-isolation"
+    },
+    {
+      "class": "MemoryFlushMiddlewareAsyncFlushTest",
+      "source": "agentscope-harness/src/test/java/io/agentscope/harness/agent/middleware/MemoryFlushMiddlewareAsyncFlushTest.java",
+      "capability": "memory-isolation"
+    },
+    {
+      "class": "CompactionMiddlewareTest",
+      "source": "agentscope-harness/src/test/java/io/agentscope/harness/agent/middleware/CompactionMiddlewareTest.java",
+      "capability": "compaction-offload"
+    },
+    {
+      "class": "ToolResultEvictionMiddlewareTest",
+      "source": "agentscope-harness/src/test/java/io/agentscope/harness/agent/middleware/ToolResultEvictionMiddlewareTest.java",
+      "capability": "compaction-offload"
+    },
+    {
+      "class": "SubAgentToolCancellationTest",
+      "source": "agentscope-core/src/test/java/io/agentscope/core/tool/subagent/SubAgentToolCancellationTest.java",
+      "capability": "subagent-lifecycle"
+    },
+    {
+      "class": "SubAgentToolSessionTest",
+      "source": "agentscope-core/src/test/java/io/agentscope/core/tool/subagent/SubAgentToolSessionTest.java",
+      "capability": "subagent-lifecycle"
+    },
+    {
+      "class": "AgentSpawnToolResultStateTest",
+      "source": "agentscope-harness/src/test/java/io/agentscope/harness/agent/tool/AgentSpawnToolResultStateTest.java",
+      "capability": "subagent-lifecycle"
+    },
+    {
+      "class": "SubagentPendingToolRecoveryTest",
+      "source": "agentscope-harness/src/test/java/io/agentscope/harness/agent/SubagentPendingToolRecoveryTest.java",
+      "capability": "subagent-lifecycle"
+    },
+    {
+      "class": "PermissionBehaviorTest",
+      "source": "agentscope-core/src/test/java/io/agentscope/core/permission/PermissionBehaviorTest.java",
+      "capability": "permissions-plan-mode"
+    },
+    {
+      "class": "PlanModeContextStatePersistenceTest",
+      "source": "agentscope-core/src/test/java/io/agentscope/core/state/PlanModeContextStatePersistenceTest.java",
+      "capability": "permissions-plan-mode"
+    },
+    {
+      "class": "PlanModeMiddlewareTest",
+      "source": "agentscope-harness/src/test/java/io/agentscope/harness/agent/middleware/PlanModeMiddlewareTest.java",
+      "capability": "permissions-plan-mode"
+    },
+    {
+      "class": "AgentSpawnToolPermissionTest",
+      "source": "agentscope-harness/src/test/java/io/agentscope/harness/agent/tool/AgentSpawnToolPermissionTest.java",
+      "capability": "permissions-plan-mode"
+    },
+    {
+      "class": "AgentSpawnToolPlanModeTest",
+      "source": "agentscope-harness/src/test/java/io/agentscope/harness/agent/tool/AgentSpawnToolPlanModeTest.java",
+      "capability": "permissions-plan-mode"
+    },
+    {
+      "class": "LocalFilesystemModeTest",
+      "source": "agentscope-harness/src/test/java/io/agentscope/harness/agent/filesystem/LocalFilesystemModeTest.java",
+      "capability": "filesystem-isolation"
+    },
+    {
+      "class": "RemoteFilesystemCASTest",
+      "source": "agentscope-harness/src/test/java/io/agentscope/harness/agent/filesystem/RemoteFilesystemCASTest.java",
+      "capability": "filesystem-isolation"
+    },
+    {
+      "class": "CompositeFilesystemTest",
+      "source": "agentscope-harness/src/test/java/io/agentscope/harness/agent/filesystem/CompositeFilesystemTest.java",
+      "capability": "filesystem-isolation"
+    },
+    {
+      "class": "LocalFilesystemSpecSharedWorkspaceTest",
+      "source": "agentscope-harness/src/test/java/io/agentscope/harness/agent/filesystem/LocalFilesystemSpecSharedWorkspaceTest.java",
+      "capability": "filesystem-isolation"
+    },
+    {
+      "class": "DynamicSkillMiddlewareTest",
+      "source": "agentscope-core/src/test/java/io/agentscope/core/skill/DynamicSkillMiddlewareTest.java",
+      "capability": "skills-mcp"
+    },
+    {
+      "class": "SkillFilterTest",
+      "source": "agentscope-core/src/test/java/io/agentscope/core/skill/SkillFilterTest.java",
+      "capability": "skills-mcp"
+    },
+    {
+      "class": "McpNamespacedToolTest",
+      "source": "agentscope-core/src/test/java/io/agentscope/core/tool/mcp/McpNamespacedToolTest.java",
+      "capability": "skills-mcp"
+    },
+    {
+      "class": "McpToolMetaPropagationTest",
+      "source": "agentscope-core/src/test/java/io/agentscope/core/tool/mcp/McpToolMetaPropagationTest.java",
+      "capability": "skills-mcp"
+    }
+  ]
+}

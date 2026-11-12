@@ -1,0 +1,4 @@
+# Native adapter tests and task configuration parsing; no cloud SDK is required directly.
+-r requirements-protocol.txt
+harbor==0.25.0
+toml==0.10.2

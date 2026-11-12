@@ -1,0 +1,12 @@
+[
+  {
+    "path": "billing.py",
+    "kind": "text",
+    "value": "# Public billing API\nTAX_RATE = 0.07\n\ndef total(n):\n    return n * (1 + TAX_RATE)"
+  },
+  {
+    "path": "policy.json",
+    "kind": "text",
+    "value": "{\"tax_rate\":0.07}"
+  }
+]

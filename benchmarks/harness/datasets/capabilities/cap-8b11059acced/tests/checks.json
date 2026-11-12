@@ -1,0 +1,29 @@
+[
+  {
+    "kind": "final_text_contains",
+    "args": [
+      "appetizer"
+    ],
+    "case_insensitive": true
+  },
+  {
+    "kind": "final_text_contains",
+    "args": [
+      "main"
+    ],
+    "case_insensitive": true
+  },
+  {
+    "kind": "final_text_contains",
+    "args": [
+      "dessert"
+    ],
+    "case_insensitive": true
+  },
+  {
+    "kind": "max_tool_calls",
+    "args": [
+      0
+    ]
+  }
+]

@@ -1,0 +1,20 @@
+[
+  {
+    "kind": "final_text_contains",
+    "args": [
+      "21,800,000"
+    ]
+  },
+  {
+    "kind": "final_text_contains",
+    "args": [
+      "606"
+    ]
+  },
+  {
+    "kind": "final_text_min_length",
+    "args": [
+      80
+    ]
+  }
+]

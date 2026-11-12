@@ -411,7 +411,7 @@ tools: [read_file, grep_files]   # 可选；继承工具的白名单
 
 ```jsonc
 {
-  // 白名单：非空时只允许列出的工具
+  // 工具白名单：默认豁免平台工具，strictAllow 为 true 时取消豁免
   "allow": ["read_file", "grep_files", "execute"],
   // 黑名单：列出的工具一律不暴露（优先级高于 allow）
   "deny":  ["write_file"],
@@ -448,9 +448,10 @@ tools: [read_file, grep_files]   # 可选；继承工具的白名单
 
 - **MCP server 在构建期一次性注册到 toolkit**，agent 看到的就是这些 server 暴露的工具。
 - **meta 透传由三个可选字段控制**，与 core MCP client 的三级开关一一对应：`propagateMeta`（连接级——部署态一刀切；core 每次调用实时判定该开关，但 Harness 当前不提供运行时取回入口，按构建期配置对待）、`propagateMetaDefault`（注册级——该 server 注册的所有工具默认静默）、`propagateMetaOverrides`（工具级——放行个别工具；写错的工具名会让本次注册直接失败，绝不静默丢失；工具级 `true` 压不过连接级 `false`，连接级始终是实时天花板）。三个都不写时保持 core 默认行为（meta 全部透传）。
-- **`allow` / `deny` 在所有工具注册完之后才应用**——所以也会过滤掉 Harness 的内置工具（`read_file` / `memory_search` / `agent_spawn` 等）。**用 `allow` 列白名单时务必把要保留的内置工具一并列出**，否则会一起被砍掉。
+- **`allow` / `deny` 在 Harness 和 core 工具注册完成后应用。** 默认情况下 Harness 平台工具不受 `allow` 限制，`deny` 始终优先。设置 `strictAllow: true` 可取消平台工具豁免；再设置 `defaultToolsEnabled: false`，即使 `allow` 为空也只开放显式允许的工具。技能刷新会尊重已移除的 `load_skill_through_path`，不会在调用开始时重新注册它。
+- 记忆、知识文件和子代理提示会根据已注册工具生成。过滤工具不会关闭自动记忆 hook；需要关闭时显式调用 `disableMemoryHooks()`。仅使用业务工具的 runner 还应通过 `disableSubagents()`、`disableMemoryTools()` 关闭不用的能力。
 - `${ENV_VAR}` 语法做环境变量替换；未设置时给 warning 并替换成空字符串。
-- 不想用文件？直接 `builder.toolsConfig(ToolsConfig.builder()...)` 编程注入；要完全关掉读取用 `disableToolsConfig()`。
+- 不想用文件？创建 `new ToolsConfig()`、通过 setter 配置后调用 `builder.toolsConfig(config)`；要完全关掉读取用 `disableToolsConfig()`。
 - 在共享存储模式下，`tools.json` 走前面说的"远端为上层、本机模板为下层"的 overlay。
 
 ### `plans/`

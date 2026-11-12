@@ -1,0 +1,27 @@
+{
+  "category": "capabilities/tool_use",
+  "capabilities": true,
+  "variant": 0,
+  "fixture_tools": {
+    "module": "test_tool_usage_relational.py",
+    "names": [
+      "get_user_name",
+      "list_user_ids",
+      "find_users_by_name",
+      "find_locations_by_name",
+      "find_foods_by_name",
+      "get_user_email",
+      "get_user_location",
+      "get_user_favorite_color",
+      "get_user_favorite_foods",
+      "get_weather_at_location",
+      "get_city_for_location",
+      "get_current_time_for_location",
+      "get_food_name",
+      "get_food_calories",
+      "get_food_allergic_ingredients",
+      "get_current_user_id"
+    ]
+  },
+  "system_context": ""
+}

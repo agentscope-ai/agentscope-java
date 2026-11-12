@@ -1,0 +1,7 @@
+{
+  "category": "lifecycle",
+  "requires": [
+    "transport_request_dedup"
+  ],
+  "evidence": "duplicate_delivery"
+}

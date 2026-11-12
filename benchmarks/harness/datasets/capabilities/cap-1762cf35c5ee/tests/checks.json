@@ -1,0 +1,16 @@
+[
+  {
+    "kind": "file_contains",
+    "args": [
+      "/workspace/project/AGENTS.md",
+      "bullet points"
+    ]
+  },
+  {
+    "kind": "final_text_contains",
+    "args": [
+      "bullet"
+    ],
+    "case_insensitive": true
+  }
+]

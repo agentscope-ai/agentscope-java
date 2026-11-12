@@ -1,0 +1,17 @@
+[
+  {
+    "kind": "file_contains",
+    "args": [
+      "/workspace/project/AGENTS.md",
+      "Python"
+    ]
+  },
+  {
+    "kind": "llm_judge",
+    "args": [
+      "The agent should record that the user only reviews Python PRs in its memory file.",
+      "The memory should note that the user is not familiar with JavaScript."
+    ],
+    "include_tool_calls": true
+  }
+]

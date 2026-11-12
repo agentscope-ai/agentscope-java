@@ -1,0 +1,17 @@
+[
+  {
+    "kind": "file_contains",
+    "args": [
+      "/workspace/project/AGENTS.md",
+      "C++"
+    ]
+  },
+  {
+    "kind": "llm_judge",
+    "args": [
+      "The agent should write a note to its memory file recording that the user prefers or uses C++.",
+      "The memory update should NOT contain a full C++ code tutorial — just the preference."
+    ],
+    "include_tool_calls": true
+  }
+]

@@ -1,0 +1,10 @@
+[
+  {
+    "kind": "llm_judge",
+    "args": [
+      "The agent should ask where customer questions come from (email, Slack, support tool, etc.).",
+      "The agent should ask about the domain or product to understand what kinds of questions to expect.",
+      "The agent should NOT ask whether responses should be automated vs. drafted unless the distinction is unclear from context."
+    ]
+  }
+]

@@ -1,0 +1,14 @@
+[
+  {
+    "kind": "final_text_contains",
+    "args": [
+      "/workspace/src/app.py"
+    ]
+  },
+  {
+    "kind": "final_text_excludes",
+    "args": [
+      "/workspace/src/util.py"
+    ]
+  }
+]

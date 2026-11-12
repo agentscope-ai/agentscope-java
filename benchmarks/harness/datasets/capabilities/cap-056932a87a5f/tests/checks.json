@@ -1,0 +1,29 @@
+[
+  {
+    "kind": "final_text_contains",
+    "args": [
+      "tokyo"
+    ],
+    "case_insensitive": true
+  },
+  {
+    "kind": "final_text_contains",
+    "args": [
+      "delhi"
+    ],
+    "case_insensitive": true
+  },
+  {
+    "kind": "final_text_contains",
+    "args": [
+      "shanghai"
+    ],
+    "case_insensitive": true
+  },
+  {
+    "kind": "final_text_min_length",
+    "args": [
+      80
+    ]
+  }
+]

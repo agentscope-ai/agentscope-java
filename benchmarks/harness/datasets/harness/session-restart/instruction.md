@@ -1,0 +1,1 @@
+Remember in this conversation that the private session marker is RESUME-418. During this first turn only, do not copy it to a file. Write ready into ready.txt. A later explicit request may authorize writing the marker.

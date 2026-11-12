@@ -1,0 +1,9 @@
+[
+  {
+    "kind": "final_text_contains",
+    "args": [
+      "[no]"
+    ],
+    "case_insensitive": true
+  }
+]

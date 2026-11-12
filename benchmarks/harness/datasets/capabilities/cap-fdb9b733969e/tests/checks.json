@@ -1,0 +1,10 @@
+[
+  {
+    "kind": "llm_judge",
+    "args": [
+      "The agent should ask what data source or file the user wants analyzed.",
+      "The agent should ask what kind of analysis the user needs (summary stats, trends, anomalies, etc.).",
+      "The agent should NOT assume a specific file format or tool without asking."
+    ]
+  }
+]

@@ -1,0 +1,163 @@
+{
+  "profile": "managed-agents-text-v1",
+  "reviewed_at": "2026-11-07",
+  "beta": "managed-agents-2026-04-01",
+  "sdk_repository": "anthropics/anthropic-sdk-python",
+  "sdk_revision": "4c7b598466b88559583f98216139be8e9b34c1fc",
+  "scope": "Text-only subset; local profile version is stored outside event objects. Unsupported types are rejected, not silently reinterpreted.",
+  "references": [
+    "https://platform.claude.com/docs/en/managed-agents/events-and-streaming",
+    "https://platform.claude.com/docs/en/managed-agents/event-deltas",
+    "https://platform.claude.com/docs/en/managed-agents/reference"
+  ],
+  "source_files": [
+    {
+      "path": "src/anthropic/types/beta/sessions/beta_managed_agents_agent_message_event.py",
+      "blob_sha": "2ac32200b93a228e82e9c32f2f5cf13ae0682032"
+    },
+    {
+      "path": "src/anthropic/types/beta/sessions/beta_managed_agents_session_status_running_event.py",
+      "blob_sha": "7aad0d96633dbf0e102805281fa08460709b4006"
+    },
+    {
+      "path": "src/anthropic/types/beta/sessions/beta_managed_agents_session_status_idle_event.py",
+      "blob_sha": "2500867d6f960ab0e509a087e34e816c6fa05609"
+    },
+    {
+      "path": "src/anthropic/types/beta/sessions/beta_managed_agents_user_message_event.py",
+      "blob_sha": "cd351f84d0de7baff9d506a49add621d82caa4cf"
+    },
+    {
+      "path": "src/anthropic/types/beta/sessions/beta_managed_agents_user_interrupt_event.py",
+      "blob_sha": "930c4534c536f824bb95bafdf92c3db519873bd6"
+    },
+    {
+      "path": "src/anthropic/types/beta/sessions/beta_managed_agents_agent_custom_tool_use_event.py",
+      "blob_sha": "b035b812eae47192b78ccd54d1f924773a140b24"
+    },
+    {
+      "path": "src/anthropic/types/beta/sessions/beta_managed_agents_user_custom_tool_result_event.py",
+      "blob_sha": "fe29cf6ef05002f4203b63cffa0638ec856412c5"
+    },
+    {
+      "path": "src/anthropic/types/beta/sessions/beta_managed_agents_session_error_event.py",
+      "blob_sha": "6c202fa0d760d56e5186bacc20904f79668bbea4"
+    },
+    {
+      "path": "src/anthropic/types/beta/sessions/beta_managed_agents_span_model_request_end_event.py",
+      "blob_sha": "fd56c9504b36e6f07967ecb7abfe31208a4b1cbf"
+    },
+    {
+      "path": "src/anthropic/types/beta/sessions/beta_managed_agents_agent_tool_use_event.py",
+      "blob_sha": "540f211898291746badd4ab0a416fa4186966805"
+    },
+    {
+      "path": "src/anthropic/types/beta/sessions/beta_managed_agents_agent_tool_result_event.py",
+      "blob_sha": "9c3602459f3310736244cb7d92389d82f93a2590"
+    },
+    {
+      "path": "src/anthropic/types/beta/sessions/beta_managed_agents_agent_mcp_tool_use_event.py",
+      "blob_sha": "18c54ad7a7fc19f49a643263f663daa8566aaa28"
+    },
+    {
+      "path": "src/anthropic/types/beta/sessions/beta_managed_agents_agent_mcp_tool_result_event.py",
+      "blob_sha": "381e5f78d2f1977e1e485b1cdb7214dd76930bb7"
+    },
+    {
+      "path": "src/anthropic/types/beta/sessions/beta_managed_agents_user_tool_confirmation_event_params.py",
+      "blob_sha": "4eee1a09468dc1b162062de2b40da8ef306b7a62"
+    },
+    {
+      "path": "src/anthropic/types/beta/sessions/beta_managed_agents_session_end_turn.py",
+      "blob_sha": "44354e155b0951ad895922427a4c9a9ada3970a8"
+    },
+    {
+      "path": "src/anthropic/types/beta/sessions/beta_managed_agents_session_requires_action.py",
+      "blob_sha": "727737371d6c06d8929745f2b327ee6f82e4c7e9"
+    },
+    {
+      "path": "src/anthropic/types/beta/sessions/beta_managed_agents_session_retries_exhausted.py",
+      "blob_sha": "7d055a847ca69166c518b5cdfa7fbcc6ebc32dcb"
+    },
+    {
+      "path": "src/anthropic/types/beta/sessions/beta_managed_agents_session_budget_reached.py",
+      "blob_sha": "c823a8892ff508e92b0c3607f6d9ae80ebf8ce31"
+    },
+    {
+      "path": "src/anthropic/types/beta/sessions/beta_managed_agents_session_refusal.py",
+      "blob_sha": "39753e1b996e6ce572707dc82fbe17261474cbc3"
+    },
+    {
+      "path": "src/anthropic/types/beta/sessions/beta_managed_agents_unknown_error.py",
+      "blob_sha": "feb25abf10757d144fbc56968b297b7b216c0a0b"
+    },
+    {
+      "path": "src/anthropic/types/beta/sessions/beta_managed_agents_session_status_terminated_event.py",
+      "blob_sha": "b442497d0986c469083634b50523c06556df896e"
+    },
+    {
+      "path": "src/anthropic/types/beta/sessions/beta_managed_agents_agent_thread_context_compacted_event.py",
+      "blob_sha": "7e0cdea1a49459cbc826f5d3b666eaec1cce8c12"
+    },
+    {
+      "path": "src/anthropic/types/beta/sessions/beta_managed_agents_agent_thinking_event.py",
+      "blob_sha": "658f335a48f98d10e574deb25becfbf070ce0ee0"
+    },
+    {
+      "path": "src/anthropic/types/beta/sessions/beta_managed_agents_span_model_request_start_event.py",
+      "blob_sha": "5973e93b4fd2f1c4ec55d398f418caf97b020873"
+    },
+    {
+      "path": "src/anthropic/types/beta/sessions/beta_managed_agents_span_model_usage.py",
+      "blob_sha": "3e970468559a33349e64b54aa3bbf7f65a4c9723"
+    },
+    {
+      "path": "src/anthropic/types/beta/sessions/beta_managed_agents_text_block.py",
+      "blob_sha": "203cc6508eee15840f8e100f95046d906ae94c6b"
+    },
+    {
+      "path": "src/anthropic/types/beta/sessions/beta_managed_agents_user_message_event_params.py",
+      "blob_sha": "eb64e68882af07fb3b29d7ba1d1d11a0b9829686"
+    },
+    {
+      "path": "src/anthropic/types/beta/sessions/beta_managed_agents_user_interrupt_event_params.py",
+      "blob_sha": "f456f5cd1efb7b749050da0696cba307710af987"
+    },
+    {
+      "path": "src/anthropic/types/beta/sessions/beta_managed_agents_user_custom_tool_result_event_params.py",
+      "blob_sha": "b06439addcd4128229042be2cde725efd2b2a6a7"
+    },
+    {
+      "path": "src/anthropic/types/beta/sessions/beta_managed_agents_system_message_event_params.py",
+      "blob_sha": "6b1a80fc362c2b3876fe947a366186a5bc4538f6"
+    },
+    {
+      "path": "src/anthropic/types/beta/sessions/beta_managed_agents_retry_status_retrying.py",
+      "blob_sha": "db6064e3bab3b7b5705ae2fe18b712c879aab671"
+    },
+    {
+      "path": "src/anthropic/types/beta/sessions/beta_managed_agents_retry_status_terminal.py",
+      "blob_sha": "fa8e0bd06985db1a4fd1676fd30e005a9c5ec2d8"
+    },
+    {
+      "path": "src/anthropic/types/beta/sessions/beta_managed_agents_retry_status_exhausted.py",
+      "blob_sha": "2300625e75b6afffc34089d5ee1517401d166baa"
+    },
+    {
+      "path": "src/anthropic/types/beta/sessions/beta_managed_agents_agent_evaluated_permission.py",
+      "blob_sha": "f8ed47d701f56ea6159a720170531fac857ae4b3"
+    },
+    {
+      "path": "src/anthropic/types/beta/sessions/beta_managed_agents_user_tool_confirmation_event.py",
+      "blob_sha": "2260ac4b3eae6337d0cd8979a46703004c0f4396"
+    },
+    {
+      "path": "src/anthropic/types/beta/sessions/beta_managed_agents_session_refusal_stop_details.py",
+      "blob_sha": "7da87d6b61f79a8749e60fd9fff2384e9a01f180"
+    },
+    {
+      "path": "src/anthropic/types/beta/sessions/beta_managed_agents_session_status_rescheduled_event.py",
+      "blob_sha": "41a89b9b160e4dd295f8092e4077c6acc6043682"
+    }
+  ]
+}

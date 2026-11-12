@@ -1,0 +1,60 @@
+{
+  "agent_steps": 3,
+  "tool_call_requests": 6,
+  "tool_calls": [
+    {
+      "kind": "tool_call",
+      "args": [],
+      "name": "ls",
+      "step": 1,
+      "args_contains": {
+        "path": "/quotes"
+      }
+    },
+    {
+      "kind": "tool_call",
+      "args": [],
+      "name": "read_file",
+      "step": 2,
+      "args_contains": {
+        "file_path": "/quotes/q1.txt"
+      }
+    },
+    {
+      "kind": "tool_call",
+      "args": [],
+      "name": "read_file",
+      "step": 2,
+      "args_contains": {
+        "file_path": "/quotes/q2.txt"
+      }
+    },
+    {
+      "kind": "tool_call",
+      "args": [],
+      "name": "read_file",
+      "step": 2,
+      "args_contains": {
+        "file_path": "/quotes/q3.txt"
+      }
+    },
+    {
+      "kind": "tool_call",
+      "args": [],
+      "name": "read_file",
+      "step": 2,
+      "args_contains": {
+        "file_path": "/quotes/q4.txt"
+      }
+    },
+    {
+      "kind": "tool_call",
+      "args": [],
+      "name": "read_file",
+      "step": 2,
+      "args_contains": {
+        "file_path": "/quotes/q5.txt"
+      }
+    }
+  ]
+}

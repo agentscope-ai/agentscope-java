@@ -1,0 +1,25 @@
+/.venv/
+/artifacts/
+/.pytest_cache/
+/.ruff_cache/
+/report.html
+**/node_modules/
+
+# Local investigations, campaign receipts and intermediate results.
+/diagnostics/
+/selections/
+/test_audit.py
+/docs/*-run*.md
+/docs/*-findings*.md
+/docs/implementation-status.md
+/docs/release-acceptance*.md
+/docs/unified-evaluation-design*.md
+/docs/*-migration*.md
+/docs/*-coverage.md
+/docs/business-full-operations.md
+/docs/business-cluster-expansion*.md
+/deploy/check_business_campaign.py
+/deploy/submit_business_campaign.py
+/configs/acs-*-preflight-mutation.json
+/configs/acs-*-preflight-skills.json
+/configs/business-cluster-expansion.json

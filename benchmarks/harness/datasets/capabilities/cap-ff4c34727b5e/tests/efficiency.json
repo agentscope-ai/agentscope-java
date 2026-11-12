@@ -1,0 +1,15 @@
+{
+  "agent_steps": 2,
+  "tool_call_requests": 1,
+  "tool_calls": [
+    {
+      "kind": "tool_call",
+      "args": [],
+      "name": "edit_file",
+      "step": 1,
+      "args_contains": {
+        "file_path": "/skills/user/testing/SKILL.md"
+      }
+    }
+  ]
+}

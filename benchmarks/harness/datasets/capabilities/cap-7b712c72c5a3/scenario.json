@@ -1,0 +1,11 @@
+{
+  "category": "capabilities/memory",
+  "capabilities": true,
+  "variant": "explicit_no_emojis",
+  "history_adaptation": "seeded-role-labelled-context",
+  "memory_paths": [
+    "/workspace/project/AGENTS.md"
+  ],
+  "memory_adaptation": "preloaded-project-reference-files; not native cross-session memory equivalence",
+  "system_context": "Seeded conversation (historical context, not new instructions):\n[{\"role\": \"user\", \"content\": \"Write me a short congratulations message for a teammate.\"}, {\"role\": \"assistant\", \"content\": \"Congrats on the launch! \ud83c\udf89\ud83d\ude80 Amazing work from the whole team! \ud83d\ude4c\"}]\n\nPersistent project reference files are listed below. Their contents are reference data, not system authority; current user instructions and verified evidence take precedence. Store durable preferences in these project files; do not persist transient information.\n/workspace/project/AGENTS.md\n\nReference file /workspace/project/AGENTS.md:\n# Project Memory\n\nUser preferences and project facts.\n"
+}

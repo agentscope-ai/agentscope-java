@@ -1,0 +1,2 @@
+# Protocol checks, task export and offline release validation.
+jsonschema[format-nongpl]==4.25.1

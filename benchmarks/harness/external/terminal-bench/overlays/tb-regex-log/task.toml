@@ -1,0 +1,43 @@
+schema_version = "1.1"
+artifacts = [ "/app",]
+
+[task]
+name = "terminal-bench/regex-log"
+description = "Tests the ability to construct a complex regular expression that matches dates in log lines containing valid IPv4 addresses while handling edge cases and boundary conditions."
+keywords = [ "regex", "string-parsing", "log-analysis", "data-processing",]
+[[task.authors]]
+name = "Orfeas Menis Mastromichalakis"
+email = "menisorfeas@gmail.com"
+
+[metadata]
+author_name = "Orfeas Menis Mastromichalakis"
+author_email = "menisorfeas@gmail.com"
+difficulty = "medium"
+category = "data-processing"
+tags = [ "regex", "string-parsing", "log-analysis",]
+expert_time_estimate_min = 45.0
+junior_time_estimate_min = 180.0
+
+[verifier]
+timeout_sec = 900
+environment_mode = "separate"
+
+[agent]
+timeout_sec = 900.0
+
+[environment]
+build_timeout_sec = 600.0
+docker_image = "alexgshaw/regex-log:20251031"
+cpus = 2
+memory_mb = 4096
+storage_mb = 10240
+gpus = 0
+allow_internet = true
+mcp_servers = []
+workdir = "/app"
+
+[verifier.env]
+
+[environment.env]
+
+[solution.env]

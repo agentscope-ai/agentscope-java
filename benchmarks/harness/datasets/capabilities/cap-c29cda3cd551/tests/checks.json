@@ -1,0 +1,32 @@
+[
+  {
+    "kind": "final_text_contains",
+    "args": [
+      "def "
+    ]
+  },
+  {
+    "kind": "final_text_excludes",
+    "args": [
+      "function("
+    ]
+  },
+  {
+    "kind": "final_text_excludes",
+    "args": [
+      "=>"
+    ]
+  },
+  {
+    "kind": "final_text_excludes",
+    "args": [
+      "const "
+    ]
+  },
+  {
+    "kind": "final_text_excludes",
+    "args": [
+      "console.log"
+    ]
+  }
+]

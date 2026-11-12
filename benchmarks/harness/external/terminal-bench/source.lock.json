@@ -1,0 +1,226 @@
+{
+  "repository": "https://github.com/harbor-framework/terminal-bench-2",
+  "revision": "2fd12b88aafdd04a52c298e3940bcb189f9766d6",
+  "tasks": {
+    "tb-cancel-async-tasks": {
+      "path": "cancel-async-tasks",
+      "files": {
+        ".gitignore": "9a8dd8d9b6c3adb8e9e56328df27deef859a3e98fffc9b8133c8b22207c25953",
+        "README.md": "9adf86b1279cc44f83fe16e6d340595aa992240f1d87243d204cae32e453693b",
+        "environment/Dockerfile": "1ee7bdb4a7536f5f114c11a3ac6ff42790abfea901fcba6b2a8ea8685f19140e",
+        "instruction.md": "23d22f7039b50682941652c716f96dac314b8585c32c133614cac77dc067f47e",
+        "task.toml": "14db0675e04408f2133b0067e8dbddf66a1d6e7baf6b8d38bef8ecccfc4e58a8",
+        "tests/test.py": "f533c0a64db068f582b4733c5b81f2e66b8fa52fcd3efa65752e6bd6d24780aa",
+        "tests/test.sh": "79600a6b863def31b4daa008297423010cd2d6243e689d67503e118e4dc53397",
+        "tests/test_outputs.py": "d6f510b51fafc81b4e9b5cc95535aa13491c8753e0e4171db42c45f4de460ee7"
+      },
+      "prepared_files": {
+        ".gitignore": "9a8dd8d9b6c3adb8e9e56328df27deef859a3e98fffc9b8133c8b22207c25953",
+        "README.md": "9adf86b1279cc44f83fe16e6d340595aa992240f1d87243d204cae32e453693b",
+        "environment/Dockerfile": "1ee7bdb4a7536f5f114c11a3ac6ff42790abfea901fcba6b2a8ea8685f19140e",
+        "instruction.md": "23d22f7039b50682941652c716f96dac314b8585c32c133614cac77dc067f47e",
+        "scenario.json": "8c844b69b5fec0ca6586318f581815706dbc1645c7757312dff88796acb323ff",
+        "task.toml": "2a01dc42b5360704cc87859729e01c290b5fa37c2068571415c0d26aa5f75618",
+        "tests/test.py": "f533c0a64db068f582b4733c5b81f2e66b8fa52fcd3efa65752e6bd6d24780aa",
+        "tests/test.sh": "191fe6bc01b4fc51d474e29020b693bbf73c02cdd565b43e1a4081176061a317",
+        "tests/test_outputs.py": "d6f510b51fafc81b4e9b5cc95535aa13491c8753e0e4171db42c45f4de460ee7",
+        "tests/upstream-test.sh": "79600a6b863def31b4daa008297423010cd2d6243e689d67503e118e4dc53397"
+      }
+    },
+    "tb-fix-git": {
+      "path": "fix-git",
+      "files": {
+        ".gitignore": "9a8dd8d9b6c3adb8e9e56328df27deef859a3e98fffc9b8133c8b22207c25953",
+        "README.md": "818af93ec53de56cffbd33da3377f5bd013786e1232cc7fa47f7dff6cca9a93f",
+        "environment/Dockerfile": "dfd64a46955909f58d1b562ea233c3cace75195bbef5d75cd6b599f3b8967bb7",
+        "environment/resources/patch_files/about.md": "2e09260b011012f9f7f491cd02809903449924cf8f825acd369fb8990b04e768",
+        "environment/resources/patch_files/default.html": "fb3fad17b83338002f5fd6a99ea1ec3a662cea570f9fff9240b8abc1861be655",
+        "environment/setup.sh": "99125cf2e362f2f4a864ba2f55c2f0e9f0aa0641fed588cef588184fcc192de2",
+        "instruction.md": "f98174e47ba5ce040f6fad22ef3cbca4dd27b3192868ea5d082077222c3ec4e8",
+        "task.toml": "25507ef6cbd6bf73c8bfdfbe7f7ba136224c8453fbba2de2993c639e2a61ad8b",
+        "tests/test.sh": "4770437ea96c3cc84684b4f99d55fb148fcac09f9ea1e8ef49de487716e6c334",
+        "tests/test_outputs.py": "a8a6f51eb0d7c4ebdf0813c8f0b645edf29c995f1f9faf2aca3886a6713043f3"
+      },
+      "prepared_files": {
+        ".gitignore": "9a8dd8d9b6c3adb8e9e56328df27deef859a3e98fffc9b8133c8b22207c25953",
+        "README.md": "818af93ec53de56cffbd33da3377f5bd013786e1232cc7fa47f7dff6cca9a93f",
+        "environment/Dockerfile": "dfd64a46955909f58d1b562ea233c3cace75195bbef5d75cd6b599f3b8967bb7",
+        "environment/resources/patch_files/about.md": "2e09260b011012f9f7f491cd02809903449924cf8f825acd369fb8990b04e768",
+        "environment/resources/patch_files/default.html": "fb3fad17b83338002f5fd6a99ea1ec3a662cea570f9fff9240b8abc1861be655",
+        "environment/setup.sh": "99125cf2e362f2f4a864ba2f55c2f0e9f0aa0641fed588cef588184fcc192de2",
+        "instruction.md": "f98174e47ba5ce040f6fad22ef3cbca4dd27b3192868ea5d082077222c3ec4e8",
+        "scenario.json": "4bec95ccfa85cd90da01fc103d119af1e34bc6112e493ef9e06ed6b295e44f11",
+        "task.toml": "5e8f41bae63a54fcc855f5aa714dbdb077301351b2854a46c567c3f6cf73aac7",
+        "tests/test.sh": "58105892f4742529c92f7d66d55a01e8564f27b42ab33c19a59439e7988f944e",
+        "tests/test_outputs.py": "a8a6f51eb0d7c4ebdf0813c8f0b645edf29c995f1f9faf2aca3886a6713043f3",
+        "tests/upstream-test.sh": "4770437ea96c3cc84684b4f99d55fb148fcac09f9ea1e8ef49de487716e6c334"
+      }
+    },
+    "tb-large-scale-text-editing": {
+      "path": "large-scale-text-editing",
+      "files": {
+        ".gitignore": "9a8dd8d9b6c3adb8e9e56328df27deef859a3e98fffc9b8133c8b22207c25953",
+        "README.md": "6eff0990be57c2c2e9a1739152a188e3da911c6b7687ed595b08f3898fbde900",
+        "environment/Dockerfile": "609759efe5a6bca4c0f4d0011dd1dda814896ca6873ead803af68d92b92d8aa2",
+        "environment/gen_large_csv.py": "167daab578dc75ba1385c40492037f11708b06ea4cda836cd05f12017ae54654",
+        "environment/tests/gen_large_csv.py": "167daab578dc75ba1385c40492037f11708b06ea4cda836cd05f12017ae54654",
+        "environment/tests/test_outputs.py": "f5e69f4fedeefa23197745888a5847161529f454e6b5c32a4057363d9ae4cd43",
+        "instruction.md": "2746a16369b28b2e368ca168bc85222811cbe570f3b315f1b1c432afad07ddc8",
+        "task.toml": "5c9488e80c1186f72efb8193e6be13c74eadf334b3846db2e794d24513a88f5f",
+        "tests/gen_large_csv.py": "167daab578dc75ba1385c40492037f11708b06ea4cda836cd05f12017ae54654",
+        "tests/test.sh": "e5edb6fcd43d7e638ffcf64522c11185a8355afb5daf6ad805cdfedd47e9ceb3",
+        "tests/test_outputs.py": "f5e69f4fedeefa23197745888a5847161529f454e6b5c32a4057363d9ae4cd43"
+      },
+      "prepared_files": {
+        ".gitignore": "9a8dd8d9b6c3adb8e9e56328df27deef859a3e98fffc9b8133c8b22207c25953",
+        "README.md": "6eff0990be57c2c2e9a1739152a188e3da911c6b7687ed595b08f3898fbde900",
+        "environment/Dockerfile": "609759efe5a6bca4c0f4d0011dd1dda814896ca6873ead803af68d92b92d8aa2",
+        "environment/gen_large_csv.py": "167daab578dc75ba1385c40492037f11708b06ea4cda836cd05f12017ae54654",
+        "environment/tests/gen_large_csv.py": "167daab578dc75ba1385c40492037f11708b06ea4cda836cd05f12017ae54654",
+        "environment/tests/test_outputs.py": "f5e69f4fedeefa23197745888a5847161529f454e6b5c32a4057363d9ae4cd43",
+        "instruction.md": "2746a16369b28b2e368ca168bc85222811cbe570f3b315f1b1c432afad07ddc8",
+        "scenario.json": "7f5ecff62b3c29f5a19938ae2d31c2ce02941321c9a3495be4f54816719f320f",
+        "task.toml": "ff747720de2ca4a09469b7e6c054e503096591bd45236fa29c649588d6f9b709",
+        "tests/gen_large_csv.py": "167daab578dc75ba1385c40492037f11708b06ea4cda836cd05f12017ae54654",
+        "tests/test.sh": "1ecb0212f304fc2478ba32677482847271ebf0627e4f717cf6fafc05e1573eca",
+        "tests/test_outputs.py": "f5e69f4fedeefa23197745888a5847161529f454e6b5c32a4057363d9ae4cd43",
+        "tests/upstream-test.sh": "e5edb6fcd43d7e638ffcf64522c11185a8355afb5daf6ad805cdfedd47e9ceb3"
+      }
+    },
+    "tb-log-summary-date-ranges": {
+      "path": "log-summary-date-ranges",
+      "files": {
+        ".gitignore": "9a8dd8d9b6c3adb8e9e56328df27deef859a3e98fffc9b8133c8b22207c25953",
+        "README.md": "026000415cb577f3d3d5132902670262f7d5d8f69841903ec06a882292f756b4",
+        "environment/Dockerfile": "b479f6e987b63a6ec118fa1691b8bb85c437b2a6a0fe63feab5ed7154957fdfc",
+        "environment/log_generator_deterministic.py": "beb6eff59979e9aa0be63ce8a0f1b0df1178f92871f04ba9f76fa70cf8beb81c",
+        "instruction.md": "c1d4516ad4ec2238209740eaf01291df9ab48b0028a3fc5df383c6f831453484",
+        "task.toml": "9a9593673d6805ef3a301ea734e9c4dbaf80da1b37c0fe9d1f2ceea2a8c57e18",
+        "tests/test.sh": "4770437ea96c3cc84684b4f99d55fb148fcac09f9ea1e8ef49de487716e6c334",
+        "tests/test_outputs.py": "2fc06a6ce1944ad82f84fb437395fa75ed8c0eadd385b92e375c27e5bc9cb2b4"
+      },
+      "prepared_files": {
+        ".gitignore": "9a8dd8d9b6c3adb8e9e56328df27deef859a3e98fffc9b8133c8b22207c25953",
+        "README.md": "026000415cb577f3d3d5132902670262f7d5d8f69841903ec06a882292f756b4",
+        "environment/Dockerfile": "b479f6e987b63a6ec118fa1691b8bb85c437b2a6a0fe63feab5ed7154957fdfc",
+        "environment/log_generator_deterministic.py": "beb6eff59979e9aa0be63ce8a0f1b0df1178f92871f04ba9f76fa70cf8beb81c",
+        "instruction.md": "c1d4516ad4ec2238209740eaf01291df9ab48b0028a3fc5df383c6f831453484",
+        "scenario.json": "8b2ef33284efb6a5837b806da9d22edb6d7f39aaf7d2db8de852b9e356a04dee",
+        "task.toml": "87cf89e54ec8d216fc9abc0d3e556764eb4be17600fec83700158e7064e5e747",
+        "tests/test.sh": "1ecb0212f304fc2478ba32677482847271ebf0627e4f717cf6fafc05e1573eca",
+        "tests/test_outputs.py": "2fc06a6ce1944ad82f84fb437395fa75ed8c0eadd385b92e375c27e5bc9cb2b4",
+        "tests/upstream-test.sh": "4770437ea96c3cc84684b4f99d55fb148fcac09f9ea1e8ef49de487716e6c334"
+      }
+    },
+    "tb-multi-source-data-merger": {
+      "path": "multi-source-data-merger",
+      "files": {
+        ".gitignore": "9a8dd8d9b6c3adb8e9e56328df27deef859a3e98fffc9b8133c8b22207c25953",
+        "README.md": "9bf37162a4c1b88ed93627830bb8512ebae154325d7cb069c883144a0e4c69d6",
+        "environment/Dockerfile": "c95a40d3d35b473dc15ae1e8784ba7fb1725805c0583fc574dd2764325d75e4f",
+        "environment/data/source_a/users.json": "75e51e2d3ab0bdba2269d7cf3757576f84f3ee2c13407d2db94289a5958a1778",
+        "environment/data/source_b/users.csv": "8e87d16dc47d166edd8e56165955bad265b630d53d02762367c816affb5fa760",
+        "environment/data/source_c/users.parquet": "23d1ea51c4170bdba53febb885a0f495e28de525a52667347b2932136b9a72fe",
+        "instruction.md": "d1d28bb6e37f7a255a1b7f78aae8591f35c0494f33e4913392424ad954aab944",
+        "task.toml": "ee3964c0ee040f0a0cb121cefefbc15443d127684acb003fa5b61dd42f31c694",
+        "tests/test.sh": "d5a00e64413c0e1ae452f38a1aa1a47c3ed7b4416bbfccae1a4c053025a336d1",
+        "tests/test_outputs.py": "a070888930cf829aeca039771260b1386bda990ea805f313468d381ba3608ca5"
+      },
+      "prepared_files": {
+        ".gitignore": "9a8dd8d9b6c3adb8e9e56328df27deef859a3e98fffc9b8133c8b22207c25953",
+        "README.md": "9bf37162a4c1b88ed93627830bb8512ebae154325d7cb069c883144a0e4c69d6",
+        "environment/Dockerfile": "c95a40d3d35b473dc15ae1e8784ba7fb1725805c0583fc574dd2764325d75e4f",
+        "environment/data/source_a/users.json": "75e51e2d3ab0bdba2269d7cf3757576f84f3ee2c13407d2db94289a5958a1778",
+        "environment/data/source_b/users.csv": "8e87d16dc47d166edd8e56165955bad265b630d53d02762367c816affb5fa760",
+        "environment/data/source_c/users.parquet": "23d1ea51c4170bdba53febb885a0f495e28de525a52667347b2932136b9a72fe",
+        "instruction.md": "d1d28bb6e37f7a255a1b7f78aae8591f35c0494f33e4913392424ad954aab944",
+        "scenario.json": "c4538b43cd7d9d673ec4d6a303c5a4b10364a4e1baee3bb031c4c1d79e0f936a",
+        "task.toml": "44c5933abaea80c9d5bf0882e16bfc33d63c0410c395099b448a916f7898873c",
+        "tests/test.sh": "1ecb0212f304fc2478ba32677482847271ebf0627e4f717cf6fafc05e1573eca",
+        "tests/test_outputs.py": "a070888930cf829aeca039771260b1386bda990ea805f313468d381ba3608ca5",
+        "tests/upstream-test.sh": "d5a00e64413c0e1ae452f38a1aa1a47c3ed7b4416bbfccae1a4c053025a336d1"
+      }
+    },
+    "tb-polyglot-c-py": {
+      "path": "polyglot-c-py",
+      "files": {
+        ".gitignore": "9a8dd8d9b6c3adb8e9e56328df27deef859a3e98fffc9b8133c8b22207c25953",
+        "README.md": "591e27f9c71f12f6d0f0dc506970850737f951bfdb3f582196e89bc752e92881",
+        "environment/Dockerfile": "2eb537f29d2bc4ab30e1b35ff352578437a08b90f91ef6360ee28d8195d5098a",
+        "instruction.md": "a57c0c0e1232113113cd29a154ea7e0ac9ea45e4aedc16958fbc6bc753a4ef96",
+        "task.toml": "d31b9f60c47eed0d79e10d3be8fd56a23e50b3986606e3f2546863d44ac9a9ea",
+        "tests/test.sh": "4770437ea96c3cc84684b4f99d55fb148fcac09f9ea1e8ef49de487716e6c334",
+        "tests/test_outputs.py": "b94a7a9882decd8114835bdf52b5bc42fc78e9fe67ecad9bd19050b11781ddec"
+      },
+      "prepared_files": {
+        ".gitignore": "9a8dd8d9b6c3adb8e9e56328df27deef859a3e98fffc9b8133c8b22207c25953",
+        "README.md": "591e27f9c71f12f6d0f0dc506970850737f951bfdb3f582196e89bc752e92881",
+        "environment/Dockerfile": "2eb537f29d2bc4ab30e1b35ff352578437a08b90f91ef6360ee28d8195d5098a",
+        "instruction.md": "a57c0c0e1232113113cd29a154ea7e0ac9ea45e4aedc16958fbc6bc753a4ef96",
+        "scenario.json": "bf13eadbfdea0c38a44e7ecc3b8fdd23892249be4467e0e4a996e709a0d6a922",
+        "task.toml": "9ce1bd40b5d26f05682b06b56dd4d12f6b6dde9dca111e3e6f742a712b33fc73",
+        "tests/test.sh": "1ecb0212f304fc2478ba32677482847271ebf0627e4f717cf6fafc05e1573eca",
+        "tests/test_outputs.py": "b94a7a9882decd8114835bdf52b5bc42fc78e9fe67ecad9bd19050b11781ddec",
+        "tests/upstream-test.sh": "4770437ea96c3cc84684b4f99d55fb148fcac09f9ea1e8ef49de487716e6c334"
+      }
+    },
+    "tb-regex-log": {
+      "path": "regex-log",
+      "files": {
+        ".gitignore": "9a8dd8d9b6c3adb8e9e56328df27deef859a3e98fffc9b8133c8b22207c25953",
+        "README.md": "29ffd98c55dbb6f4844f1b9d8c1769b2155c117ee475e0df6bbc5ef330d239b3",
+        "environment/Dockerfile": "5f264ff0bf62a49aee3c6398447de5108df141e7a2ad35c6de8ef39fa62049c6",
+        "instruction.md": "4f7ac05e70cf9220ea0f1e5a052c5f908cd0fa884e847d80b0bd51bae2e96f9c",
+        "task.toml": "6bc98525852755caf1fe34c174c2f10f4328adb4ce6c1968dcafe1c877e4e160",
+        "tests/test.sh": "4770437ea96c3cc84684b4f99d55fb148fcac09f9ea1e8ef49de487716e6c334",
+        "tests/test_outputs.py": "345c3bd09ab6f6fe8c8361a58c0a47bf0a13b3fcb38a5ac7824e44ff855e8f72"
+      },
+      "prepared_files": {
+        ".gitignore": "9a8dd8d9b6c3adb8e9e56328df27deef859a3e98fffc9b8133c8b22207c25953",
+        "README.md": "29ffd98c55dbb6f4844f1b9d8c1769b2155c117ee475e0df6bbc5ef330d239b3",
+        "environment/Dockerfile": "5f264ff0bf62a49aee3c6398447de5108df141e7a2ad35c6de8ef39fa62049c6",
+        "instruction.md": "4f7ac05e70cf9220ea0f1e5a052c5f908cd0fa884e847d80b0bd51bae2e96f9c",
+        "scenario.json": "5b476c564eb71cdc7b126895ead32a719cb876000de4977e17aa06dd105fe5d7",
+        "task.toml": "69f16e7654c2deac4838f971e686a26dea77f1bf7109d8649ee96a151791f877",
+        "tests/test.sh": "1ecb0212f304fc2478ba32677482847271ebf0627e4f717cf6fafc05e1573eca",
+        "tests/test_outputs.py": "345c3bd09ab6f6fe8c8361a58c0a47bf0a13b3fcb38a5ac7824e44ff855e8f72",
+        "tests/upstream-test.sh": "4770437ea96c3cc84684b4f99d55fb148fcac09f9ea1e8ef49de487716e6c334"
+      }
+    },
+    "tb-write-compressor": {
+      "path": "write-compressor",
+      "files": {
+        ".gitignore": "9a8dd8d9b6c3adb8e9e56328df27deef859a3e98fffc9b8133c8b22207c25953",
+        "README.md": "603015a28500a28f0838fea2c43a5168613746bfd07737920f4bae40b5a326f7",
+        "environment/Dockerfile": "9a583d29d46818f6ff2be7c6a0879d03343106e5376fd5a48eb5926b402bb93b",
+        "environment/data.txt": "0fc483d0fb31128dfa41ed11adca56c88688888189826ef9daeafd7559b4fa4e",
+        "environment/decomp.c": "7f8d9ef66943f912a217aa48f4ef5efc967b44c2b21d0f56df029b5ab413f62a",
+        "environment/main.rs": "fa53d6572fca95903e30d2d953f1e428bb8b63513ff218ebee9bc60a425ab389",
+        "instruction.md": "c4fc3e73e44deeac95f1cd4a34a2d87e853b22ceec2b2824767f5f087b470bb2",
+        "task.toml": "6066a509066433c97c417fea68c4e3e73996f698dcdcbabe07718835eea355a6",
+        "tests/original-data.txt": "0fc483d0fb31128dfa41ed11adca56c88688888189826ef9daeafd7559b4fa4e",
+        "tests/original-decomp.c": "7f8d9ef66943f912a217aa48f4ef5efc967b44c2b21d0f56df029b5ab413f62a",
+        "tests/test.sh": "4770437ea96c3cc84684b4f99d55fb148fcac09f9ea1e8ef49de487716e6c334",
+        "tests/test_outputs.py": "809f486053e3ffbce852111dee1f63d80ab31297bd33172389e50278bed384e2"
+      },
+      "prepared_files": {
+        ".gitignore": "9a8dd8d9b6c3adb8e9e56328df27deef859a3e98fffc9b8133c8b22207c25953",
+        "README.md": "603015a28500a28f0838fea2c43a5168613746bfd07737920f4bae40b5a326f7",
+        "environment/Dockerfile": "9a583d29d46818f6ff2be7c6a0879d03343106e5376fd5a48eb5926b402bb93b",
+        "environment/data.txt": "0fc483d0fb31128dfa41ed11adca56c88688888189826ef9daeafd7559b4fa4e",
+        "environment/decomp.c": "7f8d9ef66943f912a217aa48f4ef5efc967b44c2b21d0f56df029b5ab413f62a",
+        "environment/main.rs": "fa53d6572fca95903e30d2d953f1e428bb8b63513ff218ebee9bc60a425ab389",
+        "instruction.md": "c4fc3e73e44deeac95f1cd4a34a2d87e853b22ceec2b2824767f5f087b470bb2",
+        "scenario.json": "1a04de0c3f20729ffddc28b76030f3a10503484f93129b5755bb3803b17edac8",
+        "task.toml": "d085332ddb955f2700e746c81aa5485b6e4e5f3752386261f9dcee0de5971e7b",
+        "tests/original-data.txt": "0fc483d0fb31128dfa41ed11adca56c88688888189826ef9daeafd7559b4fa4e",
+        "tests/original-decomp.c": "7f8d9ef66943f912a217aa48f4ef5efc967b44c2b21d0f56df029b5ab413f62a",
+        "tests/test.sh": "1ecb0212f304fc2478ba32677482847271ebf0627e4f717cf6fafc05e1573eca",
+        "tests/test_outputs.py": "809f486053e3ffbce852111dee1f63d80ab31297bd33172389e50278bed384e2",
+        "tests/upstream-test.sh": "4770437ea96c3cc84684b4f99d55fb148fcac09f9ea1e8ef49de487716e6c334"
+      }
+    }
+  },
+  "selection": "Environment compatibility and category coverage; selected before any candidate execution",
+  "license": "Apache-2.0"
+}

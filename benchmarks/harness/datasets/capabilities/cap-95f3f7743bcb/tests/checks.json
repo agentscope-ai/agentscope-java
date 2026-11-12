@@ -1,0 +1,24 @@
+[
+  {
+    "kind": "final_text_contains",
+    "args": [
+      "bob@hotmail.com"
+    ]
+  },
+  {
+    "kind": "required_fixture_calls",
+    "args": [
+      [
+        {
+          "kind": "tool_call",
+          "args": [],
+          "name": "get_user_email",
+          "step": 1,
+          "args_contains": {
+            "user_id": 21
+          }
+        }
+      ]
+    ]
+  }
+]

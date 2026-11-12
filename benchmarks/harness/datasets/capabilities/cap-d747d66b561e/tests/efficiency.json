@@ -1,0 +1,42 @@
+{
+  "agent_steps": 7,
+  "tool_call_requests": 6,
+  "tool_calls": [
+    {
+      "kind": "tool_call",
+      "args": [],
+      "name": "write_todos",
+      "step": 1
+    },
+    {
+      "kind": "tool_call",
+      "args": [],
+      "name": "write_todos",
+      "step": 2
+    },
+    {
+      "kind": "tool_call",
+      "args": [],
+      "name": "write_todos",
+      "step": 3
+    },
+    {
+      "kind": "tool_call",
+      "args": [],
+      "name": "write_todos",
+      "step": 4
+    },
+    {
+      "kind": "tool_call",
+      "args": [],
+      "name": "write_todos",
+      "step": 5
+    },
+    {
+      "kind": "tool_call",
+      "args": [],
+      "name": "write_todos",
+      "step": 6
+    }
+  ]
+}

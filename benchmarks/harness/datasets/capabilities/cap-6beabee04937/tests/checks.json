@@ -1,0 +1,20 @@
+[
+  {
+    "kind": "final_text_contains",
+    "args": [
+      "DONE"
+    ]
+  },
+  {
+    "kind": "file_absent",
+    "args": [
+      "/workspace/a.md"
+    ]
+  },
+  {
+    "kind": "file_absent",
+    "args": [
+      "/workspace/b.md"
+    ]
+  }
+]

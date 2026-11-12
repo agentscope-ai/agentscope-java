@@ -1,0 +1,7 @@
+{
+  "category": "lifecycle",
+  "requires": [
+    "native_cancellation_probe"
+  ],
+  "evidence": "cancel"
+}

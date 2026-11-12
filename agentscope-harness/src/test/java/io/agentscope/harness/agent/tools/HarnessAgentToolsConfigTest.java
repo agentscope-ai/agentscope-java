@@ -24,6 +24,9 @@ import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
+import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.core.message.Msg;
+import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.Model;
@@ -34,9 +37,11 @@ import io.agentscope.harness.agent.testing.HarnessQuiescence;
 import io.agentscope.harness.agent.workspace.WorkspaceConstants;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import reactor.core.publisher.Flux;
@@ -45,6 +50,120 @@ import reactor.core.publisher.Flux;
 class HarnessAgentToolsConfigTest {
 
     @TempDir Path workspace;
+
+    @Test
+    void strictAllowSurvivesCallsAndStreamingAndDoesNotAdvertiseRemovedCapabilities()
+            throws Exception {
+        ToolsConfig config = new ToolsConfig();
+        config.setDefaultToolsEnabled(false);
+        config.setStrictAllow(true);
+        config.setAllow(List.of("read_file"));
+        Files.createDirectories(workspace.resolve("skills/example"));
+        Files.writeString(
+                workspace.resolve("skills/example/SKILL.md"),
+                "---\nname: example\ndescription: example skill\n---\nInstructions");
+        Model model = stubModel();
+        List<List<String>> requests = new ArrayList<>();
+        when(model.stream(anyList(), any(), any()))
+                .thenAnswer(
+                        invocation -> {
+                            List<ToolSchema> tools = invocation.getArgument(1);
+                            requests.add(tools.stream().map(ToolSchema::getName).toList());
+                            List<Msg> messages = invocation.getArgument(0);
+                            String prompt =
+                                    messages.stream()
+                                            .map(Msg::getTextContent)
+                                            .collect(Collectors.joining("\n"));
+                            for (String unavailable :
+                                    List.of(
+                                            "load_skill_through_path",
+                                            "## Subagents",
+                                            "memory_search",
+                                            "memory_get",
+                                            "memory_save",
+                                            "available_skills")) {
+                                assertFalse(
+                                        prompt.contains(unavailable),
+                                        unavailable + " leaked into model context");
+                            }
+                            return Flux.just(
+                                    new ChatResponse(
+                                            "ok",
+                                            List.of(TextBlock.builder().text("ok").build()),
+                                            null,
+                                            Map.of(),
+                                            "stop"));
+                        });
+        try (HarnessAgent agent =
+                HarnessAgent.builder()
+                        .name("restricted")
+                        .model(model)
+                        .workspace(workspace)
+                        .abstractFilesystem(new LocalFilesystem(workspace))
+                        .disableMemoryHooks()
+                        .toolsConfig(config)
+                        .build()) {
+            assertEquals(List.of("read_file"), toolNames(agent));
+            Msg input =
+                    Msg.builder()
+                            .role(MsgRole.USER)
+                            .content(TextBlock.builder().text("hi").build())
+                            .build();
+            RuntimeContext context = RuntimeContext.builder().sessionId("restricted").build();
+            agent.call(input, context).block(Duration.ofSeconds(20));
+            agent.streamEvents(input, RuntimeContext.builder().sessionId("restricted").build())
+                    .blockLast(Duration.ofSeconds(20));
+            assertEquals(List.of("read_file"), toolNames(agent));
+        }
+        assertEquals(2, requests.size());
+        requests.forEach(names -> assertEquals(List.of("read_file"), names));
+    }
+
+    @Test
+    void explicitlyDeniedSkillLoaderIsNotRestoredAtCallTime() {
+        ToolsConfig config = new ToolsConfig();
+        config.setDeny(List.of("load_skill_through_path"));
+        Model model = stubModel();
+        when(model.stream(anyList(), any(), any()))
+                .thenAnswer(
+                        invocation -> {
+                            List<ToolSchema> tools = invocation.getArgument(1);
+                            assertFalse(
+                                    tools.stream()
+                                            .anyMatch(
+                                                    t ->
+                                                            t.getName()
+                                                                    .equals(
+                                                                            "load_skill_through_path")));
+                            assertTrue(
+                                    tools.stream().anyMatch(t -> t.getName().equals("read_file")));
+                            return Flux.just(
+                                    new ChatResponse(
+                                            "ok",
+                                            List.of(TextBlock.builder().text("ok").build()),
+                                            null,
+                                            Map.of(),
+                                            "stop"));
+                        });
+        try (HarnessAgent agent =
+                HarnessAgent.builder()
+                        .name("denied-skill")
+                        .model(model)
+                        .workspace(workspace)
+                        .abstractFilesystem(new LocalFilesystem(workspace))
+                        .disableMemoryHooks()
+                        .toolsConfig(config)
+                        .build()) {
+            agent.call(
+                            Msg.builder()
+                                    .role(MsgRole.USER)
+                                    .content(TextBlock.builder().text("hi").build())
+                                    .build(),
+                            RuntimeContext.builder().sessionId("denied-skill").build())
+                    .block(Duration.ofSeconds(20));
+            assertFalse(toolNames(agent).contains("load_skill_through_path"));
+        }
+    }
 
     @Test
     void toolsJsonDeny_removesBuiltInTool() throws Exception {

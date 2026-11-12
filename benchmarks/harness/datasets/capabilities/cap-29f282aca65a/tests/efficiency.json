@@ -1,0 +1,24 @@
+{
+  "agent_steps": 2,
+  "tool_call_requests": 2,
+  "tool_calls": [
+    {
+      "kind": "tool_call",
+      "args": [],
+      "name": "read_file",
+      "step": 1,
+      "args_contains": {
+        "file_path": "/skills/user/frontend-deploy/SKILL.md"
+      }
+    },
+    {
+      "kind": "tool_call",
+      "args": [],
+      "name": "read_file",
+      "step": 1,
+      "args_contains": {
+        "file_path": "/skills/user/backend-deploy/SKILL.md"
+      }
+    }
+  ]
+}

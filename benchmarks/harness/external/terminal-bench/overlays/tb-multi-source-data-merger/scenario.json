@@ -1,0 +1,7 @@
+{
+  "category": "terminal-bench",
+  "image_key": "tb-multi-source-data-merger",
+  "workdir": "/app",
+  "upstream": "2fd12b88aafdd04a52c298e3940bcb189f9766d6",
+  "environment_adaptation": "Native tools layered onto shared Python 3.12 sandbox; upstream public setup retained. Official tests unchanged."
+}

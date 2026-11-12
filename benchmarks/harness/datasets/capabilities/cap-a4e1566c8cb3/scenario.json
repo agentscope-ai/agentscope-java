@@ -1,0 +1,12 @@
+{
+  "category": "capabilities/planning",
+  "capabilities": true,
+  "variant": 0,
+  "fixture_tools": {
+    "module": "test_todo_tools.py",
+    "names": [
+      "lookup_population"
+    ]
+  },
+  "system_context": ""
+}

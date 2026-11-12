@@ -1,0 +1,17 @@
+[
+  {
+    "kind": "file_contains",
+    "args": [
+      "/workspace/project/AGENTS.md",
+      "9am"
+    ]
+  },
+  {
+    "kind": "llm_judge",
+    "args": [
+      "The agent should record the user's meeting availability (9am-5pm Eastern) in its memory file.",
+      "The memory update should capture the timezone (Eastern or ET or EST)."
+    ],
+    "include_tool_calls": true
+  }
+]

@@ -20,8 +20,13 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
+import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.core.tool.AgentTool;
+import io.agentscope.core.tool.Toolkit;
 import io.agentscope.harness.agent.context.WorkspaceContextMaterials;
 import io.agentscope.harness.agent.workspace.WorkspaceManager;
 import java.nio.file.Files;
@@ -55,6 +60,32 @@ class WorkspaceContextMiddlewareMemoryPromptTest {
     }
 
     @TempDir Path workspace;
+
+    @Test
+    void partialToolkitAdvertisesOnlyAvailableMemoryAndKnowledgeTools() throws Exception {
+        Files.createDirectories(workspace.resolve("knowledge"));
+        Files.writeString(workspace.resolve("knowledge/reference.md"), "reference");
+        Agent agent = mock(Agent.class);
+        Toolkit toolkit = mock(Toolkit.class);
+        when(agent.getToolkit()).thenReturn(toolkit);
+        when(toolkit.getTool("memory_search")).thenReturn(mock(AgentTool.class));
+        WorkspaceContextMiddleware mw =
+                new WorkspaceContextMiddleware(
+                        track(new WorkspaceManager(workspace)), "agent", null, 8000, false, true);
+        RuntimeContext rc = RuntimeContext.empty();
+        mw.onSystemPrompt(agent, rc, "").block();
+        String guidance =
+                rc.get(WorkspaceContextMaterials.class).items().stream()
+                        .filter(item -> item.sourceId().equals("harness:workspace-guidance"))
+                        .findFirst()
+                        .orElseThrow()
+                        .content();
+        assertTrue(guidance.contains("memory_search"));
+        for (String unavailable :
+                List.of("memory_get", "memory_save", "read_file", "grep_files", "glob_files")) {
+            assertFalse(guidance.contains(unavailable), unavailable);
+        }
+    }
 
     @Test
     void onSystemPromptBuildsWorkspaceContextOnBoundedElastic() {
@@ -179,11 +210,11 @@ class WorkspaceContextMiddlewareMemoryPromptTest {
         var mw = new WorkspaceContextMiddleware(wm, 8000);
         var truncate =
                 WorkspaceContextMiddleware.class.getDeclaredMethod(
-                        "truncateToTokenBudget", String.class, int.class);
+                        "truncateToTokenBudget", String.class, int.class, boolean.class);
         truncate.setAccessible(true);
 
         String text = "old-entry ".repeat(200) + "NEWEST";
-        String out = (String) truncate.invoke(mw, text, 4);
+        String out = (String) truncate.invoke(mw, text, 4, true);
 
         assertEquals(16, out.length());
         assertTrue(out.endsWith("NEWEST"));

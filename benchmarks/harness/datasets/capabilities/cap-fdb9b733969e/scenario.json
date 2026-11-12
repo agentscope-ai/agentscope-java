@@ -1,0 +1,6 @@
+{
+  "category": "capabilities/conversation",
+  "capabilities": true,
+  "variant": "vague_data_analysis",
+  "system_context": ""
+}

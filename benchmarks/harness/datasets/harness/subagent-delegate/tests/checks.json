@@ -1,0 +1,12 @@
+[
+  {
+    "path": "answer.txt",
+    "kind": "text",
+    "value": "2"
+  },
+  {
+    "path": "payload.json",
+    "kind": "text",
+    "value": "[{\"enabled\":true},{\"enabled\":false},{\"enabled\":true}]"
+  }
+]

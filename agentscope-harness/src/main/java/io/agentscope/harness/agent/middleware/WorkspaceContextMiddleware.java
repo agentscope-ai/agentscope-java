@@ -208,13 +208,13 @@ public class WorkspaceContextMiddleware implements HarnessRuntimeMiddleware {
                         () -> {
                             RuntimeContext rc = ctx != null ? ctx : RuntimeContext.empty();
                             String base = currentPrompt != null ? currentPrompt : "";
-                            collectWorkspaceMaterials(rc);
+                            collectWorkspaceMaterials(rc, agent);
                             return base;
                         })
                 .subscribeOn(Schedulers.boundedElastic());
     }
 
-    private void collectWorkspaceMaterials(RuntimeContext rc) {
+    private void collectWorkspaceMaterials(RuntimeContext rc, Agent agent) {
         String agentsContent = composeAgentsContent(workspaceManager.readAgentsMd(rc));
         boolean includeMemoryContext = includeMemoryContext();
         String memoryContent =
@@ -243,7 +243,11 @@ public class WorkspaceContextMiddleware implements HarnessRuntimeMiddleware {
             if (available <= 0) {
                 memoryContent = "";
             } else if (memoryTokens > available) {
-                memoryContent = truncateToTokenBudget(memoryContent, available);
+                memoryContent =
+                        truncateToTokenBudget(
+                                memoryContent,
+                                available,
+                                !disableMemoryTools && hasTool(agent, "memory_search"));
             }
         }
 
@@ -258,7 +262,7 @@ public class WorkspaceContextMiddleware implements HarnessRuntimeMiddleware {
                         ContextItem.instruction(
                                 "working_principles",
                                 "harness:workspace-guidance",
-                                buildGuidance(knowledgeContent, knowledgeFiles)),
+                                buildGuidance(knowledgeContent, knowledgeFiles, agent)),
                         ContextItem.instruction(
                                 "environment",
                                 "harness:workspace-environment",
@@ -315,30 +319,50 @@ public class WorkspaceContextMiddleware implements HarnessRuntimeMiddleware {
         return !(disableMemoryTools && disableMemoryHooks);
     }
 
-    private String buildGuidance(String knowledgeContent, List<Path> knowledgeFiles) {
+    private static boolean hasTool(Agent agent, String name) {
+        return agent == null
+                || agent.getToolkit() == null
+                || agent.getToolkit().getTool(name) != null;
+    }
+
+    private String buildGuidance(String knowledgeContent, List<Path> knowledgeFiles, Agent agent) {
         StringBuilder sb = new StringBuilder();
         if (!knowledgeContent.isBlank() || !knowledgeFiles.isEmpty()) {
             sb.append(DOMAIN_KNOWLEDGE_GUIDANCE.strip()).append("\n\n");
-            if (!knowledgeFiles.isEmpty()) {
+            if (!knowledgeFiles.isEmpty()
+                    && hasTool(agent, "read_file")
+                    && hasTool(agent, "grep_files")
+                    && hasTool(agent, "glob_files")) {
                 sb.append(KNOWLEDGE_FILES_GUIDANCE.strip()).append("\n\n");
             }
         }
-        if (!disableMemoryTools) {
+        boolean search = !disableMemoryTools && hasTool(agent, "memory_search");
+        boolean get = !disableMemoryTools && hasTool(agent, "memory_get");
+        if (search && get) {
             sb.append(MEMORY_RECALL_GUIDANCE.strip()).append("\n\n");
+        } else if (search || get) {
+            sb.append("## Memory Recall\n");
+            sb.append(
+                    search
+                            ? "Use memory_search to find relevant prior work, decisions and"
+                                    + " preferences."
+                            : "Use memory_get to read needed lines from known memory paths.");
+            sb.append(" Include Source: <path#line> citations when helpful.\n\n");
         }
-        String persistence = buildMemoryPersistenceGuidance();
+        String persistence = buildMemoryPersistenceGuidance(agent);
         if (!persistence.isBlank()) {
             sb.append(persistence.strip()).append("\n\n");
         }
         return sb.toString().stripTrailing() + "\n";
     }
 
-    private String buildMemoryPersistenceGuidance() {
-        if (disableMemoryTools && disableMemoryHooks) {
+    private String buildMemoryPersistenceGuidance(Agent agent) {
+        boolean save = !disableMemoryTools && hasTool(agent, "memory_save");
+        if (!save && disableMemoryHooks) {
             return "";
         }
         StringBuilder sb = new StringBuilder();
-        if (!disableMemoryTools) {
+        if (save) {
             sb.append(MEMORY_PERSISTENCE_HEADER.strip()).append("\n");
             sb.append(MEMORY_SAVE_TOOL_GUIDANCE.strip()).append("\n");
         } else {
@@ -592,13 +616,12 @@ public class WorkspaceContextMiddleware implements HarnessRuntimeMiddleware {
         return text == null || text.isEmpty() ? 0 : text.length() / 4;
     }
 
-    private String truncateToTokenBudget(String text, int maxTokens) {
+    private String truncateToTokenBudget(String text, int maxTokens, boolean searchAvailable) {
         int maxChars = maxTokens * 4;
         if (text.length() <= maxChars) {
             return text;
         }
-        String notice =
-                disableMemoryTools ? TRUNCATION_NOTICE_PLAIN : TRUNCATION_NOTICE_WITH_SEARCH;
+        String notice = searchAvailable ? TRUNCATION_NOTICE_WITH_SEARCH : TRUNCATION_NOTICE_PLAIN;
         if (maxChars <= notice.length()) {
             return text.substring(text.length() - maxChars);
         }

@@ -1,0 +1,72 @@
+[
+  {
+    "kind": "final_text_contains",
+    "args": [
+      "Ben Ortiz"
+    ]
+  },
+  {
+    "kind": "final_text_contains",
+    "args": [
+      "ben@ops.example.com"
+    ]
+  },
+  {
+    "kind": "required_fixture_calls",
+    "args": [
+      [
+        {
+          "kind": "tool_call",
+          "args": [],
+          "name": "get_current_incident_id",
+          "step": 1
+        },
+        {
+          "kind": "tool_call",
+          "args": [],
+          "name": "get_incident_service",
+          "step": 2,
+          "args_contains": {
+            "incident_id": 41017
+          }
+        },
+        {
+          "kind": "tool_call",
+          "args": [],
+          "name": "get_service_team",
+          "step": 3,
+          "args_contains": {
+            "service_id": 8401
+          }
+        },
+        {
+          "kind": "tool_call",
+          "args": [],
+          "name": "get_team_oncall_engineer",
+          "step": 4,
+          "args_contains": {
+            "team_id": 481
+          }
+        },
+        {
+          "kind": "tool_call",
+          "args": [],
+          "name": "get_engineer_name",
+          "step": 5,
+          "args_contains": {
+            "engineer_id": 7243
+          }
+        },
+        {
+          "kind": "tool_call",
+          "args": [],
+          "name": "get_engineer_email",
+          "step": 5,
+          "args_contains": {
+            "engineer_id": 7243
+          }
+        }
+      ]
+    ]
+  }
+]

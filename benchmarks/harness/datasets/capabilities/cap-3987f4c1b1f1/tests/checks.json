@@ -1,0 +1,51 @@
+[
+  {
+    "kind": "final_text_contains",
+    "args": [
+      "1"
+    ]
+  },
+  {
+    "kind": "final_text_contains",
+    "args": [
+      "21"
+    ]
+  },
+  {
+    "kind": "final_text_contains",
+    "args": [
+      "35"
+    ]
+  },
+  {
+    "kind": "final_text_contains",
+    "args": [
+      "41"
+    ]
+  },
+  {
+    "kind": "final_text_contains",
+    "args": [
+      "42"
+    ]
+  },
+  {
+    "kind": "final_text_contains",
+    "args": [
+      "43"
+    ]
+  },
+  {
+    "kind": "required_fixture_calls",
+    "args": [
+      [
+        {
+          "kind": "tool_call",
+          "args": [],
+          "name": "list_user_ids",
+          "step": 1
+        }
+      ]
+    ]
+  }
+]

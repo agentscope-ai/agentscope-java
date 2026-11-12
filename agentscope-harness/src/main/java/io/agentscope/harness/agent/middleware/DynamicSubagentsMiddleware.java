@@ -165,10 +165,12 @@ public class DynamicSubagentsMiddleware implements HarnessRuntimeMiddleware {
         }
         Msg stateMsg =
                 SubagentsMiddleware.buildSubagentStateMsg(
-                        merged, SubagentsMiddleware.buildTaskSummary(taskRepository, rc));
+                        SubagentsMiddleware.canSpawn(agent, false) ? merged : List.of(),
+                        SubagentsMiddleware.buildTaskSummary(taskRepository, rc));
         List<Msg> rebuilt =
                 SubagentsMiddleware.prependToSystemMessage(
-                        input.messages(), SubagentsMiddleware.renderSubagentSection(merged, false));
+                        input.messages(),
+                        SubagentsMiddleware.renderSubagentSection(merged, false, agent));
         if (stateMsg != null) {
             rebuilt = new ArrayList<>(rebuilt);
             rebuilt.add(stateMsg);

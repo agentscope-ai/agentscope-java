@@ -1,0 +1,16 @@
+[
+  {
+    "kind": "file_contains",
+    "args": [
+      "/workspace/project/AGENTS.md",
+      "Project Memory"
+    ]
+  },
+  {
+    "kind": "file_excludes",
+    "args": [
+      "/workspace/project/AGENTS.md",
+      "Italian"
+    ]
+  }
+]

@@ -1,0 +1,1 @@
+Rank Tokyo, Atlantis, and Cairo by population density (people per km²) from highest to lowest. Look up the population and area for each city, compute density for each, and present the ranking. Use a todo list to plan and track your work.

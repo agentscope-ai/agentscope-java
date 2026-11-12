@@ -15,9 +15,15 @@
  */
 package io.agentscope.harness.agent.middleware;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
+import io.agentscope.core.agent.Agent;
+import io.agentscope.core.tool.AgentTool;
+import io.agentscope.core.tool.Toolkit;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 
@@ -29,6 +35,29 @@ import org.junit.jupiter.api.Test;
  * behavior is proven by the AgentSpawnTool* tests, not by verbatim prompt snapshots.
  */
 class SubagentsMiddlewareSubagentSectionContractTest {
+
+    @Test
+    void filteredToolkitDoesNotAdvertiseUnavailableCoordinationTools() {
+        Agent agent = mock(Agent.class);
+        // Agent's default accessor is null when it cannot expose a toolkit for inspection.
+        assertEquals(SECTION, SubagentsMiddleware.renderSubagentSection(List.of(), false, agent));
+        Toolkit toolkit = mock(Toolkit.class);
+        when(agent.getToolkit()).thenReturn(toolkit);
+        assertEquals("", SubagentsMiddleware.renderSubagentSection(List.of(), false, agent));
+        when(toolkit.getTool("agent_spawn")).thenReturn(mock(AgentTool.class));
+        String partial = SubagentsMiddleware.renderSubagentSection(List.of(), false, agent);
+        assertTrue(partial.contains("agent_spawn"));
+        for (String unavailable :
+                List.of(
+                        "agent_send",
+                        "agent_list",
+                        "task_output",
+                        "task_list",
+                        "task_cancel",
+                        "wait_async_results")) {
+            assertFalse(partial.contains(unavailable), unavailable);
+        }
+    }
 
     private static final String SECTION =
             SubagentsMiddleware.renderSubagentSection(List.of(), false);

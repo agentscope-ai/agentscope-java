@@ -1,0 +1,14 @@
+{
+  "tool_calls": [
+    {
+      "kind": "tool_call",
+      "args": [],
+      "name": "linear_create_issue"
+    },
+    {
+      "kind": "tool_call",
+      "args": [],
+      "name": "github_create_issue"
+    }
+  ]
+}

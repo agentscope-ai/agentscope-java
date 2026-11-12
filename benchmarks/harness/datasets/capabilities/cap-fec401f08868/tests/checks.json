@@ -1,0 +1,8 @@
+[
+  {
+    "kind": "final_text_contains",
+    "args": [
+      "/workspace/quotes/q3.txt"
+    ]
+  }
+]

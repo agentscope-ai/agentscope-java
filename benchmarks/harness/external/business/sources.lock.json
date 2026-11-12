@@ -1,0 +1,29 @@
+{
+  "tau": {
+    "repository": "https://github.com/sierra-research/tau-bench",
+    "revision": "59a200c6d575d595120f1cb70fea53cef0632f6b",
+    "split": "test",
+    "files": {
+      "tau_bench/envs/retail/tasks_test.py": "6f09468923c6cfb6162e94fe659264d6aee70816c18d51278fb4a581db7765a4",
+      "tau_bench/envs/airline/tasks_test.py": "14cdb6b4fe810faac9a0cc8395d3c7b32c883a979d1cde8c8003ae25a93d2ff3",
+      "LICENSE": "243d23d45b80122b5ac575586ccef352fdc9c45e6d7d2605449aca8a17478b42"
+    }
+  },
+  "appworld": {
+    "repository": "https://github.com/StonyBrookNLP/appworld",
+    "revision": "42b5bcf3cd334fee33f0c37c02070a9f5807add5",
+    "splits": [
+      "dev",
+      "test_normal",
+      "test_challenge"
+    ],
+    "files": {
+      "src/appworld/common/constants.py": "776a1c2a97e8f3d7cbda00523be3fdf38ed6165d61ac729a82290a843524138d",
+      "src/appworld/.source/apps.bundle": "68752f6f9c36260e566b1269c283f765dfd3fe603d817fa6ae58dacb034f1470",
+      "src/appworld/.source/tests.bundle": "802c1b638c6232a9d46d4c68d0782d9d16552dd9b4548318f582e111d96b69c2",
+      "LICENSE": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4"
+    },
+    "data_version": "0.2.0",
+    "data_mode": "minimal"
+  }
+}

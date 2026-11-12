@@ -1,0 +1,42 @@
+{
+  "agent_steps": 4,
+  "tool_call_requests": 4,
+  "tool_calls": [
+    {
+      "kind": "tool_call",
+      "args": [],
+      "name": "find_services_by_name",
+      "step": 1,
+      "args_contains": {
+        "name": "checkout-web"
+      }
+    },
+    {
+      "kind": "tool_call",
+      "args": [],
+      "name": "list_service_dependencies",
+      "step": 2,
+      "args_contains": {
+        "service_id": 8514
+      }
+    },
+    {
+      "kind": "tool_call",
+      "args": [],
+      "name": "get_service_name",
+      "step": 3,
+      "args_contains": {
+        "service_id": 8401
+      }
+    },
+    {
+      "kind": "tool_call",
+      "args": [],
+      "name": "get_service_name",
+      "step": 3,
+      "args_contains": {
+        "service_id": 8627
+      }
+    }
+  ]
+}

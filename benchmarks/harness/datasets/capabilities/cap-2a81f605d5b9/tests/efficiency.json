@@ -1,0 +1,14 @@
+{
+  "agent_steps": 2,
+  "tool_call_requests": 1,
+  "tool_calls": [
+    {
+      "kind": "tool_call",
+      "args": [],
+      "name": "slack_post_channel",
+      "args_contains": {
+        "channel": "deployments"
+      }
+    }
+  ]
+}

@@ -1,0 +1,24 @@
+{
+  "agent_steps": 3,
+  "tool_call_requests": 2,
+  "tool_calls": [
+    {
+      "kind": "tool_call",
+      "args": [],
+      "name": "find_users_by_name",
+      "step": 1,
+      "args_contains": {
+        "name": "Eve"
+      }
+    },
+    {
+      "kind": "tool_call",
+      "args": [],
+      "name": "get_user_email",
+      "step": 2,
+      "args_contains": {
+        "user_id": 42
+      }
+    }
+  ]
+}
