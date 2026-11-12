@@ -181,7 +181,7 @@ func (r *controlPlaneRepo) ListAgentInstances(_ context.Context, tenant, namespa
 	return out, nil
 }
 
-func (r *controlPlaneRepo) HeartbeatAgentInstance(_ context.Context, id uuid.UUID, generation int64, activeSessions int32, capabilities json.RawMessage) (*controlmodel.AgentInstance, error) {
+func (r *controlPlaneRepo) HeartbeatAgentInstance(_ context.Context, id uuid.UUID, generation int64, activeSessions *int32, capabilities json.RawMessage) (*controlmodel.AgentInstance, error) {
 	r.s.mu.Lock()
 	defer r.s.mu.Unlock()
 	in, ok := r.s.agentInstances[id]
@@ -191,7 +191,9 @@ func (r *controlPlaneRepo) HeartbeatAgentInstance(_ context.Context, id uuid.UUI
 	if generation > 0 && in.Generation != generation {
 		return nil, store.ErrConflict
 	}
-	in.ActiveSessions = activeSessions
+	if activeSessions != nil {
+		in.ActiveSessions = *activeSessions
+	}
 	if capabilities != nil {
 		in.Capabilities = cloneJSON(capabilities)
 	}

@@ -113,6 +113,7 @@ type ReportIdentity struct {
 
 // EventSink processes upstream events from data plane instances.
 type EventSink interface {
+	HandleHeartbeat(ctx context.Context, identity ReportIdentity) error
 	HandleConnect(tenant, namespace, agentID, bindingID, agentKey, instanceKey string, generation int64, runtime, sdkVersion string, capabilities []string)
 	HandleDisconnect(tenant, namespace, agentID, bindingID, instanceKey string, generation int64)
 	HandleSessionReport(identity ReportIdentity, report *SessionReport)

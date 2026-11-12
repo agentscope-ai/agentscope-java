@@ -114,9 +114,9 @@ func (r *runtimeRegistryRepo) ListAgentInstances(ctx context.Context, tenant, na
 	return out, rows.Err()
 }
 
-func (r *runtimeRegistryRepo) HeartbeatAgentInstance(ctx context.Context, id uuid.UUID, generation int64, activeSessions int32, capabilities json.RawMessage) (*controlmodel.AgentInstance, error) {
+func (r *runtimeRegistryRepo) HeartbeatAgentInstance(ctx context.Context, id uuid.UUID, generation int64, activeSessions *int32, capabilities json.RawMessage) (*controlmodel.AgentInstance, error) {
 	instance, err := scanAgentInstance(r.pool.QueryRow(ctx, `UPDATE agent_instances SET
-		active_sessions=$3,capabilities=COALESCE($4,capabilities),health=$5,last_seen_at=now(),updated_at=now()
+		active_sessions=COALESCE($3,active_sessions),capabilities=COALESCE($4,capabilities),health=$5,last_seen_at=now(),updated_at=now()
 		WHERE id=$1 AND ($2<=0 OR generation=$2) RETURNING `+agentInstanceColumns,
 		id, generation, activeSessions, nullJSON(capabilities), controlmodel.RuntimeHealthHealthy))
 	if errors.Is(err, store.ErrNotFound) {

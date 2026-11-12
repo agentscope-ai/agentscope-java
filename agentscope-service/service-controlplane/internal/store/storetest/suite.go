@@ -276,6 +276,25 @@ func testAgentCatalog(t *testing.T, ctx context.Context, s store.Store) {
 	if err != nil || len(instances) != contenders+2 {
 		t.Fatalf("scale-out should add instances only: instances=%+v err=%v", instances, err)
 	}
+
+	registry := s.RuntimeRegistry()
+	load := int32(2)
+	capabilities := controlmodel.CapabilityFlags([]string{"agent-task"})
+	instance := followUp.Instance
+	before, err := registry.HeartbeatAgentInstance(ctx, instance.ID, instance.Generation, &load, capabilities)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := registry.HeartbeatAgentInstance(ctx, instance.ID, instance.Generation+1, nil, nil); !errors.Is(err, store.ErrConflict) {
+		t.Fatalf("mismatched generation was accepted: %v", err)
+	}
+	renewed, err := registry.HeartbeatAgentInstance(ctx, instance.ID, instance.Generation, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if renewed.ActiveSessions != load || string(renewed.Capabilities) != string(before.Capabilities) {
+		t.Fatalf("heartbeat without a payload overwrote runtime state: %+v", renewed)
+	}
 }
 
 func testCollaborationReliability(t *testing.T, ctx context.Context, s store.Store) {

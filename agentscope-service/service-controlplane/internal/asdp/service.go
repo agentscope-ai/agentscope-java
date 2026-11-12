@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"time"
 
 	"google.golang.org/grpc/metadata"
 	"sigs.k8s.io/controller-runtime/pkg/log"
@@ -171,6 +172,16 @@ func (s *service) Connect(stream AgentDataPlaneService_ConnectServer) error {
 				return err
 			}
 		case *Upstream_Heartbeat:
+			if s.server.eventSink != nil {
+				// Renew liveness using the authenticated handshake identity.
+				heartbeatCtx, cancelHeartbeat := context.WithTimeout(ctx, 3*time.Second)
+				err := s.server.eventSink.HandleHeartbeat(heartbeatCtx, reportIdentity(meta))
+				cancelHeartbeat()
+				if err != nil {
+					logger.Error(err, "instance heartbeat renewal failed",
+						"agentId", meta.AgentId, "instance", meta.InstanceKey, "generation", meta.Generation)
+				}
+			}
 			if err := conn.Send(&Downstream{
 				Payload: &Downstream_Heartbeat{Heartbeat: &Heartbeat{Timestamp: p.Heartbeat.Timestamp}},
 			}); err != nil {
