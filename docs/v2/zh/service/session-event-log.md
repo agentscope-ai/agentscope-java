@@ -211,6 +211,8 @@ CANCEL_JSON=$(
 CANCEL_COMMAND_ID=$(jq -er '.command.id' <<< "$CANCEL_JSON")
 ```
 
+Managed Agent 的 Turn 以 `failed` 结束后，仍会阻塞同一 Session 中后续的 Turn。当它的 `available_commands` 包含 `cancel` 时，提交 `/cancel` 即可丢弃该 Turn。Turn 仍保持 `failed` 状态，不会重复执行任何工具调用，排队中的下一个 Turn 随后可以开始。
+
 当 `/turns/{turnId}/capabilities` 的 `available_commands` 包含 `resume` 时，可以向同一路径下的 `/resume` 提交恢复命令。恢复保留原 Turn ID，并从已保存的状态继续。若任务仍在等待用户答复，应先处理待办；若工具调用结果未知，应先核实结果。不要把恢复当成重新提交任务的通用替代品。
 
 ```bash

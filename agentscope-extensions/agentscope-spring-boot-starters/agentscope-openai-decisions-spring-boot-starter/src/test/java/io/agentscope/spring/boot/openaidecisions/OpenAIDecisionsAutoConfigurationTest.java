@@ -37,6 +37,7 @@ import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -52,6 +53,7 @@ class OpenAIDecisionsAutoConfigurationTest {
 
     @Test
     void bindsPropertiesAndCreatesUsableClient() throws Exception {
+        var attempts = new AtomicInteger();
         var authorization = new AtomicReference<String>();
         var body = new AtomicReference<String>();
         var server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
@@ -69,7 +71,8 @@ class OpenAIDecisionsAutoConfigurationTest {
                             """
                                     .getBytes(StandardCharsets.UTF_8);
                     exchange.getResponseHeaders().set("Content-Type", "application/json");
-                    exchange.sendResponseHeaders(200, response.length);
+                    exchange.sendResponseHeaders(
+                            attempts.incrementAndGet() == 1 ? 429 : 200, response.length);
                     try (var output = exchange.getResponseBody()) {
                         output.write(response);
                     }
@@ -82,7 +85,9 @@ class OpenAIDecisionsAutoConfigurationTest {
                                     + server.getAddress().getPort()
                                     + "/v1",
                             "agentscope.openai-decisions.model=test-model",
-                            "agentscope.openai-decisions.timeout=15s")
+                            "agentscope.openai-decisions.timeout=15s",
+                            "agentscope.openai-decisions.retry.max-retries=1",
+                            "agentscope.openai-decisions.retry.initial-backoff=1ms")
                     .run(
                             context -> {
                                 assertThat(context).hasSingleBean(OpenAIDecisionsClient.class);
@@ -90,6 +95,7 @@ class OpenAIDecisionsAutoConfigurationTest {
                                 assertThat(properties.getTimeout())
                                         .isEqualTo(Duration.ofSeconds(15));
                                 assertThat(properties.isEnabled()).isTrue();
+                                assertThat(properties.getRetry().getMaxRetries()).isEqualTo(1);
                                 context.getBean(OpenAIDecisionsClient.class)
                                         .decideBlocking(request());
                                 assertThat(authorization.get()).isEqualTo("Bearer test-key");
@@ -99,6 +105,7 @@ class OpenAIDecisionsAutoConfigurationTest {
                                                         .get("model")
                                                         .textValue())
                                         .isEqualTo("test-model");
+                                assertThat(attempts.get()).isEqualTo(2);
                             });
         } finally {
             server.stop(0);
@@ -157,6 +164,18 @@ class OpenAIDecisionsAutoConfigurationTest {
         runner.withPropertyValues(
                         "agentscope.openai-decisions.api-key=test-key",
                         "agentscope.openai-decisions.timeout=0s")
+                .run(context -> assertThat(context).hasFailed());
+    }
+
+    @Test
+    void rejectsInvalidRetrySettings() {
+        runner.withPropertyValues(
+                        "agentscope.openai-decisions.api-key=test-key",
+                        "agentscope.openai-decisions.retry.max-retries=-1")
+                .run(context -> assertThat(context).hasFailed());
+        runner.withPropertyValues(
+                        "agentscope.openai-decisions.api-key=test-key",
+                        "agentscope.openai-decisions.retry.initial-backoff=0s")
                 .run(context -> assertThat(context).hasFailed());
     }
 

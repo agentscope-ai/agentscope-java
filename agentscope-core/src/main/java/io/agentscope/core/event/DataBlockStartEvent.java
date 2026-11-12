@@ -22,21 +22,37 @@ public class DataBlockStartEvent extends AgentEvent {
 
     private final String replyId;
     private final String blockId;
+    private final String mediaType;
+
+    public DataBlockStartEvent(
+            @JsonProperty("id") String id,
+            @JsonProperty("createdAt") String createdAt,
+            @JsonProperty("replyId") String replyId,
+            @JsonProperty("blockId") String blockId) {
+        this(id, createdAt, replyId, blockId, null);
+    }
 
     @JsonCreator
     public DataBlockStartEvent(
             @JsonProperty("id") String id,
             @JsonProperty("createdAt") String createdAt,
             @JsonProperty("replyId") String replyId,
-            @JsonProperty("blockId") String blockId) {
+            @JsonProperty("blockId") String blockId,
+            @JsonProperty("mediaType") String mediaType) {
         super(id, createdAt);
         this.replyId = replyId;
         this.blockId = blockId;
+        this.mediaType = mediaType;
     }
 
     public DataBlockStartEvent(String replyId, String blockId) {
+        this(replyId, blockId, null);
+    }
+
+    public DataBlockStartEvent(String replyId, String blockId, String mediaType) {
         this.replyId = replyId;
         this.blockId = blockId;
+        this.mediaType = mediaType;
     }
 
     @Override
@@ -50,5 +66,9 @@ public class DataBlockStartEvent extends AgentEvent {
 
     public String getBlockId() {
         return blockId;
+    }
+
+    public String getMediaType() {
+        return mediaType;
     }
 }

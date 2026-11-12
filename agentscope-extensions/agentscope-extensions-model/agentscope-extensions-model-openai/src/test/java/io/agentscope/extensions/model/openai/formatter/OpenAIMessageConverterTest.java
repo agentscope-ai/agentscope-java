@@ -23,6 +23,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import io.agentscope.core.message.AudioBlock;
 import io.agentscope.core.message.Base64Source;
 import io.agentscope.core.message.ContentBlock;
+import io.agentscope.core.message.DocumentBlock;
+import io.agentscope.core.message.FileIdSource;
 import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
@@ -45,6 +47,7 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.EnumSource;
 
 /**
  * Unit tests for OpenAIMessageConverter.
@@ -105,6 +108,109 @@ class OpenAIMessageConverterTest {
         assertNotNull(result);
         assertEquals("user", result.getRole());
         assertEquals("Hello", result.getContentAsString());
+    }
+
+    @Test
+    @DisplayName("Should replace a DocumentBlock with a text reference")
+    void testDocumentBlockReference() {
+        Msg msg =
+                Msg.builder()
+                        .role(MsgRole.USER)
+                        .content(
+                                List.of(
+                                        DocumentBlock.builder()
+                                                .source(
+                                                        FileIdSource.builder()
+                                                                .provider("openai")
+                                                                .fileId("file-abc")
+                                                                .build())
+                                                .name("report.pdf")
+                                                .build()))
+                        .build();
+
+        OpenAIMessage result = converter.convertToMessage(msg, true);
+
+        assertEquals("user", result.getRole());
+        @SuppressWarnings("unchecked")
+        List<OpenAIContentPart> parts = (List<OpenAIContentPart>) result.getContent();
+        assertEquals(1, parts.size());
+        assertEquals(
+                "[document: report.pdf, provider file id: file-abc (openai)]",
+                parts.get(0).getText());
+    }
+
+    @ParameterizedTest
+    @EnumSource(
+            value = MsgRole.class,
+            names = {"ASSISTANT", "TOOL"})
+    @DisplayName("Should retain document-only assistant and bare tool messages")
+    void testDocumentReferenceWithoutText(MsgRole role) {
+        DocumentBlock document =
+                DocumentBlock.builder()
+                        .source(new FileIdSource("dashscope", "file-123"))
+                        .name("report.pdf")
+                        .build();
+        Msg msg = Msg.builder().role(role).content(document).build();
+
+        OpenAIMessage result = converter.convertToMessage(msg, false);
+
+        assertEquals(
+                "[document: report.pdf, provider file id: file-123 (dashscope)]",
+                result.getContentAsString());
+    }
+
+    @ParameterizedTest
+    @EnumSource(
+            value = MsgRole.class,
+            names = {"ASSISTANT", "TOOL"})
+    @DisplayName("Should render each document even when text already contains its reference")
+    void testDocumentReferencesAreIndependentOfText(MsgRole role) {
+        DocumentBlock document =
+                DocumentBlock.builder()
+                        .source(new FileIdSource("dashscope", "file-123"))
+                        .name("report.pdf")
+                        .build();
+        String reference = "[document: report.pdf, provider file id: file-123 (dashscope)]";
+        Msg msg =
+                Msg.builder()
+                        .role(role)
+                        .content(TextBlock.builder().text(reference).build(), document, document)
+                        .build();
+
+        OpenAIMessage result = converter.convertToMessage(msg, false);
+
+        assertEquals(reference + "\n" + reference + "\n" + reference, result.getContentAsString());
+    }
+
+    @Test
+    @DisplayName("A mixed tool result keeps the document reference")
+    void testMixedToolResultKeepsDocumentReference() {
+        ToolResultBlock toolResult =
+                ToolResultBlock.of(
+                        "call-1",
+                        "report_tool",
+                        List.of(
+                                TextBlock.builder().text("Generated.").build(),
+                                ImageBlock.builder()
+                                        .source(
+                                                URLSource.builder()
+                                                        .url("https://example.com/image.png")
+                                                        .build())
+                                        .build(),
+                                DocumentBlock.builder()
+                                        .source(new FileIdSource("dashscope", "file-abc"))
+                                        .name("report.pdf")
+                                        .build()));
+        Msg msg = Msg.builder().role(MsgRole.TOOL).content(toolResult).build();
+
+        OpenAIMessage result = converter.convertToMessage(msg, false);
+
+        @SuppressWarnings("unchecked")
+        List<OpenAIContentPart> parts = (List<OpenAIContentPart>) result.getContent();
+        assertEquals(3, parts.size());
+        assertEquals(
+                "[document: report.pdf, provider file id: file-abc (dashscope)]",
+                parts.get(2).getText());
     }
 
     // Note: ImageBlock and AudioBlock constructors require non-null source,

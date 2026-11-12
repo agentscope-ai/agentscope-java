@@ -381,7 +381,7 @@ public class LocalFilesystemWithShell extends LocalFilesystem implements Abstrac
                                     + " seconds. For long-running commands, re-run using the"
                                     + " timeout parameter.";
                 }
-                return new ExecuteResponse(msg, 124, false);
+                return new ExecuteResponse(msg, 124, false, true);
             }
 
             StringBuilder output = new StringBuilder();

@@ -20,12 +20,15 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.core.formatter.DocumentReferenceRenderer;
 import io.agentscope.core.message.ContentBlock;
+import io.agentscope.core.message.DocumentBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ChatUsage;
+import io.agentscope.core.model.Model;
 import io.agentscope.core.model.ToolSchema;
 import io.agentscope.core.state.AgentState;
 import io.agentscope.core.state.PlanModeContextState;
@@ -242,15 +245,7 @@ public final class AgentScopeAdapter implements FrameworkAdapter {
         }
         String systemPrompt = sysPromptOf(observed);
         int contextWindow = contextWindowOf(observed);
-        String modelName = null;
-        ReActAgent react = reactOf(observed);
-        if (react != null && react.getModel() != null) {
-            try {
-                modelName = react.getModel().getModelName();
-            } catch (RuntimeException e) {
-                modelName = null;
-            }
-        }
+        String modelName = modelNameOf(observed);
         target.describeSession(
                 sessionId, systemPrompt, toolsOf(observed), contextWindow, modelName);
     }
@@ -854,24 +849,41 @@ public final class AgentScopeAdapter implements FrameworkAdapter {
 
     private static String modelNameOf(Agent target) {
         ReActAgent react = reactOf(target);
-        if (react != null && react.getModel() != null) {
+        Model model = resolveModelOf(react);
+        if (model != null) {
             try {
-                String name = react.getModel().getModelName();
+                String name = model.getModelName();
                 return name == null ? "" : name;
             } catch (RuntimeException e) {
-                return "";
+                // fall through to the raw identity below
             }
         }
-        return "";
+        return react == null || react.getModelIdentity() == null ? "" : react.getModelIdentity();
+    }
+
+    /**
+     * Best-effort effective model for metadata paths: resolves an identity-mode agent's
+     * current instance ({@code getModel()} returns {@code null} there); {@code null} when the
+     * agent has neither instance nor resolvable identity.
+     */
+    private static Model resolveModelOf(ReActAgent react) {
+        if (react == null) {
+            return null;
+        }
+        try {
+            return react.getModel(null);
+        } catch (RuntimeException e) {
+            return null; // identity configured but unresolvable right now
+        }
     }
 
     private static String modelProviderOf(Agent target) {
         ReActAgent react = reactOf(target);
-        if (react == null || react.getModel() == null) {
+        Object model = resolveModelOf(react);
+        if (model == null) {
             return "";
         }
         try {
-            Object model = react.getModel();
             try {
                 Object provider = model.getClass().getMethod("getModelProvider").invoke(model);
                 if (provider != null && !provider.toString().isBlank()) {
@@ -912,10 +924,10 @@ public final class AgentScopeAdapter implements FrameworkAdapter {
     }
 
     private static int contextWindowOf(Agent target) {
-        ReActAgent react = reactOf(target);
-        if (react != null && react.getModel() != null) {
+        Model model = resolveModelOf(reactOf(target));
+        if (model != null) {
             try {
-                return react.getModel().getContextWindowSize();
+                return model.getContextWindowSize();
             } catch (RuntimeException e) {
                 return 0;
             }
@@ -971,12 +983,19 @@ public final class AgentScopeAdapter implements FrameworkAdapter {
         if (msg == null) {
             return "";
         }
-        String text = msg.getTextContent();
-        if (text != null && !text.isEmpty()) {
+        // Message text and message-level documents first; tool results are rendered from their
+        // own blocks so a result's text output survives next to its document references instead
+        // of being displaced by them.
+        String text = DocumentReferenceRenderer.renderMessageText(msg, false);
+        ToolResultBlock result = firstBlock(msg, ToolResultBlock.class);
+        String toolText = result != null ? blocksText(result.getOutput()) : "";
+        if (toolText.isEmpty()) {
             return text;
         }
-        ToolResultBlock result = firstBlock(msg, ToolResultBlock.class);
-        return result != null ? blocksText(result.getOutput()) : "";
+        if (text.isEmpty()) {
+            return toolText;
+        }
+        return text + "\n" + toolText;
     }
 
     static String blocksText(List<ContentBlock> blocks) {
@@ -985,11 +1004,17 @@ public final class AgentScopeAdapter implements FrameworkAdapter {
         }
         StringBuilder sb = new StringBuilder();
         for (ContentBlock block : blocks) {
+            String rendered = null;
             if (block instanceof io.agentscope.core.message.TextBlock text) {
+                rendered = text.getText();
+            } else if (block instanceof DocumentBlock document) {
+                rendered = DocumentReferenceRenderer.render(document);
+            }
+            if (rendered != null && !rendered.isEmpty()) {
                 if (sb.length() > 0) {
                     sb.append('\n');
                 }
-                sb.append(text.getText());
+                sb.append(rendered);
             }
         }
         return sb.toString();

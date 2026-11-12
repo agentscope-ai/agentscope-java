@@ -8,7 +8,7 @@
 
 <span align="center">
 
-[**中文主页**](https://github.com/agentscope-ai/agentscope-java/blob/main/README_zh.md) | [**Documentation**](https://java.agentscope.io/)
+[**中文主页**](https://github.com/agentscope-ai/agentscope-java/blob/main/README_zh.md) | [**日本語ホームページ**](https://github.com/agentscope-ai/agentscope-java/blob/main/README_ja.md) | [**Documentation**](https://java.agentscope.io/)
 
 </span>
 

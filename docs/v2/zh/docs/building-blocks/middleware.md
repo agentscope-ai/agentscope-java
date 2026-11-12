@@ -316,6 +316,8 @@ public class FullObservabilityMiddleware implements MiddlewareBase {
 
 需要替换流入下一层的字段时，构造一个新的 input record 后再调用 `next.apply(...)`。
 
+`onModelCall` 中的修改只影响该次模型请求，不会自动改写已保存的对话历史。对于旧版 `PostActingEvent`，`setToolResult(...)` 会更新下一轮推理读取的工具消息；显式替换的 `Msg` 优先，原始工具调用标识保持一致。`returnDirect` 仍按原有方式直接返回；替换结果不会改写已经发出的流式 delta。
+
 完整可运行示例：`agentscope-examples/documentation/.../middleware/CustomizedMiddlewareExample.java`、`middleware/ModelCallMiddlewareExample.java`、`middleware/SystemPromptMiddlewareExample.java`。
 
 ### 状态就绪通知
@@ -362,11 +364,18 @@ import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.middleware.AgentInput;
 import io.agentscope.core.middleware.MiddlewareBase;
+import java.util.EnumSet;
+import java.util.Set;
 import java.util.function.Function;
 import reactor.core.publisher.Flux;
 
 /** 把 user / request id 打到日志，并把 trace id 写回 context 供 tool 读取。 */
 public class RequestContextMiddleware implements MiddlewareBase {
+
+    @Override
+    public Set<ExtensionPoint> activePoints() {
+        return EnumSet.of(ExtensionPoint.ON_AGENT);
+    }
 
     @Override
     public Flux<AgentEvent> onAgent(
@@ -405,6 +414,11 @@ MiddlewareBase lowerPriority = new MiddlewareBase() {
     @Override
     public int order() {
         return 0;
+    }
+
+    @Override
+    public Set<ExtensionPoint> activePoints() {
+        return EnumSet.noneOf(ExtensionPoint.class);  // no hooks, zero participation
     }
 };
 ```
@@ -447,21 +461,17 @@ onAgent
 
 ### 扩展点参与声明（`activePoints()`）
 
-`MiddlewareBase.activePoints()` 声明 middleware 在哪些扩展点处于激活状态。它是**参与开关**，不是对"覆写了哪些方法"的复述：
+**你写的每个 middleware 都应当实现 `activePoints()`，明确返回自己挂接的点集合。** 无论是业务代码、第三方库还是 AI 工具生成的 middleware，都应遵循这一实践；下面的 `null` 默认值仅为 API 兼容而保留。`MiddlewareBase.activePoints()` 是**参与开关**，不是对"覆写了哪些方法"的复述：
 
-| 声明       | 方法实现 | 行为                                     |
-| ---------- | -------- | ---------------------------------------- |
-| 包含该点   | 已覆写   | 正常参与                                 |
-| 包含该点   | 未覆写   | 调用默认实现（直通）——合法冗余           |
-| 不包含该点 | 已覆写   | 方法不会被调用——有意关闭，非错误         |
-| 不包含该点 | 未覆写   | 该 middleware 在此点不存在，链中不占位   |
+- 声明包含某点即参与该点；未覆写对应方法时走默认直通实现，属合法冗余。
+- 声明不包含某点即在此点不存在——链中不占位，即使覆写了方法也不会被调用（有意关闭，非错误）。
 
 关键语义：
 
-- **默认全量激活。** 未覆写 `activePoints()` 的 middleware 保持与现状完全一致的行为，包括未来版本新增的扩展点。
-- **覆写即接管。** 一旦覆写，激活集合就是返回的集合本身；忘记声明的扩展点即使覆写了方法也不会生效。
+- **声明且仅声明你挂接的点。** 每个 middleware 都应覆写 `activePoints()`，精确返回自己挂接的点集合（`EnumSet.allOf(ExtensionPoint.class)` 显式表达全点参与）。声明是权威的：agent 构建时读取一次，优先于下面的自动探测。
+- **`null` 默认值仅为 API 兼容而保留——不要依赖它。** 默认实现返回 `null`，让这份契约出现之前写就的 middleware 无需修改即可继续编译和运行。当前 `null` 由自动探测解析：middleware 恰好参与其类实际实现了钩子方法的扩展点（父类继承的实现同样计入），按类计算一次并缓存。自动探测是遗留兜底，不能替代声明意图——它表达不了有意退出，也会因直通基类覆写的钩子点亮无关的点。探测行为在未来版本可能调整，新代码一律实现 `activePoints()`。
 - **空集合合法。** `EnumSet.noneOf(ExtensionPoint.class)` 让 middleware 在所有扩展点失活，同时保留注册——可用作运行开关。
-- **构造期固化。** agent 构建时读取一次声明；之后修改返回的集合对已构建的 agent 无效。
+- **构造期固化。** agent 构建时解析一次参与集；之后修改返回的集合对已构建的 agent 无效。
 - **与 `order()` 正交。** 声明只回答"是否参与"，不回答"什么顺序"——各点参与者保持既有 `order()` 语义。
 
 ```java
@@ -479,9 +489,11 @@ MiddlewareBase timingOnly =
         };
 ```
 
-**推荐实践：** 为你实现的每个 middleware 准确定义 `activePoints()`。精确声明让框架能整体跳过未参与者——某扩展点无任何参与者时不建任何包装层（零包装、不组装 pipeline），链更短，构建期的有效执行计划也更清晰。不声明则保持完全兼容的默认行为（全量激活），因此任何时候补充声明都不会破坏行为，只会收窄参与范围。
+精确声明让链保持精简：某扩展点无任何参与者时不建任何包装层（零包装、不组装 pipeline），构建期的有效执行计划清晰可见。`middlewaresAt(point)` 只包含声明（或探测）到的参与者——绝不含在该点上没有任何逻辑的 middleware。不要因为自动探测今天能用就依赖它：探测行为在未来版本可能调整，而显式声明是稳定的契约。
 
-继承内置 middleware 时同样适用：内置类声明的正是其挂接的扩展点，子类若覆写了新的 hook（例如给 `TaskReminderMiddleware` 增加 `onModelCall`），必须相应扩展继承到的 `activePoints()`——否则新增的 hook 会被静默跳过。
+继承内置 middleware 时同样适用：内置类声明的正是其挂接的扩展点，子类若覆写了新的 hook（例如给 `TaskReminderMiddleware` 增加 `onModelCall`），必须相应扩展继承到的 `activePoints()`——否则新增的 hook 永远不会被调用。
+
+新增扩展点遵循同一条评审规则：凡是激活会在参与 middleware 之外产生副作用的点（例如改变全局事件路由），绝不能仅凭自动探测激活——带全局影响的激活必须依赖显式声明或显式开关，绝不能用 `!middlewaresAt(point).isEmpty()` 推断。
 
 ## 实用示例
 
@@ -494,10 +506,18 @@ import io.agentscope.core.agent.Agent;
 import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.middleware.MiddlewareBase;
 import io.agentscope.core.middleware.ModelCallInput;
+import java.util.EnumSet;
+import java.util.Set;
 import java.util.function.Function;
 import reactor.core.publisher.Flux;
 
 public class TimingMiddleware implements MiddlewareBase {
+
+    @Override
+    public Set<ExtensionPoint> activePoints() {
+        return EnumSet.of(ExtensionPoint.ON_MODEL_CALL);
+    }
+
     @Override
     public Flux<AgentEvent> onModelCall(
             Agent agent, ModelCallInput input, Function<ModelCallInput, Flux<AgentEvent>> next) {
@@ -522,6 +542,8 @@ import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.middleware.MiddlewareBase;
 import io.agentscope.core.middleware.ModelCallInput;
 import java.time.Duration;
+import java.util.EnumSet;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Function;
 import reactor.core.publisher.Flux;
@@ -534,6 +556,11 @@ public class RateLimitMiddleware implements MiddlewareBase {
 
     public RateLimitMiddleware(Duration minInterval) {
         this.minIntervalMs = minInterval.toMillis();
+    }
+
+    @Override
+    public Set<ExtensionPoint> activePoints() {
+        return EnumSet.of(ExtensionPoint.ON_MODEL_CALL);
     }
 
     @Override
@@ -556,6 +583,8 @@ public class RateLimitMiddleware implements MiddlewareBase {
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.middleware.MiddlewareBase;
 import java.time.Instant;
+import java.util.EnumSet;
+import java.util.Set;
 import java.util.function.Supplier;
 import reactor.core.publisher.Mono;
 
@@ -565,6 +594,11 @@ public class DynamicContextMiddleware implements MiddlewareBase {
 
     public DynamicContextMiddleware(Supplier<String> contextFn) {
         this.contextFn = contextFn;
+    }
+
+    @Override
+    public Set<ExtensionPoint> activePoints() {
+        return EnumSet.of(ExtensionPoint.ON_SYSTEM_PROMPT);
     }
 
     @Override
@@ -587,6 +621,8 @@ import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.middleware.MiddlewareBase;
 import io.agentscope.core.middleware.ModelCallInput;
 import io.agentscope.core.model.Model;
+import java.util.EnumSet;
+import java.util.Set;
 import java.util.function.Function;
 import reactor.core.publisher.Flux;
 
@@ -596,6 +632,11 @@ public class ModelFallbackMiddleware implements MiddlewareBase {
 
     public ModelFallbackMiddleware(Model fallback) {
         this.fallback = fallback;
+    }
+
+    @Override
+    public Set<ExtensionPoint> activePoints() {
+        return EnumSet.of(ExtensionPoint.ON_MODEL_CALL);
     }
 
     @Override
@@ -637,10 +678,17 @@ import io.agentscope.core.event.RequestStopEvent;
 import io.agentscope.core.message.GenerateReason;
 import io.agentscope.core.middleware.ActingInput;
 import io.agentscope.core.middleware.MiddlewareBase;
+import java.util.EnumSet;
+import java.util.Set;
 import java.util.function.Function;
 import reactor.core.publisher.Flux;
 
 public class StopOnAllDeniedMiddleware implements MiddlewareBase {
+
+    @Override
+    public Set<ExtensionPoint> activePoints() {
+        return EnumSet.of(ExtensionPoint.ON_ACTING);
+    }
 
     @Override
     public Flux<AgentEvent> onActing(

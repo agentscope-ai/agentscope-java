@@ -21,11 +21,15 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doNothing;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.verify;
 
 import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.harness.agent.sandbox.Sandbox;
 import io.agentscope.harness.agent.sandbox.SandboxAcquireResult;
+import io.agentscope.harness.agent.sandbox.SandboxContext;
 import io.agentscope.harness.agent.sandbox.SandboxManager;
 import io.agentscope.harness.agent.sandbox.SessionSandboxStateStore;
 import io.agentscope.harness.agent.sandbox.WorkspaceSpec;
@@ -33,8 +37,11 @@ import io.agentscope.harness.agent.sandbox.layout.FileEntry;
 import io.agentscope.harness.agent.sandbox.snapshot.SandboxSnapshot;
 import java.io.IOException;
 import java.io.InputStream;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.List;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 import org.mockito.ArgumentCaptor;
 
 class E2bSandboxOptionsAndStateTest {
@@ -162,6 +169,41 @@ class E2bSandboxOptionsAndStateTest {
     }
 
     @Test
+    void resumedLegacyStateMaterializesEntriesUnderSavedExecutionRoot(@TempDir Path temp)
+            throws Exception {
+        Path legacyRoot = temp.resolve("legacy-manifest");
+        Path executionRoot = temp.resolve("saved-execution");
+        WorkspaceSpec manifest = new WorkspaceSpec();
+        manifest.setRoot(legacyRoot.toString());
+        manifest.getEntries().put("restored.txt", new FileEntry("saved content"));
+        E2bSandboxState state = new E2bSandboxState();
+        state.setWorkspaceSpec(manifest);
+        state.setWorkspaceRoot(executionRoot.toString());
+        state.setSandboxId("saved-sandbox");
+
+        try (var server = new okhttp3.mockwebserver.MockWebServer()) {
+            server.start();
+            server.enqueue(
+                    new okhttp3.mockwebserver.MockResponse()
+                            .setResponseCode(200)
+                            .setBody("{\"sandboxID\":\"saved-sandbox\"}"));
+            E2bSandboxClientOptions options = new E2bSandboxClientOptions();
+            options.setApiKey("test-key");
+            options.setApiBaseUrl(server.url("/").toString());
+            E2bSandbox sandbox = spy(new E2bSandbox(state, options));
+            // The local platform stub reconnects the sandbox; no envd process is required.
+            doNothing().when(sandbox).doSetupWorkspace();
+
+            sandbox.start();
+
+            assertEquals("saved content", Files.readString(executionRoot.resolve("restored.txt")));
+            assertFalse(Files.exists(legacyRoot.resolve("restored.txt")));
+            assertEquals(legacyRoot.toString(), manifest.getRoot());
+            assertTrue(sandbox.isRunning());
+        }
+    }
+
+    @Test
     void defaultFilesystemWorkspaceMatchesClientRoot() {
         var context = new E2bFilesystemSpec().toSandboxContext();
         assertEquals(
@@ -267,6 +309,26 @@ class E2bSandboxOptionsAndStateTest {
         assertNotNull(spec.createClient());
         assertNotNull(spec.workspaceSpec());
         assertNotNull(spec.snapshotSpec());
+    }
+
+    @Test
+    void filesystemSpecWorkspaceRootDrivesEffectiveWorkspaceSpec() {
+        E2bFilesystemSpec spec =
+                new E2bFilesystemSpec()
+                        .volumeMount("vol-a", "/mnt/data")
+                        .workspaceRoot("/mnt/data/ws");
+        SandboxContext context = spec.toSandboxContext();
+        E2bSandboxClient client = (E2bSandboxClient) context.getClient();
+
+        Sandbox sandbox =
+                client.create(
+                        context.getWorkspaceSpec(),
+                        null,
+                        (E2bSandboxClientOptions) context.getClientOptions());
+
+        E2bSandboxState state = (E2bSandboxState) sandbox.getState();
+        assertEquals("/mnt/data/ws", state.getWorkspaceRoot());
+        assertTrue(state.isWorkspaceOnVolume());
     }
 
     @Test

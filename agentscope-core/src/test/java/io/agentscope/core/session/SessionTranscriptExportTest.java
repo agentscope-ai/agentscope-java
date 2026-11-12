@@ -16,10 +16,16 @@
 package io.agentscope.core.session;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.message.AssistantMessage;
+import io.agentscope.core.message.Base64Source;
 import io.agentscope.core.message.DataBlock;
+import io.agentscope.core.message.DocumentBlock;
+import io.agentscope.core.message.FileIdSource;
+import io.agentscope.core.message.Msg;
+import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolResultMessage;
@@ -30,6 +36,107 @@ import java.util.Map;
 import org.junit.jupiter.api.Test;
 
 class SessionTranscriptExportTest {
+    @Test
+    void blankTextKeepsItsLineLikeTheAllTextBaseline() {
+        assertEquals(
+                "alpha\n\nbeta",
+                exportToolResult(
+                        List.of(
+                                TextBlock.builder().text("alpha").build(),
+                                TextBlock.builder().text("").build(),
+                                TextBlock.builder().text("beta").build())));
+    }
+
+    @Test
+    void blankLinesSurviveLeadingTrailingConsecutiveAndAllBlankOutputs() {
+        assertEquals(
+                "\nbeta",
+                exportToolResult(
+                        List.of(
+                                TextBlock.builder().text("").build(),
+                                TextBlock.builder().text("beta").build())));
+        assertEquals(
+                "alpha\n",
+                exportToolResult(
+                        List.of(
+                                TextBlock.builder().text("alpha").build(),
+                                TextBlock.builder().text("").build())));
+        assertEquals(
+                "alpha\n\n\nbeta",
+                exportToolResult(
+                        List.of(
+                                TextBlock.builder().text("alpha").build(),
+                                TextBlock.builder().text("").build(),
+                                TextBlock.builder().text("").build(),
+                                TextBlock.builder().text("beta").build())));
+        assertEquals(
+                "\n",
+                exportToolResult(
+                        List.of(
+                                TextBlock.builder().text("").build(),
+                                TextBlock.builder().text("").build())));
+        assertEquals("", exportToolResult(List.of(TextBlock.builder().text("").build())));
+    }
+
+    private String exportToolResult(List<io.agentscope.core.message.ContentBlock> output) {
+        var request =
+                ToolUseBlock.builder().id("call").name("log").input(Map.of("step", "1")).build();
+        var result = ToolResultBlock.builder().id("call").name("log").output(output).build();
+        var transcript =
+                new SessionViews.Transcript(
+                        9,
+                        List.of(
+                                AssistantMessage.builder().id("request").content(request).build(),
+                                ToolResultMessage.builder().id("result").result(result).build()));
+        return SessionTranscriptExport.entries(transcript).get(1).toolResult();
+    }
+
+    @Test
+    void documentInMixedToolResultBecomesAReferenceNotBase64() {
+        var request =
+                ToolUseBlock.builder()
+                        .id("call")
+                        .name("export")
+                        .input(Map.of("file", "report.pdf"))
+                        .build();
+        var result =
+                ToolResultBlock.builder()
+                        .id("call")
+                        .name("export")
+                        .output(
+                                List.of(
+                                        TextBlock.builder().text("report ready").build(),
+                                        DocumentBlock.builder()
+                                                .name("report.pdf")
+                                                .mimeType("application/pdf")
+                                                .source(
+                                                        Base64Source.builder()
+                                                                .mediaType("application/pdf")
+                                                                .data("aGVsbG8gd29ybGQ=")
+                                                                .build())
+                                                .build(),
+                                        DataBlock.builder()
+                                                .source(
+                                                        URLSource.builder()
+                                                                .url(
+                                                                        "https://example.test/preview.png")
+                                                                .build())
+                                                .build()))
+                        .build();
+        var transcript =
+                new SessionViews.Transcript(
+                        9,
+                        List.of(
+                                AssistantMessage.builder().id("request").content(request).build(),
+                                ToolResultMessage.builder().id("result").result(result).build()));
+
+        String toolResult = SessionTranscriptExport.entries(transcript).get(1).toolResult();
+
+        assertTrue(toolResult.contains("[document: report.pdf, application/pdf"), toolResult);
+        assertTrue(toolResult.contains("report ready"), toolResult);
+        assertFalse(toolResult.contains("aGVsbG8gd29ybGQ="), toolResult);
+    }
+
     @Test
     void flatUiRowsRetainToolInputAndMixedOutput() {
         var request =
@@ -67,5 +174,58 @@ class SessionTranscriptExportTest {
         assertTrue(entries.get(1).toolResult().contains("found plot"));
         assertTrue(entries.get(1).toolResult().contains("https://example.test/plot.png"));
         assertTrue(SessionTranscriptExport.jsonl(transcript).contains("toolInput"));
+    }
+
+    @Test
+    void aDocumentOnlyTurnExportsAReferenceInsteadOfAnEmptyEntry() {
+        DocumentBlock document =
+                DocumentBlock.builder()
+                        .source(new FileIdSource("dashscope", "file-42"))
+                        .name("report.pdf")
+                        .mimeType("application/pdf")
+                        .build();
+        Msg msg =
+                Msg.builder()
+                        .id("turn")
+                        .name("user")
+                        .role(MsgRole.USER)
+                        .content(List.of(document))
+                        .build();
+        var transcript = new SessionViews.Transcript(3, List.of(msg));
+
+        var entries = SessionTranscriptExport.entries(transcript);
+
+        assertEquals(1, entries.size());
+        assertEquals(
+                "[document: report.pdf, application/pdf, provider file id: file-42 (dashscope)]",
+                entries.get(0).content());
+    }
+
+    @Test
+    void aDocumentInsideAToolResultIsRenderedReadably() {
+        DocumentBlock document =
+                DocumentBlock.builder()
+                        .source(new URLSource("https://example.test/report.pdf"))
+                        .name("report.pdf")
+                        .mimeType("application/pdf")
+                        .build();
+        var result =
+                ToolResultBlock.builder()
+                        .id("call")
+                        .name("download")
+                        .output(List.of(TextBlock.builder().text("downloaded").build(), document))
+                        .build();
+        var transcript =
+                new SessionViews.Transcript(
+                        4,
+                        List.of(ToolResultMessage.builder().id("result").result(result).build()));
+
+        var entries = SessionTranscriptExport.entries(transcript);
+
+        assertEquals(1, entries.size());
+        assertEquals(
+                "downloaded\n[document: report.pdf, application/pdf,"
+                        + " url: https://example.test/report.pdf]",
+                entries.get(0).toolResult());
     }
 }

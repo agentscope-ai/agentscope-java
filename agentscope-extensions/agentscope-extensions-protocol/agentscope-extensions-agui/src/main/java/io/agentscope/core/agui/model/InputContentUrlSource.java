@@ -15,6 +15,7 @@
  */
 package io.agentscope.core.agui.model;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import java.util.Objects;
 
@@ -31,6 +32,7 @@ import java.util.Objects;
  * @author shanhongyu
  * @since 2026-08-01
  */
+@JsonInclude(JsonInclude.Include.NON_NULL)
 public record InputContentUrlSource(
         @JsonProperty("value") String value, @JsonProperty("mimeType") String mimeType)
         implements InputContentSource {

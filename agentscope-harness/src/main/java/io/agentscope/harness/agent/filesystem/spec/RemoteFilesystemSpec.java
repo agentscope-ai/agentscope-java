@@ -75,6 +75,7 @@ import java.util.Set;
 public class RemoteFilesystemSpec {
 
     private BaseStore store;
+    private boolean autoInjectedStore;
     private final Set<String> extraSharedPrefixes = new LinkedHashSet<>();
     private String anonymousUserId = "_default";
     private IsolationScope isolationScope = IsolationScope.USER;
@@ -123,6 +124,18 @@ public class RemoteFilesystemSpec {
     public void injectStoreIfAbsent(BaseStore store) {
         if (this.store == null) {
             this.store = store;
+            this.autoInjectedStore = true;
+        }
+    }
+
+    /**
+     * Restores a store captured before a failed HarnessAgent build. A store supplied through
+     * the constructor remains explicit caller configuration and is not changed.
+     */
+    public void restoreAutoInjectedStore(BaseStore previousStore) {
+        if (autoInjectedStore) {
+            this.store = previousStore;
+            this.autoInjectedStore = previousStore != null;
         }
     }
 

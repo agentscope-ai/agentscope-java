@@ -47,6 +47,33 @@ func (s *Server) nativeServiceTurn(ctx context.Context, ep *model.Endpoint, inv 
 	err = json.Unmarshal(item.Value, &turn)
 	return turn, err
 }
+
+// The dataplane keeps a failed managed turn ahead of later turns in its session
+// until it is resumed or cancelled, while the public Turn is already terminal.
+// Cancelling such a turn discards it there and releases the session queue.
+func (s *Server) failedNativeServiceTurn(ctx context.Context, ep *model.Endpoint, inv *model.EndpointInvocation) (serviceNativeTurn, bool, error) {
+	if inv.Status != model.EndpointInvocationFailed || inv.RunID != nil || s.product == nil {
+		return serviceNativeTurn{}, false, nil
+	}
+	turn, err := s.nativeServiceTurn(ctx, ep, inv)
+	if errors.Is(err, store.ErrNotFound) {
+		return serviceNativeTurn{}, false, nil
+	}
+	if err != nil {
+		return serviceNativeTurn{}, false, err
+	}
+	raw, err := s.product.ManagedServiceRequest(ctx, turn.Owner, inv.SessionID, "GET", "/turns/"+url.PathEscape(turn.ID), "", nil)
+	if err != nil {
+		return serviceNativeTurn{}, false, err
+	}
+	var state struct {
+		Status string `json:"status"`
+	}
+	if err = json.Unmarshal(raw, &state); err != nil {
+		return serviceNativeTurn{}, false, err
+	}
+	return turn, state.Status == "failed", nil
+}
 func (s *Server) acceptNativeServiceTurn(ctx context.Context, ep *model.Endpoint, inv *model.EndpointInvocation, owner, message string) error {
 	if s.product == nil {
 		return fmt.Errorf("managed runtime unavailable")

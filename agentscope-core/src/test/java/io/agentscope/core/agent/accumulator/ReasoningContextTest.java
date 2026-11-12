@@ -16,6 +16,7 @@
 package io.agentscope.core.agent.accumulator;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -424,6 +425,58 @@ class ReasoningContextTest {
         assertEquals("enc_v1", msg.getMetadata().get("openai.reasoning.encrypted_content"));
         // Same key: last-write-wins
         assertEquals("completed", msg.getMetadata().get("openai.response.status"));
+    }
+
+    @Test
+    @DisplayName("Should treat OpenAI Responses output limit as truncation")
+    void testOpenAiResponsesOutputLimitIsTruncated() {
+        ChatResponse chunk =
+                ChatResponse.builder()
+                        .id("msg-1")
+                        .content(
+                                List.of(
+                                        ToolUseBlock.builder()
+                                                .id("call_1")
+                                                .name("tool")
+                                                .content("")
+                                                .build()))
+                        .metadata(Map.of("openai.response.incomplete_reason", "max_output_tokens"))
+                        .finishReason("incomplete")
+                        .build();
+
+        context.processChunk(chunk);
+        Msg msg = context.buildFinalMessage();
+
+        assertNotNull(msg);
+        assertEquals(Boolean.TRUE, msg.getMetadata().get(MessageMetadataKeys.OUTPUT_LIMIT_REACHED));
+        ToolUseBlock toolCall = msg.getContentBlocks(ToolUseBlock.class).get(0);
+        assertTrue(toolCall.hasMalformedArguments());
+    }
+
+    @Test
+    @DisplayName("Should not treat other OpenAI Responses incomplete reasons as truncation")
+    void testOpenAiResponsesContentFilterIsNotTruncated() {
+        ChatResponse chunk =
+                ChatResponse.builder()
+                        .id("msg-1")
+                        .content(
+                                List.of(
+                                        ToolUseBlock.builder()
+                                                .id("call_1")
+                                                .name("tool")
+                                                .content("")
+                                                .build()))
+                        .metadata(Map.of("openai.response.incomplete_reason", "content_filter"))
+                        .finishReason("incomplete")
+                        .build();
+
+        context.processChunk(chunk);
+        Msg msg = context.buildFinalMessage();
+
+        assertNotNull(msg);
+        assertFalse(msg.getMetadata().containsKey(MessageMetadataKeys.OUTPUT_LIMIT_REACHED));
+        ToolUseBlock toolCall = msg.getContentBlocks(ToolUseBlock.class).get(0);
+        assertFalse(toolCall.hasMalformedArguments());
     }
 
     @Test

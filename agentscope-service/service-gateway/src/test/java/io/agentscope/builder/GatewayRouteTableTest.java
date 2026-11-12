@@ -69,6 +69,10 @@ class GatewayRouteTableTest {
                                     .isLessThan(find(routes, "control-api").getOrder());
                             assertThat(find(routes, "agent-session-lifecycle").getOrder())
                                     .isLessThan(find(routes, "control-api").getOrder());
+                            assertThat(find(routes, "control-events").getUri())
+                                    .isEqualTo(URI.create("http://control:8081"));
+                            assertThat(find(routes, "control-events").getOrder())
+                                    .isLessThan(find(routes, "control-api").getOrder());
                         })
                 .verifyComplete();
     }

@@ -18,12 +18,14 @@ package io.agentscope.core.agui.processor;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.ArgumentMatchers.nullable;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -210,6 +212,115 @@ class AguiRequestProcessorTest {
         assertEquals(input, context.get(RunAgentInput.class));
         assertEquals("thread-1", context.get(AguiAgentAdapter.RUNTIME_CONTEXT_THREAD_ID_KEY));
         assertEquals("run-1", context.get(AguiAgentAdapter.RUNTIME_CONTEXT_RUN_ID_KEY));
+    }
+
+    @Test
+    void processAdoptsRequestUserIdWhenNoResolverConfigured() {
+        AgentResolver resolver = mock(AgentResolver.class);
+        ReActAgent agent = mock(ReActAgent.class);
+        ArgumentCaptor<RuntimeContext> contextCaptor =
+                ArgumentCaptor.forClass(RuntimeContext.class);
+        when(resolver.resolveAgent(eq("default"), eq("thread-1"), eq("user-1"))).thenReturn(agent);
+        when(agent.streamEvents(anyList(), contextCaptor.capture())).thenReturn(Flux.empty());
+        AguiRequestProcessor processor =
+                AguiRequestProcessor.builder().agentResolver(resolver).build();
+
+        processor.process(request(input("run-1"), "user-1")).events().collectList().block();
+
+        verify(resolver).resolveAgent("default", "thread-1", "user-1");
+        RuntimeContext context = contextCaptor.getValue();
+        assertEquals("user-1", context.getUserId());
+        assertEquals("thread-1", context.getSessionId());
+    }
+
+    @Test
+    void processResolverUserIdWinsOverConflictingRequestUserId() {
+        AgentResolver resolver = mock(AgentResolver.class);
+        ReActAgent agent = mock(ReActAgent.class);
+        ArgumentCaptor<RuntimeContext> contextCaptor =
+                ArgumentCaptor.forClass(RuntimeContext.class);
+        when(resolver.resolveAgent(eq("default"), eq("thread-1"), eq("resolver-user")))
+                .thenReturn(agent);
+        when(agent.streamEvents(anyList(), contextCaptor.capture())).thenReturn(Flux.empty());
+        RuntimeContext resolverContext = RuntimeContext.builder().userId("resolver-user").build();
+        AtomicReference<String> userIdSeenByResolver = new AtomicReference<>();
+        AguiRequestProcessor processor =
+                AguiRequestProcessor.builder()
+                        .agentResolver(resolver)
+                        .runtimeContextResolver(
+                                request -> {
+                                    userIdSeenByResolver.set(request.getUserId());
+                                    return resolverContext;
+                                })
+                        .build();
+
+        processor.process(request(input("run-1"), "request-user")).events().collectList().block();
+
+        // The resolver sits downstream of the request, so it can see, validate or adopt the
+        // caller-asserted id before overriding it.
+        assertEquals("request-user", userIdSeenByResolver.get());
+        verify(resolver).resolveAgent("default", "thread-1", "resolver-user");
+        assertEquals("resolver-user", contextCaptor.getValue().getUserId());
+    }
+
+    @Test
+    void processAdoptsRequestUserIdWhenResolverReturnsNullContext() {
+        AgentResolver resolver = mock(AgentResolver.class);
+        ReActAgent agent = mock(ReActAgent.class);
+        ArgumentCaptor<RuntimeContext> contextCaptor =
+                ArgumentCaptor.forClass(RuntimeContext.class);
+        when(resolver.resolveAgent(eq("default"), eq("thread-1"), eq("request-user")))
+                .thenReturn(agent);
+        when(agent.streamEvents(anyList(), contextCaptor.capture())).thenReturn(Flux.empty());
+        AguiRequestProcessor processor =
+                AguiRequestProcessor.builder()
+                        .agentResolver(resolver)
+                        .runtimeContextResolver(request -> null)
+                        .build();
+
+        processor.process(request(input("run-1"), "request-user")).events().collectList().block();
+
+        assertEquals("request-user", contextCaptor.getValue().getUserId());
+        assertEquals("thread-1", contextCaptor.getValue().getSessionId());
+    }
+
+    @Test
+    void processAdoptsRequestUserIdWhenResolverReturnsContextWithoutUserId() {
+        AgentResolver resolver = mock(AgentResolver.class);
+        ReActAgent agent = mock(ReActAgent.class);
+        ArgumentCaptor<RuntimeContext> contextCaptor =
+                ArgumentCaptor.forClass(RuntimeContext.class);
+        when(resolver.resolveAgent(eq("default"), eq("thread-1"), eq("request-user")))
+                .thenReturn(agent);
+        when(agent.streamEvents(anyList(), contextCaptor.capture())).thenReturn(Flux.empty());
+        RuntimeContext resolverContext = RuntimeContext.builder().put("tenant", "tenant-a").build();
+        AguiRequestProcessor processor =
+                AguiRequestProcessor.builder()
+                        .agentResolver(resolver)
+                        .runtimeContextResolver(request -> resolverContext)
+                        .build();
+
+        processor.process(request(input("run-1"), "request-user")).events().collectList().block();
+
+        RuntimeContext context = contextCaptor.getValue();
+        assertEquals("request-user", context.getUserId());
+        assertEquals("tenant-a", context.get("tenant"));
+    }
+
+    @Test
+    void processTreatsBlankRequestUserIdAsNotProvided() {
+        AgentResolver resolver = mock(AgentResolver.class);
+        ReActAgent agent = mock(ReActAgent.class);
+        ArgumentCaptor<RuntimeContext> contextCaptor =
+                ArgumentCaptor.forClass(RuntimeContext.class);
+        when(resolver.resolveAgent(eq("default"), eq("thread-1"), isNull())).thenReturn(agent);
+        when(agent.streamEvents(anyList(), contextCaptor.capture())).thenReturn(Flux.empty());
+        AguiRequestProcessor processor =
+                AguiRequestProcessor.builder().agentResolver(resolver).build();
+
+        processor.process(request(input("run-1"), "  ")).events().collectList().block();
+
+        assertNull(contextCaptor.getValue().getUserId());
     }
 
     @Test
@@ -869,5 +980,9 @@ class AguiRequestProcessorTest {
 
     private static AguiRuntimeContextRequest<?> request(RunAgentInput runInput) {
         return AguiRuntimeContextRequest.builder().input(runInput).build();
+    }
+
+    private static AguiRuntimeContextRequest<?> request(RunAgentInput runInput, String userId) {
+        return AguiRuntimeContextRequest.builder().input(runInput).userId(userId).build();
     }
 }

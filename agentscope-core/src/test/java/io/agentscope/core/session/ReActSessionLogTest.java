@@ -16,6 +16,7 @@
 package io.agentscope.core.session;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -35,6 +36,9 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.ValueSource;
 import reactor.core.publisher.Flux;
 
 class ReActSessionLogTest {
@@ -56,6 +60,58 @@ class ReActSessionLogTest {
                     ChatResponse.builder()
                             .content(List.of(TextBlock.builder().text("answer").build()))
                             .build());
+        }
+    }
+
+    @ParameterizedTest
+    @CsvSource({
+        "log-id, display-name, log-id",
+        "log-id, , log-id",
+        ", display-name, display-name",
+        ", , framework-id",
+        ", '', framework-id",
+        ", '   ', framework-id"
+    })
+    void sessionIdentityUsesExplicitIdThenNonBlankNameThenAgentId(
+            String sessionLogAgentId, String name, String expected) {
+        var builder =
+                ReActAgent.builder().agentId("framework-id").name(name).model(new CaptureModel());
+        if (sessionLogAgentId != null) builder.sessionLogAgentId(sessionLogAgentId);
+        var agent = builder.build();
+
+        assertEquals(new SessionKey("u", expected, "s"), agent.sessionKey(context()));
+    }
+
+    @Test
+    void unnamedAgentWithoutExplicitIdUsesGeneratedIdForSessionIdentity() {
+        var agent = ReActAgent.builder().model(new CaptureModel()).build();
+
+        assertEquals(new SessionKey("u", agent.getAgentId(), "s"), agent.sessionKey(context()));
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void unnamedAgentSupportsCallAndStreamWithOrWithoutSessionLog(boolean sessionLogEnabled) {
+        var model = new CaptureModel();
+        var builder = ReActAgent.builder().agentId("framework-id").model(model);
+        if (sessionLogEnabled) builder.sessionLogStore(new InMemorySessionLogStore());
+        var agent = builder.build();
+
+        var reply =
+                agent.call(List.of(new UserMessage("hello")), context())
+                        .block(Duration.ofSeconds(10));
+        assertEquals("answer", reply.getTextContent());
+        var events =
+                agent.streamEvents(List.of(new UserMessage("continue")), context())
+                        .collectList()
+                        .block(Duration.ofSeconds(10));
+        assertFalse(events.isEmpty());
+        assertTrue(
+                events.stream().allMatch(e -> "framework-id".equals(e.getExecution().agentId())));
+        assertEquals(2, model.calls.size());
+        if (sessionLogEnabled) {
+            var facts = agent.sessionLog(context()).readAfter(0, 1000);
+            assertEquals(2, facts.stream().filter(e -> e.type().equals("run/end")).count());
         }
     }
 

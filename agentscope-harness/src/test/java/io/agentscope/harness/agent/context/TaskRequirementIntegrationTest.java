@@ -107,8 +107,9 @@ class TaskRequirementIntegrationTest {
                                             Map.of(),
                                             "stop"));
                         });
-        var context = RuntimeContext.builder().userId("user").sessionId("session").build();
         for (int i = 0; i < 2; i++) {
+            // A fresh context per execution: one runId belongs to exactly one agent call.
+            var context = RuntimeContext.builder().userId("user").sessionId("session").build();
             try (var agent =
                     HarnessAgent.builder()
                             .name("requirements")

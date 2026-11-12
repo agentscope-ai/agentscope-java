@@ -40,9 +40,33 @@ public class AgentExecuteProperties {
      */
     private final boolean requireInnerMessage;
 
-    private AgentExecuteProperties(boolean completeWithMessage, boolean requireInnerMessage) {
+    /**
+     * For a blocking request that got a non-final result first, how long the request handler then
+     * waits for the agent to stop producing events, in seconds. It is not a deadline for the agent
+     * or the whole request.
+     *
+     * <p>{@code null} keeps the request handler's default (60 seconds).
+     */
+    private final Integer agentCompletionTimeoutSeconds;
+
+    /**
+     * For a blocking request that got a non-final result first, how long the request handler then
+     * waits for the produced events to be consumed, in seconds. It is not a deadline for the agent
+     * or the whole request.
+     *
+     * <p>{@code null} keeps the request handler's default (10 seconds).
+     */
+    private final Integer consumptionCompletionTimeoutSeconds;
+
+    private AgentExecuteProperties(
+            boolean completeWithMessage,
+            boolean requireInnerMessage,
+            Integer agentCompletionTimeoutSeconds,
+            Integer consumptionCompletionTimeoutSeconds) {
         this.completeWithMessage = completeWithMessage;
         this.requireInnerMessage = requireInnerMessage;
+        this.agentCompletionTimeoutSeconds = agentCompletionTimeoutSeconds;
+        this.consumptionCompletionTimeoutSeconds = consumptionCompletionTimeoutSeconds;
     }
 
     public boolean isCompleteWithMessage() {
@@ -53,6 +77,14 @@ public class AgentExecuteProperties {
         return requireInnerMessage;
     }
 
+    public Integer getAgentCompletionTimeoutSeconds() {
+        return agentCompletionTimeoutSeconds;
+    }
+
+    public Integer getConsumptionCompletionTimeoutSeconds() {
+        return consumptionCompletionTimeoutSeconds;
+    }
+
     public static Builder builder() {
         return new Builder();
     }
@@ -60,6 +92,8 @@ public class AgentExecuteProperties {
     public static class Builder {
         private boolean completeWithMessage;
         private boolean requireInnerMessage;
+        private Integer agentCompletionTimeoutSeconds;
+        private Integer consumptionCompletionTimeoutSeconds;
 
         public Builder completeWithMessage(boolean completeWithMessage) {
             this.completeWithMessage = completeWithMessage;
@@ -71,8 +105,23 @@ public class AgentExecuteProperties {
             return this;
         }
 
+        public Builder agentCompletionTimeoutSeconds(Integer agentCompletionTimeoutSeconds) {
+            this.agentCompletionTimeoutSeconds = agentCompletionTimeoutSeconds;
+            return this;
+        }
+
+        public Builder consumptionCompletionTimeoutSeconds(
+                Integer consumptionCompletionTimeoutSeconds) {
+            this.consumptionCompletionTimeoutSeconds = consumptionCompletionTimeoutSeconds;
+            return this;
+        }
+
         public AgentExecuteProperties build() {
-            return new AgentExecuteProperties(completeWithMessage, requireInnerMessage);
+            return new AgentExecuteProperties(
+                    completeWithMessage,
+                    requireInnerMessage,
+                    agentCompletionTimeoutSeconds,
+                    consumptionCompletionTimeoutSeconds);
         }
     }
 }

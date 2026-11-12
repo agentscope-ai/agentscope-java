@@ -83,11 +83,10 @@ class ToolMethodInvoker {
                             })
                     .flatMap(
                             future ->
-                                    Mono.fromFuture(future)
-                                            .map(
-                                                    r ->
-                                                            converter.convert(
-                                                                    r, extractGenericType(method)))
+                                    convertAsyncResult(
+                                                    Mono.fromFuture(future),
+                                                    extractGenericType(method),
+                                                    converter)
                                             .onErrorResume(this::handleError))
                     .onErrorResume(this::handleError);
 
@@ -105,7 +104,7 @@ class ToolMethodInvoker {
                             })
                     .flatMap(
                             mono ->
-                                    mono.map(r -> converter.convert(r, extractGenericType(method)))
+                                    convertAsyncResult(mono, extractGenericType(method), converter)
                                             .onErrorResume(this::handleError))
                     .onErrorResume(this::handleError);
 
@@ -122,6 +121,14 @@ class ToolMethodInvoker {
                             })
                     .onErrorResume(this::handleError);
         }
+    }
+
+    private Mono<ToolResultBlock> convertAsyncResult(
+            Mono<Object> result, Type returnType, ToolResultConverter converter) {
+        if (returnType == Void.class) {
+            return result.then(Mono.fromSupplier(() -> converter.convert(null, returnType)));
+        }
+        return result.map(value -> converter.convert(value, returnType));
     }
 
     /**

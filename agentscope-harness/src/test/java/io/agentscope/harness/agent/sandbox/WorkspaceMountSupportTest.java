@@ -75,4 +75,52 @@ class WorkspaceMountSupportTest {
         assertEquals(
                 "/workspace/repo", WorkspaceMountSupport.containerMountPath("/workspace/", "repo"));
     }
+
+    @Test
+    void normalizeVirtualPath_collapsesAndStrips() {
+        assertEquals("/mnt/data", WorkspaceMountSupport.normalizeVirtualPath("//mnt//data//"));
+        assertEquals("/mnt/data", WorkspaceMountSupport.normalizeVirtualPath("/mnt/data"));
+        assertEquals("/mnt/data", WorkspaceMountSupport.normalizeVirtualPath("  /mnt/data/  "));
+        assertEquals("/", WorkspaceMountSupport.normalizeVirtualPath("/"));
+        assertEquals("/", WorkspaceMountSupport.normalizeVirtualPath("//"));
+        assertEquals("/", WorkspaceMountSupport.normalizeVirtualPath(""));
+        assertEquals("/", WorkspaceMountSupport.normalizeVirtualPath(null));
+    }
+
+    @Test
+    void tarExcludeArgsForAbsolutePaths_onlyNestedMounts() {
+        assertEquals(
+                List.of("--exclude=./data"),
+                WorkspaceMountSupport.tarExcludeArgsForAbsolutePaths(
+                        "/home/user", List.of("/home/user/data")));
+        assertEquals(
+                List.of(),
+                WorkspaceMountSupport.tarExcludeArgsForAbsolutePaths(
+                        "/home/user", List.of("/home/user")));
+        assertEquals(
+                List.of(),
+                WorkspaceMountSupport.tarExcludeArgsForAbsolutePaths(
+                        "/home/user", List.of("/mnt/data", "/home/user-x")));
+        assertEquals(
+                List.of("--exclude=./a/b"),
+                WorkspaceMountSupport.tarExcludeArgsForAbsolutePaths(
+                        "/home/user/", List.of("/home/user/a/b/")));
+        assertEquals(List.of(), WorkspaceMountSupport.tarExcludeArgsForAbsolutePaths(null, null));
+    }
+
+    @Test
+    void tarExcludeArgsForAbsolutePaths_rootSlashAndNormalization() {
+        assertEquals(
+                List.of("--exclude=./mnt/data"),
+                WorkspaceMountSupport.tarExcludeArgsForAbsolutePaths("/", List.of("/mnt/data")));
+        assertEquals(
+                List.of("--exclude=./mnt/data"),
+                WorkspaceMountSupport.tarExcludeArgsForAbsolutePaths(
+                        "//", List.of("//mnt//data//")));
+        assertEquals(
+                List.of(), WorkspaceMountSupport.tarExcludeArgsForAbsolutePaths("/", List.of("/")));
+        assertEquals(
+                List.of(),
+                WorkspaceMountSupport.tarExcludeArgsForAbsolutePaths("/", List.of("mnt/data")));
+    }
 }

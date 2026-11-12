@@ -57,6 +57,9 @@ public class WorkspaceIndex implements AutoCloseable {
     private static final String INDEX_DIR = ".index";
     private static final String INDEX_DB = "workspace.db";
 
+    /** Escape character declared by {@code ESCAPE} on every prefix lookup; see {@link #likePrefix}. */
+    private static final char LIKE_ESCAPE = '\\';
+
     /**
      * Path prefixes (workspace-relative) that are eligible for indexing.
      * Only files under one of these prefixes will be tracked.
@@ -74,22 +77,31 @@ public class WorkspaceIndex implements AutoCloseable {
      * Opens (or creates) the workspace index for the given workspace root.
      *
      * <p>Returns {@code null} if the index cannot be initialized — callers should treat a
-     * {@code null} index as "unavailable" and fall back to remote scan.
+     * {@code null} index as "unavailable" and fall back to remote scan. Any connection acquired
+     * during a failed initialization is closed; a successfully returned index owns its connection
+     * until {@link #close()} is called.
      *
      * @param workspaceRoot absolute path to the workspace root directory
      * @return a ready-to-use {@link WorkspaceIndex}, or {@code null} on failure
      */
     public static WorkspaceIndex open(Path workspaceRoot) {
+        WorkspaceIndex idx = null;
         try {
             Path indexDir = workspaceRoot.resolve(INDEX_DIR);
             Files.createDirectories(indexDir);
             Path dbFile = indexDir.resolve(INDEX_DB);
             String url = "jdbc:sqlite:" + dbFile.toAbsolutePath();
             Connection c = DriverManager.getConnection(url);
-            WorkspaceIndex idx = new WorkspaceIndex(c);
+            idx = new WorkspaceIndex(c);
+            try (Statement st = c.createStatement()) {
+                st.execute("PRAGMA case_sensitive_like = ON");
+            }
             idx.initSchema();
             return idx;
         } catch (Exception e) {
+            if (idx != null) {
+                idx.close();
+            }
             log.warn("WorkspaceIndex unavailable (non-fatal): {}", e.getMessage());
             return null;
         }
@@ -262,8 +274,9 @@ public class WorkspaceIndex implements AutoCloseable {
         }
         try (PreparedStatement ps =
                 conn.prepareStatement(
-                        "SELECT path FROM files WHERE path LIKE ? AND present_local=1")) {
-            ps.setString(1, prefix + "%");
+                        "SELECT path FROM files WHERE path LIKE ? ESCAPE '\\' AND"
+                                + " present_local=1")) {
+            ps.setString(1, likePrefix(prefix));
             try (ResultSet rs = ps.executeQuery()) {
                 while (rs.next()) {
                     result.add(rs.getString(1));
@@ -280,10 +293,14 @@ public class WorkspaceIndex implements AutoCloseable {
      * {@link #listByPrefix} when only presence is needed.
      */
     public boolean hasPrefix(String prefix) {
+        if (prefix == null) {
+            return false;
+        }
         try (PreparedStatement ps =
                 conn.prepareStatement(
-                        "SELECT 1 FROM files WHERE path LIKE ? AND present_local=1 LIMIT 1")) {
-            ps.setString(1, prefix + "%");
+                        "SELECT 1 FROM files WHERE path LIKE ? ESCAPE '\\' AND present_local=1"
+                                + " LIMIT 1")) {
+            ps.setString(1, likePrefix(prefix));
             try (ResultSet rs = ps.executeQuery()) {
                 return rs.next();
             }
@@ -368,5 +385,26 @@ public class WorkspaceIndex implements AutoCloseable {
             }
         }
         return false;
+    }
+
+    /**
+     * Turns a literal path prefix into a {@code LIKE} pattern matching that prefix followed by
+     * anything. Agent, session and file names arrive verbatim from configuration and callers, so
+     * {@code '_'} and {@code '%'} in them must be escaped: otherwise {@code agents/bot_1/...}
+     * would also match {@code agents/bot21/...} ({@code '_'} is the single-character wildcard),
+     * and a caller subtracting the prefix length from such a row reads it as a child of a
+     * directory it does not live in. The backslash escapes are declared by {@code ESCAPE '\\'} in
+     * the statements that use this pattern.
+     */
+    static String likePrefix(String prefix) {
+        StringBuilder pattern = new StringBuilder(prefix.length() + 8);
+        for (int i = 0; i < prefix.length(); i++) {
+            char c = prefix.charAt(i);
+            if (c == '%' || c == '_' || c == LIKE_ESCAPE) {
+                pattern.append(LIKE_ESCAPE);
+            }
+            pattern.append(c);
+        }
+        return pattern.append('%').toString();
     }
 }

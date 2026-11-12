@@ -40,14 +40,16 @@ import reactor.core.publisher.Mono;
 public final class FeishuAccessTokenProvider {
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
+    private static final Duration DEFAULT_RESPONSE_TIMEOUT = Duration.ofSeconds(10);
 
     private final WebClient client;
     private final String appId;
     private final String appSecret;
     private final AccessTokenStore store;
+    private final Duration responseTimeout;
 
     public FeishuAccessTokenProvider(String apiBase, String appId, String appSecret) {
-        this(apiBase, appId, appSecret, new InMemoryAccessTokenStore());
+        this(apiBase, appId, appSecret, new InMemoryAccessTokenStore(), DEFAULT_RESPONSE_TIMEOUT);
     }
 
     /**
@@ -59,10 +61,37 @@ public final class FeishuAccessTokenProvider {
      */
     public FeishuAccessTokenProvider(
             String apiBase, String appId, String appSecret, AccessTokenStore store) {
+        this(apiBase, appId, appSecret, store, DEFAULT_RESPONSE_TIMEOUT);
+    }
+
+    /**
+     * Constructor variant with an explicit bound for one token request. Production keeps the
+     * 10s default; tests against a loopback server on starved CI runners pass a longer bound.
+     *
+     * @param responseTimeout positive bound for one token request
+     */
+    public FeishuAccessTokenProvider(
+            String apiBase, String appId, String appSecret, Duration responseTimeout) {
+        this(apiBase, appId, appSecret, new InMemoryAccessTokenStore(), responseTimeout);
+    }
+
+    /**
+     * @param responseTimeout positive bound for one token request
+     */
+    public FeishuAccessTokenProvider(
+            String apiBase,
+            String appId,
+            String appSecret,
+            AccessTokenStore store,
+            Duration responseTimeout) {
         this.client = WebClient.builder().baseUrl(apiBase).build();
         this.appId = appId;
         this.appSecret = appSecret;
         this.store = Objects.requireNonNull(store, "store");
+        Objects.requireNonNull(responseTimeout, "responseTimeout");
+        if (responseTimeout.isZero() || responseTimeout.isNegative())
+            throw new IllegalArgumentException("responseTimeout must be positive");
+        this.responseTimeout = responseTimeout;
     }
 
     /** Returns a valid tenant_access_token, refreshing in-band when missing or near-expiry. */
@@ -84,7 +113,7 @@ public final class FeishuAccessTokenProvider {
                 .bodyValue(body)
                 .retrieve()
                 .bodyToMono(String.class)
-                .timeout(Duration.ofSeconds(10))
+                .timeout(responseTimeout)
                 .map(this::parseAndStore);
     }
 

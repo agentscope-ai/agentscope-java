@@ -22,6 +22,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.Msg;
+import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
@@ -36,10 +37,13 @@ import io.agentscope.core.tool.ToolBase;
 import io.agentscope.core.tool.ToolCallParam;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.harness.agent.HarnessAgent;
+import io.agentscope.harness.agent.filesystem.spec.LocalFilesystemSpec;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -52,6 +56,40 @@ import reactor.core.publisher.Sinks;
 class AgentSessionTest {
     @TempDir Path workspace;
     private static final Duration WAIT = Duration.ofSeconds(15);
+
+    @Test
+    void submittedTaskKeepsExpandedFileAttachments() throws Exception {
+        Files.writeString(workspace.resolve("notes.txt"), "ATTACHMENT_CONTENT");
+        var requests = new CopyOnWriteArrayList<List<Msg>>();
+        Model model =
+                new Model() {
+                    public String getModelName() {
+                        return "attachment-test";
+                    }
+
+                    public Flux<ChatResponse> stream(
+                            List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
+                        requests.add(List.copyOf(messages));
+                        return response(TextBlock.builder().text("done").build());
+                    }
+                };
+        try (var agent =
+                agentBuilder(model, new Toolkit(), new InMemorySessionLogStore())
+                        .filesystem(new LocalFilesystemSpec().project(workspace))
+                        .build()) {
+            var session = session(agent);
+            var result = session.await(session.submit("Read @./notes.txt")).block(WAIT);
+            assertEquals("completed", result.status(), session.executionError());
+            assertTrue(
+                    requests.get(0).stream()
+                            .filter(message -> message.getRole() == MsgRole.USER)
+                            .anyMatch(
+                                    message ->
+                                            message.getTextContent()
+                                                    .contains("ATTACHMENT_CONTENT")),
+                    "the submitted task must retain the built-in @path expansion");
+        }
+    }
 
     @Test
     void permissionAnswerUsesExistingHitlAndIsNotReplayedAsChatInput() throws Exception {
@@ -206,6 +244,45 @@ class AgentSessionTest {
         }
     }
 
+    @Test
+    void callerModelIdDoesNotStickToDurableSessionTurns() {
+        var calls = new AtomicInteger();
+        Model sessionModel =
+                new Model() {
+                    public String getModelName() {
+                        return "session-default";
+                    }
+
+                    public Flux<ChatResponse> stream(
+                            List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
+                        calls.incrementAndGet();
+                        return response(TextBlock.builder().text("done").build());
+                    }
+                };
+        Model sticky =
+                new Model() {
+                    public String getModelName() {
+                        return "sticky-per-call";
+                    }
+
+                    public Flux<ChatResponse> stream(
+                            List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
+                        return Flux.error(
+                                new AssertionError(
+                                        "session turns must not inherit the caller's pinned"
+                                                + " model"));
+                    }
+                };
+        try (var agent = agent(sessionModel, new Toolkit(), new InMemorySessionLogStore())) {
+            var callerCtx = RuntimeContext.builder().userId("u").sessionId("s").build();
+            callerCtx.put(Model.class, sticky);
+            var session = agent.session(callerCtx);
+            var done = session.await(session.submit("begin")).block(WAIT);
+            assertEquals("completed", done.status(), session.executionError());
+            assertEquals(1, calls.get());
+        }
+    }
+
     private static Flux<ChatResponse> response(ContentBlock content) {
         return Flux.just(ChatResponse.builder().content(List.of(content)).build());
     }
@@ -215,6 +292,11 @@ class AgentSessionTest {
     }
 
     private HarnessAgent agent(Model model, Toolkit toolkit, InMemorySessionLogStore store) {
+        return agentBuilder(model, toolkit, store).disableAtPathExpansion().build();
+    }
+
+    private HarnessAgent.Builder agentBuilder(
+            Model model, Toolkit toolkit, InMemorySessionLogStore store) {
         return HarnessAgent.builder()
                 .name("session-test")
                 .agentId("session-test")
@@ -232,8 +314,6 @@ class AgentSessionTest {
                 .disableMemoryTools()
                 .disableMemoryHooks()
                 .disableToolsConfig()
-                .disableWorkspaceContext()
-                .disableAtPathExpansion()
-                .build();
+                .disableWorkspaceContext();
     }
 }

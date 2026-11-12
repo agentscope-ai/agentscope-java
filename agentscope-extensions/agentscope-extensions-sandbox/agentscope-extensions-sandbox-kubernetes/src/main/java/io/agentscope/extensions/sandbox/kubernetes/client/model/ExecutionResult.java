@@ -31,12 +31,20 @@ public class ExecutionResult {
     @JsonProperty("exit_code")
     private int exitCode = -1;
 
+    @JsonProperty("timed_out")
+    private boolean timedOut;
+
     public ExecutionResult() {}
 
     public ExecutionResult(String stdout, String stderr, int exitCode) {
+        this(stdout, stderr, exitCode, false);
+    }
+
+    public ExecutionResult(String stdout, String stderr, int exitCode, boolean timedOut) {
         this.stdout = stdout != null ? stdout : "";
         this.stderr = stderr != null ? stderr : "";
         this.exitCode = exitCode;
+        this.timedOut = timedOut;
     }
 
     public String getStdout() {
@@ -61,5 +69,13 @@ public class ExecutionResult {
 
     public void setExitCode(int exitCode) {
         this.exitCode = exitCode;
+    }
+
+    public boolean isTimedOut() {
+        return timedOut;
+    }
+
+    public void setTimedOut(boolean timedOut) {
+        this.timedOut = timedOut;
     }
 }

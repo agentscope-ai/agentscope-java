@@ -70,6 +70,20 @@ context automatically and preserves returned calls and results in conversation h
 tools can be combined with local function tools. Do not use `GeminiServerTool.of(...)` for custom
 function tools; it rejects those definitions.
 
+## Documents
+
+Gemini reads documents natively. A `DocumentBlock` on a user message becomes an `inlineData` part
+(bytes from a `Base64Source` or a readable `URLSource`) or a `fileData` part when the source is a
+`FileIdSource` whose provider is `gemini` — bare Files API names such as `files/abc123` are expanded
+to the full URI `fileData` expects.
+
+The API only reads the document types listed in the `generateContent` reference — `application/pdf`,
+`application/json`, plain text and code formats (`text/plain`, `text/html`, `text/css`,
+`text/markdown`, `text/csv`, `text/xml`, `text/rtf`, `text/javascript`, `text/x-typescript`,
+`text/x-python`, and the `application/x-*` code equivalents). A document declaring any other MIME
+type (a `.docx`, for example) is degraded to a text placeholder instead of being sent, because the
+API would reject the whole request otherwise.
+
 ## Spring Boot
 
 Spring Boot applications can use the Gemini starter:

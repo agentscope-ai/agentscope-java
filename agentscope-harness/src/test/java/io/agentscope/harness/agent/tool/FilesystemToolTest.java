@@ -368,6 +368,23 @@ class FilesystemToolTest {
     }
 
     @Test
+    void grepSchemaDescribesLiteralSearchAndFollowupTools() {
+        Toolkit toolkit = new Toolkit();
+        toolkit.registerTool(tool);
+        var schema =
+                toolkit.getToolSchemas().stream()
+                        .filter(candidate -> candidate.getName().equals("grep_files"))
+                        .findFirst()
+                        .orElseThrow();
+
+        assertTrue(schema.getDescription().contains("literal text, not a regular expression"));
+        assertTrue(schema.getDescription().contains("path:line:text"));
+        assertTrue(schema.getDescription().contains("glob_files"));
+        assertTrue(schema.getDescription().contains("read_file"));
+        assertTrue(schema.getDescription().contains("surrounding context"));
+    }
+
+    @Test
     void explicitGlobLimitAboveDefault_stillRespectsCharacterBudget() {
         when(filesystem.glob(RT, "**/*.txt", ".")).thenReturn(GlobResult.success(files(351)));
 

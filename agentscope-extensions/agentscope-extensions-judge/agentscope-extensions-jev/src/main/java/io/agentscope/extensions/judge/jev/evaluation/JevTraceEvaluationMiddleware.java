@@ -26,9 +26,11 @@ import io.agentscope.core.middleware.MiddlewareBase;
 import io.agentscope.core.middleware.ModelCallInput;
 import io.agentscope.extensions.judge.jev.JevExecution;
 import java.util.ArrayList;
+import java.util.EnumSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.UUID;
 import java.util.function.BiConsumer;
 import java.util.function.Function;
@@ -65,6 +67,12 @@ public final class JevTraceEvaluationMiddleware implements MiddlewareBase {
         if (maxCaptureChars < 1)
             throw new IllegalArgumentException("positive capture limit required");
         this.maxCaptureChars = maxCaptureChars;
+    }
+
+    /** Narrow declaration: subclasses overriding more hooks must extend this set. */
+    @Override
+    public Set<ExtensionPoint> activePoints() {
+        return EnumSet.of(ExtensionPoint.ON_AGENT, ExtensionPoint.ON_MODEL_CALL);
     }
 
     @Override

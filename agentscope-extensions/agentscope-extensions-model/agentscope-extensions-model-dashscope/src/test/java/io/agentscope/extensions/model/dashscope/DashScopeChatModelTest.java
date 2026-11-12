@@ -38,6 +38,7 @@ import io.agentscope.core.util.JsonUtils;
 import io.agentscope.extensions.model.dashscope.dto.DashScopeParameters;
 import io.agentscope.extensions.model.dashscope.dto.DashScopeRequest;
 import io.agentscope.extensions.model.dashscope.dto.DashScopeSearchOptions;
+import io.agentscope.extensions.model.dashscope.dto.DashScopeSkill;
 import io.agentscope.extensions.model.dashscope.formatter.DashScopeChatFormatter;
 import io.agentscope.extensions.model.dashscope.formatter.DashScopeMultiAgentFormatter;
 import java.io.IOException;
@@ -199,6 +200,168 @@ class DashScopeChatModelTest {
                 "Streaming should default to true when unset: " + body);
 
         mockServer.shutdown();
+    }
+
+    @Test
+    @DisplayName("A skill on a non-streaming model fails fast with an actionable message")
+    void testSkillWithNonStreamingModelIsRejected() {
+        DashScopeChatModel nonStreamingModel =
+                DashScopeChatModel.builder().apiKey(mockApiKey).modelName("qwen-doc-turbo").stream(
+                                false)
+                        .build();
+
+        GenerateOptions options =
+                GenerateOptions.builder()
+                        .additionalBodyParam(
+                                "skill",
+                                List.of(
+                                        io.agentscope.extensions.model.dashscope.dto.DashScopeSkill
+                                                .pptTemplate("news_01")))
+                        .build();
+
+        IllegalStateException ex =
+                assertThrows(
+                        IllegalStateException.class,
+                        () ->
+                                nonStreamingModel
+                                        .doStream(testMessages(), List.of(), options)
+                                        .blockLast());
+        assertTrue(ex.getMessage().contains("stream mode"), ex.getMessage());
+    }
+
+    @Test
+    @DisplayName("A per-call skill is merged into the request parameters")
+    void testSkillFlowsIntoRequestParameters() throws Exception {
+        MockWebServer server = new MockWebServer();
+        server.start();
+        server.enqueue(
+                new MockResponse()
+                        .setResponseCode(200)
+                        .setBody("data: {\"request_id\":\"test\",\"output\":{\"choices\":[]}}\n\n")
+                        .setHeader("Content-Type", "text/event-stream"));
+
+        DashScopeChatModel chatModel =
+                DashScopeChatModel.builder()
+                        .apiKey(mockApiKey)
+                        .modelName("qwen-doc-turbo")
+                        .baseUrl(server.url("/").toString().replaceAll("/$", ""))
+                        .httpTransport(OkHttpTransport.builder().build())
+                        .build();
+
+        GenerateOptions options =
+                GenerateOptions.builder()
+                        .additionalBodyParam(
+                                "skill",
+                                List.of(
+                                        io.agentscope.extensions.model.dashscope.dto.DashScopeSkill
+                                                .pptTemplate("news_01")))
+                        .build();
+
+        chatModel.doStream(testMessages(), List.of(), options).blockLast();
+
+        String body = server.takeRequest().getBody().readUtf8();
+        assertTrue(body.contains("\"skill\""), body);
+        assertTrue(body.contains("\"type\":\"ppt\""), body);
+        assertTrue(body.contains("\"template_id\":\"news_01\""), body);
+        // The skill lands inside `parameters`, next to incremental_output, not at the body root.
+        com.fasterxml.jackson.databind.JsonNode root =
+                new com.fasterxml.jackson.databind.ObjectMapper().readTree(body);
+        assertTrue(root.path("parameters").has("skill"), body);
+        assertTrue(
+                root.path("skill").isMissingNode(), "skill must not sit at the body root: " + body);
+
+        server.shutdown();
+    }
+
+    @Test
+    @DisplayName("Skill output chunks are annotated with the skill metadata key")
+    void testSkillOutputAnnotatedInResponseMetadata() throws Exception {
+        MockWebServer server = new MockWebServer();
+        server.start();
+        server.enqueue(
+                new MockResponse()
+                        .setResponseCode(200)
+                        .setBody(
+                                "data:"
+                                    + " {\"request_id\":\"t\",\"output\":{\"choices\":[{\"message\":{\"role\":\"assistant\",\"reasoning_content\":\"outline\"}}]}}\n\n"
+                                    + "data:"
+                                    + " {\"request_id\":\"t\",\"output\":{\"choices\":[{\"message\":{\"role\":\"assistant\",\"content\":\"https://example.com/out.pptx\"},\"finish_reason\":\"stop\"}]}}\n\n")
+                        .setHeader("Content-Type", "text/event-stream"));
+
+        DashScopeChatModel chatModel =
+                DashScopeChatModel.builder()
+                        .apiKey(mockApiKey)
+                        .modelName("qwen-doc-turbo")
+                        .baseUrl(server.url("/").toString().replaceAll("/$", ""))
+                        .httpTransport(OkHttpTransport.builder().build())
+                        .build();
+
+        GenerateOptions options =
+                GenerateOptions.builder()
+                        .additionalBodyParam(
+                                "skill",
+                                List.of(
+                                        io.agentscope.extensions.model.dashscope.dto.DashScopeSkill
+                                                .pptTemplate("news_01")))
+                        .build();
+
+        List<ChatResponse> responses =
+                chatModel.doStream(testMessages(), List.of(), options).collectList().block();
+
+        assertNotNull(responses);
+        assertEquals(2, responses.size());
+        // The reasoning chunk carries no text content and stays unannotated.
+        assertTrue(
+                responses.get(0).getMetadata() == null
+                        || !responses
+                                .get(0)
+                                .getMetadata()
+                                .containsKey(DashScopeSkill.RESPONSE_METADATA_KEY));
+        // The content chunk carries the PPT download URL and is annotated.
+        assertEquals(
+                DashScopeSkill.TYPE_PPT,
+                responses.get(1).getMetadata().get(DashScopeSkill.RESPONSE_METADATA_KEY));
+
+        server.shutdown();
+    }
+
+    @Test
+    @DisplayName("Responses without a skill stay unannotated")
+    void testResponsesWithoutSkillAreNotAnnotated() throws Exception {
+        MockWebServer server = new MockWebServer();
+        server.start();
+        server.enqueue(
+                new MockResponse()
+                        .setResponseCode(200)
+                        .setBody(
+                                "data:"
+                                    + " {\"request_id\":\"t\",\"output\":{\"choices\":[{\"message\":{\"role\":\"assistant\",\"content\":\"https://example.com/out.pptx\"},\"finish_reason\":\"stop\"}]}}\n\n")
+                        .setHeader("Content-Type", "text/event-stream"));
+
+        DashScopeChatModel chatModel =
+                DashScopeChatModel.builder()
+                        .apiKey(mockApiKey)
+                        .modelName("qwen-doc-turbo")
+                        .baseUrl(server.url("/").toString().replaceAll("/$", ""))
+                        .httpTransport(OkHttpTransport.builder().build())
+                        .build();
+
+        List<ChatResponse> responses =
+                chatModel
+                        .doStream(testMessages(), List.of(), GenerateOptions.builder().build())
+                        .collectList()
+                        .block();
+
+        assertNotNull(responses);
+        assertEquals(1, responses.size());
+        assertTrue(
+                responses.get(0).getMetadata() == null
+                        || !responses
+                                .get(0)
+                                .getMetadata()
+                                .containsKey(DashScopeSkill.RESPONSE_METADATA_KEY));
+
+        server.shutdown();
     }
 
     private static List<Msg> testMessages() {

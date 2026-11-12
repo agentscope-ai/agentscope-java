@@ -42,6 +42,35 @@ OpenAIResponsesChatModel model = OpenAIResponsesChatModel.builder()
     .build();
 ```
 
+## 文档输入
+
+通过用户消息中的 `DocumentBlock` 发送文档。默认 formatter 和
+`ResponsesMultiAgentFormatter` 都会将文档保留为原生 `input_file` 内容，并保持
+文档与文本、图片的排列顺序。文件格式和模型支持范围遵循
+[OpenAI 文件输入指南](https://developers.openai.com/api/docs/guides/file-inputs)。
+
+OpenAI 要求单个文件小于 50 MB，且一次请求中所有文件的合计大小不超过 50 MB。
+对于跨请求复用的文档，可以先上传到 OpenAI 服务端，再使用 `FileIdSource`
+引用返回的文件 ID，避免重复读取和编码。
+
+```java
+import io.agentscope.core.message.DocumentBlock;
+import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.URLSource;
+import io.agentscope.core.message.UserMessage;
+import java.util.List;
+
+DocumentBlock document = DocumentBlock.builder()
+    .source(new URLSource("https://example.com/report.pdf"))
+    .build();
+
+model.stream(List.of(UserMessage.builder()
+        .content(TextBlock.builder().text("总结这份报告。").build(), document)
+        .build()), null, null)
+    .doOnNext(System.out::println)
+    .blockLast();
+```
+
 ## 服务端内置工具
 
 OpenAI 官方文档: https://developers.openai.com/api/docs/guides/tools#available-tools
@@ -67,7 +96,16 @@ OpenAIResponsesChatModel model = OpenAIResponsesChatModel.builder()
 
 模型返回的内置工具调用和结果会保留为 server-tool 标记的 `ToolUseBlock` / `ToolResultBlock`，并将原始 Responses item 存至 metadata 在后续轮次回放。
 
-`tool_search` 仅支持 "Hosted" 模式，暂不支持 "Client-executed" 模式。 可为单个本地函数工具标注 `@Tool(deferLoading = true)`，其参数 schema 会延迟到模型通过 hosted tool search 加载时才进入上下文。未标注的工具保持立即可用；配置了 `deferLoading` 但未启用 `tool_search` server tool 时会快速失败。
+Hosted `tool_search` 通过 `OpenAIServerTool` 配置。可为单个本地函数工具标注
+`@Tool(deferLoading = true)`，延迟加载其参数 schema。未标注的工具保持立即可用；
+配置了 `deferLoading` 但未启用 hosted 搜索声明时会快速失败。
+
+使用 client-executed 搜索时，在 agent 上注册 `ToolSearchMiddleware`。
+Middleware 调用配置的 `ToolSearchStrategy`；模型适配层声明原生客户端搜索，将
+`tool_search_call` 交给现有权限和执行链处理，并通过 `tool_search_output` 重放命中的
+工具定义。流式与非流式响应使用相同的调用表示。同一请求不能同时声明 hosted 和
+client-executed 搜索。
+配置与普通函数调用回退方式见[按需搜索工具](/v2/zh/docs/building-blocks/tool#按需搜索工具)。
 
 消息 annotations（包括 `container_file_citation`）会保留在 `openai.response.citations` 响应 metadata 中。Code Interpreter 的图片输出会表示为带 `URLSource` 的 `DataBlock`，容器 ID 会保留在工具结果 metadata 中。
 

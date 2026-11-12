@@ -19,17 +19,20 @@ package io.agentscope.core.nacos.a2a.registry;
 import com.alibaba.nacos.api.ai.AiFactory;
 import com.alibaba.nacos.api.ai.AiService;
 import com.alibaba.nacos.api.ai.constant.AiConstants;
+import com.alibaba.nacos.api.ai.utils.EndpointCanonicalizer;
 import com.alibaba.nacos.api.exception.NacosException;
 import com.alibaba.nacos.common.utils.StringUtils;
 import io.agentscope.core.a2a.agent.utils.LoggerUtil;
 import io.agentscope.core.a2a.server.registry.AgentRegistry;
 import io.agentscope.core.a2a.server.transport.TransportProperties;
+import io.agentscope.core.a2a.server.utils.NetworkUtils;
 import io.agentscope.core.nacos.a2a.registry.constants.Constants;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Properties;
 import org.a2aproject.sdk.spec.AgentCard;
 import org.a2aproject.sdk.spec.AgentInterface;
@@ -202,10 +205,18 @@ public class NacosAgentRegistry implements AgentRegistry {
             AgentCard agentCard, NacosA2aRegistryTransportProperties transportProperties) {
         String newUrl = generateNewUrl(transportProperties);
         String transport = transportProperties.transport();
-        AgentInterface agentInterface = new AgentInterface(transport, newUrl);
+        AgentInterface agentInterface = preferredReplacement(agentCard, transport, newUrl);
         List<AgentInterface> agentInterfaces = new LinkedList<>(agentCard.supportedInterfaces());
         // The first interface is the preferred one; it is listed once.
-        agentInterfaces.removeIf(agentInterface::equals);
+        String canonicalUrl = EndpointCanonicalizer.canonicalizeUri(newUrl);
+        agentInterfaces.removeIf(
+                each ->
+                        transport.equals(each.protocolBinding())
+                                && canonicalUrl.equals(
+                                        EndpointCanonicalizer.canonicalizeUri(each.url()))
+                                && Objects.equals(agentInterface.tenant(), each.tenant())
+                                && Objects.equals(
+                                        agentInterface.protocolVersion(), each.protocolVersion()));
         agentInterfaces.add(0, agentInterface);
         AgentCard.Builder builder = AgentCard.builder(agentCard);
         builder.supportedInterfaces(agentInterfaces);
@@ -219,6 +230,39 @@ public class NacosAgentRegistry implements AgentRegistry {
         return builder.build();
     }
 
+    /** Preserves the selected interface's metadata while applying the configured runtime URL. */
+    private AgentInterface preferredReplacement(AgentCard card, String transport, String url) {
+        List<AgentInterface> matches =
+                card.supportedInterfaces().stream()
+                        .filter(each -> transport.equals(each.protocolBinding()))
+                        .toList();
+        String canonicalUrl = EndpointCanonicalizer.canonicalizeUri(url);
+        List<AgentInterface> exact =
+                matches.stream()
+                        .filter(
+                                each ->
+                                        canonicalUrl.equals(
+                                                EndpointCanonicalizer.canonicalizeUri(each.url())))
+                        .toList();
+        if (!exact.isEmpty()) matches = exact;
+        if (matches.isEmpty()) return new AgentInterface(transport, url);
+        AgentInterface selected = matches.get(0);
+        if (matches.stream()
+                .anyMatch(
+                        each ->
+                                !Objects.equals(selected.tenant(), each.tenant())
+                                        || !Objects.equals(
+                                                selected.protocolVersion(),
+                                                each.protocolVersion()))) {
+            throw new IllegalArgumentException(
+                    "Preferred transport "
+                            + transport
+                            + " matches multiple interfaces with different tenant or protocol"
+                            + " version");
+        }
+        return new AgentInterface(transport, url, selected.tenant(), selected.protocolVersion());
+    }
+
     private String generateNewUrl(NacosA2aRegistryTransportProperties transportProperties) {
         String protocol = transportProperties.protocol();
         if (StringUtils.isEmpty(protocol)) {
@@ -230,7 +274,7 @@ public class NacosAgentRegistry implements AgentRegistry {
                 String.format(
                         AGENT_INTERFACE_URL_PATTERN,
                         protocol,
-                        transportProperties.host(),
+                        NetworkUtils.formatHostForUrl(transportProperties.host()),
                         transportProperties.port());
         String path = transportProperties.path();
         if (StringUtils.isNotBlank(path)) {

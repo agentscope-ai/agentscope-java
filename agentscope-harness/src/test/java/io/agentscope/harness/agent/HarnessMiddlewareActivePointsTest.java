@@ -23,6 +23,7 @@ import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.middleware.ActivePointsResolver;
 import io.agentscope.core.middleware.AgentInput;
 import io.agentscope.core.middleware.MiddlewareBase;
 import io.agentscope.core.middleware.ReasoningInput;
@@ -42,7 +43,11 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import reactor.core.publisher.Flux;
 
-/** Verifies middleware {@code activePoints()} declarations survive HarnessAgent composition. */
+/**
+ * Verifies middleware {@code activePoints()} declarations survive HarnessAgent composition, and
+ * that every composed middleware declares every point whose hook it implements (an implemented
+ * hook whose point is not declared is silently dead).
+ */
 class HarnessMiddlewareActivePointsTest {
 
     @TempDir Path workspace;
@@ -95,6 +100,34 @@ class HarnessMiddlewareActivePointsTest {
                     List.of("onReasoning"),
                     trace,
                     "undeclared points must stay inactive after harness composition");
+        }
+    }
+
+    @Test
+    void composedMiddlewaresDeclareEveryImplementedHookPoint() throws Exception {
+        Files.createDirectories(workspace);
+        try (HarnessAgent agent =
+                HarnessAgent.builder()
+                        .name("consistent")
+                        .model(new FixedTextModel())
+                        .workspace(workspace)
+                        .abstractFilesystem(new LocalFilesystem(workspace))
+                        .build()) {
+
+            for (MiddlewareBase mw : agent.getDelegate().getMiddlewares()) {
+                Set<MiddlewareBase.ExtensionPoint> inferred =
+                        ActivePointsResolver.infer(mw.getClass());
+                Set<MiddlewareBase.ExtensionPoint> declared = mw.activePoints();
+                assertTrue(
+                        declared != null && declared.containsAll(inferred),
+                        mw.getClass().getSimpleName()
+                                + " implements hooks at "
+                                + inferred
+                                + " but declares "
+                                + declared
+                                + " — an implemented hook whose point is not declared is never"
+                                + " invoked");
+            }
         }
     }
 

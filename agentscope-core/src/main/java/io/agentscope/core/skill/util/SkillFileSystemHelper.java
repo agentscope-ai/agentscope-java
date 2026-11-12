@@ -51,6 +51,94 @@ public final class SkillFileSystemHelper {
     private SkillFileSystemHelper() {}
 
     /**
+     * Reads a relative resource from a skill directory, using {@code base64:} for binary data.
+     * Absolute paths, traversal sequences, and directories are rejected.
+     */
+    public static Optional<String> readResource(Path originDir, String path) {
+        Optional<Path> resolved = resolveResourcePath(originDir, path);
+        if (resolved.isEmpty()) {
+            return Optional.empty();
+        }
+        Path target = resolved.get();
+        try {
+            return Optional.of(Files.readString(target, StandardCharsets.UTF_8));
+        } catch (MalformedInputException e) {
+            try {
+                byte[] bytes = Files.readAllBytes(target);
+                return Optional.of("base64:" + Base64.getEncoder().encodeToString(bytes));
+            } catch (IOException ex) {
+                logger.warn("Failed to read binary resource {}: {}", target, ex.getMessage());
+                return Optional.empty();
+            }
+        } catch (IOException e) {
+            logger.warn("Failed to read resource {}: {}", target, e.getMessage());
+            return Optional.empty();
+        }
+    }
+
+    /** Reads the original resource bytes with the same relative-path rules as {@link #readResource}. */
+    public static Optional<byte[]> readResourceBinary(Path originDir, String path) {
+        Optional<Path> resolved = resolveResourcePath(originDir, path);
+        if (resolved.isEmpty()) {
+            return Optional.empty();
+        }
+        try {
+            return Optional.of(Files.readAllBytes(resolved.get()));
+        } catch (IOException e) {
+            logger.warn("Failed to read binary resource {}: {}", resolved.get(), e.getMessage());
+            return Optional.empty();
+        }
+    }
+
+    private static Optional<Path> resolveResourcePath(Path originDir, String path) {
+        Optional<String> relative = sanitizeRelativePath(path);
+        if (relative.isEmpty()) {
+            return Optional.empty();
+        }
+        Path target = originDir.resolve(relative.get()).normalize();
+        if (!target.startsWith(originDir)
+                || !Files.isRegularFile(target)
+                || !Files.isReadable(target)) {
+            return Optional.empty();
+        }
+        return Optional.of(target);
+    }
+
+    /** Lists readable relative support-file paths for a skill's missing-resource response. */
+    public static List<String> listResourcePaths(Path originDir) {
+        List<String> entries = new ArrayList<>();
+        try (var stream = Files.walk(originDir)) {
+            stream.filter(Files::isRegularFile)
+                    .filter(Files::isReadable)
+                    .forEach(
+                            p -> {
+                                String rel = originDir.relativize(p).toString().replace('\\', '/');
+                                if (!rel.isBlank() && !SKILL_FILE_NAME.equals(rel)) {
+                                    entries.add(rel);
+                                }
+                            });
+        } catch (IOException e) {
+            logger.debug(
+                    "Failed to enumerate {} for not-found listing: {}", originDir, e.getMessage());
+        }
+        return List.copyOf(entries);
+    }
+
+    private static Optional<String> sanitizeRelativePath(String path) {
+        if (path == null || path.isBlank()) {
+            return Optional.empty();
+        }
+        String normalized = path.replace('\\', '/');
+        if (normalized.startsWith("/") || normalized.contains("..")) {
+            return Optional.empty();
+        }
+        if (".".equals(normalized) || "./".equals(normalized)) {
+            return Optional.empty();
+        }
+        return Optional.of(normalized);
+    }
+
+    /**
      * Loads a skill by name from the given base directory.
      *
      * @param baseDir The base directory containing skill folders

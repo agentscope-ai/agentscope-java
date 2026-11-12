@@ -33,9 +33,7 @@ import io.agentscope.harness.agent.filesystem.remote.store.NamespaceFactory;
 import io.agentscope.harness.agent.filesystem.remote.store.StoreItem;
 import io.agentscope.harness.agent.filesystem.util.FilesystemUtils;
 import io.agentscope.harness.agent.workspace.WorkspaceIndex;
-import java.nio.ByteBuffer;
 import java.nio.charset.CharacterCodingException;
-import java.nio.charset.CodingErrorAction;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.FileSystems;
 import java.nio.file.Path;
@@ -221,6 +219,16 @@ public class RemoteFilesystem implements AbstractFilesystem {
                 .collect(java.util.stream.Collectors.joining("."));
     }
 
+    /**
+     * Returns the effective storage namespace for this call as an immutable snapshot.
+     *
+     * @param rc call identity; null is treated as an empty context
+     * @return the namespace used for remote file operations
+     */
+    public List<String> storageNamespace(RuntimeContext rc) {
+        return List.copyOf(getNamespace(rc != null ? rc : RuntimeContext.empty()));
+    }
+
     private List<String> getNamespace(RuntimeContext rc) {
         List<String> ns = namespaceFactory.getNamespace(rc);
         if (ns == null || ns.isEmpty()) {
@@ -343,11 +351,7 @@ public class RemoteFilesystem implements AbstractFilesystem {
         // CAS create-if-absent: atomic under concurrent writers across nodes.
         boolean written = store.putIfVersion(ns, filePath, fileDataToStoreValue(fileData), 0L);
         if (!written) {
-            return WriteResult.fail(
-                    "Cannot write to "
-                            + filePath
-                            + " because it already exists. Read and then make an edit,"
-                            + " or write to a new path.");
+            return WriteResult.alreadyExists(filePath);
         }
         return WriteResult.ok(filePath);
     }
@@ -362,6 +366,11 @@ public class RemoteFilesystem implements AbstractFilesystem {
             String oldString,
             String newString,
             boolean replaceAll) {
+        EditResult invalid = FilesystemUtils.validateEditArguments(oldString, newString);
+        if (invalid != null) {
+            return invalid;
+        }
+
         List<String> ns = getNamespace(runtimeContext);
         // Bounded CAS retry loop: re-read the current version on each attempt and retry on
         // version mismatch. After EDIT_MAX_RETRIES failed CAS attempts we surface a conflict
@@ -378,16 +387,15 @@ public class RemoteFilesystem implements AbstractFilesystem {
             }
 
             String content = fileData.content() != null ? fileData.content() : "";
-            Object[] result =
-                    FilesystemUtils.performStringReplacement(
-                            content, oldString, newString, replaceAll);
+            FilesystemUtils.ReplacementResult result =
+                    FilesystemUtils.stringReplacement(content, oldString, newString, replaceAll);
 
-            if (result.length == 1) {
-                return EditResult.fail((String) result[0]);
+            if (!result.isSuccess()) {
+                return EditResult.fail(result.error());
             }
 
-            String newContent = (String) result[0];
-            int occurrences = (int) result[1];
+            String newContent = result.content();
+            int occurrences = result.occurrences();
 
             FileData updated = fileData.withContent(newContent);
             boolean ok =
@@ -582,13 +590,7 @@ public class RemoteFilesystem implements AbstractFilesystem {
             String contentStr;
             String encoding;
             try {
-                contentStr =
-                        StandardCharsets.UTF_8
-                                .newDecoder()
-                                .onMalformedInput(CodingErrorAction.REPORT)
-                                .onUnmappableCharacter(CodingErrorAction.REPORT)
-                                .decode(ByteBuffer.wrap(content))
-                                .toString();
+                contentStr = FilesystemUtils.decodeUtf8Strict(content);
                 encoding = "utf-8";
             } catch (CharacterCodingException e) {
                 contentStr = Base64.getEncoder().encodeToString(content);

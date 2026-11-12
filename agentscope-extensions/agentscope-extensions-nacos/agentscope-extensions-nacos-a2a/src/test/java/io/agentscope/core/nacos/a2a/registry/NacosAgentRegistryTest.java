@@ -29,7 +29,12 @@ import static org.mockito.Mockito.mockConstruction;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.alibaba.nacos.api.ability.constant.AbilityStatus;
+import com.alibaba.nacos.api.ai.AgentService;
 import com.alibaba.nacos.api.ai.AiService;
+import com.alibaba.nacos.api.ai.model.a2a.AgentEndpoint;
+import com.alibaba.nacos.api.ai.model.agent.client.AgentPublishRequest;
+import com.alibaba.nacos.api.utils.json.JsonUtils;
 import io.agentscope.core.a2a.server.transport.TransportProperties;
 import java.lang.reflect.Field;
 import java.util.ArrayList;
@@ -45,6 +50,8 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.MockedConstruction;
@@ -217,6 +224,33 @@ class NacosAgentRegistryTest {
     }
 
     @Test
+    @DisplayName("Should bracket IPv6 hosts when overwriting the preferred interface")
+    void testOverwritePreferredProtocolWithIpv6Host()
+            throws NoSuchFieldException, IllegalAccessException {
+        nacosA2aProperties =
+                NacosA2aRegistryProperties.builder().overwritePreferredTransport("JSONRPC").build();
+        nacosAgentRegistry =
+                NacosAgentRegistry.builder(mock(AiService.class))
+                        .nacosA2aProperties(nacosA2aProperties)
+                        .build();
+        injectMockNacosA2aRegistry(nacosAgentRegistry);
+        TransportProperties ipv6Transport =
+                TransportProperties.builder("JSONRPC")
+                        .host("::1")
+                        .port(8080)
+                        .path("/a2a")
+                        .supportTls(false)
+                        .build();
+
+        nacosAgentRegistry.register(mockAgentCard(), List.of(ipv6Transport));
+
+        ArgumentCaptor<AgentCard> registered = ArgumentCaptor.forClass(AgentCard.class);
+        verify(nacosA2aRegistry)
+                .registerAgent(registered.capture(), any(NacosA2aRegistryProperties.class));
+        assertAgentCard(registered.getValue(), "http://[::1]:8080/a2a", "JSONRPC");
+    }
+
+    @Test
     @DisplayName("Should list the overwritten interface once when the card already has it")
     void testOverwriteWithInterfaceAlreadyInCard()
             throws NoSuchFieldException, IllegalAccessException {
@@ -348,6 +382,136 @@ class NacosAgentRegistryTest {
             assertFalse(customProperties.supportTls());
             assertEquals(1, mockedParser.constructed().size());
         }
+    }
+
+    @ParameterizedTest
+    @CsvSource({
+        "true,http://localhost:8080/agent", "false,http://localhost:8080/agent",
+        "true,http://LOCALHOST:8080/agent", "false,http://LOCALHOST:8080/agent",
+        "true,http://original:8080/agent", "false,http://original:8080/agent"
+    })
+    void preferredTransportPreservesMetadataThroughPublication(boolean rad, String originalUrl)
+            throws Exception {
+        AiService client = mock(AiService.class);
+        AgentService nativeService = mock(AgentService.class);
+        when(client.getAgentDiscoveryCapability())
+                .thenReturn(rad ? AbilityStatus.SUPPORTED : AbilityStatus.NOT_SUPPORTED);
+        if (rad) when(client.agent()).thenReturn(nativeService);
+        NacosAgentRegistry registry =
+                NacosAgentRegistry.builder(client)
+                        .nacosA2aProperties(
+                                NacosA2aRegistryProperties.builder()
+                                        .setAsLatest(true)
+                                        .enabledRegisterEndpoint(true)
+                                        .overwritePreferredTransport("JSONRPC")
+                                        .build())
+                        .build();
+        AgentCard card =
+                AgentCard.builder(mockAgentCard())
+                        .supportedInterfaces(
+                                List.of(
+                                        new AgentInterface(
+                                                "JSONRPC", originalUrl, "team-a", "1.1")))
+                        .build();
+        registry.register(
+                card,
+                List.of(
+                        TransportProperties.builder("JSONRPC")
+                                .host("localhost")
+                                .port(8080)
+                                .path("/agent")
+                                .supportTls(false)
+                                .build()));
+        com.alibaba.nacos.api.ai.model.a2a.AgentCard published;
+        if (rad) {
+            ArgumentCaptor<AgentPublishRequest> request =
+                    ArgumentCaptor.forClass(AgentPublishRequest.class);
+            verify(nativeService).publishAgent(request.capture());
+            var call = request.getValue().getCallInterfaces().get(0);
+            published =
+                    JsonUtils.toObj(
+                            JsonUtils.toJson(call.getNativeDescriptor()),
+                            com.alibaba.nacos.api.ai.model.a2a.AgentCard.class);
+            var endpoint = call.getEndpointSets().get(0).getEndpoints().get(0);
+            assertEquals(
+                    "team-a",
+                    endpoint.getMetadata()
+                            .get(
+                                    com.alibaba.nacos.api.ai.constant.AiConstants.A2a
+                                            .ENDPOINT_TENANT));
+            assertEquals(
+                    "1.1",
+                    endpoint.getMetadata()
+                            .get(
+                                    com.alibaba.nacos.api.ai.constant.AiConstants.A2a
+                                            .ENDPOINT_PROTOCOL_VERSION));
+        } else {
+            ArgumentCaptor<com.alibaba.nacos.api.ai.model.a2a.AgentCard> request =
+                    ArgumentCaptor.forClass(com.alibaba.nacos.api.ai.model.a2a.AgentCard.class);
+            verify(client).releaseAgentCard(request.capture(), eq("SERVICE"), eq(true));
+            published = request.getValue();
+        }
+        assertEquals(
+                originalUrl.contains("original") ? 2 : 1,
+                published.getSupportedInterfaces().size());
+        var preferred = published.getSupportedInterfaces().get(0);
+        assertEquals("http://localhost:8080/agent", preferred.getUrl());
+        assertEquals("team-a", preferred.getTenant());
+        assertEquals("1.1", preferred.getProtocolVersion());
+        ArgumentCaptor<AgentEndpoint> runtime = ArgumentCaptor.forClass(AgentEndpoint.class);
+        verify(client).registerAgentEndpoint(eq("test"), runtime.capture());
+        assertEquals("team-a", runtime.getValue().getTenant());
+        assertEquals("1.1", runtime.getValue().getProtocolVersion());
+    }
+
+    @Test
+    void preferredTransportSelectsExactInterfaceWithoutChangingOtherTenants() throws Exception {
+        NacosAgentRegistry registry =
+                NacosAgentRegistry.builder(mock(AiService.class))
+                        .nacosA2aProperties(
+                                NacosA2aRegistryProperties.builder()
+                                        .overwritePreferredTransport("JSONRPC")
+                                        .build())
+                        .build();
+        injectMockNacosA2aRegistry(registry);
+        AgentInterface other =
+                new AgentInterface("JSONRPC", "https://other:8080/agent", "team-b", "1.0");
+        AgentInterface selected =
+                new AgentInterface("JSONRPC", "https://localhost:8080/agent", "team-a", "1.1");
+        AgentCard card =
+                AgentCard.builder(mockAgentCard())
+                        .supportedInterfaces(List.of(other, selected))
+                        .build();
+        registry.register(card, mockTransportProperties("JSONRPC"));
+        ArgumentCaptor<AgentCard> registered = ArgumentCaptor.forClass(AgentCard.class);
+        verify(nacosA2aRegistry).registerAgent(registered.capture(), any());
+        assertEquals(List.of(selected, other), registered.getValue().supportedInterfaces());
+    }
+
+    @ParameterizedTest
+    @CsvSource({"https://localhost:8080/agent", "https://unmatched:8080/agent"})
+    void preferredTransportStillRejectsAmbiguousInterfaceMetadata(String originalUrl)
+            throws Exception {
+        NacosAgentRegistry registry =
+                NacosAgentRegistry.builder(mock(AiService.class))
+                        .nacosA2aProperties(
+                                NacosA2aRegistryProperties.builder()
+                                        .overwritePreferredTransport("JSONRPC")
+                                        .build())
+                        .build();
+        injectMockNacosA2aRegistry(registry);
+        AgentCard card =
+                AgentCard.builder(mockAgentCard())
+                        .supportedInterfaces(
+                                List.of(
+                                        new AgentInterface("JSONRPC", originalUrl, "team-a", "1.1"),
+                                        new AgentInterface(
+                                                "JSONRPC", originalUrl, "team-b", "1.0")))
+                        .build();
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> registry.register(card, mockTransportProperties("JSONRPC")));
+        org.mockito.Mockito.verifyNoInteractions(nacosA2aRegistry);
     }
 
     private List<TransportProperties> mockTransportProperties(String... transportTypes) {

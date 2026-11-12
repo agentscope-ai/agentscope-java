@@ -183,8 +183,10 @@ public final class SessionOperations {
                                     new ArrayList<>(context.subList(0, before - keepLast));
                             // Snapshot BEFORE we touch the live state, so undo can revert.
                             snapshots.push(state.getSessionId(), state.toJson());
+                            // getModel(null) resolves an identity-mode agent's current
+                            // instance (plain getModel() returns null there).
                             return summarizer
-                                    .summarize(react.getModel(), previousSummary, toFold)
+                                    .summarize(react.getModel(null), previousSummary, toFold)
                                     .defaultIfEmpty(previousSummary)
                                     .flatMap(
                                             newSummary -> {

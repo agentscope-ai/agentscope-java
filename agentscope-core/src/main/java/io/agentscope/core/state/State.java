@@ -25,6 +25,12 @@ package io.agentscope.core.state;
  * <p>Existing domain objects (like {@link io.agentscope.core.message.Msg}) can implement this
  * interface directly to avoid conversion overhead.
  *
+ * <p>Implementations stored in lists must implement {@code equals} and {@code hashCode} by content.
+ * {@link ListHashUtil} fingerprints the elements that are already persisted to decide between an
+ * incremental append and a full rewrite, so an implementation that keeps identity equality makes an
+ * unchanged list look modified and forces a rewrite on every save.
+ *
  * @see io.agentscope.core.state.AgentStateStore
+ * @see ListHashUtil
  */
 public interface State {}

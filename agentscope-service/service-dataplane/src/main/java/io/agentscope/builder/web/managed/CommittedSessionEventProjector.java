@@ -32,18 +32,42 @@ public final class CommittedSessionEventProjector {
 
     public record Event(String type, Map<String, Object> payload) {}
 
+    private static void stripInlineDocumentPayload(Map<String, Object> block) {
+        if (!(block.get("source") instanceof Map<?, ?> source)) {
+            return;
+        }
+        if (!"base64".equals(String.valueOf(source.get("type")))) {
+            return;
+        }
+        var trimmed = new LinkedHashMap<String, Object>();
+        source.forEach(
+                (key, value) -> {
+                    if (!"data".equals(key)) {
+                        trimmed.put(String.valueOf(key), value);
+                    }
+                });
+        block.put("source", trimmed);
+    }
+
     public static List<Object> publicContent(Object raw) {
         if (!(raw instanceof List<?> blocks)) return List.of();
         var content = new ArrayList<Object>();
         for (var block : blocks) {
             if (!(block instanceof Map<?, ?> value)) continue;
             String type = String.valueOf(value.get("type"));
-            if (Set.of("text", "image", "audio", "video", "file", "data").contains(type)) {
+            if (Set.of("text", "image", "audio", "video", "file", "data", "document")
+                    .contains(type)) {
                 var copy = new LinkedHashMap<String, Object>();
                 value.forEach(
                         (k, v) -> {
                             if (!"metadata".equals(k)) copy.put(String.valueOf(k), v);
                         });
+                if ("document".equals(type)) {
+                    // A document can carry its bytes inline. Session events are for display, so
+                    // keep the descriptor and drop the payload; otherwise one attachment is
+                    // copied into every event a client receives.
+                    stripInlineDocumentPayload(copy);
+                }
                 content.add(copy);
             } else if (type.equals("tool_use") || type.equals("tool_result")) {
                 var copy = new LinkedHashMap<String, Object>();

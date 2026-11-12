@@ -15,18 +15,23 @@
  */
 package io.agentscope.harness.agent.memory.compaction;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 
 import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.core.message.Base64Source;
 import io.agentscope.core.message.ContentBlock;
+import io.agentscope.core.message.DocumentBlock;
+import io.agentscope.core.message.FileIdSource;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolResultState;
 import io.agentscope.core.message.ToolUseBlock;
+import io.agentscope.core.message.URLSource;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.Model;
@@ -40,6 +45,8 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import reactor.core.publisher.Flux;
 
 /**
@@ -74,6 +81,115 @@ class ConversationCompactorSummaryShapeTest {
         assertTrue(formatted.contains("HEAD_MARKER"), "result preview must keep the head");
         assertTrue(formatted.contains("TAIL_MARKER"), "result preview must keep the tail");
         assertTrue(formatted.contains("chars pruned"), "elision must be marked");
+    }
+
+    @Test
+    void formatMessagesForSummaryKeepsDocumentReferences() {
+        String formatted =
+                ConversationCompactor.formatMessagesForSummary(
+                        List.of(
+                                Msg.builder()
+                                        .role(MsgRole.USER)
+                                        .content(
+                                                List.of(
+                                                        TextBlock.builder()
+                                                                .text("summarize these attachments")
+                                                                .build(),
+                                                        DocumentBlock.builder()
+                                                                .name("report.pdf")
+                                                                .mimeType("application/pdf")
+                                                                .source(
+                                                                        new FileIdSource(
+                                                                                "dashscope",
+                                                                                "file-abc123"))
+                                                                .build(),
+                                                        DocumentBlock.builder()
+                                                                .name("spec.docx")
+                                                                .mimeType("application/msword")
+                                                                .source(
+                                                                        new URLSource(
+                                                                                "https://example.com/spec.docx"))
+                                                                .build(),
+                                                        DocumentBlock.builder()
+                                                                .name("notes.txt")
+                                                                .mimeType("text/plain")
+                                                                .sizeBytes(4096L)
+                                                                .source(
+                                                                        new Base64Source(
+                                                                                "text/plain",
+                                                                                "aGVsbG8="))
+                                                                .build()))
+                                        .build()));
+
+        assertTrue(formatted.contains("summarize these attachments"));
+        assertTrue(
+                formatted.contains(
+                        "[document: report.pdf, application/pdf, provider file id: file-abc123"
+                                + " (dashscope)]"),
+                "file id must survive with its provider: " + formatted);
+        assertTrue(
+                formatted.contains(
+                        "[document: spec.docx, application/msword, url:"
+                                + " https://example.com/spec.docx]"),
+                "url must survive: " + formatted);
+        assertTrue(
+                formatted.contains(
+                        "[document: notes.txt, text/plain, inline base64 (~4096 bytes)]"),
+                "inline size must be described: " + formatted);
+        assertFalse(formatted.contains("aGVsbG8="), "base64 payload must never be inlined");
+    }
+
+    @Test
+    void formatMessagesForSummaryKeepsDocumentInsideToolResult() {
+        Msg result =
+                Msg.builder()
+                        .role(MsgRole.TOOL)
+                        .content(
+                                ToolResultBlock.builder()
+                                        .id("call-read")
+                                        .name("read_file")
+                                        .output(
+                                                List.of(
+                                                        TextBlock.builder()
+                                                                .text(
+                                                                        "attached the report "
+                                                                                + "x".repeat(2_000))
+                                                                .build(),
+                                                        DocumentBlock.builder()
+                                                                .name("q3.pdf")
+                                                                .mimeType("application/pdf")
+                                                                .source(
+                                                                        new FileIdSource(
+                                                                                "gemini",
+                                                                                "files/xyz789"))
+                                                                .build()))
+                                        .state(ToolResultState.SUCCESS)
+                                        .build())
+                        .build();
+
+        String formatted = ConversationCompactor.formatMessagesForSummary(List.of(result));
+
+        assertTrue(formatted.contains("attached the report"));
+        assertTrue(
+                formatted.contains(
+                        "[document: q3.pdf, application/pdf, provider file id: files/xyz789"
+                                + " (gemini)]"),
+                "tool-result documents must not vanish: " + formatted);
+    }
+
+    @ParameterizedTest
+    @ValueSource(ints = {599, 600, 601})
+    void formatMessagesForSummaryPreservesTextPreviewBoundary(int length) {
+        String text = "H".repeat(300) + "T".repeat(length - 300);
+        String formatted =
+                ConversationCompactor.formatMessagesForSummary(
+                        List.of(toolResult("execute", text, ToolResultState.SUCCESS)));
+
+        String expected =
+                length <= 600
+                        ? text
+                        : "H".repeat(300) + "\n\n...(1 chars pruned)...\n\n" + "T".repeat(300);
+        assertEquals("Tool: [tool_result: execute] " + expected, formatted);
     }
 
     @Test
@@ -179,6 +295,12 @@ class ConversationCompactorSummaryShapeTest {
             assertTrue(prompt.contains(section), "missing section: " + section);
         }
         assertTrue(prompt.contains("Preserve verbatim"), "verbatim preservation rule");
+        assertTrue(
+                prompt.contains("Still-active user constraints"),
+                "still-active user constraints kept in their own wording");
+        assertTrue(
+                prompt.contains("Mark superseded decisions as superseded"),
+                "superseded decisions must be marked");
         assertTrue(prompt.contains("merge it with the new material"), "re-compaction merge rule");
         assertTrue(prompt.contains("Do NOT mention this summarization"), "secrecy rule");
         assertTrue(prompt.contains("{messages}"), "custom-prompt placeholder contract");
@@ -243,8 +365,8 @@ class ConversationCompactorSummaryShapeTest {
                 .compactIfNeeded(
                         rc,
                         List.of(
-                                message(MsgRole.USER, "M1"),
-                                message(MsgRole.USER, "M2"),
+                                message(MsgRole.USER, "M1" + PAD),
+                                message(MsgRole.USER, "M2" + PAD),
                                 message(MsgRole.USER, "TAIL_1"),
                                 message(MsgRole.USER, "TAIL_2")),
                         config,
@@ -253,6 +375,9 @@ class ConversationCompactorSummaryShapeTest {
                 .block()
                 .orElseThrow();
     }
+
+    /** Padding that keeps prefix fixtures above the fixed summary-wrapper cost. */
+    private static final String PAD = " earlier conversation detail".repeat(40);
 
     private static Msg message(MsgRole role, String text) {
         return Msg.builder().role(role).content(TextBlock.builder().text(text).build()).build();

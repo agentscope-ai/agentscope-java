@@ -20,13 +20,14 @@ import com.fasterxml.jackson.annotation.JsonSubTypes;
 import com.fasterxml.jackson.annotation.JsonTypeInfo;
 
 /**
- * Base class for media sources (URL or Base64).
+ * Base class for content sources (URL, Base64, or provider file ID).
  *
  * Uses Jackson annotations for polymorphic JSON serialization.
  */
 @JsonTypeInfo(use = JsonTypeInfo.Id.NAME, include = JsonTypeInfo.As.PROPERTY, property = "type")
 @JsonSubTypes({
     @JsonSubTypes.Type(value = URLSource.class, name = "url"),
-    @JsonSubTypes.Type(value = Base64Source.class, name = "base64")
+    @JsonSubTypes.Type(value = Base64Source.class, name = "base64"),
+    @JsonSubTypes.Type(value = FileIdSource.class, name = "file_id")
 })
 public class Source {}

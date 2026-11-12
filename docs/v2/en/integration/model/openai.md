@@ -40,6 +40,10 @@ OpenAIChatModel model = OpenAIChatModel.builder()
     .build();
 ```
 
+## Reasoning history
+
+The formatter preserves reasoning detail blocks in conversation history, including encrypted data. When formatting the next request, it copies each detail without the optional `index` field, which strict OpenAI-compatible endpoints reject as a streaming-only field. The original response and persisted history retain their indexes; `id`, `type`, `data`, `text`, `format`, and block order are preserved in requests.
+
 ## Spring Boot
 
 Spring Boot applications can use the OpenAI starter:

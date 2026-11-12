@@ -15,12 +15,14 @@
  */
 package io.agentscope.extensions.sandbox.kubernetes;
 
+import io.agentscope.extensions.sandbox.kubernetes.client.crd.SandboxClaimSpec.EnvVar;
 import io.agentscope.harness.agent.filesystem.spec.SandboxFilesystemSpec;
 import io.agentscope.harness.agent.sandbox.SandboxClient;
 import io.agentscope.harness.agent.sandbox.SandboxClientOptions;
 import io.agentscope.harness.agent.sandbox.WorkspaceSpec;
 import io.agentscope.harness.agent.sandbox.snapshot.NoopSnapshotSpec;
 import io.agentscope.harness.agent.sandbox.snapshot.SandboxSnapshotSpec;
+import java.util.List;
 
 /** {@link SandboxFilesystemSpec} for the agent-sandbox backed Kubernetes sandbox store. */
 public class KubernetesFilesystemSpec extends SandboxFilesystemSpec {
@@ -48,6 +50,11 @@ public class KubernetesFilesystemSpec extends SandboxFilesystemSpec {
 
     public KubernetesFilesystemSpec warmPoolName(String warmPoolName) {
         options.setWarmPoolName(warmPoolName);
+        return this;
+    }
+
+    public KubernetesFilesystemSpec claimEnv(List<EnvVar> env) {
+        options.setClaimEnv(env);
         return this;
     }
 

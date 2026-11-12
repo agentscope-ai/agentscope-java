@@ -42,6 +42,37 @@ OpenAIResponsesChatModel model = OpenAIResponsesChatModel.builder()
     .build();
 ```
 
+## Document input
+
+Send documents in user messages with `DocumentBlock`. Both the default formatter
+and `ResponsesMultiAgentFormatter` preserve documents as native `input_file`
+content parts, including their position among text and images. File formats and
+model support follow the [OpenAI file inputs guide](https://developers.openai.com/api/docs/guides/file-inputs).
+
+OpenAI requires each file to be under 50 MB, and the combined size of all files
+in one request to be at most 50 MB.
+For documents reused across requests, upload the file to OpenAI first, then use a
+`FileIdSource` to reference the returned file ID; this avoids
+repeated local reads and encoding.
+
+```java
+import io.agentscope.core.message.DocumentBlock;
+import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.URLSource;
+import io.agentscope.core.message.UserMessage;
+import java.util.List;
+
+DocumentBlock document = DocumentBlock.builder()
+    .source(new URLSource("https://example.com/report.pdf"))
+    .build();
+
+model.stream(List.of(UserMessage.builder()
+        .content(TextBlock.builder().text("Summarize this report.").build(), document)
+        .build()), null, null)
+    .doOnNext(System.out::println)
+    .blockLast();
+```
+
 ## Server-side built-in tools
 
 OpenAI Official Documents: https://developers.openai.com/api/docs/guides/tools#available-tools
@@ -67,7 +98,19 @@ Supported tool types are `web_search`, `code_interpreter`, `image_generation`, a
 
 Built-in tool calls and results are preserved as server-tool-marked `ToolUseBlock` / `ToolResultBlock` blocks, and the raw Responses item is stored in metadata for replay in later turns.
 
-`tool_search` supports only "Hosted" mode; "Client-executed" mode is not supported yet. Mark individual local function tools with `@Tool(deferLoading = true)` to defer their parameter schemas until the model loads them through hosted tool search. Unmarked tools stay eagerly available, and requesting `deferLoading` without a `tool_search` server tool fails fast.
+Hosted `tool_search` is configured through `OpenAIServerTool`. Mark individual local
+function tools with `@Tool(deferLoading = true)` to defer their parameter schemas.
+Unmarked tools stay eagerly available, and requesting `deferLoading` without a
+hosted search declaration fails fast.
+
+For client-executed search, register `ToolSearchMiddleware` on the agent instead.
+The middleware uses your `ToolSearchStrategy`; the model adapter declares native
+client search, dispatches `tool_search_call` locally through the normal permission
+and execution path, and replays `tool_search_output` with the discovered schemas.
+Streaming and non-streaming responses use the same call representation. Hosted
+and client-executed search declarations cannot be combined in one request.
+See [on-demand tool search](/v2/en/docs/building-blocks/tool#on-demand-tool-search)
+for configuration and the ordinary-function fallback.
 
 Message annotations, including `container_file_citation`, are preserved in the `openai.response.citations` response metadata. Code Interpreter image outputs are represented as `DataBlock` blocks with `URLSource`, and the container ID is retained in the tool result metadata.
 

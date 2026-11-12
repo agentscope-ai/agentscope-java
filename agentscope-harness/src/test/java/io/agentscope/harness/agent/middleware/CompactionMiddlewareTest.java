@@ -18,6 +18,7 @@ package io.agentscope.harness.agent.middleware;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -35,21 +36,179 @@ import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.ToolSchema;
 import io.agentscope.core.session.InMemorySessionLogStore;
+import io.agentscope.core.state.AgentState;
+import io.agentscope.core.util.JsonUtils;
 import io.agentscope.harness.agent.memory.compaction.CompactionConfig;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import reactor.core.publisher.Flux;
 import reactor.core.scheduler.Schedulers;
 import reactor.test.StepVerifier;
 
 /** Verifies that compaction fallback does not swallow interrupts or rerun downstream reasoning. */
 class CompactionMiddlewareTest {
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void overflowDoesNotRestoreNotificationAlreadyRemovedByFinalPreparation(boolean copiedInput) {
+        Msg notice =
+                Msg.builder()
+                        .role(MsgRole.USER)
+                        .textContent("old notice")
+                        .metadata(
+                                Map.of(
+                                        Msg.METADATA_SYNTHETIC,
+                                        true,
+                                        Msg.METADATA_REMINDER_KIND,
+                                        "task_delivery"))
+                        .build();
+        var original = List.of(userMessage("old request"), notice, userMessage("latest"));
+        var state = AgentState.builder().context(original).build();
+        var ctx = RuntimeContext.builder().agentState(state).build();
+        var agent = agent();
+        when(agent.sessionLogEnabled()).thenReturn(true);
+        when(agent.getModel()).thenReturn(new SuccessfulSummaryModel());
+        var recovery = new CompactionMiddleware(null, new SuccessfulSummaryModel(), fixedConfig());
+        var calls = new AtomicInteger();
+        Msg system = Msg.builder().role(MsgRole.SYSTEM).textContent("Base instructions").build();
+        Msg transientState =
+                Msg.builder()
+                        .textContent("Current runtime state")
+                        .metadata(Map.of(Msg.METADATA_SYNTHETIC, true))
+                        .build();
+        var request = new java.util.ArrayList<>(List.of(system));
+        request.addAll(
+                copiedInput
+                        ? original.stream()
+                                .map(
+                                        msg ->
+                                                JsonUtils.getJsonCodec()
+                                                        .fromJson(
+                                                                JsonUtils.getJsonCodec()
+                                                                        .toJson(msg),
+                                                                Msg.class))
+                                .toList()
+                        : original);
+        request.add(transientState);
+        StepVerifier.create(
+                        recovery.overflowRecovery()
+                                .onReasoning(
+                                        agent,
+                                        ctx,
+                                        new ReasoningInput(request, List.of(), null),
+                                        input -> {
+                                            if (calls.getAndIncrement() == 0) {
+                                                state.contextMutable().clear();
+                                                state.contextMutable()
+                                                        .addAll(
+                                                                List.of(
+                                                                        userMessage(
+                                                                                "prior summary"
+                                                                                        + PAD),
+                                                                        userMessage("latest")));
+                                                return Flux.error(
+                                                        new IllegalStateException(
+                                                                "context_length_exceeded"));
+                                            }
+                                            assertFalse(
+                                                    input.messages().stream()
+                                                            .anyMatch(
+                                                                    msg ->
+                                                                            notice.getId()
+                                                                                    .equals(
+                                                                                            msg
+                                                                                                    .getId())));
+                                            assertEquals(
+                                                    1,
+                                                    input.messages().stream()
+                                                            .filter(msg -> msg == system)
+                                                            .count());
+                                            assertEquals(
+                                                    1,
+                                                    input.messages().stream()
+                                                            .filter(msg -> msg == transientState)
+                                                            .count());
+                                            return Flux.empty();
+                                        }))
+                .verifyComplete();
+        assertEquals(2, calls.get());
+        assertFalse(state.contextMutable().contains(transientState));
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"task_delivery", "empty_response"})
+    void nativeOverflowCompactsPersistedNotificationsWithoutDuplicatingThem(String kind) {
+        var notice =
+                Msg.builder()
+                        .role(MsgRole.USER)
+                        .textContent("persisted notification")
+                        .metadata(
+                                Map.of(
+                                        Msg.METADATA_SYNTHETIC,
+                                        true,
+                                        Msg.METADATA_REMINDER_KIND,
+                                        kind))
+                        .build();
+        var calls = new AtomicInteger();
+        ChatModelBase execution =
+                new ChatModelBase() {
+                    public String getModelName() {
+                        return "overflow-notice";
+                    }
+
+                    protected Flux<ChatResponse> doStream(
+                            List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
+                        if (calls.getAndIncrement() == 0)
+                            return Flux.error(new IllegalStateException("context_length_exceeded"));
+                        assertFalse(messages.contains(notice));
+                        assertTrue(
+                                messages.stream()
+                                        .anyMatch(
+                                                msg -> {
+                                                    Object covered =
+                                                            msg.getMetadata()
+                                                                    .get(
+                                                                            "context.covered_messages");
+                                                    return covered instanceof List<?> ids
+                                                            && ids.contains(notice.getId());
+                                                }));
+                        return Flux.just(
+                                ChatResponse.builder()
+                                        .content(
+                                                List.of(TextBlock.builder().text("answer").build()))
+                                        .build());
+                    }
+                };
+        var recovery = new CompactionMiddleware(null, new SuccessfulSummaryModel(), fixedConfig());
+        var agent =
+                ReActAgent.builder()
+                        .name("notification-recovery")
+                        .model(execution)
+                        .sessionLogStore(new InMemorySessionLogStore())
+                        .middleware(recovery.overflowRecovery())
+                        .build();
+        var ctx = context("user", "notice-overflow");
+        var run =
+                agent.prepareCall(
+                        List.of(
+                                userMessage("old request" + PAD),
+                                notice,
+                                userMessage("latest request")),
+                        ctx);
+        assertEquals("answer", run.stream().blockLast(Duration.ofSeconds(10)).getTextContent());
+        assertEquals(2, calls.get());
+        assertEquals(AgentRun.Status.COMPLETED, run.status());
+    }
+
     @Test
     void nativeOverflowRecoveryKeepsOneExecutionAndRecordsBothModelCalls() {
         AtomicInteger calls = new AtomicInteger();
@@ -81,7 +240,8 @@ class CompactionMiddlewareTest {
         var ctx = context("user", "overflow-session");
         var run =
                 agent.prepareCall(
-                        List.of(userMessage("old context"), userMessage("latest request")), ctx);
+                        List.of(userMessage("old context" + PAD), userMessage("latest request")),
+                        ctx);
         assertEquals("answer", run.stream().blockLast(Duration.ofSeconds(10)).getTextContent());
         assertEquals(AgentRun.Status.COMPLETED, run.status());
         assertEquals(2, calls.get());
@@ -388,6 +548,80 @@ class CompactionMiddlewareTest {
         assertEquals(2, model.callCount.get());
     }
 
+    /**
+     * Without a dedicated config model, the per-call model of the executing agent (its {@code
+     * RuntimeContext}) drives compaction; the build-time field model must not serve it.
+     */
+    @Test
+    void perCallModelDrivesCompactionWhenNoDedicatedModel() {
+        ChatModelBase perCall =
+                new ChatModelBase() {
+                    public String getModelName() {
+                        return "per-call";
+                    }
+
+                    protected Flux<ChatResponse> doStream(
+                            List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
+                        return Flux.just(
+                                ChatResponse.builder()
+                                        .content(
+                                                List.of(
+                                                        TextBlock.builder()
+                                                                .text("per-call-compacted")
+                                                                .build()))
+                                        .build());
+                    }
+                };
+        ChatModelBase defaultModel =
+                new ChatModelBase() {
+                    public String getModelName() {
+                        return "default";
+                    }
+
+                    protected Flux<ChatResponse> doStream(
+                            List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
+                        return Flux.just(
+                                ChatResponse.builder()
+                                        .content(
+                                                List.of(
+                                                        TextBlock.builder()
+                                                                .text("default-model-compacted")
+                                                                .build()))
+                                        .build());
+                    }
+                };
+        ReActAgent agent = mock(ReActAgent.class);
+        when(agent.getName()).thenReturn("compaction-test-agent");
+        when(agent.getModel(any(RuntimeContext.class))).thenReturn(perCall);
+        when(agent.getModel()).thenReturn(defaultModel);
+        // No dedicated compaction model: the field is null, so compaction resolves the
+        // agent's per-call (context-pinned) model instead of its default.
+        CompactionMiddleware middleware = new CompactionMiddleware(null, null, fixedConfig());
+
+        List<Msg> downstream = new ArrayList<>();
+        StepVerifier.create(
+                        middleware.onReasoning(
+                                agent,
+                                context("user", "session"),
+                                input("previous context" + PAD, "latest request"),
+                                next -> {
+                                    downstream.addAll(next.messages());
+                                    return Flux.empty();
+                                }))
+                .verifyComplete();
+
+        String rendered =
+                downstream.stream()
+                        .map(Msg::getTextContent)
+                        .collect(java.util.stream.Collectors.joining(" "));
+        assertTrue(
+                rendered.contains("per-call-compacted"),
+                () -> "expected per-call summary: " + rendered);
+        assertFalse(
+                rendered.contains("default-model-compacted"),
+                () -> "default model must not compact: " + rendered);
+    }
+
     /** Creates stable configuration that enters the compaction branch. */
     private CompactionConfig fixedConfig() {
         return CompactionConfig.builder()
@@ -397,6 +631,9 @@ class CompactionMiddlewareTest {
                 .prune(null)
                 .build();
     }
+
+    /** Padding that keeps recovery fixtures larger than the fixed summary-wrapper cost. */
+    private static final String PAD = " earlier conversation detail".repeat(40);
 
     /** Creates stable configuration that bypasses compaction for model-stream interrupt tests. */
     private CompactionConfig noCompactionConfig() {

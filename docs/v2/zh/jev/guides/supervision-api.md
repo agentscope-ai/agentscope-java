@@ -71,7 +71,9 @@ var agent = HarnessAgent.builder()
 
 例如任务仍在查订单时，应用可以记录 CONTINUE；报告看似完整但缺少宿主验证时，应请求补验证；有版本匹配的成功验证后，才可能建议 REVIEW_COMPLETION。
 
-返回 CONTINUE、REQUEST_VERIFICATION、REVIEW_COMPLETION、REVIEW_DOCUMENTATION、REVIEW_DIRECTION 或 MANUAL_REVIEW。它们都不附带执行权。即使 REVIEW_COMPLETION，也不更改 Agent 或业务任务的完成状态。离线 Snapshot 的 workerFailed，以及事件流中的迭代上限、请求停止、全部工具被拒绝，会阻止完成复核建议；异常退出原样传播。
+返回 CONTINUE、REQUEST_VERIFICATION、REVIEW_COMPLETION、REVIEW_DOCUMENTATION、REVIEW_DIRECTION 或 MANUAL_REVIEW。它们都不附带执行权。即使 REVIEW_COMPLETION，也不更改 Agent 或业务任务的完成状态。
+
+监督按当前 Agent 的 `AgentResultEvent.result.generateReason` 判断逻辑结果，与 Core 的 Session 生命周期一致。`AllToolsDeniedEvent` 和 `RequestStopEvent` 保留为观察事实，本身不表示 worker 失败；全拒绝后继续推理并正常完成的任务仍可进入完成复核。等待权限确认、工具挂起或 Hook/middleware 暂停时，任务保持未完成，不能因本次调用结束就进入完成复核。最终结果为 `ALL_TOOLS_DENIED`、`MAX_ITERATIONS` 或 `INTERRUPTED` 时，监督标记 worker 失败并阻止完成复核；离线 Snapshot 显式设置的 workerFailed 也保留此约束。迭代上限事件仍提供即时失败信号，异常退出原样传播。
 
 ## 可信验证证据
 

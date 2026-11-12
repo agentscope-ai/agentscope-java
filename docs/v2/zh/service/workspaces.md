@@ -54,6 +54,8 @@ Skill 名用于资源路径；正文中的 name、description 帮助 Agent 识�
 
 如果通过通用文件接口手动上传 `skills/report-review/SKILL.md`，还需要在 Workspace 的 `skills` 列表中选择它，例如 `{"type":"workspace","name":"report-review"}`。文件已经存在和技能已被选用是两个步骤；本页使用的 Skill 专用接口会同时完成这两项工作。Agent 若对 `skills` 设置了覆盖，则仍以自己的技能列表为准。
 
+使用 Git 技能市场时，Control Plane 需要安装 Git，并能访问配置的仓库。首次浏览会克隆配置的分支；后续浏览和安装会通过快进拉取刷新同一份缓存。如果刷新失败，操作会返回错误，而不会替换已有缓存。
+
 ### 增加内部 Subagent
 
 如果希望当前 Agent 将专项审阅委派给内部子 Agent，可以通过 `PUT /api/workspaces/{id}/subagents/{name}` 把职责说明和执行指令保存到 Workspace 草稿中。请求使用 `description` 和 `inlineBody`，还可以指定模型、工具和工作目录策略。它和 Skill 一样，需要经过 Workspace 发布、Agent 绑定以及新 Session 的创建，才会进入所选定义；保存成功本身不会启动子任务。

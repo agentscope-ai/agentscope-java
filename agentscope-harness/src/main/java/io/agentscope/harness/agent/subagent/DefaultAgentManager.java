@@ -23,6 +23,7 @@ import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.agent.StreamOptions;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
+import io.agentscope.core.model.Model;
 import io.agentscope.core.session.SessionExecution;
 import io.agentscope.core.session.SessionExportSink;
 import io.agentscope.core.session.SessionRecorder;
@@ -251,6 +252,9 @@ public final class DefaultAgentManager {
                                 .userId(userId)
                                 .build();
         var recorder = SessionRecorder.from(parent);
+        // The typed bag carries the caller's pinned model; subagents keep their build-time
+        // model contract.
+        child.put(Model.class, null);
         child.put(SessionRecorder.CONTEXT_KEY, null);
         child.put(SessionRecorder.TURN_ID_KEY, null);
         child.put(SessionExportSink.CONTEXT_KEY, null);

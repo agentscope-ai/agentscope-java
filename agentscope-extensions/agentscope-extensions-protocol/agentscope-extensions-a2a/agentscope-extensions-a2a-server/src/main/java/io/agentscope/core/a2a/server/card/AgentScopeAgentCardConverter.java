@@ -18,6 +18,7 @@ package io.agentscope.core.a2a.server.card;
 
 import io.agentscope.core.a2a.server.executor.runner.AgentRunner;
 import io.agentscope.core.a2a.server.transport.TransportProperties;
+import io.agentscope.core.a2a.server.utils.NetworkUtils;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -166,7 +167,13 @@ public class AgentScopeAgentCardConverter {
         String schema = transport.supportTls() ? HTTPS : HTTP;
         String path = getPath(transport);
         int port = getPort(transport);
-        String url = String.format(URL_PATTERN, schema, transport.host(), port, path);
+        String url =
+                String.format(
+                        URL_PATTERN,
+                        schema,
+                        NetworkUtils.formatHostForUrl(transport.host()),
+                        port,
+                        path);
         return new AgentInterface(transport.transportType(), url);
     }
 

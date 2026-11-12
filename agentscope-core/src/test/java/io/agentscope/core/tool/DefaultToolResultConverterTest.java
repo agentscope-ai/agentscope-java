@@ -61,11 +61,20 @@ class DefaultToolResultConverterTest {
 
     @Test
     void testConvert_VoidType() {
-        ToolResultBlock result = converter.convert("ignored", Void.TYPE);
+        ToolResultBlock result = converter.convert(null, Void.TYPE);
 
         assertNotNull(result);
         assertFalse(ToolTestUtils.isErrorResponse(result));
-        assertEquals("Done", ToolTestUtils.extractContent(result));
+        assertEquals("(completed with no output)", ToolTestUtils.extractContent(result));
+    }
+
+    @Test
+    void testConvert_BoxedVoidType() {
+        ToolResultBlock result = converter.convert(null, Void.class);
+
+        assertNotNull(result);
+        assertFalse(ToolTestUtils.isErrorResponse(result));
+        assertEquals("(completed with no output)", ToolTestUtils.extractContent(result));
     }
 
     @Test

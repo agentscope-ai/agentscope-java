@@ -140,8 +140,10 @@ public abstract class AgentEvent {
 
     /**
      * Returns the source path identifying the originating agent. {@code null} for events from the
-     * top-level (parent) agent; a slash-separated path (e.g. {@code "main/researcher"}) for events
-     * forwarded from a subagent.
+     * top-level (parent) agent; a slash-separated path for events forwarded from a subagent. Local
+     * subagent events use {@code parentSessionId/agentId/subagentSessionId}, so multiple instances
+     * of the same subagent type remain distinguishable. Remote subagent events use {@code
+     * parentSessionId/agentId/taskId}; the task id is the remote invocation discriminator.
      */
     public String getSource() {
         return source;

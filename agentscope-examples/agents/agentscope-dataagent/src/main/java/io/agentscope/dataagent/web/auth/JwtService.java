@@ -36,8 +36,8 @@ import org.springframework.stereotype.Service;
  *   <li>{@code roles} — list of role strings
  * </ul>
  *
- * <p>The signing secret is read from {@code dataagent.jwt.secret}. Defaults to a development-only
- * placeholder — <strong>must be overridden in production</strong>.
+ * <p>The signing secret is read from {@code dataagent.jwt.secret}. A deployment-specific random
+ * secret of at least 32 bytes is required in every profile.
  */
 @Service
 public class JwtService {
@@ -46,16 +46,15 @@ public class JwtService {
 
     private final SecretKey signingKey;
 
-    public JwtService(
-            @Value(
-                            "${dataagent.jwt.secret:dataagent-default-dev-secret-change-in-production-32chars}")
-                    String secret) {
+    public JwtService(@Value("${dataagent.jwt.secret:}") String secret) {
         byte[] keyBytes = secret.getBytes(StandardCharsets.UTF_8);
-        // JJWT requires >= 32 bytes for HS256
-        if (keyBytes.length < 32) {
-            byte[] padded = new byte[32];
-            System.arraycopy(keyBytes, 0, padded, 0, keyBytes.length);
-            keyBytes = padded;
+        // Reject the former public default shipped by previous versions; it is publicly known.
+        if (secret.isBlank()
+                || secret.equals("dataagent-default-dev-secret-change-in-production-32chars")
+                || keyBytes.length < 32) {
+            throw new IllegalArgumentException(
+                    "dataagent.jwt.secret must be a deployment-specific random secret of at least"
+                            + " 32 bytes, not the published default; set DATAAGENT_JWT_SECRET");
         }
         this.signingKey = Keys.hmacShaKeyFor(keyBytes);
     }

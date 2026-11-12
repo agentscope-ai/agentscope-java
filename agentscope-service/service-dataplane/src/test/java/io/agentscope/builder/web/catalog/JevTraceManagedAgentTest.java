@@ -375,7 +375,11 @@ class JevTraceManagedAgentTest {
                                             }))
                             .build();
             var events =
-                    agent.streamEvents(List.of(new UserMessage("Where is the order?")), ctx)
+                    agent.streamEvents(
+                                    List.of(new UserMessage("Where is the order?")),
+                                    // One runId per execution: reuse the caller's session
+                                    // attributes but start a new run.
+                                    RuntimeContext.builder(ctx).runId(null).build())
                             .collectList()
                             .block(Duration.ofSeconds(10));
             var answer =
@@ -453,7 +457,9 @@ class JevTraceManagedAgentTest {
                             null);
             var disabled = builds.getOrBuildAgent(session, off);
             assertThat(disabled).isNotSameAs(agent);
-            disabled.streamEvents(List.of(new UserMessage("Where is the order?")), ctx)
+            disabled.streamEvents(
+                            List.of(new UserMessage("Where is the order?")),
+                            RuntimeContext.builder(ctx).runId(null).build())
                     .blockLast(Duration.ofSeconds(10));
             assertThat(evaluations.get()).isEqualTo(expectedCalls);
             if (purpose.equals("routing")) assertThat(routedCalls.get()).isEqualTo(1);

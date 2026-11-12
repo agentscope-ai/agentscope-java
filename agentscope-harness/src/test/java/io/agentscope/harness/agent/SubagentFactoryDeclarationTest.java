@@ -43,8 +43,10 @@ import io.agentscope.harness.agent.tool.AgentSpawnTool;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.EnumSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
@@ -131,6 +133,11 @@ class SubagentFactoryDeclarationTest {
         MiddlewareBase privateMiddleware =
                 new MiddlewareBase() {
                     @Override
+                    public Set<ExtensionPoint> activePoints() {
+                        return EnumSet.of(ExtensionPoint.ON_AGENT);
+                    }
+
+                    @Override
                     public Flux<AgentEvent> onAgent(
                             Agent agent,
                             RuntimeContext ctx,
@@ -167,12 +174,10 @@ class SubagentFactoryDeclarationTest {
                                 })
                         .buildSubagentEntries(workspace);
         AgentSpawnTool tool = new AgentSpawnTool(new DefaultAgentManager(entries, null), null, 0);
-        RuntimeContext ctx =
-                RuntimeContext.builder().userId("user").sessionId("parent-session").build();
 
         String first =
                 tool.agentSpawn(
-                                ctx,
+                                context("user", "parent-session"),
                                 null,
                                 "note-taker",
                                 "Remember the code word: heron.",
@@ -184,7 +189,7 @@ class SubagentFactoryDeclarationTest {
         AgentState nextParentState = AgentState.builder().build();
         String second =
                 tool.agentSpawn(
-                                ctx,
+                                context("user", "parent-session"),
                                 nextParentState,
                                 "note-taker",
                                 "What is the code word?",
@@ -250,23 +255,35 @@ class SubagentFactoryDeclarationTest {
                                 })
                         .buildSubagentEntries(workspace);
         AgentSpawnTool tool = new AgentSpawnTool(new DefaultAgentManager(entries, null), null, 0);
-        RuntimeContext alice = RuntimeContext.builder().userId("alice").sessionId("s1").build();
-        RuntimeContext bob = RuntimeContext.builder().userId("bob").sessionId("s1").build();
 
         String aliceFirst =
-                tool.agentSpawn(alice, null, "note-taker", "first", label, 30, null)
+                tool.agentSpawn(
+                                context("alice", "s1"),
+                                null,
+                                "note-taker",
+                                "first",
+                                label,
+                                30,
+                                null)
                         .map(result -> assertText(result, SUCCESS))
                         .block(TIMEOUT);
         String bobFirst =
-                tool.agentSpawn(bob, null, "note-taker", "first", label, 30, null)
+                tool.agentSpawn(context("bob", "s1"), null, "note-taker", "first", label, 30, null)
                         .map(result -> assertText(result, SUCCESS))
                         .block(TIMEOUT);
         String aliceAgain =
-                tool.agentSpawn(alice, null, "note-taker", "again", label, 30, null)
+                tool.agentSpawn(
+                                context("alice", "s1"),
+                                null,
+                                "note-taker",
+                                "again",
+                                label,
+                                30,
+                                null)
                         .map(result -> assertText(result, SUCCESS))
                         .block(TIMEOUT);
         String bobAgain =
-                tool.agentSpawn(bob, null, "note-taker", "again", label, 30, null)
+                tool.agentSpawn(context("bob", "s1"), null, "note-taker", "again", label, 30, null)
                         .map(result -> assertText(result, SUCCESS))
                         .block(TIMEOUT);
 
@@ -281,11 +298,11 @@ class SubagentFactoryDeclarationTest {
         assertEquals(2, factoryCalls.get(), "one child must be constructed per user");
         if (!label.isBlank()) {
             String aliceSend =
-                    tool.agentSend(alice, null, null, label, "follow-up", 30)
+                    tool.agentSend(context("alice", "s1"), null, null, label, "follow-up", 30)
                             .map(result -> assertText(result, SUCCESS))
                             .block(TIMEOUT);
             String bobSend =
-                    tool.agentSend(bob, null, null, label, "follow-up", 30)
+                    tool.agentSend(context("bob", "s1"), null, null, label, "follow-up", 30)
                             .map(result -> assertText(result, SUCCESS))
                             .block(TIMEOUT);
             assertTrue(aliceSend.contains("child bound to alice"), aliceSend);
@@ -368,6 +385,11 @@ class SubagentFactoryDeclarationTest {
                         IllegalArgumentException.class,
                         () -> builder.subagentFactory(remote, rc -> mock(Agent.class)));
         assertTrue(error.getMessage().contains("remote-worker"), error.getMessage());
+    }
+
+    /** A fresh context per execution: one runId belongs to exactly one agent call. */
+    private static RuntimeContext context(String userId, String sessionId) {
+        return RuntimeContext.builder().userId(userId).sessionId(sessionId).build();
     }
 
     private static Function<List<Msg>, List<ChatResponse>> recordingReply(

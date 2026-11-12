@@ -45,7 +45,7 @@ import org.yaml.snakeyaml.representer.Representer;
  * <p>Frontmatter format:
  * <pre>{@code
  * ---
- * name: example_skill
+ * name: example-skill
  * description: Example skill description
  * version: 1.0.0
  * ---

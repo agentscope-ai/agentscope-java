@@ -21,11 +21,13 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.agentscope.core.message.DocumentBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
+import io.agentscope.core.message.URLSource;
 import io.agentscope.core.model.ChatUsage;
 import io.agentscope.core.state.AgentState;
 import io.agentscope.extensions.controlplane.FrameworkAdapter;
@@ -404,5 +406,37 @@ class AgentScopeAdapterTest {
 
         // Bypass principle: reporting failures stay inside the adapter.
         adapter.publish(SessionEvent.builder(SESSION, SessionEvent.MESSAGE).build());
+    }
+
+    @Test
+    void textOfKeepsToolTextNextToTheDocumentReference() {
+        Msg msg =
+                Msg.builder()
+                        .role(MsgRole.TOOL)
+                        .content(
+                                ToolResultBlock.builder()
+                                        .id("call-1")
+                                        .name("generate_report")
+                                        .output(
+                                                List.of(
+                                                        TextBlock.builder()
+                                                                .text("Generated 3 pages")
+                                                                .build(),
+                                                        DocumentBlock.builder()
+                                                                .name("report.pdf")
+                                                                .mimeType("application/pdf")
+                                                                .source(
+                                                                        URLSource.builder()
+                                                                                .url(
+                                                                                        "https://example.com/report.pdf")
+                                                                                .build())
+                                                                .build()))
+                                        .build())
+                        .build();
+
+        String text = AgentScopeAdapter.textOf(msg);
+
+        assertTrue(text.contains("Generated 3 pages"), text);
+        assertTrue(text.contains("[document: report.pdf, application/pdf"), text);
     }
 }

@@ -45,8 +45,10 @@ import java.lang.reflect.Method;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.EnumSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
@@ -205,6 +207,11 @@ class ReActAgentRuntimeContextTest {
         MiddlewareBase middleware =
                 new MiddlewareBase() {
                     @Override
+                    public Set<ExtensionPoint> activePoints() {
+                        return EnumSet.of(ExtensionPoint.ON_SYSTEM_PROMPT);
+                    }
+
+                    @Override
                     public Mono<String> onSystemPrompt(
                             Agent agent, RuntimeContext ctx, String prompt) {
                         entered.put(ctx.getUserId(), ctx);
@@ -299,6 +306,11 @@ class ReActAgentRuntimeContextTest {
 
         CtxMiddleware(AtomicReference<RuntimeContext> observed) {
             this.observed = observed;
+        }
+
+        @Override
+        public Set<ExtensionPoint> activePoints() {
+            return EnumSet.of(ExtensionPoint.ON_SYSTEM_PROMPT);
         }
 
         @Override

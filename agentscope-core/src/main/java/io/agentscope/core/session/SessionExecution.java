@@ -47,6 +47,20 @@ public final class SessionExecution {
         return inputs;
     }
 
+    /**
+     * Prepares the command and restores continuation input into the private per-call list.
+     * Submit/respond inputs have already passed through onAgent middleware; keep those changes.
+     * Resume commands have no messages of their own, so prepend their recovered inputs before
+     * state-ready middleware runs. The accepted command remains immutable.
+     *
+     * @param recorder the recorder holding the execution writer lease
+     * @param callInputs mutable input list owned by this lifecycle execution
+     */
+    public void prepare(SessionRecorder recorder, List<Msg> callInputs) {
+        prepare(recorder);
+        if (command.kind().equals("resume")) callInputs.addAll(0, inputs);
+    }
+
     public void prepare(SessionRecorder recorder) {
         var view = SessionTurns.read(log);
         if (view.started().contains(command.id()))

@@ -32,7 +32,7 @@ public final class OpenAIDecisionsException extends RuntimeException {
         return statusCode;
     }
 
-    /** A hint for caller-controlled retries; the client does not automatically retry. */
+    /** Whether the failure is eligible for the client's configured retry policy. */
     public boolean isRetryable() {
         return retryable;
     }

@@ -243,7 +243,7 @@ Skill 优先级从低到高合成（详见 [技能](/v2/zh/docs/harness/skill)�
 |-----------|------|------|---------|
 | `GitSkillRepository` | `agentscope-extensions-skill-git-repository` | 团队 git 仓库；HEAD 变化才拉；只读分发 | 早期 / 小团队；改 skill 走 git PR review |
 | `MysqlSkillRepository` | `agentscope-extensions-skill-mysql-repository` | DataSource 注入；`writeable(true/false)` 双模式；从 agent 侧可写回 | 平台侧统一治理；多团队多 agent |
-| `NacosSkillRepository` | `agentscope-extensions-nacos-skill` | 在线下发 + 配置中心变更订阅；`AutoCloseable` | 阿里系生态；要"改一次全网立即生效" |
+| `NacosSkillRepository` | `agentscope-extensions-nacos-skill` | 从 Nacos 加载 Skill，支持指定版本或标签 | 集中管理 Skill 的版本和标签 |
 | `ClasspathSkillRepository` | `agentscope-core` | 和 JAR 一起发；Spring Boot Fat JAR 兼容 | 产品内置不可改的能力包 |
 
 ```java
@@ -266,7 +266,7 @@ HarnessAgent agent = HarnessAgent.builder()
 - **优先 `MysqlSkillRepository(writeable=false)` 或 `NacosSkillRepository`**——平台集中治理，agent 端只读；写回走管理台 + 审核流。
 - 不希望 agent 看到 `workspace/skills/`？`.disableDefaultWorkspaceSkills()`。
 - 开 `enableSkillManageTool` 让 agent 自己起草新 skill 时，**必须**配 `enableSkillPromotionGate(...)`；生产严禁 `autoPromote=true`。
-- `NacosSkillRepository` 是 `AutoCloseable`——Spring `@PreDestroy` 或者 `try-with-resources` 关掉它，否则会泄露订阅。
+- 使用 `NacosSkillRepository` 时，建议指定版本或生产标签，避免测试版本影响线上 Agent。更新后需重新加载 Skill，具体配置见 [Nacos Skill 仓库](/v2/zh/integration/infrastructure/nacos#skill-仓库)。
 
 ## 5. 需要 shell：选 Sandbox + 必配 Snapshot
 
@@ -484,7 +484,6 @@ try (HarnessAgent agent = agentBuilder.build()) {
 - **`tools.json` 的 `allow` 会过滤内置工具**——用白名单时务必把 `read_file` / `memory_search` / `agent_spawn` 这些保留下来，否则整套内置工具一起被砍。
 - **`IsolationScope` 改了，旧数据不会自动迁移**——上线前定下来，别上线后改。改了等同于"换了一个命名空间"。
 - **本地 `AgentStateStore` 单机限制**：K8s 多副本部署里如果把分布式文件系统和本地 `JsonFileAgentStateStore` 搭配，第一次 build 就抛 `IllegalStateException`，**这是设计如此**——告诉你别把 agent 状态留在某个 pod 的本地磁盘上。
-- **`NacosSkillRepository` 不关闭**——会泄露订阅，集群规模大了 Nacos 会喊。Spring 注入用 `@PreDestroy` 或 `destroyMethod="close"`。
 - **OSS / NAS 走完 IAM 再上线**——`OssSnapshotSpec` 的 AK/SK 是平台凭证；用 RAM Role + STS 临时凭证更稳。
 - **本地 `AgentStateStore` + 沙箱模式仅用于开发**——构建时的 warning 日志是故意的，生产环境别忽略。
 
