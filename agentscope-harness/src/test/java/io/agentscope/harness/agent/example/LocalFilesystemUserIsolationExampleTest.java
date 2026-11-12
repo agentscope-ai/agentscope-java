@@ -492,6 +492,8 @@ class LocalFilesystemUserIsolationExampleTest {
                         .name("assistant")
                         .model(stubModel("done"))
                         .workspace(workspace)
+                        // Keep background extraction/consolidation from creating caller memory.
+                        .disableMemoryHooks()
                         .build()) {
 
             agent.call(userMsg("hi"), ctx("s1", "alice")).block();
