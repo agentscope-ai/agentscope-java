@@ -13,7 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package io.agentscope.examples.documentation2.jev;
+package io.agentscope.examples.documentation2.judge;
 
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.Agent;
@@ -37,7 +37,9 @@ import io.agentscope.extensions.judge.jev.SystemOneRequest;
 import io.agentscope.extensions.judge.jev.SystemOneResult;
 import io.agentscope.extensions.judge.jev.example.JevToolSelectionMiddleware;
 import java.time.Duration;
+import java.util.EnumSet;
 import java.util.List;
+import java.util.Set;
 import java.util.function.Function;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
@@ -47,13 +49,13 @@ import reactor.core.publisher.Mono;
  *
  * <p>Before running this manual test, add a model-provider dependency such as agentscope-extensions-model-openai.
  */
-public final class JevToolSelectionMiddlewareTest {
+public final class JevToolSelectionMiddlewareExample {
 
     private static final String DASHSCOPE_COMPATIBLE_BASE_URL =
             "https://dashscope.aliyuncs.com/compatible-mode/v1";
     private static final Duration MODEL_CALL_TIMEOUT = Duration.ofSeconds(60);
 
-    private JevToolSelectionMiddlewareTest() {}
+    private JevToolSelectionMiddlewareExample() {}
 
     public static void main(String[] args) {
         String jevApiKey = firstNonBlankEnv("TYPESAFE_API_KEY", "JEV_API_KEY");
@@ -256,6 +258,11 @@ public final class JevToolSelectionMiddlewareTest {
         }
 
         @Override
+        public Set<ExtensionPoint> activePoints() {
+            return EnumSet.of(ExtensionPoint.ON_REASONING);
+        }
+
+        @Override
         public Flux<AgentEvent> onReasoning(
                 Agent agent,
                 RuntimeContext ctx,
@@ -278,6 +285,11 @@ public final class JevToolSelectionMiddlewareTest {
         @Override
         public int order() {
             return -1;
+        }
+
+        @Override
+        public Set<ExtensionPoint> activePoints() {
+            return EnumSet.of(ExtensionPoint.ON_REASONING, ExtensionPoint.ON_ACTING);
         }
 
         @Override

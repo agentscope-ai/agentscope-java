@@ -146,6 +146,20 @@ HarnessAgent agent = HarnessAgent.builder()
 </Warning>
 
 
+### 沙箱镜像的释放等待
+
+对于自管理沙箱，`agentscope.sandbox.mirror.release-timeout-millis` 控制**每次释放时同步等待**正在进行的会话镜像上传的时间。它是进程级 JVM 系统属性：同一 JVM 中的所有 Agent 共用，并在每次释放时读取；目前没有按 Agent 设置的 builder 覆盖项。
+
+取值为整数，单位为毫秒，默认 `1000`；`0` 表示不等待。负数、格式错误或超出整数范围的值会记录警告并回退到 `1000`。例如，启动应用的可执行 JAR 时，可以设置每次释放最多等待五秒（请将 `your-agent-app.jar` 替换为实际路径）：
+
+```bash
+java -Dagentscope.sandbox.mirror.release-timeout-millis=5000 -jar your-agent-app.jar
+```
+
+释放时先拒绝新的镜像上传，再等待已有上传，随后调用沙箱管理器的释放操作。连续多次释放时，每次都可能用完整个等待额度。该配置只限制这段镜像等待时间，既不是单次上传的超时，也不是整体关闭流程的截止时间。跨调用保持运行的用户管理沙箱不使用这段释放等待。
+
+等待耗尽后仍会继续关闭沙箱，尚未完成的镜像上传可能失败。日志 `Mirror upload still in flight after ... ms; releasing sandbox` 表示发生了这种情况。增大配置值能给慢上传更多完成时间，但也可能让每次调用的释放阶段增加同样长的延迟；设为 `0` 可省去等待，但不会给进行中的镜像留出完成时间。调整时同时观察这条警告和调用完成延迟；移除 JVM 参数即可恢复默认值。该参数不会改变由 `agentscope.state.home` 控制的 Agent 状态存储目录。
+
 ### 同 (userId, sessionId) 跨进程、跨机器接续
 
 配置共享状态存储后，每次 call 会重新加载该槽位已保存的状态。以下示例假设节点 A 已完成保存，再由节点 B 接续，不是两个节点同时执行同一会话：
@@ -328,8 +342,40 @@ Msg result = agent.call(List.of(new UserMessage("Hi")), ctx).block();
 | `resolveAgentState(ctx, agent)` | 静态辅助方法:优先返回 `ctx.getAgentState()`,回退到 `agent.getAgentState()`。执行期间应确保当前调用已注入状态；回退不保证选中正确业务会话 |
 | `get(String)` / `put(String, Object)` | 字符串键存取 |
 | `get(Class<T>)` / `put(Class<T>, T)` | 按类型存取(typed singleton) |
+| `get(Model.class)` / `put(Model.class, ...)` | 按调用钉定模型(见下方[按调用选择模型](#按调用选择模型)) |
 | `getExtra()` | 直接拿到字符串属性 map(可变视图) |
 | `RuntimeContext.empty()` | 空上下文 |
+
+### 按调用选择模型
+
+`ctx.put(Model.class, model)` 为单次调用钉定模型——即 LLM API 的 per-request 模型惯例。agent 在本次 run 的每一次模型边界(推理、摘要、压缩、记忆清洗)都读取该钉定,因此单例 Agent 无需反射、也无需为每个租户实例化一个 Agent,就能服务需要不同模型的多个会话。选择对整个调用是确定性的:实例引用不可变,不存在调用中途切换,也不会跨会话泄漏。
+
+```java
+// 启动时注册一次模型与命名创建上下文:
+ModelRegistry.register("my-prod-model-01", openAiModel);
+ModelRegistry.registerFactory("dashscope:.*", id -> dashscopeModel(id));
+ModelRegistry.registerCreationContext("mytokenplan01",
+        ModelCreationContext.builder().apiKey(tenantApiKey).build());
+
+// 每个请求:由你的应用层解析调用方的选择(认证/白名单在这一步),
+// 再把实例钉定到本次调用的 context 上:
+Model choice = ModelRegistry.resolve("mytokenplan01@dashscope:qwen-plus");
+RuntimeContext ctx = RuntimeContext.builder()
+        .userId("alice")
+        .sessionId("s-001")
+        .build();
+ctx.put(Model.class, choice);   // 不钉定 = Agent 构建期默认模型
+Msg result = agent.call(List.of(new UserMessage("Hi")), ctx).block();
+```
+
+语义:
+
+- **优先级与确定性**:钉定优先于 agent 的两种构建期设置(惰性身份串、直给实例)。胜出者只决定一次——agent 会把自身首次解析结果记忆化到同一 typed 槽位——因此模型不会在响应中途切换;换新 context 重新决定。路由不可信选择时,请在自己的认证/白名单之后解析并钉定实例,绝不透传客户端提交的身份串。
+- **辅助调用跟随 effective 模型**:压缩、记忆清洗、超轮摘要使用钉定(或默认)模型;若为它们配置了专用模型(`CompactionConfig.getModel()` / `MemoryConfig.model()`)则专用模型优先。压缩触发阈值按 effective 模型的上下文窗口计算。后台的定期记忆整合不在此列——它不属于任何调用,始终使用构建期配置的模型。
+- **子代理不继承**:子代理派生上下文时会清空调用方的钉定——子代理的模型是构建期契约(`SubagentDeclaration.getModel()`),调用方的运行时选择不得悄悄改变 worker 模型或其成本面。
+- **provider 故障仍然 failover**:钉定的模型运行期出错时,已配置的 `fallbackModel` 照常接管——failover 管可用性,选择本身已被尊重。
+- 会话级粘性(跨请求记住选择)是应用自己的职责:把解析结果(或待重解析的身份串)存在你自己的会话记录里;选择不进 `AgentState`,事实源只有一个。
+- 不要与 `GenerateOptions.getModelName()` 混淆——那是 provider 侧的路由提示,不参与模型选择。
 
 ### runId 关联
 

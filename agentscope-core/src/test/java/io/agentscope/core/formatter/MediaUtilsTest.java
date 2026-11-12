@@ -498,6 +498,9 @@ class MediaUtilsTest {
         assertEquals("video/quicktime", MediaUtils.determineMediaType("video.mov"));
         assertEquals("video/x-msvideo", MediaUtils.determineMediaType("video.avi"));
 
+        // Documents
+        assertEquals("application/pdf", MediaUtils.determineMediaType("document.pdf"));
+
         // Fallback
         assertEquals("application/octet-stream", MediaUtils.determineMediaType("file.unknown"));
         assertEquals("application/octet-stream", MediaUtils.determineMediaType("file"));

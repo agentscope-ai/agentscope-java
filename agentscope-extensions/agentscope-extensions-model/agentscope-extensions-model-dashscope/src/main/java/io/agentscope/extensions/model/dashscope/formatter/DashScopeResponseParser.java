@@ -180,9 +180,12 @@ public class DashScopeResponseParser {
                                 .content(argsJson)
                                 .build());
             } else if (argsJson != null) {
-                // Subsequent chunks with only argument fragments
-                String callId =
-                        id != null ? id : ("fragment_" + System.currentTimeMillis() + "_" + idx);
+                // Subsequent chunks with only argument fragments.
+                // A fragment must not carry an id of its own: the accumulator merges a
+                // continuation chunk into the last named tool call when the id is empty
+                // (same contract as the OpenAI and Anthropic parsers). A synthesized
+                // per-chunk id would strand the fragment in its own nameless tool call.
+                String callId = id != null ? id : "";
                 blocks.add(
                         ToolUseBlock.builder()
                                 .id(callId)

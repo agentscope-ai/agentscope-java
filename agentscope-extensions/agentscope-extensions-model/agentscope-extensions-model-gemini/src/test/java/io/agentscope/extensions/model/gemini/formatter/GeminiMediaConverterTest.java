@@ -27,6 +27,7 @@ import com.sun.net.httpserver.HttpServer;
 import io.agentscope.core.message.AudioBlock;
 import io.agentscope.core.message.Base64Source;
 import io.agentscope.core.message.DataBlock;
+import io.agentscope.core.message.DocumentBlock;
 import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.URLSource;
 import io.agentscope.core.message.VideoBlock;
@@ -41,6 +42,7 @@ import okhttp3.mockwebserver.MockResponse;
 import okhttp3.mockwebserver.MockWebServer;
 import okhttp3.mockwebserver.SocketPolicy;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.NullAndEmptySource;
 import org.junit.jupiter.params.provider.ValueSource;
@@ -51,6 +53,68 @@ import org.junit.jupiter.params.provider.ValueSource;
 class GeminiMediaConverterTest extends GeminiFormatterTestBase {
 
     private final GeminiMediaConverter converter = new GeminiMediaConverter();
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void documentUrlSourceInfersMimeTypeFromLocalPathOrFileUri(
+            boolean useFileUri, @TempDir Path tempDir) throws IOException {
+        byte[] bytes = "%PDF-1.4".getBytes(StandardCharsets.UTF_8);
+        Path file = Files.write(tempDir.resolve("report.pdf"), bytes);
+        DocumentBlock block =
+                DocumentBlock.builder()
+                        .source(
+                                new URLSource(
+                                        useFileUri ? file.toUri().toString() : file.toString()))
+                        .build();
+
+        Blob blob = converter.convertToInlineDataPart(block).inlineData().orElseThrow();
+
+        assertEquals("application/pdf", blob.mimeType().orElseThrow());
+        assertArrayEquals(bytes, blob.data().orElseThrow());
+    }
+
+    @Test
+    void documentMimeTypeOverridesUrlSourceHint() throws IOException {
+        try (MockWebServer server = new MockWebServer()) {
+            server.enqueue(new MockResponse().setBody("%PDF-1.4"));
+            DocumentBlock block =
+                    DocumentBlock.builder()
+                            .source(
+                                    new URLSource(
+                                            server.url("/download?version=1.2").toString(),
+                                            "text/plain"))
+                            .mimeType("application/pdf")
+                            .build();
+
+            Blob blob = converter.convertToInlineDataPart(block).inlineData().orElseThrow();
+
+            assertEquals("application/pdf", blob.mimeType().orElseThrow());
+            assertArrayEquals(
+                    "%PDF-1.4".getBytes(StandardCharsets.UTF_8), blob.data().orElseThrow());
+        }
+    }
+
+    @Test
+    void oversizedDocumentDownloadDegradesToPlaceholder() throws IOException {
+        try (MockWebServer server = new MockWebServer()) {
+            server.enqueue(
+                    new MockResponse()
+                            .setBody("fixture")
+                            .setHeader("Content-Length", 50L * 1024 * 1024 + 1)
+                            .setSocketPolicy(SocketPolicy.DISCONNECT_AT_END));
+            DocumentBlock block =
+                    DocumentBlock.builder()
+                            .source(new URLSource(server.url("/report.pdf").toString()))
+                            .name("report.pdf")
+                            .build();
+
+            Part part = converter.convertToInlineDataPart(block);
+
+            assertTrue(part.inlineData().isEmpty());
+            assertEquals("[Document - not readable: report.pdf]", part.text().orElseThrow());
+            assertEquals(1, server.getRequestCount());
+        }
+    }
 
     @ParameterizedTest
     @ValueSource(strings = {"image/jpg", "IMAGE/JPG", "image/jpeg"})

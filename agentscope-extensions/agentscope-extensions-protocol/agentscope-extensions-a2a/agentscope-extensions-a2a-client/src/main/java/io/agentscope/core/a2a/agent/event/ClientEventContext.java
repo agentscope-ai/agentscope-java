@@ -16,20 +16,26 @@
 
 package io.agentscope.core.a2a.agent.event;
 
-import io.a2a.spec.Task;
 import io.agentscope.core.a2a.agent.A2aAgent;
+import io.agentscope.core.event.AgentEventEmitter;
+import io.agentscope.core.event.TextBlockDeltaEvent;
+import io.agentscope.core.event.ThinkingBlockDeltaEvent;
 import io.agentscope.core.hook.Hook;
 import io.agentscope.core.hook.PostReasoningEvent;
 import io.agentscope.core.hook.PreReasoningEvent;
 import io.agentscope.core.hook.ReasoningChunkEvent;
+import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.Msg;
+import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.ThinkingBlock;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
+import org.a2aproject.sdk.spec.Task;
 import reactor.core.publisher.Mono;
 import reactor.core.publisher.MonoSink;
 
 /**
- * Context for handler {@link io.a2a.client.ClientEvent}.
+ * Context for handler {@link org.a2aproject.sdk.client.ClientEvent}.
  *
  * <p>One A2A task might respond multiple times, so we need a context to store the response.
  */
@@ -42,6 +48,11 @@ public class ClientEventContext {
     private MonoSink<Msg> sink;
 
     private List<Hook> hooks;
+
+    /** Receives the events of the reply, or {@code null} when nobody streams them. */
+    private AgentEventEmitter eventEmitter;
+
+    private String replyId;
 
     private Task task;
 
@@ -93,6 +104,17 @@ public class ClientEventContext {
         this.task = task;
     }
 
+    /**
+     * Set where the events of the reply go, see {@link A2aAgent#streamEvents(List)}.
+     *
+     * @param replyId the id of the reply the events belong to
+     * @param eventEmitter receives the events
+     */
+    public void setEventEmitter(String replyId, AgentEventEmitter eventEmitter) {
+        this.replyId = replyId;
+        this.eventEmitter = eventEmitter;
+    }
+
     public void setInputMessages(List<Msg> inputMessages) {
         this.inputMessages = inputMessages;
     }
@@ -140,6 +162,7 @@ public class ClientEventContext {
      * Trigger ReasoningChunkEvent (streaming process)
      */
     void publishReasoningChunk(Msg chunkMsg) {
+        emitDeltas(chunkMsg);
         if (hooks != null && !hooks.isEmpty()) {
             publishPreReasoning(); // If not sent Pre before, send Pre first
             ReasoningChunkEvent chunkEvent =
@@ -150,6 +173,21 @@ public class ClientEventContext {
                 eventMono = eventMono.flatMap(hook::onEvent);
             }
             eventMono.block();
+        }
+    }
+
+    /** Emits the text and the thinking of a streamed chunk as deltas of the reply. */
+    private void emitDeltas(Msg chunkMsg) {
+        if (eventEmitter == null) {
+            return;
+        }
+        for (ContentBlock block : chunkMsg.getContent()) {
+            if (block instanceof TextBlock text) {
+                eventEmitter.emit(new TextBlockDeltaEvent(replyId, "text", text.getText()));
+            } else if (block instanceof ThinkingBlock thinking) {
+                eventEmitter.emit(
+                        new ThinkingBlockDeltaEvent(replyId, "thinking", thinking.getThinking()));
+            }
         }
     }
 

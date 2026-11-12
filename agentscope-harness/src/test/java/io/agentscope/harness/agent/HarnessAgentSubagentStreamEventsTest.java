@@ -28,6 +28,7 @@ import static org.mockito.Mockito.when;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.event.AgentEventType;
+import io.agentscope.core.event.AgentStartEvent;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
@@ -39,6 +40,7 @@ import io.agentscope.harness.agent.testing.HarnessQuiescence;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -191,10 +193,121 @@ class HarnessAgentSubagentStreamEventsTest {
                     "source should contain childId; got: " + childEvent.getSource());
         }
 
+        // The final segment is the spawned instance's own session id. Two spawns of the same
+        // subagent type therefore receive distinct source paths in one parent session.
+        AgentStartEvent childStart =
+                childEvents.stream()
+                        .filter(e -> e instanceof AgentStartEvent)
+                        .map(e -> (AgentStartEvent) e)
+                        .findFirst()
+                        .orElseThrow();
+        assertEquals(
+                "sess-stream-events/" + childId + "/" + childStart.getSessionId(),
+                childStart.getSource(),
+                "source should identify the child instance");
+
         // Parent events: source == null
         assertTrue(
                 events.stream().anyMatch(e -> e.getSource() == null),
                 "expected at least one parent event with source == null");
+    }
+
+    // -----------------------------------------------------------------
+    // 1a. Two spawned instances of the same subagent type must keep
+    // distinct source paths inside one parent session.
+    // -----------------------------------------------------------------
+
+    @Test
+    void streamEvents_sameTypeSubagentInstancesGetDistinctSources() throws Exception {
+        String childId = "researcher";
+        writeSubagentSpec(childId, "Research specialist", "You are a researcher.");
+
+        Model model = mock(Model.class);
+        when(model.getModelName()).thenReturn("stub");
+        when(model.stream(anyList(), any(), any()))
+                .thenReturn(
+                        Flux.just(
+                                toolCallChunk(
+                                        "p1",
+                                        "agent_spawn",
+                                        Map.of(
+                                                "agent_id",
+                                                childId,
+                                                "task",
+                                                "research first",
+                                                "timeout_seconds",
+                                                60))))
+                .thenReturn(Flux.just(stopChunk("c1", "first complete")))
+                .thenReturn(Flux.just(stopChunk("p1", "first turn complete")))
+                .thenReturn(
+                        Flux.just(
+                                toolCallChunk(
+                                        "p2",
+                                        "agent_spawn",
+                                        Map.of(
+                                                "agent_id",
+                                                childId,
+                                                "task",
+                                                "research second",
+                                                "timeout_seconds",
+                                                60))))
+                .thenReturn(Flux.just(stopChunk("c2", "second complete")))
+                .thenReturn(Flux.just(stopChunk("p3", "both complete")));
+
+        parent =
+                HarnessAgent.builder()
+                        .name("parent")
+                        .model(model)
+                        .workspace(workspace)
+                        .abstractFilesystem(new LocalFilesystem(workspace))
+                        .build();
+
+        RuntimeContext ctx = RuntimeContext.builder().sessionId("sess-multi-instance").build();
+        List<AgentEvent> firstTurn =
+                parent.streamEvents(
+                                List.of(
+                                        Msg.builder()
+                                                .role(MsgRole.USER)
+                                                .textContent("start")
+                                                .build()),
+                                ctx)
+                        .collectList()
+                        .block();
+        List<AgentEvent> secondTurn =
+                parent.streamEvents(
+                                List.of(
+                                        Msg.builder()
+                                                .role(MsgRole.USER)
+                                                .textContent("continue")
+                                                .build()),
+                                RuntimeContext.builder().sessionId(ctx.getSessionId()).build())
+                        .collectList()
+                        .block();
+
+        List<AgentEvent> events = new ArrayList<>(firstTurn);
+        events.addAll(secondTurn);
+
+        assertNotNull(events);
+        List<AgentStartEvent> childStarts =
+                events.stream()
+                        .filter(e -> e instanceof AgentStartEvent && e.getSource() != null)
+                        .map(e -> (AgentStartEvent) e)
+                        .collect(Collectors.toList());
+
+        assertEquals(2, childStarts.size(), "expected two child starts");
+        assertEquals(
+                2,
+                childStarts.stream().map(AgentStartEvent::getSessionId).distinct().count(),
+                "same-type child instances must use distinct session ids");
+        assertEquals(
+                2,
+                childStarts.stream().map(AgentStartEvent::getSource).distinct().count(),
+                "same-type child instances must use distinct source paths");
+        for (AgentStartEvent start : childStarts) {
+            assertTrue(
+                    start.getSource().startsWith("sess-multi-instance/" + childId + "/"),
+                    "source should use the parent session and child type: " + start.getSource());
+        }
     }
 
     // -----------------------------------------------------------------

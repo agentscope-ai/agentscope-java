@@ -30,7 +30,6 @@ public final class WorkspaceConstants {
     public static final String SKILLS_DIR = "skills";
     public static final String KNOWLEDGE_DIR = "knowledge";
     public static final String KNOWLEDGE_MD = "KNOWLEDGE.md";
-    public static final String RULES_DIR = "rules";
 
     public static final String AGENTS_DIR = "agents";
     public static final String SESSIONS_DIR = "sessions";

@@ -22,6 +22,7 @@ import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.harness.agent.bus.WorkspaceMessageBus;
 import io.agentscope.harness.agent.filesystem.local.LocalFilesystem;
+import java.time.Duration;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
@@ -44,7 +45,10 @@ class WakeupDispatcherTest {
 
     @BeforeEach
     void setUp() {
-        messageBus = new WorkspaceMessageBus(new LocalFilesystem(tmpDir, true, 10), "/bus");
+        // 50ms heartbeat: signal-driven assertions no longer wait out the 3s production tick.
+        messageBus =
+                new WorkspaceMessageBus(
+                        new LocalFilesystem(tmpDir, true, 10), "/bus", Duration.ofMillis(50));
         target = new StubTarget();
         dispatcher = new WakeupDispatcher(messageBus, target);
     }
@@ -78,7 +82,10 @@ class WakeupDispatcherTest {
 
         messageBus.enqueueWakeup("user-1", "sess-running", "agent-main").block();
 
-        Thread.sleep(500);
+        // The wakeup entry is consumed by the first 50ms tick after this point (drain deletes
+        // it), so a wrong dispatch can only surface within ~1-2 ticks; 300ms covers that with
+        // headroom for CI contention.
+        Thread.sleep(300);
         assertTrue(target.wokenSessions.isEmpty(), "Running session should not be woken");
     }
 
@@ -89,7 +96,8 @@ class WakeupDispatcherTest {
 
         messageBus.enqueueWakeup("user-1", "sess-unknown", "agent-main").block();
 
-        Thread.sleep(500);
+        // Same grounded window as above: first tick after enqueue decides, 300ms observes it.
+        Thread.sleep(300);
         assertTrue(target.wokenSessions.isEmpty(), "Unknown session should not be woken");
     }
 

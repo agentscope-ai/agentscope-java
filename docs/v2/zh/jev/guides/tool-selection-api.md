@@ -23,6 +23,9 @@ var options = new JevExecution.Options(
     (ctx, record) -> System.out.println(record));
 var selector = JevToolSelectionMiddleware.builder(client)
     .execution(options)
+    .contextStrategy(JevToolSelectionMiddleware.ContextStrategy.RECENT_WINDOW)
+    .maxContextMessages(8)
+    .maxContextChars(8000)
     .maxTools(2)
     .confidenceThreshold(0.8)
     .rejectionThreshold(0.2)
@@ -85,3 +88,15 @@ java -cp "$JEV_CP" io.agentscope.examples.jev.JevHarnessScenarios selection
 无可选工具或没有用户文本时不请求；只有一个候选也判断是否适用。候选按 64 个独立问题串行分批，共享一个总预算。多个明确适用工具按概率排序后裁剪，同分保持原候选顺序，最终工具顺序仍沿用原输入。
 
 缺项、多项、非法概率、超时或后端异常都回退原目录；取消后不继续调用后续推理。阈值必须满足 `0 <= rejection < confidence <= 1`。
+
+## 会话上下文预算
+
+启用工具选择后，默认 `RECENT_WINDOW` 只发送最近 8 条非空文本消息，文本总量最多
+8000 个字符，投影为 `{role, text}`。优先保留最新消息，必要时截断最旧的保留消息，
+不会拆开 UTF-16 代理对；空文本消息不占窗口名额。各候选批次复用同一个有界状态。
+
+可用 `.contextStrategy(ContextStrategy.LATEST_USER_MESSAGE)` 只发送最新用户文本
+（`userRequest`），或选择 `FULL_CONVERSATION` 恢复完整原始消息列表。
+`maxContextMessages` 和 `maxContextChars` 必须为正数。长对话中的早期工具线索可能被窗口丢弃，
+应结合业务样本调整预算。此配置不改变默认 OFF、SHADOW/ENFORCE 模式、64 个独立问题分批、
+明确选空或失败回退语义；构建上下文失败同样由执行预算层记录并回退原工具目录。

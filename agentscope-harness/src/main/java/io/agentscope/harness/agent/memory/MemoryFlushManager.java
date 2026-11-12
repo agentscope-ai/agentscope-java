@@ -16,7 +16,9 @@
 package io.agentscope.harness.agent.memory;
 
 import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.core.formatter.DocumentReferenceRenderer;
 import io.agentscope.core.message.ContentBlock;
+import io.agentscope.core.message.DocumentBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
@@ -199,12 +201,12 @@ public class MemoryFlushManager {
                         java.time.Instant.now().toString(), content);
 
         String dailyRelPath = WorkspaceConstants.MEMORY_DIR + "/" + today + ".md";
-        workspaceManager.appendUtf8WorkspaceRelative(rc, dailyRelPath, dailyEntry);
+        workspaceManager.appendMemoryFileUtf8(rc, dailyRelPath, dailyEntry);
     }
 
     private String readExistingContent(RuntimeContext rc, String relativePath) {
         try {
-            String content = workspaceManager.readManagedWorkspaceFileUtf8(rc, relativePath);
+            String content = workspaceManager.readMemoryFileUtf8(rc, relativePath);
             return content != null ? content : "";
         } catch (Exception e) {
             log.debug("Could not read {}: {}", relativePath, e.getMessage());
@@ -275,6 +277,8 @@ public class MemoryFlushManager {
                 parts.add(renderToolUse(tu));
             } else if (block instanceof ToolResultBlock tr) {
                 parts.add(renderToolResult(tr));
+            } else if (block instanceof DocumentBlock doc) {
+                parts.add(DocumentReferenceRenderer.render(doc));
             }
         }
 
@@ -322,6 +326,11 @@ public class MemoryFlushManager {
                             sb.append(text);
                         }
                     }
+                } else if (out instanceof DocumentBlock doc) {
+                    if (sb.length() > 0 && !Character.isWhitespace(sb.charAt(sb.length() - 1))) {
+                        sb.append(' ');
+                    }
+                    sb.append(DocumentReferenceRenderer.render(doc));
                 }
             }
         }
