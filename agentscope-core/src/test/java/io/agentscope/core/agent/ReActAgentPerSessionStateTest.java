@@ -207,6 +207,39 @@ class ReActAgentPerSessionStateTest {
     }
 
     @Test
+    @DisplayName("ids containing '/' keep distinct slots and persist under their own identity")
+    void slotKeysDoNotCollideForIdsContainingSlash() throws Exception {
+        InMemoryAgentStateStore store = new InMemoryAgentStateStore();
+        ReActAgent agent = agent(store);
+
+        // Without the userId length prefix both pairs joined to "u1/a/b" and shared one cached
+        // state, CAS version and call gate (#3337).
+        agent.call(
+                        List.of(userMsg("first")),
+                        RuntimeContext.builder().userId("u1/a").sessionId("b").build())
+                .block(Duration.ofSeconds(10));
+        agent.call(
+                        List.of(userMsg("second")),
+                        RuntimeContext.builder().userId("u1").sessionId("a/b").build())
+                .block(Duration.ofSeconds(10));
+
+        AgentState a = agent.getAgentState("u1/a", "b");
+        AgentState b = agent.getAgentState("u1", "a/b");
+        assertNotSame(a, b, "distinct (userId, sessionId) pairs must not share a slot");
+        assertEquals(2, slotVersionCount(agent), "each identity must own its CAS version slot");
+        assertTrue(allText(a).contains("first"));
+        assertFalse(allText(a).contains("second"), "the other identity's input must not leak in");
+        assertTrue(allText(b).contains("second"));
+        assertFalse(allText(b).contains("first"), "the other identity's input must not leak in");
+
+        // Each state must persist under its own (userId, sessionId) store identity, so a rebuilt
+        // agent replays both slots correctly.
+        ReActAgent reborn = agent(store);
+        assertTrue(allText(reborn.getAgentState("u1/a", "b")).contains("first"));
+        assertTrue(allText(reborn.getAgentState("u1", "a/b")).contains("second"));
+    }
+
+    @Test
     @DisplayName("clearStateCache releases all local session state and permission engines")
     void clearStateCacheReleasesAllLocalCaches() {
         ReActAgent agent =
@@ -764,12 +797,12 @@ class ReActAgentPerSessionStateTest {
         // getAgentState seeds slotVersions with 0L for a fresh slot on a versioning store;
         // drop the entry to recreate the "version unknown → unconditional persist" window
         // (e.g. a restart whose version cache is empty), which is the path this fix hardens.
-        clearSlotVersion(agent, "u1/sessA");
+        clearSlotVersion(agent, "2:u1/sessA");
         agent.saveAgentState("u1", "sessA");
 
         assertEquals(1, store.unconditionalVersions.size());
         assertEquals(1L, store.unconditionalVersions.get(0));
-        assertEquals(1L, slotVersionOf(agent, "u1/sessA"));
+        assertEquals(1L, slotVersionOf(agent, "2:u1/sessA"));
     }
 
     @Test

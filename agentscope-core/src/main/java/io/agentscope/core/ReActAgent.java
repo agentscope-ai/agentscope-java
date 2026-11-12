@@ -498,8 +498,11 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
     }
 
     /**
-     * Internal slot identifier — {@code (userId or "__anon__") + "/" + sessionId}.
-     * Not part of the public API.
+     * Internal slot identifier — the pair joined with {@code "/"}, plus a length prefix on the
+     * userId so distinct pairs can never collide: {@code ("u1/a", "b")} and {@code ("u1",
+     * "a/b")} would otherwise both join to {@code u1/a/b} and share one cached state, CAS
+     * version, call gate and interrupt routing (#3337). Not part of the public API. In-memory
+     * only — persisted store keys use the raw (userId, sessionId) pair.
      *
      * <p>The key is opaque: it keys the per-slot caches, same-slot call serialization and interrupt
      * routing. It must never be split back into {@code (userId, sessionId)}, because a sessionId
@@ -508,7 +511,8 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
      */
     private static String slotKey(String userId, String sessionId) {
         Objects.requireNonNull(sessionId, "sessionId must not be null");
-        return (userId == null || userId.isBlank() ? "__anon__" : userId) + "/" + sessionId;
+        String uid = userId == null || userId.isBlank() ? "__anon__" : userId;
+        return uid.length() + ":" + uid + "/" + sessionId;
     }
 
     /**
