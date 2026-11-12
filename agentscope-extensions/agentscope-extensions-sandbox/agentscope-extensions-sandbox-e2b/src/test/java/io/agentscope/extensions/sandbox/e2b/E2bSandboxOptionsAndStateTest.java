@@ -24,7 +24,9 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 
 import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.harness.agent.sandbox.Sandbox;
 import io.agentscope.harness.agent.sandbox.SandboxAcquireResult;
+import io.agentscope.harness.agent.sandbox.SandboxContext;
 import io.agentscope.harness.agent.sandbox.SandboxManager;
 import io.agentscope.harness.agent.sandbox.SessionSandboxStateStore;
 import io.agentscope.harness.agent.sandbox.WorkspaceSpec;
@@ -129,6 +131,26 @@ class E2bSandboxOptionsAndStateTest {
         assertNotNull(spec.createClient());
         assertNotNull(spec.workspaceSpec());
         assertNotNull(spec.snapshotSpec());
+    }
+
+    @Test
+    void filesystemSpecWorkspaceRootDrivesEffectiveWorkspaceSpec() {
+        E2bFilesystemSpec spec =
+                new E2bFilesystemSpec()
+                        .volumeMount("vol-a", "/mnt/data")
+                        .workspaceRoot("/mnt/data/ws");
+        SandboxContext context = spec.toSandboxContext();
+        E2bSandboxClient client = (E2bSandboxClient) context.getClient();
+
+        Sandbox sandbox =
+                client.create(
+                        context.getWorkspaceSpec(),
+                        null,
+                        (E2bSandboxClientOptions) context.getClientOptions());
+
+        E2bSandboxState state = (E2bSandboxState) sandbox.getState();
+        assertEquals("/mnt/data/ws", state.getWorkspaceRoot());
+        assertTrue(state.isWorkspaceOnVolume());
     }
 
     @Test
