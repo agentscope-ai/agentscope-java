@@ -812,4 +812,9 @@ public class RemoteFilesystem implements AbstractFilesystem {
         }
         return key.equals(normalizedPath) || key.startsWith(normalizedPath + "/");
     }
+
+    @Override
+    public Object storageKey(RuntimeContext runtimeContext, String path) {
+        return List.of(getNamespace(runtimeContext), path);
+    }
 }
