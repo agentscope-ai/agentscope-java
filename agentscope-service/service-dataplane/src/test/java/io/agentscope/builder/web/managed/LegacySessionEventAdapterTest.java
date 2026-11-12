@@ -200,6 +200,62 @@ class LegacySessionEventAdapterTest {
     }
 
     @Test
+    void documentBlocksSurviveProjectionSoClientsCanSeeAttachments() {
+        var projected =
+                CommittedSessionEventProjector.publicContent(
+                        List.of(
+                                Map.of(
+                                        "type",
+                                        "document",
+                                        "name",
+                                        "report.pdf",
+                                        "mime_type",
+                                        "application/pdf",
+                                        "source",
+                                        Map.of(
+                                                "type",
+                                                "file_id",
+                                                "provider",
+                                                "dashscope",
+                                                "file_id",
+                                                "file-1"),
+                                        "metadata",
+                                        Map.of("private", "x"))));
+
+        assertThat(projected).hasSize(1);
+        Map<?, ?> block = (Map<?, ?>) projected.get(0);
+        assertThat(block.get("type")).isEqualTo("document");
+        assertThat(block.get("name")).isEqualTo("report.pdf");
+        assertThat(block.containsKey("metadata")).isFalse();
+    }
+
+    @Test
+    void inlineDocumentPayloadIsNotCopiedIntoPublicEvents() {
+        var projected =
+                CommittedSessionEventProjector.publicContent(
+                        List.of(
+                                Map.of(
+                                        "type",
+                                        "document",
+                                        "name",
+                                        "report.pdf",
+                                        "source",
+                                        Map.of(
+                                                "type",
+                                                "base64",
+                                                "media_type",
+                                                "application/pdf",
+                                                "data",
+                                                "JVBERi0xLjQK"))));
+
+        Map<?, ?> block = (Map<?, ?>) projected.get(0);
+        Map<?, ?> source = (Map<?, ?>) block.get("source");
+        assertThat(source.get("type")).isEqualTo("base64");
+        assertThat(source.get("media_type")).isEqualTo("application/pdf");
+        assertThat(source.containsKey("data")).isFalse();
+    }
+
+    @Test
     void onlyPublicTextPreviewIsAdaptedAndRemainsUnnumbered() {
         var event =
                 new SessionEventDto(

@@ -32,6 +32,7 @@ import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
@@ -273,7 +274,11 @@ public class SandboxBackedFilesystem extends BaseSandboxFilesystem implements Sa
 
         String archivePath = resolveArchivePath(active, path);
         ByteArrayOutputStream output = new ByteArrayOutputStream();
-        try (TarArchiveOutputStream tar = new TarArchiveOutputStream(output)) {
+        // UTF-8 entry names: this archive is extracted container-side, where tar decodes
+        // names as UTF-8 — the platform default would mangle non-ASCII paths on JVMs
+        // whose default is not UTF-8 (same pinning as the projection tar writer).
+        try (TarArchiveOutputStream tar =
+                new TarArchiveOutputStream(output, StandardCharsets.UTF_8.name())) {
             tar.setLongFileMode(TarArchiveOutputStream.LONGFILE_POSIX);
             TarArchiveEntry entry = new TarArchiveEntry(archivePath);
             entry.setSize(content.length);

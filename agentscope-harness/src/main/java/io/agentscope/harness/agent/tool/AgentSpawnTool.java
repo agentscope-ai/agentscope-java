@@ -27,6 +27,7 @@ import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.event.AgentEventEmitter;
 import io.agentscope.core.event.AgentStartEvent;
 import io.agentscope.core.event.SubagentExposedEvent;
+import io.agentscope.core.formatter.DocumentReferenceRenderer;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolResultState;
@@ -515,7 +516,7 @@ public class AgentSpawnTool {
                                                             capturedTask,
                                                             runtimeContext)
                                                     .block();
-                                    return reply != null ? reply.getTextContent() : "";
+                                    return textOf(reply);
                                 });
             }
             taskRepository.putTask(runtimeContext, taskId, agentId, parentSessionId, spec);
@@ -691,7 +692,7 @@ public class AgentSpawnTool {
                                                             capturedMessage,
                                                             runtimeContext)
                                                     .block();
-                                    return reply != null ? reply.getTextContent() : "";
+                                    return textOf(reply);
                                 });
             }
             taskRepository.putTask(
@@ -1188,8 +1189,14 @@ public class AgentSpawnTool {
         return restored;
     }
 
+    /**
+     * Renders a subagent reply as text for the task result.
+     *
+     * <p>The background task contract stores a string, so a delivered document cannot travel as
+     * a block here. It is named in a reference instead of disappearing.
+     */
     private static String textOf(Msg msg) {
-        return msg != null ? msg.getTextContent() : "";
+        return DocumentReferenceRenderer.renderMessageText(msg);
     }
 
     private static String formatTimeoutPromoted(String taskId, long timeoutMs) {
@@ -1734,7 +1741,7 @@ public class AgentSpawnTool {
                                                             capturedTask,
                                                             runtimeContext)
                                                     .block();
-                                    return reply != null ? reply.getTextContent() : "";
+                                    return textOf(reply);
                                 });
             }
             taskRepository.putTask(

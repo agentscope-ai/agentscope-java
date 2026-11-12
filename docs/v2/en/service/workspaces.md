@@ -54,6 +54,8 @@ The Skill name identifies its resource path; frontmatter name and description he
 
 If you upload `skills/report-review/SKILL.md` through the general file API, also select it in the Workspace's `skills` list, for example with `{"type":"workspace","name":"report-review"}`. Saving files and selecting a Skill are separate concerns; the dedicated Skill endpoint used here performs both. An Agent that overrides `skills` still uses its own selection.
 
+For a Git Skill Marketplace, the Control Plane needs Git installed and access to the configured repository. The first browse clones the configured branch; subsequent browsing and installation refresh the same cache with a fast-forward pull. If refresh fails, the operation returns an error instead of replacing the existing cache.
+
 ### Add an internal subagent
 
 To let the current Agent delegate specialist review to an internal subagent, save its responsibilities and instructions in the Workspace draft through `PUT /api/workspaces/{id}/subagents/{name}`. The request uses `description` and `inlineBody`, with optional model, tool, and working-directory settings. Like a Skill, it enters the selected definition through Workspace publication, Agent binding, and creation of a new Session. Saving the definition does not start a child task.

@@ -34,7 +34,8 @@ public interface Model {
     Flux<ChatResponse> stream(List<Msg> messages, List<ToolSchema> tools, GenerateOptions options);
 
     /**
-     * Get model name for logging and identification.
+     * Returns the bare model name without the provider prefix — the catalog name sent to the
+     * upstream API; distinct from the full modelId ({@code providerId:modelName}).
      *
      * @return model name
      */

@@ -206,6 +206,7 @@ public class DashScopeHttpClient {
             Map<String, String> additionalHeaders,
             Map<String, Object> additionalBodyParams,
             Map<String, String> additionalQueryParams) {
+        rejectSkillOutsideStreaming(request, additionalBodyParams);
         EndpointType endpointType =
                 request.getEndpointType() != null ? request.getEndpointType() : EndpointType.AUTO;
         String endpoint = selectEndpoint(request.getModel(), endpointType);
@@ -630,6 +631,48 @@ public class DashScopeHttpClient {
                             + URLEncoder.encode(value, StandardCharsets.UTF_8));
         }
         return url + joiner.toString();
+    }
+
+    /** Error message for a {@code skill} outside streaming mode, shared with the model layer. */
+    static final String SKILL_STREAM_REQUIREMENT_MESSAGE =
+            "DashScope `skill` (e.g. PPT generation on qwen-doc-turbo) is only supported in stream"
+                    + " mode; build the model with .stream(true)";
+
+    /**
+     * Reject a {@code skill} on the non-streaming call path.
+     *
+     * <p>DashScope rejects the parameter with {@code The parameter skill is only supported in
+     * stream mode}. The streaming path is unaffected; this guard catches callers that reach the
+     * client directly (without {@code DashScopeChatModel}'s earlier check) so the failure names
+     * the fix instead of surfacing the provider error.
+     *
+     * @param request the request whose parameters may carry a skill
+     * @param additionalBodyParams additional body params that will be merged into the parameters
+     */
+    private static void rejectSkillOutsideStreaming(
+            DashScopeRequest request, Map<String, Object> additionalBodyParams) {
+        if (isSkillConfigured(request, additionalBodyParams)) {
+            throw new IllegalStateException(SKILL_STREAM_REQUIREMENT_MESSAGE);
+        }
+    }
+
+    /**
+     * Checks whether the request carries a {@code skill}.
+     *
+     * <p>A skill reaches the request either through the typed parameters or through additional
+     * body params, which the HTTP client merges into the parameters object.
+     *
+     * @param request the request whose parameters may carry a skill
+     * @param additionalBodyParams additional body params that will be merged into the parameters
+     * @return true if a skill is configured for this request
+     */
+    static boolean isSkillConfigured(
+            DashScopeRequest request, Map<String, Object> additionalBodyParams) {
+        boolean viaAdditionalParams =
+                additionalBodyParams != null && additionalBodyParams.containsKey("skill");
+        boolean viaParameters =
+                request.getParameters() != null && request.getParameters().getSkill() != null;
+        return viaAdditionalParams || viaParameters;
     }
 
     /**
