@@ -82,6 +82,15 @@ public class SkillUtil {
             ThreadLocal.withInitial(SkillUtil::createDigest);
 
     /**
+     * Single source of the skillId composition separator: {@code skillId = name + "_" +
+     * source}. The standard name charset (see {@link #VALID_SKILL_NAME_PATTERN}) forbids
+     * underscores, so the separator is unambiguous: in a well-formed skillId it is exactly
+     * the first underscore, and the id splits deterministically into its name and source
+     * parts regardless of the source's charset.
+     */
+    public static final String SKILL_ID_SEPARATOR = "_";
+
+    /**
      * Maximum length of a skill name, following the Agent Skills ecosystem standard.
      */
     public static final int MAX_SKILL_NAME_LENGTH = 64;
@@ -130,6 +139,21 @@ public class SkillUtil {
                             + MAX_SKILL_NAME_LENGTH
                             + " characters");
         }
+    }
+
+    /**
+     * Parses the skill name out of a skill identifier. A skillId is composed as {@code name +
+     * "_" + source} (see {@link io.agentscope.core.skill.AgentSkill#getSkillId()}); because
+     * {@link #VALID_SKILL_NAME_PATTERN} forbids underscores in names, the first separator in
+     * a well-formed id is always the delimiter, so the split is deterministic regardless of
+     * the source's charset.
+     *
+     * @param skillIdOrName a bare skill name or a full skillId ({@code name_source})
+     * @return the name part (the whole input when it contains no separator)
+     */
+    public static String parseSkillName(String skillIdOrName) {
+        int idx = skillIdOrName.indexOf(SKILL_ID_SEPARATOR);
+        return idx < 0 ? skillIdOrName : skillIdOrName.substring(0, idx);
     }
 
     /**

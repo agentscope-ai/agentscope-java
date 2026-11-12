@@ -16,6 +16,7 @@
 package io.agentscope.core.skill;
 
 import io.agentscope.core.agent.Agent;
+import io.agentscope.core.agent.CapabilitySurface;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.middleware.MiddlewareBase;
 import io.agentscope.core.session.SessionRecorder;
@@ -359,6 +360,37 @@ public class DynamicSkillMiddleware implements MiddlewareBase {
     }
 
     /**
+     * Grant visibility filter. A missing surface means this pass never entered an agent
+     * {@code call()} funnel (a funnel always writes one, even ALLOW_ALL): treat it as
+     * unrestricted — direct middleware use is trusted assembler code, the same stance as
+     * the core execution gates and the harness middleware. A filtering error still fails
+     * closed to an empty set (the filterVisible hook's exception handling is fail-open, so
+     * this filter must catch its own exceptions).
+     *
+     * <p>The filter matches by skill name / full skill id only — one grant entry covers
+     * every version of that name, including pinned and cached-historical versions.
+     *
+     * @param visible the entries remaining after the filterVisible hook
+     * @param ctx the per-call runtime context carrying the grant set
+     * @return the granted subset; the input unchanged when no surface is present; empty on
+     *     a filter error
+     */
+    private List<SkillEntry> applyCapabilityFilter(List<SkillEntry> visible, RuntimeContext ctx) {
+        try {
+            CapabilitySurface surface = ctx != null ? ctx.get(CapabilitySurface.class) : null;
+            if (surface == null) {
+                return visible;
+            }
+            return visible.stream().filter(entry -> surface.allowsSkill(entry.skill)).toList();
+        } catch (Exception e) {
+            log.warn(
+                    "Capability filtering failed; failing closed to an empty skill set: {}",
+                    e.getMessage());
+            return List.of();
+        }
+    }
+
+    /**
      * Resolves the invoking agent's baseline {@link SkillFilter}, defaulting to {@link
      * SkillFilter#all()} when the agent is {@code null} or exposes none.
      *
@@ -482,6 +514,10 @@ public class DynamicSkillMiddleware implements MiddlewareBase {
                     e.getMessage());
             visible = new ArrayList<>(merged.values());
         }
+        // Grant filtering runs after the overridable filterVisible hook and must reassign
+        // visible: the filtered list feeds the per-call box below directly, otherwise the
+        // box (prompt + registry) stays full.
+        visible = applyCapabilityFilter(visible, ctx);
         if (visible.isEmpty()) {
             return null;
         }

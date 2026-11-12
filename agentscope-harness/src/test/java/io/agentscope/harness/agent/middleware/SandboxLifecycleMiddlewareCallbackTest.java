@@ -16,8 +16,10 @@
 package io.agentscope.harness.agent.middleware;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.agentscope.core.agent.CapabilitySurface;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.skill.AgentSkill;
 import io.agentscope.core.skill.SkillFilter;
@@ -143,6 +145,114 @@ class SandboxLifecycleMiddlewareCallbackTest {
         assertTrue(
                 Files.exists(staged),
                 ".skills-cache should be populated by the callback before sandbox.start()");
+    }
+
+    @Test
+    void prestageForProjectionReturnsExplicitCacheRoots() {
+        AgentSkill skill =
+                new AgentSkill(
+                        "rooted-skill", "test", "content", Map.of("data.txt", "hello"), "root-src");
+        StubSkillRepository repo = new StubSkillRepository(List.of(skill), "root-src");
+        MarketplaceStager stager = new MarketplaceStager(tempWorkspace);
+        HarnessSkillMiddleware middleware =
+                new HarnessSkillMiddleware(
+                        List.of(repo),
+                        new Toolkit(),
+                        null,
+                        null,
+                        stager,
+                        ShellPathPolicy.noShell());
+
+        List<String> roots = middleware.prestageForProjection(RuntimeContext.empty());
+
+        assertEquals(
+                List.of(".skills-cache/_shared/root-src/rooted-skill"),
+                roots,
+                "an unrestricted call projects exactly the staged skill's explicit subtree");
+    }
+
+    @Test
+    void prestageForProjectionWithoutStagerReturnsNull() {
+        HarnessSkillMiddleware middleware =
+                new HarnessSkillMiddleware(
+                        List.of(), new Toolkit(), null, null, null, ShellPathPolicy.noShell());
+
+        assertNull(
+                middleware.prestageForProjection(RuntimeContext.empty()),
+                "no stager means nothing this middleware manages lives on disk: keep the"
+                        + " configured projection");
+    }
+
+    @Test
+    void prestageForProjectionWithDenyAllGrantReturnsEmptyAndStagesNothing() {
+        AgentSkill skill =
+                new AgentSkill("denied-skill", "test", "content", Map.of("x.txt", "x"), "src");
+        StubSkillRepository repo = new StubSkillRepository(List.of(skill), "src");
+        MarketplaceStager stager = new MarketplaceStager(tempWorkspace);
+        HarnessSkillMiddleware middleware =
+                new HarnessSkillMiddleware(
+                        List.of(repo),
+                        new Toolkit(),
+                        null,
+                        null,
+                        stager,
+                        ShellPathPolicy.noShell());
+        RuntimeContext rc = RuntimeContext.builder().userId("u1").build();
+        rc.put(CapabilitySurface.class, CapabilitySurface.DENY_ALL);
+
+        List<String> roots = middleware.prestageForProjection(rc);
+
+        assertTrue(
+                roots.isEmpty(),
+                "a deny-all grant must remove the whole cache from this call's projection");
+        assertTrue(
+                Files.notExists(tempWorkspace.resolve(".skills-cache")),
+                "nothing may be staged for a call whose grant set is empty");
+    }
+
+    @Test
+    void prestageForProjectionNarrowsAfterGrantShrinksWhileDiskResidueRemains() {
+        // P1-2 scenario: call 1 grants alpha+beta (both staged); call 2 for the same user
+        // grants only alpha. The residue stays on disk (grace-window GC owns deletion), but
+        // the returned projection roots must no longer name beta.
+        AgentSkill alpha =
+                new AgentSkill("alpha", "Alpha", "# A", Map.of("run.sh", "echo a"), "market");
+        AgentSkill beta =
+                new AgentSkill("beta", "Beta", "# B", Map.of("run.sh", "echo b"), "market");
+        StubSkillRepository repo = new StubSkillRepository(List.of(alpha, beta), "market");
+        MarketplaceStager stager = new MarketplaceStager(tempWorkspace);
+        HarnessSkillMiddleware middleware =
+                new HarnessSkillMiddleware(
+                        List.of(repo),
+                        new Toolkit(),
+                        null,
+                        null,
+                        stager,
+                        ShellPathPolicy.noShell());
+
+        RuntimeContext wide = RuntimeContext.builder().userId("u1").build();
+        wide.put(
+                CapabilitySurface.class,
+                new CapabilitySurface(java.util.Set.of("alpha", "beta"), null, null));
+        RuntimeContext narrow = RuntimeContext.builder().userId("u1").build();
+        narrow.put(
+                CapabilitySurface.class,
+                new CapabilitySurface(java.util.Set.of("alpha"), null, null));
+
+        List<String> wideRoots = middleware.prestageForProjection(wide);
+        List<String> narrowRoots = middleware.prestageForProjection(narrow);
+
+        assertEquals(
+                List.of(".skills-cache/u1/market/alpha", ".skills-cache/u1/market/beta"),
+                wideRoots);
+        assertEquals(
+                List.of(".skills-cache/u1/market/alpha"),
+                narrowRoots,
+                "the shrunken grant must drop beta's subtree from this call's projection");
+        assertTrue(
+                Files.exists(tempWorkspace.resolve(".skills-cache/u1/market/beta/run.sh")),
+                "disk residue stays (shared cache, grace-window GC) — only the projection"
+                        + " narrows");
     }
 
     /** Minimal repository stub that returns a fixed skill list. */

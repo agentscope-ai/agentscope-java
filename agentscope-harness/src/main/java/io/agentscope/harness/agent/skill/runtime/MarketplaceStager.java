@@ -696,6 +696,23 @@ public final class MarketplaceStager {
     /** Pairs a skill with the repository that produced it. */
     public record RepoBound(AgentSkill skill, AgentSkillRepository repo) {}
 
+    /**
+     * Workspace-relative include-root (forward slashes) of a cached skill's staged directory —
+     * the per-skill narrowing unit for sandbox workspace projection.
+     *
+     * @param cached a successful staging outcome
+     * @return {@code .skills-cache/<scopeSegment>/<sourceNamespace>/<skillName>}
+     */
+    public static String projectionRoot(StageResult.Cached cached) {
+        return CACHE_DIR
+                + "/"
+                + cached.scopeSegment()
+                + "/"
+                + cached.sourceNamespace()
+                + "/"
+                + cached.skillName();
+    }
+
     /** Outcome of staging one skill. */
     public sealed interface StageResult {
         StageResult NONE = new None();

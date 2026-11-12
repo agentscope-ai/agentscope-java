@@ -15,6 +15,7 @@
  */
 package io.agentscope.harness.agent.skill.runtime;
 
+import io.agentscope.core.agent.CapabilitySurface;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.skill.AgentSkill;
 import io.agentscope.core.skill.util.MarkdownSkillParser;
@@ -99,6 +100,14 @@ public final class SkillLoadTool implements AgentTool {
     }
 
     @Override
+    public boolean isSystem() {
+        // Framework meta tool (aligned with the core load tool in SkillToolFactory):
+        // ungrouped, always visible and callable even under a restricted capability
+        // surface / DENY_ALL — per-skill grant decisions live in isSkillGranted.
+        return true;
+    }
+
+    @Override
     public String getName() {
         return TOOL_NAME;
     }
@@ -164,11 +173,10 @@ public final class SkillLoadTool implements AgentTool {
             SkillCatalog catalog = catalogFor(param);
             HarnessSkillEntry entry = catalog.get(skillId);
             if (entry == null) {
-                return Mono.just(
-                        ToolResultBlock.error(
-                                "Skill not found: '"
-                                        + skillId
-                                        + "'. Check the available skills list."));
+                return Mono.just(ToolResultBlock.error(skillNotFound(skillId)));
+            }
+            if (!isSkillGranted(param, entry)) {
+                return Mono.just(ToolResultBlock.error(skillNotFound(skillId)));
             }
 
             return Mono.just(loadOne(entry, path));
@@ -176,6 +184,42 @@ public final class SkillLoadTool implements AgentTool {
             log.error("load_skill_through_path failed", e);
             return Mono.just(ToolResultBlock.error(e.getMessage()));
         }
+    }
+
+    /**
+     * Grant gate for skill loading. Defense in depth on top of the catalog boundary: the
+     * per-call catalog installed by the skill middleware is already grant-filtered, this check
+     * also covers catalogs installed through other paths. A missing surface means the call never
+     * entered an agent {@code call()} funnel: treat it as unrestricted — direct execution is
+     * trusted assembler code, the same stance as the core execution gates.
+     *
+     * @param param the tool call parameters
+     * @param entry the resolved catalog entry
+     * @return {@code true} when the skill passes the call's grant set
+     */
+    private boolean isSkillGranted(ToolCallParam param, HarnessSkillEntry entry) {
+        CapabilitySurface surface =
+                param.getRuntimeContext() != null
+                        ? param.getRuntimeContext().get(CapabilitySurface.class)
+                        : null;
+        if (surface == null || surface.allowsSkill(entry.skill())) {
+            return true;
+        }
+        log.warn(
+                "Skill load denied (grant): skillId='{}', userId='{}', sessionId='{}'",
+                entry.skill().getName(),
+                param.getRuntimeContext().getUserId(),
+                param.getRuntimeContext().getSessionId());
+        return false;
+    }
+
+    /**
+     * @param skillId the caller-supplied skill identifier (authoritative for the error echo)
+     * @return the not-found error text — byte-identical for unknown and un-granted skills so
+     *     the model cannot distinguish existence
+     */
+    private static String skillNotFound(String skillId) {
+        return "Skill not found: '" + skillId + "'. Check the available skills list.";
     }
 
     private SkillCatalog catalogFor(ToolCallParam param) {
@@ -239,7 +283,9 @@ public final class SkillLoadTool implements AgentTool {
         sb.append("Successfully loaded skill: ").append(skill.getSkillId()).append("\n\n");
         sb.append("Name: ").append(skill.getName()).append("\n");
         sb.append("Description: ").append(skill.getDescription()).append("\n");
-        sb.append("Source: ").append(skill.getSource()).append("\n");
+        if (skill.getSource() != null) {
+            sb.append("Source: ").append(skill.getSource()).append("\n");
+        }
         if (entry.filesRoot() != null && !entry.filesRoot().isBlank()) {
             sb.append("Files root: ").append(entry.filesRoot()).append("\n");
         }

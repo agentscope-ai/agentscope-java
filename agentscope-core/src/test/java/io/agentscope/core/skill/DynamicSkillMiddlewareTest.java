@@ -25,6 +25,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.Agent;
+import io.agentscope.core.agent.CapabilitySurface;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.skill.repository.AgentSkillRepositoryInfo;
 import io.agentscope.core.tool.Toolkit;
@@ -133,10 +134,20 @@ class DynamicSkillMiddlewareTest {
         return new DynamicSkillMiddleware(List.of(new StubRepo(skills)));
     }
 
+    /**
+     * Direct onSystemPrompt calls bypass the agent call() entry, so the grant layer's
+     * fail-closed skill filtering would cut every skill. Seed ALLOW_ALL explicitly.
+     */
+    private static RuntimeContext grantRc() {
+        RuntimeContext rc = RuntimeContext.empty();
+        rc.put(CapabilitySurface.class, CapabilitySurface.ALLOW_ALL);
+        return rc;
+    }
+
     @Test
     void emptyRepositoryProducesNoBox() {
         DynamicSkillMiddleware mw = middleware(List.of());
-        RuntimeContext rc = RuntimeContext.empty();
+        RuntimeContext rc = grantRc();
 
         String prompt = mw.onSystemPrompt(agent, rc, "base").block();
 
@@ -148,7 +159,7 @@ class DynamicSkillMiddlewareTest {
     void repositorySkillIsExposedViaRuntimeContext() {
         AgentSkill skill = new AgentSkill("my-skill", "My Skill", "# Content", null);
         DynamicSkillMiddleware mw = middleware(List.of(skill));
-        RuntimeContext rc = RuntimeContext.empty();
+        RuntimeContext rc = grantRc();
 
         String prompt = mw.onSystemPrompt(agent, rc, "base").block();
 
@@ -158,11 +169,46 @@ class DynamicSkillMiddlewareTest {
     }
 
     @Test
+    void directUseWithoutSurfaceKeepsVisibleSkills() {
+        // Pre-grant compatibility: onSystemPrompt invoked outside an agent call() funnel
+        // carries no surface on the rc. Direct middleware use is trusted assembler code
+        // (the same stance as the core execution gates), so the skills must stay visible.
+        AgentSkill skill = new AgentSkill("my-skill", "My Skill", "# Content", null);
+        DynamicSkillMiddleware mw = middleware(List.of(skill));
+        RuntimeContext rc = RuntimeContext.empty();
+
+        String prompt = mw.onSystemPrompt(agent, rc, "base").block();
+
+        assertTrue(
+                prompt.contains("my-skill"),
+                "direct use without a surface must keep visible skills (pre-grant usage)");
+        assertNotNull(rc.get(SkillBox.class), "the per-call SkillBox must still be exposed");
+    }
+
+    @Test
+    void restrictedSurfaceStillFiltersOnDirectUse() {
+        // The unrestricted default for a missing surface must not weaken filtering when a
+        // surface IS present: an alpha-only grant keeps alpha and cuts beta.
+        AgentSkill alpha = new AgentSkill("alpha", "Alpha", "# Alpha", null);
+        AgentSkill beta = new AgentSkill("beta", "Beta", "# Beta", null);
+        DynamicSkillMiddleware mw = middleware(List.of(alpha, beta));
+        RuntimeContext rc = RuntimeContext.empty();
+        rc.put(
+                CapabilitySurface.class,
+                new CapabilitySurface(java.util.Set.of("alpha"), null, null));
+
+        String prompt = mw.onSystemPrompt(agent, rc, "base").block();
+
+        assertTrue(prompt.contains("alpha"), "the granted skill must stay visible");
+        assertFalse(prompt.contains("beta"), "the ungranted skill must be cut");
+    }
+
+    @Test
     void reusedRuntimeContextClearsStaleBox() {
         AgentSkill skill = new AgentSkill("my-skill", "My Skill", "# Content", null);
         StubRepo repo = new StubRepo(List.of(skill));
         DynamicSkillMiddleware mw = new DynamicSkillMiddleware(List.of(repo));
-        RuntimeContext rc = RuntimeContext.empty();
+        RuntimeContext rc = grantRc();
 
         mw.onSystemPrompt(agent, rc, "base").block();
         assertNotNull(rc.get(SkillBox.class));
@@ -184,8 +230,8 @@ class DynamicSkillMiddlewareTest {
                         "shared", "Shared", "instructions", java.util.Map.of("data.txt", "B"));
         StubRepo repo = new StubRepo(List.of(a));
         DynamicSkillMiddleware mw = new DynamicSkillMiddleware(List.of(repo), true);
-        RuntimeContext rcA = RuntimeContext.empty();
-        RuntimeContext rcB = RuntimeContext.empty();
+        RuntimeContext rcA = grantRc();
+        RuntimeContext rcB = grantRc();
         mw.onSystemPrompt(agent, rcA, "").block();
         SkillBox boxA = rcA.get(SkillBox.class);
         String id = boxA.getAllSkillIds().iterator().next();
@@ -243,7 +289,7 @@ class DynamicSkillMiddlewareTest {
                 futures.add(
                         pool.submit(
                                 () -> {
-                                    RuntimeContext rc = RuntimeContext.empty();
+                                    RuntimeContext rc = grantRc();
                                     mw.onSystemPrompt(agent, rc, "").block();
                                     SkillBox box = rc.get(SkillBox.class);
                                     assertEquals(
@@ -277,13 +323,13 @@ class DynamicSkillMiddlewareTest {
                         java.util.Map.of("data.txt", "original"));
         StubRepo repo = new StubRepo(List.of(skill));
         DynamicSkillMiddleware mw = new DynamicSkillMiddleware(List.of(repo));
-        RuntimeContext rc = RuntimeContext.empty();
+        RuntimeContext rc = grantRc();
         mw.onSystemPrompt(agent, rc, "").block();
         SkillBox active = rc.get(SkillBox.class);
         Path activeFile = active.getUploadDir().resolve(skill.getSkillId()).resolve("data.txt");
         for (int i = 0; i < 3; i++) {
             repo.skills = List.of(new AgentSkill("other" + i, "Other", "content", null));
-            mw.onSystemPrompt(agent, RuntimeContext.empty(), "").block();
+            mw.onSystemPrompt(agent, grantRc(), "").block();
         }
         // An executing skill may have modified its workspace; rebuilding must leave it alone.
         java.nio.file.Files.writeString(activeFile, "in use");
@@ -352,13 +398,13 @@ class DynamicSkillMiddlewareTest {
                     second.getToolkit().getTool(SkillToolFactory.LOAD_TOOL_NAME),
                     "an agent without a prompt pass must stay unregistered");
 
-            mw.onSystemPrompt(first, RuntimeContext.empty(), "base").block();
+            mw.onSystemPrompt(first, grantRc(), "base").block();
 
             assertNotNull(
                     first.getToolkit().getTool(SkillToolFactory.LOAD_TOOL_NAME),
                     "the first prompt pass must make the load tool available");
             // Repeated passes must not duplicate the registration.
-            mw.onSystemPrompt(first, RuntimeContext.empty(), "base").block();
+            mw.onSystemPrompt(first, grantRc(), "base").block();
             assertEquals(
                     1,
                     first.getToolkit().getToolSchemas().stream()
@@ -366,7 +412,7 @@ class DynamicSkillMiddlewareTest {
                             .count(),
                     "repeated passes must not register the load tool twice");
             // Each agent registers on its own toolkit at its own first pass.
-            mw.onSystemPrompt(second, RuntimeContext.empty(), "base").block();
+            mw.onSystemPrompt(second, grantRc(), "base").block();
             assertNotNull(
                     second.getToolkit().getTool(SkillToolFactory.LOAD_TOOL_NAME),
                     "a rebuilt agent must gain the load tool at its own first pass");
@@ -391,7 +437,7 @@ class DynamicSkillMiddlewareTest {
                     agent.getToolkit().getTool(SkillToolFactory.LOAD_TOOL_NAME),
                     "build alone must not register the load tool");
 
-            mw.onSystemPrompt(agent, RuntimeContext.empty(), "").block();
+            mw.onSystemPrompt(agent, grantRc(), "").block();
 
             assertNotNull(
                     agent.getToolkit().getTool(SkillToolFactory.LOAD_TOOL_NAME),
@@ -409,7 +455,7 @@ class DynamicSkillMiddlewareTest {
         assertNull(
                 toolkit.getTool(SkillToolFactory.LOAD_TOOL_NAME), "construction must not register");
 
-        mw.onSystemPrompt(wired, RuntimeContext.empty(), "base").block();
+        mw.onSystemPrompt(wired, grantRc(), "base").block();
 
         assertNotNull(
                 toolkit.getTool(SkillToolFactory.LOAD_TOOL_NAME),
@@ -471,11 +517,11 @@ class DynamicSkillMiddlewareTest {
         org.mockito.Mockito.when(agent.getSkillFilter())
                 .thenReturn(SkillFilter.only("alpha", "beta"));
 
-        String baseline = mw.onSystemPrompt(agent, RuntimeContext.empty(), "").block();
+        String baseline = mw.onSystemPrompt(agent, grantRc(), "").block();
         assertTrue(baseline.contains("alpha"), "the agent baseline must show alpha");
         assertTrue(baseline.contains("beta"), "the agent baseline must show beta");
 
-        RuntimeContext rc = RuntimeContext.empty();
+        RuntimeContext rc = grantRc();
         rc.put(SkillFilter.class, SkillFilter.disable("alpha"));
         String overlayed = mw.onSystemPrompt(agent, rc, "").block();
         assertFalse(overlayed.contains("alpha"), "the runtime overlay must disable alpha");
@@ -495,8 +541,8 @@ class DynamicSkillMiddlewareTest {
         Agent gammaOnly = org.mockito.Mockito.mock(Agent.class);
         org.mockito.Mockito.when(gammaOnly.getSkillFilter()).thenReturn(SkillFilter.only("gamma"));
 
-        String forAlpha = mw.onSystemPrompt(alphaOnly, RuntimeContext.empty(), "").block();
-        String forGamma = mw.onSystemPrompt(gammaOnly, RuntimeContext.empty(), "").block();
+        String forAlpha = mw.onSystemPrompt(alphaOnly, grantRc(), "").block();
+        String forGamma = mw.onSystemPrompt(gammaOnly, grantRc(), "").block();
 
         assertTrue(forAlpha.contains("alpha"), "agent A's baseline must apply to its pass");
         assertFalse(forAlpha.contains("gamma"), "agent A's baseline must exclude gamma");
@@ -511,7 +557,7 @@ class DynamicSkillMiddlewareTest {
         DynamicSkillMiddleware mw =
                 new DynamicSkillMiddleware(List.of(new StubRepo(List.of(alpha, gamma))));
 
-        String prompt = mw.onSystemPrompt(agent, RuntimeContext.empty(), "").block();
+        String prompt = mw.onSystemPrompt(agent, grantRc(), "").block();
 
         assertTrue(prompt.contains("alpha"), "no agent baseline must default to all-allowed");
         assertTrue(prompt.contains("gamma"), "no agent baseline must default to all-allowed");
@@ -526,7 +572,7 @@ class DynamicSkillMiddlewareTest {
         DynamicSkillMiddleware mw =
                 new DynamicSkillMiddleware(List.of(new StubRepo(List.of(skill))));
 
-        RuntimeContext rc = RuntimeContext.empty();
+        RuntimeContext rc = grantRc();
         mw.onSystemPrompt(bare, rc, "").block();
 
         SkillBox box = rc.get(SkillBox.class);
@@ -561,7 +607,7 @@ class DynamicSkillMiddlewareTest {
                         });
         DynamicSkillMiddleware mw = new DynamicSkillMiddleware(List.of(repo));
 
-        StepVerifier.create(mw.onSystemPrompt(null, RuntimeContext.empty(), "base"))
+        StepVerifier.create(mw.onSystemPrompt(null, grantRc(), "base"))
                 .assertNext(prompt -> assertTrue(prompt.contains("my-skill")))
                 .verifyComplete();
 
@@ -593,7 +639,7 @@ class DynamicSkillMiddlewareTest {
                         repo.getAllSkills(org.mockito.ArgumentMatchers.any(RuntimeContext.class)))
                 .thenReturn(List.of(skill));
         DynamicSkillMiddleware mw = new DynamicSkillMiddleware(List.of(repo));
-        RuntimeContext rc = RuntimeContext.empty();
+        RuntimeContext rc = grantRc();
 
         String first = mw.onSystemPrompt(null, rc, "base").block();
         SkillBox firstBox = rc.get(SkillBox.class);
