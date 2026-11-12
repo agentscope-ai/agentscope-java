@@ -33,9 +33,9 @@ const button = `${field} hover:bg-slate-50 disabled:opacity-50`;
 const panel = 'my-4 rounded-xl border border-slate-200 bg-white p-5 space-y-4';
 const states: Record<string, string> = { pending: '等待发送', submitted: '等待平台回执', provider_accepted: '平台已接受', failed: '发送失败', cancelled: '权限或订阅已撤销' };
 
-export default function ChannelWorkPanel({ channelId, canConfigure }: { channelId: string; canConfigure: boolean }) {
+export default function ChannelWorkPanel({ channelId, canConfigure, personalChatOnly = false, connectionReady = true, onIdentityChanged }: { channelId: string; canConfigure: boolean; personalChatOnly?: boolean; connectionReady?: boolean; onIdentityChanged?: (linked: boolean) => void }) {
   const scope = useControlPlaneScope();
-  const groups = useQuery({ queryKey: ['namespace-groups', scope.namespace], queryFn: () => getGroups(scope.namespace), enabled: canConfigure });
+  const groups = useQuery({ queryKey: ['namespace-groups', scope.namespace], queryFn: () => getGroups(scope.namespace), enabled: canConfigure && !personalChatOnly });
   const [config, setConfig] = useState<ChannelWorkSettings>();
   const [activity, setActivity] = useState<ChannelWorkActivity>();
   const [teams, setTeams] = useState<Team[]>([]);
@@ -44,14 +44,19 @@ export default function ChannelWorkPanel({ channelId, canConfigure }: { channelI
   const [notice, setNotice] = useState('');
   const [busy, setBusy] = useState(false);
   const canUse = scope.roles.some(r => ['member', 'developer', 'admin'].includes(r));
+  useEffect(() => { onIdentityChanged?.(!!activity?.identities.length); }, [activity, onIdentityChanged]);
   async function refreshActivity() { setActivity(await getChannelWorkActivity(channelId)); }
   useEffect(() => {
     let active = true;
+    if (personalChatOnly) {
+      void getChannelWorkActivity(channelId).then(a => { if (active) setActivity(a); }).catch(e => { if (active) setError(String(e)); });
+      return () => { active = false; };
+    }
     Promise.all([getChannelWorkSettings(channelId), getChannelWorkActivity(channelId), listTeams(scope.tenant, scope.namespace)])
       .then(([settings, a, t]) => { if (active) { setConfig({ ...settings, defaultTarget: { targetType: settings.defaultTarget?.targetType || 'agent', targetRef: settings.defaultTarget?.targetRef || '' } }); setActivity(a); setTeams(t.items); } })
       .catch(e => { if (active) setError(String(e)); });
     return () => { active = false; };
-  }, [channelId, scope.tenant, scope.namespace]);
+  }, [channelId, scope.tenant, scope.namespace, personalChatOnly]);
   async function perform(action: () => Promise<unknown>) {
     setBusy(true); setError(''); setNotice('');
     try { await action(); await refreshActivity(); }
@@ -73,17 +78,18 @@ export default function ChannelWorkPanel({ channelId, canConfigure }: { channelI
   return <>
     {error && <p role="alert" className="text-red-700">{error}</p>}
     {notice && <p role="status" className="text-green-700">{notice}</p>}
-    <section className={panel}>
-      <h2 className="font-semibold text-lg">我的外部账号</h2>
-      <p className="text-sm text-slate-600">生成绑定码后，在与机器人的私聊中发送命令。绑定仅代表你的账号，工作权限随空间成员资格实时变化。</p>
-      <div className="flex gap-2">
-        <button className={button} disabled={busy || !canUse} onClick={() => void perform(async () => { const p = await createChannelPairing(channelId); setPairing(p.command); })}>生成绑定码</button>
+    <section id="channel-identity" className={panel}>
+      <h2 className="font-semibold text-lg">{personalChatOnly ? '关联聊天账号' : '我的外部账号'}</h2>
+      <p className="text-sm text-slate-600">{personalChatOnly ? '完成扫码连接后，生成绑定码并在微信机器人私聊中发送。这样才能将微信消息关联到你的平台账号。' : '生成绑定码后，在与机器人的私聊中发送命令。绑定仅代表你的账号，工作权限随空间成员资格实时变化。'}</p>
+      <div className="flex flex-wrap gap-2">
+        <button className={button} disabled={busy || !canUse || !connectionReady} onClick={() => void perform(async () => { const p = await createChannelPairing(channelId); setPairing(p.command); })}>生成绑定码</button>
+        {personalChatOnly && <button className={button} disabled={busy || !connectionReady} onClick={() => void perform(refreshActivity)}>刷新绑定状态</button>}
         <button className={button} disabled={busy || !activity?.identities.length} onClick={() => void perform(async () => { await unlinkChannelIdentity(channelId); setPairing(''); })}>解除我的绑定</button>
       </div>
       {pairing && <div className="rounded bg-slate-50 p-3"><p className="text-sm mb-2">10 分钟有效，仅在机器人私聊中使用。</p><code className="break-all select-all">{pairing}</code></div>}
-      {activity?.identities.map(i => <p className="text-sm break-all" key={`${i.accountId}:${i.senderId}`}>组织 {i.accountId} · 用户 {i.senderId}</p>)}
+      {activity?.identities.map(i => <p className="text-sm break-all" key={`${i.accountId}:${i.senderId}`}>{personalChatOnly ? '已关联微信聊天账号' : `组织 ${i.accountId} · 用户 ${i.senderId}`}</p>)}
     </section>
-    {config && <section className={panel}>
+    {config && !personalChatOnly && <section className={panel}>
       <h2 className="font-semibold text-lg">工作接待</h2>
       <p className="text-sm text-slate-600">飞书可创建和跟进 Issue，并持续回传结果。Team 会进入协作编排。关闭工作接待后，仅支持个人空间中已绑定账号的私聊会话。</p>
       <label className="flex gap-2"><input type="checkbox" checked={config.enabled} disabled={!canConfigure} onChange={e => setConfig({ ...config, enabled: e.target.checked })} />启用工作接待（飞书）</label>
@@ -106,7 +112,7 @@ export default function ChannelWorkPanel({ channelId, canConfigure }: { channelI
       <div className="flex gap-4">{[['result', '工作结果'], ['status', '状态变化']].map(([event, name]) => <label key={event} className="flex gap-2 text-sm"><input type="checkbox" checked={config.notifyEvents.includes(event)} disabled={!canConfigure} onChange={e => setConfig({ ...config, notifyEvents: e.target.checked ? [...config.notifyEvents, event] : config.notifyEvents.filter(x => x !== event) })} />{name}</label>)}</div>
       {canConfigure && <button className={button} disabled={busy} onClick={() => void perform(async () => { setConfig(await saveChannelWorkSettings(channelId, config)); setNotice('工作接待与回传配置已保存。'); })}>保存工作配置</button>}
     </section>}
-    <section className={panel}>
+    {!personalChatOnly && <section className={panel}>
       <div className="flex justify-between"><h2 className="font-semibold text-lg">我的工作关联与回传记录</h2><button className={button} disabled={busy} onClick={() => void perform(refreshActivity)}>刷新记录</button></div>
       <p className="text-sm text-slate-600">平台接受不代表用户已读，也不会自动完成工作验收或工具审批。工具审批仍通过控制台进行。</p>
       {activity?.links.map(l => <div className="flex gap-3 items-center text-sm" key={l.id}><Link className="text-indigo-700" to={scope.scopedPath(`/work/issues/${l.issueId}`)}>{l.issueId}</Link><span className="break-all">{l.address.peerId}{l.address.threadId ? ` / ${l.address.threadId}` : ''}</span>{l.active ? <button className={button} disabled={busy} onClick={() => void perform(() => unsubscribeChannelWork(channelId, l.id))}>停止回传</button> : <span>已停止</span>}</div>)}
@@ -114,6 +120,6 @@ export default function ChannelWorkPanel({ channelId, canConfigure }: { channelI
       <div className="overflow-auto"><table className="w-full text-sm text-left"><thead><tr><th>状态</th><th>尝试次数</th><th>平台消息 ID</th><th>操作</th></tr></thead><tbody>
         {activity?.deliveries.map(d => <tr className="border-t" key={d.id}><td className="py-3">{states[d.state] || d.state}{d.lastError && <p className="text-xs text-red-700">{d.lastError}</p>}</td><td>{d.attempts}</td><td className="font-mono break-all">{d.providerMessageId || '—'}</td><td>{d.state === 'failed' && <button className={button} disabled={busy} onClick={() => void perform(() => retryChannelDelivery(channelId, d.id))}>重试</button>}</td></tr>)}
       </tbody></table></div>
-    </section>
+    </section>}
   </>;
 }

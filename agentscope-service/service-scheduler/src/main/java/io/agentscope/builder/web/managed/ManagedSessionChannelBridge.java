@@ -35,8 +35,8 @@ import reactor.core.scheduler.Schedulers;
  * managed-session model across plane boundaries:
  *
  * <ol>
- *   <li>{@code POST /api/internal/sessions/find-or-create} on the <b>control plane</b> resolves
- *       (or creates and version-pins) the session for the channel conversation;
+ *   <li>{@code POST /api/internal/managed-sessions/find-or-create} on the <b>control plane</b>
+ *       resolves the managed session and registers its runtime identity before dispatch;
  *   <li>{@code POST /api/sessions/{id}/events} on the <b>data plane</b> posts the user message,
  *       which schedules the harness turn asynchronously;
  *   <li>{@code GET /api/sessions/{id}/events?after=seq} on the <b>data plane</b> is polled until
@@ -56,6 +56,8 @@ public class ManagedSessionChannelBridge {
 
     private static final ParameterizedTypeReference<List<SessionEventDto>> EVENT_LIST =
             new ParameterizedTypeReference<>() {};
+
+    private record SessionRegistration(String id) {}
 
     private final WebClient controlPlane;
     private final WebClient dataPlane;
@@ -88,34 +90,46 @@ public class ManagedSessionChannelBridge {
                 .subscribeOn(Schedulers.boundedElastic());
     }
 
-    /** @deprecated use {@link #dispatchAndAwaitReply(String, String, String, String)} */
+    /**
+     * @deprecated use {@link #dispatchAndAwaitReply(String, String, String, String)}. Without a
+     *     stable external key the control plane would create a new session per call — or, since
+     *     the registration endpoint now requires one, reject the request — so this overload fails
+     *     fast instead of relying on that.
+     */
     @Deprecated
     public Mono<String> dispatchAndAwaitReply(String ownerId, String agentId, String text) {
-        return dispatchAndAwaitReply(ownerId, agentId, null, text);
+        return Mono.error(
+                new IllegalArgumentException(
+                        "externalKey is required: use dispatchAndAwaitReply(ownerId, agentId,"
+                                + " externalKey, text)"));
     }
 
     private String doDispatch(String ownerId, String agentId, String externalKey, String text) {
-        ManagedSessionDto session = findOrCreateSession(ownerId, agentId, externalKey);
+        SessionRegistration session = findOrCreateSession(ownerId, agentId, externalKey);
         long after = postUserMessage(ownerId, session.id(), text);
         return awaitReply(ownerId, session.id(), after);
     }
 
     /** Resolves the active session for the conversation, creating one on first contact. */
-    private ManagedSessionDto findOrCreateSession(
+    private SessionRegistration findOrCreateSession(
             String ownerId, String agentId, String externalKey) {
+        if (externalKey == null || externalKey.isBlank()) {
+            // The control plane no longer mints a key, so sending one-less requests would just be
+            // rejected after a round trip. Callers build the key with ChannelExternalKeys.
+            throw new IllegalArgumentException(
+                    "externalKey is required: the control plane does not mint session keys");
+        }
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("ownerId", ownerId);
         body.put("agentId", agentId);
-        if (externalKey != null && !externalKey.isBlank()) {
-            body.put("externalKey", externalKey);
-        }
+        body.put("externalKey", externalKey);
         return controlPlane
                 .post()
-                .uri("/api/internal/sessions/find-or-create")
+                .uri("/api/internal/managed-sessions/find-or-create")
                 .header(InternalTokenAuthFilter.INTERNAL_USER_HEADER, ownerId)
                 .bodyValue(body)
                 .retrieve()
-                .bodyToMono(ManagedSessionDto.class)
+                .bodyToMono(SessionRegistration.class)
                 .block(Duration.ofSeconds(30));
     }
 

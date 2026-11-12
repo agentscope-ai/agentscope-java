@@ -44,6 +44,7 @@ func (s *Server) registerChannelWork(r gin.IRouter) {
 	r.POST("/api/channels/:channelId/messages/:messageId/retry", s.retryChannelIntake)
 	r.DELETE("/api/channels/:channelId/links/:linkId", s.unsubscribeChannelWork)
 	r.POST("/api/internal/channels/inbound", s.receiveChannelInbound)
+	r.POST("/api/internal/channels/replies", s.enqueueChannelReply)
 	r.POST("/api/internal/channels/deliveries/claim", s.claimChannelDelivery)
 	r.POST("/api/internal/channels/deliveries/:deliveryId/receipt", s.channelDeliveryReceipt)
 }
@@ -228,6 +229,86 @@ func (s *Server) createChannelPairing(c *gin.Context) {
 	}
 	c.Header("Cache-Control", "no-store")
 	c.JSON(200, gin.H{"command": "/bind " + code, "expiresInSeconds": 600})
+}
+
+// enqueueChannelReply persists an Agent reply for durable delivery.
+//
+// The scheduler produces reply text but no longer sends it: reply delivery is owned here, where the
+// queue already retries with backoff, caps attempts and offers a manual re-send. Sending inline
+// would make a provider outage fail the inbound message and replay the Agent that produced it.
+func (s *Server) enqueueChannelReply(c *gin.Context) {
+	c.Header("Cache-Control", "no-store")
+	var req struct {
+		ChannelID string `json:"channelId"`
+		AccountID string `json:"accountId"`
+		SenderID  string `json:"senderId"`
+		PeerKind  string `json:"peerKind"`
+		PeerID    string `json:"peerId"`
+		ThreadID  string `json:"threadId"`
+		MessageID string `json:"messageId"`
+		Text      string `json:"text"`
+		EventKey  string `json:"eventKey"`
+	}
+	if c.ShouldBindJSON(&req) != nil {
+		writeErr(c, 400, "invalid reply")
+		return
+	}
+	ctx := c.Request.Context()
+	ch, err := s.loadChannel(ctx, req.ChannelID)
+	if err != nil || ch.Disabled || s.channelWork == nil {
+		writeErr(c, 404, "channel unavailable")
+		return
+	}
+	in := ChannelInbound{
+		ChannelID: req.ChannelID,
+		AccountID: req.AccountID,
+		SenderID:  req.SenderID,
+		PeerKind:  req.PeerKind,
+		PeerID:    req.PeerID,
+		ThreadID:  req.ThreadID,
+		MessageID: req.MessageID,
+		Text:      req.Text,
+	}
+	if in.validate() != nil || strings.TrimSpace(req.EventKey) == "" {
+		writeErr(c, 400, "invalid reply")
+		return
+	}
+	// The reply belongs to whoever the peer is bound to. Falling back to the channel owner keeps a
+	// racing unbind from failing the inbound dispatch: the claim path re-checks the binding, so a
+	// reply that no longer has one is dropped there instead of burning the message's retries.
+	user := ch.OwnerID
+	var bound string
+	if err = s.db.Pool.QueryRow(ctx, `SELECT user_id FROM channel_identities WHERE channel_id=$1 AND account_id=$2 AND sender_id=$3`, in.ChannelID, in.AccountID, in.SenderID).Scan(&bound); err == nil {
+		user = bound
+	} else if !errors.Is(err, pgx.ErrNoRows) {
+		writeErr(c, 503, "identity authority temporarily unavailable")
+		return
+	}
+	if _, _, err = s.channelActor(ctx, ch, user, true); err != nil {
+		if !errors.Is(err, store.ErrNotFound) {
+			writeErr(c, 503, "namespace authority temporarily unavailable")
+			return
+		}
+		writeErr(c, 403, "namespace membership required")
+		return
+	}
+	tx, err := s.db.Pool.Begin(ctx)
+	if err != nil {
+		writeErr(c, 503, "delivery queue unavailable")
+		return
+	}
+	defer tx.Rollback(ctx)
+	// The event key is the idempotency unit: a replayed inbound message must not queue a second
+	// copy of the same reply.
+	if err = s.enqueueChannelDelivery(ctx, tx, in, user, nil, nil, req.EventKey, req.Text); err != nil {
+		writeErr(c, 503, "delivery queue unavailable")
+		return
+	}
+	if err = tx.Commit(ctx); err != nil {
+		writeErr(c, 503, "delivery queue unavailable")
+		return
+	}
+	c.Status(204)
 }
 func (s *Server) deleteChannelIdentity(c *gin.Context) {
 	ch, ok := s.channelOwned(c)

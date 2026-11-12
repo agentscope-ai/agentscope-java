@@ -14,8 +14,8 @@
  * limitations under the License.
  */
 
-import React, { useEffect, useMemo, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { useControlPlaneScope } from '@/app/ScopeContext';
 import ChannelWorkPanel from '@/components/ChannelWorkPanel';
 import {
@@ -36,6 +36,8 @@ import PlatformCredentialsForm, {
   propertiesFromCredentials,
 } from '../components/PlatformCredentialsForm';
 import { AgentIdentity, AgentPicker } from '../components/AgentPicker';
+import WeixinConnectionPanel from '@/components/weixin/WeixinConnectionPanel';
+import type { WeixinLinkFlow } from '@/api/weixin';
 
 const DM_SCOPES = ['MAIN', 'PER_PEER'];
 
@@ -143,10 +145,17 @@ export default function ChannelDetailPage() {
   const admin = scope.roles.some(r => ['developer', 'admin'].includes(r));
   const { channelId = '' } = useParams<{ channelId: string }>();
   const navigate = useNavigate();
+  const location = useLocation();
+  const initialLink = useRef<{ channelId: string; flow?: WeixinLinkFlow; error?: string } | undefined>(location.state?.weixinLink);
+  const consumeInitialLink = useCallback(() => {
+    if (location.state?.weixinLink) navigate({ pathname: location.pathname, search: location.search }, { replace: true, state: null });
+  }, [location.pathname, location.search, location.state, navigate]);
   const [detail, setDetail] = useState<ChannelDetail | null>(null);
   const [types, setTypes] = useState<ChannelTypeSpec[]>([]);
   const [err, setErr] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
+  const [weixinReady, setWeixinReady] = useState(false);
+  const [identityLinked, setIdentityLinked] = useState(false);
 
   const [type, setType] = useState('');
   const [dmScope, setDmScope] = useState('PER_PEER');
@@ -164,7 +173,7 @@ export default function ChannelDetailPage() {
     [typeSpec, channelId],
   );
 
-  async function load() {
+  const load = useCallback(async () => {
     setErr(null);
     try {
       const [d, t] = await Promise.all([getChannelDetail(channelId), listChannelTypes()]);
@@ -179,9 +188,9 @@ export default function ChannelDetailPage() {
     } catch (e: unknown) {
       setErr(e instanceof Error ? e.message : String(e));
     }
-  }
+  }, [channelId]);
 
-  useEffect(() => { if (admin) void load(); /* eslint-disable-next-line */ }, [channelId, admin]);
+  useEffect(() => { if (admin) void load(); }, [admin, load]);
 
   function onTypeChange(next: string) {
     if (next === type) return;
@@ -232,7 +241,7 @@ export default function ChannelDetailPage() {
     if (!confirm(`Delete channel '${channelId}'? This removes its entry and all bindings.`)) return;
     try {
       await deleteChannel(channelId);
-      navigate('/agent-center/entrypoints');
+      navigate(scope.scopedPath('/agent-center/entrypoints'));
     } catch (e: unknown) {
       setErr(e instanceof Error ? e.message : String(e));
     }
@@ -284,34 +293,44 @@ export default function ChannelDetailPage() {
 
   return (
     <div className="console-page-legacy" style={S.root}>
-      <button style={S.backLink} onClick={() => navigate('/agent-center/entrypoints')}>← All channels</button>
+      <button style={S.backLink} onClick={() => navigate(scope.scopedPath('/agent-center/entrypoints'))}>← All channels</button>
       <h1 style={S.title}>{channelId}</h1>
-      <div style={S.subtle}>连接平台、配置工作接待，并按已授权的工作关联回传消息。</div>
+      <div style={S.subtle}>{detail?.type === 'weixin' ? '管理微信授权与普通私聊。' : '连接平台、配置工作接待，并按已授权的工作关联回传消息。'}</div>
 
       {err && <div style={{ ...S.err, marginTop: 16 }}>{err}</div>}
       {info && <div style={{ ...S.ok, marginTop: 16 }}>{info}</div>}
 
-      <ChannelWorkPanel channelId={channelId} canConfigure={admin} />
+      {detail?.type !== 'weixin' && <ChannelWorkPanel channelId={channelId} canConfigure={admin} />}
       {detail && (
         <>
+          {detail.type === 'weixin' && <WeixinConnectionPanel
+            key={`${scope.tenant}/${scope.namespace}/${channelId}`}
+            channelId={channelId}
+            initialFlow={initialLink.current?.channelId === channelId ? initialLink.current.flow : undefined}
+            initialError={initialLink.current?.channelId === channelId ? initialLink.current.error : undefined}
+            onInitialConsumed={consumeInitialLink}
+            identityLinked={identityLinked}
+            onReadyChange={setWeixinReady}
+            onChanged={() => void load()}
+          />}
           <div style={{ ...S.section, marginTop: 18 }}>
-            <div style={S.sectionHead}>
+            <div style={{ ...S.sectionHead, flexWrap: 'wrap' }}>
               <h2 style={S.sectionTitle}>平台连接与普通会话</h2>
               <span style={S.badge}>{status}</span>
               {detail.lastError ? <span style={{ ...S.badge, color: '#dc2626' }}>{detail.lastError}</span> : null}
               <span style={{ flex: 1 }} />
-              <button style={S.btn} onClick={toggleDisabled}>
+              {detail.type !== 'weixin' && <button style={S.btn} onClick={toggleDisabled}>
                 {detail.disabled ? 'Enable' : 'Disable'}
-              </button>
+              </button>}
               <button style={{ ...S.btn, color: '#dc2626', borderColor: '#fca5a5' }} onClick={handleDeleteChannel}>
                 Delete
               </button>
             </div>
-            <div style={S.grid2}>
+            <div className="grid gap-3.5 sm:grid-cols-2">
               <div>
                 <label style={S.field}>Platform</label>
-                <select style={S.input} value={type} onChange={e => onTypeChange(e.target.value)}>
-                  {types.map(t => <option key={t.type} value={t.type}>{t.label}</option>)}
+                <select style={S.input} value={type} disabled={detail.type === 'weixin'} onChange={e => onTypeChange(e.target.value)}>
+                  {types.filter(t => detail.type === 'weixin' || t.type !== 'weixin').map(t => <option key={t.type} value={t.type}>{t.label}</option>)}
                 </select>
               </div>
               <div>
@@ -324,12 +343,13 @@ export default function ChannelDetailPage() {
                   ))}
                 </select>
               </div>
-              <div style={{ gridColumn: '1 / span 2' }}>
+              <div className="sm:col-span-2">
                 <label style={S.field}>普通私聊默认 Agent</label>
                 <AgentPicker value={defaultAgentId} onChange={setDefaultAgentId} aria-label="Channel default Agent" />
+                {detail.type === 'weixin' && !defaultAgentId && <p className="mt-2 text-sm text-amber-800">尚未配置默认 Agent，普通微信私聊可能无法收到回复。</p>}
               </div>
             </div>
-            <div style={{ marginTop: 18 }}>
+            {detail.type !== 'weixin' && <div style={{ marginTop: 18 }}>
               <h3 style={{ ...S.sectionTitle, fontSize: '0.95rem', marginBottom: 10 }}>Credentials</h3>
               <PlatformCredentialsForm
                 spec={typeSpec}
@@ -338,7 +358,7 @@ export default function ChannelDetailPage() {
                 showAdvanced={showAdvanced}
                 onToggleAdvanced={() => setShowAdvanced((v) => !v)}
               />
-            </div>
+            </div>}
             {callbackUrl ? (
               <div style={S.callout}>
                 <strong>Callback / webhook URL</strong>
@@ -350,6 +370,8 @@ export default function ChannelDetailPage() {
               <button style={{ ...S.btn, ...S.btnPrimary }} onClick={() => persist()}>Save configuration</button>
             </div>
           </div>
+
+          {detail.type === 'weixin' && <ChannelWorkPanel channelId={channelId} canConfigure={admin} personalChatOnly connectionReady={weixinReady} onIdentityChanged={setIdentityLinked} />}
 
           <div style={S.section}>
             <div style={S.sectionHead}>

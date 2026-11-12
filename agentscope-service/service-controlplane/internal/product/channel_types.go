@@ -87,6 +87,13 @@ var supportedChannelTypes = []ChannelTypeSpec{
 		},
 	},
 	{
+		Type:      "weixin",
+		Label:     "Personal Weixin",
+		Transport: "polling",
+		Hint:      "Create the channel, then authorize Personal Weixin by QR code.",
+		Fields:    []ChannelFieldSpec{},
+	},
+	{
 		Type:        "github",
 		Label:       "GitHub",
 		Transport:   "webhook",

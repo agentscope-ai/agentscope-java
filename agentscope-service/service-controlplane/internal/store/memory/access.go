@@ -71,6 +71,11 @@ func (s *Store) canReadSessionLocked(ctx context.Context, session *store.Session
 		task := s.agentTasks[*session.AgentTaskID]
 		return task != nil && s.canReadIssueLocked(ctx, task.IssueID)
 	}
+	if owner := store.ChannelSessionOwnerRef(session); owner != "" {
+		if owner == access.User || slices.Contains(access.Refs, owner) {
+			return true
+		}
+	}
 	for _, chat := range s.chats {
 		if chat.SessionID == session.ID && slices.Contains(access.Refs, chat.CreatorRef) {
 			return true

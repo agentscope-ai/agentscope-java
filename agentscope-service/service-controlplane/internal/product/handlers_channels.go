@@ -35,6 +35,7 @@ const secretMask = "********"
 
 func (s *Server) registerChannels(r gin.IRouter) {
 	s.registerChannelWork(r)
+	s.registerWeixin(r)
 	r.GET("/api/channels", s.listChannels)
 	r.GET("/api/channels/types", s.listChannelTypes)
 	r.GET("/api/channels/:channelId", s.getChannel)
@@ -109,6 +110,9 @@ func (ch channelRow) detailJSON(maskSecrets bool) gin.H {
 	props := parseJSONRaw(deref(ch.PropertiesJSON))
 	if maskSecrets {
 		props = maskChannelProperties(props)
+		if ch.Type == "weixin" {
+			props = gin.H{}
+		}
 	}
 	bindings := parseJSONArray(deref(ch.BindingsJSON))
 	return gin.H{
@@ -278,6 +282,10 @@ func (s *Server) createChannel(c *gin.Context) {
 		writeTextErr(c, http.StatusBadRequest, "Unknown channel type: "+typ)
 		return
 	}
+	if typ == "weixin" && !emptyWeixinProperties(req.Properties) {
+		writeErr(c, 400, "Weixin provider properties are managed by QR authorization")
+		return
+	}
 	incomingProps := propsAsMap(req.Properties)
 	if missing, err := validateChannelProperties(typ, incomingProps, nil, false); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error(), "missingFields": missing})
@@ -287,6 +295,9 @@ func (s *Server) createChannel(c *gin.Context) {
 	disabled := false
 	if req.Disabled != nil {
 		disabled = *req.Disabled
+	}
+	if typ == "weixin" {
+		disabled = true
 	}
 	dmScope := req.DmScope
 	if dmScope == nil || strings.TrimSpace(*dmScope) == "" {
@@ -338,7 +349,13 @@ func nullStrPtrVal(p *string) any {
 
 func (s *Server) updateChannel(c *gin.Context) {
 	channelID := c.Param("channelId")
-	ch, err := s.loadChannel(c.Request.Context(), channelID)
+	tx, err := s.db.Pool.Begin(c.Request.Context())
+	if err != nil {
+		writeErr(c, 500, "cannot update channel")
+		return
+	}
+	defer tx.Rollback(c.Request.Context())
+	ch, err := s.scanChannel(tx.QueryRow(c.Request.Context(), channelSelect+` WHERE channel_id=$1 AND owner_id=$2 FOR UPDATE`, channelID, currentResourceOwner(c)))
 	if err != nil || ch.OwnerID != currentResourceOwner(c) {
 		writeErr(c, http.StatusNotFound, "Channel not found: "+channelID)
 		return
@@ -353,6 +370,26 @@ func (s *Server) updateChannel(c *gin.Context) {
 		typ = strings.TrimSpace(req.Type)
 		if !knownChannelType(typ) {
 			writeTextErr(c, http.StatusBadRequest, "Unknown channel type: "+typ)
+			return
+		}
+	}
+	if (ch.Type == "weixin" || typ == "weixin") && ch.Type != typ {
+		writeErr(c, 400, "Weixin channel type cannot be changed")
+		return
+	}
+	if typ == "weixin" && !emptyWeixinProperties(req.Properties) {
+		writeErr(c, 400, "Weixin provider properties are managed by QR authorization")
+		return
+	}
+	if typ == "weixin" && req.Disabled != nil && !*req.Disabled {
+		if err := canEnableWeixin(c.Request.Context(), tx, ch); err != nil {
+			writeErr(c, 409, "Complete Weixin authorization before enabling")
+			return
+		}
+	}
+	if typ == "weixin" && req.Disabled != nil && *req.Disabled {
+		if err := invalidateWeixinFlows(c.Request.Context(), tx, ch.ChannelID); err != nil {
+			writeErr(c, 500, "cannot disable channel")
 			return
 		}
 	}
@@ -396,13 +433,17 @@ func (s *Server) updateChannel(c *gin.Context) {
 		bindings = mustJSON(req.Bindings)
 	}
 	now := nowMillis()
-	_, err = s.db.Pool.Exec(c.Request.Context(),
+	_, err = tx.Exec(c.Request.Context(),
 		`UPDATE channels SET type=$1, dm_scope=$2, default_agent_id=$3, disabled=$4,
 		 properties_json=$5, bindings_json=$6, updated_at=$7 WHERE channel_id=$8`,
 		typ, nullStrPtrVal(dmScope), nullStrPtrVal(defaultAgent), disabled,
 		nullStr(props), bindings, now, channelID)
 	if err != nil {
 		writeErr(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if err = tx.Commit(c.Request.Context()); err != nil {
+		writeErr(c, 500, "cannot update channel")
 		return
 	}
 	if req.Bindings != nil {
@@ -413,21 +454,37 @@ func (s *Server) updateChannel(c *gin.Context) {
 }
 
 func (s *Server) deleteChannel(c *gin.Context) {
-	owner := currentResourceOwner(c)
-	channelID := c.Param("channelId")
-	tag, err := s.db.Pool.Exec(c.Request.Context(),
-		`DELETE FROM channels WHERE channel_id=$1 AND owner_id=$2`, channelID, owner)
+	ctx := c.Request.Context()
+	tx, err := s.db.Pool.Begin(ctx)
 	if err != nil {
-		writeErr(c, http.StatusInternalServerError, err.Error())
+		writeErr(c, 500, "cannot delete channel")
 		return
 	}
-	if tag.RowsAffected() == 0 {
-		writeErr(c, http.StatusNotFound, "Channel not found: "+channelID)
+	defer tx.Rollback(ctx)
+	ch, err := s.scanChannel(tx.QueryRow(ctx, channelSelect+` WHERE channel_id=$1 AND owner_id=$2 FOR UPDATE`, c.Param("channelId"), currentResourceOwner(c)))
+	if err != nil {
+		writeErr(c, 404, "Channel not found")
 		return
 	}
-	_, _ = s.db.Pool.Exec(c.Request.Context(),
-		`DELETE FROM agent_bindings WHERE owner_id=$1 AND channel_id=$2`, owner, channelID)
-	c.Status(http.StatusNoContent)
+	if ch.Type == "weixin" {
+		if err = disconnectWeixinTx(ctx, tx, ch); err != nil {
+			writeErr(c, 500, "cannot disconnect channel")
+			return
+		}
+	}
+	if _, err = tx.Exec(ctx, `DELETE FROM channels WHERE channel_id=$1`, ch.ChannelID); err != nil {
+		writeErr(c, 500, "cannot delete channel")
+		return
+	}
+	if _, err = tx.Exec(ctx, `DELETE FROM agent_bindings WHERE owner_id=$1 AND channel_id=$2`, ch.OwnerID, ch.ChannelID); err != nil {
+		writeErr(c, 500, "cannot delete channel bindings")
+		return
+	}
+	if err = tx.Commit(ctx); err != nil {
+		writeErr(c, 500, "cannot delete channel")
+		return
+	}
+	c.Status(204)
 }
 
 func (s *Server) enableChannel(c *gin.Context) {
@@ -439,20 +496,42 @@ func (s *Server) disableChannel(c *gin.Context) {
 }
 
 func (s *Server) setChannelDisabled(c *gin.Context, disabled bool) {
-	owner := currentResourceOwner(c)
-	now := nowMillis()
-	tag, err := s.db.Pool.Exec(c.Request.Context(),
-		`UPDATE channels SET disabled=$1, updated_at=$2 WHERE channel_id=$3 AND owner_id=$4`,
-		disabled, now, c.Param("channelId"), owner)
+	ctx := c.Request.Context()
+	tx, err := s.db.Pool.Begin(ctx)
 	if err != nil {
-		writeErr(c, http.StatusInternalServerError, err.Error())
+		writeErr(c, 500, "cannot update channel")
 		return
 	}
-	if tag.RowsAffected() == 0 {
-		writeErr(c, http.StatusNotFound, "Channel not found: "+c.Param("channelId"))
+	defer tx.Rollback(ctx)
+	ch, err := s.scanChannel(tx.QueryRow(ctx, channelSelect+` WHERE channel_id=$1 AND owner_id=$2 FOR UPDATE`, c.Param("channelId"), currentResourceOwner(c)))
+	if err != nil {
+		writeErr(c, 404, "Channel not found")
 		return
 	}
-	c.Status(http.StatusNoContent)
+	if ch.Type == "weixin" {
+		if !disabled {
+			if err = canEnableWeixin(ctx, tx, ch); err != nil {
+				writeErr(c, 409, "Complete Weixin authorization before enabling")
+				return
+			}
+		}
+		if disabled {
+			if err = invalidateWeixinFlows(ctx, tx, ch.ChannelID); err != nil {
+				writeErr(c, 500, "cannot disable channel")
+				return
+			}
+		}
+	}
+	_, err = tx.Exec(ctx, `UPDATE channels SET disabled=$1,updated_at=$2 WHERE channel_id=$3`, disabled, nowMillis(), ch.ChannelID)
+	if err != nil {
+		writeErr(c, 500, "cannot update channel")
+		return
+	}
+	if err = tx.Commit(ctx); err != nil {
+		writeErr(c, 500, "cannot update channel")
+		return
+	}
+	c.Status(204)
 }
 
 func (s *Server) setChannelDefault(c *gin.Context) {

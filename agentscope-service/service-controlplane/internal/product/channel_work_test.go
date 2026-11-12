@@ -548,3 +548,52 @@ func TestChannelPendingApprovalNotificationIsPrivateAndDoesNotAuthorizeTool(t *t
 		t.Fatal("obsolete approval prompt published")
 	}
 }
+
+func TestChannelReplyEnqueueIsIdempotent(t *testing.T) {
+	f := channelSetup(t)
+	eventKey := "channel-reply:" + f.ch.ChannelID + ":org:reply-msg-1"
+	body := gin.H{
+		"channelId": f.ch.ChannelID,
+		"accountId": "org",
+		"senderId":  "sender-a",
+		"peerKind":  "DIRECT",
+		"peerId":    "chat-a",
+		"threadId":  "",
+		"messageId": "reply-msg-1",
+		"text":      "hello",
+		"eventKey":  eventKey,
+	}
+	// A replayed inbound message must not queue its reply twice.
+	for i := 0; i < 2; i++ {
+		if w := f.request(t, "POST", "/api/internal/channels/replies", body, ""); w.Code != 204 {
+			t.Fatalf("enqueue %d %s", w.Code, w.Body.String())
+		}
+	}
+	var count int
+	if e := f.s.db.Pool.QueryRow(t.Context(), `SELECT count(*) FROM channel_deliveries WHERE channel_id=$1 AND event_key=$2`, f.ch.ChannelID, eventKey).Scan(&count); e != nil {
+		t.Fatal(e)
+	}
+	if count != 1 {
+		t.Fatalf("the same inbound message queued %d replies", count)
+	}
+	// A second inbound message keeps its own reply.
+	body["messageId"] = "reply-msg-2"
+	body["eventKey"] = "channel-reply:" + f.ch.ChannelID + ":org:reply-msg-2"
+	if w := f.request(t, "POST", "/api/internal/channels/replies", body, ""); w.Code != 204 {
+		t.Fatalf("second enqueue %d %s", w.Code, w.Body.String())
+	}
+	if e := f.s.db.Pool.QueryRow(t.Context(), `SELECT count(*) FROM channel_deliveries WHERE channel_id=$1`, f.ch.ChannelID).Scan(&count); e != nil {
+		t.Fatal(e)
+	}
+	if count != 2 {
+		t.Fatalf("expected two queued replies, got %d", count)
+	}
+	// The reply is owned by the bound identity's user, not by whoever calls the internal API.
+	var owner string
+	if e := f.s.db.Pool.QueryRow(t.Context(), `SELECT user_id FROM channel_deliveries WHERE channel_id=$1 AND event_key=$2`, f.ch.ChannelID, eventKey).Scan(&owner); e != nil {
+		t.Fatal(e)
+	}
+	if owner != f.user {
+		t.Fatalf("reply owner %q, want %q", owner, f.user)
+	}
+}
