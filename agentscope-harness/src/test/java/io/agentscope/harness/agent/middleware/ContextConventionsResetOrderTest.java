@@ -33,7 +33,9 @@ import io.agentscope.harness.agent.context.ContextItem;
 import io.agentscope.harness.agent.context.ContextPolicy;
 import io.agentscope.harness.agent.context.HarnessContextBuilder;
 import io.agentscope.harness.agent.context.WorkspaceContextMaterials;
+import java.util.EnumSet;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.CopyOnWriteArrayList;
 import org.junit.jupiter.api.Test;
 import reactor.core.publisher.Flux;
@@ -50,6 +52,11 @@ class ContextConventionsResetOrderTest {
         List<String> capturedSystemPrompts = new CopyOnWriteArrayList<>();
         MiddlewareBase userMiddleware =
                 new MiddlewareBase() {
+                    @Override
+                    public Set<ExtensionPoint> activePoints() {
+                        return EnumSet.of(ExtensionPoint.ON_SYSTEM_PROMPT);
+                    }
+
                     @Override
                     public Mono<String> onSystemPrompt(
                             Agent agent, RuntimeContext ctx, String currentPrompt) {

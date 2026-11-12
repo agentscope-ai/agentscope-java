@@ -360,6 +360,9 @@ HarnessAgent agent = HarnessAgent.builder()
 | `addRoot(Path)` | 额外允许访问的宿主目录 | 无 |
 | `additionalRoots(Collection)` | 批量设置额外目录 | 无 |
 | `projectWritable(boolean)` | 文件工具写项目文件时直接落到项目目录，而非 workspace | `false` |
+| `namespaceBoundary(Boolean)` | 覆盖命名空间边界开关（绝对路径只能落到 workspace 下调用者自己的命名空间内，参见[隔离维度](#isolationscope--多用户与多副本怎么分桶)）；传 `true`/`false` 强制开关，不传则取默认 | `ROOTED` 时开启 |
+
+> **升级提示 — workspace 根目录下的绝对路径：** `ROOTED` workspace 默认启用命名空间边界后，形如 `<workspace>/skills/tool.md` 的绝对路径无法再触及 workspace 根目录下的共享内容（此前任一会话都可以借绝对路径访问其他会话的目录）。共享内容仍然可以通过 workspace 相对路径访问（overlay 会将其解析到只读的项目层）；经过安全评估的单租户 workspace 如需保留旧行为，传 `.namespaceBoundary(false)` 即可。
 
 #### 路径解析策略（`LocalFsMode`）
 
@@ -544,7 +547,9 @@ workspace/
 
 ## 工作区里的两层读取
 
-`AGENTS.md`、`MEMORY.md`、`KNOWLEDGE.md` 等关键文件在读取时有"两层兜底"：先看你配的文件系统后端，没有再退回本地磁盘。这对**模式 1（共享存储）下的"模板文件"** 很有用：第一个副本启动时本地有 `AGENTS.md` 模板，立刻可用；后续副本会从共享存储读出最新版本。
+`AGENTS.md`、`KNOWLEDGE.md` 等关键文件在读取时有"两层兜底"：先看你配的文件系统后端，没有再退回本地磁盘。这对**模式 1（共享存储）下的"模板文件"** 很有用：第一个副本启动时本地有 `AGENTS.md` 模板，立刻可用；后续副本会从共享存储读出最新版本。
+
+按身份的运行时数据（`MEMORY.md`、`memory/*.md`、task records）兜底落在 **caller 命名空间内**，不会回退到 workspace 根。规则见 [workspace](/v2/zh/docs/harness/workspace#两层读架构filesystem-first--本地兜底)。
 
 写入永远走配置的文件系统后端。
 

@@ -241,7 +241,8 @@ public final class MemoryConfig {
 
         /**
          * Sets a dedicated model for memory operations by model id string
-         * (e.g. {@code "openai:gpt-4.1-mini"}).
+         * (e.g. {@code "openai:gpt-4.1-mini"}). Legacy eager semantics: resolved once at build
+         * time, not per call.
          *
          * @see ModelRegistry#resolve(String)
          */

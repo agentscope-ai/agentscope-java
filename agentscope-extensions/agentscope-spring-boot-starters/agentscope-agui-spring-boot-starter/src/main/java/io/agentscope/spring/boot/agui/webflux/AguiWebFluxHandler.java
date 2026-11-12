@@ -84,20 +84,22 @@ public class AguiWebFluxHandler {
 
     private AguiWebFluxHandler(Builder builder) {
         this.processor =
-                AguiRequestProcessor.builder()
-                        .agentResolver(
-                                DefaultAgentResolver.builder()
-                                        .registry(builder.registry)
-                                        .sessionManager(builder.sessionManager)
-                                        .serverSideMemory(builder.serverSideMemory)
-                                        .build())
-                        .config(
-                                builder.config != null
-                                        ? builder.config
-                                        : AguiAdapterConfig.defaultConfig())
-                        .adapterFactory(builder.adapterFactory)
-                        .runtimeContextResolver(builder.runtimeContextResolver)
-                        .build();
+                builder.requestProcessor != null
+                        ? builder.requestProcessor
+                        : AguiRequestProcessor.builder()
+                                .agentResolver(
+                                        DefaultAgentResolver.builder()
+                                                .registry(builder.registry)
+                                                .sessionManager(builder.sessionManager)
+                                                .serverSideMemory(builder.serverSideMemory)
+                                                .build())
+                                .config(
+                                        builder.config != null
+                                                ? builder.config
+                                                : AguiAdapterConfig.defaultConfig())
+                                .adapterFactory(builder.adapterFactory)
+                                .runtimeContextResolver(builder.runtimeContextResolver)
+                                .build();
         this.encoder = new AguiEventEncoder();
         this.requestBodyParser =
                 builder.requestBodyParser != null
@@ -299,6 +301,24 @@ public class AguiWebFluxHandler {
         private AguiRuntimeContextResolver runtimeContextResolver;
         private AguiAgentAdapterFactory adapterFactory;
         private AguiRequestBodyParser requestBodyParser;
+        private AguiRequestProcessor requestProcessor;
+
+        /**
+         * Set a custom request processor instead of constructing the default processor.
+         *
+         * <p>When set, {@link #agentRegistry}, {@link #sessionManager}, {@link
+         * #serverSideMemory}, {@link #config}, {@link #adapterFactory}, and {@link
+         * #runtimeContextResolver} are ignored; configure their equivalents on the supplied
+         * processor. A registry is not required. Passing {@code null} restores default processor
+         * construction.
+         *
+         * @param requestProcessor The custom processor, or {@code null} to use the default
+         * @return This builder
+         */
+        public Builder requestProcessor(AguiRequestProcessor requestProcessor) {
+            this.requestProcessor = requestProcessor;
+            return this;
+        }
 
         /**
          * Set the agent registry.
@@ -403,10 +423,10 @@ public class AguiWebFluxHandler {
          * Build the handler.
          *
          * @return The built handler
-         * @throws IllegalStateException if registry is not set
+         * @throws IllegalStateException if neither a custom processor nor a registry is set
          */
         public AguiWebFluxHandler build() {
-            if (registry == null) {
+            if (requestProcessor == null && registry == null) {
                 throw new IllegalStateException("Agent registry must be set");
             }
             return new AguiWebFluxHandler(this);

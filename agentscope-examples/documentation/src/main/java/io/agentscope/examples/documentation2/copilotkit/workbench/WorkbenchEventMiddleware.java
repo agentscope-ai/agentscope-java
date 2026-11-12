@@ -32,6 +32,7 @@ import io.agentscope.core.middleware.AgentInput;
 import io.agentscope.core.middleware.MiddlewareBase;
 import io.agentscope.core.state.TaskContextState;
 import io.agentscope.core.util.JsonUtils;
+import java.util.EnumSet;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -81,6 +82,12 @@ public class WorkbenchEventMiddleware implements MiddlewareBase {
 
     public WorkbenchEventMiddleware(WorkbenchStateRegistry registry) {
         this.registry = registry;
+    }
+
+    /** Narrow declaration: subclasses overriding more hooks must extend this set. */
+    @Override
+    public Set<ExtensionPoint> activePoints() {
+        return EnumSet.of(ExtensionPoint.ON_AGENT);
     }
 
     @Override

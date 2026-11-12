@@ -16,6 +16,7 @@
 package io.agentscope.harness.agent.subagent.task;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -23,7 +24,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.harness.agent.coordination.PeriodicGate;
 import io.agentscope.harness.agent.filesystem.CompositeFilesystem;
+import io.agentscope.harness.agent.filesystem.local.LocalFilesystem;
 import io.agentscope.harness.agent.filesystem.remote.store.InMemoryStore;
+import io.agentscope.harness.agent.filesystem.remote.store.NamespaceFactory;
 import io.agentscope.harness.agent.filesystem.spec.RemoteFilesystemSpec;
 import io.agentscope.harness.agent.workspace.WorkspaceManager;
 import java.nio.file.Files;
@@ -438,6 +441,40 @@ class WorkspaceTaskRepositoryTest {
     // ------------------------------------------------------------------
     //  WorkspaceManager task record round-trip
     // ------------------------------------------------------------------
+
+    @Test
+    @DisplayName("Task record read stays in the caller's namespace and ignores a root leftover")
+    void taskRecordRead_ignoresAnUnnamespacedRootCopy() throws Exception {
+        Path ws = tempDir.resolve("namespaced-ws");
+        Files.createDirectories(ws);
+        NamespaceFactory namespace = rc -> List.of(rc.getUserId());
+        LocalFilesystem filesystem = new LocalFilesystem(ws, false, 10, namespace);
+        try (WorkspaceManager namespaced = new WorkspaceManager(ws, filesystem, null, namespace)) {
+            RuntimeContext alice =
+                    RuntimeContext.builder().userId("alice").sessionId("s-1").build();
+            RuntimeContext bob = RuntimeContext.builder().userId("bob").sessionId("s-2").build();
+            TaskRecord record = new TaskRecord("t1", "agent-a", "parent", "s-1", null);
+            record.setStatus(TaskStatus.RUNNING);
+            namespaced.writeTaskRecord(alice, "agent-a", "s-1", record);
+
+            Path namespacedFile = ws.resolve("alice/agents/agent-a/tasks/s-1.json");
+            assertTrue(
+                    Files.isRegularFile(namespacedFile),
+                    "the record should land in the caller's namespace");
+
+            // Pre-namespace layout: the same file sitting at the workspace root.
+            Path rootCopy = ws.resolve("agents/agent-a/tasks/s-1.json");
+            Files.createDirectories(rootCopy.getParent());
+            Files.copy(namespacedFile, rootCopy);
+
+            assertTrue(
+                    namespaced.readTaskRecord(alice, "agent-a", "s-1", "t1").isPresent(),
+                    "the owner still reads its own record");
+            assertFalse(
+                    namespaced.readTaskRecord(bob, "agent-a", "s-1", "t1").isPresent(),
+                    "a root-level leftover must not be served to another identity");
+        }
+    }
 
     @Test
     @DisplayName("WorkspaceManager writeTaskRecord / readTaskRecord / listTaskRecords round-trip")
