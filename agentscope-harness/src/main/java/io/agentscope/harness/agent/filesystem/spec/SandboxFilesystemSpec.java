@@ -38,6 +38,13 @@ import java.util.Objects;
  */
 public abstract class SandboxFilesystemSpec {
 
+    /**
+     * Entry key under which the workspace projection entry is registered on the {@link
+     * WorkspaceSpec}. Shared with consumers that adjust the projection per call (e.g. {@code
+     * SandboxLifecycleMiddleware}'s {@code .skills-cache} narrowing) so the key cannot drift.
+     */
+    public static final String WORKSPACE_PROJECTION_ENTRY_KEY = "__workspace_projection__";
+
     private static final List<String> DEFAULT_WORKSPACE_PROJECTION_ROOTS =
             List.of("AGENTS.md", "skills", "subagents", "knowledge", ".skills-cache");
 
@@ -135,7 +142,7 @@ public abstract class SandboxFilesystemSpec {
         projection.setIncludeRoots(workspaceProjectionRoots);
 
         Map<String, WorkspaceEntry> entries = new LinkedHashMap<>(effective.getEntries());
-        entries.put("__workspace_projection__", projection);
+        entries.put(WORKSPACE_PROJECTION_ENTRY_KEY, projection);
         effective.setEntries(entries);
         return effective;
     }

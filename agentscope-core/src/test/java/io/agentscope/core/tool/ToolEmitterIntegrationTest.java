@@ -31,6 +31,7 @@ import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.ChatUsage;
+import io.agentscope.core.tool.test.GrantTestUtils;
 import io.agentscope.core.util.JsonUtils;
 import java.util.ArrayList;
 import java.util.List;
@@ -98,7 +99,11 @@ class ToolEmitterIntegrationTest {
 
         // Call the tool
         ToolResultBlock finalResponse =
-                toolkit.callTool(ToolCallParam.builder().toolUseBlock(toolUseBlock).build())
+                toolkit.callTool(
+                                ToolCallParam.builder()
+                                        .toolUseBlock(toolUseBlock)
+                                        .runtimeContext(GrantTestUtils.grantRc())
+                                        .build())
                         .block();
 
         // Verify final response
@@ -152,7 +157,11 @@ class ToolEmitterIntegrationTest {
                         .build();
 
         ToolResultBlock finalResponse =
-                toolkit.callTool(ToolCallParam.builder().toolUseBlock(toolUseBlock).build())
+                toolkit.callTool(
+                                ToolCallParam.builder()
+                                        .toolUseBlock(toolUseBlock)
+                                        .runtimeContext(GrantTestUtils.grantRc())
+                                        .build())
                         .block();
 
         // Verify final response
@@ -204,7 +213,12 @@ class ToolEmitterIntegrationTest {
                         .input(inputA)
                         .content(JsonUtils.getJsonCodec().toJson(inputA))
                         .build();
-        toolkit.callTool(ToolCallParam.builder().toolUseBlock(toolA).build()).block();
+        toolkit.callTool(
+                        ToolCallParam.builder()
+                                .toolUseBlock(toolA)
+                                .runtimeContext(GrantTestUtils.grantRc())
+                                .build())
+                .block();
 
         // Call task_b
         Map<String, Object> inputB = Map.of("data", "y");
@@ -215,7 +229,12 @@ class ToolEmitterIntegrationTest {
                         .input(inputB)
                         .content(JsonUtils.getJsonCodec().toJson(inputB))
                         .build();
-        toolkit.callTool(ToolCallParam.builder().toolUseBlock(toolB).build()).block();
+        toolkit.callTool(
+                        ToolCallParam.builder()
+                                .toolUseBlock(toolB)
+                                .runtimeContext(GrantTestUtils.grantRc())
+                                .build())
+                .block();
 
         // Verify chunks
         assertEquals(3, capturedChunks.size());
@@ -293,7 +312,7 @@ class ToolEmitterIntegrationTest {
                                 List.of(createToolCall("stream_task", Map.of("input", "demo"))),
                                 null,
                                 null,
-                                null,
+                                GrantTestUtils.grantRc(),
                                 internal)
                         .block();
 
@@ -318,6 +337,7 @@ class ToolEmitterIntegrationTest {
                                         .toolUseBlock(
                                                 createToolCall(
                                                         "stream_task", Map.of("input", "demo")))
+                                        .runtimeContext(GrantTestUtils.grantRc())
                                         .build())
                         .block();
 
@@ -339,7 +359,7 @@ class ToolEmitterIntegrationTest {
                                 List.of(createToolCall("stream_task", Map.of("input", "demo"))),
                                 null,
                                 null,
-                                null,
+                                GrantTestUtils.grantRc(),
                                 internal)
                         .block();
 
