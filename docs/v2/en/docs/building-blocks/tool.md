@@ -275,6 +275,13 @@ Inside a `@Tool` method, any parameter **without `@ToolParam`** is treated as fr
 | `ToolExecutionContext` | `runtimeContext.asToolExecutionContext()` (compatibility shim, deprecated) |
 | Any other user POJO type | `runtimeContext.get(ParamType.class)` — i.e. an object the caller registered via `RuntimeContext.builder().put(ParamType.class, value)` |
 
+The deprecated `ToolExecutionContext.builder().register(...)` compatibility API also supports looking
+up registered subtypes through a superclass or interface. Its default `ContextStore` prefers an exact
+registered type; otherwise it returns the first assignable match, with no guaranteed order when
+multiple subtypes match. `get(key, type)` and `contains(key, type)` keep keys isolated. `get(type)`
+searches only the default key, while `contains(type)` checks every key. New code should use
+`RuntimeContext`.
+
 An injected `ToolEmitter` exposes the current tool call ID, which can be used to correlate progress with frontend state or another shared store:
 
 ```java

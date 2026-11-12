@@ -26,6 +26,10 @@ import java.util.Objects;
  * <p>Supports singleton (one per type) and multi-instance (keyed) patterns. Immutable and
  * thread-safe.
  *
+ * <p>Lookups prefer an exact registered type, then fall back to registered subtypes. If multiple
+ * subtypes match, the first match is returned; their iteration order is unspecified. Keyed lookups
+ * only consider the requested key, and singleton lookups only consider the default key.
+ *
  * @deprecated Part of the {@link ToolExecutionContext} layer which is superseded by
  *     {@link io.agentscope.core.agent.RuntimeContext}.
  */
@@ -60,16 +64,21 @@ class DefaultContextStore implements ContextStore {
      * @return The object instance, or null if not found
      */
     @Override
-    @SuppressWarnings("unchecked")
     public <T> T get(String key, Class<T> type) {
         Map<String, Object> keyMap = objectMap.get(type);
-        if (keyMap == null) {
-            return null;
+        if (keyMap != null) {
+            Object obj = keyMap.get(key);
+            if (type.isInstance(obj)) {
+                return type.cast(obj);
+            }
         }
-
-        Object obj = keyMap.get(key);
-        if (obj != null && type.isInstance(obj)) {
-            return (T) obj;
+        for (Map.Entry<Class<?>, Map<String, Object>> entry : objectMap.entrySet()) {
+            if (type != null && type.isAssignableFrom(entry.getKey())) {
+                Object obj = entry.getValue().get(key);
+                if (type.isInstance(obj)) {
+                    return type.cast(obj);
+                }
+            }
         }
         return null;
     }
@@ -98,8 +107,7 @@ class DefaultContextStore implements ContextStore {
      */
     @Override
     public boolean contains(String key, Class<?> type) {
-        Map<String, Object> keyMap = objectMap.get(type);
-        return keyMap != null && keyMap.containsKey(key);
+        return get(key, type) != null;
     }
 
     /**
@@ -111,7 +119,15 @@ class DefaultContextStore implements ContextStore {
     @Override
     public boolean contains(Class<?> type) {
         Map<String, Object> keyMap = objectMap.get(type);
-        return keyMap != null && !keyMap.isEmpty();
+        if (keyMap != null && !keyMap.isEmpty()) {
+            return true;
+        }
+        return type != null
+                && objectMap.entrySet().stream()
+                        .anyMatch(
+                                entry ->
+                                        type.isAssignableFrom(entry.getKey())
+                                                && !entry.getValue().isEmpty());
     }
 
     /**
