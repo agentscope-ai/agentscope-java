@@ -547,18 +547,16 @@ func (e *Engine) convergeCompletedIssue(ctx context.Context, run *controlmodel.O
 // Historical completion must never advance a newer Run's blocked root. The
 // freshness check only compares adaptive Runs: comment-driven direct Runs
 // never own the Issue lifecycle, so one created while the Team Run waits must
-// not strip it of resume eligibility. When the owning Team Run has already
-// terminated, a later converging Run evaluates the same conditions on its
-// behalf instead of leaving the root blocked forever.
+// not strip it of resume eligibility.
 func (e *Engine) completedTeamCanResumeRoot(ctx context.Context, run *controlmodel.OrchestrationRun, issue *controlmodel.Issue) (bool, error) {
-	if issue.AssigneeType != controlmodel.AssigneeTeam || issue.ArchivedAt != nil {
+	if run.Mode != controlmodel.RunModeAdaptive || issue.AssigneeType != controlmodel.AssigneeTeam || issue.ArchivedAt != nil {
 		return false, nil
 	}
-	owner, err := e.resumeOwnerRun(ctx, run)
-	if err != nil || owner == nil {
+	latest, err := e.Store.Orchestration().ListRuns(ctx, store.OrchestrationRunFilter{Tenant: run.Tenant, Namespace: run.Namespace, RootIssueID: run.RootIssueID, Mode: controlmodel.RunModeAdaptive, Limit: 1})
+	if err != nil || len(latest) == 0 || latest[0].ID != run.ID {
 		return false, err
 	}
-	nodes, err := e.Store.Orchestration().ListNodes(ctx, owner.ID)
+	nodes, err := e.Store.Orchestration().ListNodes(ctx, run.ID)
 	if err != nil {
 		return false, err
 	}
@@ -585,38 +583,6 @@ func (e *Engine) completedTeamCanResumeRoot(ctx context.Context, run *controlmod
 			return true, nil
 		}
 	}
-}
-
-// resumeOwnerRun resolves which adaptive Team Run may drive the resume of a
-// blocked root. A converging adaptive Run resumes only as the newest adaptive
-// Run of the root; any other converging Run may act on behalf of the newest
-// adaptive Run once that owner has terminated. Returns nil when no adaptive
-// Run may resume on behalf of this convergence.
-func (e *Engine) resumeOwnerRun(ctx context.Context, run *controlmodel.OrchestrationRun) (*controlmodel.OrchestrationRun, error) {
-	runs, err := e.Store.Orchestration().ListRuns(ctx, store.OrchestrationRunFilter{Tenant: run.Tenant, Namespace: run.Namespace, RootIssueID: run.RootIssueID, Limit: 50})
-	if err != nil {
-		return nil, err
-	}
-	var latestAdaptive *controlmodel.OrchestrationRun
-	for _, candidate := range runs {
-		if candidate.Mode == controlmodel.RunModeAdaptive {
-			latestAdaptive = candidate
-			break
-		}
-	}
-	if latestAdaptive == nil {
-		return nil, nil
-	}
-	if run.Mode == controlmodel.RunModeAdaptive {
-		if latestAdaptive.ID == run.ID {
-			return run, nil
-		}
-		return nil, nil
-	}
-	if controlmodel.IsOrchestrationRunTerminal(latestAdaptive.State) {
-		return latestAdaptive, nil
-	}
-	return nil, nil
 }
 
 // convergeFailedIssueTree prevents a terminal Run from leaving human-facing

@@ -20,8 +20,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/google/uuid"
-
 	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/collaboration"
 	controlmodel "github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/controlplane/model"
 	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/store"
@@ -42,7 +40,7 @@ func setupBlockedTeamRoot(t *testing.T, st store.Store, cancelChild bool) (*cont
 	issue, err := st.Collaboration().CreateIssue(ctx, &controlmodel.Issue{
 		Tenant: "tenant-a", Namespace: "ns-a", Title: "team work awaiting human input",
 		AssigneeType: controlmodel.AssigneeTeam, AssigneeRef: team.ID.String(),
-		Creator:      controlmodel.Actor{Type: controlmodel.ActorHuman, Ref: "owner"},
+		Creator: controlmodel.Actor{Type: controlmodel.ActorHuman, Ref: "owner"},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -109,7 +107,7 @@ func completeTeamCoordinator(t *testing.T, st store.Store, task *controlmodel.Ag
 // A Team Run waiting on human input is routinely joined by newer comment-driven
 // direct Runs on the same root. Those Runs never own the Issue lifecycle, so
 // they must not strip the Team Run of its resume eligibility.
-func TestAdaptiveTeamRunResumesBlockedRootDespiteNewerDirectRun(t *testing.T) {
+func TestAdaptiveTeamRunResumesBlockedRootDespiteNewerDirectRuns(t *testing.T) {
 	ctx := context.Background()
 	st, err := store.Open(ctx, store.Config{Driver: store.DriverMemory})
 	if err != nil {
@@ -117,15 +115,17 @@ func TestAdaptiveTeamRunResumesBlockedRootDespiteNewerDirectRun(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = st.Close() })
 	issue, leader := setupBlockedTeamRoot(t, st, true)
-	// A comment mention dispatches a short-lived direct Run on the same root
-	// while the adaptive Team Run is still waiting.
+	// Comment-driven direct Runs must not exhaust the query before the owning
+	// adaptive Team Run is considered.
 	time.Sleep(5 * time.Millisecond)
-	if _, err = st.Orchestration().CreateRun(ctx, &controlmodel.OrchestrationRun{
-		Tenant: "tenant-a", Namespace: "ns-a", RootIssueID: issue.ID,
-		Mode: controlmodel.RunModeDirect, State: controlmodel.RunSucceeded,
-		TriggerType: "comment", CreatedBy: controlmodel.Actor{Type: controlmodel.ActorHuman, Ref: "owner"},
-	}); err != nil {
-		t.Fatal(err)
+	for i := 0; i < 50; i++ {
+		if _, err = st.Orchestration().CreateRun(ctx, &controlmodel.OrchestrationRun{
+			Tenant: "tenant-a", Namespace: "ns-a", RootIssueID: issue.ID,
+			Mode: controlmodel.RunModeDirect, State: controlmodel.RunSucceeded,
+			TriggerType: "comment", CreatedBy: controlmodel.Actor{Type: controlmodel.ActorHuman, Ref: "owner"},
+		}); err != nil {
+			t.Fatal(err)
+		}
 	}
 	completeTeamCoordinator(t, st, leader)
 	if err = (&Engine{Store: st}).ReconcileRun(ctx, leader.OrchestrationRunID); err != nil {
@@ -169,89 +169,5 @@ func TestOlderAdaptiveRunDoesNotResumeRootOwnedByNewerTeamRun(t *testing.T) {
 	}
 	if current.Status != controlmodel.IssueBlocked {
 		t.Fatalf("older Team Run advanced a root owned by a newer Team Run: status=%s", current.Status)
-	}
-}
-
-// The Team Run may already be terminal when its blocked root becomes resumable
-// (for example when the last child is closed by a separate dispatch). A later
-// direct Run that converges on the same root must evaluate the resume
-// conditions on behalf of the finished Team Run instead of leaving the root
-// blocked forever.
-func TestDirectRunResumesBlockedRootAfterTeamRunFinished(t *testing.T) {
-	ctx := context.Background()
-	st, err := store.Open(ctx, store.Config{Driver: store.DriverMemory})
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = st.Close() })
-	issue, leader := setupBlockedTeamRoot(t, st, false)
-	// The adaptive Team Run already finished with its coordinator resolved.
-	node, err := st.Orchestration().GetNode(ctx, leader.RunNodeID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	switch node.State {
-	case controlmodel.RunNodePending:
-		if node, err = st.Orchestration().TransitionNode(ctx, node.ID, node.Version, controlmodel.RunNodeReady, nil, "", ""); err != nil {
-			t.Fatal(err)
-		}
-		fallthrough
-	case controlmodel.RunNodeReady:
-		if node, err = st.Orchestration().TransitionNode(ctx, node.ID, node.Version, controlmodel.RunNodeRunning, nil, "", ""); err != nil {
-			t.Fatal(err)
-		}
-		fallthrough
-	case controlmodel.RunNodeRunning, controlmodel.RunNodeWaiting:
-		if node, err = st.Orchestration().TransitionNode(ctx, node.ID, node.Version,
-			controlmodel.RunNodeSucceeded, json.RawMessage(`{"summary":"done"}`), "", ""); err != nil {
-			t.Fatal(err)
-		}
-	}
-	run, err := st.Orchestration().GetRun(ctx, leader.OrchestrationRunID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err = st.Orchestration().TransitionRun(ctx, run.ID, run.Version,
-		controlmodel.RunSucceeded, nil, "", ""); err != nil {
-		t.Fatal(err)
-	}
-	// The blocked child is closed by a separate dispatch after the Team Run ended.
-	children, err := st.Collaboration().ListIssues(ctx, store.IssueFilter{
-		Tenant: "tenant-a", Namespace: "ns-a", ParentID: &issue.ID, Limit: 10,
-	})
-	if err != nil || len(children) != 1 {
-		t.Fatalf("children: %+v err=%v", children, err)
-	}
-	if _, err = st.Collaboration().TransitionIssue(ctx, children[0].ID, children[0].Version,
-		controlmodel.IssueCancelled, controlmodel.Actor{Type: controlmodel.ActorHuman, Ref: "owner"}, "skipped"); err != nil {
-		t.Fatal(err)
-	}
-	// A later direct Run converges on the same root after the Team Run ended.
-	time.Sleep(5 * time.Millisecond)
-	direct, err := st.Orchestration().CreateRun(ctx, &controlmodel.OrchestrationRun{
-		Tenant: "tenant-a", Namespace: "ns-a", RootIssueID: issue.ID,
-		Mode: controlmodel.RunModeDirect, State: controlmodel.RunRunning,
-		CreatedBy: controlmodel.Actor{Type: controlmodel.ActorHuman, Ref: "owner"},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	issueID := issue.ID
-	if _, err = st.Orchestration().CreateNode(ctx, &controlmodel.RunNode{
-		ID: uuid.New(), RunID: direct.ID, Tenant: direct.Tenant, Namespace: direct.Namespace,
-		NodeKey: "agent", Type: controlmodel.RunNodeAgent, IssueID: &issueID,
-		State: controlmodel.RunNodeSucceeded,
-	}); err != nil {
-		t.Fatal(err)
-	}
-	if err = (&Engine{Store: st}).ReconcileRun(ctx, direct.ID); err != nil {
-		t.Fatal(err)
-	}
-	current, err := st.Collaboration().GetIssue(ctx, issue.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if current.Status != controlmodel.IssueInReview {
-		t.Fatalf("direct Run did not resume the blocked root after the Team Run finished: status=%s version=%d", current.Status, current.Version)
 	}
 }
