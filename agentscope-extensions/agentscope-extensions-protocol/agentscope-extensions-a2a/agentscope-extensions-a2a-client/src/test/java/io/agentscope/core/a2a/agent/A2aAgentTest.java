@@ -74,6 +74,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 import java.util.function.Function;
@@ -736,6 +737,119 @@ public class A2aAgentTest {
         call.dispose();
 
         verify(a2aClient, timeout(5000)).close();
+    }
+
+    @Test
+    @DisplayName("Should cancel the remote task when the call is cancelled")
+    void testCancelRemoteTaskWhenCallIsCancelled() throws InterruptedException {
+        A2aAgent agent =
+                A2aAgent.builder()
+                        .name("test-agent")
+                        .agentCard(agentCard)
+                        .clientReplacer(this::useMockClient)
+                        .build();
+        AtomicReference<List<BiConsumer<ClientEvent, AgentCard>>> consumers =
+                new AtomicReference<>();
+        CountDownLatch sent = new CountDownLatch(1);
+        doAnswer(captureConsumers(consumers, sent))
+                .when(a2aClient)
+                .sendMessage(any(Message.class), anyList(), any());
+
+        Disposable call = agent.call(Msg.builder().textContent("test").build()).subscribe();
+        assertTrue(sent.await(5, TimeUnit.SECONDS));
+        deliver(consumers.get(), new TaskEvent(workingTask()));
+        call.dispose();
+
+        ArgumentCaptor<CancelTaskParams> cancelled =
+                ArgumentCaptor.forClass(CancelTaskParams.class);
+        verify(a2aClient, timeout(5000)).cancelTask(cancelled.capture(), eq(null));
+        assertEquals("taskId", cancelled.getValue().id());
+    }
+
+    @Test
+    @DisplayName("Should still close the client when cancelling the remote task fails")
+    void testCloseClientWhenCancelTaskFails() throws InterruptedException {
+        A2aAgent agent =
+                A2aAgent.builder()
+                        .name("test-agent")
+                        .agentCard(agentCard)
+                        .clientReplacer(this::useMockClient)
+                        .build();
+        AtomicReference<List<BiConsumer<ClientEvent, AgentCard>>> consumers =
+                new AtomicReference<>();
+        CountDownLatch sent = new CountDownLatch(1);
+        doAnswer(captureConsumers(consumers, sent))
+                .when(a2aClient)
+                .sendMessage(any(Message.class), anyList(), any());
+        doThrow(new A2AClientException("cancel not supported"))
+                .when(a2aClient)
+                .cancelTask(any(CancelTaskParams.class), any());
+
+        Disposable call = agent.call(Msg.builder().textContent("test").build()).subscribe();
+        assertTrue(sent.await(5, TimeUnit.SECONDS));
+        deliver(consumers.get(), new TaskEvent(workingTask()));
+        call.dispose();
+
+        verify(a2aClient, timeout(5000)).cancelTask(any(CancelTaskParams.class), any());
+        verify(a2aClient, timeout(5000)).close();
+    }
+
+    @Test
+    @DisplayName("Should drop the events that arrive after the call is cancelled")
+    void testIgnoreEventsAfterCallIsCancelled() throws InterruptedException {
+        AtomicInteger chunks = new AtomicInteger();
+        A2aAgent agent =
+                A2aAgent.builder()
+                        .name("test-agent")
+                        .agentCard(agentCard)
+                        .clientReplacer(this::useMockClient)
+                        .hook(
+                                new Hook() {
+                                    @Override
+                                    public <T extends HookEvent> Mono<T> onEvent(T event) {
+                                        if (event instanceof ReasoningChunkEvent) {
+                                            chunks.incrementAndGet();
+                                        }
+                                        return Mono.just(event);
+                                    }
+                                })
+                        .build();
+        AtomicReference<List<BiConsumer<ClientEvent, AgentCard>>> consumers =
+                new AtomicReference<>();
+        CountDownLatch sent = new CountDownLatch(1);
+        doAnswer(captureConsumers(consumers, sent))
+                .when(a2aClient)
+                .sendMessage(any(Message.class), anyList(), any());
+
+        Disposable call = agent.call(Msg.builder().textContent("test").build()).subscribe();
+        assertTrue(sent.await(5, TimeUnit.SECONDS));
+        deliver(consumers.get(), workingUpdate("before"));
+        assertEquals(1, chunks.get());
+        call.dispose();
+
+        deliver(consumers.get(), workingUpdate("after"));
+
+        assertEquals(1, chunks.get());
+    }
+
+    @Test
+    @DisplayName("Should not cancel the remote task of a call that completed")
+    void testDoNotCancelRemoteTaskOfCompletedCall() {
+        A2aAgent agent =
+                A2aAgent.builder()
+                        .name("test-agent")
+                        .agentCard(agentCard)
+                        .clientReplacer(this::useMockClient)
+                        .build();
+        doAnswer(mockFinalTask(TaskState.TASK_STATE_COMPLETED, "done", null))
+                .when(a2aClient)
+                .sendMessage(any(Message.class), anyList(), any());
+
+        Msg result = agent.call(Msg.builder().textContent("test").build()).block();
+
+        assertEquals("done", result.getTextContent());
+        verify(a2aClient).close();
+        verify(a2aClient, never()).cancelTask(any(CancelTaskParams.class), any());
     }
 
     @Test
@@ -1577,6 +1691,43 @@ public class A2aAgentTest {
                     consumer -> consumer.accept(new TaskUpdateEvent(completed, done), agentCard));
             return null;
         };
+    }
+
+    /** Keeps the consumers of the call and leaves the stream open, as a streaming client does. */
+    private static Answer<Void> captureConsumers(
+            AtomicReference<List<BiConsumer<ClientEvent, AgentCard>>> consumers,
+            CountDownLatch sent) {
+        return invocationOnMock -> {
+            @SuppressWarnings("unchecked")
+            List<BiConsumer<ClientEvent, AgentCard>> captured =
+                    invocationOnMock.getArgument(1, List.class);
+            consumers.set(captured);
+            sent.countDown();
+            return null;
+        };
+    }
+
+    private void deliver(List<BiConsumer<ClientEvent, AgentCard>> consumers, ClientEvent event) {
+        consumers.forEach(consumer -> consumer.accept(event, agentCard));
+    }
+
+    private static Task workingTask() {
+        return Task.builder()
+                .id("taskId")
+                .contextId("contextId")
+                .status(new TaskStatus(TaskState.TASK_STATE_WORKING))
+                .build();
+    }
+
+    private static TaskUpdateEvent workingUpdate(String text) {
+        TaskStatusUpdateEvent update =
+                new TaskStatusUpdateEvent(
+                        "taskId",
+                        new TaskStatus(
+                                TaskState.TASK_STATE_WORKING, A2A.toAgentMessage(text), null),
+                        "contextId",
+                        Map.of());
+        return new TaskUpdateEvent(workingTask(), update);
     }
 
     private Answer<Void> mockWaitingStopAnswer(final AtomicBoolean stopFlag) {

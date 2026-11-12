@@ -2468,6 +2468,32 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                     : Mono.empty());
         }
 
+        /**
+         * Passes every streamed element through until this execution is interrupted.
+         *
+         * <p>{@link #checkInterrupted()} is only a read of the interruption flag wrapped in a
+         * {@code Mono}, so testing it per chunk through {@code concatMap} made every streamed chunk
+         * cross an asynchronous boundary to reach the same field access. {@code handle} performs
+         * that read in place: the element continues, or the stream ends with the same error the
+         * {@code Mono} raised. Ordering and backpressure are unchanged because {@code handle}
+         * processes elements one at a time, and the interruption still lands between two chunks
+         * rather than after the whole response.
+         *
+         * @param upstream the streamed elements
+         * @param <T> element type
+         * @return the same elements, or an {@link InterruptedException} once the flag is set
+         */
+        private <T> Flux<T> untilInterrupted(Flux<T> upstream) {
+            return upstream.handle(
+                    (item, sink) -> {
+                        if (interruption.isInterrupted()) {
+                            sink.error(new InterruptedException("Agent execution interrupted"));
+                            return;
+                        }
+                        sink.next(item);
+                    });
+        }
+
         private Mono<Msg> doCallInner(List<Msg> msgs) {
             // Graceful-shutdown deduplication: if the agent's session was previously interrupted
             // by shutdown, the client is likely retrying with the same user prompt that already
@@ -3532,7 +3558,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                     () ->
                                             SessionModels.wrap(mci.model(), rc, "REASONING").stream(
                                                     mci.messages(), mci.tools(), mci.options()))
-                            .concatMap(chunk -> checkInterrupted().thenReturn(chunk))
+                            .transform(this::untilInterrupted)
                             .concatMap(
                                     chunk ->
                                             Flux.deferContextual(
@@ -5169,7 +5195,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
 
             Flux<AgentEvent> modelEvents =
                     Flux.defer(() -> mci.model().stream(mci.messages(), mci.tools(), mci.options()))
-                            .concatMap(chunk -> checkInterrupted().thenReturn(chunk))
+                            .transform(this::untilInterrupted)
                             .concatMap(
                                     chunk ->
                                             Flux.deferContextual(
