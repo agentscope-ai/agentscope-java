@@ -172,6 +172,7 @@ class WorkspaceProjectionRevocationTest {
         assertTrue(sandbox.exists("user guide.md"));
         assertTrue(sandbox.exists("中文目录/说明.md"));
         assertTrue(sandbox.exists("it's.md"));
+        assertTrue(sandbox.exists("a$(x)b`c`.md"));
 
         sandbox.stop();
         state.setWorkspaceSpec(specWithRoots());

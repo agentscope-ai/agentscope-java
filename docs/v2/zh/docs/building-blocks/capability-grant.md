@@ -117,3 +117,5 @@ new CapabilitySurface(Set.of(), Set.of(), Set.of());
 授权兼容：`skillBox(...)` 与 capability resolver **可以组合**。静态提示词在注入前按当次授权面裁剪——SkillHook 从调用上下文读取授权面，经同一渲染管线过滤；未启用授权（或授权面为 ALLOW_ALL）时提示词与历史版本逐字节一致，零技能获授时整块不注入；子代理继承父级授权面时同样生效。
 
 仍被拒绝的组合只有一种：`skillRepositories(...)` + `dynamicSkillsEnabled(false)` + resolver——该形态没有任何 per-call 技能提示词可供裁剪，配置等于无效授权，`build()` 直接抛 `IllegalStateException`（授权配置绝不允许静默退化为不裁剪的 agent）。
+
+持久化与降级：授权状态（surface、托管标记、撤销范围）从不写入持久化状态；撤销清单（`projectedWorkspacePaths`）仅在启用授权后写入——未启用的部署持久化 JSON 与旧版逐字段一致，可安全回滚。已启用授权的部署回滚到旧版时，旧版无法识别该字段，会放弃恢复的沙箱状态并重建工作区（WARN 提示，不影响调用）。多实例部署请配置真实的执行互斥（`DistributedStore`）——默认的 Noop 互斥下，同作用域并发调用的投影状态为最后写入者胜出。
