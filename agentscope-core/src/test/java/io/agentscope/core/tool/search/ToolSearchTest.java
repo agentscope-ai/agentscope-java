@@ -143,6 +143,83 @@ class ToolSearchTest {
     }
 
     @Test
+    void cjkQueriesRecallToolsDescribedWithShorterChinesePhrases() {
+        var strategy = new KeywordToolSearchStrategy();
+        var candidates =
+                List.of(
+                        schema("read_cn", "搜索并读取文件内容"),
+                        schema("shell_cn", "执行系统命令"),
+                        schema("english_only", "Search and read file contents"));
+        // A natural Chinese query is one long term after splitting (CJK letters are not
+        // separators), so whole-phrase contains() never matches a shorter description.
+        List<String> names =
+                strategy.search(new ToolSearchRequest(candidates, List.of(), "帮我搜索文件内容", 5))
+                        .block()
+                        .toolNames();
+        assertEquals(List.of("read_cn"), names, "actual: " + names);
+    }
+
+    @Test
+    void twoCharacterCjkQueriesKeepExactSubstringSemantics() {
+        var strategy = new KeywordToolSearchStrategy();
+        var candidates = List.of(schema("read_cn", "搜索并读取文件内容"), schema("shell_cn", "执行系统命令"));
+        // A two-character term is already the smallest matching unit; behaviour is unchanged.
+        List<String> names =
+                strategy.search(new ToolSearchRequest(candidates, List.of(), "文件", 5))
+                        .block()
+                        .toolNames();
+        assertEquals(List.of("read_cn"), names, "actual: " + names);
+        List<String> none =
+                strategy.search(new ToolSearchRequest(candidates, List.of(), "天气", 5))
+                        .block()
+                        .toolNames();
+        assertTrue(none.isEmpty(), "unrelated short queries still recall nothing, actual: " + none);
+    }
+
+    @Test
+    void mixedScriptQueriesDoNotRecallToolsThroughLatinFragments() {
+        var strategy = new KeywordToolSearchStrategy();
+        var candidates =
+                List.of(
+                        schema("install_plugin", "Install a plugin from input box"),
+                        schema("mail_cn", "读取并管理邮件"));
+        // The mixed term is one token (CJK and Latin are both letters); expanding it must not
+        // emit Latin character pairs — "in"/"bo" windows would hit install_plugin's name and
+        // description and outrank the tool the Chinese part of the query describes.
+        List<String> names =
+                strategy.search(new ToolSearchRequest(candidates, List.of(), "帮我找inbox邮件", 5))
+                        .block()
+                        .toolNames();
+        assertEquals(List.of("mail_cn"), names, "actual: " + names);
+    }
+
+    @Test
+    void supplementaryPlaneHanTermsMatchOnAdjacentCodePoints() {
+        var strategy = new KeywordToolSearchStrategy();
+        // The description shares ONLY the surrogate-spanning window 文𠀀 with the query — a
+        // BMP-only window generator would find no overlap and recall nothing.
+        var candidates = List.of(schema("ext_doc", "整理文𠀀资料"), schema("other_cn", "执行系统命令"));
+        List<String> names =
+                strategy.search(new ToolSearchRequest(candidates, List.of(), "查文𠀀档", 5))
+                        .block()
+                        .toolNames();
+        assertEquals(List.of("ext_doc"), names, "actual: " + names);
+
+        // 文𠁁 is a different ext-B character than 𠀀: a query mentioning 文𠁁 must not recall
+        // the tool described with 文𠀀. Char-based windows would emit "文" plus the unpaired
+        // high surrogate, which substring-matches the surrogate pair inside the description.
+        List<String> noFalseHit =
+                strategy.search(new ToolSearchRequest(candidates, List.of(), "查询文𠁁工具", 5))
+                        .block()
+                        .toolNames();
+        assertTrue(
+                noFalseHit.isEmpty(),
+                "a different ext-B character must not match through a split surrogate pair,"
+                        + " actual: "
+                        + noFalseHit);
+    }
+
+    @Test
     void discoveriesAccumulateDeduplicatePersistAndStaySessionScoped() {
         Toolkit toolkit = new Toolkit();
         toolkit.registerSchema(schema("get_order", "orders"));

@@ -703,7 +703,9 @@ ReActAgent agent = ReActAgent.builder()
 ```
 
 默认的 `KeywordToolSearchStrategy` 不引入额外依赖，按关键词匹配工具名称和描述，
-名称匹配的排序权重更高。可以实现 `ToolSearchStrategy.search(ToolSearchRequest)`，
+名称匹配的排序权重更高。包含三个及以上汉字的词条会额外按相邻两字窗口匹配，
+因此自然中文查询可以召回描述中使用更短中文短语的工具；两字词条与非中文字符
+保持精确子串语义。可以实现 `ToolSearchStrategy.search(ToolSearchRequest)`，
 接入语义检索或远程索引，并通过 `ToolSearchResult` 按相关性返回可用工具名称。
 结果在写入会话状态前会去重、限制数量；不属于候选集合的名称会被拒绝。
 候选集合遵守当前激活的工具组和请求级工具覆盖规则，未激活的组仍需通过现有工具组

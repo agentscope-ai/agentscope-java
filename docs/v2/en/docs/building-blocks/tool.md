@@ -705,7 +705,10 @@ ReActAgent agent = ReActAgent.builder()
 ```
 
 The dependency-free `KeywordToolSearchStrategy` matches query terms against tool
-names and descriptions, with name matches ranked higher. Implement
+names and descriptions, with name matches ranked higher. Terms carrying three or
+more Han characters additionally match on their overlapping two-character windows,
+so natural Chinese queries recall tools described with shorter Chinese phrases;
+two-character and non-CJK terms keep exact-substring semantics. Implement
 `ToolSearchStrategy.search(ToolSearchRequest)` to use semantic retrieval or a remote
 index instead. Return eligible tool names in relevance order using
 `ToolSearchResult`; unknown names are rejected and results are deduplicated and
