@@ -16,7 +16,7 @@ Create or connect an Agent, configure resources, and publish an Endpoint. Applic
 
 Endpoints define input/output contracts and releases. Applications use queries, SSE, or Webhooks to receive changes, involve people in decisions, and return verified results to a business process. Execution completion and business acceptance are separate stages.
 
-Start with the [API quickstart](../docs/v2/en/service/first-session.md), then follow [Endpoint publishing](../docs/v2/en/service/endpoints.md) and [Unified service API](../docs/v2/en/service/service-api.md). Managed native session, file, subagent, and checkpoint APIs provide their respective extensions; their IDs, authentication, and event cursors are not interchangeable with public Invocations.
+Start with the [API quickstart](../docs/v2/en/service/quickstart.md), then follow [Endpoint publishing](../docs/v2/en/service/endpoints.md) and [Unified service API](../docs/v2/en/service/service-api.md). Managed native session, file, subagent, and checkpoint APIs provide their respective extensions; their IDs, authentication, and event cursors are not interchangeable with public Invocations.
 
 ### Choose execution for the task
 
@@ -61,7 +61,7 @@ In production, the recommended AgentScope Service deployment looks like this:
 
 ## How Agents attach
 
-Application developers can validate a call with the [API quickstart](../docs/v2/en/service/first-session.md). Platform teams prepare models, execution resources, identities, and releases. Existing applications implement the [External execution adapter](../docs/v2/en/service/register-agentscope-agent.md) before publishing a service.
+Application developers can validate a call with the [API quickstart](../docs/v2/en/service/quickstart.md). Platform teams prepare models, execution resources, identities, and releases. Existing applications implement the [External execution adapter](../docs/v2/en/service/register-agentscope-agent.md) before publishing a service.
 
 ## Quick start with Docker Compose
 
@@ -251,7 +251,7 @@ For enterprise cloud offerings, also see Alibaba Cloud [Agent Teams](https://hel
 
 - [Service overview](../docs/v2/en/service/index.md)
 - [Use cases and integration designs](../docs/v2/en/service/usecases.md)
-- [API quickstart](../docs/v2/en/service/first-session.md)
+- [API quickstart](../docs/v2/en/service/quickstart.md)
 - [Unified service API](../docs/v2/en/service/service-api.md)
 - [Managed native sessions and tasks](../docs/v2/en/service/session-event-log.md)
 - [API reference](../docs/v2/en/service/api-reference.md)
