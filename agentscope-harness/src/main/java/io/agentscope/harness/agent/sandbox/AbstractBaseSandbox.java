@@ -296,21 +296,13 @@ public abstract class AbstractBaseSandbox implements Sandbox {
 
     /**
      * Deletes workspace files that a previous projection put in place and the current one
-     * no longer authorizes. Every manifest path is a regular file by construction (the
-     * projection collects regular files only), so the default implementation deletes with
-     * {@code rm -f --} — never {@code rm -r}: a tampered manifest entry pointing at a
-     * directory fails the deletion and the start (fail-closed) instead of recursively
-     * removing a tree. Paths are validated against a strict character whitelist before use
-     * (workspace-relative POSIX file paths only) and single-quoted — no expansion vector
-     * remains in POSIX sh; a validation failure throws rather than skipping — leftover
-     * unauthorized files are an authorization breach, not a cosmetic issue. Runs through
-     * {@link #doExec(RuntimeContext, String, int)} (no backend currently consumes the
-     * runtime context inside {@code doExec}); backends with a native delete primitive may
-     * override. Paths are chunked to respect command-length limits.
-     *
-     * <p>Assumes this sandbox owns its workspace root: concurrent sandboxes never share a
-     * root, so revoking "everything this sandbox itself projected" cannot touch another
-     * call's files.
+     * no longer authorizes. The deletion runs inside the sandbox via {@link
+     * #doExec(RuntimeContext, String, int)} — remote backends expose no host-side file API,
+     * so a shell command is the only universal channel, and it is safe here: every path is
+     * whitelist-validated and single-quoted, and a failed deletion fails the start rather
+     * than leaving unauthorized files behind. Backends with a native delete primitive may
+     * override; each sandbox owns its workspace root, so only this sandbox's own projected
+     * files are ever touched.
      *
      * @param relativePaths workspace-relative POSIX paths previously projected
      * @throws Exception when a manifest path is invalid or deletion fails
@@ -324,10 +316,8 @@ public abstract class AbstractBaseSandbox implements Sandbox {
             List<String> chunk =
                     relativePaths.subList(
                             from, Math.min(from + DELETE_CHUNK_SIZE, relativePaths.size()));
-            // rm -f, never -r: manifest entries are regular files only, so a directory
-            // entry fails the delete (fail-closed) instead of removing a tree. Single
-            // quotes: no expansion inside '...' in POSIX sh, and the whitelist above
-            // already rejects any ' in the path.
+            // rm inside the sandbox: paths are whitelist-validated and single-quoted, so
+            // the command cannot expand or escape the projected file set.
             StringBuilder command = new StringBuilder("rm -f --");
             for (String path : chunk) {
                 command.append(" '").append(root).append('/').append(path).append('\'');
