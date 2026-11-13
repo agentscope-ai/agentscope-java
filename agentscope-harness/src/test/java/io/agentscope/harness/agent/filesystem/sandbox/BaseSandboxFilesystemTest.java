@@ -29,6 +29,7 @@ import io.agentscope.harness.agent.filesystem.model.GlobResult;
 import io.agentscope.harness.agent.filesystem.model.GrepResult;
 import io.agentscope.harness.agent.filesystem.model.LsResult;
 import io.agentscope.harness.agent.filesystem.model.ReadResult;
+import io.agentscope.harness.agent.filesystem.model.WriteResult;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -309,6 +310,57 @@ class BaseSandboxFilesystemTest {
                     result.error().contains("exit code -1"),
                     "error should fall back to the exit code when no diagnostic output exists");
         }
+
+        @Test
+        void write_checkCommand_containsNoDoubleQuotesOrSubstitution() {
+            FakeSandboxFilesystem fs = new FakeSandboxFilesystem();
+            fs.write(RT, "/workspace/docs/new/notes.txt", "hello");
+            assertFalse(fs.lastCommand.contains("\""), fs.lastCommand);
+            assertFalse(fs.lastCommand.contains("dirname"), fs.lastCommand);
+        }
+
+        @Test
+        void write_newNestedPath_mkdirsParentAsSingleQuotedLiteral() {
+            FakeSandboxFilesystem fs = new FakeSandboxFilesystem();
+            WriteResult result = fs.write(RT, "/workspace/my docs/new file.txt", "hello");
+            assertTrue(result.isSuccess(), result.error());
+            assertTrue(
+                    fs.lastCommand.contains("mkdir -p '/workspace/my docs' 2>&1"), fs.lastCommand);
+        }
+
+        @Test
+        void write_rootLevelFile_needsNoParentMkdir() {
+            FakeSandboxFilesystem fs = new FakeSandboxFilesystem();
+            WriteResult result = fs.write(RT, "/notes.txt", "hello");
+            assertTrue(result.isSuccess(), result.error());
+            assertFalse(fs.lastCommand.contains("mkdir"), fs.lastCommand);
+        }
+
+        @Test
+        void move_checkCommand_containsNoSubstitutionOrDoubleQuotes() {
+            FakeSandboxFilesystem fs = new FakeSandboxFilesystem();
+            fs.move(RT, "/workspace/docs/old.txt", "/workspace/docs/new/notes.txt");
+            assertFalse(fs.lastCommand.contains("dirname"), fs.lastCommand);
+            assertFalse(fs.lastCommand.contains("\""), fs.lastCommand);
+        }
+
+        @Test
+        void move_newNestedPath_mkdirsParentAsSingleQuotedLiteral() {
+            FakeSandboxFilesystem fs = new FakeSandboxFilesystem();
+            WriteResult result = fs.move(RT, "/tmp/src.txt", "/workspace/my docs/new file.txt");
+            assertTrue(result.isSuccess(), result.error());
+            assertTrue(
+                    fs.lastCommand.startsWith("mkdir -p '/workspace/my docs' 2>&1 && mv "),
+                    fs.lastCommand);
+        }
+
+        @Test
+        void move_rootLevelFile_needsNoParentMkdir() {
+            FakeSandboxFilesystem fs = new FakeSandboxFilesystem();
+            WriteResult result = fs.move(RT, "/tmp/src.txt", "/dst.txt");
+            assertTrue(result.isSuccess(), result.error());
+            assertTrue(fs.lastCommand.startsWith("mv "), fs.lastCommand);
+        }
     }
 
     // ================================================================
@@ -451,6 +503,39 @@ class BaseSandboxFilesystemTest {
             assertEquals(3, result.occurrences());
             assertEquals("y y y\n", Files.readString(file));
         }
+
+        @Test
+        void write_pathWithSpaces_createsParentDirsAndWritesFile() throws IOException {
+            Path target = tmpDir.resolve("my docs/new file.txt");
+            WriteResult result =
+                    new LocalShellSandboxFilesystem().write(RT, target.toString(), "hello");
+            assertTrue(result.isSuccess(), result.error());
+            assertEquals("hello", Files.readString(target));
+        }
+
+        @Test
+        void write_existingFile_failsWithExistsSignal() throws IOException {
+            Path target = tmpDir.resolve("exists.txt");
+            Files.writeString(target, "original");
+            WriteResult result =
+                    new LocalShellSandboxFilesystem().write(RT, target.toString(), "hello");
+            assertFalse(result.isSuccess());
+            assertTrue(result.error().contains("already exists"));
+            assertEquals("original", Files.readString(target), "existing file must be untouched");
+        }
+
+        @Test
+        void move_pathWithSpaces_createsParentDirsAndMovesFile() throws IOException {
+            Path source = tmpDir.resolve("source.txt");
+            Files.writeString(source, "hello");
+            Path target = tmpDir.resolve("my docs/new file.txt");
+            WriteResult result =
+                    new LocalShellSandboxFilesystem()
+                            .move(RT, source.toString(), target.toString());
+            assertTrue(result.isSuccess(), result.error());
+            assertEquals("hello", Files.readString(target));
+            assertFalse(Files.exists(source), "source must be moved, not copied");
+        }
     }
 
     // ================================================================
@@ -490,7 +575,7 @@ class BaseSandboxFilesystemTest {
         @Override
         public List<FileUploadResponse> uploadFiles(
                 RuntimeContext runtimeContext, List<Map.Entry<String, byte[]>> files) {
-            return List.of();
+            return files.stream().map(entry -> FileUploadResponse.success(entry.getKey())).toList();
         }
 
         @Override
@@ -561,7 +646,21 @@ class BaseSandboxFilesystemTest {
         @Override
         public List<FileUploadResponse> uploadFiles(
                 RuntimeContext runtimeContext, List<Map.Entry<String, byte[]>> files) {
-            return List.of();
+            return files.stream()
+                    .map(
+                            entry -> {
+                                try {
+                                    Path target = Path.of(entry.getKey());
+                                    if (target.getParent() != null) {
+                                        Files.createDirectories(target.getParent());
+                                    }
+                                    Files.write(target, entry.getValue());
+                                    return FileUploadResponse.success(entry.getKey());
+                                } catch (IOException e) {
+                                    return FileUploadResponse.fail(entry.getKey(), e.getMessage());
+                                }
+                            })
+                    .toList();
         }
 
         @Override
