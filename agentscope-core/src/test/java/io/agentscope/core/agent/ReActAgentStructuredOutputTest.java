@@ -17,6 +17,7 @@
 package io.agentscope.core.agent;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 
 import io.agentscope.core.ReActAgent;
@@ -347,6 +348,35 @@ class ReActAgentStructuredOutputTest {
                 1,
                 memoryMessages.stream().filter(m -> m.getRole() == MsgRole.USER).count(),
                 "Should only have the original user message, no new ones added");
+    }
+
+    @Test
+    void testExtractResponseDataPreservesMessageIdentityAndUsage() throws Exception {
+        ReActAgent agent = ReActAgent.builder().model(new MockModel(msgs -> List.of())).build();
+        Msg original =
+                Msg.builder()
+                        .id("response-id")
+                        .name("generate_response")
+                        .role(MsgRole.ASSISTANT)
+                        .content(TextBlock.builder().text("result").build())
+                        .timestamp("2026-10-13T00:00:00Z")
+                        .usage(new ChatUsage(10, 20, 30))
+                        .metadata(Map.of("response", Map.of("location", "Paris"), "other", "kept"))
+                        .build();
+        java.lang.reflect.Method extract =
+                ReActAgent.class.getDeclaredMethod("extractResponseData", Msg.class);
+        extract.setAccessible(true);
+
+        Msg result = (Msg) extract.invoke(agent, original);
+
+        assertEquals(original.getId(), result.getId());
+        assertEquals(original.getTimestamp(), result.getTimestamp());
+        assertEquals(original.getUsage(), result.getUsage());
+        assertEquals(original.getRole(), result.getRole());
+        assertEquals(original.getContent(), result.getContent());
+        assertEquals("kept", result.getMetadata().get("other"));
+        assertEquals("Paris", result.getStructuredData(Map.class).get("location"));
+        assertFalse(result.getMetadata().containsKey("response"));
     }
 
     @Test
