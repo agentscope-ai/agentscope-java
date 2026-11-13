@@ -24,6 +24,8 @@ code-reviewer/
     └── run-checks.sh
 ```
 
+`SKILL.md` 使用 UTF-8 编码，支持在开头的 `---` 前带有字节顺序标记（BOM）。
+
 SKILL.md 写法：
 
 ```markdown

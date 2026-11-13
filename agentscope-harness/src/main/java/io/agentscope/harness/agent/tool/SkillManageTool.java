@@ -710,7 +710,8 @@ public class SkillManageTool implements AgentTool {
             return "SKILL.md content exceeds " + MAX_SKILL_CONTENT_CHARS + " chars.";
         }
         // Must look like frontmatter: starts with "---" on first line and contains closing "---".
-        String trimmed = content.stripLeading();
+        String trimmed = content.startsWith("\uFEFF") ? content.substring(1) : content;
+        trimmed = trimmed.stripLeading();
         if (!trimmed.startsWith("---")) {
             return "SKILL.md must start with '---' (YAML frontmatter).";
         }
