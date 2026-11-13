@@ -65,6 +65,8 @@ The sandbox snapshots its workspace at each `call()` end and restores at the nex
 - Container gone → reboot from snapshot, restore workspace
 - No snapshot → full init from `WorkspaceSpec` (cold start)
 
+An opened snapshot archive is closed even if workspace setup fails during restoration.
+
 E2B snapshot read or restore failures fail the call rather than silently starting an empty workspace. A confirmed absent snapshot (including a native snapshot returning HTTP 404) still permits a cold start.
 
 Where snapshots land is decided by `snapshotSpec`:
