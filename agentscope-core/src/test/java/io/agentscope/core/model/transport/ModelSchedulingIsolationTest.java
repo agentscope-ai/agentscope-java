@@ -183,6 +183,7 @@ class ModelSchedulingIsolationTest {
                                             .responseTimeout(Duration.ofMillis(100))
                                             .build())
                             .build();
+            JdkHttpTransport recovery = null;
             try {
                 StepVerifier.create(transport.stream(request(server)))
                         .expectErrorMatches(
@@ -191,17 +192,19 @@ class ModelSchedulingIsolationTest {
                                                 && error.getMessage().contains("Stream timeout"))
                         .verify(Duration.ofSeconds(2));
                 assertEquals(0, server.getRequestCount());
+                recovery = JdkHttpTransport.builder().streamScheduler(reads).build();
                 server.enqueue(new MockResponse().setBody("data: next\n\ndata: [DONE]\n\n"));
                 release.countDown();
                 assertEquals(
                         List.of("next"),
-                        transport.stream(request(server))
+                        recovery.stream(request(server))
                                 .collectList()
                                 .block(Duration.ofSeconds(2)));
                 assertEquals(
                         1, server.getRequestCount(), "The timed-out queued send must never run");
             } finally {
                 release.countDown();
+                if (recovery != null) recovery.close();
                 transport.close();
             }
         } finally {
