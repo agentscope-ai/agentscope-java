@@ -2512,8 +2512,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
                     (uid, sid) -> {
                         RuntimeContext bakedRc =
                                 HarnessAgentBuilderSupport.buildBakedRuntimeContext(uid, sid);
-                        NamespaceFactory ctxNs =
-                                rc -> (uid == null || uid.isBlank()) ? List.of() : List.of(uid);
+                        NamespaceFactory ctxNs = rc -> nsFactory.getNamespace(bakedRc);
                         AbstractFilesystem ctxFs =
                                 new io.agentscope.harness.agent.filesystem.BakedContextFilesystem(
                                         sharedFilesystemRef, bakedRc);

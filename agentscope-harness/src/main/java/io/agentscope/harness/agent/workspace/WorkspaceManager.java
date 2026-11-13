@@ -237,14 +237,75 @@ public class WorkspaceManager implements AutoCloseable {
      * identity (user/session) drives the namespace, not a shared mutable reference.
      */
     public Path resolveRuntimeDataPath(RuntimeContext rc, String relativePath) {
-        if (namespaceFactory == null) {
-            return workspace.resolve(relativePath);
+        String normalized = requireSafeRelativePath(relativePath);
+        List<String> ns =
+                namespaceFactory == null
+                        ? List.of()
+                        : namespaceFactory.getNamespace(rc != null ? rc : RuntimeContext.empty());
+        Path root = workspace.toAbsolutePath().normalize();
+        Path namespaceRoot = root;
+        if (ns != null) {
+            // Validate the entire tuple before inspecting any host path. Each item is one
+            // segment, not a path; custom tuples still retain their ordinary nested layout.
+            for (String segment : ns) {
+                if (segment == null
+                        || segment.isEmpty()
+                        || segment.equals(".")
+                        || segment.equals("..")
+                        || segment.indexOf('/') >= 0
+                        || segment.indexOf('\\') >= 0
+                        || segment.indexOf('\0') >= 0
+                        || Path.of(segment).isAbsolute()
+                        || (segment.length() >= 2
+                                && ((segment.charAt(0) >= 'A' && segment.charAt(0) <= 'Z')
+                                        || (segment.charAt(0) >= 'a' && segment.charAt(0) <= 'z'))
+                                && segment.charAt(1) == ':')) {
+                    throw new IllegalArgumentException(
+                            "Unsafe runtime namespace segment: " + segment);
+                }
+                namespaceRoot = namespaceRoot.resolve(segment);
+            }
         }
-        List<String> ns = namespaceFactory.getNamespace(rc != null ? rc : RuntimeContext.empty());
-        if (ns == null || ns.isEmpty()) {
-            return workspace.resolve(relativePath);
+        Path resolved = namespaceRoot.resolve(normalized).normalize();
+        if (!resolved.startsWith(namespaceRoot)) {
+            throw new IllegalArgumentException("Runtime data path escapes its namespace");
         }
-        return workspace.resolve(String.join("/", ns)).resolve(relativePath);
+        try {
+            // A symlink in the namespace prefix would alias another user's namespace even
+            // when its target remains under the workspace. Never use it as an isolation root.
+            Path prefix = root;
+            for (Path segment : root.relativize(namespaceRoot)) {
+                prefix = prefix.resolve(segment);
+                if (!prefix.equals(root) && Files.isSymbolicLink(prefix)) {
+                    throw new IllegalArgumentException("Symlink in runtime namespace: " + prefix);
+                }
+            }
+            Path physicalRoot = resolveExistingAncestor(root);
+            Path physicalNamespace = physicalRoot.resolve(root.relativize(namespaceRoot));
+            Path candidate = namespaceRoot;
+            if (!resolveExistingAncestor(candidate).startsWith(physicalNamespace)) {
+                throw new IllegalArgumentException("Runtime namespace escapes workspace");
+            }
+            // Internal symlinks are allowed only when every traversed prefix remains inside
+            // this namespace. This also validates existing parents of not-yet-created files.
+            for (Path segment : namespaceRoot.relativize(resolved)) {
+                candidate = candidate.resolve(segment);
+                if (!resolveExistingAncestor(candidate).startsWith(physicalNamespace)) {
+                    throw new IllegalArgumentException("Runtime data path escapes its namespace");
+                }
+            }
+        } catch (IOException e) {
+            throw new IllegalArgumentException("Cannot validate runtime data path", e);
+        }
+        return workspace.resolve(root.relativize(resolved));
+    }
+
+    private static Path resolveExistingAncestor(Path path) throws IOException {
+        Path ancestor = path;
+        while (!Files.exists(ancestor, java.nio.file.LinkOption.NOFOLLOW_LINKS)) {
+            ancestor = ancestor.getParent();
+        }
+        return ancestor.toRealPath().resolve(ancestor.relativize(path)).normalize();
     }
 
     /** Reads AGENTS.md content, returns empty string if not found. */
@@ -590,8 +651,14 @@ public class WorkspaceManager implements AutoCloseable {
 
     private boolean isLiveSandboxServingPath(String relPath) {
         AbstractFilesystem fs = this.filesystem;
+        while (fs instanceof io.agentscope.harness.agent.filesystem.BakedContextFilesystem baked) {
+            fs = baked.delegate();
+        }
         if (fs instanceof RoutedSandboxFilesystem routed) {
             fs = routed.backendFor(relPath);
+        }
+        while (fs instanceof io.agentscope.harness.agent.filesystem.BakedContextFilesystem baked) {
+            fs = baked.delegate();
         }
         return fs instanceof SandboxBackedFilesystem;
     }

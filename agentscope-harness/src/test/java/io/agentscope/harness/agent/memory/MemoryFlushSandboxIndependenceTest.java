@@ -364,6 +364,190 @@ class MemoryFlushSandboxIndependenceTest {
         }
     }
 
+    @Test
+    void hostMemoryRejectsMaliciousBuiltInIdentitiesAndCustomSegments() throws Exception {
+        Path host = Files.createDirectories(workspace.resolve("host"));
+        Path sibling = Files.createDirectories(host.resolve("bob"));
+        Path outside = Files.createDirectories(workspace.resolve("sentinel"));
+        for (Path sentinelRoot : List.of(host, sibling, outside)) {
+            Files.writeString(sentinelRoot.resolve("MEMORY.md"), "private sentinel");
+        }
+        List<String> unsafe =
+                List.of(
+                        outside.toString(),
+                        "../sentinel",
+                        "alice/../bob",
+                        "alice\\..\\bob",
+                        ".",
+                        "..",
+                        "alice/bob",
+                        "alice\\bob",
+                        "C:drive",
+                        "bad\0id");
+        for (io.agentscope.harness.agent.IsolationScope scope :
+                List.of(
+                        io.agentscope.harness.agent.IsolationScope.USER,
+                        io.agentscope.harness.agent.IsolationScope.SESSION)) {
+            try (WorkspaceManager wsm =
+                    new WorkspaceManager(
+                            host,
+                            new SandboxBackedFilesystem(),
+                            null,
+                            scope.toNamespaceFactory())) {
+                for (String identity : unsafe) {
+                    RuntimeContext rc =
+                            scope == io.agentscope.harness.agent.IsolationScope.USER
+                                    ? RuntimeContext.builder()
+                                            .userId(identity)
+                                            .sessionId("safe")
+                                            .build()
+                                    : RuntimeContext.builder()
+                                            .userId("safe")
+                                            .sessionId(identity)
+                                            .build();
+                    assertMemoryAccessRejected(wsm, rc, "MEMORY.md");
+                }
+                // USER's session fallback is equally untrusted.
+                assertMemoryAccessRejected(
+                        wsm,
+                        RuntimeContext.builder().sessionId("alice/../bob").build(),
+                        "MEMORY.md");
+            }
+        }
+        for (String segment :
+                java.util.Arrays.asList(
+                        null, "", ".", "..", "team/../bob", "team\\bob", outside.toString())) {
+            try (WorkspaceManager wsm =
+                    new WorkspaceManager(
+                            host,
+                            new SandboxBackedFilesystem(),
+                            null,
+                            rc -> java.util.Arrays.asList("tenant", segment))) {
+                assertMemoryAccessRejected(wsm, RuntimeContext.empty(), "MEMORY.md");
+            }
+        }
+        for (Path sentinelRoot : List.of(host, sibling, outside)) {
+            assertEquals("private sentinel", Files.readString(sentinelRoot.resolve("MEMORY.md")));
+        }
+    }
+
+    @Test
+    void hostMemoryAllowsSafeUnicodeNestedNamespacesAndLegacyRoot() throws Exception {
+        try (WorkspaceManager wsm =
+                new WorkspaceManager(
+                        workspace,
+                        new SandboxBackedFilesystem(),
+                        null,
+                        rc -> List.of("租户 group", "用户 α"))) {
+            RuntimeContext rc = RuntimeContext.empty();
+            wsm.writeMemoryFileUtf8(rc, "MEMORY.md", "own memory");
+            wsm.appendMemoryFileUtf8(rc, "MEMORY.md", " plus");
+            assertEquals("own memory plus", wsm.readMemoryMd(rc));
+            assertEquals(
+                    "own memory plus",
+                    Files.readString(workspace.resolve("租户 group/用户 α/MEMORY.md")));
+            org.junit.jupiter.api.Assertions.assertThrows(
+                    IllegalArgumentException.class,
+                    () -> wsm.readMemoryFileUtf8(rc, "../MEMORY.md"));
+        }
+        try (WorkspaceManager wsm =
+                new WorkspaceManager(
+                        workspace,
+                        new SandboxBackedFilesystem(),
+                        null,
+                        io.agentscope.harness.agent.IsolationScope.USER.toNamespaceFactory())) {
+            wsm.writeMemoryFileUtf8(RuntimeContext.empty(), "MEMORY.md", "legacy root");
+            assertEquals("legacy root", Files.readString(workspace.resolve("MEMORY.md")));
+        }
+        Path relativeWorkspace = Path.of("").toAbsolutePath().relativize(workspace);
+        for (List<String> ns : List.of(List.<String>of(), List.of("user"))) {
+            try (WorkspaceManager wsm =
+                    new WorkspaceManager(relativeWorkspace, null, null, rc -> ns)) {
+                Path expected =
+                        ns.isEmpty() ? relativeWorkspace : relativeWorkspace.resolve("user");
+                assertEquals(
+                        expected.resolve("MEMORY.md"),
+                        wsm.resolveRuntimeDataPath(RuntimeContext.empty(), "MEMORY.md"));
+            }
+        }
+    }
+
+    @Test
+    void hostMemoryRejectsNamespacePrefixAndEscapingInternalSymlinks() throws Exception {
+        Path host = Files.createDirectories(workspace.resolve("host"));
+        Path bob = Files.createDirectories(host.resolve("bob"));
+        Path alice = Files.createDirectories(host.resolve("alice"));
+        Path outside = Files.createDirectories(workspace.resolve("sentinel"));
+        Files.writeString(bob.resolve("MEMORY.md"), "sibling sentinel");
+        Files.writeString(outside.resolve("MEMORY.md"), "host sentinel");
+        try {
+            Files.createSymbolicLink(host.resolve("alias"), Path.of("bob"));
+        } catch (UnsupportedOperationException | java.io.IOException | SecurityException e) {
+            org.junit.jupiter.api.Assumptions.assumeTrue(
+                    false, "symlink creation unavailable: " + e);
+        }
+        // The configured workspace itself is a trusted root, not a namespace prefix.
+        Path workspaceLink = Files.createSymbolicLink(workspace.resolve("workspace-link"), host);
+        try (WorkspaceManager legacy =
+                new WorkspaceManager(workspaceLink, new SandboxBackedFilesystem())) {
+            legacy.writeMemoryFileUtf8(RuntimeContext.empty(), "MEMORY.md", "legacy linked root");
+            assertEquals("legacy linked root", legacy.readMemoryMd(RuntimeContext.empty()));
+        }
+        Files.createSymbolicLink(host.resolve("external-alias"), outside);
+        Files.createSymbolicLink(alice.resolve("sibling"), Path.of("../bob"));
+        Files.createSymbolicLink(alice.resolve("outside"), outside);
+        Files.createSymbolicLink(alice.resolve("dangling"), outside.resolve("not-created"));
+        Files.writeString(alice.resolve("own.md"), "own link target");
+        Files.createSymbolicLink(alice.resolve("own-link.md"), Path.of("own.md"));
+        try (WorkspaceManager wsm =
+                new WorkspaceManager(
+                        host,
+                        new SandboxBackedFilesystem(),
+                        null,
+                        io.agentscope.harness.agent.IsolationScope.USER.toNamespaceFactory())) {
+            for (String id : List.of("alias", "external-alias")) {
+                assertMemoryAccessRejected(
+                        wsm, RuntimeContext.builder().userId(id).build(), "MEMORY.md");
+            }
+            RuntimeContext rc = RuntimeContext.builder().userId("alice").build();
+            for (String path :
+                    List.of("sibling/MEMORY.md", "outside/MEMORY.md", "dangling/MEMORY.md")) {
+                assertMemoryAccessRejected(wsm, rc, path);
+            }
+            assertEquals("own link target", wsm.readMemoryFileUtf8(rc, "own-link.md"));
+            wsm.appendMemoryFileUtf8(rc, "own-link.md", " plus");
+            assertEquals("own link target plus", Files.readString(alice.resolve("own.md")));
+        }
+        try (WorkspaceManager wsm =
+                new WorkspaceManager(
+                        host,
+                        new SandboxBackedFilesystem(),
+                        null,
+                        rc -> List.of("alias", "nested"))) {
+            assertMemoryAccessRejected(wsm, RuntimeContext.empty(), "MEMORY.md");
+        }
+        assertEquals("sibling sentinel", Files.readString(bob.resolve("MEMORY.md")));
+        assertEquals("host sentinel", Files.readString(outside.resolve("MEMORY.md")));
+        assertFalse(Files.exists(outside.resolve("not-created")));
+    }
+
+    private static void assertMemoryAccessRejected(
+            WorkspaceManager wsm, RuntimeContext rc, String path) {
+        org.junit.jupiter.api.Assertions.assertThrows(
+                IllegalArgumentException.class,
+                () ->
+                        new io.agentscope.harness.agent.tool.MemoryGetTool(wsm)
+                                .memoryGet(rc, path, 1, 10));
+        org.junit.jupiter.api.Assertions.assertThrows(
+                IllegalArgumentException.class, () -> wsm.readMemoryFileUtf8(rc, path));
+        org.junit.jupiter.api.Assertions.assertThrows(
+                IllegalArgumentException.class,
+                () -> wsm.writeMemoryFileUtf8(rc, path, "overwrite sentinel"));
+        org.junit.jupiter.api.Assertions.assertThrows(
+                IllegalArgumentException.class,
+                () -> wsm.appendMemoryFileUtf8(rc, path, "append sentinel"));
+    }
+
     /**
      * Minimal in-memory persistent backend for the routed test. Paths arrive prefix-stripped
      * from {@code CompositeFilesystem} routing, so keys are stored as received — assertions go

@@ -137,6 +137,135 @@ class HarnessAgentTest {
                 agent.getWorkspaceManager().readAgentsMd(RuntimeContext.empty()).contains(marker));
     }
 
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.EnumSource(IsolationScope.class)
+    void workspaceForKeepsSandboxHostRoutingAndConfiguredNamespace(IsolationScope scope)
+            throws Exception {
+        InMemorySandboxFilesystemSpec spec = new InMemorySandboxFilesystemSpec();
+        spec.isolationScope(scope);
+        AtomicReference<HarnessAgent> agentRef = new AtomicReference<>();
+        RuntimeContext rc =
+                RuntimeContext.builder().userId("用户 one").sessionId("session one").build();
+        RuntimeContext stranger =
+                RuntimeContext.builder().userId("other").sessionId("other").build();
+        AtomicInteger activeReads = new AtomicInteger();
+        try (HarnessAgent agent =
+                HarnessAgent.builder()
+                        .name("workspace-view")
+                        .model(stubModel("done"))
+                        .workspace(workspace)
+                        .filesystem(spec)
+                        .disableMemoryHooks()
+                        .stateStore(new io.agentscope.core.state.InMemoryAgentStateStore())
+                        .middleware(
+                                new MiddlewareBase() {
+                                    @Override
+                                    public Mono<String> onSystemPrompt(
+                                            Agent agent, RuntimeContext callRc, String prompt) {
+                                        var live = agentRef.get().getWorkspaceManager();
+                                        assertEquals("before call", live.readMemoryMd(callRc));
+                                        var baked =
+                                                agentRef.get()
+                                                        .workspaceFor(
+                                                                rc.getUserId(), rc.getSessionId());
+                                        assertEquals("before call", baked.readMemoryMd(stranger));
+                                        baked.appendMemoryFileUtf8(
+                                                stranger, "MEMORY.md", " during call");
+                                        assertEquals(
+                                                "before call during call",
+                                                live.readMemoryMd(callRc));
+                                        activeReads.incrementAndGet();
+                                        return Mono.just(prompt);
+                                    }
+                                })
+                        .build()) {
+            agentRef.set(agent);
+            var view = agent.workspaceFor(rc.getUserId(), rc.getSessionId());
+            view.writeMemoryFileUtf8(RuntimeContext.empty(), "MEMORY.md", "before call");
+            agent.call(userText("hello"), rc).block();
+            assertEquals(1, activeReads.get());
+            assertEquals("before call during call", view.readMemoryMd(RuntimeContext.empty()));
+            view.appendMemoryFileUtf8(stranger, "MEMORY.md", " after release");
+            Path expected = workspace;
+            for (String segment : scope.toNamespaceFactory().getNamespace(rc)) {
+                expected = expected.resolve(segment);
+            }
+            assertEquals(
+                    "before call during call after release",
+                    Files.readString(expected.resolve("MEMORY.md")));
+            if (scope == IsolationScope.USER || scope == IsolationScope.SESSION) {
+                var other = agent.workspaceFor("other", "other");
+                other.writeMemoryFileUtf8(RuntimeContext.empty(), "MEMORY.md", "other memory");
+                assertEquals("other memory", other.readMemoryMd(rc));
+                assertEquals("before call during call after release", view.readMemoryMd(stranger));
+                assertFalse(Files.exists(workspace.resolve("MEMORY.md")));
+            }
+        }
+    }
+
+    @Test
+    void workspaceForUsesUserScopeSessionFallback() throws Exception {
+        try (HarnessAgent agent =
+                HarnessAgent.builder()
+                        .name("fallback-view")
+                        .model(stubModel("done"))
+                        .workspace(workspace)
+                        .filesystem(new InMemorySandboxFilesystemSpec())
+                        .stateStore(new io.agentscope.core.state.InMemoryAgentStateStore())
+                        .build()) {
+            var first = agent.workspaceFor(null, "session one");
+            var second = agent.workspaceFor(null, "session two");
+            first.writeMemoryFileUtf8(RuntimeContext.empty(), "MEMORY.md", "first");
+            second.writeMemoryFileUtf8(RuntimeContext.empty(), "MEMORY.md", "second");
+            assertEquals("first", first.readMemoryMd(RuntimeContext.empty()));
+            assertEquals("second", second.readMemoryMd(RuntimeContext.empty()));
+            assertEquals("first", Files.readString(workspace.resolve("session one/MEMORY.md")));
+            assertFalse(Files.exists(workspace.resolve("MEMORY.md")));
+        }
+    }
+
+    @Test
+    void workspaceForHonorsPersistentMemoryRoutesAndBakedSessionAfterRelease() throws Exception {
+        InMemorySandboxFilesystemSpec spec = new InMemorySandboxFilesystemSpec();
+        spec.isolationScope(IsolationScope.SESSION);
+        var store =
+                new io.agentscope.harness.agent.filesystem.remote.RemoteFilesystem(
+                        new InMemoryStore(), IsolationScope.SESSION.toNamespaceFactory());
+        try (HarnessAgent agent =
+                HarnessAgent.builder()
+                        .name("routed-view")
+                        .model(stubModel("done"))
+                        .workspace(workspace)
+                        .filesystem(spec)
+                        .filesystemRoute("memory/", store)
+                        .filesystemRoute("MEMORY.md", store)
+                        .disableMemoryHooks()
+                        .stateStore(new io.agentscope.core.state.InMemoryAgentStateStore())
+                        .build()) {
+            RuntimeContext firstRc =
+                    RuntimeContext.builder().userId("same").sessionId("first").build();
+            var first = agent.workspaceFor("same", "first");
+            var second = agent.workspaceFor("same", "second");
+            first.writeMemoryFileUtf8(RuntimeContext.empty(), "MEMORY.md", "first summary");
+            first.writeMemoryFileUtf8(RuntimeContext.empty(), "memory/ledger.md", "first ledger");
+            agent.call(userText("hello"), firstRc).block();
+            first.appendMemoryFileUtf8(
+                    RuntimeContext.empty(), "memory/ledger.md", " after release");
+            second.writeMemoryFileUtf8(firstRc, "MEMORY.md", "second summary");
+            second.writeMemoryFileUtf8(firstRc, "memory/ledger.md", "second ledger");
+            assertEquals("first summary", first.readMemoryMd(RuntimeContext.empty()));
+            assertEquals(
+                    "first ledger after release",
+                    first.readMemoryFileUtf8(RuntimeContext.empty(), "memory/ledger.md"));
+            assertEquals("second summary", second.readMemoryMd(firstRc));
+            assertEquals("second ledger", second.readMemoryFileUtf8(firstRc, "memory/ledger.md"));
+            assertTrue(
+                    first.listMemoryFilePaths(RuntimeContext.empty()).contains("memory/ledger.md"));
+            assertFalse(Files.exists(workspace.resolve("first/MEMORY.md")));
+            assertFalse(Files.exists(workspace.resolve("first/memory/ledger.md")));
+        }
+    }
+
     @Test
     void disableMemoryTools_omitsHarnessMemoryAndSessionTools() throws Exception {
         Files.createDirectories(workspace);
