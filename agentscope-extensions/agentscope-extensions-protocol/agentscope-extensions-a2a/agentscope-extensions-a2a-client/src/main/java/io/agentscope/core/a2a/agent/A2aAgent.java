@@ -20,6 +20,7 @@ import io.a2a.client.Client;
 import io.a2a.client.ClientBuilder;
 import io.a2a.client.ClientEvent;
 import io.a2a.client.config.ClientConfig;
+import io.a2a.client.http.JdkA2AHttpClient;
 import io.a2a.client.transport.jsonrpc.JSONRPCTransport;
 import io.a2a.client.transport.jsonrpc.JSONRPCTransportConfig;
 import io.a2a.spec.A2AClientException;
@@ -44,12 +45,14 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.CancellationException;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BiConsumer;
 import java.util.function.UnaryOperator;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Schedulers;
 
 /**
  * The implementation of Agent for A2A(Agent2Agent).
@@ -130,15 +133,22 @@ public class A2aAgent extends AgentBase {
                             + ". Check that the agent name matches the name registered on the"
                             + " server.");
         }
-        Client client = buildA2aClient(agentCard);
+        StreamTrackingHttpClient httpClient =
+                this.a2aAgentConfig.clientTransports().isEmpty()
+                        ? new StreamTrackingHttpClient(new JdkA2AHttpClient())
+                        : null;
+        Client client = buildA2aClient(agentCard, httpClient);
         LoggerUtil.debug(
                 log, "[{}] A2aAgent build A2a Client with Agent Card: {}.", requestId, agentCard);
         A2aCall call =
                 new A2aCall(
                         requestId,
                         client,
+                        httpClient,
                         new ClientEventContext(requestId, this),
-                        isStreaming(agentCard));
+                        isStreaming(agentCard),
+                        new AtomicBoolean(),
+                        new AtomicBoolean());
         currentCall.set(call);
         return call;
     }
@@ -163,8 +173,45 @@ public class A2aAgent extends AgentBase {
 
     private void endCall(A2aCall call) {
         currentCall.compareAndSet(call, null);
-        call.client().close();
-        LoggerUtil.debug(log, "[{}] A2aAgent close A2a Client.", call.requestId());
+        if (call.httpClient() != null) {
+            call.httpClient().cancelStreams();
+        }
+        io.a2a.spec.Task task = call.eventContext().getTask();
+        if (call.cancelled().get() && task != null && task.getId() != null) {
+            try {
+                Schedulers.boundedElastic().schedule(() -> cancelAndClose(call, task.getId()));
+                return;
+            } catch (RuntimeException e) {
+                LoggerUtil.warn(
+                        log,
+                        "[{}] A2aAgent could not schedule remote cancellation.",
+                        call.requestId(),
+                        e);
+            }
+        }
+        closeClient(call);
+    }
+
+    private void cancelAndClose(A2aCall call, String taskId) {
+        try {
+            call.client().cancelTask(new TaskIdParams(taskId), null);
+        } catch (Exception e) {
+            LoggerUtil.warn(
+                    log,
+                    "[{}] A2aAgent could not cancel remote task {}.",
+                    call.requestId(),
+                    taskId,
+                    e);
+        } finally {
+            closeClient(call);
+        }
+    }
+
+    private void closeClient(A2aCall call) {
+        if (call.closed().compareAndSet(false, true)) {
+            call.client().close();
+            LoggerUtil.debug(log, "[{}] A2aAgent close A2a Client.", call.requestId());
+        }
     }
 
     @Override
@@ -232,11 +279,11 @@ public class A2aAgent extends AgentBase {
                 && agentCard.capabilities().streaming();
     }
 
-    private Client buildA2aClient(AgentCard agentCard) {
+    private Client buildA2aClient(AgentCard agentCard, StreamTrackingHttpClient httpClient) {
         ClientBuilder builder = Client.builder(agentCard);
-        if (this.a2aAgentConfig.clientTransports().isEmpty()) {
+        if (httpClient != null) {
             // Default Add The Basic JSON-RPC Transport
-            builder.withTransport(JSONRPCTransport.class, new JSONRPCTransportConfig());
+            builder.withTransport(JSONRPCTransport.class, new JSONRPCTransportConfig(httpClient));
         } else {
             this.a2aAgentConfig.clientTransports().forEach(builder::withTransport);
         }
@@ -252,8 +299,12 @@ public class A2aAgent extends AgentBase {
                     ClientEventContext eventContext = call.eventContext();
                     Client client = call.client();
                     eventContext.setSink(sink);
+                    sink.onCancel(() -> call.cancelled().set(true));
                     BiConsumer<ClientEvent, AgentCard> a2aEventConsumer =
                             (event, agentCard) -> {
+                                if (call.cancelled().get()) {
+                                    return;
+                                }
                                 LoggerUtil.trace(
                                         log,
                                         "[{}] A2aAgent receive event {}: ",
@@ -308,7 +359,13 @@ public class A2aAgent extends AgentBase {
 
     /** The client and the event context of one call. */
     private record A2aCall(
-            String requestId, Client client, ClientEventContext eventContext, boolean streaming) {}
+            String requestId,
+            Client client,
+            StreamTrackingHttpClient httpClient,
+            ClientEventContext eventContext,
+            boolean streaming,
+            AtomicBoolean cancelled,
+            AtomicBoolean closed) {}
 
     public static class Builder {
 

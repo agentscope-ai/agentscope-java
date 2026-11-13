@@ -43,7 +43,7 @@ public class ClientEventContext {
 
     private List<Hook> hooks;
 
-    private Task task;
+    private volatile Task task;
 
     /**
      * Temporarily store the complete historical dialogue context at the time of this call,

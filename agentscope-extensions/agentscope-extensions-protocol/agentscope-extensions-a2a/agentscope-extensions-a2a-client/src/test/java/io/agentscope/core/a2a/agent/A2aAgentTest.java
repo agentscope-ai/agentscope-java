@@ -969,6 +969,124 @@ public class A2aAgentTest {
         }
     }
 
+    @Test
+    void testCancelledCallsCancelKnownTaskOffThreadAndCloseOnFailure() {
+        for (boolean failCancel : List.of(false, true)) {
+            java.util.concurrent.atomic.AtomicReference<List<BiConsumer<ClientEvent, AgentCard>>>
+                    consumers = new java.util.concurrent.atomic.AtomicReference<>();
+            java.util.concurrent.atomic.AtomicReference<String> cancelThread =
+                    new java.util.concurrent.atomic.AtomicReference<>();
+            doAnswer(
+                            invocation -> {
+                                consumers.set(invocation.getArgument(1));
+                                return null;
+                            })
+                    .when(a2aClient)
+                    .sendMessage(any(Message.class), anyList(), any());
+            when(a2aClient.cancelTask(any(TaskIdParams.class), any()))
+                    .thenAnswer(
+                            invocation -> {
+                                cancelThread.set(Thread.currentThread().getName());
+                                TaskIdParams params = invocation.getArgument(0);
+                                assertEquals("taskId", params.id());
+                                if (failCancel) {
+                                    throw new A2AClientException("cancel not supported");
+                                }
+                                return null;
+                            });
+            AtomicInteger chunks = new AtomicInteger();
+            A2aAgent agent =
+                    A2aAgent.builder()
+                            .name("test-agent")
+                            .agentCard(agentCard)
+                            .clientReplacer(this::useMockClient)
+                            .hook(
+                                    new Hook() {
+                                        @Override
+                                        public <T extends HookEvent> Mono<T> onEvent(T event) {
+                                            if (event instanceof ReasoningChunkEvent) {
+                                                chunks.incrementAndGet();
+                                            }
+                                            return Mono.just(event);
+                                        }
+                                    })
+                            .build();
+            reactor.core.Disposable call =
+                    agent.call(Msg.builder().textContent("test").build()).subscribe();
+            Task task =
+                    new Task.Builder()
+                            .id("taskId")
+                            .contextId("c1")
+                            .status(new TaskStatus(TaskState.WORKING))
+                            .build();
+            TaskStatusUpdateEvent update =
+                    new TaskStatusUpdateEvent(
+                            "taskId",
+                            new TaskStatus(TaskState.WORKING, A2A.toAgentMessage("chunk"), null),
+                            "c1",
+                            false,
+                            Map.of());
+            consumers.get().forEach(c -> c.accept(new TaskUpdateEvent(task, update), agentCard));
+            assertEquals(1, chunks.get());
+            call.dispose();
+            verify(a2aClient, org.mockito.Mockito.timeout(5000)).close();
+            verify(a2aClient).cancelTask(any(TaskIdParams.class), any());
+            assertTrue(cancelThread.get().contains("boundedElastic"));
+            consumers.get().forEach(c -> c.accept(new TaskUpdateEvent(task, update), agentCard));
+            assertEquals(1, chunks.get());
+            assertEquals(1, agent.getMemory().getMessages().size());
+            org.mockito.Mockito.clearInvocations(a2aClient);
+        }
+    }
+
+    @Test
+    void testTimeoutCancelsKnownTaskAndClosesClient() {
+        doAnswer(
+                        invocation -> {
+                            List<BiConsumer<ClientEvent, AgentCard>> consumers =
+                                    invocation.getArgument(1);
+                            Task task =
+                                    new Task.Builder()
+                                            .id("taskId")
+                                            .contextId("c1")
+                                            .status(new TaskStatus(TaskState.WORKING))
+                                            .build();
+                            consumers.forEach(c -> c.accept(new TaskEvent(task), agentCard));
+                            return null;
+                        })
+                .when(a2aClient)
+                .sendMessage(any(Message.class), anyList(), any());
+        A2aAgent agent =
+                A2aAgent.builder()
+                        .name("test-agent")
+                        .agentCard(agentCard)
+                        .clientReplacer(this::useMockClient)
+                        .build();
+        reactor.test.StepVerifier.create(
+                        agent.call(Msg.builder().textContent("test").build())
+                                .timeout(java.time.Duration.ofMillis(100)))
+                .expectError(TimeoutException.class)
+                .verify(java.time.Duration.ofSeconds(5));
+        verify(a2aClient, org.mockito.Mockito.timeout(5000)).close();
+        verify(a2aClient).cancelTask(any(TaskIdParams.class), any());
+    }
+
+    @Test
+    void testCompletedCallDoesNotCancelRemoteTask() {
+        doAnswer(mockSuccessMessage())
+                .when(a2aClient)
+                .sendMessage(any(Message.class), anyList(), any());
+        A2aAgent agent =
+                A2aAgent.builder()
+                        .name("test-agent")
+                        .agentCard(agentCard)
+                        .clientReplacer(this::useMockClient)
+                        .build();
+        assertNotNull(agent.call(Msg.builder().textContent("test").build()).block());
+        verify(a2aClient).close();
+        verify(a2aClient, never()).cancelTask(any(TaskIdParams.class), any());
+    }
+
     private Client useMockClient(Client built) {
         built.close();
         return a2aClient;
