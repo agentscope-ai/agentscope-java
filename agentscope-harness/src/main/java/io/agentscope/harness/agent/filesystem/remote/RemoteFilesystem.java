@@ -17,6 +17,7 @@ package io.agentscope.harness.agent.filesystem.remote;
 
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
+import io.agentscope.harness.agent.filesystem.AtomicTextFile;
 import io.agentscope.harness.agent.filesystem.model.EditResult;
 import io.agentscope.harness.agent.filesystem.model.FileData;
 import io.agentscope.harness.agent.filesystem.model.FileDownloadResponse;
@@ -141,6 +142,46 @@ public class RemoteFilesystem implements AbstractFilesystem {
         }
         List<String> frozen = List.copyOf(namespace);
         return rc -> frozen;
+    }
+
+    @Override
+    public AtomicTextFile atomicTextFile(RuntimeContext rc, String path, boolean inheritLower) {
+        if (!store.supportsAtomicJournalStorage())
+            throw new UnsupportedOperationException(
+                    "Memory updates require versioned store writes");
+        List<String> namespace = getNamespace(rc);
+        return new AtomicTextFile() {
+            @Override
+            public String read() {
+                StoreItem item = store.get(namespace, path);
+                return item == null ? null : convertItemToFileData(item).content();
+            }
+
+            @Override
+            public boolean compareAndSet(String expected, String updated) {
+                StoreItem item = store.get(namespace, path);
+                String actual = item == null ? null : convertItemToFileData(item).content();
+                if (!java.util.Objects.equals(expected, actual)) return false;
+                String now =
+                        java.time.Instant.now(
+                                        rc.get(java.time.Clock.class) == null
+                                                ? java.time.Clock.systemUTC()
+                                                : rc.get(java.time.Clock.class))
+                                .toString();
+                return store.putIfVersion(
+                        namespace,
+                        path,
+                        fileDataToStoreValue(
+                                new FileData(
+                                        updated,
+                                        "utf-8",
+                                        item == null
+                                                ? now
+                                                : convertItemToFileData(item).createdAt(),
+                                        now)),
+                        item == null ? 0 : item.version());
+            }
+        };
     }
 
     @Override

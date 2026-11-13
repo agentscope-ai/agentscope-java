@@ -379,6 +379,9 @@ public class WorkspaceIndex implements AutoCloseable {
         if (path == null || path.isBlank()) {
             return false;
         }
+        if (path.startsWith("memory/.flush-state/") || path.endsWith(".cas-lock")) return false;
+        String name = path.substring(path.lastIndexOf('/') + 1);
+        if (name.startsWith(".memory-") && name.endsWith(".tmp")) return false;
         for (String prefix : INDEXED_PREFIXES) {
             if (path.startsWith(prefix)) {
                 return true;

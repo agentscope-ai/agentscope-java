@@ -306,6 +306,12 @@ public class LocalFilesystem implements AbstractFilesystem {
     }
 
     @Override
+    public io.agentscope.harness.agent.filesystem.AtomicTextFile atomicTextFile(
+            RuntimeContext rc, String path, boolean inheritLower) {
+        return new LocalAtomicTextFile(resolvePath(rc, path));
+    }
+
+    @Override
     public LsResult ls(RuntimeContext runtimeContext, String path) {
         Path dirPath = resolvePath(runtimeContext, path);
         if (!Files.exists(dirPath)) {
@@ -318,6 +324,7 @@ public class LocalFilesystem implements AbstractFilesystem {
         List<FileInfo> results = new ArrayList<>();
         try (DirectoryStream<Path> ds = Files.newDirectoryStream(dirPath)) {
             for (Path entry : ds) {
+                if (isAtomicWriteArtifact(entry)) continue;
                 try {
                     BasicFileAttributes attrs =
                             Files.readAttributes(entry, BasicFileAttributes.class);
@@ -478,6 +485,7 @@ public class LocalFilesystem implements AbstractFilesystem {
         if (matches == null) {
             matches = javaSearch(runtimeContext, pattern, basePath, glob);
         }
+        matches.removeIf(match -> isAtomicWriteArtifact(Path.of(match.path())));
         return GrepResult.success(matches);
     }
 
@@ -523,6 +531,7 @@ public class LocalFilesystem implements AbstractFilesystem {
                     new SimpleFileVisitor<>() {
                         @Override
                         public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) {
+                            if (isAtomicWriteArtifact(file)) return FileVisitResult.CONTINUE;
                             Path rel = searchPath.relativize(file);
                             if (matcher.matches(rel) || directMatcher.matches(rel)) {
                                 String filePath = resolveEntryPath(runtimeContext, file);
@@ -1004,6 +1013,11 @@ public class LocalFilesystem implements AbstractFilesystem {
             return relPath.substring(nsPrefix.length() + 1);
         }
         return relPath;
+    }
+
+    private static boolean isAtomicWriteArtifact(Path path) {
+        String name = path.getFileName().toString();
+        return name.endsWith(".cas-lock") || name.startsWith(".memory-") && name.endsWith(".tmp");
     }
 
     // ==================== Grep implementations ====================
