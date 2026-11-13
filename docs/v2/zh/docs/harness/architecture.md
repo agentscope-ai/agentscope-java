@@ -44,6 +44,33 @@ en_link: /v2/en/docs/harness/architecture
 | MCP 集成与工具白名单 | 声明式 MCP server + 工具粒度允许 / 拒绝 | `workspace/tools.json` | [工作区](/v2/zh/docs/harness/workspace) |
 | Channel 路由 | 会话管理、per-session 并发控制、多 agent 路由、流式事件 | `agent.channel(...)` / `GatewayBootstrap` | [Channel](/v2/zh/docs/harness/channel) |
 
+## 内置工具渐进式加载
+
+默认情况下，所有已注册的 Harness 内置工具都会对模型可见。工具较多的应用可以显式开启渐进式暴露：
+
+```java
+HarnessAgent agent = HarnessAgent.builder()
+    .name("assistant")
+    .model(model)
+    .enableProgressiveToolLoading()
+    .build();
+```
+
+该选项会自动启用常驻的 `reset_equipped_tools` Meta Tool，并把可选内置工具放入初始未激活的 META 组：
+
+| 分组 | 能力 |
+|---|---|
+| `workspace_files` | 文件系统、Shell 执行与产物交付 |
+| `subagents` | 子 Agent、Team、后台任务与异步结果等待 |
+| `session_history` | 会话搜索、列表与历史记录 |
+| `web` | Web 搜索与页面读取 |
+
+Memory、Skill 和 Plan Mode 工具保持未分组并始终可见。现有 `disable*()` 配置与 `tools.json` 过滤会先执行；某类工具全部被移除后，不会生成空分组。自定义 Tool 与 MCP Tool 不会被自动分类，即使其名称与已禁用的内置 Tool 相同。模型通过 `reset_equipped_tools` 激活一个或多个组后，下一轮推理即可看到对应 Schema。
+
+激活状态按 session 隔离并持久化，不会在单次调用结束时自动回收。由于切换激活组会改变模型请求中的 Tool Schema 前缀，严重依赖 prompt cache 的应用需要在更小的 Schema 与更低的前缀缓存复用率之间权衡。
+
+启用该选项时，上述四个分组名为保留名称。如果其中任一名称已经存在，或需要渐进加载的 Harness 内置 Tool 已属于其他分组，构建会立即失败，从而保证可选内置 Tool 初始不可见。
+
 ## 状态怎么流转
 
 状态分三层，框架自动在层之间搬数据。
