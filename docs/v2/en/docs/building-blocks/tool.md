@@ -120,7 +120,7 @@ Common `@Tool` attributes:
 | `description` | `String` | Description shown to the agent |
 | `strict` | `boolean` | Recursively add `additionalProperties: false` to object schemas, preserving explicit values (default `false`); unknown arguments are rejected before execution |
 | `readOnly` | `boolean` | Whether the tool is read-only (default `false`) |
-| `concurrencySafe` | `boolean` | Whether the tool is safe for concurrent calls (default `false`) |
+| `concurrencySafe` | `boolean` | Whether the tool is safe for concurrent calls (default `true`) |
 | `stateInjected` | `boolean` | Inject `AgentState` as an extra parameter (default `false`) |
 | `dangerousFiles` / `dangerousDirectories` | `String[]` | Append custom dangerous paths |
 | `converter` | `Class<? extends ToolResultConverter>` | Custom conversion of return values into `ToolResultBlock` |
@@ -351,11 +351,10 @@ import io.agentscope.core.tool.mcp.McpClientBuilder;
 import io.agentscope.core.tool.mcp.McpClientWrapper;
 
 McpClientWrapper filesystem =
-        McpClientBuilder.stdio()
-                .name("filesystem")
-                .command("mcp-server-filesystem")
-                .args("--root", "/my/project")
-                .build();
+        McpClientBuilder.create("filesystem")
+                .stdioTransport("mcp-server-filesystem", "--root", "/my/project")
+                .buildAsync()
+                .block();
 
 Toolkit toolkit = new Toolkit();
 toolkit.registerMcpClient(filesystem).block();
@@ -372,11 +371,11 @@ import io.agentscope.core.tool.mcp.McpClientBuilder;
 import io.agentscope.core.tool.mcp.McpClientWrapper;
 
 McpClientWrapper weather =
-        McpClientBuilder.streamableHttp()
-                .name("weather")
-                .url("https://api.weather.com/mcp")
+        McpClientBuilder.create("weather")
+                .streamableHttpTransport("https://api.weather.com/mcp")
                 .header("Authorization", "Bearer xxx")
-                .build();
+                .buildAsync()
+                .block();
 
 Toolkit toolkit = new Toolkit();
 toolkit.registerMcpClient(weather).block();
@@ -392,10 +391,10 @@ import io.agentscope.core.tool.mcp.McpClientBuilder;
 import io.agentscope.core.tool.mcp.McpClientWrapper;
 
 McpClientWrapper search =
-        McpClientBuilder.sse()
-                .name("search")
-                .url("https://api.search.com/mcp/sse")
-                .build();
+        McpClientBuilder.create("search")
+                .sseTransport("https://api.search.com/mcp/sse")
+                .buildAsync()
+                .block();
 
 Toolkit toolkit = new Toolkit();
 toolkit.registerMcpClient(search).block();
@@ -572,22 +571,24 @@ Toolkit toolkit = new Toolkit();
 toolkit.registerTool(new BasicTools());
 
 ToolGroup database =
-        new ToolGroup(
-                "database",
-                "Tools for database operations.",
-                ToolGroupScope.SESSION,
-                /* active = */ false);
+        ToolGroup.builder()
+                .name("database")
+                .description("Tools for database operations.")
+                .scope(ToolGroupScope.META)
+                .active(false)
+                .build();
 database.addTool("db_query");
 database.addTool("db_migrate");
 toolkit.registerTool(new DatabaseTools());
 toolkit.registerToolGroup(database);
 
 ToolGroup deployment =
-        new ToolGroup(
-                "deployment",
-                "Tools for deploying services.",
-                ToolGroupScope.SESSION,
-                /* active = */ false);
+        ToolGroup.builder()
+                .name("deployment")
+                .description("Tools for deploying services.")
+                .scope(ToolGroupScope.META)
+                .active(false)
+                .build();
 deployment.addTool("deploy");
 deployment.addTool("rollback");
 toolkit.registerTool(new DeploymentTools());
@@ -601,7 +602,7 @@ ReActAgent agent =
                 .build();
 ```
 
-`ToolGroup` takes a name, a description, a scope (`ToolGroupScope`), and an initial active flag. The reserved name `"basic"` is auto-populated by `Toolkit#registerTool(Object)` and is always active.
+`ToolGroup` is built with `ToolGroup.builder()`: a name, a description, a scope (`ToolGroupScope`), and an initial active flag. The reserved name `"basic"` is auto-populated by `Toolkit#registerTool(Object)` and is always active.
 
 ### Using the meta tool
 
