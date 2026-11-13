@@ -236,7 +236,7 @@ Customize threshold or destination via `ToolResultEvictionConfig.builder()...bui
 
 When memory is enabled, the agent gets four tools:
 
-- `memory_search query="..."` — keyword scan over `MEMORY.md` + `memory/*.md`
+- `memory_search query="..."` — keyword scan over `MEMORY.md` + `memory/*.md`. Memory search applies Unicode case matching (for example, `café` matches `CAFÉ`).
 - `memory_get path="memory/2026-06-02.md" startLine=10 endLine=40` — read a specific line range
 - `memory_save content="..."` — persist a memory via `MEMORY.md` and the daily ledger
 - `session_search query="..."` — search past session transcripts
