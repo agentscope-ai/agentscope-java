@@ -74,9 +74,10 @@ class JdkHttpTransportTest {
 
         HttpTransportConfig config =
                 HttpTransportConfig.builder()
-                        .connectTimeout(Duration.ofSeconds(5))
-                        .readTimeout(Duration.ofSeconds(2)) // Global timeout for sync calls
-                        .responseTimeout(Duration.ofSeconds(2)) // First emitted chunk for streaming
+                        .connectTimeout(Duration.ofSeconds(15))
+                        .readTimeout(Duration.ofSeconds(10)) // Global timeout for sync calls
+                        .responseTimeout(
+                                Duration.ofSeconds(10)) // First emitted chunk for streaming
                         .streamIdleTimeout(Duration.ofSeconds(1)) // Inter-token gap for streaming
                         .build();
         transport = new JdkHttpTransport(config);
@@ -1240,26 +1241,34 @@ class JdkHttpTransportTest {
     void testStreamResponseTimeout() {
         // Test Timeout Strategy 1:
         // Delay headers by 3 seconds, which exceeds the configured responseTimeout (2 seconds).
-        mockServer.enqueue(
-                new MockResponse()
-                        .setResponseCode(200)
-                        .setBody("data: {\"id\":\"1\"}\n\ndata: [DONE]\n\n")
-                        .setHeader("Content-Type", "text/event-stream")
-                        .setHeadersDelay(3, TimeUnit.SECONDS));
+        HttpTransportConfig customConfig =
+                HttpTransportConfig.builder().responseTimeout(Duration.ofSeconds(2)).build();
+        JdkHttpTransport customTransport = new JdkHttpTransport(customConfig);
 
-        HttpRequest request =
-                HttpRequest.builder()
-                        .url(mockServer.url("/ttft-timeout").toString())
-                        .method("POST")
-                        .body("{}")
-                        .build();
+        try {
+            mockServer.enqueue(
+                    new MockResponse()
+                            .setResponseCode(200)
+                            .setBody("data: {\"id\":\"1\"}\n\ndata: [DONE]\n\n")
+                            .setHeader("Content-Type", "text/event-stream")
+                            .setHeadersDelay(3, TimeUnit.SECONDS));
 
-        StepVerifier.create(transport.stream(request))
-                .expectErrorMatches(
-                        e ->
-                                e instanceof HttpTransportException
-                                        && e.getMessage().contains("Stream timeout"))
-                .verify(Duration.ofSeconds(5));
+            HttpRequest request =
+                    HttpRequest.builder()
+                            .url(mockServer.url("/ttft-timeout").toString())
+                            .method("POST")
+                            .body("{}")
+                            .build();
+
+            StepVerifier.create(customTransport.stream(request))
+                    .expectErrorMatches(
+                            e ->
+                                    e instanceof HttpTransportException
+                                            && e.getMessage().contains("Stream timeout"))
+                    .verify(Duration.ofSeconds(5));
+        } finally {
+            customTransport.close();
+        }
     }
 
     @Test
@@ -1332,34 +1341,45 @@ class JdkHttpTransportTest {
     @Test
     void testStreamSurvivesGlobalReadTimeout() {
         // Verify that streaming requests are NOT killed by the global readTimeout.
-        // readTimeout is 2s, but we will make the stream take roughly 3s overall.
-        // We throttle 10 bytes every 500ms. Inter-token gap is < 1s, so streamIdleTimeout is
-        // respected.
-        String sseBody =
-                "data: 1\n\n"
-                        + "data: 2\n\n"
-                        + "data: 3\n\n"
-                        + "data: 4\n\n"
-                        + "data: 5\n\n"
-                        + "data: [DONE]\n\n";
-
-        mockServer.enqueue(
-                new MockResponse()
-                        .setResponseCode(200)
-                        .setHeader("Content-Type", "text/event-stream")
-                        .setBody(sseBody)
-                        .throttleBody(10, 500, TimeUnit.MILLISECONDS));
-
-        HttpRequest request =
-                HttpRequest.builder()
-                        .url(mockServer.url("/survive-timeout").toString())
-                        .method("POST")
-                        .body("{}")
+        // The custom config keeps readTimeout at 2s, but we will make the stream take roughly
+        // 3s overall. We throttle 10 bytes every 500ms. Inter-token gap is < 1s, so
+        // streamIdleTimeout is respected.
+        HttpTransportConfig customConfig =
+                HttpTransportConfig.builder()
+                        .readTimeout(Duration.ofSeconds(2))
+                        .streamIdleTimeout(Duration.ofSeconds(1))
                         .build();
+        JdkHttpTransport customTransport = new JdkHttpTransport(customConfig);
 
-        StepVerifier.create(transport.stream(request))
-                .expectNextCount(5) // Should successfully receive all 5 data chunks
-                .verifyComplete();
+        try {
+            String sseBody =
+                    "data: 1\n\n"
+                            + "data: 2\n\n"
+                            + "data: 3\n\n"
+                            + "data: 4\n\n"
+                            + "data: 5\n\n"
+                            + "data: [DONE]\n\n";
+
+            mockServer.enqueue(
+                    new MockResponse()
+                            .setResponseCode(200)
+                            .setHeader("Content-Type", "text/event-stream")
+                            .setBody(sseBody)
+                            .throttleBody(10, 500, TimeUnit.MILLISECONDS));
+
+            HttpRequest request =
+                    HttpRequest.builder()
+                            .url(mockServer.url("/survive-timeout").toString())
+                            .method("POST")
+                            .body("{}")
+                            .build();
+
+            StepVerifier.create(customTransport.stream(request))
+                    .expectNextCount(5) // Should successfully receive all 5 data chunks
+                    .verifyComplete();
+        } finally {
+            customTransport.close();
+        }
     }
 
     /** Records the built JDK request for assertions. */
