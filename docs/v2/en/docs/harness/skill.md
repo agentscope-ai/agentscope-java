@@ -207,11 +207,11 @@ Example: the team Git has a generic `code-reviewer`; the project's `workspace/sk
 | `skillRepository(repo)` | Append a marketplace; callable multiple times |
 | `skillRepositories(list)` | Replace all marketplaces at once |
 | `projectGlobalSkillsDir(path)` | Enable the project-global dir; skipped if missing |
-| `disableDynamicSkills()` | Turn off "re-merge before each reasoning"; merge once at build |
+| `disableDynamicSkills()` | Turn off "re-merge before each call"; merge once at build |
 
 Subagents inherit the parent's marketplaces and project-global dir automatically.
 
-When to use `disableDynamicSkills()`: one-shot tasks; or slow marketplace stores you don't want to refetch per turn. Usually don't touch it.
+When to use `disableDynamicSkills()`: one-shot tasks; or slow marketplace stores you don't want to refetch per call. Usually don't touch it.
 
 ## Self-learning loop (optional)
 
@@ -282,7 +282,7 @@ agent.promoteSkill("notes-taker", "alice")                   // manually promote
 
 `SkillBox.uploadSkillFiles()` skips skill directories whose normalized paths escape the upload root and resources whose normalized paths escape their skill directory. This lexical containment check does not add name-pattern or length restrictions; 2.0.x keeps legacy names and the `name_source` identifier format. Concurrent uploads to the same path are serialized using a fixed table of 256 lock stripes, so lock memory does not grow with the number of materialized paths. Unrelated paths sharing a stripe may wait for each other.
 
-When the agent reasons, it sees an `<available_skills>` block in the system prompt listing every skill currently in scope:
+On each call, harness builds an `<available_skills>` block in the system prompt listing every skill currently in scope. The block is built once per call (during PreCall, seeded together with the system message) and then stays visible as-is across every reasoning step of that call — it is not rebuilt per step:
 
 ```xml
 <available_skills>
@@ -330,7 +330,7 @@ So the agent's shell call is always `execute("python3 <files-root>/scripts/foo.p
 
 ### Where marketplace files actually live
 
-Marketplace skill resources start as in-memory bytes. For shell execution to work, harness materializes them to `<wsRoot>/.skills-cache/<scope>/<source>/<name>/` before each reasoning step:
+Marketplace skill resources start as in-memory bytes. For shell execution to work, harness materializes them to `<wsRoot>/.skills-cache/<scope>/<source>/<name>/` during call setup, including the `onSystemPrompt` pass that builds `<available_skills>`. In sandbox mode, resources are also pre-staged before sandbox startup so workspace projection includes them in the same call; staging is idempotent, not repeated per reasoning step:
 
 - Per-file SHA-256 dedup — only changed files are rewritten
 - Orphan directories (skills no longer published, or repos removed from the builder) are cleaned up in the same pass once untouched for the grace period (30 minutes by default)
@@ -361,7 +361,7 @@ Two classes of skills can run in the container, with different staging points:
 
 ### Step 1: materialize marketplace skills to the host
 
-Marketplace skill resources arrive as in-memory bytes — shell can't execute those directly. Before each reasoning step, `MarketplaceStager` writes them to the host at `<wsRoot>/.skills-cache/<scope>/<source>/<name>/`:
+Marketplace skill resources arrive as in-memory bytes — shell can't execute those directly. During setup for each call, `MarketplaceStager` writes them to the host at `<wsRoot>/.skills-cache/<scope>/<source>/<name>/`; sandbox mode pre-stages them before startup so projection can include them:
 
 - **Per-file SHA-256 dedup** — only changed files are rewritten; unchanged ones are skipped.
 - **Orphan cleanup** — directories left by skills that are no longer published, or by repos removed from the builder, are deleted in the same pass once untouched for the grace period.
@@ -431,4 +431,4 @@ A common point of confusion: **reading** a skill (`load_skill_through_path` fetc
 
 - [Workspace](/v2/en/docs/harness/workspace) — overall layout of `skills/`
 - [Filesystem](/v2/en/docs/harness/filesystem) — multi-tenant isolation and per-user bucketing
-- [Architecture](/v2/en/docs/harness/architecture) — how the skill set is rebuilt each reasoning step
+- [Architecture](/v2/en/docs/harness/architecture) — how the skill set is rebuilt each call

@@ -207,11 +207,11 @@ workspace/
 | `skillRepository(repo)` | 追加一个市场；可重复调用 |
 | `skillRepositories(list)` | 一次性替换所有市场 |
 | `projectGlobalSkillsDir(path)` | 启用项目全局目录；目录不存在则跳过 |
-| `disableDynamicSkills()` | 关掉"每次推理前重新合并"，改成 build 时合并一次 |
+| `disableDynamicSkills()` | 关掉"每次 call 前重新合并"，改成 build 时合并一次 |
 
 子 agent 自动继承父的市场列表和项目全局目录，不用重复配。
 
-什么时候用 `disableDynamicSkills()`：单次任务，跑完就退出；或市场后端慢、不想每轮拉。平时不用动这个开关。
+什么时候用 `disableDynamicSkills()`：单次任务，跑完就退出；或市场后端慢、不想每次 call 都重新拉。平时不用动这个开关。
 
 ## 自学习闭环（可选）
 
@@ -282,7 +282,7 @@ agent.promoteSkill("notes-taker", "alice")                   // 手动晋升一�
 
 `SkillBox.uploadSkillFiles()` 会跳过规范化路径越出上传根目录的 skill 目录，以及规范化路径越出对应 skill 目录的资源。这是词法路径包含检查，不增加名称格式或长度限制；2.0.x 保留旧有名称及 `name_source` 标识符格式。并发上传到同一路径时，使用固定的 256 个分段锁串行写入，锁内存不会随物化路径数量增长。不同路径落到同一分段时可能互相等待。
 
-每轮推理时，agent 会在 system prompt 里看到一个 `<available_skills>` 块，列出当前可见的所有 skill：
+agent 每次 call 时，harness 会在 system prompt 里构建一个 `<available_skills>` 块，列出当前可见的所有 skill。这个块每次 call 只构建一次（在 PreCall 阶段，随 system message 一起 seed），随后在该 call 的每一轮推理里都原样可见——不是每轮重新构建：
 
 ```xml
 <available_skills>
@@ -330,10 +330,10 @@ agent 感知不到这种差异，`load_skill_through_path` 调起来都一样。
 
 ### 市场 skill 文件实际落在哪儿
 
-市场 skill 的资源最初只在内存里。要让 shell 能跑它们，harness 在每轮推理前把它们物化到 `<wsRoot>/.skills-cache/<scope>/<source>/<name>/`：
+市场 skill 的资源最初只在内存里。要让 shell 能跑它们，harness 在 call 初始化时把它们物化到 `<wsRoot>/.skills-cache/<scope>/<source>/<name>/`，包括构建 `<available_skills>` 的 `onSystemPrompt` 阶段。沙箱模式还会在沙箱启动前预先物化，让 workspace projection 在同一次 call 中包含这些资源；物化是幂等的，不会每轮推理都重复执行：
 
 - 文件级 SHA-256 去重，只重写变化过的文件
-- 已经下架的 skill（或被从 builder 中移除的整个仓库）留下的孤儿目录，在整个宽限期内未被使用后，会在同一轮清理掉（默认宽限期为 30 分钟）
+- 已经下架的 skill（或被从 builder 中移除的整个仓库）留下的孤儿目录，在整个宽限期内未被使用后，会在同一次物化里清理掉（默认宽限期为 30 分钟）
 - Sandbox 模式下，`.skills-cache` 默认包含在 workspace projection roots 里，沙箱启动时（以及内容变化时）会跟 `workspace/skills/` 一起 hydrate 进沙箱
 
 进行 stage 时，技能名称必须是单个目录名。绝对路径、`/` 或 `\` 分隔符、盘符或数据流语法（`:`）、`.`/`..`、以点或空格结尾的名称，以及 Windows 设备保留名称（如 `CON`、`NUL.txt` 或 `COM1`），会在暂存写入或资源清理前被拒绝。受影响的技能不会获得暂存的 `<files-root>`，其他技能仍会正常 stage。技能名称不会被改写，此检查也不要求名称仅使用小写或限制为 64 字符。
@@ -361,10 +361,10 @@ agent 感知不到这种差异，`load_skill_through_path` 调起来都一样。
 
 ### 第一步：把市场 skill 物化到宿主
 
-市场 skill 的资源拿到时只是内存里的字节，shell 没法直接执行。每轮推理前，`MarketplaceStager` 把它们写到宿主的 `<wsRoot>/.skills-cache/<scope>/<source>/<name>/`：
+市场 skill 的资源拿到时只是内存里的字节，shell 没法直接执行。每次 call 初始化时，`MarketplaceStager` 把它们写到宿主的 `<wsRoot>/.skills-cache/<scope>/<source>/<name>/`；沙箱模式会在启动前预先物化，让投影能包含这些资源：
 
 - **文件级 SHA-256 去重** —— 只重写变化过的文件，没变的跳过；
-- **孤儿清理** —— 已下架的 skill、或从 builder 里移除的整个仓库，留下的目录在整个宽限期内未被使用后，在同一轮删掉；
+- **孤儿清理** —— 已下架的 skill、或从 builder 里移除的整个仓库，留下的目录在整个宽限期内未被使用后，在同一次物化里删掉；
 - **恢复执行位** —— 资源在入库时被转成字符串，POSIX 权限丢了，所以 stager 用启发式补回 `+x`：文件开头是 shebang（`#!`），或后缀是已知脚本类型（`.sh`/`.bash`/`.py`/`.rb`/`.pl`/`.js`/`.mjs`），就加上可执行位（按 `chmod +x` 的语义，只给本来有读权限的位加执行位）。纯静态资产（`.json`/`.md`/`.txt`）保持 644。
 
 工作区 skill（Layer 3 / Layer 4）跳过这一步——它们本来就在工作区目录里。
@@ -431,4 +431,4 @@ execute("python3 /workspace/skills/code-reviewer/scripts/run-checks.sh <目标�
 
 - [工作区](/v2/zh/docs/harness/workspace) — `skills/` 目录的整体布局
 - [文件系统](/v2/zh/docs/harness/filesystem) — 多租户隔离与按用户切目录
-- [架构](/v2/zh/docs/harness/architecture) — skill 集合是怎么每轮重新合成的
+- [架构](/v2/zh/docs/harness/architecture) — skill 集合是怎么每次 call 重新合成的
