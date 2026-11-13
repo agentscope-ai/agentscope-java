@@ -16,8 +16,11 @@
 package io.agentscope.extensions.agentprotocol;
 
 import io.agentscope.harness.agent.subagent.protocol.RemoteAgentEvent;
+import java.util.Iterator;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicLong;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -27,26 +30,50 @@ import reactor.core.publisher.Sinks;
 /**
  * Per-task event bus for Agent Protocol SSE streaming. Uses a replay buffer so late subscribers /
  * reconnects can catch up from {@code fromSeq}.
+ *
+ * <p>A channel is created on first use and is <em>retained</em> once the task completes, so a
+ * subscriber that arrives after completion still drains the replay buffer and is then completed
+ * instead of being left open until the client-side SSE timeout. Retention is bounded by {@link
+ * #maxChannels}: completed channels are evicted before live ones, oldest first. Ids of completed
+ * tasks are remembered past their channel so that a reconnect to an evicted-but-finished task
+ * terminates immediately rather than opening a channel that will never complete.
  */
 public final class AgentProtocolTaskEventBus implements AgentProtocolEventBus {
 
     private static final Logger log = LoggerFactory.getLogger(AgentProtocolTaskEventBus.class);
 
+    /** Default upper bound on the number of channels a single bus retains. */
+    public static final int DEFAULT_MAX_CHANNELS = 1024;
+
+    private final Object lock = new Object();
     private final int replayBufferSize;
-    private final Map<String, Channel> channels = new ConcurrentHashMap<>();
+    private final int maxChannels;
+    private final int maxCompletedIds;
+
+    /** Insertion-ordered so eviction can prefer the oldest channel. Guarded by {@link #lock}. */
+    private final Map<String, Channel> channels = new LinkedHashMap<>();
+
+    /** Ids of completed tasks, oldest first. Guarded by {@link #lock}. */
+    private final Set<String> completedIds = new LinkedHashSet<>();
 
     public AgentProtocolTaskEventBus() {
         this(256);
     }
 
     public AgentProtocolTaskEventBus(int replayBufferSize) {
+        this(replayBufferSize, DEFAULT_MAX_CHANNELS);
+    }
+
+    public AgentProtocolTaskEventBus(int replayBufferSize, int maxChannels) {
         this.replayBufferSize = Math.max(16, replayBufferSize);
+        this.maxChannels = Math.max(1, maxChannels);
+        this.maxCompletedIds = this.maxChannels * 4;
     }
 
     /** Publishes an event, assigning a monotonic {@code seq}. */
     @Override
     public RemoteAgentEvent publish(String taskId, RemoteAgentEvent event) {
-        Channel ch = channels.computeIfAbsent(taskId, id -> new Channel(replayBufferSize));
+        Channel ch = channel(taskId);
         long seq = ch.seq.incrementAndGet();
         event.setSeq(seq);
         event.setTaskId(taskId);
@@ -59,11 +86,23 @@ public final class AgentProtocolTaskEventBus implements AgentProtocolEventBus {
 
     /**
      * Subscribes to events for {@code taskId}, optionally skipping those with {@code seq <=
-     * fromSeq}.
+     * fromSeq}. Returns an already-completed stream when {@code taskId} has finished and its
+     * channel is no longer retained.
      */
     @Override
     public Flux<RemoteAgentEvent> subscribe(String taskId, long fromSeq) {
-        Channel ch = channels.computeIfAbsent(taskId, id -> new Channel(replayBufferSize));
+        Channel ch;
+        boolean finishedWithoutChannel;
+        synchronized (lock) {
+            ch = channels.get(taskId);
+            finishedWithoutChannel = ch == null && completedIds.contains(taskId);
+        }
+        if (ch == null) {
+            if (finishedWithoutChannel) {
+                return Flux.empty();
+            }
+            ch = channel(taskId);
+        }
         Flux<RemoteAgentEvent> flux = ch.sink.asFlux();
         if (fromSeq > 0) {
             return flux.filter(e -> e.getSeq() > fromSeq);
@@ -71,18 +110,77 @@ public final class AgentProtocolTaskEventBus implements AgentProtocolEventBus {
         return flux;
     }
 
-    /** Completes and removes the channel after a terminal event has been published. */
+    /**
+     * Completes the channel for {@code taskId}. The channel is retained so that a later subscriber
+     * replays the buffered events and is then completed; it is released once the bus evicts it.
+     */
     @Override
     public void complete(String taskId) {
-        Channel ch = channels.remove(taskId);
+        Channel ch;
+        synchronized (lock) {
+            ch = channels.get(taskId);
+            if (ch != null) {
+                ch.completed = true;
+            }
+            completedIds.add(taskId);
+            while (completedIds.size() > maxCompletedIds) {
+                Iterator<String> oldest = completedIds.iterator();
+                oldest.next();
+                oldest.remove();
+            }
+        }
         if (ch != null) {
             ch.sink.tryEmitComplete();
         }
     }
 
+    /** Visible for tests - the number of channels currently retained. */
+    int channelCount() {
+        synchronized (lock) {
+            return channels.size();
+        }
+    }
+
+    private Channel channel(String taskId) {
+        synchronized (lock) {
+            Channel existing = channels.get(taskId);
+            if (existing != null) {
+                return existing;
+            }
+            while (channels.size() >= maxChannels && evictOne()) {
+                // Keep evicting until there is room for the new channel.
+            }
+            Channel created = new Channel(replayBufferSize);
+            channels.put(taskId, created);
+            return created;
+        }
+    }
+
+    /** Caller must hold {@link #lock}. Completed channels are evicted first, oldest first. */
+    private boolean evictOne() {
+        Iterator<Map.Entry<String, Channel>> it = channels.entrySet().iterator();
+        String eldestKey = null;
+        while (it.hasNext()) {
+            Map.Entry<String, Channel> entry = it.next();
+            if (eldestKey == null) {
+                eldestKey = entry.getKey();
+            }
+            if (entry.getValue().completed) {
+                it.remove();
+                return true;
+            }
+        }
+        if (eldestKey != null) {
+            channels.remove(eldestKey);
+            return true;
+        }
+        return false;
+    }
+
     private static final class Channel {
         private final Sinks.Many<RemoteAgentEvent> sink;
         private final AtomicLong seq = new AtomicLong();
+        private volatile boolean completed;
 
         Channel(int replayBufferSize) {
             this.sink = Sinks.many().replay().limit(replayBufferSize);
