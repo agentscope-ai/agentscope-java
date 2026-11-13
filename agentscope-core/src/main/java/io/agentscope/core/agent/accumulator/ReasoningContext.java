@@ -28,6 +28,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 
 /**
  * Reasoning context that manages all state and content accumulation for a single reasoning round.
@@ -49,6 +50,8 @@ public class ReasoningContext {
     private final TextAccumulator textAcc = new TextAccumulator();
     private final ThinkingAccumulator thinkingAcc = new ThinkingAccumulator();
     private final ToolCallsAccumulator toolCallsAcc = new ToolCallsAccumulator();
+
+    private String finishReason;
 
     private final List<Msg> allStreamedChunks = new ArrayList<>();
 
@@ -85,6 +88,9 @@ public class ReasoningContext {
      */
     public List<Msg> processChunk(ChatResponse chunk) {
         this.messageId = chunk.getId();
+        if (chunk.getFinishReason() != null) {
+            finishReason = chunk.getFinishReason();
+        }
 
         // Accumulate ChatUsage
         ChatUsage usage = chunk.getUsage();
@@ -173,7 +179,8 @@ public class ReasoningContext {
         }
 
         // Add all tool calls
-        List<ToolUseBlock> toolCalls = toolCallsAcc.buildAllToolCalls();
+        boolean outputLimitReached = isTruncated();
+        List<ToolUseBlock> toolCalls = toolCallsAcc.buildAllToolCalls(outputLimitReached);
         blocks.addAll(toolCalls);
 
         // If no content at all, return null
@@ -183,6 +190,9 @@ public class ReasoningContext {
 
         // Build metadata: start with propagated response metadata, then add ChatUsage
         Map<String, Object> metadata = new HashMap<>(responseMetadata);
+        if (outputLimitReached) {
+            metadata.put(MessageMetadataKeys.OUTPUT_LIMIT_REACHED, true);
+        }
         ChatUsage chatUsage = null;
         if (inputTokens > 0 || outputTokens > 0 || time > 0) {
             chatUsage =
@@ -205,6 +215,23 @@ public class ReasoningContext {
                 .metadata(metadata)
                 .usage(chatUsage)
                 .build();
+    }
+
+    private boolean isTruncated() {
+        // OpenAI Chat Completions and DashScope report "length"; Anthropic and Gemini report
+        // "max_tokens" or "MAX_TOKENS".
+        return "length".equalsIgnoreCase(finishReason)
+                || "max_tokens".equalsIgnoreCase(finishReason)
+                || isOpenAiResponsesOutputLimit();
+    }
+
+    private boolean isOpenAiResponsesOutputLimit() {
+        if (!"incomplete".equalsIgnoreCase(finishReason)) {
+            return false;
+        }
+        String incompleteReason =
+                Objects.toString(responseMetadata.get("openai.response.incomplete_reason"), null);
+        return "max_output_tokens".equalsIgnoreCase(incompleteReason);
     }
 
     /**

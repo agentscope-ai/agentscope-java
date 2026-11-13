@@ -179,6 +179,10 @@ public class WebSearchTool extends ToolBase {
 }
 ```
 
+### 流式参数不完整或格式错误
+
+JSON 参数格式错误或不完整的工具调用不会执行，也不会提交审批。Agent 用原调用 ID 记录错误结果，让模型修正调用。若响应达到输出 token 上限，错误会建议拆分调用或缩短参数。即使响应达到上限，完整的 JSON 对象仍可执行。
+
 ### 定义外部执行 Tool
 
 外部执行 tool 把实际执行委派给 agent 运行时之外 —— 通常是人工操作员或外部系统。Agent 调用此类 tool 时会发出 `RequireExternalExecutionEvent` 并暂停。下一次调用回传匹配的 `ToolResultBlock` 后，agent 会发出带有相同 `replyId` 的 `ExternalExecutionResultEvent`，然后继续执行。

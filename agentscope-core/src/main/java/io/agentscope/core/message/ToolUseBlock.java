@@ -16,6 +16,7 @@
 package io.agentscope.core.message;
 
 import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import java.util.Collections;
 import java.util.HashMap;
@@ -35,6 +36,9 @@ public final class ToolUseBlock extends ContentBlock {
 
     /** Metadata key for Gemini thought signature (byte[] value). */
     public static final String METADATA_THOUGHT_SIGNATURE = "thoughtSignature";
+
+    /** Metadata marker for streamed arguments that never formed a valid JSON object. */
+    public static final String METADATA_MALFORMED_ARGUMENTS = "malformedArguments";
 
     private final String id;
     private final String name;
@@ -173,6 +177,12 @@ public final class ToolUseBlock extends ContentBlock {
      */
     public ToolCallState getState() {
         return state;
+    }
+
+    /** Returns whether streamed arguments were malformed or incomplete. */
+    @JsonIgnore
+    public boolean hasMalformedArguments() {
+        return Boolean.TRUE.equals(metadata.get(METADATA_MALFORMED_ARGUMENTS));
     }
 
     /**

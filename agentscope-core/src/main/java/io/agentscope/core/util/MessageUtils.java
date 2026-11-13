@@ -16,6 +16,7 @@
 package io.agentscope.core.util;
 
 import io.agentscope.core.message.ContentBlock;
+import io.agentscope.core.message.MessageMetadataKeys;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.ToolResultBlock;
@@ -119,6 +120,21 @@ public final class MessageUtils {
      */
     public static Msg lastAssistantMessage(List<Msg> messages) {
         return lastMessageByRole(messages, MsgRole.ASSISTANT);
+    }
+
+    /** Returns whether the named agent's latest assistant message reached its output limit. */
+    public static boolean lastAssistantReachedOutputLimit(List<Msg> messages, String agentName) {
+        if (messages == null || messages.isEmpty()) {
+            return false;
+        }
+        for (int i = messages.size() - 1; i >= 0; i--) {
+            Msg msg = messages.get(i);
+            if (msg.getRole() == MsgRole.ASSISTANT && Objects.equals(msg.getName(), agentName)) {
+                return Boolean.TRUE.equals(
+                        msg.getMetadata().get(MessageMetadataKeys.OUTPUT_LIMIT_REACHED));
+            }
+        }
+        return false;
     }
 
     /**

@@ -179,6 +179,10 @@ public class WebSearchTool extends ToolBase {
 }
 ```
 
+### Invalid streamed arguments
+
+Tool calls with malformed or incomplete JSON arguments are not executed or sent for approval. The agent records an error result with the original call ID and lets the model correct the call. If the response reached its output token limit, the error suggests smaller calls or shorter arguments. Complete JSON objects remain executable even when the response reached that limit.
+
 ### External execution tools
 
 External-execution tools delegate the actual work outside the agent runtime — typically to a human operator or an external system. The agent emits `RequireExternalExecutionEvent` and pauses. When the next call feeds back matching `ToolResultBlock`s, the agent emits `ExternalExecutionResultEvent` with the same `replyId` before continuing.
