@@ -262,7 +262,14 @@ public class AguiWebFluxHandler {
             String threadId, String runId, String errorMessage) {
         String errorEvent =
                 encoder.encodeToJson(
-                                new AguiEvent.Raw(threadId, runId, Map.of("error", errorMessage)))
+                                new AguiEvent.Raw(
+                                        threadId,
+                                        runId,
+                                        Map.of(
+                                                "error",
+                                                errorMessage != null
+                                                        ? errorMessage
+                                                        : "Unknown error")))
                         .trim();
         String finishEvent =
                 encoder.encodeToJson(new AguiEvent.RunFinished(threadId, runId)).trim();
