@@ -74,9 +74,9 @@ class CompactionMiddlewareTest {
         assertEquals(1, nextCalls.get());
     }
 
-    /** A normal summary failure is still best-effort and continues with a failed-summary message. */
+    /** A normal summary failure is best-effort but must not replace history with a placeholder. */
     @Test
-    void ordinarySummaryFailureContinuesWithCompactedInput() {
+    void ordinarySummaryFailureContinuesWithOriginalInput() {
         AtomicInteger nextCalls = new AtomicInteger();
         CompactionMiddleware middleware =
                 new CompactionMiddleware(
@@ -93,11 +93,11 @@ class CompactionMiddlewareTest {
                                 next -> {
                                     nextCalls.incrementAndGet();
                                     assertEquals(2, next.messages().size());
-                                    assertTrue(
-                                            next.messages()
-                                                    .get(0)
-                                                    .getTextContent()
-                                                    .contains("Summarization failed"));
+                                    assertEquals(
+                                            List.of("previous context", "latest request"),
+                                            next.messages().stream()
+                                                    .map(Msg::getTextContent)
+                                                    .toList());
                                     return Flux.empty();
                                 }))
                 .verifyComplete();

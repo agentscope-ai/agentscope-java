@@ -22,6 +22,8 @@ import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
+import io.agentscope.core.model.ChatResponse;
+import io.agentscope.core.model.FinishReasons;
 import io.agentscope.core.model.Model;
 import io.agentscope.core.util.ExceptionUtils;
 import io.agentscope.harness.agent.memory.MemoryFlushManager;
@@ -111,19 +113,13 @@ public class ConversationCompactor {
 
         int totalTokens = TokenCounterUtil.calculateToken(messages);
         if (!shouldCompact(messages, totalTokens, config)) {
-            return Mono.just(
-                    messages.equals(conversationMessages)
-                            ? Optional.empty()
-                            : Optional.of(messages));
+            return Mono.just(lightweightResult(messages, conversationMessages));
         }
 
         int cutoff = determineCutoffIndex(messages, totalTokens, config);
         if (cutoff <= 0) {
             log.debug("Compaction triggered but safe cutoff is 0 — returning lightweight result");
-            return Mono.just(
-                    messages.equals(conversationMessages)
-                            ? Optional.empty()
-                            : Optional.of(messages));
+            return Mono.just(lightweightResult(messages, conversationMessages));
         }
 
         // Keep prior summaries in the summarization input so each compaction builds on the
@@ -198,15 +194,33 @@ public class ConversationCompactor {
                                 summarizePrefix(summaryInput, config)
                                         .map(
                                                 summary -> {
+                                                    if (summary.isEmpty()) {
+                                                        return lightweightResult(
+                                                                messages, conversationMessages);
+                                                    }
                                                     String filePath =
                                                             offloadPath.isBlank()
                                                                     ? null
                                                                     : offloadPath;
                                                     Msg summaryMsg =
-                                                            buildSummaryMessage(summary, filePath);
+                                                            buildSummaryMessage(
+                                                                    summary.get(), filePath);
                                                     List<Msg> compacted = new ArrayList<>();
                                                     compacted.add(summaryMsg);
                                                     compacted.addAll(tail);
+                                                    int candidateTokens =
+                                                            TokenCounterUtil.calculateToken(
+                                                                    compacted);
+                                                    if (candidateTokens >= totalTokens) {
+                                                        log.warn(
+                                                                "Rejected summary candidate: {}"
+                                                                    + " tokens is not smaller than"
+                                                                    + " the current {} tokens",
+                                                                candidateTokens,
+                                                                totalTokens);
+                                                        return lightweightResult(
+                                                                messages, conversationMessages);
+                                                    }
                                                     log.info(
                                                             "Compaction complete: {} msgs → 1"
                                                                     + " summary + {} tail = {}"
@@ -216,6 +230,11 @@ public class ConversationCompactor {
                                                             compacted.size());
                                                     return Optional.of(compacted);
                                                 }));
+    }
+
+    /** Lightweight reductions replace history only when they actually changed something. */
+    private static Optional<List<Msg>> lightweightResult(List<Msg> messages, List<Msg> original) {
+        return messages.equals(original) ? Optional.empty() : Optional.of(messages);
     }
 
     // -------------------------------------------------------------------------
@@ -349,46 +368,83 @@ public class ConversationCompactor {
     // Summarization
     // -------------------------------------------------------------------------
 
-    private Mono<String> summarizePrefix(List<Msg> prefix, CompactionConfig config) {
+    /**
+     * Accepts only complete, nonempty text summaries. Missing or unrecognized finish reasons
+     * remain compatible with providers that do not report one. Ordinary failures reject the
+     * summary without discarding successful lightweight reductions; interrupts still propagate.
+     */
+    private Mono<Optional<String>> summarizePrefix(List<Msg> prefix, CompactionConfig config) {
         if (prefix.isEmpty()) {
-            return Mono.just("No previous conversation history.");
+            return Mono.just(Optional.empty());
         }
 
-        String formatted = formatMessagesForSummary(prefix);
-        String prompt = config.getSummaryPrompt().replace("{messages}", formatted);
-
-        List<Msg> summarizationInput =
-                List.of(
-                        Msg.builder()
-                                .role(MsgRole.USER)
-                                .content(TextBlock.builder().text(prompt).build())
-                                .build());
-
-        return model.stream(summarizationInput, null, null)
-                .reduce(
-                        new StringBuilder(),
-                        (sb, resp) -> {
-                            if (resp.getContent() != null) {
-                                for (ContentBlock block : resp.getContent()) {
-                                    if (block instanceof TextBlock tb && tb.getText() != null) {
-                                        sb.append(tb.getText());
-                                    }
-                                }
-                            }
-                            return sb;
+        return Mono.defer(
+                        () -> {
+                            String formatted = formatMessagesForSummary(prefix);
+                            String prompt =
+                                    config.getSummaryPrompt().replace("{messages}", formatted);
+                            List<Msg> summarizationInput =
+                                    List.of(
+                                            Msg.builder()
+                                                    .role(MsgRole.USER)
+                                                    .content(
+                                                            TextBlock.builder()
+                                                                    .text(prompt)
+                                                                    .build())
+                                                    .build());
+                            return model.stream(summarizationInput, null, null)
+                                    .collect(SummaryCollection::new, SummaryCollection::accept)
+                                    .map(SummaryCollection::toValidatedSummary);
                         })
-                .map(StringBuilder::toString)
-                .map(String::strip)
-                .filter(s -> !s.isBlank())
-                .defaultIfEmpty("(Summary unavailable)")
                 .onErrorResume(
                         e -> {
                             if (ExceptionUtils.containsInterruptedException(e)) {
                                 return Mono.error(e);
                             }
                             log.warn("Summarization LLM call failed: {}", e.getMessage());
-                            return Mono.just("(Summarization failed: " + e.getMessage() + ")");
+                            return Mono.just(Optional.empty());
                         });
+    }
+
+    /** Accumulates one summary call's streamed output together with its terminal state. */
+    private static final class SummaryCollection {
+        private final StringBuilder text = new StringBuilder();
+        private boolean sawNonText;
+        private String finishReason;
+        private Map<String, Object> finishMetadata = Map.of();
+
+        void accept(ChatResponse response) {
+            if (response.getContent() != null) {
+                for (ContentBlock block : response.getContent()) {
+                    if (block instanceof TextBlock tb) {
+                        text.append(tb.getText());
+                    } else {
+                        sawNonText = true;
+                    }
+                }
+            }
+            if (response.getFinishReason() != null && !response.getFinishReason().isBlank()) {
+                finishReason = response.getFinishReason();
+                finishMetadata = response.getMetadata() == null ? Map.of() : response.getMetadata();
+            }
+        }
+
+        Optional<String> toValidatedSummary() {
+            if (FinishReasons.indicatesOutputLimit(finishReason, finishMetadata)) {
+                log.warn("Rejected summary: output stopped at the provider token limit");
+                return Optional.empty();
+            }
+            if (sawNonText) {
+                log.warn("Rejected summary: model returned non-text content or tool calls");
+                return Optional.empty();
+            }
+            String summary = text.toString().strip();
+            if (summary.isBlank()) {
+                log.warn("Rejected summary: model returned no text content");
+                return Optional.empty();
+            }
+            return Optional.of(summary);
+        }
     }
 
     /**
