@@ -187,6 +187,8 @@ public class WebSearchTool extends ToolBase {
 
 ### 流式参数不完整或格式错误
 
+默认 `JacksonJsonCodec` 只读取一个完整的 JSON 值。允许尾随空白；额外的 JSON 值或其他尾随内容会抛出 `JsonException`。未标记的工具调用可从无效原始参数回退到解析后的 input；流式结束时已标记为参数损坏的调用仍不可执行，不使用该回退。
+
 JSON 参数格式错误或不完整的工具调用不会执行，也不会提交审批。Agent 用原调用 ID 记录错误结果，让模型修正调用。若响应达到输出 token 上限，错误会建议拆分调用或缩短参数。即使响应达到上限，完整的 JSON 对象仍可执行。
 
 ### 定义外部执行 Tool

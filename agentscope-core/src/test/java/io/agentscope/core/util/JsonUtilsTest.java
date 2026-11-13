@@ -140,9 +140,10 @@ class JsonUtilsTest {
             assertFalse(JsonUtils.isValidJsonObject("{\"a\":1}]"));
             assertFalse(JsonUtils.isValidJsonObject("{} garbage"));
             assertTrue(JsonUtils.isValidJsonObject(" {\"a\": [1, {\"text\": \"} {\"}]} \n\t"));
-            // Strictness belongs to this validation operation, not the application's codec.
-            assertEquals(
-                    Map.of("a", 1), JsonUtils.getJsonCodec().fromJson("{\"a\":1}{}", Map.class));
+            // The default codec now also enforces exactly one root value per read.
+            assertThrows(
+                    JsonException.class,
+                    () -> JsonUtils.getJsonCodec().fromJson("{\"a\":1}{}", Map.class));
         }
 
         @Test

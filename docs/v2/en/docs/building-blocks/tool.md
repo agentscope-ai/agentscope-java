@@ -187,6 +187,8 @@ public class WebSearchTool extends ToolBase {
 
 ### Invalid streamed arguments
 
+The default `JacksonJsonCodec` reads exactly one JSON value. Trailing whitespace is accepted; an extra value or other trailing content raises `JsonException`. For unmarked tool calls, invalid raw arguments can fall back to parsed input. Calls marked malformed during stream finalization remain non-executable and never use that fallback.
+
 Tool calls with malformed or incomplete JSON arguments are not executed or sent for approval. The agent records an error result with the original call ID and lets the model correct the call. If the response reached its output token limit, the error suggests smaller calls or shorter arguments. Complete JSON objects remain executable even when the response reached that limit.
 
 ### External execution tools
