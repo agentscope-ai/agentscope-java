@@ -674,8 +674,11 @@ public class QdrantStore implements VDBStoreBase, AutoCloseable {
             // Extract embedding from vectors if available
             if (scoredPoint.hasVectors()) {
                 var vectorsOutput = scoredPoint.getVectors();
-                if (vectorsOutput.hasVector()) {
-                    var vectorOutput = vectorsOutput.getVector();
+                var vectorOutput = vectorsOutput.hasVector() ? vectorsOutput.getVector() : null;
+                if (vectorName != null && vectorsOutput.hasVectors()) {
+                    vectorOutput = vectorsOutput.getVectors().getVectorsOrDefault(vectorName, null);
+                }
+                if (vectorOutput != null && vectorOutput.hasDense()) {
                     List<Float> floatList = vectorOutput.getDense().getDataList();
                     double[] embedding = new double[floatList.size()];
                     for (int i = 0; i < floatList.size(); i++) {
