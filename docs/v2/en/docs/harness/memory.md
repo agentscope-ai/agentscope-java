@@ -213,6 +213,8 @@ HarnessAgent.builder()
 
 ## Large tool-result offloading
 
+Within compaction, aggregate tool-result pruning counts each result independently toward its protection and minimum-pruning token budgets, even when multiple results share one message.
+
 Independent of compaction. When a single tool call returns more than the threshold, the full text is written to a directory and only a head/tail preview + a placeholder is left in context. The agent can `read_file` for the full content:
 
 ```java
