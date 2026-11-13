@@ -31,7 +31,7 @@ Per-call saves use the exact caller identity used for loading. Session IDs conta
 
 ## File-store concurrency
 
-`JsonFileAgentStateStore` uses unique temporary siblings with cleanup and a JVM-wide lock per session directory, shared across store instances and root aliases. Reads, saves and deletions for one session are serialized; different sessions remain independent. This is not a cross-process lock: one process must own each session. Use a database-backed store for shared multi-process sessions.
+`JsonFileAgentStateStore` uses unique temporary siblings with cleanup and a bounded set of 256 JVM-wide lock stripes selected by the normalized absolute session-directory hash, shared across store instances and root aliases. Reads, saves and deletions for one session are serialized; distinct sessions may also serialize on a hash collision. This is not a cross-process lock: one process must own each session. Use a database-backed store for shared multi-process sessions.
 
 Separate read-modify-write calls remain last-writer-wins. List data and hash files are not a two-file transaction; a failed hash write can leave a stale hash until the next save. Session listing and clearing are not global transactions.
 
