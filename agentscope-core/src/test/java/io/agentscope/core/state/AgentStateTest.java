@@ -158,9 +158,10 @@ class AgentStateTest {
     }
 
     @Test
-    void jsonOmittedFieldsFallBackToDefaults() throws Exception {
+    void jsonOptionalFieldsFallBackToDefaults() throws Exception {
         AgentState decoded = mapper.readValue("{\"session_id\":\"only-id\"}", AgentState.class);
         assertEquals("only-id", decoded.getSessionId());
+        assertEquals("main", decoded.getThreadId());
         assertEquals("", decoded.getSummary());
         assertEquals(0, decoded.getCurIter());
         assertNotNull(decoded.getReplyId());

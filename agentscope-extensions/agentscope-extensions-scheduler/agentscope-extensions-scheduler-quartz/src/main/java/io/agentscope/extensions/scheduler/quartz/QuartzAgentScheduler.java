@@ -409,9 +409,13 @@ public class QuartzAgentScheduler implements AgentScheduler {
      */
     @Override
     public void shutdown() {
+        shutdown(true);
+    }
+
+    void shutdown(boolean waitForJobsToComplete) {
         logger.info("Shutting down QuartzAgentScheduler...");
         try {
-            scheduler.shutdown(true);
+            scheduler.shutdown(waitForJobsToComplete);
             logger.info("QuartzAgentScheduler shutdown completed");
         } catch (SchedulerException e) {
             logger.error("Error occurred while shutting down QuartzAgentScheduler", e);

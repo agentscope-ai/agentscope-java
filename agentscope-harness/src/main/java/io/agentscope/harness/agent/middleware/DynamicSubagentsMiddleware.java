@@ -140,6 +140,13 @@ public class DynamicSubagentsMiddleware implements HarnessRuntimeMiddleware {
         return agentManager;
     }
 
+    /** Loads declarations for host-owned continuation without invoking a model. */
+    public DefaultAgentManager refreshAgentManager(RuntimeContext context) {
+        RuntimeContext effective = context == null ? RuntimeContext.empty() : context;
+        if (agentManager != null) agentManager.replaceAgents(reloadEntries(effective));
+        return agentManager;
+    }
+
     /**
      * Returns the tool instances this middleware contributes to the agent toolkit. The caller
      * is responsible for registering them on the toolkit at orchestration time.

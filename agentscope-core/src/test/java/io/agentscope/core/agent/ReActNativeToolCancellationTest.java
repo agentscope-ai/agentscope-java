@@ -24,14 +24,13 @@ import io.agentscope.core.agent.test.MockModel;
 import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.event.AgentEventEmitter;
 import io.agentscope.core.event.ToolResultEndEvent;
+import io.agentscope.core.journal.InMemoryThreadJournalStore;
+import io.agentscope.core.journal.JournalProjection;
+import io.agentscope.core.journal.ThreadJournal;
+import io.agentscope.core.journal.ThreadJournalStore;
+import io.agentscope.core.journal.ThreadRecovery;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolResultState;
-import io.agentscope.core.session.InMemorySessionLogStore;
-import io.agentscope.core.session.SessionKey;
-import io.agentscope.core.session.SessionLog;
-import io.agentscope.core.session.SessionLogStore;
-import io.agentscope.core.session.SessionProjection;
-import io.agentscope.core.session.SessionRecovery;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Proxy;
 import java.time.Duration;
@@ -51,15 +50,15 @@ class ReActNativeToolCancellationTest {
     @CsvSource({"false,false", "true,false", "false,true", "true,true"})
     void nativeRecoveryRetainsCompletedResultAfterHardCancel(boolean stream, boolean mutateState)
             throws Exception {
-        var rawStore = new InMemorySessionLogStore();
+        var rawStore = new InMemoryThreadJournalStore();
         var released = new CountDownLatch(1);
-        SessionLogStore observed =
+        ThreadJournalStore observed =
                 (key, ctx) -> {
                     var delegate = rawStore.open(key, ctx);
-                    return (SessionLog)
+                    return (ThreadJournal)
                             Proxy.newProxyInstance(
-                                    SessionLog.class.getClassLoader(),
-                                    new Class<?>[] {SessionLog.class},
+                                    ThreadJournal.class.getClassLoader(),
+                                    new Class<?>[] {ThreadJournal.class},
                                     (proxy, method, arguments) -> {
                                         try {
                                             Object value = method.invoke(delegate, arguments);
@@ -111,7 +110,7 @@ class ReActNativeToolCancellationTest {
                         .agentId("audit-cancel")
                         .model(ProgressiveToolResultTest.model())
                         .toolkit(toolkit)
-                        .sessionLogStore(observed)
+                        .threadJournalStore(observed)
                         .build()) {
             CompletableFuture<?> running =
                     stream
@@ -135,9 +134,11 @@ class ReActNativeToolCancellationTest {
                 assertTrue(
                         released.await(5, TimeUnit.SECONDS),
                         "await actual native cancellation commit/release");
-                var log = rawStore.open(new SessionKey("u", "audit-cancel", "s"), ctx);
-                var projection = SessionProjection.read(log);
+                assertEquals(1, executions.get(), "fast execution count after cancellation");
+                var log = rawStore.open(new ThreadKey("u", "audit-cancel", "s", "main"), ctx);
+                var projection = JournalProjection.read(log);
                 var restored = projection.restore();
+                assertEquals(1, executions.get(), "fast execution count after projection");
                 var fast =
                         restored.getContext().stream()
                                 .flatMap(m -> m.getContentBlocks(ToolResultBlock.class).stream())
@@ -145,26 +146,28 @@ class ReActNativeToolCancellationTest {
                                 .findFirst();
                 assertFalse(projection.uncertainToolCalls().contains("fast-call"));
                 assertEquals(java.util.Set.of("slow-call"), projection.uncertainToolCalls());
+                assertTrue(fast.isPresent(), "the checkpoint must not hide a completed result");
                 if (mutateState)
                     assertEquals(
                             List.of("discovered-by-tool"),
                             restored.getToolContext().getDiscoveredTools());
                 // Resolve only the actually unknown slow invocation; never authorize replay of
                 // fast.
-                SessionRecovery.reconcile(
+                ThreadRecovery.reconcile(
                         log,
                         Map.of(
                                 "slow-call",
                                 ToolResultBlock.error("slow-call", "operator verified cancellation")
                                         .withIdAndName("slow-call", "slow")),
                         "operator verified the pending slow invocation");
+                assertEquals(1, executions.get(), "fast execution count after reconciliation");
                 try (var resumed =
                         ReActAgent.builder()
                                 .name("audit-cancel")
                                 .agentId("audit-cancel")
                                 .model(new MockModel("continued"))
                                 .toolkit(toolkit)
-                                .sessionLogStore(rawStore)
+                                .threadJournalStore(rawStore)
                                 .build()) {
                     resumed.call(
                                     List.of(),
@@ -175,7 +178,6 @@ class ReActNativeToolCancellationTest {
                         1,
                         executions.get(),
                         "reconciling slow must not replay a durably completed fast tool");
-                assertTrue(fast.isPresent(), "the checkpoint must not hide a completed result");
                 assertEquals(ToolResultState.SUCCESS, fast.orElseThrow().getState());
                 assertTrue(fast.orElseThrow().getOutput().toString().contains("committed-receipt"));
             } finally {

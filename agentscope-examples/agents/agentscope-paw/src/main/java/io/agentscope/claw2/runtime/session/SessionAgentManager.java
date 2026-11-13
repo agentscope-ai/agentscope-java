@@ -19,10 +19,10 @@ import io.agentscope.claw2.runtime.session.tool.SessionsTool;
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.core.agent.ThreadKey;
+import io.agentscope.core.journal.ThreadHistory;
+import io.agentscope.core.journal.ThreadTranscriptExport;
 import io.agentscope.core.message.Msg;
-import io.agentscope.core.session.SessionKey;
-import io.agentscope.core.session.SessionTranscriptExport;
-import io.agentscope.core.session.SessionViews;
 import io.agentscope.harness.agent.HarnessAgent;
 import io.agentscope.harness.agent.subagent.DefaultAgentManager;
 import io.agentscope.harness.agent.subagent.SubagentFactory;
@@ -532,10 +532,6 @@ public class SessionAgentManager {
                                                         io.agentscope.harness.agent.subagent.task
                                                                 .TaskRepository
                                                                 .SUPPRESS_COMPLETION_CALLBACK)))
-                        .put(
-                                "agentTaskManaged",
-                                parent != null
-                                        && Boolean.TRUE.equals(parent.get("agentTaskManaged")))
                         .build();
         Agent agent =
                 agentCache.computeIfAbsent(
@@ -794,11 +790,11 @@ public class SessionAgentManager {
             }
             String content;
             if (agent instanceof HarnessAgent harness) {
-                content = SessionTranscriptExport.jsonl(harness.sessionTranscript(rc));
+                content = ThreadTranscriptExport.jsonl(harness.threadTranscript(rc));
             } else if (agent instanceof ReActAgent react) {
                 content =
-                        SessionTranscriptExport.jsonl(
-                                SessionViews.transcript(react.sessionLog(rc)));
+                        ThreadTranscriptExport.jsonl(
+                                ThreadHistory.transcript(react.threadJournal(rc)));
             } else {
                 return new HistoryResult(
                         entry.sessionKey(),
@@ -1019,6 +1015,6 @@ public class SessionAgentManager {
 
     /** Logical history reference; retained under the old DTO field name for clients. */
     public String resolveSessionFilePath(String agentId, String sessionId) {
-        return "session-log:" + new SessionKey(null, agentId, sessionId).storagePath();
+        return "session-log:" + new ThreadKey(null, agentId, sessionId, "main").storagePath();
     }
 }

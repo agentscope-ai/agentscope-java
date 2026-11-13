@@ -105,7 +105,7 @@ public class AgentToolsController {
                     new BuiltinToolInfo(
                             "memory_get", "Fetch a specific memory entry by id.", "memory"),
                     new BuiltinToolInfo(
-                            "session_search",
+                            "thread_search",
                             "Search prior session transcripts for context.",
                             "memory"),
                     new BuiltinToolInfo(

@@ -27,6 +27,10 @@ import io.agentscope.core.event.AgentEventEmitter;
 import io.agentscope.core.event.ConfirmResult;
 import io.agentscope.core.event.RequireUserConfirmEvent;
 import io.agentscope.core.event.ToolResultEndEvent;
+import io.agentscope.core.journal.InMemoryThreadJournalStore;
+import io.agentscope.core.journal.JournalEvent;
+import io.agentscope.core.journal.ThreadInteractions;
+import io.agentscope.core.journal.ThreadJournal;
 import io.agentscope.core.message.GenerateReason;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
@@ -41,11 +45,6 @@ import io.agentscope.core.model.Model;
 import io.agentscope.core.model.ToolSchema;
 import io.agentscope.core.permission.PermissionContextState;
 import io.agentscope.core.permission.PermissionDecision;
-import io.agentscope.core.session.InMemorySessionLogStore;
-import io.agentscope.core.session.SessionEvent;
-import io.agentscope.core.session.SessionInteractions;
-import io.agentscope.core.session.SessionKey;
-import io.agentscope.core.session.SessionLog;
 import io.agentscope.core.state.AgentState;
 import io.agentscope.core.state.ConflictPolicy;
 import io.agentscope.core.state.InMemoryAgentStateStore;
@@ -329,7 +328,7 @@ class ReActAgentPermissionPersistenceTest {
         final AtomicInteger executed = new AtomicInteger();
         final CountDownLatch writerReleased = new CountDownLatch(1);
         Runnable beforeSuspensionSave = () -> {};
-        final InMemorySessionLogStore backing = new InMemorySessionLogStore();
+        final InMemoryThreadJournalStore backing = new InMemoryThreadJournalStore();
         final InMemoryAgentStateStore legacy =
                 new InMemoryAgentStateStore() {
                     @Override
@@ -346,9 +345,10 @@ class ReActAgentPermissionPersistenceTest {
             this.journal = journal;
         }
 
-        SessionLog log() {
+        ThreadJournal log() {
             return backing.open(
-                    new SessionKey("permission-user", "permission-agent", "permission-session"),
+                    new ThreadKey(
+                            "permission-user", "permission-agent", "permission-session", "main"),
                     context());
         }
 
@@ -414,7 +414,7 @@ class ReActAgentPermissionPersistenceTest {
                             .toolkit(toolkit)
                             .conflictPolicy(conflictPolicy);
             if (journal)
-                builder.sessionLogStore(
+                builder.threadJournalStore(
                         (key, ctx) ->
                                 new InterceptedLog(
                                         backing.open(key, ctx),
@@ -438,13 +438,14 @@ class ReActAgentPermissionPersistenceTest {
                         request.getReplyId(),
                         assistant.getMetadata().get(Msg.METADATA_CONFIRM_REQUEST_REPLY_ID));
                 if (journal)
-                    assertTrue(SessionInteractions.pending(log()).containsKey("permission-tool"));
+                    assertTrue(ThreadInteractions.pending(log()).containsKey("permission-tool"));
             }
         }
     }
 
-    private record InterceptedLog(SessionLog delegate, Runnable beforeSave, CountDownLatch released)
-            implements SessionLog {
+    private record InterceptedLog(
+            ThreadJournal delegate, Runnable beforeSave, CountDownLatch released)
+            implements ThreadJournal {
         public Head head() {
             return delegate.head();
         }
@@ -466,11 +467,11 @@ class ReActAgentPermissionPersistenceTest {
             released.countDown();
         }
 
-        public List<SessionEvent> readAfter(long after, int limit) {
+        public List<JournalEvent> readAfter(long after, int limit) {
             return delegate.readAfter(after, limit);
         }
 
-        public Head commit(Writer writer, String id, long expected, List<SessionEvent> events) {
+        public Head commit(Writer writer, String id, long expected, List<JournalEvent> events) {
             if (events.stream().anyMatch(e -> e.type().equals("interaction/requested")))
                 beforeSave.run();
             return delegate.commit(writer, id, expected, events);

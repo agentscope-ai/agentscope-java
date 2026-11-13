@@ -76,7 +76,7 @@ Where snapshots land is decided by `snapshotSpec`:
 | `LocalSnapshotSpec` | Host local file (single-machine long-running) |
 | `OssSnapshotSpec` | OSS / S3-compatible (multi-replica) |
 | `RedisSnapshotSpec` | Redis (low latency, small workspaces) |
-| `JdbcSnapshotSpec` | JDBC BLOB (existing relational DB) |
+| `JdbcSnapshotSpec` | MySQL / JDBC BLOB (existing relational DB) |
 
 ```java
 .filesystem(new DockerFilesystemSpec()

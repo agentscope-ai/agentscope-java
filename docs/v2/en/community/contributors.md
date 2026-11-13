@@ -100,4 +100,4 @@ Meet some of the project's contributors below. Each card links to a GitHub profi
   </li>
 </ul>
 
-Want to get involved? Start with the [contribution guide](https://github.com/agentscope-ai/agentscope-java/blob/main/CONTRIBUTING.md). To update this page, open a pull request editing `docs/v2/en/community/contributors.md`.
+Want to get involved? Start with the [contribution guide](https://github.com/agentscope-ai/agentscope-java/blob/v2.0.4/CONTRIBUTING.md). To update this page, open a pull request editing `docs/v2/en/community/contributors.md`.

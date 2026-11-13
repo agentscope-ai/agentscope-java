@@ -20,6 +20,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.core.journal.InMemoryThreadJournalStore;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.TextBlock;
@@ -28,7 +29,6 @@ import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.Model;
 import io.agentscope.core.model.ToolSchema;
-import io.agentscope.core.session.InMemorySessionLogStore;
 import io.agentscope.core.skill.AgentSkill;
 import io.agentscope.core.skill.repository.AgentSkillRepository;
 import io.agentscope.core.skill.repository.AgentSkillRepositoryInfo;
@@ -279,7 +279,7 @@ class SharedWorkspaceSkillStagingE2ETest {
                 // Keep the session journal out of the shared workspace: this test is about skill
                 // staging, and on Windows the default journal is one SQLite file that every call
                 // writes ~18 times with full sync — slow enough to hit the 120 s budget (#3514).
-                .sessionLogStore(new InMemorySessionLogStore())
+                .threadJournalStore(new InMemoryThreadJournalStore())
                 .skillRepository(repo)
                 .build();
     }
