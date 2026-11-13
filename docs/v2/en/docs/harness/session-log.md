@@ -399,3 +399,7 @@ The destination starts from an imported baseline. It does not copy the source ev
 ## Complete example: recoverable Web Chat
 
 The [agentscope-chat walkthrough](/v2/en/blogs/best-practices/session-chat) connects these operations to HTTP handlers and a browser: submit a background task, restore partial messages and tools, reconnect SSE, answer pending input and continue after interruption or restart. It runs offline by default and can also use a real model. Follow its source to adapt the application projection and runtime ownership to your own chat or task UI.
+
+## Incremental source consumers
+
+`SessionLog.sourceId()` identifies a journal within its backend namespace; custom logs returning `null` require a caller-supplied key. `SessionRecorder.log()` exposes committed history after execution closes, and `unrecordedMessages()` returns messages without individual source events. New `turn/output` events include the optional `sourceMessageRecorded` flag so consumers can skip terminal copies already recorded as messages.

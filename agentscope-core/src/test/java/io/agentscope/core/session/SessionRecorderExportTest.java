@@ -16,16 +16,56 @@
 package io.agentscope.core.session;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.agentscope.core.message.AssistantMessage;
+import io.agentscope.core.message.UserMessage;
+import io.agentscope.core.state.AgentState;
+import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 class SessionRecorderExportTest {
+
+    @ParameterizedTest
+    @ValueSource(booleans = {true, false})
+    void terminalOutputIdentifiesItsIndividualSourceEvent(boolean recorded) {
+        SessionLog log =
+                new InMemorySessionLogStore()
+                        .open(new SessionKey("user-1", "agent-1", "session-1"), null);
+        var result = AssistantMessage.builder().textContent("result").build();
+        var input = new UserMessage("input");
+        var state = AgentState.builder().context(List.of(input)).build();
+        var recorder = new SessionRecorder(log, null);
+        try {
+            recorder.start(List.of(input), state).block(Duration.ofSeconds(5));
+            recorder.checkpointNow(state, "input");
+            assertSame(log, recorder.log());
+            assertEquals(List.of(result), recorder.unrecordedMessages(List.of(input, result)));
+            if (recorded) state.contextMutable().add(result);
+            recorder.result(result);
+            recorder.finish(state, "completed").block(Duration.ofSeconds(5));
+            var events = log.readAfter(0, 100);
+            var output =
+                    events.stream()
+                            .filter(e -> e.type().equals("turn/output"))
+                            .findFirst()
+                            .orElseThrow();
+            assertEquals(recorded, output.data().get("sourceMessageRecorded"));
+            assertEquals(
+                    recorded ? 1 : 0,
+                    events.stream().filter(e -> e.type().equals("message/assistant")).count());
+        } finally {
+            recorder.close();
+        }
+    }
 
     @Test
     void exportRequestedDuringAnInFlightDrainIsNotDropped() throws InterruptedException {

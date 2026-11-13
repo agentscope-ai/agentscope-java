@@ -442,3 +442,7 @@ static Mono<Void> recordReview(RuntimeContext context, String note) {
 ## 把这些能力接到完整应用中
 
 [可恢复聊天示例](/v2/zh/blogs/best-practices/session-chat)可以离线运行，也可以接入真实模型。建议先启动它，发送多步任务，在工具执行和文本生成期间刷新页面；再试一次待办答复、中断与继续。这样可以直接看到：提交接口负责表达用户意图，后台会话负责执行，快照与事件负责恢复页面，checkpoint 负责继续任务。
+
+## 增量来源消费者
+
+`SessionLog.sourceId()` 标识后端命名空间内的日志；自定义日志返回 `null` 时需由调用方提供标识。`SessionRecorder.log()` 允许执行关闭后读取已提交历史，`unrecordedMessages()` 返回尚无独立来源事件的消息。新的 `turn/output` 事件包含可选字段 `sourceMessageRecorded`，消费者可跳过已有消息事件的终态副本。

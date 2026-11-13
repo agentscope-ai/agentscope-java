@@ -20,6 +20,11 @@ import java.util.List;
 
 /** Blocking persistence SPI; runtime integration schedules it on boundedElastic. */
 public interface SessionLog {
+    /** Stable source identity within the backend namespace; null requires an explicit caller key. */
+    default String sourceId() {
+        return null;
+    }
+
     /** Durable input journal, independent of the execution writer and its event sequence. */
     default SessionLog inbox() {
         throw new UnsupportedOperationException(

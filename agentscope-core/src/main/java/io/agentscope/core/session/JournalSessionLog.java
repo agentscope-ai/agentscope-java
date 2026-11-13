@@ -62,6 +62,11 @@ public final class JournalSessionLog implements SessionLog {
     }
 
     @Override
+    public String sourceId() {
+        return prefix;
+    }
+
+    @Override
     public SessionLog inbox() {
         return new JournalSessionLog(storage, path("inbox"), clock);
     }

@@ -76,6 +76,7 @@ public final class SessionRecorder {
     private String resultStatus;
     private String resultReason;
     private String resultJson;
+    private String resultMessageId;
     private String stepId;
     private String batchId;
     private final Map<String, String> actionIds = new ConcurrentHashMap<>();
@@ -182,6 +183,18 @@ public final class SessionRecorder {
 
     public synchronized long durableSeq() {
         return durableSeq;
+    }
+
+    /** Committed history remains readable after this execution closes. */
+    public SessionLog log() {
+        return log;
+    }
+
+    /** Messages not yet represented by individual source events in this execution. */
+    public synchronized List<Msg> unrecordedMessages(List<Msg> messages) {
+        return messages.stream()
+                .filter(message -> !recordedMessages.contains(message.getId()))
+                .toList();
     }
 
     private void check() {
@@ -485,7 +498,10 @@ public final class SessionRecorder {
     }
 
     public synchronized void result(Msg result) {
-        if (result != null) resultJson = JsonUtils.getJsonCodec().toJson(result);
+        if (result != null) {
+            resultJson = JsonUtils.getJsonCodec().toJson(result);
+            resultMessageId = result.getId();
+        }
         if (result != null && result.getGenerateReason() != null) {
             resultReason = result.getGenerateReason().name();
             resultStatus = outcome(result.getGenerateReason());
@@ -531,7 +547,9 @@ public final class SessionRecorder {
                                                     "status",
                                                     terminal.equals("completed")
                                                             ? "completed"
-                                                            : "incomplete"));
+                                                            : "incomplete",
+                                                    "sourceMessageRecorded",
+                                                    recordedMessages.contains(resultMessageId)));
                                 Map<String, Object> outcome = new LinkedHashMap<>();
                                 outcome.put("status", terminal);
                                 outcome.put("reason", resultReason);

@@ -16,6 +16,7 @@
 package io.agentscope.core.session;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -28,6 +29,14 @@ import org.junit.jupiter.api.Test;
 
 class JournalSessionLogTest {
     private final SessionKey key = new SessionKey("u", "a", "s");
+
+    @Test
+    void sourceIdentitySurvivesReopeningAndSeparatesSessions() {
+        var store = new InMemorySessionLogStore();
+        String source = store.open(key, null).sourceId();
+        assertEquals(source, store.open(key, null).sourceId());
+        assertNotEquals(source, store.open(new SessionKey("u", "a", "other"), null).sourceId());
+    }
 
     private SessionEvent event(long seq, String type) {
         return new SessionEvent(1, "e" + seq, seq, 1, type, "r", "t", true, "{}");
