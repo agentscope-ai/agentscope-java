@@ -312,6 +312,10 @@ public class JdkHttpTransport implements HttpTransport {
         boolean isNdjson =
                 TransportConstants.STREAM_FORMAT_NDJSON.equals(
                         request.getHeaders().get(TransportConstants.STREAM_FORMAT_HEADER));
+        String terminator =
+                isNdjson
+                        ? null
+                        : request.getHeaders().get(TransportConstants.STREAM_TERMINATOR_HEADER);
 
         // The body is closed by the terminal signal's doFinally, never the reader: BufferedReader
         // close() contends for the monitor held by a parked readLine(), which is the hang
@@ -323,7 +327,9 @@ public class JdkHttpTransport implements HttpTransport {
                                     new BufferedReader(
                                             new InputStreamReader(
                                                     inputStream, StandardCharsets.UTF_8));
-                            return isNdjson ? readNdJsonLines(reader) : readSseLines(reader);
+                            return isNdjson
+                                    ? readNdJsonLines(reader)
+                                    : readSseLines(reader, terminator);
                         })
                 // reader.lines() uses blocking I/O internally
                 .subscribeOn(Schedulers.boundedElastic());
@@ -331,14 +337,39 @@ public class JdkHttpTransport implements HttpTransport {
 
     /**
      * Extract non-empty SSE data payloads and stop before the terminal marker.
+     *
+     * <p>When {@code terminator} is non-null (caller's {@code STREAM_TERMINATOR_HEADER}), a body
+     * that ends without the marker fails with {@link StreamTerminationException}: a clean
+     * connection close is not proof of complete content.
      */
-    private Flux<String> readSseLines(BufferedReader reader) {
-        return Flux.fromStream(reader.lines())
-                .filter(line -> line.startsWith(SSE_DATA_PREFIX))
-                .map(line -> line.substring(SSE_DATA_PREFIX.length()).trim())
-                .takeWhile(data -> !SSE_DONE_MARKER.equals(data))
-                .doOnNext(data -> log.debug("Received SSE data chunk"))
-                .filter(data -> !data.isEmpty());
+    private Flux<String> readSseLines(BufferedReader reader, String terminator) {
+        String marker = terminator != null ? terminator : SSE_DONE_MARKER;
+        AtomicBoolean sawMarker = new AtomicBoolean(false);
+        Flux<String> lines =
+                Flux.fromStream(reader.lines())
+                        .filter(line -> line.startsWith(SSE_DATA_PREFIX))
+                        .map(line -> line.substring(SSE_DATA_PREFIX.length()).trim())
+                        .doOnNext(
+                                data -> {
+                                    if (marker.equals(data)) {
+                                        sawMarker.set(true);
+                                    }
+                                })
+                        .takeWhile(data -> !marker.equals(data))
+                        .doOnNext(data -> log.debug("Received SSE data chunk"))
+                        .filter(data -> !data.isEmpty());
+        if (terminator == null) {
+            return lines;
+        }
+        // Runs only on natural completion, never on cancellation or error: the marker check must
+        // not fire when the caller cancelled mid-stream.
+        return lines.concatWith(
+                Flux.defer(
+                        () ->
+                                sawMarker.get()
+                                        ? Flux.<String>empty()
+                                        : Flux.<String>error(
+                                                new StreamTerminationException(terminator))));
     }
 
     /**

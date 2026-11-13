@@ -256,6 +256,83 @@ class JdkHttpTransportTest {
     }
 
     @Test
+    void testStreamWithoutTerminatorHeaderStaysLenient() {
+        // No STREAM_TERMINATOR_HEADER: a body that ends without [DONE] still completes normally
+        // (backwards-compatible behavior for providers without a terminal marker).
+        String sseResponse = "data: {\"id\":\"1\"}\n\n";
+
+        mockServer.enqueue(
+                new MockResponse()
+                        .setResponseCode(200)
+                        .setBody(sseResponse)
+                        .setHeader("Content-Type", "text/event-stream"));
+
+        HttpRequest request =
+                HttpRequest.builder()
+                        .url(mockServer.url("/stream").toString())
+                        .method("POST")
+                        .body("{}")
+                        .build();
+
+        StepVerifier.create(transport.stream(request))
+                .expectNextMatches(data -> data.contains("\"id\":\"1\""))
+                .verifyComplete();
+    }
+
+    @Test
+    void testStreamWithTerminatorHeaderErrorsWhenMarkerMissing() {
+        String sseResponse = "data: {\"id\":\"1\"}\n\n";
+
+        mockServer.enqueue(
+                new MockResponse()
+                        .setResponseCode(200)
+                        .setBody(sseResponse)
+                        .setHeader("Content-Type", "text/event-stream"));
+
+        HttpRequest request =
+                HttpRequest.builder()
+                        .url(mockServer.url("/stream").toString())
+                        .method("POST")
+                        .header(TransportConstants.STREAM_TERMINATOR_HEADER, "[DONE]")
+                        .body("{}")
+                        .build();
+
+        StepVerifier.create(transport.stream(request))
+                .expectNextMatches(data -> data.contains("\"id\":\"1\""))
+                .expectErrorMatches(
+                        e ->
+                                e instanceof StreamTerminationException
+                                        && "[DONE]"
+                                                .equals(
+                                                        ((StreamTerminationException) e)
+                                                                .getTerminator()))
+                .verify();
+    }
+
+    @Test
+    void testStreamWithTerminatorHeaderCompletesWhenMarkerSeen() {
+        String sseResponse = "data: {\"id\":\"1\"}\n\ndata: [DONE]\n\n";
+
+        mockServer.enqueue(
+                new MockResponse()
+                        .setResponseCode(200)
+                        .setBody(sseResponse)
+                        .setHeader("Content-Type", "text/event-stream"));
+
+        HttpRequest request =
+                HttpRequest.builder()
+                        .url(mockServer.url("/stream").toString())
+                        .method("POST")
+                        .header(TransportConstants.STREAM_TERMINATOR_HEADER, "[DONE]")
+                        .body("{}")
+                        .build();
+
+        StepVerifier.create(transport.stream(request))
+                .expectNextMatches(data -> data.contains("\"id\":\"1\""))
+                .verifyComplete();
+    }
+
+    @Test
     void testStreamErrorResponse() {
         mockServer.enqueue(
                 new MockResponse()

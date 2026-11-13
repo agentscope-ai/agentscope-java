@@ -15,14 +15,29 @@
  */
 package io.agentscope.extensions.model.openai;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+
+import com.sun.net.httpserver.HttpServer;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.transport.HttpRequest;
 import io.agentscope.core.model.transport.HttpResponse;
 import io.agentscope.core.model.transport.HttpTransport;
+import io.agentscope.core.model.transport.HttpTransportConfig;
+import io.agentscope.core.model.transport.JdkHttpTransport;
+import io.agentscope.core.model.transport.OkHttpTransport;
+import io.agentscope.core.model.transport.StreamTerminationException;
+import io.agentscope.core.model.transport.TransportConstants;
 import io.agentscope.extensions.model.openai.dto.OpenAIMessage;
 import io.agentscope.extensions.model.openai.dto.OpenAIRequest;
+import io.agentscope.extensions.model.openai.exception.OpenAIException;
+import java.io.IOException;
+import java.io.OutputStream;
+import java.net.InetSocketAddress;
+import java.net.http.HttpClient;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -76,6 +91,33 @@ class OpenAIStreamTerminationTest {
                 .build();
     }
 
+    /** A transport whose SSE body emits the given lines and then closes the connection. */
+    private static HttpTransport closingTransport(String... lines) {
+        return new HttpTransport() {
+            @Override
+            public HttpResponse execute(HttpRequest request) {
+                throw new UnsupportedOperationException("not used in this test");
+            }
+
+            @Override
+            public Flux<String> stream(HttpRequest request) {
+                return Flux.just(lines);
+            }
+
+            @Override
+            public void close() {}
+        };
+    }
+
+    private static Flux<?> streamOf(HttpTransport transport) {
+        return new OpenAIClient(transport)
+                .stream(
+                        "test-key",
+                        "http://localhost",
+                        sampleRequest(),
+                        GenerateOptions.builder().build());
+    }
+
     @Test
     @DisplayName("Stream should complete on [DONE] even if the connection stays open")
     void streamCompletesOnDoneSentinelWithoutWaitingForConnectionClose() {
@@ -90,5 +132,130 @@ class OpenAIStreamTerminationTest {
                 .expectNextCount(2)
                 .expectComplete()
                 .verify(Duration.ofSeconds(5));
+    }
+
+    @Test
+    @DisplayName("Client declares the [DONE] terminator so enforcing transports reject truncation")
+    void clientDeclaresStreamTerminatorHeader() {
+        AtomicReference<HttpRequest> captured = new AtomicReference<>();
+        HttpTransport capturing =
+                new HttpTransport() {
+                    @Override
+                    public HttpResponse execute(HttpRequest request) {
+                        throw new UnsupportedOperationException("not used in this test");
+                    }
+
+                    @Override
+                    public Flux<String> stream(HttpRequest request) {
+                        captured.set(request);
+                        return Flux.just(CHUNK_CONTENT, "[DONE]");
+                    }
+
+                    @Override
+                    public void close() {}
+                };
+
+        StepVerifier.create(streamOf(capturing))
+                .expectNextCount(1)
+                .expectComplete()
+                .verify(Duration.ofSeconds(5));
+        assertEquals(
+                "[DONE]",
+                captured.get().getHeaders().get(TransportConstants.STREAM_TERMINATOR_HEADER));
+    }
+
+    @Test
+    @DisplayName("Transport-reported early termination maps to a stream_terminated_early error")
+    void earlyTerminationFromTransportFailsTheStream() {
+        // Simulates a transport honoring STREAM_TERMINATOR_HEADER: the body ended before [DONE].
+        HttpTransport truncating =
+                new HttpTransport() {
+                    @Override
+                    public HttpResponse execute(HttpRequest request) {
+                        throw new UnsupportedOperationException("not used in this test");
+                    }
+
+                    @Override
+                    public Flux<String> stream(HttpRequest request) {
+                        return Flux.just(CHUNK_CONTENT)
+                                .concatWith(Flux.error(new StreamTerminationException("[DONE]")));
+                    }
+
+                    @Override
+                    public void close() {}
+                };
+
+        StepVerifier.create(streamOf(truncating))
+                .expectNextCount(1)
+                .expectErrorMatches(
+                        e ->
+                                e instanceof OpenAIException
+                                        && "stream_terminated_early"
+                                                .equals(((OpenAIException) e).getErrorCode()))
+                .verify(Duration.ofSeconds(5));
+    }
+
+    @Test
+    @DisplayName("finish_reason without [DONE] is a normal completion (lenient gateways)")
+    void finishReasonWithoutDoneSentinelCompletes() {
+        StepVerifier.create(streamOf(closingTransport(CHUNK_CONTENT, CHUNK_FINISH)))
+                .expectNextCount(2)
+                .expectComplete()
+                .verify(Duration.ofSeconds(5));
+    }
+
+    @Test
+    @DisplayName("[DONE] without finish_reason is a normal completion")
+    void doneSentinelWithoutFinishReasonCompletes() {
+        StepVerifier.create(streamOf(closingTransport(CHUNK_CONTENT, "[DONE]")))
+                .expectNextCount(1)
+                .expectComplete()
+                .verify(Duration.ofSeconds(5));
+    }
+
+    @Test
+    @DisplayName("JDK transport accepts finish_reason without [DONE]")
+    void jdkTransportAcceptsFinishReasonWithoutDoneSentinel() throws IOException {
+        assertFinishReasonWithoutDoneCompletes(
+                new JdkHttpTransport(HttpClient.newHttpClient(), HttpTransportConfig.defaults()));
+    }
+
+    @Test
+    @DisplayName("OkHttp transport accepts finish_reason without [DONE]")
+    void okHttpTransportAcceptsFinishReasonWithoutDoneSentinel() throws IOException {
+        assertFinishReasonWithoutDoneCompletes(new OkHttpTransport());
+    }
+
+    private static void assertFinishReasonWithoutDoneCompletes(HttpTransport transport)
+            throws IOException {
+        HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        server.createContext(
+                "/v1/chat/completions",
+                exchange -> {
+                    byte[] body =
+                            ("data: " + CHUNK_CONTENT + "\n\ndata: " + CHUNK_FINISH + "\n\n")
+                                    .getBytes(StandardCharsets.UTF_8);
+                    exchange.getResponseHeaders().set("Content-Type", "text/event-stream");
+                    exchange.sendResponseHeaders(200, body.length);
+                    try (OutputStream output = exchange.getResponseBody()) {
+                        output.write(body);
+                    }
+                });
+        server.start();
+        try {
+            StepVerifier.create(
+                            new OpenAIClient(transport)
+                                    .stream(
+                                            "test-key",
+                                            "http://127.0.0.1:" + server.getAddress().getPort(),
+                                            sampleRequest(),
+                                            GenerateOptions.builder().build()))
+                    .expectNextCount(2)
+                    .expectComplete()
+                    .verify(Duration.ofSeconds(5));
+        } finally {
+            transport.close();
+            server.stop(0);
+        }
     }
 }
