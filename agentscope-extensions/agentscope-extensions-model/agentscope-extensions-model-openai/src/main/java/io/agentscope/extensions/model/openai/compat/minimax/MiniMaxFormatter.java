@@ -19,6 +19,8 @@ import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.ToolChoice;
 import io.agentscope.extensions.model.openai.dto.OpenAIRequest;
 import io.agentscope.extensions.model.openai.formatter.OpenAIChatFormatter;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Formatter for MiniMax OpenAI-compatible chat completions.
@@ -27,6 +29,8 @@ import io.agentscope.extensions.model.openai.formatter.OpenAIChatFormatter;
  * Completions API</a>.
  */
 public class MiniMaxFormatter extends OpenAIChatFormatter {
+
+    private static final Logger log = LoggerFactory.getLogger(MiniMaxFormatter.class);
 
     @Override
     public void applyOptions(
@@ -49,6 +53,30 @@ public class MiniMaxFormatter extends OpenAIChatFormatter {
 
     @Override
     public void applyToolChoice(OpenAIRequest request, ToolChoice toolChoice) {
+        applyMiniMaxToolChoice(request, toolChoice);
+    }
+
+    /**
+     * Apply MiniMax-specific tool choice handling.
+     *
+     * <p>MiniMax does not accept the {@code tool_choice} field, so none is sent and the
+     * API default ({@code auto}) applies. For {@link ToolChoice.None} that default would
+     * still let the model call tools, so the tool definitions are removed instead to
+     * preserve the no-tool-call contract.
+     *
+     * <p>This method is static to allow sharing with {@link MiniMaxMultiAgentFormatter}.
+     *
+     * @param request the request to apply tool choice to
+     * @param toolChoice the requested tool choice
+     */
+    static void applyMiniMaxToolChoice(OpenAIRequest request, ToolChoice toolChoice) {
+        if (toolChoice instanceof ToolChoice.None
+                && request.getTools() != null
+                && !request.getTools().isEmpty()) {
+            log.info(
+                    "MiniMax does not support tool_choice='none', removing tools from the request");
+            request.setTools(null);
+        }
         request.setToolChoice(null);
     }
 
