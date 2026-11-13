@@ -235,6 +235,12 @@ public class HumanApprovalTool extends ToolBase {
 
 完整可运行示例：`agentscope-examples/documentation/.../tool/ToolBaseExample.java`、`tool/ToolExecutionContextExample.java`。
 
+## SubAgentTool 会话状态
+
+省略 `session_id` 时，`SubAgentTool` 会创建子会话。后续调用传入返回的 `session_id`，即可通过 `SubAgentConfig.stateStore` 恢复历史。每次子调用继承父调用的用户 ID 和元数据，但使用自己的会话 ID 与运行中 agent 状态，不修改父会话及其状态。加载、保存、流式执行和取消均使用这个子上下文。历史同时按用户 ID 和子会话 ID 隔离，其他用户仅提供相同的会话 ID 无法恢复该历史。
+
+结果仍为以 `session_id: <id>` 开头的 String；转发事件的载荷和元数据不变。状态存储加载或保存失败时，仍按原有行为记录日志并继续执行。
+
 ## 接收 Context
 
 每次 `agent.call(msgs, runtimeContext)` 传入的 [`RuntimeContext`](/v2/zh/docs/building-blocks/agent#runtimecontext-per-call-上下文) 会自动透传到所在 reply 内每一次工具调用。Tool 可以用两种方式拿到它：注解式 tool 走自动注入，`ToolBase.callAsync` 走 `ToolCallParam`。

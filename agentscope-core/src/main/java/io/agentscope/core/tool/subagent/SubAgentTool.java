@@ -146,13 +146,18 @@ public class SubAgentTool implements AgentTool {
                             return Mono.just(ToolResultBlock.error("Message is required"));
                         }
 
-                        // Create agent for this session
+                        // A child inherits user metadata, not the parent's session or live state.
                         final String finalSessionId = sessionId;
+                        RuntimeContext runtimeContext =
+                                RuntimeContext.builder(param.getRuntimeContext())
+                                        .sessionId(finalSessionId)
+                                        .agentState(null)
+                                        .build();
                         Agent agent = agentProvider.provide();
 
                         // Load existing state if continuing session
                         if (!isNewSession) {
-                            loadAgentState(finalSessionId, agent);
+                            loadAgentState(agent, runtimeContext);
                         }
 
                         // Build user message
@@ -161,7 +166,6 @@ public class SubAgentTool implements AgentTool {
                                         .role(MsgRole.USER)
                                         .content(TextBlock.builder().text(message).build())
                                         .build();
-                        RuntimeContext runtimeContext = param.getRuntimeContext();
 
                         logger.debug(
                                 "AgentStateStore {} with agent '{}': {}",
@@ -210,7 +214,7 @@ public class SubAgentTool implements AgentTool {
                                         });
 
                         // Save state after execution
-                        return result.doOnSuccess(r -> saveAgentState(finalSessionId, agent));
+                        return result.doOnSuccess(r -> saveAgentState(agent, runtimeContext));
                     } catch (Exception e) {
                         logger.error("Error in session setup: {}", e.getMessage(), e);
                         return Mono.just(
@@ -236,11 +240,11 @@ public class SubAgentTool implements AgentTool {
     }
 
     /**
-     * Loads sub-agent state for the conversation identified by {@code sessionId} from
+     * Loads sub-agent state for the child context's user and session from
      * {@link SubAgentConfig#getStateStore()} and merges it into the live agent's
      * {@link AgentState}. Errors are logged but do not interrupt execution.
      */
-    private void loadAgentState(String sessionId, Agent agent) {
+    private void loadAgentState(Agent agent, RuntimeContext childContext) {
         if (!(agent instanceof ReActAgent ra)) {
             return;
         }
@@ -248,10 +252,11 @@ public class SubAgentTool implements AgentTool {
         if (subSession == null) {
             return;
         }
+        String sessionId = childContext.getSessionId();
         try {
             subSession
-                    .get(null, sessionId, "agent_state", AgentState.class)
-                    .ifPresent(loaded -> applyLoadedState(ra, loaded));
+                    .get(childContext.getUserId(), sessionId, "agent_state", AgentState.class)
+                    .ifPresent(loaded -> applyLoadedState(ra.getAgentState(childContext), loaded));
             logger.debug("Loaded sub-agent state for session: {}", sessionId);
         } catch (Exception e) {
             logger.warn(
@@ -260,10 +265,10 @@ public class SubAgentTool implements AgentTool {
     }
 
     /**
-     * Saves the live {@link AgentState} for the conversation identified by {@code sessionId} into
+     * Saves the live {@link AgentState} for the child context's user and session into
      * {@link SubAgentConfig#getStateStore()}. Errors are logged but do not interrupt execution.
      */
-    private void saveAgentState(String sessionId, Agent agent) {
+    private void saveAgentState(Agent agent, RuntimeContext childContext) {
         if (!(agent instanceof ReActAgent ra)) {
             return;
         }
@@ -271,8 +276,13 @@ public class SubAgentTool implements AgentTool {
         if (subSession == null) {
             return;
         }
+        String sessionId = childContext.getSessionId();
         try {
-            subSession.save(null, sessionId, "agent_state", ra.getAgentState());
+            subSession.save(
+                    childContext.getUserId(),
+                    sessionId,
+                    "agent_state",
+                    ra.getAgentState(childContext));
             logger.debug("Saved sub-agent state for session: {}", sessionId);
         } catch (Exception e) {
             logger.warn(
@@ -280,8 +290,7 @@ public class SubAgentTool implements AgentTool {
         }
     }
 
-    private static void applyLoadedState(ReActAgent agent, AgentState loaded) {
-        AgentState live = agent.getAgentState();
+    private static void applyLoadedState(AgentState live, AgentState loaded) {
         if (live == null) {
             return;
         }

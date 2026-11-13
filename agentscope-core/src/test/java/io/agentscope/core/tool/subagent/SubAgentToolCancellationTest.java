@@ -15,6 +15,11 @@
  */
 package io.agentscope.core.tool.subagent;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertNotSame;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
@@ -24,6 +29,7 @@ import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.ToolResultBlock;
+import io.agentscope.core.state.AgentState;
 import io.agentscope.core.tool.ToolCallParam;
 import io.agentscope.core.tool.ToolEmitter;
 import java.util.Map;
@@ -33,6 +39,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mockito;
 import reactor.core.publisher.Mono;
 
@@ -80,6 +87,8 @@ class SubAgentToolCancellationTest {
         ToolEmitter emitter = Mockito.mock(ToolEmitter.class);
         RuntimeContext rtCtx =
                 RuntimeContext.builder().sessionId("test-session").userId("test-user").build();
+        AgentState parentState = Mockito.mock(AgentState.class);
+        rtCtx.setAgentState(parentState);
 
         ToolCallParam param =
                 ToolCallParam.builder()
@@ -121,5 +130,20 @@ class SubAgentToolCancellationTest {
 
         // 2. The agent's Mono was cancelled (execution stopped, not leaked).
         assertTrue(monoCancelled.get(), "Agent's execution Mono should be cancelled, not leaking");
+
+        // Execution and interruption must target the same child, not the parent session.
+        ArgumentCaptor<RuntimeContext> callContext = ArgumentCaptor.forClass(RuntimeContext.class);
+        ArgumentCaptor<RuntimeContext> interruptContext =
+                ArgumentCaptor.forClass(RuntimeContext.class);
+        verify(spyAgent).call(anyList(), callContext.capture());
+        verify(spyAgent).interrupt(interruptContext.capture());
+        RuntimeContext childContext = callContext.getValue();
+        assertSame(childContext, interruptContext.getValue());
+        assertNotSame(rtCtx, childContext);
+        assertEquals("test-user", childContext.getUserId());
+        assertNotEquals("test-session", childContext.getSessionId());
+        assertNull(childContext.getAgentState());
+        assertSame(parentState, rtCtx.getAgentState());
+        assertEquals("test-session", rtCtx.getSessionId());
     }
 }

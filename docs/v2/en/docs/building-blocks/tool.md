@@ -235,6 +235,12 @@ public class HumanApprovalTool extends ToolBase {
 
 Runnable examples: `agentscope-examples/documentation/.../tool/ToolBaseExample.java`, `tool/ToolExecutionContextExample.java`.
 
+## SubAgentTool session state
+
+`SubAgentTool` starts a child conversation when `session_id` is omitted. Pass the returned `session_id` on later calls to resume its history using `SubAgentConfig.stateStore`. Each child call inherits the parent's user ID and metadata, but uses its own session ID and live agent state; the parent's session and state are unchanged. Loading, saving, streaming, and cancellation all use that child context. History is scoped by both user ID and child session ID, so another user cannot resume it merely by supplying the same session ID.
+
+The result remains a String starting with `session_id: <id>`; forwarded event payloads and metadata are unchanged. State-store load/save failures retain the existing log-and-continue behavior.
+
 ## Receiving context
 
 The [`RuntimeContext`](/v2/en/docs/building-blocks/agent#runtimecontext-per-call-context) passed to `agent.call(msgs, runtimeContext)` is forwarded to every tool invocation in that reply. Tools can read it in two ways: annotation-based tools through automatic injection, and `ToolBase.callAsync` through `ToolCallParam`.
