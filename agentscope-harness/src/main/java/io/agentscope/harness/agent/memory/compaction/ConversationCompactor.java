@@ -505,7 +505,12 @@ public class ConversationCompactor {
      * results with a head+tail preview when the total prunable amount exceeds
      * {@code minimumTokens}.
      *
-     * <p>Non-LLM operation. Returns the original list if no pruning occurred.
+     * <p>Non-LLM operation. Returns the original list if no pruning occurred. The pruned block
+     * keeps its metadata and execution state — only the output text is replaced with the
+     * preview — so downstream consumers of markers such as {@code agentscope.tool_result_evicted}
+     * or {@link ToolResultBlock#METADATA_SUSPENDED} keep working. The preserved markers describe
+     * the pre-prune payload, though: consumers must not assume the block text is the full
+     * payload (e.g. an eviction pointer's referenced content is no longer inline after pruning).
      */
     List<Msg> pruneToolResults(List<Msg> messages, CompactionConfig.PruneConfig pruneConfig) {
         if (pruneConfig == null || messages == null || messages.isEmpty()) {
@@ -570,6 +575,8 @@ public class ConversationCompactor {
                             .id(tr.getId())
                             .name(tr.getName())
                             .output(List.of(TextBlock.builder().text(preview).build()))
+                            .metadata(tr.getMetadata())
+                            .state(tr.getState())
                             .build();
             newBlocks.set(blockIdx, pruned);
             result.set(
@@ -581,6 +588,7 @@ public class ConversationCompactor {
                             .content(newBlocks)
                             .metadata(msg.getMetadata())
                             .timestamp(msg.getTimestamp())
+                            .usage(msg.getUsage())
                             .build());
         }
 
