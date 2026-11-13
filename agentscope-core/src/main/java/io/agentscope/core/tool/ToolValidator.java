@@ -154,9 +154,9 @@ public final class ToolValidator {
         }
 
         try {
-            JsonNode schemaNode = JsonUtils.getJsonCodec().convertValue(schema, JsonNode.class);
-            Schema compiledSchema = SCHEMA_REGISTRY.getSchema(schemaNode);
-            List<Error> errors = compiledSchema.validate(output);
+            String schemaJson = JsonUtils.getJsonCodec().toJson(schema);
+            Schema compiledSchema = SCHEMA_REGISTRY.getSchema(schemaJson);
+            List<Error> errors = compiledSchema.validate(output.toString(), InputFormat.JSON);
             if (errors == null || errors.isEmpty()) {
                 return null;
             }

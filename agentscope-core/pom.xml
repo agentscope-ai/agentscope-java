@@ -78,6 +78,12 @@
             <artifactId>jsonschema-module-jackson</artifactId>
         </dependency>
 
+        <!-- Jackson 3.x (tools.jackson) required by jsonschema-generator 5.x -->
+        <dependency>
+            <groupId>tools.jackson.core</groupId>
+            <artifactId>jackson-databind</artifactId>
+        </dependency>
+
         <!-- Jackson Java 8 Date/Time support -->
         <dependency>
             <groupId>com.fasterxml.jackson.datatype</groupId>
