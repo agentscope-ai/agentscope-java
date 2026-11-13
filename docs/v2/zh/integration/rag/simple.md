@@ -92,6 +92,8 @@ List<Document> hits = knowledge.retrieve(
 
 切换向量库只需要换一个 `VDBStoreBase` 实现，传给 `SimpleKnowledge.builder().embeddingStore(...)`。
 
+`QdrantStore.location(...)` 支持不带协议的 gRPC 地址，例如 `127.0.0.1:16334`、`localhost:6334` 和 `[::1]:6334`，并保留显式指定的端口。未指定端口时默认使用 6334；端口为 6333 的 HTTP URL 仍通过 6334 端口连接 gRPC。
+
 ## 检索参数
 
 `RetrieveConfig` 控制检索行为：

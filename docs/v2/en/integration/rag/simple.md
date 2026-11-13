@@ -92,6 +92,8 @@ Implement `EmbeddingModel` to add your own.
 
 Switching stores is a one-line change: pass a different `VDBStoreBase` to `SimpleKnowledge.builder().embeddingStore(...)`.
 
+`QdrantStore.location(...)` accepts scheme-less gRPC addresses such as `127.0.0.1:16334`, `localhost:6334`, and `[::1]:6334`, preserving the explicit port. Without a port it defaults to 6334; HTTP URLs using port 6333 continue to connect via gRPC on 6334.
+
 ## Retrieval parameters
 
 `RetrieveConfig` controls retrieval:
