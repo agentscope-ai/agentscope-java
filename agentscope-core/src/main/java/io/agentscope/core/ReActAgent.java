@@ -641,7 +641,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                 toSave.contextMutable().clear();
                 toSave.contextMutable().addAll(mergedContext);
                 slotVersions.put(slot, merged);
-                stateCache.put(slot, baseline);
+                stateCache.put(slot, toSave);
                 log.info(
                         "agent_state CAS conflict — APPEND_MERGE succeeded"
                                 + " (userId={}, sessionId={})",
