@@ -347,6 +347,26 @@ class CompactionMiddlewareTest {
         assertEquals(2, model.callCount.get());
     }
 
+    @Test
+    void legacyConstructorLeavesDownstreamOverflowUnchanged() {
+        AtomicInteger nextCalls = new AtomicInteger();
+        CompactionMiddleware middleware =
+                new CompactionMiddleware(null, new SuccessfulSummaryModel(), noCompactionConfig());
+        RuntimeException overflow = new RuntimeException("context_length_exceeded");
+        StepVerifier.create(
+                        middleware.onReasoning(
+                                agent(),
+                                context("user", "session"),
+                                input(),
+                                next -> {
+                                    nextCalls.incrementAndGet();
+                                    return Flux.error(overflow);
+                                }))
+                .expectErrorMatches(error -> error == overflow)
+                .verify();
+        assertEquals(1, nextCalls.get());
+    }
+
     /** Creates stable configuration that enters the compaction branch. */
     private CompactionConfig fixedConfig() {
         return CompactionConfig.builder()

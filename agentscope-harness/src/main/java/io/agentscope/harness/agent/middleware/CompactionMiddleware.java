@@ -18,7 +18,10 @@ package io.agentscope.harness.agent.middleware;
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.core.agent.accumulator.ReasoningContext;
 import io.agentscope.core.event.AgentEvent;
+import io.agentscope.core.event.ModelCallStartEvent;
+import io.agentscope.core.interruption.InterruptControl;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.middleware.ReasoningInput;
@@ -29,14 +32,18 @@ import io.agentscope.harness.agent.memory.MemoryFlushManager;
 import io.agentscope.harness.agent.memory.compaction.CompactionConfig;
 import io.agentscope.harness.agent.memory.compaction.ConversationCompactor;
 import io.agentscope.harness.agent.workspace.WorkspaceManager;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.Optional;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Function;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Schedulers;
 
 /**
  * Middleware that performs conversation compaction before each LLM reasoning call.
@@ -64,12 +71,26 @@ public class CompactionMiddleware implements HarnessRuntimeMiddleware {
     private final WorkspaceManager workspaceManager;
     private final Model model;
     private final CompactionConfig config;
+    private final Model emergencyModel;
+    private final String emergencyFlushPrompt;
 
     public CompactionMiddleware(
             WorkspaceManager workspaceManager, Model model, CompactionConfig config) {
+        this(workspaceManager, model, config, null, null);
+    }
+
+    /** Harness wiring; emergency recovery additionally requires its private call-context opt-in. */
+    public CompactionMiddleware(
+            WorkspaceManager workspaceManager,
+            Model model,
+            CompactionConfig config,
+            Model emergencyModel,
+            String emergencyFlushPrompt) {
         this.workspaceManager = workspaceManager;
         this.model = model;
         this.config = config;
+        this.emergencyModel = emergencyModel;
+        this.emergencyFlushPrompt = emergencyFlushPrompt;
     }
 
     @Override
@@ -83,8 +104,14 @@ public class CompactionMiddleware implements HarnessRuntimeMiddleware {
         }
         final RuntimeContext rc = ctx != null ? ctx : RuntimeContext.empty();
 
-        return Flux.defer(
-                () -> {
+        return Flux.deferContextual(
+                cv -> {
+                    // Capture once while the reasoning stage owns the admitted CallExecution.
+                    AgentState liveState = RuntimeContext.resolveAgentState(rc, reActAgent);
+                    AtomicBoolean attempt = cv.getOrDefault(this, null);
+                    InterruptControl control = cv.getOrDefault(InterruptControl.class, null);
+                    AtomicBoolean partial =
+                            cv.getOrDefault(ReasoningContext.class, new AtomicBoolean());
                     List<Msg> messages = input.messages();
                     Msg systemMsg = null;
                     List<Msg> conversation;
@@ -123,30 +150,161 @@ public class CompactionMiddleware implements HarnessRuntimeMiddleware {
                                                 error.getMessage());
                                         return Mono.just(Optional.empty());
                                     })
-                            .flatMapMany(
+                            .map(
                                     optResult -> {
                                         if (optResult.isEmpty()) {
-                                            return next.apply(input);
+                                            return input;
                                         }
                                         List<Msg> compacted = optResult.get();
-                                        applyToContext(
-                                                RuntimeContext.resolveAgentState(rc, reActAgent),
-                                                compacted);
+                                        applyToContext(liveState, compacted);
                                         log.debug(
                                                 "Compacted to {} messages before reasoning",
                                                 compacted.size());
-                                        List<Msg> newMessages = new ArrayList<>();
-                                        if (sys != null) {
-                                            newMessages.add(sys);
-                                        }
-                                        newMessages.addAll(compacted);
-                                        return next.apply(
-                                                new ReasoningInput(
-                                                        newMessages,
-                                                        input.tools(),
-                                                        input.options()));
-                                    });
+                                        return rebuildInput(input, sys, compacted);
+                                    })
+                            .flatMapMany(
+                                    prepared ->
+                                            reasonWithRecovery(
+                                                    rc, liveState, prepared, sys, next, attempt,
+                                                    control, partial, agentId, sessionId));
                 });
+    }
+
+    private Flux<AgentEvent> reasonWithRecovery(
+            RuntimeContext rc,
+            AgentState state,
+            ReasoningInput input,
+            Msg systemMsg,
+            Function<ReasoningInput, Flux<AgentEvent>> next,
+            AtomicBoolean attempt,
+            InterruptControl control,
+            AtomicBoolean partial,
+            String agentId,
+            String sessionId) {
+        return Flux.defer(() -> next.apply(input))
+                .doOnNext(
+                        event -> {
+                            // A model-call start is harmless; any later event may expose partial
+                            // text, thinking, a tool call, or a downstream stop request. Never hide
+                            // that output by converting a failed round to a successful retry.
+                            if (!(event instanceof ModelCallStartEvent)) {
+                                partial.set(true);
+                            }
+                        })
+                .onErrorResume(
+                        error -> {
+                            if (attempt == null
+                                    || emergencyModel == null
+                                    || control == null
+                                    || state == null
+                                    || rc.getAgentState() != state
+                                    || partial.get()
+                                    || ExceptionUtils.containsInterruptedException(error)
+                                    || !isContextOverflowError(error)
+                                    || !attempt.compareAndSet(false, true)) {
+                                return Flux.error(error);
+                            }
+                            return emergencyCompact(rc, state, control, agentId, sessionId)
+                                    .flatMapMany(
+                                            result -> {
+                                                if (control.isInterrupted()) {
+                                                    return Flux.error(
+                                                            new InterruptedException(
+                                                                    "Agent execution interrupted"));
+                                                }
+                                                if (result.isEmpty()) {
+                                                    return Flux.error(error);
+                                                }
+                                                // No reload or separate save: the existing call-end
+                                                // and error paths persist this exact scoped state.
+                                                state.contextMutable().clear();
+                                                state.contextMutable().addAll(result.get());
+                                                // Retry only the downstream model reasoning stage,
+                                                // not normal compaction or input admission again.
+                                                return Flux.defer(
+                                                        () ->
+                                                                next.apply(
+                                                                        rebuildInput(
+                                                                                input,
+                                                                                systemMsg,
+                                                                                result.get())));
+                                            });
+                        });
+    }
+
+    private Mono<Optional<List<Msg>>> emergencyCompact(
+            RuntimeContext rc,
+            AgentState state,
+            InterruptControl control,
+            String agentId,
+            String sessionId) {
+        // This branch's interrupt is cooperative. Observe the same scoped flag while waiting for
+        // summary/flush publishers as well as immediately before replacing the working history.
+        Mono<Void> interrupted =
+                Flux.interval(Duration.ofMillis(25))
+                        .concatMap(ignored -> checkInterrupted(control))
+                        .then();
+        return checkInterrupted(control)
+                .then(
+                        Mono.defer(
+                                () -> {
+                                    log.warn(
+                                            "Context overflow detected, compacting in reasoning"
+                                                    + " scope");
+                                    List<Msg> conversation = List.copyOf(state.contextMutable());
+                                    MemoryFlushManager fm =
+                                            new MemoryFlushManager(
+                                                    workspaceManager,
+                                                    emergencyModel,
+                                                    emergencyFlushPrompt);
+                                    return new ConversationCompactor(emergencyModel, fm)
+                                            .compactIfNeeded(
+                                                    rc,
+                                                    conversation,
+                                                    CompactionConfig.builder()
+                                                            .triggerMessages(1)
+                                                            .build(),
+                                                    agentId,
+                                                    sessionId);
+                                }))
+                .subscribeOn(Schedulers.boundedElastic())
+                // firstWithSignal cancels the losing summary publisher even when the interrupt
+                // publisher fails; takeUntilOther does not cancel its source on an other-error.
+                .or(interrupted.then(Mono.empty()));
+    }
+
+    private static Mono<Void> checkInterrupted(InterruptControl control) {
+        return Mono.defer(
+                () ->
+                        control.isInterrupted()
+                                ? Mono.error(
+                                        new InterruptedException("Agent execution interrupted"))
+                                : Mono.empty());
+    }
+
+    private static ReasoningInput rebuildInput(
+            ReasoningInput input, Msg systemMsg, List<Msg> conversation) {
+        List<Msg> messages = new ArrayList<>();
+        if (systemMsg != null) {
+            messages.add(systemMsg);
+        }
+        messages.addAll(conversation);
+        return new ReasoningInput(messages, input.tools(), input.options());
+    }
+
+    private static boolean isContextOverflowError(Throwable error) {
+        String message = error.getMessage();
+        if (message == null) {
+            return false;
+        }
+        String lower = message.toLowerCase(Locale.ROOT);
+        return lower.contains("context_length_exceeded")
+                || lower.contains("context length")
+                || lower.contains("maximum context")
+                || lower.contains("token limit")
+                || lower.contains("too many tokens")
+                || lower.contains("exceeds the model's maximum")
+                || lower.contains("reduce the length");
     }
 
     /**

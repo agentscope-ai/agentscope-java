@@ -2552,7 +2552,8 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                 return summarizing();
             }
 
-            ReasoningContext context = new ReasoningContext(getName());
+            AtomicReference<ReasoningContext> attemptContext =
+                    new AtomicReference<>(new ReasoningContext(getName()));
 
             return checkInterrupted()
                     .then(
@@ -2594,11 +2595,27 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                 }
                                 Function<ReasoningInput, Flux<AgentEvent>> reasoningCore =
                                         ri ->
-                                                reasoningStream(
-                                                        context,
-                                                        ri.messages(),
-                                                        ri.tools(),
-                                                        ri.options());
+                                                Flux.defer(
+                                                        () -> {
+                                                            // Each downstream attempt owns its
+                                                            // accumulator, including usage and
+                                                            // provider metadata from empty chunks.
+                                                            ReasoningContext context =
+                                                                    new ReasoningContext(getName());
+                                                            attemptContext.set(context);
+                                                            return checkInterrupted()
+                                                                    .thenMany(
+                                                                            Flux.defer(
+                                                                                    () ->
+                                                                                            reasoningStream(
+                                                                                                    context,
+                                                                                                    ri
+                                                                                                            .messages(),
+                                                                                                    ri
+                                                                                                            .tools(),
+                                                                                                    ri
+                                                                                                            .options())));
+                                                        });
                                 Flux<AgentEvent> stream =
                                         MiddlewareChain.build(
                                                         middlewares,
@@ -2625,7 +2642,9 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                                 Mono.defer(
                                                         () -> {
                                                             Msg finalMsg =
-                                                                    context.buildFinalMessage();
+                                                                    attemptContext
+                                                                            .get()
+                                                                            .buildFinalMessage();
                                                             RequestStopEvent rs =
                                                                     stopRequested.get();
                                                             if (rs != null && finalMsg != null) {
@@ -2647,7 +2666,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                     .onErrorResume(
                             InterruptedException.class,
                             error -> {
-                                Msg msg = context.buildFinalMessage();
+                                Msg msg = attemptContext.get().buildFinalMessage();
                                 if (msg != null) {
                                     boolean discard =
                                             interruption.getSource() == InterruptSource.SYSTEM
@@ -2674,7 +2693,13 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                     return Mono.just(msg);
                                 }
                                 return runPostReasoningPipeline(msg, iter);
-                            });
+                            })
+                    // Internal reasoning-scope bindings for middleware work. The output marker
+                    // observes raw chunks even if downstream middleware filters their events.
+                    .contextWrite(
+                            c ->
+                                    c.put(InterruptControl.class, interruption)
+                                            .put(ReasoningContext.class, new AtomicBoolean()));
         }
 
         @SuppressWarnings("deprecation")
@@ -2865,6 +2890,14 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                     chunk ->
                                             Flux.deferContextual(
                                                     parentCtx -> {
+                                                        AtomicBoolean outputSeen =
+                                                                parentCtx.getOrDefault(
+                                                                        ReasoningContext.class,
+                                                                        null);
+                                                        if (outputSeen != null
+                                                                && !chunk.getContent().isEmpty()) {
+                                                            outputSeen.set(true);
+                                                        }
                                                         List<Msg> chunkMsgs =
                                                                 context.processChunk(chunk);
                                                         for (Msg msg : chunkMsgs) {
