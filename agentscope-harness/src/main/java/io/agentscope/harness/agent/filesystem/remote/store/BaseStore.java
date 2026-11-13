@@ -17,6 +17,7 @@ package io.agentscope.harness.agent.filesystem.remote.store;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 
 /**
  * Abstract interface for a namespace-based key-value store.
@@ -38,6 +39,49 @@ public interface BaseStore {
      * @return the store item, or {@code null} if not found
      */
     StoreItem get(List<String> namespace, String key);
+
+    /**
+     * Checks whether a key exists in the exact namespace used by {@link #get}.
+     *
+     * <p>The default reads the item for compatibility. Backends can override this method to
+     * check existence without loading the value.
+     *
+     * @param namespace hierarchical namespace path
+     * @param key the item key within the namespace
+     * @return whether the item exists
+     */
+    default boolean containsKey(List<String> namespace, String key) {
+        return get(namespace, key) != null;
+    }
+
+    /**
+     * Checks for a key starting with a literal, case-sensitive prefix in the namespace scope
+     * of {@link #search}, including child namespaces.
+     *
+     * <p>The default reads one page of items at a time and stops at the first match. Backends
+     * can override this method to avoid reading values. An empty prefix matches any key.
+     *
+     * @param namespace hierarchical namespace prefix
+     * @param prefix non-null literal key prefix
+     * @return whether a matching key exists
+     */
+    default boolean hasKeyPrefix(List<String> namespace, String prefix) {
+        Objects.requireNonNull(prefix, "prefix must not be null");
+        int pageSize = 100;
+        int offset = 0;
+        while (true) {
+            List<StoreItem> page = search(namespace, pageSize, offset);
+            for (StoreItem item : page) {
+                if (item.key().startsWith(prefix)) {
+                    return true;
+                }
+            }
+            if (page.size() < pageSize) {
+                return false;
+            }
+            offset += pageSize;
+        }
+    }
 
     /**
      * Store or update an item.

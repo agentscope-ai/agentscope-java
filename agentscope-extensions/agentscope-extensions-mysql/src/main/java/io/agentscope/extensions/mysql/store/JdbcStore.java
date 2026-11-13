@@ -94,6 +94,8 @@ public class JdbcStore implements BaseStore {
 
     // Pre-resolved SQL (table name substituted in once)
     private final String selectSql;
+    private final String containsKeySql;
+    private final String hasKeyPrefixSql;
     private final String upsertSql;
     private final String insertSql;
     private final String casUpdateSql;
@@ -106,6 +108,8 @@ public class JdbcStore implements BaseStore {
         this.objectMapper = b.objectMapper != null ? b.objectMapper : new ObjectMapper();
         this.tableName = b.tableName;
         this.selectSql = String.format(dialect.getSelectSql(), tableName);
+        this.containsKeySql = String.format(dialect.getContainsKeySql(), tableName);
+        this.hasKeyPrefixSql = String.format(dialect.getHasKeyPrefixSql(), tableName);
         this.upsertSql = String.format(dialect.getUpsertSql(), tableName);
         this.insertSql = String.format(dialect.getInsertSql(), tableName);
         this.casUpdateSql = String.format(dialect.getCasUpdateSql(), tableName);
@@ -154,6 +158,44 @@ public class JdbcStore implements BaseStore {
             }
         } catch (SQLException e) {
             throw new IllegalStateException("JdbcStore get failed", e);
+        }
+    }
+
+    @Override
+    public boolean containsKey(List<String> namespace, String key) {
+        validateKey(key);
+        String nsPath = namespacePath(namespace);
+        try (Connection c = dataSource.getConnection();
+                PreparedStatement ps = c.prepareStatement(containsKeySql)) {
+            ps.setString(1, nsPath);
+            ps.setString(2, key);
+            try (ResultSet rs = ps.executeQuery()) {
+                return rs.next();
+            }
+        } catch (SQLException e) {
+            throw new IllegalStateException("JdbcStore containsKey failed", e);
+        }
+    }
+
+    @Override
+    public boolean hasKeyPrefix(List<String> namespace, String prefix) {
+        String namespacePattern = likePrefixPattern(namespace);
+        String keyPattern =
+                likePrefixPattern(Objects.requireNonNull(prefix, "prefix must not be null"));
+        try (Connection c = dataSource.getConnection();
+                PreparedStatement ps = c.prepareStatement(hasKeyPrefixSql)) {
+            ps.setString(1, namespacePattern);
+            ps.setString(2, keyPattern);
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    if (rs.getString(1).startsWith(prefix)) {
+                        return true;
+                    }
+                }
+                return false;
+            }
+        } catch (SQLException e) {
+            throw new IllegalStateException("JdbcStore hasKeyPrefix failed", e);
         }
     }
 
@@ -308,9 +350,13 @@ public class JdbcStore implements BaseStore {
     }
 
     private String likePrefixPattern(List<String> namespace) {
+        return likePrefixPattern(namespacePath(namespace));
+    }
+
+    private String likePrefixPattern(String prefix) {
         char esc = dialect.getLikeEscapeChar();
         StringBuilder sb = new StringBuilder();
-        for (char ch : namespacePath(namespace).toCharArray()) {
+        for (char ch : prefix.toCharArray()) {
             if (ch == esc || ch == '%' || ch == '_') {
                 sb.append(esc);
             }
