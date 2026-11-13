@@ -159,6 +159,39 @@ class ReActAgentStructuredOutputTest {
     }
 
     @Test
+    void testStructuredOutputParsedArgumentsSurviveEmptyContent() {
+        for (String content : new String[] {null, "{}"}) {
+            MockModel model =
+                    new MockModel(
+                            msgs ->
+                                    List.of(
+                                            ChatResponse.builder()
+                                                    .content(
+                                                            List.of(
+                                                                    ToolUseBlock.builder()
+                                                                            .id("parsed-output")
+                                                                            .name(
+                                                                                    "generate_response")
+                                                                            .input(
+                                                                                    Map.of(
+                                                                                            "response",
+                                                                                            Map.of(
+                                                                                                    "location",
+                                                                                                    "Paris")))
+                                                                            .content(content)
+                                                                            .build()))
+                                                    .build()));
+            ReActAgent agent = ReActAgent.builder().name("parsed").model(model).build();
+            Msg result =
+                    agent.call("Format the weather", WeatherResponse.class)
+                            .block(Duration.ofSeconds(5));
+            assertNotNull(result);
+            assertEquals("Paris", result.getStructuredData(WeatherResponse.class).location);
+            assertEquals(1, model.getCallCount());
+        }
+    }
+
+    @Test
     void testStructuredOutputAutoFallbackToToolBased() {
         Memory memory = new InMemoryMemory();
 

@@ -3678,7 +3678,8 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
          */
         private Mono<ToolResultBlock> executeStructuredTool(ToolUseBlock use) {
             String validationError =
-                    ToolValidator.validateInput(use.getContent(), soTool.getParameters());
+                    ToolValidator.validateInput(
+                            JsonUtils.resolveToolCallArgsJson(use), soTool.getParameters());
             if (validationError != null) {
                 return Mono.just(
                         ToolResultBlock.error(
