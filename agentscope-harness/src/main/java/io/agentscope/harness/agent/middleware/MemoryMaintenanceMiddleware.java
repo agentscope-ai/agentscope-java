@@ -38,14 +38,16 @@ import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
+import reactor.util.context.ContextView;
 
 /**
  * Middleware that performs periodic memory maintenance after each agent call.
  *
- * <p>Fires on the agent invocation completion (via {@code onAgent doOnComplete}, after
- * {@link MemoryFlushMiddleware}) and is throttled by a configurable minimum gap so it
- * does not run on every single call. The maintenance is <em>fire-and-forget</em>: the agent
- * stream completes immediately while the maintenance runs on a background scheduler.
+ * <p>Fires on the agent stream's completion signal (after {@link MemoryFlushMiddleware}) and
+ * is throttled by a configurable minimum gap so it does not run on every single call. The
+ * maintenance is <em>fire-and-forget</em>: the agent stream completes immediately while the
+ * maintenance runs on a background scheduler with the completing subscription's Reactor
+ * context replayed for context-scoped instrumentation (token metering and tracing).
  *
  * <p>Maintenance steps executed in order:
  * <ol>
@@ -147,19 +149,21 @@ public class MemoryMaintenanceMiddleware implements HarnessRuntimeMiddleware {
         // updated synchronously, so a quiescence check can never observe an empty in-flight
         // set before the task is counted.
         return next.apply(input)
-                .doOnComplete(
-                        () -> {
-                            MemoryBackgroundTasks.begin();
-                            Mono.defer(() -> doMaintenance(rc))
-                                    .subscribeOn(Schedulers.boundedElastic())
-                                    .doFinally(signal -> MemoryBackgroundTasks.end())
-                                    .subscribe(
-                                            null,
-                                            e ->
-                                                    log.warn(
-                                                            "Memory maintenance failed: {}",
-                                                            e.getMessage()));
+                .doOnEach(
+                        signal -> {
+                            if (signal.isOnComplete()) {
+                                scheduleMaintenance(rc, signal.getContextView());
+                            }
                         });
+    }
+
+    private void scheduleMaintenance(RuntimeContext rc, ContextView contextView) {
+        MemoryBackgroundTasks.begin();
+        Mono.defer(() -> doMaintenance(rc))
+                .subscribeOn(Schedulers.boundedElastic())
+                .contextWrite(context -> context.putAll(contextView))
+                .doFinally(signal -> MemoryBackgroundTasks.end())
+                .subscribe(null, e -> log.warn("Memory maintenance failed: {}", e.getMessage()));
     }
 
     private Mono<Void> doMaintenance(RuntimeContext rc) {
@@ -168,7 +172,11 @@ public class MemoryMaintenanceMiddleware implements HarnessRuntimeMiddleware {
             // Mono completes.
             return Mono.empty();
         }
-        return Mono.fromRunnable(() -> runMaintenance(rc));
+        return Mono.fromRunnable(() -> expireDailyFiles(rc))
+                .then(Mono.defer(() -> consolidateMemory(rc)))
+                .then(
+                        Mono.<Void>fromRunnable(() -> pruneOldSessions(rc))
+                                .subscribeOn(Schedulers.boundedElastic()));
     }
 
     /**
@@ -194,14 +202,6 @@ public class MemoryMaintenanceMiddleware implements HarnessRuntimeMiddleware {
                     MemoryFlushMiddleware.blankToEmpty(rc != null ? rc.getSessionId() : null);
             case AGENT, GLOBAL -> "";
         };
-    }
-
-    private void runMaintenance(RuntimeContext rc) {
-        log.debug("Running memory maintenance...");
-        expireDailyFiles(rc);
-        consolidateMemory(rc);
-        pruneOldSessions(rc);
-        log.debug("Memory maintenance completed");
     }
 
     private void expireDailyFiles(RuntimeContext rc) {
@@ -241,15 +241,16 @@ public class MemoryMaintenanceMiddleware implements HarnessRuntimeMiddleware {
         }
     }
 
-    private void consolidateMemory(RuntimeContext rc) {
+    private Mono<Void> consolidateMemory(RuntimeContext rc) {
         if (consolidator == null) {
-            return;
+            return Mono.empty();
         }
-        try {
-            consolidator.consolidate(rc).block();
-        } catch (Exception e) {
-            log.warn("Memory consolidation failed: {}", e.getMessage());
-        }
+        return Mono.defer(() -> consolidator.consolidate(rc))
+                .onErrorResume(
+                        e -> {
+                            log.warn("Memory consolidation failed: {}", e.getMessage());
+                            return Mono.empty();
+                        });
     }
 
     private void pruneOldSessions(RuntimeContext rc) {

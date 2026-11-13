@@ -40,14 +40,17 @@ import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
+import reactor.util.context.ContextView;
 
 /**
  * Middleware that triggers memory flush and message offload at the end of each agent call.
  *
- * <p>Runs in {@link #onAgent}'s {@code doOnComplete} so long-term memories are extracted and
+ * <p>Runs on {@link #onAgent}'s completion signal so long-term memories are extracted and
  * persisted after every call, even when conversation compaction was not triggered during that
  * call. The flush is <em>fire-and-forget</em>: the agent stream completes immediately while the
- * extraction runs on a background scheduler. When {@link CompactionMiddleware} is active, it
+ * extraction runs on a background scheduler with the completing subscription's Reactor context
+ * replayed for context-scoped instrumentation (token metering and tracing).
+ * When {@link CompactionMiddleware} is active, it
  * handles flush/offload for the messages it summarizes; this middleware covers the remaining
  * tail of messages that were kept verbatim.
  *
@@ -156,10 +159,16 @@ public class MemoryFlushMiddleware implements HarnessRuntimeMiddleware {
             AgentInput input,
             Function<AgentInput, Flux<AgentEvent>> next) {
         final RuntimeContext rc = ctx != null ? ctx : RuntimeContext.empty();
-        return next.apply(input).doOnComplete(() -> scheduleFlush(agent, rc));
+        return next.apply(input)
+                .doOnEach(
+                        signal -> {
+                            if (signal.isOnComplete()) {
+                                scheduleFlush(agent, rc, signal.getContextView());
+                            }
+                        });
     }
 
-    private void scheduleFlush(Agent agent, RuntimeContext rc) {
+    private void scheduleFlush(Agent agent, RuntimeContext rc, ContextView contextView) {
         // The in-flight slot is acquired at dispatch rather than inside the task: a queued
         // flush must already be counted, or a quiescence check could observe an empty
         // in-flight set while work is still pending.
@@ -171,7 +180,7 @@ public class MemoryFlushMiddleware implements HarnessRuntimeMiddleware {
         ConversationKey conversationKey =
                 new ConversationKey(
                         agent, blankToEmpty(rc.getUserId()), blankToEmpty(rc.getSessionId()));
-        Runnable task = () -> runFlush(key, agent, rc);
+        Runnable task = () -> runFlush(key, agent, rc, contextView);
         Runnable[] starter = new Runnable[1];
         Runnable[] displaced = new Runnable[1];
         FLUSH_QUEUES.compute(
@@ -200,9 +209,10 @@ public class MemoryFlushMiddleware implements HarnessRuntimeMiddleware {
         }
     }
 
-    private void runFlush(String key, Agent agent, RuntimeContext rc) {
+    private void runFlush(String key, Agent agent, RuntimeContext rc, ContextView contextView) {
         Mono.defer(() -> doFlush(agent, rc))
                 .subscribeOn(Schedulers.boundedElastic())
+                .contextWrite(context -> context.putAll(contextView))
                 .doFinally(
                         signal -> {
                             MemoryBackgroundTasks.end();

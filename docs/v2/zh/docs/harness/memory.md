@@ -59,7 +59,7 @@ Flush（路径 1）会在以下三个时机被触发：
 
 这三处用的是 **同一份** `flushPrompt`，定制后三处行为一致。
 
-Flush 和 offload 都是**异步执行**的：它们在响应流结束后通过 `doOnComplete` 以 fire-and-forget 方式启动，不会阻塞当前 `call()` 的返回。换句话说，调用方拿到完整响应之后，flush LLM 调用和 JSONL offload 才在后台开始。
+Flush 和 offload 都是**异步执行**的：它们在响应流完成信号上以 fire-and-forget 方式启动，不会阻塞当前 `call()` 的返回。换句话说，调用方拿到完整响应之后，flush LLM 调用和 JSONL offload 才在后台开始。后台记忆 flush 与 consolidation 会回放完成本轮调用的 Reactor context，使依赖上下文的 token 计量和 tracing 保持关联；session 保留和清理逻辑不变。
 
 ## 开启压缩
 
@@ -250,7 +250,7 @@ HarnessAgent.builder()
 - `memory_save content="..."` —— 通过 `MEMORY.md` 与每日台账持久化记忆
 - `session_search query="..."` —— 搜索过往会话记录
 
-模型在看到 `MEMORY.md` 已被截断的提示时通常会自己调 `memory_search` 找老内容。
+`MEMORY.md` 超出提示词预算时，注入内容会保留开头结构和最新追加的条目，省略较旧的中间部分。预算小到放不下截断提示时，只保留最新的尾部。模型在看到 `MEMORY.md` 已被截断的提示时通常会自己调 `memory_search` 找老内容。
 
 ## 后台维护
 
@@ -261,6 +261,8 @@ HarnessAgent.builder()
 - 清理超过 `sessionRetentionDays`（默认 180 天）的会话日志
 
 进入维护流程不一定会调用模型：如果自上次成功合并以来没有新增日流水账内容，consolidation 会跳过 LLM 请求。`FlushTrigger.never()` 不会关闭这条维护路径。
+
+合并结果设有提交门：只有**完整**（未被模型输出上限截断）、纯文本、非空且不超过 `consolidationMaxTokens` 正文目标（每 token 约四个字符）的结果，才会替换 `MEMORY.md`。推理块会被忽略，不进入正文；只要出现其他任何非文本内容块（工具调用/结果、图片、音频、视频、数据或提示），整个结果都会被拒绝。写入后必须在实际写入目标回读并确认正文完全一致，才会推进合并水位（watermark）；上传仍遵守原包装层的分发与身份策略，确认不会使用 overlay 的读取回退层。`workspaceFor(userId, sessionId)` 视图始终以绑定身份确认，即使调用方传入空上下文或其他身份；嵌套绑定与实际写入一样采用最内层身份。无法确定实际写入目标的不透明或自定义上传策略会拒绝提交。截断、混入工具/媒体/数据/提示内容、空白或超长正文、模型异常或物理写入前取消（包括排队或等待普通追加操作持有的共享锁）时，原记忆与水位保持不变。物理写入开始后取消不会回滚正文；若在水位步骤前观察到取消，则不推进水位。写入未确认时，正文可能已经改变，但水位不会推进，下一次仍可重试同一批流水账。2.0.x 合并调用仍为 `model.stream(messages, null, null)`：正文目标不会覆盖模型 API 的输出上限。
 
 所有阈值都可以通过 `.memory(MemoryConfig.builder()...)` 调，绝大多数项目不需要碰。
 

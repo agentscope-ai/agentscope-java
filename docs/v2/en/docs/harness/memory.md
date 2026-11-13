@@ -60,7 +60,7 @@ Flush (path 1) is triggered at three different moments:
 
 All three sites share the **same** `flushPrompt`, so customizing it changes all three.
 
-Both flush and offload are **asynchronous**: they are launched in a fire-and-forget fashion via `doOnComplete` after the response stream has ended, so they never block the current `call()` return. The caller receives the full response first; the flush LLM call and JSONL offload run in the background afterward.
+Both flush and offload are **asynchronous**: they are launched in a fire-and-forget fashion on the response stream's completion signal, so they never block the current `call()` return. The caller receives the full response first; the flush LLM call and JSONL offload run in the background afterward. Background memory flush and consolidation replay the completing turn's Reactor context, preserving context-scoped token metering and tracing; session retention and pruning remain unchanged.
 
 ## Enable compaction
 
@@ -251,7 +251,7 @@ When memory is enabled, the agent gets four tools:
 - `memory_save content="..."` — persist a memory via `MEMORY.md` and the daily ledger
 - `session_search query="..."` — search past session transcripts
 
-When the model sees a "MEMORY truncated" note in the prompt, it typically calls `memory_search` to look further back.
+When `MEMORY.md` exceeds its prompt budget, the injected block keeps the heading structure and the newest appended entries, omitting the older middle region. A budget too small for the truncation notice keeps only the newest tail. When the model sees a "MEMORY truncated" note in the prompt, it typically calls `memory_search` to look further back.
 
 ## Background maintenance
 
@@ -262,6 +262,8 @@ When memory is enabled, a throttled background job also runs. The first eligible
 - Prunes session logs older than `sessionRetentionDays` (default 180 days)
 
 Entering maintenance does not necessarily call the model: consolidation skips the LLM request when there are no new daily ledger entries since the last successful consolidation. `FlushTrigger.never()` does not disable this maintenance path.
+
+Consolidation has a commit gate: only a **complete** (not cut off by the model's output limit), text-only, non-empty body within the `consolidationMaxTokens` target (approximately four characters per token) replaces `MEMORY.md`. Reasoning blocks are ignored rather than treated as body text; any other non-text content block (tool call/result, image, audio, video, data, or hint) rejects the whole result. The watermark advances only after reading back the exact written body at the authoritative write destination, preserving the upload wrapper's dispatch and identity policy rather than using an overlay's read fallback. A `workspaceFor(userId, sessionId)` view confirms with its bound identity even if the caller supplies an empty or different context; nested bindings use the innermost identity, as the actual write does. Opaque or custom upload policies that cannot expose that destination fail closed. Truncation, tool/media/data/hint output, an empty or oversized body, a model error, or cancellation before physical writing (including while queued or waiting for an ordinary append's shared lock) leaves the existing memory and watermark untouched. Cancellation after physical writing starts does not roll back the body; cancellation observed before the watermark step prevents progress from advancing. An unconfirmed write may already have changed the body, but the watermark stays unchanged so the same ledgers can be retried. The 2.0.x merge call remains `model.stream(messages, null, null)`: the body target does not override the model API output limit.
 
 All thresholds are tunable via `.memory(MemoryConfig.builder()...)`, though most projects don't need to touch them.
 

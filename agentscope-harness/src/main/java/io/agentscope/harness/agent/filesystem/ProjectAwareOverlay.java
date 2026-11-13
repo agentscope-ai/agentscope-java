@@ -194,6 +194,17 @@ public class ProjectAwareOverlay extends OverlayFilesystem implements AbstractSa
         return results;
     }
 
+    @Override
+    public UploadDestination uploadDestination(RuntimeContext runtimeContext, String path) {
+        if (getClass() != ProjectAwareOverlay.class) {
+            return null;
+        }
+        // Workspace uploads preserve their original spelling; only project uploads normalize.
+        return isWorkspacePath(runtimeContext, path)
+                ? new UploadDestination(upper(), path)
+                : new UploadDestination(projectFs, toWorkspaceRelativePath(runtimeContext, path));
+    }
+
     // ==================== Read / search / move routing ====================
 
     @Override

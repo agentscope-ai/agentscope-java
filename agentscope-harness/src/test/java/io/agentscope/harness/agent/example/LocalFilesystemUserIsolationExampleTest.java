@@ -32,11 +32,20 @@ import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.Model;
 import io.agentscope.harness.agent.HarnessAgent;
 import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
+import io.agentscope.harness.agent.filesystem.local.LocalFilesystem;
 import io.agentscope.harness.agent.filesystem.model.FileInfo;
 import io.agentscope.harness.agent.filesystem.model.GlobResult;
 import io.agentscope.harness.agent.filesystem.model.GrepResult;
 import io.agentscope.harness.agent.filesystem.model.ReadResult;
+import io.agentscope.harness.agent.filesystem.remote.RemoteFilesystem;
+import io.agentscope.harness.agent.filesystem.remote.store.InMemoryStore;
+import io.agentscope.harness.agent.filesystem.remote.store.NamespaceFactory;
+import io.agentscope.harness.agent.filesystem.sandbox.SandboxBackedFilesystem;
+import io.agentscope.harness.agent.middleware.WorkspaceContextMiddleware;
 import io.agentscope.harness.agent.testing.HarnessQuiescence;
+import io.agentscope.harness.agent.tool.MemoryGetTool;
+import io.agentscope.harness.agent.tool.MemorySearchTool;
+import io.agentscope.harness.agent.workspace.WorkspaceManager;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -418,6 +427,175 @@ class LocalFilesystemUserIsolationExampleTest {
                             unexpected.isEmpty(),
                             "workspace/agents/ should contain no regular files but found: "
                                     + unexpected);
+                }
+            }
+        }
+    }
+
+    /**
+     * Reads are anchored to the caller's namespace too: naming a sibling user's directory must
+     * not resolve to that user's file, neither through {@code memory_get} nor through the
+     * workspace manager's read path.
+     */
+    @Test
+    void memoryRead_doesNotCrossIntoSiblingNamespace() throws Exception {
+        Files.createDirectories(workspace);
+        Files.writeString(workspace.resolve("AGENTS.md"), "# Test\n");
+
+        try (HarnessAgent agent =
+                HarnessAgent.builder()
+                        .name("assistant")
+                        .model(stubModel("done"))
+                        .workspace(workspace)
+                        .disableMemoryHooks()
+                        .build()) {
+
+            agent.call(userMsg("hi"), ctx("s1", "alice")).block();
+            WorkspaceManager wm = agent.getWorkspaceManager();
+            wm.writeUtf8WorkspaceRelative(ctx("s1", "alice"), "MEMORY.md", "alice-private-note");
+
+            assertEquals("alice-private-note", wm.readMemoryMd(ctx("s1", "alice")));
+            assertEquals("", wm.readMemoryMd(ctx("s2", "bob")));
+            assertEquals("", wm.readMemoryFileUtf8(ctx("s2", "bob"), "alice/MEMORY.md"));
+            // The './' spelling reaches the same file once normalized.
+            assertEquals("", wm.readMemoryFileUtf8(ctx("s2", "bob"), "./alice/MEMORY.md"));
+
+            String viaTool =
+                    new MemoryGetTool(wm).memoryGet(ctx("s2", "bob"), "alice/MEMORY.md", 1, 5);
+            String dotted =
+                    new MemoryGetTool(wm).memoryGet(ctx("s2", "bob"), "./alice/MEMORY.md", 1, 5);
+            // The manager's normalization ignores leading whitespace and slashes, so this is
+            // still a '..' traversal — it must fail as a tool error, not as a failed turn.
+            String padded =
+                    new MemoryGetTool(wm).memoryGet(ctx("s2", "bob"), "  ../alice/MEMORY.md", 1, 5);
+            // Every spelling fails as a tool error and never echoes the sibling's content.
+            for (String blocked : List.of(viaTool, dotted, padded)) {
+                assertTrue(
+                        blocked.startsWith("Error: "),
+                        "memory_get must not read across the namespace boundary");
+                assertFalse(
+                        blocked.contains("alice-private-note"),
+                        "memory_get must not leak alice's content in its output");
+            }
+        }
+    }
+
+    /**
+     * A root-level {@code MEMORY.md} is either a pre-namespace leftover or an explicitly shared
+     * file. An identified caller must not be served it — {@code memory_search} cannot see it
+     * either, so reading it would advertise content the tool surface cannot find again — while
+     * an identity-less read keeps the historical single-tenant behaviour.
+     */
+    @Test
+    void memoryRead_ignoresUnnamespacedRootCopyForIdentifiedCaller() throws Exception {
+        Files.createDirectories(workspace);
+        Files.writeString(workspace.resolve("AGENTS.md"), "# Test\n");
+        Files.writeString(workspace.resolve("MEMORY.md"), "legacy-root-note");
+
+        try (HarnessAgent agent =
+                HarnessAgent.builder()
+                        .name("assistant")
+                        .model(stubModel("done"))
+                        .workspace(workspace)
+                        .disableMemoryHooks()
+                        .build()) {
+
+            agent.call(userMsg("hi"), ctx("s1", "alice")).block();
+            WorkspaceManager wm = agent.getWorkspaceManager();
+
+            assertEquals("", wm.readMemoryMd(ctx("s1", "alice")));
+            assertEquals("", wm.readMemoryMd(ctx("s2", "bob")));
+            assertFalse(
+                    wm.listMemoryFilePaths(ctx("s1", "alice")).contains("MEMORY.md"),
+                    "the root-level leftover must not be listed for an identified caller");
+            assertEquals("legacy-root-note", wm.readMemoryMd(RuntimeContext.empty()));
+
+            wm.writeUtf8WorkspaceRelative(ctx("s1", "alice"), "MEMORY.md", "alice-fact");
+            assertEquals("alice-fact", wm.readMemoryMd(ctx("s1", "alice")));
+            assertEquals("", wm.readMemoryMd(ctx("s2", "bob")));
+        }
+    }
+
+    @Test
+    void callerNamespaceIsPreservedAcrossMemoryBackendsAndIsolationScopes() throws Exception {
+        for (boolean sessionScope : new boolean[] {false, true}) {
+            NamespaceFactory namespace =
+                    rc -> {
+                        String identity = sessionScope ? rc.getSessionId() : rc.getUserId();
+                        return identity == null ? List.of() : List.of(identity);
+                    };
+            RuntimeContext alice =
+                    sessionScope ? ctx("alice", "same-user") : ctx("same-session", "alice");
+            RuntimeContext bob =
+                    sessionScope ? ctx("bob", "same-user") : ctx("same-session", "bob");
+            for (int backend = 0; backend < 3; backend++) {
+                Path root = workspace.resolve((sessionScope ? "session-" : "user-") + backend);
+                Files.createDirectories(root.resolve("alice"));
+                Files.writeString(root.resolve("alice/MEMORY.md"), "alice-private-note");
+                Files.writeString(root.resolve("MEMORY.md"), "legacy-root-note");
+                AbstractFilesystem filesystem =
+                        backend == 0
+                                ? new LocalFilesystem(root, false, 10, namespace)
+                                : backend == 1
+                                        ? new SandboxBackedFilesystem() {
+                                            @Override
+                                            public ReadResult read(
+                                                    RuntimeContext rc,
+                                                    String path,
+                                                    int offset,
+                                                    int limit) {
+                                                assertFalse(
+                                                        path.endsWith("MEMORY.md")
+                                                                || path.startsWith("memory/"),
+                                                        "memory content must never be read through"
+                                                                + " the sandbox");
+                                                return ReadResult.fail(
+                                                        "shared configuration absent in fixture");
+                                            }
+
+                                            @Override
+                                            public GlobResult glob(
+                                                    RuntimeContext rc,
+                                                    String pattern,
+                                                    String path) {
+                                                assertFalse(
+                                                        path.startsWith("memory"),
+                                                        "memory listing must never use the"
+                                                                + " sandbox");
+                                                return GlobResult.success(List.of());
+                                            }
+                                        }
+                                        : new RemoteFilesystem(new InMemoryStore(), namespace);
+                try (WorkspaceManager wm =
+                        new WorkspaceManager(root, filesystem, null, namespace)) {
+                    wm.writeMemoryFileUtf8(alice, "MEMORY.md", "alice-private-note");
+                    assertEquals("alice-private-note", wm.readMemoryMd(alice));
+                    assertEquals("", wm.readMemoryMd(bob));
+                    for (String path :
+                            List.of("alice/MEMORY.md", "./alice/MEMORY.md", "  alice/MEMORY.md")) {
+                        assertEquals("", wm.readMemoryFileUtf8(bob, path));
+                        String result = new MemoryGetTool(wm).memoryGet(bob, path, 1, 5);
+                        assertTrue(result.startsWith("Error: "));
+                        assertFalse(result.contains("alice-private-note"));
+                    }
+                    String prompt =
+                            new WorkspaceContextMiddleware(wm)
+                                    .onSystemPrompt(null, bob, "BASE")
+                                    .block();
+                    assertNotNull(prompt);
+                    assertFalse(prompt.contains("alice-private-note"));
+                    assertFalse(prompt.contains("legacy-root-note"));
+                    assertFalse(
+                            new MemorySearchTool(wm)
+                                    .memorySearch(bob, "private-note")
+                                    .contains("alice-private-note"));
+                    if (backend != 2) {
+                        assertEquals("legacy-root-note", wm.readMemoryMd(RuntimeContext.empty()));
+                    }
+                    wm.writeMemoryFileUtf8(bob, "MEMORY.md", "bob-private-note");
+                    assertEquals("bob-private-note", wm.readMemoryMd(bob));
+                    assertEquals("alice-private-note", wm.readMemoryMd(alice));
+                    assertEquals("legacy-root-note", Files.readString(root.resolve("MEMORY.md")));
                 }
             }
         }

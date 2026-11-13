@@ -39,7 +39,8 @@ public class MemoryGetTool {
             readOnly = true,
             description =
                     "Read specific lines from a memory file. Use after memory_search to pull"
-                            + " full context around matched lines. Path is relative to workspace.")
+                            + " full context around matched lines. Path is relative to the"
+                            + " caller's memory namespace.")
     public String memoryGet(
             RuntimeContext runtimeContext,
             @ToolParam(
@@ -56,12 +57,20 @@ public class MemoryGetTool {
             return "Error: path is required";
         }
 
-        Path resolved = workspaceManager.getWorkspace().resolve(path).normalize();
-        if (!resolved.startsWith(workspaceManager.getWorkspace())) {
+        // Reuse the manager's normalization, including leading whitespace and slashes.
+        try {
+            WorkspaceManager.requireSafeRelativePath(path);
+        } catch (IllegalArgumentException e) {
             return "Error: path traversal not allowed";
         }
 
         RuntimeContext rc = runtimeContext != null ? runtimeContext : RuntimeContext.empty();
+        Path workspace = workspaceManager.getWorkspace();
+        Path resolved = workspaceManager.resolveRuntimeDataPath(rc, path).normalize();
+        if (!resolved.startsWith(workspace)) {
+            return "Error: path must be relative to the memory namespace: " + path;
+        }
+
         String text = workspaceManager.readMemoryFileUtf8(rc, path);
         if (text == null || text.isBlank()) {
             return "Error: file not found: " + path;

@@ -85,6 +85,19 @@ public class OverlayFilesystem implements AbstractFilesystem {
         return lower;
     }
 
+    /** Authoritative upload target, for confirmation only; uploads must still use the overlay. */
+    public record UploadDestination(AbstractFilesystem filesystem, String path) {}
+
+    /**
+     * Returns the destination used by {@link #uploadFiles}, or {@code null} when a custom subtype's
+     * upload policy is unknown. Read fallback is not evidence that an upload reached its target.
+     */
+    public UploadDestination uploadDestination(RuntimeContext runtimeContext, String path) {
+        return getClass() == OverlayFilesystem.class || getClass() == ShellAwareOverlay.class
+                ? new UploadDestination(upper, path)
+                : null;
+    }
+
     /**
      * Builds an overlay that automatically exposes shell execution when {@code upper} supports
      * it. Returns a {@link AbstractSandboxFilesystem}-implementing subclass when

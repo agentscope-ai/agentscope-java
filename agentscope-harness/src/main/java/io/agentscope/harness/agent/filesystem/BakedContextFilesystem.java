@@ -48,13 +48,17 @@ public final class BakedContextFilesystem implements AbstractFilesystem {
         this.bakedRc = bakedRc != null ? bakedRc : RuntimeContext.empty();
     }
 
-    /** Internal routing inspection; IO must still go through this context-bound wrapper. */
+    /** Internal routing inspection; IO must retain this wrapper's effective context. */
     public AbstractFilesystem delegate() {
         return delegate;
     }
 
-    /** Fixed identity for routing metadata; IO must still go through this wrapper. */
-    public RuntimeContext context() {
+    /**
+     * Internal routing inspection of the context supplied to the delegate. Destination inspection
+     * and authoritative readback must use this context, not the caller's; a nested context-bound
+     * wrapper substitutes its own context in turn. Uploads must still use the original wrapper.
+     */
+    public RuntimeContext effectiveRuntimeContext() {
         return bakedRc;
     }
 

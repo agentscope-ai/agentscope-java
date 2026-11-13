@@ -19,6 +19,9 @@ import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.ThinkingBlock;
+import io.agentscope.core.model.ChatResponse;
+import io.agentscope.core.model.FinishReasons;
 import io.agentscope.core.model.Model;
 import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
 import io.agentscope.harness.agent.filesystem.model.FileInfo;
@@ -31,9 +34,11 @@ import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicBoolean;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Schedulers;
 
 /**
  * LLM-based consolidation of daily memory ledgers into the curated {@code MEMORY.md}.
@@ -56,6 +61,26 @@ import reactor.core.publisher.Mono;
  * <p>All file I/O is performed via the {@link AbstractFilesystem} obtained from the
  * {@link WorkspaceManager}, so this class is backend-agnostic (works with Local,
  * Sandbox, and Remote filesystems without any direct {@code java.nio.file.Files} usage).
+ *
+ * <p><b>Commit gate.</b> The LLM merge uses {@code model.stream(messages, null, null)}
+ * with only its consolidation messages and no tools or generate-option overrides.
+ * Its result replaces {@code MEMORY.md} and advances the watermark only when it is
+ * <em>complete</em> (not length-truncated), text-only (reasoning blocks are ignored, any
+ * other non-text content block rejects the whole result), and a
+ * non-empty body within the configured body-text target. Truncation, non-text output,
+ * an empty or over-budget body, a model error, or a pre-commit cancellation leaves the existing
+ * {@code MEMORY.md} and the watermark untouched. The watermark advances only after
+ * the write is confirmed by reading the file back. An unconfirmed write leaves the
+ * watermark unchanged so the next run retries on the same ledgers; the memory body
+ * may already have been written.
+ *
+ * <p>{@code maxMemoryTokens} is that <em>body-text target</em>: it is stated in the
+ * prompt (tokens and the approximate character equivalent) and enforced on the
+ * committed body. It is deliberately <b>not</b> passed to the model API as an output
+ * limit — a reasoning model's API limit must also cover its reasoning tokens, so
+ * equating the two would either starve the body or pad the limit. The model's own
+ * output limit keeps its provider default; should it cut the response short, the
+ * truncation check above refuses to commit it.
  */
 public class MemoryConsolidator {
 
@@ -188,34 +213,131 @@ public class MemoryConsolidator {
                         .content(TextBlock.builder().text(userContent.toString()).build())
                         .build());
 
-        return model.stream(messages, null, null)
-                .reduce(
-                        new StringBuilder(),
-                        (sb, chatResponse) -> {
-                            if (chatResponse.getContent() != null) {
-                                for (var block : chatResponse.getContent()) {
-                                    if (block instanceof TextBlock tb && tb.getText() != null) {
-                                        sb.append(tb.getText());
-                                    }
-                                }
-                            }
-                            return sb;
-                        })
-                .flatMap(
-                        sb -> {
-                            String consolidated = sb.toString().strip();
-                            if (consolidated.isBlank()) {
-                                log.warn("Consolidation produced empty output, skipping");
-                                return Mono.empty();
-                            }
-                            writeConsolidatedMemory(rc, consolidated);
-                            writeWatermark(rc, runStart);
-                            log.info(
-                                    "MEMORY.md consolidated ({} chars), watermark advanced to {}",
-                                    consolidated.length(),
-                                    runStart);
-                            return Mono.empty();
-                        });
+        return Mono.defer(
+                () -> {
+                    AtomicBoolean cancelled = new AtomicBoolean();
+                    return model.stream(messages, null, null)
+                            .reduce(
+                                    new ConsolidationOutput(),
+                                    (acc, chatResponse) -> {
+                                        acc.accept(chatResponse);
+                                        return acc;
+                                    })
+                            .flatMap(
+                                    acc ->
+                                            Mono.fromRunnable(
+                                                            () ->
+                                                                    commitConsolidation(
+                                                                            rc, acc, maxChars,
+                                                                            runStart, cancelled))
+                                                    .subscribeOn(Schedulers.boundedElastic()))
+                            .doOnCancel(() -> cancelled.set(true))
+                            .then();
+                });
+    }
+
+    private void commitConsolidation(
+            RuntimeContext rc,
+            ConsolidationOutput acc,
+            int maxChars,
+            Instant runStart,
+            AtomicBoolean cancelled) {
+        String consolidated = acc.text().strip();
+        if (FinishReasons.indicatesOutputLimit(acc.finishReason(), acc.metadata())) {
+            log.warn(
+                    "Consolidation output truncated (finish reason {}) —"
+                            + " keeping existing MEMORY.md and watermark",
+                    acc.finishReason());
+            return;
+        }
+        if (acc.sawNonTextBlock()) {
+            log.warn(
+                    "Consolidation output contained non-text content blocks —"
+                            + " keeping existing MEMORY.md and watermark");
+            return;
+        }
+        if (consolidated.isBlank()) {
+            log.warn("Consolidation produced empty output, skipping");
+            return;
+        }
+        if (consolidated.length() > maxChars) {
+            log.warn(
+                    "Consolidation output of {} chars exceeds the {}-char body"
+                            + " target — keeping existing MEMORY.md and watermark",
+                    consolidated.length(),
+                    maxChars);
+            return;
+        }
+        // The scheduled subscription can interrupt shared-lock waiting. The per-subscription
+        // guard also survives IO implementations that swallow scheduler interruption.
+        if (cancelled.get()) {
+            return;
+        }
+        // No cross-store transaction: an unconfirmed body may change, but ledgers remain eligible.
+        if (!workspaceManager.writeMemoryFileUtf8AndConfirm(
+                rc, "MEMORY.md", consolidated, cancelled::get)) {
+            log.warn(
+                    "MEMORY.md write could not be confirmed — keeping"
+                            + " watermark so the next run retries");
+            return;
+        }
+        // No rollback once physical body IO has begun; progress can still stop.
+        if (cancelled.get() || Thread.currentThread().isInterrupted()) {
+            return;
+        }
+        writeWatermark(rc, runStart);
+        log.info(
+                "MEMORY.md consolidated ({} chars), watermark advanced to {}",
+                consolidated.length(),
+                runStart);
+    }
+
+    /** Accumulates one consolidation stream: body text plus the terminal finish signal. */
+    private static final class ConsolidationOutput {
+
+        private final StringBuilder text = new StringBuilder();
+        private String finishReason;
+        private final Map<String, Object> metadata = new HashMap<>();
+        private boolean sawNonTextBlock;
+
+        void accept(ChatResponse chunk) {
+            if (chunk.getFinishReason() != null) {
+                finishReason = chunk.getFinishReason();
+            }
+            if (chunk.getMetadata() != null && !chunk.getMetadata().isEmpty()) {
+                metadata.putAll(chunk.getMetadata());
+            }
+            if (chunk.getContent() != null) {
+                for (var block : chunk.getContent()) {
+                    if (block instanceof TextBlock tb) {
+                        if (tb.getText() != null) {
+                            text.append(tb.getText());
+                        }
+                    } else if (!(block instanceof ThinkingBlock)) {
+                        // Reasoning is separate from the MEMORY.md body; every other non-text
+                        // block (tool, media, data, hint, or a null entry) makes the body
+                        // incomplete, so the whole result must not be committed.
+                        sawNonTextBlock = true;
+                    }
+                }
+            }
+        }
+
+        String text() {
+            return text.toString();
+        }
+
+        String finishReason() {
+            return finishReason;
+        }
+
+        Map<String, Object> metadata() {
+            return metadata;
+        }
+
+        boolean sawNonTextBlock() {
+            return sawNonTextBlock;
+        }
     }
 
     /**
@@ -299,10 +421,6 @@ public class MemoryConsolidator {
             return "";
         }
         return path.startsWith("/") ? path.substring(1) : path;
-    }
-
-    private void writeConsolidatedMemory(RuntimeContext rc, String content) {
-        workspaceManager.writeMemoryFileUtf8(rc, "MEMORY.md", content);
     }
 
     static final String STATE_REL_PATH = "memory/" + STATE_FILE;

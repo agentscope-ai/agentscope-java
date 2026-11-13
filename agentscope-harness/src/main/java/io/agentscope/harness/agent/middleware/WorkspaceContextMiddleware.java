@@ -132,6 +132,8 @@ public class WorkspaceContextMiddleware implements HarnessRuntimeMiddleware {
 
     private static final String TRUNCATION_NOTICE_PLAIN = "\n\n... (memory truncated) ...\n";
 
+    private static final int MEMORY_HEAD_SHARE = 4;
+
     private static final int DEFAULT_MAX_CONTEXT_TOKENS = 8000;
     private static final int MAX_AGENTS_MD_BYTES = 100 * 1024;
 
@@ -602,7 +604,12 @@ public class WorkspaceContextMiddleware implements HarnessRuntimeMiddleware {
         }
         String notice =
                 disableMemoryTools ? TRUNCATION_NOTICE_PLAIN : TRUNCATION_NOTICE_WITH_SEARCH;
-        return text.substring(0, maxChars) + notice;
+        if (maxChars <= notice.length()) {
+            return text.substring(text.length() - maxChars);
+        }
+        int kept = maxChars - notice.length();
+        int head = kept / MEMORY_HEAD_SHARE;
+        return text.substring(0, head) + notice + text.substring(text.length() - (kept - head));
     }
 
     private String buildKnowledgeBlock(

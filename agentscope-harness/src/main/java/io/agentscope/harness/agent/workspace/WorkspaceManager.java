@@ -38,7 +38,9 @@ import io.agentscope.harness.agent.filesystem.CompositeFilesystem;
 import io.agentscope.harness.agent.filesystem.OverlayFilesystem;
 import io.agentscope.harness.agent.filesystem.RoutedSandboxFilesystem;
 import io.agentscope.harness.agent.filesystem.local.LocalFilesystem;
+import io.agentscope.harness.agent.filesystem.model.FileDownloadResponse;
 import io.agentscope.harness.agent.filesystem.model.FileInfo;
+import io.agentscope.harness.agent.filesystem.model.FileUploadResponse;
 import io.agentscope.harness.agent.filesystem.model.GlobResult;
 import io.agentscope.harness.agent.filesystem.model.ReadResult;
 import io.agentscope.harness.agent.filesystem.model.WriteResult;
@@ -55,6 +57,7 @@ import java.nio.file.StandardCopyOption;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.LinkedHashMap;
@@ -66,6 +69,7 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.locks.ReentrantLock;
+import java.util.function.BooleanSupplier;
 import java.util.function.Function;
 import java.util.stream.Stream;
 import org.slf4j.Logger;
@@ -124,6 +128,13 @@ public class WorkspaceManager implements AutoCloseable {
      * {@code AgentStateStore#saveIfVersion}, not on these path locks.
      */
     private final Map<String, ReentrantLock> pathLocks = new ConcurrentHashMap<>();
+
+    /**
+     * Set of root-level memory paths already warned as un-namespaced leftovers. Prevents log spam
+     * since memory is read on every call. Note: scoped to this manager instance, so a new instance
+     * re-emits the warnings.
+     */
+    private final Set<String> warnedLegacyRootCopies = ConcurrentHashMap.newKeySet();
 
     private final Path workspace;
     private final AbstractFilesystem filesystem;
@@ -243,11 +254,20 @@ public class WorkspaceManager implements AutoCloseable {
      * identity (user/session) drives the namespace, not a shared mutable reference.
      */
     public Path resolveRuntimeDataPath(RuntimeContext rc, String relativePath) {
+        return resolveInNamespace(namespaceOf(rc), relativePath);
+    }
+
+    /** Namespace segments for this call; empty when nothing scopes the workspace. */
+    private List<String> namespaceOf(RuntimeContext rc) {
+        if (namespaceFactory == null) {
+            return List.of();
+        }
+        List<String> ns = namespaceFactory.getNamespace(rc != null ? rc : RuntimeContext.empty());
+        return ns == null ? List.of() : ns;
+    }
+
+    private Path resolveInNamespace(List<String> ns, String relativePath) {
         String normalized = requireSafeRelativePath(relativePath);
-        List<String> ns =
-                namespaceFactory == null
-                        ? List.of()
-                        : namespaceFactory.getNamespace(rc != null ? rc : RuntimeContext.empty());
         Path root = workspace.toAbsolutePath().normalize();
         Path namespaceRoot = root;
         if (ns != null) {
@@ -340,7 +360,7 @@ public class WorkspaceManager implements AutoCloseable {
      * persistent store when one is mounted for it (e.g. on the {@code memory/} prefix), the
      * host runtime-data namespace when that backend is the per-call sandbox proxy (memory
      * files are cross-call metadata written by the fire-and-forget flush after the sandbox
-     * may be gone, #3110), and the standard two-layer read otherwise.
+     * may be gone, #3110), and a namespace-anchored two-layer read otherwise.
      *
      * <p><b>Durability assumption:</b> host-side routing presumes the host workspace outlives
      * the process or is shared across replicas. A stateless multi-replica deployment with
@@ -361,7 +381,7 @@ public class WorkspaceManager implements AutoCloseable {
             }
             return readFileQuietly(hostPath);
         }
-        return readWithOverride(rc, normalized);
+        return readNamespacedRuntimeData(rc, normalized);
     }
 
     /**
@@ -443,8 +463,125 @@ public class WorkspaceManager implements AutoCloseable {
     }
 
     /**
+     * Writes memory and confirms the exact bytes at the write destination, without read fallback.
+     * Blocking helper for consolidation; ordinary best-effort writers remain unchanged. A false
+     * result does not imply the body was left untouched, nor does confirmation provide a transaction.
+     */
+    public boolean writeMemoryFileUtf8AndConfirm(
+            RuntimeContext rc, String relativePath, String content) {
+        return writeMemoryFileUtf8AndConfirm(rc, relativePath, content, () -> false);
+    }
+
+    /**
+     * Cancellation-aware checked write. Lock waiting is interruptible and cancellation is checked
+     * immediately before body IO; once physical writing starts there is no rollback guarantee.
+     */
+    public boolean writeMemoryFileUtf8AndConfirm(
+            RuntimeContext rc, String relativePath, String content, BooleanSupplier cancelled) {
+        if (relativePath == null || content == null) {
+            return false;
+        }
+        String normalized = requireSafeRelativePath(relativePath);
+        if (normalized.isEmpty() || cancelled.getAsBoolean()) {
+            return false;
+        }
+        byte[] expected = content.getBytes(StandardCharsets.UTF_8);
+        ReentrantLock lock = pathLocks.computeIfAbsent(normalized, k -> new ReentrantLock());
+        try {
+            lock.lockInterruptibly();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return false;
+        }
+        try {
+            if (filesystem == null || memoryFilesRouteToLiveSandbox(normalized)) {
+                // Without a filesystem the historical write destination is the workspace root.
+                Path destination =
+                        (filesystem == null
+                                        ? workspace.resolve(normalized)
+                                        : resolveRuntimeDataPath(rc, normalized))
+                                .normalize();
+                if (cancelled.getAsBoolean()
+                        || Thread.currentThread().isInterrupted()
+                        || !writeLocalPath(destination, normalized, content)) {
+                    return false;
+                }
+                try {
+                    return Arrays.equals(expected, Files.readAllBytes(destination));
+                } catch (IOException e) {
+                    log.warn(
+                            "Failed to confirm memory write at {}: {}",
+                            destination,
+                            e.getMessage());
+                    return false;
+                }
+            }
+            MemoryWriteDestination destination = memoryWriteDestination(rc, filesystem, normalized);
+            if (destination == null
+                    || cancelled.getAsBoolean()
+                    || Thread.currentThread().isInterrupted()) {
+                return false;
+            }
+            // Preserve the original wrappers' upload policy, path remapping and runtime context.
+            List<FileUploadResponse> uploaded =
+                    filesystem.uploadFiles(rc, List.of(Map.entry(normalized, expected)));
+            if (uploaded == null
+                    || uploaded.size() != 1
+                    || uploaded.get(0) == null
+                    || !uploaded.get(0).isSuccess()
+                    || !normalized.equals(uploaded.get(0).path())) {
+                return false;
+            }
+            String path = destination.path();
+            List<FileDownloadResponse> downloaded =
+                    destination.filesystem().downloadFiles(destination.context(), List.of(path));
+            boolean confirmed =
+                    downloaded != null
+                            && downloaded.size() == 1
+                            && downloaded.get(0) != null
+                            && downloaded.get(0).isSuccess()
+                            && path.equals(downloaded.get(0).path())
+                            && Arrays.equals(expected, downloaded.get(0).content());
+            if (confirmed && index != null) {
+                index.upsert(normalized, expected.length, null);
+            }
+            return confirmed;
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    private record MemoryWriteDestination(
+            AbstractFilesystem filesystem, String path, RuntimeContext context) {}
+
+    private static MemoryWriteDestination memoryWriteDestination(
+            RuntimeContext rc, AbstractFilesystem fs, String path) {
+        if (fs instanceof BakedContextFilesystem baked) {
+            return memoryWriteDestination(baked.effectiveRuntimeContext(), baked.delegate(), path);
+        }
+        if (fs instanceof RoutedSandboxFilesystem routed) {
+            return memoryWriteDestination(rc, routed.backendFor(path), routed.backendPathFor(path));
+        }
+        if (fs instanceof CompositeFilesystem composite) {
+            return memoryWriteDestination(
+                    rc, composite.filesystemFor(path), composite.backendPathFor(path));
+        }
+        if (fs instanceof OverlayFilesystem overlay) {
+            OverlayFilesystem.UploadDestination destination = overlay.uploadDestination(rc, path);
+            return destination == null
+                    ? null
+                    : memoryWriteDestination(rc, destination.filesystem(), destination.path());
+        }
+        return new MemoryWriteDestination(fs, path, rc);
+    }
+
+    /**
      * Reads a UTF-8 file under the workspace, using the two-layer pattern:
      * filesystem first, then local disk fallback.
+     *
+     * <p>Same namespace caveat as {@link #readWithOverride}: the fallback reads the workspace
+     * root, so this suits build-time configuration files ({@code additionalContextFiles},
+     * {@code tools.json}), not per-identity runtime data.
      */
     public String readManagedWorkspaceFileUtf8(RuntimeContext rc, String relativePath) {
         if (relativePath == null || relativePath.isBlank()) {
@@ -723,7 +860,7 @@ public class WorkspaceManager implements AutoCloseable {
         boolean contextBound = false;
         while (fs != null) {
             if (fs instanceof BakedContextFilesystem baked) {
-                context = baked.context();
+                context = baked.effectiveRuntimeContext();
                 contextBound = true;
                 fs = baked.delegate();
             } else if (fs instanceof CompositeFilesystem composite) {
@@ -1017,6 +1154,8 @@ public class WorkspaceManager implements AutoCloseable {
                 taskRecordsRouteToLiveSandbox(rel)
                         // Same normalization/validation as the non-routed branch, so a poisoned
                         // sessionId cannot read outside the workspace via the host-disk path.
+                        // Task handles are cross-call/ cross-user state: keep the host workspace
+                        // root instead of the caller namespace.
                         ? readFileQuietly(workspace.resolve(requireSafeRelativePath(rel)))
                         : readWritableWorkspaceRelativeUtf8(rc, rel);
         if (json == null || json.isBlank()) {
@@ -1031,7 +1170,9 @@ public class WorkspaceManager implements AutoCloseable {
             String serialized =
                     TASK_RECORD_JSON.writerWithDefaultPrettyPrinter().writeValueAsString(map);
             if (taskRecordsRouteToLiveSandbox(rel)) {
-                writeLocalFile(rel, serialized);
+                // Mirror readTaskMap: task handles are cross-call/cross-user state, so they
+                // stay under the host workspace root instead of the caller's namespace.
+                writeLocalFile(requireSafeRelativePath(rel), serialized);
                 return;
             }
             writeUtf8WorkspaceRelative(rc, rel, serialized);
@@ -1070,7 +1211,7 @@ public class WorkspaceManager implements AutoCloseable {
         if (normalized.isEmpty()) {
             return "";
         }
-        return readWithOverride(rc, normalized);
+        return readNamespacedRuntimeData(rc, normalized);
     }
 
     /** Overwrites a workspace-relative UTF-8 file. All writes go through the filesystem. */
@@ -1178,8 +1319,8 @@ public class WorkspaceManager implements AutoCloseable {
     // ==================== Two-layer read/write helpers ====================
 
     /**
-     * Two-layer read: filesystem first (namespaced by {@link
-     * NamespaceFactory}), local disk fallback.
+     * Two-layer read for shared content: filesystem first (a per-caller copy wins), then the
+     * workspace-root copy. Per-identity data uses {@link #readNamespacedRuntimeData} instead.
      */
     private String readWithOverride(RuntimeContext rc, String relativePath) {
         String fsContent = readTextThroughFilesystem(rc, relativePath);
@@ -1187,6 +1328,44 @@ public class WorkspaceManager implements AutoCloseable {
             return fsContent;
         }
         return readFileQuietly(workspace.resolve(relativePath));
+    }
+
+    /**
+     * Two-layer read for per-identity runtime data: filesystem first, then the caller's namespace.
+     * The fallback never reads the workspace root — a copy there belongs to no identity, and a
+     * relative path such as {@code other-user/MEMORY.md} would name a sibling's directory.
+     * Contexts without a namespace keep the historical root read.
+     */
+    private String readNamespacedRuntimeData(RuntimeContext rc, String relativePath) {
+        String fsContent = readTextThroughFilesystem(rc, relativePath);
+        if (!fsContent.isEmpty()) {
+            return fsContent;
+        }
+        List<String> ns = namespaceOf(rc);
+        if (filesystem == null || ns.isEmpty()) {
+            // Nothing namespaces the write path either (see writeUtf8WorkspaceRelative), so
+            // the root copy is the caller's own.
+            return readFileQuietly(workspace.resolve(relativePath));
+        }
+        Path namespaced = resolveInNamespace(ns, relativePath);
+        String content = readFileQuietly(namespaced);
+        if (content.isEmpty()) {
+            warnWhenUnnamespacedRootCopyExists(relativePath, namespaced);
+        }
+        return content;
+    }
+
+    /** Reports a pre-namespace root copy once per path, so an operator knows to move it. */
+    private void warnWhenUnnamespacedRootCopyExists(String relPath, Path namespacedPath) {
+        if (Files.isRegularFile(workspace.resolve(relPath))
+                && warnedLegacyRootCopies.add(relPath)) {
+            log.warn(
+                    "Memory file {} exists at the workspace root but not in the caller's"
+                            + " namespace ({}); root copies are no longer served to identified"
+                            + " callers — move it into the namespace directory to keep it",
+                    relPath,
+                    namespacedPath);
+        }
     }
 
     private String readFileQuietly(Path path) {
@@ -1252,10 +1431,10 @@ public class WorkspaceManager implements AutoCloseable {
         writeLocalPath(workspace.resolve(relativePath).normalize(), relativePath, content);
     }
 
-    private void writeLocalPath(Path local, String relativePath, String content) {
+    private boolean writeLocalPath(Path local, String relativePath, String content) {
         if (!local.startsWith(workspace)) {
             log.warn("Refusing to write outside workspace: {}", relativePath);
-            return;
+            return false;
         }
         Path temp = local.resolveSibling(local.getFileName() + ".tmp." + UUID.randomUUID());
         try {
@@ -1275,12 +1454,14 @@ public class WorkspaceManager implements AutoCloseable {
             if (index != null) {
                 index.upsertFromLocalFile(relativePath, local);
             }
+            return true;
         } catch (IOException e) {
             log.warn("Failed to write {}: {}", local, e.getMessage());
             try {
                 Files.deleteIfExists(temp);
             } catch (IOException ignored) {
             }
+            return false;
         }
     }
 
@@ -1295,7 +1476,16 @@ public class WorkspaceManager implements AutoCloseable {
         return s;
     }
 
-    private static String requireSafeRelativePath(String relativePath) {
+    /**
+     * Normalizes a caller-supplied relative path: converts backslashes to slashes, strips
+     * leading whitespace/slashes, and rejects ".." segments.
+     *
+     * <p>Single source of truth: all read/write paths reuse this rule. Returns "" for null or
+     * blank input.
+     *
+     * @throws IllegalArgumentException if the path contains a ".." segment
+     */
+    public static String requireSafeRelativePath(String relativePath) {
         String normalized = normalizeRelativePath(relativePath);
         if (!normalized.isEmpty()) {
             AbstractFilesystem.validatePath(normalized);
