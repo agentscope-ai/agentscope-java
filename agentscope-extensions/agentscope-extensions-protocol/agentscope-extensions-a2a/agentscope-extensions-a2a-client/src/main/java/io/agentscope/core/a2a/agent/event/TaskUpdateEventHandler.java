@@ -89,8 +89,14 @@ public class TaskUpdateEventHandler implements ClientEventHandler<TaskUpdateEven
         @Override
         public void handle(TaskStatusUpdateEvent event, ClientEventContext context) {
             String currentRequestId = context.getCurrentRequestId();
+            TaskStatus taskStatus = event.getStatus();
+            if (taskStatus.state() == TaskState.INPUT_REQUIRED
+                    || taskStatus.state() == TaskState.AUTH_REQUIRED) {
+                TaskEventHandler.completeWaiting(event.getTaskId(), taskStatus, context);
+                return;
+            }
             if (event.isFinal()) {
-                TaskState state = event.getStatus().state();
+                TaskState state = taskStatus.state();
                 if (!TaskState.COMPLETED.equals(state)) {
                     String errorMsg =
                             "A2A task ended with state: "
@@ -137,17 +143,11 @@ public class TaskUpdateEventHandler implements ClientEventHandler<TaskUpdateEven
                         log, "[{}] A2aAgent complete with artifact messages: ", currentRequestId);
                 LoggerUtil.logTextMsgDetail(log, List.of(msg));
             } else {
-                TaskStatus taskStatus = event.getStatus();
                 LoggerUtil.debug(
                         log,
                         "[{}] A2aAgent task status updated to: {}.",
                         currentRequestId,
                         taskStatus.state());
-                if (taskStatus.state() == TaskState.INPUT_REQUIRED
-                        || taskStatus.state() == TaskState.AUTH_REQUIRED) {
-                    TaskEventHandler.completeWaiting(event.getTaskId(), taskStatus, context);
-                    return;
-                }
                 if (null == taskStatus.message()) {
                     return;
                 }

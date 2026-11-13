@@ -75,6 +75,9 @@ import java.util.function.Consumer;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.mockito.stubbing.Answer;
 import reactor.core.publisher.Mono;
 
@@ -967,6 +970,123 @@ public class A2aAgentTest {
                 }
             }
         }
+    }
+
+    @ParameterizedTest
+    @CsvSource({
+        "INPUT_REQUIRED, false, false",
+        "INPUT_REQUIRED, false, true",
+        "INPUT_REQUIRED, true, false",
+        "INPUT_REQUIRED, true, true",
+        "AUTH_REQUIRED, false, false",
+        "AUTH_REQUIRED, false, true",
+        "AUTH_REQUIRED, true, false",
+        "AUTH_REQUIRED, true, true"
+    })
+    void testWaitingUpdatesWithEitherFinalFlag(
+            TaskState state, boolean isFinal, boolean hasMessage) {
+        TaskStatus status =
+                new TaskStatus(
+                        state, hasMessage ? A2A.toAgentMessage("please respond") : null, null);
+        Task task = new Task.Builder().id("waiting-task").contextId("c1").status(status).build();
+        TaskUpdateEvent event =
+                new TaskUpdateEvent(
+                        task,
+                        new TaskStatusUpdateEvent("waiting-task", status, "c1", isFinal, Map.of()));
+        doAnswer(
+                        invocation -> {
+                            List<BiConsumer<ClientEvent, AgentCard>> consumers =
+                                    invocation.getArgument(1);
+                            consumers.forEach(c -> c.accept(event, agentCard));
+                            // Duplicate terminal updates must not publish a second PostReasoning.
+                            consumers.forEach(c -> c.accept(event, agentCard));
+                            return null;
+                        })
+                .when(a2aClient)
+                .sendMessage(any(Message.class), anyList(), any());
+        AtomicInteger posts = new AtomicInteger();
+        A2aAgent agent =
+                A2aAgent.builder()
+                        .name("test-agent")
+                        .agentCard(agentCard)
+                        .clientReplacer(this::useMockClient)
+                        .hook(
+                                new Hook() {
+                                    @Override
+                                    public <T extends HookEvent> Mono<T> onEvent(T event) {
+                                        if (event instanceof PostReasoningEvent post) {
+                                            posts.incrementAndGet();
+                                            assertWaitingResult(
+                                                    post.getReasoningMessage(), state, hasMessage);
+                                        }
+                                        return Mono.just(event);
+                                    }
+                                })
+                        .build();
+        Msg result =
+                agent.call(Msg.builder().textContent("test").build())
+                        .block(java.time.Duration.ofSeconds(3));
+        assertWaitingResult(result, state, hasMessage);
+        assertEquals(1, posts.get());
+        List<Event> events =
+                agent.stream(Msg.builder().textContent("stream").build())
+                        .collectList()
+                        .block(java.time.Duration.ofSeconds(3));
+        assertNotNull(events);
+        assertEquals(2, events.size());
+        assertEquals(io.agentscope.core.agent.EventType.REASONING, events.get(0).getType());
+        assertEquals(io.agentscope.core.agent.EventType.AGENT_RESULT, events.get(1).getType());
+        for (Event projected : events) {
+            assertTrue(projected.isLast());
+            assertWaitingResult(projected.getMessage(), state, hasMessage);
+        }
+        assertEquals(2, posts.get());
+        verify(a2aClient, never()).cancelTask(any(TaskIdParams.class), any());
+        verify(a2aClient, org.mockito.Mockito.times(2)).close();
+    }
+
+    private void assertWaitingResult(Msg result, TaskState state, boolean hasMessage) {
+        assertNotNull(result);
+        assertEquals("test-agent", result.getName());
+        assertEquals(io.agentscope.core.message.MsgRole.ASSISTANT, result.getRole());
+        assertEquals(
+                hasMessage
+                        ? "please respond"
+                        : "A2A task waiting-task is waiting in state " + state + ".",
+                result.getTextContent());
+        assertEquals("waiting-task", result.getMetadata().get("_agentscope_a2a_task_id"));
+        assertEquals(state.name(), result.getMetadata().get("_agentscope_a2a_task_state"));
+    }
+
+    @ParameterizedTest
+    @EnumSource(
+            value = TaskState.class,
+            names = {"FAILED", "CANCELED", "REJECTED", "WORKING", "SUBMITTED"})
+    void testOtherFinalUpdatesKeepLegacyFailure(TaskState state) {
+        TaskStatus status = new TaskStatus(state);
+        Task task = new Task.Builder().id("taskId").contextId("c1").status(status).build();
+        TaskUpdateEvent event =
+                new TaskUpdateEvent(
+                        task, new TaskStatusUpdateEvent("taskId", status, "c1", true, Map.of()));
+        doAnswer(
+                        invocation -> {
+                            List<BiConsumer<ClientEvent, AgentCard>> consumers =
+                                    invocation.getArgument(1);
+                            consumers.forEach(c -> c.accept(event, agentCard));
+                            return null;
+                        })
+                .when(a2aClient)
+                .sendMessage(any(Message.class), anyList(), any());
+        A2aAgent agent =
+                A2aAgent.builder()
+                        .name("test-agent")
+                        .agentCard(agentCard)
+                        .clientReplacer(this::useMockClient)
+                        .build();
+        assertEquals(
+                "A2A task ended with state: " + state,
+                agent.call(Msg.builder().textContent("test").build()).block().getTextContent());
+        verify(a2aClient).close();
     }
 
     @Test
