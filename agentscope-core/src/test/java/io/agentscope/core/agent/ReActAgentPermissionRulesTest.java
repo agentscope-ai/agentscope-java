@@ -15,12 +15,15 @@
  */
 package io.agentscope.core.agent;
 
+import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.event.AgentEvent;
+import io.agentscope.core.event.AgentResultEvent;
 import io.agentscope.core.event.ConfirmResult;
 import io.agentscope.core.event.RequireUserConfirmEvent;
 import io.agentscope.core.event.ToolResultEndEvent;
@@ -44,6 +47,7 @@ import io.agentscope.core.permission.PermissionContextState;
 import io.agentscope.core.permission.PermissionDecision;
 import io.agentscope.core.permission.PermissionMode;
 import io.agentscope.core.permission.PermissionRule;
+import io.agentscope.core.state.AgentState;
 import io.agentscope.core.state.AgentStateStore;
 import io.agentscope.core.state.InMemoryAgentStateStore;
 import io.agentscope.core.tool.ToolBase;
@@ -204,6 +208,265 @@ class ReActAgentPermissionRulesTest {
 
     private static RuntimeContext session(String sessionId) {
         return RuntimeContext.builder().userId("u1").sessionId(sessionId).build();
+    }
+
+    static Stream<Arguments> precallAdministrationCases() {
+        PermissionContextState allow = rules(PermissionBehavior.ALLOW);
+        PermissionContextState deny = rules(PermissionBehavior.DENY);
+        PermissionContextState ask = rules(PermissionBehavior.ASK);
+        PermissionContextState trivial = PermissionContextState.builder().build();
+        return Stream.of(false, true)
+                .flatMap(
+                        store ->
+                                Stream.of("precall", null, "", "  ")
+                                        .flatMap(
+                                                sid ->
+                                                        Stream.of(
+                                                                Arguments.of(
+                                                                        allow,
+                                                                        deny,
+                                                                        false,
+                                                                        PermissionBehavior.DENY,
+                                                                        PermissionBehavior.ALLOW,
+                                                                        store,
+                                                                        sid),
+                                                                Arguments.of(
+                                                                        allow,
+                                                                        ask,
+                                                                        false,
+                                                                        PermissionBehavior.ASK,
+                                                                        PermissionBehavior.ALLOW,
+                                                                        store,
+                                                                        sid),
+                                                                Arguments.of(
+                                                                        deny,
+                                                                        allow,
+                                                                        false,
+                                                                        PermissionBehavior.ALLOW,
+                                                                        PermissionBehavior.DENY,
+                                                                        store,
+                                                                        sid),
+                                                                Arguments.of(
+                                                                        trivial,
+                                                                        trivial.withMode(
+                                                                                PermissionMode
+                                                                                        .DONT_ASK),
+                                                                        true,
+                                                                        PermissionBehavior.DENY,
+                                                                        PermissionBehavior.ALLOW,
+                                                                        store,
+                                                                        sid),
+                                                                Arguments.of(
+                                                                        trivial.withMode(
+                                                                                PermissionMode
+                                                                                        .DONT_ASK),
+                                                                        trivial.withMode(
+                                                                                PermissionMode
+                                                                                        .BYPASS),
+                                                                        true,
+                                                                        PermissionBehavior.ALLOW,
+                                                                        PermissionBehavior.DENY,
+                                                                        store,
+                                                                        sid),
+                                                                Arguments.of(
+                                                                        allow,
+                                                                        allow.withMode(
+                                                                                PermissionMode
+                                                                                        .DONT_ASK),
+                                                                        true,
+                                                                        PermissionBehavior.ALLOW,
+                                                                        PermissionBehavior.ALLOW,
+                                                                        store,
+                                                                        sid),
+                                                                Arguments.of(
+                                                                        deny,
+                                                                        deny.withMode(
+                                                                                PermissionMode
+                                                                                        .BYPASS),
+                                                                        true,
+                                                                        PermissionBehavior.DENY,
+                                                                        PermissionBehavior.DENY,
+                                                                        store,
+                                                                        sid),
+                                                                Arguments.of(
+                                                                        ask,
+                                                                        ask.withMode(
+                                                                                PermissionMode
+                                                                                        .BYPASS),
+                                                                        true,
+                                                                        PermissionBehavior.ASK,
+                                                                        PermissionBehavior.ASK,
+                                                                        store,
+                                                                        sid))));
+    }
+
+    @ParameterizedTest
+    @MethodSource("precallAdministrationCases")
+    void precallRuntimeAdministrationSurvivesFirstActivation(
+            PermissionContextState initial,
+            PermissionContextState replacement,
+            boolean modeOnly,
+            PermissionBehavior outcome,
+            PermissionBehavior builderOutcome,
+            boolean withStore,
+            String sessionId) {
+        DeployTool tool = new DeployTool();
+        InMemoryAgentStateStore store = withStore ? new InMemoryAgentStateStore() : null;
+        PermissionContextState templateSnapshot =
+                initial.withMode(
+                                initial.getMode() == PermissionMode.DEFAULT
+                                        ? PermissionMode.BYPASS
+                                        : PermissionMode.DEFAULT)
+                        .withMode(initial.getMode());
+        try (ReActAgent agent =
+                agent(model("first", "other-session", "other-user"), initial, store, tool)) {
+            String normalizedSid =
+                    sessionId == null || sessionId.isBlank()
+                            ? agent.getDefaultSessionId()
+                            : sessionId;
+            RuntimeContext ctx = session(normalizedSid);
+            RuntimeContext otherSession = session("other-session");
+            RuntimeContext otherUser =
+                    RuntimeContext.builder().userId("u2").sessionId(normalizedSid).build();
+            if (store != null) {
+                // No explicit administration on these slots: the builder still supersedes stale
+                // persistence.
+                PermissionContextState stale =
+                        rules(
+                                builderOutcome == PermissionBehavior.ALLOW
+                                        ? PermissionBehavior.DENY
+                                        : PermissionBehavior.ALLOW);
+                for (RuntimeContext other : List.of(otherSession, otherUser)) {
+                    store.save(
+                            other.getUserId(),
+                            other.getSessionId(),
+                            "agent_state",
+                            AgentState.builder()
+                                    .userId(other.getUserId())
+                                    .sessionId(other.getSessionId())
+                                    .permissionContext(stale)
+                                    .build());
+                }
+            }
+            // Complete administration before subscribing to the first ever call. No racing
+            // operations.
+            if (modeOnly) {
+                agent.setPermissionMode(session(sessionId), replacement.getMode());
+            } else {
+                agent.replacePermissionContext("u1", sessionId, replacement);
+            }
+            assertEquals(replacement, agent.getAgentState(ctx).getPermissionContext());
+            assertSame(agent.getAgentState(ctx), agent.getAgentState(session(sessionId)));
+            if (store != null) {
+                assertEquals(
+                        replacement,
+                        store.get("u1", normalizedSid, "agent_state", AgentState.class)
+                                .orElseThrow()
+                                .getPermissionContext());
+            }
+            assertPrecallOutcome(agent, session(sessionId), tool, "first", replacement, outcome, 0);
+            int beforeIsolation = tool.callCount();
+            assertPrecallOutcome(
+                    agent,
+                    otherSession,
+                    tool,
+                    "other-session",
+                    initial,
+                    builderOutcome,
+                    beforeIsolation);
+            assertPrecallOutcome(
+                    agent,
+                    otherUser,
+                    tool,
+                    "other-user",
+                    initial,
+                    builderOutcome,
+                    tool.callCount());
+            assertEquals(replacement, agent.getAgentState(ctx).getPermissionContext());
+            assertEquals(templateSnapshot, initial, "the builder template must remain immutable");
+        }
+    }
+
+    private static void assertPrecallOutcome(
+            ReActAgent agent,
+            RuntimeContext ctx,
+            DeployTool tool,
+            String id,
+            PermissionContextState expectedContext,
+            PermissionBehavior outcome,
+            int before) {
+        List<AgentEvent> events =
+                agent.streamEvents(List.of(userMsg("deploy?")), ctx)
+                        .collectList()
+                        .block(Duration.ofSeconds(10));
+        assertNotNull(events);
+        List<RequireUserConfirmEvent> prompts =
+                events.stream()
+                        .filter(RequireUserConfirmEvent.class::isInstance)
+                        .map(RequireUserConfirmEvent.class::cast)
+                        .toList();
+        Msg result =
+                events.stream()
+                        .filter(AgentResultEvent.class::isInstance)
+                        .map(AgentResultEvent.class::cast)
+                        .map(AgentResultEvent::getResult)
+                        .findFirst()
+                        .orElseThrow();
+        AgentState state = agent.getAgentState(ctx);
+        assertAll(
+                () ->
+                        assertEquals(
+                                expectedContext,
+                                state.getPermissionContext(),
+                                "state must retain the administered context"),
+                () ->
+                        assertEquals(
+                                before + (outcome == PermissionBehavior.ALLOW ? 1 : 0),
+                                tool.callCount(),
+                                "actual execution must agree with policy"),
+                () -> assertOutcome(events, id, outcome),
+                () -> assertEquals(outcome == PermissionBehavior.ASK ? 1 : 0, prompts.size()),
+                () ->
+                        assertEquals(
+                                outcome == PermissionBehavior.ASK
+                                        ? GenerateReason.PERMISSION_ASKING
+                                        : GenerateReason.MODEL_STOP,
+                                result.getGenerateReason()),
+                () -> assertEquals(ctx.getUserId(), state.getUserId()),
+                () ->
+                        assertEquals(
+                                ctx.getSessionId() == null || ctx.getSessionId().isBlank()
+                                        ? agent.getDefaultSessionId()
+                                        : ctx.getSessionId(),
+                                state.getSessionId()),
+                () -> {
+                    if (agent.getStateStore() != null) {
+                        assertEquals(
+                                expectedContext,
+                                agent.getStateStore()
+                                        .get(
+                                                state.getUserId(),
+                                                state.getSessionId(),
+                                                "agent_state",
+                                                AgentState.class)
+                                        .orElseThrow()
+                                        .getPermissionContext());
+                    }
+                });
+        if (outcome == PermissionBehavior.ASK) {
+            assertEquals(
+                    List.of(id),
+                    prompts.get(0).getToolCalls().stream().map(ToolUseBlock::getId).toList());
+            assertEquals(
+                    prompts.get(0).getReplyId(),
+                    result.getMetadata().get(Msg.METADATA_CONFIRM_REQUEST_REPLY_ID));
+            assertEquals(
+                    List.of(id),
+                    result.getContentBlocks(ToolUseBlock.class).stream()
+                            .map(ToolUseBlock::getId)
+                            .toList());
+            rejectPendingDeploy(agent, ctx, id);
+        }
     }
 
     static Stream<Arguments> replacementCases() {

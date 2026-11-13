@@ -4906,6 +4906,8 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             String sessionId,
             AgentState state,
             PermissionContextState permissionContext) {
+        // Explicit administration takes precedence over the builder, even before the first call.
+        permissionContextAppliedSlots.add(slotKey(userId, sessionId));
         state.setPermissionContext(permissionContext);
         permissionEngineCache.put(
                 slotKey(userId, sessionId), new PermissionEngine(permissionContext));

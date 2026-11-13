@@ -217,7 +217,7 @@ Runnable examples: `agentscope-examples/documentation/.../tool/PermissionContext
 
 ### Permission contexts and existing sessions
 
-A non-null `permissionContext` replaces a slot's persisted permission context when the current agent instance loads that slot for the first time. Passing `null` leaves an existing slot's context untouched.
+Unless explicitly administered on the current agent instance, a slot's previously persisted permission context is replaced by a non-null builder `permissionContext` on its first call. Passing `null` leaves an existing slot's context untouched. A completed `replacePermissionContext(...)` or `setPermissionMode(...)` on this instance takes precedence over the builder for that slot, even before its first call; other users and sessions are unaffected. An already-admitted call keeps its call-scoped permission engine.
 
 This also applies when rebuilding an agent against the same state store. To preserve runtime permission state across a rebuild, read the old context first and construct the new one from it:
 

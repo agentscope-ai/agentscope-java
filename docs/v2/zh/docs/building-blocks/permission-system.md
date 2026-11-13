@@ -217,7 +217,7 @@ ConfirmResult result =
 
 ### 权限上下文与已存在的会话
 
-非空的 `permissionContext` 会在当前 agent 实例第一次加载某个会话槽位时，替换该槽位已持久化的权限上下文。传入 `null` 时，已有槽位的上下文保持不变。
+若当前 agent 实例尚未显式管理某个槽位的权限，非空的 builder `permissionContext` 会在该槽位首次调用时替换之前持久化的权限上下文。传入 `null` 时，已有槽位的上下文保持不变。在当前实例上完成的 `replacePermissionContext(...)` 或 `setPermissionMode(...)` 对该槽位优先于 builder，即使发生在首次调用之前；其他用户和会话不受影响。已获准进入执行的调用仍使用其调用级权限引擎。
 
 重建 agent 并复用同一个 state store 时，这个规则同样适用。如果希望保留运行时的权限状态，请先读取旧上下文，再基于它构造新的上下文：
 
