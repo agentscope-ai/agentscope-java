@@ -188,7 +188,7 @@ ReActAgent.Builder agentBuilder =
 | `stateStore` | `AgentStateStore` | `null`（不持久化） | 配置后 agent 在每次 `call` 后自动加载/保存 `AgentState`，按该次调用 `RuntimeContext` 的 `(userId, sessionId)` 寻址 |
 | `defaultSessionId` | `String` | agent `name` | 当某次调用的 `RuntimeContext` 没带 `sessionId` 时的兜底值 |
 | `permissionContext` | `PermissionContextState` | 默认 `DEFAULT` 模式 | 工具执行的细粒度规则；非空上下文会在激活槽位时替换已持久化的上下文，参见 [权限系统](/v2/zh/docs/building-blocks/permission-system) |
-| `maxIters` | `int` | `10` | ReAct 主循环最大迭代次数 |
+| `maxIters` | `int` | `10` | 单次回复的 ReAct 主循环最大迭代次数。人工确认或外部工具执行后恢复待处理的工具调用时，沿用本次回复的预算。 |
 
 ## 运行智能体
 
