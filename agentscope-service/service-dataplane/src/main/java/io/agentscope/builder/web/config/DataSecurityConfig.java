@@ -19,6 +19,7 @@ import io.agentscope.builder.control.ControlPlaneClient;
 import io.agentscope.builder.web.auth.EnvironmentKeyAuthFilter;
 import io.agentscope.builder.web.auth.InternalTokenAuthFilter;
 import io.agentscope.builder.web.auth.JwtService;
+import io.agentscope.builder.web.auth.LocalDevAuthFilter;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.JwtException;
 import java.util.List;
@@ -67,7 +68,16 @@ public class DataSecurityConfig {
             ServerHttpSecurity http,
             JwtService jwtService,
             ControlPlaneClient controlPlaneClient,
-            @Value("${builder.internal-token:${BUILDER_INTERNAL_TOKEN:}}") String internalToken) {
+            @Value("${builder.internal-token:${BUILDER_INTERNAL_TOKEN:}}") String internalToken,
+            @Value("${builder.local-dev:${BUILDER_LOCAL_DEV:false}}") boolean localDev) {
+        if (localDev) {
+            return http.csrf(ServerHttpSecurity.CsrfSpec::disable)
+                    .cors(cors -> cors.configurationSource(corsConfigurationSource()))
+                    .authorizeExchange(auth -> auth.anyExchange().permitAll())
+                    .addFilterBefore(
+                            new LocalDevAuthFilter(), SecurityWebFiltersOrder.AUTHENTICATION)
+                    .build();
+        }
         return http.csrf(ServerHttpSecurity.CsrfSpec::disable)
                 .cors(cors -> cors.configurationSource(corsConfigurationSource()))
                 .authorizeExchange(

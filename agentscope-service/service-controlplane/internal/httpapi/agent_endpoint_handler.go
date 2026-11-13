@@ -40,6 +40,7 @@ import (
 	controlmodel "github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/controlplane/model"
 	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/invocation"
 	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/orchestration"
+	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/product"
 	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/secretcrypto"
 	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/store"
 )
@@ -1071,6 +1072,12 @@ func (s *Server) authenticateEndpoint(c *gin.Context, endpoint *controlmodel.End
 		(requirePublished && endpoint.Status != controlmodel.EndpointPublished) {
 		c.JSON(http.StatusNotFound, ErrorResponse{Error: "endpoint is unavailable"})
 		return false
+	}
+	if s.localDev {
+		s.setLocalDeveloper(c)
+		c.Set(endpointPrincipalContextKey, "platform-user:"+product.LocalDeveloperID)
+		c.Set(endpointActorContextKey, controlmodel.Actor{Type: controlmodel.ActorHuman, Ref: product.LocalDeveloperID})
+		return true
 	}
 	var policy endpointAuthPolicy
 	if json.Unmarshal(endpoint.AuthPolicy, &policy) != nil {

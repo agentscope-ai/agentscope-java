@@ -16,8 +16,8 @@ Prepare Kubernetes, Helm and reachable PostgreSQL. Workspaces need an RWX Storag
 You can install the Chart directly from the public Helm repository, without cloning the source. Download the matching configuration template and initialization SQL:
 
 ```bash
-curl -fLO https://chickenlj.github.io/helm-charts/examples/2.1.0-BETA1/kubernetes.env.example
-curl -fLO https://chickenlj.github.io/helm-charts/examples/2.1.0-BETA1/postgres-init.sql
+curl -sS --fail-with-body -LO https://chickenlj.github.io/helm-charts/examples/2.1.0-BETA1/kubernetes.env.example
+curl -sS --fail-with-body -LO https://chickenlj.github.io/helm-charts/examples/2.1.0-BETA1/postgres-init.sql
 ```
 
 Execute the SQL in the target database as its application owner to create `cp`, `rt` and `dp`. Plan backups for the database, files and keys. For an offline installation, download `agentscope-service-2.1.0-BETA1-kubernetes.tar.gz` and `SHA256SUMS` from the [GitHub Release](https://github.com/agentscope-ai/agentscope-java/releases/tag/v2.1.0-BETA1), verify the checksum and extract the bundle. It includes the Chart and the same configuration files.
@@ -158,3 +158,218 @@ A reverse proxy on the same host can forward requests to `127.0.0.1:18080`. If i
 To access the deployment from another device or test public OAuth or Channel callbacks, configure an HTTPS entry point for Gateway. Prepare a domain and TLS certificate, then forward requests through a reverse proxy. Set `BUILDER_OAUTH_PUBLIC_URL` in `.env` to the actual external address, such as `https://agentscope.example.com`. If Gateway also needs a different listening address or port, change `BIND_ADDRESS` and `GATEWAY_PORT`, then recreate the containers to apply the configuration.
 
 Execution progress travels over a long-lived SSE connection, so the proxy needs to forward events promptly, disable event-stream caching, and allow sufficiently long read timeouts. After configuration, verify login and run a task that produces content over time. Check that events arrive incrementally, the page can reconnect after a refresh, and the callbacks your application uses are working.
+
+
+## Install the published Docker Compose bundle
+
+Without Kubernetes, install the published Compose bundle. It uses released images with authentication and authorization enabled, requiring no source or Java/Go build tools. Prepare Compose v2, Bash, curl, and OpenSSL, then download and verify:
+
+```bash
+curl -fLO https://github.com/agentscope-ai/agentscope-java/releases/download/v2.1.0-BETA1/agentscope-service-2.1.0-BETA1-compose.tar.gz
+curl -fLO https://github.com/agentscope-ai/agentscope-java/releases/download/v2.1.0-BETA1/SHA256SUMS
+awk '$2 == "agentscope-service-2.1.0-BETA1-compose.tar.gz"' SHA256SUMS > compose.sha256
+if command -v sha256sum >/dev/null 2>&1; then
+  sha256sum -c compose.sha256
+else
+  shasum -a 256 -c compose.sha256
+fi
+```
+
+```bash
+tar -xzf agentscope-service-2.1.0-BETA1-compose.tar.gz
+cd agentscope-service
+./init-env.sh 2.1.0-BETA1 sca-registry.cn-hangzhou.cr.aliyuncs.com/agentscope
+```
+
+Set `DASHSCOPE_API_KEY` in the generated `.env` and keep `BUILDER_LOCAL_DEV=false`. Prepare an Environment meeting your isolation needs; a trusted local evaluation may set `BUILDER_ALLOW_LOCAL_ENVIRONMENT=true`, running tools inside Dataplane.
+
+```bash
+docker compose pull
+docker compose up -d --wait --wait-timeout 600
+docker compose ps
+curl -fsS http://localhost:18080/actuator/health
+```
+
+Open `http://localhost:18080`, sign in with the bootstrap administrator from `.env`, change the password, and configure API access below. Stop with `docker compose down` to retain volumes; see [operations](/v2/en/service/operations#compose-operations) for backups and upgrades.
+
+<span id="production-api-access"></span>
+
+## Authentication and authorization
+
+Keep `BUILDER_LOCAL_DEV=false` in production. The published-image Compose configuration disables local mode by default, and the complete Service Helm Chart disables it too. Sign in to Console using `CONTROL_PLANE_BOOTSTRAP_ADMIN` and `CONTROL_PLANE_BOOTSTRAP_PASSWORD` from your `.env` or Secret, then change the password in Profile.
+
+Local tutorials omit authentication headers. Before using their APIs in production, sign in and select an authorized namespace:
+
+```bash
+export BASE_URL="https://agentscope.example.com"
+```
+
+Enter your platform username and password. On a new deployment, use `admin` and the password from `.env`, or the password you changed in Profile.
+
+```bash
+printf 'Username: '
+IFS= read -r LOGIN_USER
+printf 'Password: '
+IFS= read -r -s LOGIN_PASSWORD
+printf '\n'
+
+LOGIN_JSON=$(
+  jq -n --arg username "$LOGIN_USER" --arg password "$LOGIN_PASSWORD" \
+    '{username: $username, password: $password}' \
+  | curl -sS --fail-with-body "$BASE_URL/api/auth/login" \
+      -H "Content-Type: application/json" \
+      --data-binary @-
+)
+unset LOGIN_PASSWORD
+TOKEN=$(jq -er '.token' <<< "$LOGIN_JSON")
+
+curl -sS --fail-with-body "$BASE_URL/api/v1/me/namespaces" \
+  -H "Authorization: Bearer $TOKEN" \
+  | jq '.items[] | {tenant, name}'
+```
+
+Choose a namespace from the response and use its `tenant` and `name` for `TENANT` and `NAMESPACE` above. The user token manages resources; see [application integration](/v2/en/service/service-api) for application credentials.
+
+```bash
+export TENANT="YOUR_AUTHORIZED_TENANT"
+export NAMESPACE="YOUR_AUTHORIZED_NAMESPACE"
+```
+
+Include these headers on management requests. Scope fields in the body and query must match the selected scope:
+
+```bash
+curl -sS --fail-with-body "$BASE_URL/api/v1/agents" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "X-AgentScope-Tenant: $TENANT" \
+  -H "X-AgentScope-Namespace: $NAMESPACE"
+```
+
+See [production access management](/v2/en/service/access) for accounts, namespace roles, resource grants, and private work. Tool confirmations and designated approvals require the authorized human's identity; an application key does not represent that human. Model, tool, and OAuth providers keep their own credentials in local mode too.
+
+<span id="production-application-credentials"></span>
+
+## Application credentials
+
+Keep an actual `AGENT_ID` from [creating an Agent](/v2/en/service/create-managed-agent). The Application owner performs these management operations.
+
+Use your platform Bearer token while developing. For a business backend, create an Application and issue an API key with explicit grants for the Agents, Teams or Workflows it may use. Credentials belong to the Application: replacing a key preserves access to its Sessions, while another application cannot read those Sessions simply because it uses the same Agent. Keep keys in your backend and check the business user's permissions there.
+
+
+```bash
+set -euo pipefail
+
+APPLICATION_JSON=$(
+  curl -sS --fail-with-body "$BASE_URL/api/v1/applications" \
+    -H "Authorization: Bearer $TOKEN" \
+    -H "X-AgentScope-Tenant: $TENANT" \
+    -H "X-AgentScope-Namespace: $NAMESPACE" \
+    -H "Content-Type: application/json" \
+    --data-binary @- <<JSON
+{
+  "tenant": "$TENANT",
+  "namespace": "$NAMESPACE",
+  "name": "report-application"
+}
+JSON
+)
+APPLICATION_ID=$(jq -er '.application.id' <<< "$APPLICATION_JSON")
+```
+
+Issue a credential that can call this Agent:
+
+```bash
+KEY_JSON=$(
+  curl -sS --fail-with-body "$BASE_URL/api/v1/applications/$APPLICATION_ID/credentials" \
+    -H "Authorization: Bearer $TOKEN" \
+    -H "X-AgentScope-Tenant: $TENANT" \
+    -H "X-AgentScope-Namespace: $NAMESPACE" \
+    -H "Content-Type: application/json" \
+    --data-binary @- <<JSON
+{
+  "name": "backend",
+  "scopes": [
+    "invoke",
+    "read",
+    "interact",
+    "cancel",
+    "webhooks:write"
+  ],
+  "targets": [
+    {
+      "type": "agent",
+      "id": "$AGENT_ID"
+    }
+  ]
+}
+JSON
+)
+AGENTSCOPE_API_KEY=$(jq -er '.apiKey' <<< "$KEY_JSON")
+CREDENTIAL_ID=$(jq -er '.credential.id' <<< "$KEY_JSON")
+```
+
+A key is returned in plaintext only when it is issued. To rotate it, create a replacement, update and verify your application, then revoke the previous credential. The scopes are `invoke`, `read`, `interact`, `cancel` and `webhooks:write`. An application key does not become a designated human approver merely because it has `interact`.
+
+<Accordion title="List and revoke old credentials">
+
+```bash
+curl -sS --fail-with-body "$BASE_URL/api/v1/applications/$APPLICATION_ID/credentials" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "X-AgentScope-Tenant: $TENANT" \
+  -H "X-AgentScope-Namespace: $NAMESPACE"
+```
+
+Issue and verify a replacement with the creation request above. Then replace `OLD_CREDENTIAL_ID` with the old credential ID from the list. This disables that key.
+
+```bash
+OLD_CREDENTIAL_ID="OLD_CREDENTIAL_ID_FROM_LIST"
+curl -sS --fail-with-body -X DELETE "$BASE_URL/api/v1/applications/$APPLICATION_ID/credentials/$OLD_CREDENTIAL_ID" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "X-AgentScope-Tenant: $TENANT" \
+  -H "X-AgentScope-Namespace: $NAMESPACE"
+```
+
+</Accordion>
+
+For application Session API calls, add `-H "X-API-Key: $AGENTSCOPE_API_KEY"` to the unauthenticated requests in local tutorials. Use the authorized user's Bearer token for human approval. Python callers use `ServiceClient(BASE_URL, AGENTSCOPE_API_KEY)`; management clients use a user token.
+
+
+### Application limits
+
+Read the current version before updating concurrency and token limits:
+
+```bash
+APPLICATION_JSON=$(
+  curl -sS --fail-with-body "$BASE_URL/api/v1/applications/$APPLICATION_ID" \
+    -H "Authorization: Bearer $TOKEN" \
+    -H "X-AgentScope-Tenant: $TENANT" \
+    -H "X-AgentScope-Namespace: $NAMESPACE"
+)
+APPLICATION_VERSION=$(jq -er '.application.version' <<< "$APPLICATION_JSON")
+
+curl -sS --fail-with-body -X PATCH "$BASE_URL/api/v1/applications/$APPLICATION_ID" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "X-AgentScope-Tenant: $TENANT" \
+  -H "X-AgentScope-Namespace: $NAMESPACE" \
+  -H "Content-Type: application/json" \
+  --data-binary @- <<JSON
+{
+  "version": $APPLICATION_VERSION,
+  "maxConcurrent": 5,
+  "tokenBudget": 1000000
+}
+JSON
+```
+
+<span id="production-cli-install"></span>
+
+## Install the production CLI and Runtime Host
+
+Prepare Go 1.26+ on the target Linux/macOS host and install both published commands using the standard Go module version:
+
+```bash
+go install github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/cmd/as@v2.1.0-BETA1
+go install github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/cmd/agentscope-runtime-host@v2.1.0-BETA1
+as connect https://agentscope.example.com
+```
+
+Configure PATH using the [Runtime Host guide](/v2/en/service/runtime-host#install-with-go), substitute your actual Service URL, and follow CLI login or short-lived enrollment prompts. Install and authenticate the provider separately.

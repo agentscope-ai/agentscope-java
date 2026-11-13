@@ -4,7 +4,7 @@ en_link: /v2/en/service/create-team
 ---
 
 <Note>
-此为预览文档，正式版本尚未发布。
+本页使用 `2.1.0-BETA1` 预发布版本。
 </Note>
 
 Team 将多个已注册 Agent 组织成一个可被分派和调用的协作单元。Leader 理解目标、选择成员并汇总交付，成员通过任务与讨论交换结果。业务应用只需提交目标和输入，不必把团队内部每次委派改写成前端流程。
@@ -30,48 +30,91 @@ Managed、External、Hosted Agent 可以按各自能力加入同一 Team。先�
 
 ## 创建一个复核团队
 
-以下示例使用 Bash、`curl` 和 `jq`。先按[认证与空间](/v2/zh/service/api-reference#认证与空间)准备 `SERVICE_URL`（Service 地址）、`TOKEN`（用户 Bearer token）、`TENANT`、`NAMESPACE`，并定义请求函数：
+以下示例使用 Bash、`curl` 和 `jq`。先按[认证与空间](/v2/zh/service/api-reference#认证与空间)准备 `BASE_URL`（Service 地址）、`TENANT`、`NAMESPACE`，在同一个 Bash 终端执行后续步骤：
 
 ```bash
-api() {
-  curl --fail-with-body --silent --show-error \
-    -H "Authorization: Bearer $TOKEN" \
-    -H "X-AgentScope-Tenant: $TENANT" \
-    -H "X-AgentScope-Namespace: $NAMESPACE" \
-    -H 'Content-Type: application/json' "$@"
-}
+set -euo pipefail
 ```
 
 准备资料助手和复核助手，将其 ID 分别设为 `LEADER_AGENT_ID`、`REVIEWER_AGENT_ID`。下面让 Leader 整理材料，成员负责复核。Leader 不需要重复列入 `members`，每个成员的 Agent ID 和 role 必须唯一。
 
 ```bash
-created=$(api "$SERVICE_URL/api/v1/teams" --data "$(jq -n \
-  --arg tenant "$TENANT" --arg namespace "$NAMESPACE" \
-  --arg leader "$LEADER_AGENT_ID" --arg reviewer "$REVIEWER_AGENT_ID" \
-  '{tenant:$tenant,namespace:$namespace,name:"资料复核团队",leaderAgentId:$leader,
-    instructions:"Leader 整理材料后委派 reviewer 检查证据与缺失项，按反馈修订并交付统一报告。",
-    policy:{maxActiveTasks:3,maxFanout:2,requireReview:true},
-    members:[{agentId:$reviewer,role:"reviewer",instructions:"检查事实、证据及未确认信息。"}]}')")
-TEAM_ID=$(jq -r '.team.id' <<<"$created")
-api "$SERVICE_URL/api/v1/teams/$TEAM_ID/overview"
+TEAM_JSON=$(
+  curl -sS --fail-with-body "$BASE_URL/api/v1/teams" \
+    -H "Content-Type: application/json" \
+    --data-binary @- <<JSON
+{
+  "tenant": "$TENANT",
+  "namespace": "$NAMESPACE",
+  "name": "资料复核团队",
+  "leaderAgentId": "$LEADER_AGENT_ID",
+  "instructions": "Leader 整理材料后委派 reviewer 检查证据与缺失项，按反馈修订并交付统一报告。",
+  "policy": {
+    "maxActiveTasks": 3,
+    "maxFanout": 2,
+    "requireReview": true
+  },
+  "members": [
+    {
+      "agentId": "$REVIEWER_AGENT_ID",
+      "role": "reviewer",
+      "instructions": "检查事实、证据及未确认信息。"
+    }
+  ]
+}
+JSON
+)
+TEAM_ID=$(jq -er '.team.id' <<< "$TEAM_JSON")
+```
+
+```bash
+curl -sS --fail-with-body "$BASE_URL/api/v1/teams/$TEAM_ID/overview"
 ```
 
 `instructions` 描述协作方式，成员的 `instructions` 说明各自职责，`policy` 约束并发、委派与验收。概览返回团队的配置和运行情况；创建成功不代表每个运行时已经在线，应进一步核对成员可用性并执行一个小任务。完整策略见 [Team 配置](/v2/zh/service/team-configuration)。
 
 ## 提交团队任务并读取结果
 
-团队准备好后，直接创建以它为目标的 Session。这里继续使用平台用户身份验证；接入业务后端时，可以按[服务 API](/v2/zh/service/service-api)改用授权这个 Team 的应用凭据。
+团队准备好后，直接创建以它为目标的 Session。本地模式直接调用；生产调用身份见[生产部署](/v2/zh/service/kubernetes#production-application-credentials)。
 
 ```bash
-session=$(api "$SERVICE_URL/api/v1/agent-sessions" --data "$(jq -n \
-  --arg team "$TEAM_ID" '{target:{type:"team",id:$team}}')")
-SESSION_ID=$(jq -er '.id' <<<"$session")
-turn=$(api "$SERVICE_URL/api/v1/agent-sessions/$SESSION_ID/turns" \
-  -H 'Idempotency-Key: team-report-001' \
-  --data '{"message":"Review this week’s material and deliver a report with sources."}')
-TURN_ID=$(jq -er '.id' <<<"$turn")
-api "$SERVICE_URL/api/v1/agent-sessions/$SESSION_ID/turns/$TURN_ID"
-api "$SERVICE_URL/api/v1/agent-sessions/$SESSION_ID/snapshot"
+SESSION_JSON=$(
+  curl -sS --fail-with-body "$BASE_URL/api/v1/agent-sessions" \
+    -H "Content-Type: application/json" \
+    -H "Idempotency-Key: team-session-001" \
+    --data-binary @- <<JSON
+{
+  "target": {
+    "type": "team",
+    "id": "$TEAM_ID"
+  }
+}
+JSON
+)
+SESSION_ID=$(jq -er '.id' <<< "$SESSION_JSON")
+SESSION_URL="$BASE_URL/api/v1/agent-sessions/$SESSION_ID"
+```
+
+```bash
+TURN_JSON=$(
+  curl -sS --fail-with-body "$SESSION_URL/turns" \
+    -H "Content-Type: application/json" \
+    -H "Idempotency-Key: team-report-001" \
+    --data-binary @- <<'JSON'
+{
+  "message": "Review this week’s material and deliver a report with sources."
+}
+JSON
+)
+TURN_ID=$(jq -er '.id' <<< "$TURN_JSON")
+```
+
+```bash
+curl -sS --fail-with-body "$SESSION_URL/turns/$TURN_ID"
+```
+
+```bash
+curl -sS --fail-with-body "$SESSION_URL/snapshot"
 ```
 
 Service 在后台派发 Leader 和成员任务，并将它们的进度整理到这个 Turn。应用用 Session 快照恢复页面，再订阅事件；根 Turn 的状态用于判断团队是否完成，而不是任意一个成员的完成通知。需要进一步诊断时，可以从控制台进入关联的 Issue、Run 和执行图。人工分派与验收仍可使用[任务管理](/v2/zh/service/issues)，但应用调用无需自行创建这些内部记录。
@@ -84,7 +127,7 @@ Service 在后台派发 Leader 和成员任务，并将它们的进度整理到�
 
 ## 提供给业务应用
 
-应用调用 Team 时，直接创建 `target:{"type":"team","id":"TEAM_ID"}` 的 Session，再向 `/turns` 提交工作。Service 会将每个 Turn 转成一项团队任务，应用通过同一个 Session 查询进度、待办和产物。调用凭据在 Application 下签发，并显式授权这个 Team；调用方不需要获得修改成员或创建 Agent 的管理权限。完整流程见[服务 API](/v2/zh/service/service-api)。
+应用调用 Team 时，直接创建 `target:{"type":"team","id":"TEAM_ID"}` 的 Session，再向 `/turns` 提交工作。Service 会将每个 Turn 转成一项团队任务，应用通过同一个 Session 查询进度、待办和产物。本地模式直接调用；生产调用身份配置见[生产指南](/v2/zh/service/kubernetes#production-application-credentials)。完整流程见[服务 API](/v2/zh/service/service-api)。
 
 这也是 Agent API 覆盖 Team 的方式：对外提供统一的调用与结果协议，内部仍使用团队自己的委派和协作机制。Team 的任务执行不等于 Managed Agent 的可恢复会话；不要把 Managed 专属的 checkpoint、文件等会话接口套用于所有成员。
 
@@ -103,7 +146,7 @@ Service 在后台派发 Leader 和成员任务，并将它们的进度整理到�
 
 ## 业务应用的协作 API
 
-以下操作使用用户 Bearer token 和相应工作授权。它们操作持久业务记录，不要求调用方知道成员当前在哪个运行时执行。
+以下操作可在本地开发模式直接执行。它们操作持久业务记录，不要求调用方知道成员当前在哪个运行时执行。
 
 | 操作 | API 与关键参数 |
 | --- | --- |
@@ -112,7 +155,7 @@ Service 在后台派发 Leader 和成员任务，并将它们的进度整理到�
 | 读取讨论 | `GET /api/v1/issues/{issueId}/comments`：`limit`、`cursor`、可选 `threadId`、`rootsOnly`；返回 `items`、`nextCursor` |
 | 创建独立子目标 | `POST /api/v1/issues/{issueId}/children`：标题、说明、负责人及验收字段，返回 `issue`、`agentTask` |
 | 查询子工作 | `GET /api/v1/issues`：`tenant`、`namespace`、`parentIssueId` |
-| 文件交付 | `POST /api/v1/artifacts/uploads`：multipart 的 `tenant`、`namespace`、`issueId`、`relation`、`file` |
+| 文件交付 | `POST /api/v1/artifacts/uploads`：multipart 的 `tenant`、`namespace`、`targetType:"issue"`、`targetRef`、`relation`、`file` |
 | 读取产物 | `GET /api/v1/issues/{issueId}/artifacts`，随后 `POST /api/v1/artifacts/{artifactId}/download` |
 
 `mentions[].type` 选择 `agent`、`team` 或 `human`，`ref` 使用对应身份标识。正文中的名字不是结构化路由。提交评论后检查返回的 `routes`，确认是已排队、已合并还是被策略阻止；这些结果比“评论写入成功”更能说明是否产生了后续工作。仅记录进度时使用 `type:"progress"`，不设置 mentions，避免隐式派发。
@@ -181,3 +224,107 @@ Leader 根据上下文选择成员。需要固定节点顺序、条件和汇合�
 恢复依赖持久工作和执行状态；Runtime fresh fallback 重建上下文，不迁移旧进程。排障时沿 Issue → Run → Node → Task → Attempt 检查：未派发看就绪度与策略，执行卡住看后端与确认请求，交付未结束看成员义务和协调节点状态。
 
 操作示例见 [Team API 指南](/v2/zh/service/create-team)，页面诊断见[控制台：团队与编排](/v2/zh/service/console/index#console-orchestration)。
+
+<span id="curl-management"></span>
+
+## 评论、子工作与文件交付示例
+
+以下沿用[API 身份准备](/v2/zh/service/create-managed-agent#api-setup)的本地地址和默认空间变量。
+
+从实际团队工作中取得 ISSUE_ID。以下先预览路由，再提交同一条评论；纯进度记录应使用 type:"progress" 且不带 mentions。
+
+```bash
+ISSUE_ID="YOUR_ISSUE_ID"
+```
+
+```bash
+curl -sS --fail-with-body "$BASE_URL/api/v1/issues/$ISSUE_ID/comments/preview-routing" \
+  -H "Content-Type: application/json" \
+  --data-binary @- <<JSON
+{
+  "content": "Please review the evidence and flag missing sources.",
+  "mentions": [
+    {
+      "type": "agent",
+      "ref": "$REVIEWER_AGENT_ID"
+    }
+  ]
+}
+JSON
+```
+
+```bash
+curl -sS --fail-with-body "$BASE_URL/api/v1/issues/$ISSUE_ID/comments" \
+  -H "Content-Type: application/json" \
+  --data-binary @- <<JSON
+{
+  "content": "Please review the evidence and flag missing sources.",
+  "mentions": [
+    {
+      "type": "agent",
+      "ref": "$REVIEWER_AGENT_ID"
+    }
+  ]
+}
+JSON
+```
+
+```bash
+curl -sS --fail-with-body -G "$BASE_URL/api/v1/issues/$ISSUE_ID/comments" \
+  --data-urlencode "limit=25" \
+  --data-urlencode "rootsOnly=true"
+```
+
+<Accordion title="拆分子工作">
+
+需要独立验收的子目标才创建 child Issue；这会派发新的工作。
+
+```bash
+curl -sS --fail-with-body "$BASE_URL/api/v1/issues/$ISSUE_ID/children" \
+  -H "Content-Type: application/json" \
+  --data-binary @- <<JSON
+{
+  "title": "Verify evidence dates",
+  "description": "Inspect supplied sources and list unconfirmed dates.",
+  "assigneeType": "agent",
+  "assigneeRef": "$REVIEWER_AGENT_ID",
+  "acceptanceCriteria": [
+    "Every date is cited or explicitly unconfirmed."
+  ]
+}
+JSON
+```
+
+```bash
+curl -sS --fail-with-body -G "$BASE_URL/api/v1/issues" \
+  --data-urlencode "tenant=$TENANT" \
+  --data-urlencode "namespace=$NAMESPACE" \
+  --data-urlencode "parentIssueId=$ISSUE_ID" \
+  --data-urlencode "limit=25"
+```
+
+</Accordion>
+
+上传本机已经生成的 report.md 并关联这项 Issue。multipart 不要手动设置 Content-Type；curl 会生成边界。下载接口返回文件字节，使用 --output 保存。
+
+```bash
+ARTIFACT_JSON=$(
+  curl -sS --fail-with-body "$BASE_URL/api/v1/artifacts/uploads" \
+    --form-string "tenant=$TENANT" \
+    --form-string "namespace=$NAMESPACE" \
+    --form-string "targetType=issue" \
+    --form-string "targetRef=$ISSUE_ID" \
+    --form-string "relation=attachment" \
+    -F "file=@report.md;type=text/markdown"
+)
+ARTIFACT_ID=$(jq -er '.artifact.id' <<< "$ARTIFACT_JSON")
+```
+
+```bash
+curl -sS --fail-with-body "$BASE_URL/api/v1/issues/$ISSUE_ID/artifacts"
+```
+
+```bash
+curl -sS --fail-with-body -X POST "$BASE_URL/api/v1/artifacts/$ARTIFACT_ID/download" \
+  --output downloaded-report.md
+```

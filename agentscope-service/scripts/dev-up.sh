@@ -44,8 +44,10 @@ PG_CONTAINER="${BUILDER_PG_CONTAINER:-agentscope-dev-pg}"
 RESET_DB="${BUILDER_RESET_DB:-${BUILDER_REBUILD:-0}}"
 
 # jdbc profile requires >=32 chars and rejects known short defaults (see InternalTokenStartupValidator)
+export BUILDER_LOCAL_DEV="${BUILDER_LOCAL_DEV:-true}"
 export BUILDER_INTERNAL_TOKEN="${BUILDER_INTERNAL_TOKEN:-local-dev-internal-token-at-least-32chars}"
 export BUILDER_JWT_SECRET="${BUILDER_JWT_SECRET:-builder-default-dev-secret-change-in-production-32chars}"
+export SERVER_ADDRESS="127.0.0.1"
 export SPRING_PROFILES_ACTIVE="${SPRING_PROFILES_ACTIVE:-jdbc}"
 
 DB_URL="jdbc:postgresql://localhost:${PG_PORT}/builder?currentSchema=dp"
@@ -258,7 +260,7 @@ echo "==> Starting planes (Postgres: ${DB_URL})"
 start control "$PID_DIR/control.pid" \
     env CONTROL_PLANE_ENABLE_KUBERNETES=false \
         CONTROL_PLANE_PRODUCT_DSN="$CONTROL_PLANE_DSN" \
-        CONTROL_PLANE_HTTP_BIND=":${CONTROL_PORT}" \
+        CONTROL_PLANE_HTTP_BIND="127.0.0.1:${CONTROL_PORT}" \
         BUILDER_JWT_SECRET="$BUILDER_JWT_SECRET" \
         BUILDER_INTERNAL_TOKEN="$BUILDER_INTERNAL_TOKEN" \
         BUILDER_DATA_URL="http://localhost:${DATA_PORT}" \

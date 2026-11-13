@@ -23,14 +23,16 @@ from urllib.request import Request, urlopen
 
 class ServiceClient:
     def __init__(self, base_url: str, api_key: str = "", *, api_token: str = "", timeout: float = 30, tenant: str = "", namespace: str = "") -> None:
-        if bool(api_key) == bool(api_token):
-            raise ValueError("provide exactly one application api_key or platform api_token")
+        if api_key and api_token:
+            raise ValueError("provide an application api_key or platform api_token, not both")
         self.base_url, self.api_key, self.timeout = base_url.rstrip("/"), api_key, timeout
         self.api_token = api_token
         self.tenant, self.namespace = tenant, namespace
 
     def _headers(self) -> dict[str, str]:
-        headers = {"X-API-Key": self.api_key} if self.api_key else {"Authorization": "Bearer " + self.api_token}
+        headers = {"X-API-Key": self.api_key} if self.api_key else {}
+        if self.api_token:
+            headers["Authorization"] = "Bearer " + self.api_token
         if self.tenant:
             headers["X-AgentScope-Tenant"] = self.tenant
         if self.namespace:

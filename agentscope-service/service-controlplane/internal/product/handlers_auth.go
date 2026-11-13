@@ -23,6 +23,7 @@ import (
 func (s *Server) registerAuth(r gin.IRouter) {
 	s.registerAccountManagement(r)
 	r.POST("/api/auth/login", s.login)
+	r.GET("/api/auth/dev-session", s.localDevSession)
 	r.GET("/api/auth/me", s.me)
 	r.GET("/api/user/profile", s.profile)
 	r.POST("/api/user/change-password", s.changePassword)

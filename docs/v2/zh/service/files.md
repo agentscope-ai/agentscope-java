@@ -16,13 +16,12 @@ Agent 通过工具读写文件时，工作位置由 Environment 决定；上传�
 
 ```bash
 curl -sS --fail-with-body "$SESSION_URL/capabilities" \
-  -H "X-API-Key: $AGENTSCOPE_API_KEY" | jq '.capabilities | {files, file_input}'
+  | jq '.capabilities | {files, file_input}'
 ```
 
 ```bash
 FILE_JSON=$(
   curl -sS --fail-with-body "$SESSION_URL/files" \
-    -H "X-API-Key: $AGENTSCOPE_API_KEY" \
     -H "Idempotency-Key: report-file-001" \
     -H "X-File-Name: report.pdf" \
     -H "Content-Type: application/pdf" \
@@ -36,7 +35,6 @@ FILE_ID=$(jq -er '.id' <<< "$FILE_JSON")
 ```bash
 TURN_JSON=$(
   curl -sS --fail-with-body "$SESSION_URL/turns" \
-    -H "X-API-Key: $AGENTSCOPE_API_KEY" \
     -H "Content-Type: application/json" \
     -H "Idempotency-Key: review-report-001" \
     --data-binary @- <<JSON
@@ -72,7 +70,6 @@ TURN_ID=$(jq -er '.id' <<< "$TURN_JSON")
 
 ```bash
 curl -sS --fail-with-body -G "$SESSION_URL/files" \
-  -H "X-API-Key: $AGENTSCOPE_API_KEY" \
   --data-urlencode "limit=20" \
   --data-urlencode "offset=0"
 ```
@@ -81,7 +78,6 @@ curl -sS --fail-with-body -G "$SESSION_URL/files" \
 
 ```bash
 curl -sS --fail-with-body "$SESSION_URL/files/$FILE_ID/content" \
-  -H "X-API-Key: $AGENTSCOPE_API_KEY" \
   --output downloaded-report.pdf
 ```
 
@@ -93,7 +89,6 @@ Managed Session 可以通过 `POST /artifacts` 将已上传的文件显式发布
 RESULT_FILE_ID="UPLOADED_RESULT_FILE_ID"
 ARTIFACT_JSON=$(
   curl -sS --fail-with-body "$SESSION_URL/artifacts" \
-    -H "X-API-Key: $AGENTSCOPE_API_KEY" \
     -H "Content-Type: application/json" \
     -H "Idempotency-Key: publish-report-001" \
     --data-binary @- <<JSON
@@ -108,21 +103,18 @@ ARTIFACT_ID=$(jq -er '.artifact_id' <<< "$ARTIFACT_JSON")
 列出会话产物，再读取刚发布的元数据：
 
 ```bash
-curl -sS --fail-with-body "$SESSION_URL/artifacts" \
-  -H "X-API-Key: $AGENTSCOPE_API_KEY"
+curl -sS --fail-with-body "$SESSION_URL/artifacts"
 ```
 
 ```bash
 ARTIFACT_METADATA=$(
-  curl -sS --fail-with-body "$SESSION_URL/artifacts/$ARTIFACT_ID" \
-    -H "X-API-Key: $AGENTSCOPE_API_KEY"
+  curl -sS --fail-with-body "$SESSION_URL/artifacts/$ARTIFACT_ID"
 )
 RESULT_FILE_ID=$(jq -er '.file_id' <<< "$ARTIFACT_METADATA")
 ```
 
 ```bash
 curl -sS --fail-with-body "$SESSION_URL/files/$RESULT_FILE_ID/content" \
-  -H "X-API-Key: $AGENTSCOPE_API_KEY" \
   --output result-report.pdf
 ```
 
@@ -132,7 +124,6 @@ curl -sS --fail-with-body "$SESSION_URL/files/$RESULT_FILE_ID/content" \
 
 ```bash
 curl -sS --fail-with-body "$SESSION_URL/artifacts" \
-  -H "X-API-Key: $AGENTSCOPE_API_KEY" \
   -H "Content-Type: application/json" \
   -H "Idempotency-Key: publish-external-report-001" \
   --data-binary @- <<'JSON'
@@ -153,14 +144,12 @@ Team 和 Workflow 的任务产物由执行器回报，应用可以从 Turn 的 `
 以下下载路径用于 Team、Workflow 回报的任务产物。先查看列表，再把 `TURN_ARTIFACT_ID` 替换为实际产物 ID；它与上面的 Managed 产物 ID 属于不同资源。
 
 ```bash
-curl -sS --fail-with-body "$SESSION_URL/turns/$TURN_ID/artifacts" \
-  -H "X-API-Key: $AGENTSCOPE_API_KEY"
+curl -sS --fail-with-body "$SESSION_URL/turns/$TURN_ID/artifacts"
 ```
 
 ```bash
 TURN_ARTIFACT_ID="TASK_ARTIFACT_ID_FROM_RESPONSE"
 curl -sS --fail-with-body "$SESSION_URL/turns/$TURN_ID/artifacts/$TURN_ARTIFACT_ID" \
-  -H "X-API-Key: $AGENTSCOPE_API_KEY" \
   --output task-result.pdf
 ```
 

@@ -5,32 +5,44 @@ zh_link: /v2/zh/service/memory
 ---
 
 <Note>
-This is preview documentation. The official release is not yet available.
+This page uses the `2.1.0-BETA1` prerelease.
 </Note>
 
 A Memory Store holds knowledge that multiple tasks can reuse, such as terminology, operating guidance, and verified facts. After creating a Store and adding documents, include its ID in an Agent's `defaultMemoryStoreIds` or select it through `memoryStoreIds` when creating a Session. The Agent uses `memory_store_list` and `memory_store_read` on demand; the documents are not automatically inserted into every model request.
 
 Shared knowledge and conversation records have separate lifecycles. The current Managed HarnessAgent path mounts shared Stores read-only. Authorized users or application backends create and update documents through management APIs. Working notes, chat history, and task artifacts are not automatically written back to a Store. Reusable behavioral procedures belong in [Workspaces and Skills](/v2/en/service/workspaces).
 
-Use the platform identity variables and an available `ENVIRONMENT_ID` from the [deployment guide](/v2/en/service/quickstart). The following steps create a sourced glossary entry and verify that a Managed Agent actually reads it.
+Use the local URL and default scope variables and an available `ENVIRONMENT_ID` from the [deployment guide](/v2/en/service/quickstart). The following steps create a sourced glossary entry and verify that a Managed Agent actually reads it.
 
 ## Create a Store and add knowledge
 
 Create a product knowledge Store and write the project's definition of Lark to `product/glossary.md`. `expectedVersion: 0` requires that the path not yet exist, avoiding an accidental overwrite when repeating the exercise. Save `STORE_ID` for the resource binding below.
 
 ```bash
-STORE_JSON=$(curl --fail-with-body -sS "$BASE_URL/api/memory-stores" \
-  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
-  -H "X-AgentScope-Tenant: $TENANT" -H "X-AgentScope-Namespace: $NAMESPACE" \
-  --data '{"name":"Product knowledge","description":"Verified terms and guidance"}')
-STORE_ID=$(printf '%s' "$STORE_JSON" | jq -er '.id')
+set -euo pipefail
 
-curl --fail-with-body -sS -X PUT \
-  "$BASE_URL/api/memory-stores/$STORE_ID/memories/product/glossary.md" \
-  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
-  -H "X-AgentScope-Tenant: $TENANT" -H "X-AgentScope-Namespace: $NAMESPACE" \
-  --data '{"content":"This project defines Lark as the weekly-report archival task. Source: project glossary.","expectedVersion":0}' \
-  | jq '{id, path, headVersion}'
+STORE_JSON=$(
+  curl -sS --fail-with-body "$BASE_URL/api/memory-stores" \
+    -H "Content-Type: application/json" \
+    --data-binary @- <<'JSON'
+{
+  "name": "Product knowledge",
+  "description": "Verified terms and explanations"
+}
+JSON
+)
+STORE_ID=$(jq -er '.id' <<< "$STORE_JSON")
+```
+
+```bash
+curl -sS --fail-with-body -X PUT "$BASE_URL/api/memory-stores/$STORE_ID/memories/product/glossary.md" \
+  -H "Content-Type: application/json" \
+  --data-binary @- <<'JSON'
+{
+  "content": "This project defines Lark as the weekly report archiving task. Source: project glossary.",
+  "expectedVersion": 0
+}
+JSON
 ```
 
 Store and document creation responses are objects, each with its own `id`. Record verified, reusable findings and their sources; do not maintain unconfirmed assumptions as facts.
@@ -40,41 +52,97 @@ Store and document creation responses are objects, each with its own `id`. Recor
 A Store binding and tool configuration work together: the binding selects accessible knowledge, while tools provide the operations used to read it. The following creates a Managed knowledge assistant with `STORE_ID` as its default source and explicitly enables the two read operations. To reuse an existing Agent, update `defaultMemoryStoreIds` through [default resource configuration](/v2/en/service/managed-agent-configuration#set-default-resources-on-an-agent) and enable these operations using the [tool guide](/v2/en/service/tools#save-the-configuration-to-an-agent), retaining its other tools.
 
 ```bash
-AGENT_JSON=$(curl --fail-with-body -sS "$BASE_URL/api/v1/agents" \
-  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
-  -H "X-AgentScope-Tenant: $TENANT" -H "X-AgentScope-Namespace: $NAMESPACE" \
-  --data "$(jq -n --arg tenant "$TENANT" --arg namespace "$NAMESPACE" \
-    --arg env "$ENVIRONMENT_ID" --arg store "$STORE_ID" '{
-      tenant:$tenant, namespace:$namespace,
-      agentKey:"knowledge-assistant", displayName:"Knowledge assistant",
-      binding:{kind:"managed"},
-      definition:{name:"Knowledge assistant", defaultEnvironmentId:$env,
-        defaultMemoryStoreIds:[$store],
-        system:"Answer using bound knowledge documents. Locate and read relevant sources, cite their document paths, and report missing knowledge without guessing from names.",
-        tools:[{type:"agent_toolset", defaultConfig:{enabled:false}, configs:[
-          {name:"memory_store_list",enabled:true,permissionPolicy:{type:"always_allow"}},
-          {name:"memory_store_read",enabled:true,permissionPolicy:{type:"always_allow"}}
-        ]}]}
-    }')")
-AGENT_ID=$(printf '%s' "$AGENT_JSON" | jq -er '.agent.id')
-printf '%s' "$AGENT_JSON" | jq '.definition | {version, defaultMemoryStoreIds, tools}'
+AGENT_JSON=$(
+  curl -sS --fail-with-body "$BASE_URL/api/v1/agents" \
+    -H "Content-Type: application/json" \
+    --data-binary @- <<JSON
+{
+  "tenant": "$TENANT",
+  "namespace": "$NAMESPACE",
+  "agentKey": "knowledge-assistant",
+  "displayName": "Knowledge assistant",
+  "binding": {
+    "kind": "managed"
+  },
+  "definition": {
+    "name": "Knowledge assistant",
+    "defaultEnvironmentId": "$ENVIRONMENT_ID",
+    "defaultMemoryStoreIds": [
+      "$STORE_ID"
+    ],
+    "system": "Answer from the bound knowledge documents. Find and read sources first, cite their paths, and say when no source is found. Do not guess from a name.",
+    "tools": [
+      {
+        "type": "agent_toolset",
+        "defaultConfig": {
+          "enabled": false
+        },
+        "configs": [
+          {
+            "name": "memory_store_list",
+            "enabled": true,
+            "permissionPolicy": {
+              "type": "always_allow"
+            }
+          },
+          {
+            "name": "memory_store_read",
+            "enabled": true,
+            "permissionPolicy": {
+              "type": "always_allow"
+            }
+          }
+        ]
+      }
+    ]
+  }
+}
+JSON
+)
+AGENT_ID=$(jq -er '.agent.id' <<< "$AGENT_JSON")
 ```
 
 After creation, `definition.defaultMemoryStoreIds` should contain this Store. The example uses `agentKey: "knowledge-assistant"`; retain the returned `AGENT_ID` when repeating the exercise, or choose another key for a separate Agent. Create a Session next, omitting `memoryStoreIds` so it inherits the saved default.
 
 ```bash
-SESSION_JSON=$(curl --fail-with-body -sS "$BASE_URL/api/v1/agent-sessions" \
-  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
-  -H "X-AgentScope-Tenant: $TENANT" -H "X-AgentScope-Namespace: $NAMESPACE" \
-  --data "$(jq -n --arg agent "$AGENT_ID" '{target:{type:"agent",id:$agent}}')")
-SESSION_ID=$(printf '%s' "$SESSION_JSON" | jq -er '.id')
+SESSION_JSON=$(
+  curl -sS --fail-with-body "$BASE_URL/api/v1/agent-sessions" \
+    -H "Content-Type: application/json" \
+    -H "Idempotency-Key: memory-session-001" \
+    --data-binary @- <<JSON
+{
+  "target": {
+    "type": "agent",
+    "id": "$AGENT_ID"
+  }
+}
+JSON
+)
+SESSION_ID=$(jq -er '.id' <<< "$SESSION_JSON")
 SESSION_URL="$BASE_URL/api/v1/agent-sessions/$SESSION_ID"
-printf '%s' "$SESSION_JSON" | jq '{id, target, memoryStoreIds}'
+printf '%s\n' "$SESSION_JSON" | jq '{id, target, memoryStoreIds}'
 ```
 
 Check that the response's `memoryStoreIds` contains the actual `STORE_ID`, then submit a task asking the Agent to read the project glossary, explain Lark, and cite the document path. Follow snapshots and events for `$SESSION_URL` using the [Session guide](/v2/en/service/session-event-log). Verify a knowledge-tool read of `product/glossary.md` and an answer preserving the weekly-report archival definition. A similar answer without a corresponding read does not establish that the Store was used.
 
 To select the Store for only one Session, explicitly send `memoryStoreIds: ["ACTUAL_STORE_ID"]` during Session creation. This replaces that Session's complete list rather than appending to the Agent defaults; include every desired ID when using multiple Stores. Omission inherits defaults, while `[]` attaches none of the default Stores. Changing an Agent's default list does not change existing Session selections.
+
+Submit a task that requires the knowledge, then inspect tool calls and citations in the snapshot:
+
+```bash
+curl -sS --fail-with-body "$SESSION_URL/turns" \
+  -H "Content-Type: application/json" \
+  -H "Idempotency-Key: knowledge-query-001" \
+  --data-binary @- <<'JSON'
+{
+  "message": "What is Lark in this project? Read the bound knowledge and cite the document path."
+}
+JSON
+```
+
+```bash
+curl -sS --fail-with-body "$SESSION_URL/snapshot"
+```
 
 ## Read and write access
 
@@ -106,7 +174,7 @@ Maintain Stores and documents under **Resources → Memory**, then select defaul
 
 ## Management APIs and versions
 
-Use a platform user Bearer token and `X-AgentScope-Tenant` and `X-AgentScope-Namespace`; prepare variables as in the [deployment preparation](/v2/en/service/quickstart). Reads require inspect, mutations require edit, and creation requires namespace resource creation rights. Listings contain only inspectable Stores.
+Local examples use the default scope without authentication headers. See [production deployment](/v2/en/service/kubernetes#production-api-access) for production grants.
 
 Below, `path` is a document path such as `product/glossary.md`. Encode individual URL path segments while preserving directory separators. `versions/` is reserved for history reads and should not prefix a document path.
 
@@ -124,3 +192,87 @@ Below, `path` is a document path such as `product/glossary.md`. Encode individua
 Store listings support `limit` (1–500), `offset` (requires limit), and `X-Total-Count`. There is currently no PATCH endpoint for a Store's name or description.
 
 Each document PUT creates a version. Use `expectedVersion:0` for creation; for an update, read and submit the current `headVersion`. A changed version returns 409, requiring a reread and merge. Omitting the condition allows overwriting current content. Ordinary updates retain old versions. Redact removes sensitive content from stored history but does not change text already copied into sessions, artifacts, or other systems.
+
+<span id="curl-management"></span>
+
+## Query, update and remove knowledge
+
+Use the platform identity and scope variables from [API setup](/v2/en/service/create-managed-agent#api-setup). Use resource IDs returned by creation or lookup.
+
+```bash
+curl -sS --fail-with-body -G "$BASE_URL/api/memory-stores" \
+  --data-urlencode "limit=25" \
+  --data-urlencode "offset=0"
+```
+
+```bash
+curl -sS --fail-with-body "$BASE_URL/api/memory-stores/$STORE_ID/memories"
+```
+
+For an existing document, use its current `headVersion`. On 409, reread and review the content; do not force an overwrite with 0.
+
+```bash
+MEMORY_JSON=$(
+  curl -sS --fail-with-body "$BASE_URL/api/memory-stores/$STORE_ID/memories/product/glossary.md"
+)
+MEMORY_VERSION=$(jq -er '.headVersion' <<< "$MEMORY_JSON")
+```
+
+```bash
+curl -sS --fail-with-body -X PUT "$BASE_URL/api/memory-stores/$STORE_ID/memories/product/glossary.md" \
+  -H "Content-Type: application/json" \
+  --data-binary @- <<JSON
+{
+  "content": "Lark is the weekly report archiving task. Source: verified project glossary.",
+  "expectedVersion": $MEMORY_VERSION
+}
+JSON
+```
+
+```bash
+curl -sS --fail-with-body "$BASE_URL/api/memory-stores/$STORE_ID/memories/versions/product/glossary.md"
+```
+
+<Accordion title="Remove knowledge when needed">
+
+These alternatives delete one document, permanently redact its history, archive a Store, or delete a Store. Choose the appropriate operation; redaction cannot restore old versions.
+
+<Tabs>
+<Tab title="Delete document">
+
+```bash
+curl -sS --fail-with-body -X DELETE "$BASE_URL/api/memory-stores/$STORE_ID/memories/product/glossary.md"
+```
+
+</Tab>
+<Tab title="Redact">
+
+```bash
+curl -sS --fail-with-body "$BASE_URL/api/memory-stores/$STORE_ID/redact" \
+  -H "Content-Type: application/json" \
+  --data-binary @- <<'JSON'
+{
+  "path": "product/glossary.md",
+  "replacement": "[REDACTED]"
+}
+JSON
+```
+
+</Tab>
+<Tab title="Archive Store">
+
+```bash
+curl -sS --fail-with-body -X POST "$BASE_URL/api/memory-stores/$STORE_ID/archive"
+```
+
+</Tab>
+<Tab title="Delete Store">
+
+```bash
+curl -sS --fail-with-body -X DELETE "$BASE_URL/api/memory-stores/$STORE_ID"
+```
+
+</Tab>
+</Tabs>
+
+</Accordion>

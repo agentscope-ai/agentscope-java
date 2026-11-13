@@ -148,8 +148,10 @@ func Open(ctx context.Context, cfg Config) (*Server, error) {
 	if len(cfg.JWTSecret) < 32 {
 		return nil, fmt.Errorf("jwt secret must be at least 32 characters")
 	}
-	if err := validateBootstrap(cfg); err != nil {
-		return nil, err
+	if !cfg.LocalDev {
+		if err := validateBootstrap(cfg); err != nil {
+			return nil, err
+		}
 	}
 	if err := os.MkdirAll(cfg.WorkspaceRoot, 0o755); err != nil {
 		return nil, fmt.Errorf("workspace root: %w", err)
@@ -163,7 +165,12 @@ func Open(ctx context.Context, cfg Config) (*Server, error) {
 		db.Close()
 		return nil, err
 	}
-	if cfg.BootstrapAdmin != "" {
+	if cfg.LocalDev {
+		if err := seedLocalDeveloper(ctx, db); err != nil {
+			db.Close()
+			return nil, fmt.Errorf("local developer: %w", err)
+		}
+	} else if cfg.BootstrapAdmin != "" {
 		if err := bootstrapAdmin(ctx, db, cfg); err != nil {
 			db.Close()
 			return nil, fmt.Errorf("bootstrap admin: %w", err)
@@ -217,6 +224,9 @@ func (s *Server) VerifyToken(token string) (*Claims, error) {
 // VerifyAccountToken also checks the live account, so deletion and platform-role
 // revocation take effect without waiting for a seven-day JWT to expire.
 func (s *Server) VerifyAccountToken(ctx context.Context, token string) (*Claims, error) {
+	if s.cfg.LocalDev {
+		return LocalDeveloperClaims(), nil
+	}
 	claims, err := s.VerifyToken(token)
 	if err != nil {
 		return nil, err

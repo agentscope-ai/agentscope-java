@@ -4,7 +4,7 @@ zh_link: /v2/zh/service/sessions
 ---
 
 <Note>
-This is preview documentation. The official release is not yet available.
+This page uses the `2.1.0-BETA1` prerelease.
 </Note>
 
 Applications submit work through Agent API sessions, Issues, or Session API. This reference follows the request through Runs, Tasks, Attempts, and Sessions. Namespace, work-level, and operational permissions apply to diagnostic APIs.
@@ -22,7 +22,7 @@ Query the Runs associated with an Issue. Inspect input, mode and actual target, 
 
 ## Execution query APIs
 
-Use a user Bearer token and consistent `X-AgentScope-Tenant` / `X-AgentScope-Namespace` headers. List requests also require explicit `tenant` and `namespace`. See [Workflow APIs](/v2/en/service/workflows) and [task APIs](/v2/en/service/issues) for complete requests.
+Call directly in local mode. List requests also require explicit `tenant` and `namespace`. See [Workflow APIs](/v2/en/service/workflows) and [task APIs](/v2/en/service/issues) for complete requests.
 
 | Operation | API | Query / response |
 | --- | --- | --- |
@@ -36,6 +36,54 @@ Use a user Bearer token and consistent `X-AgentScope-Tenant` / `X-AgentScope-Nam
 
 `RunEvent.sequence` supports incremental reads within its Run. `type` identifies the event; `nodeId`, `agentTaskId`, and `attemptId` identify affected records. This events endpoint returns JSON rather than SSE. Published-service callers should prefer their Turn's returned statusUrl / eventsUrl; see [unified service APIs](/v2/en/service/service-api).
 
+Use the platform identity and scope variables from [API setup](/v2/en/service/create-managed-agent#api-setup). Use resource IDs returned by creation or lookup.
+
+Take ISSUE_ID from the actual work record. The list can contain multiple Runs. Inspect runs before selecting RUN_ID; do not assume the first item is the target.
+
+```bash
+ISSUE_ID="YOUR_ISSUE_ID"
+
+curl -sS --fail-with-body -G "$BASE_URL/api/v1/orchestration-runs" \
+  --data-urlencode "tenant=$TENANT" \
+  --data-urlencode "namespace=$NAMESPACE" \
+  --data-urlencode "issueId=$ISSUE_ID" \
+  --data-urlencode "limit=25"
+```
+
+```bash
+RUN_ID="RUN_ID_FROM_LIST"
+
+curl -sS --fail-with-body "$BASE_URL/api/v1/orchestration-runs/$RUN_ID/graph"
+```
+
+```bash
+curl -sS --fail-with-body -G "$BASE_URL/api/v1/orchestration-runs/$RUN_ID/events" \
+  --data-urlencode "after=0" \
+  --data-urlencode "limit=50"
+```
+
+Select TASK_ID from the graph’s tasks, inspect the task and its attempts, then choose ATTEMPT_ID from the actual execution state.
+
+```bash
+TASK_ID="TASK_ID_FROM_GRAPH"
+
+curl -sS --fail-with-body "$BASE_URL/api/v1/agent-tasks/$TASK_ID"
+```
+
+```bash
+curl -sS --fail-with-body -G "$BASE_URL/api/v1/execution-attempts" \
+  --data-urlencode "tenant=$TENANT" \
+  --data-urlencode "namespace=$NAMESPACE" \
+  --data-urlencode "taskId=$TASK_ID" \
+  --data-urlencode "limit=25"
+```
+
+```bash
+ATTEMPT_ID="ATTEMPT_ID_FROM_LIST"
+
+curl -sS --fail-with-body "$BASE_URL/api/v1/execution-attempts/$ATTEMPT_ID"
+```
+
 ## States and controls
 
 planned has not started, running is progressing and waiting awaits a condition, signal or external result. paused prevents new dispatch; cancelling awaits cancellation convergence. Terminal states are cancelled, succeeded, partial_succeeded and failed.
@@ -45,6 +93,53 @@ Pause does not freeze existing external processes. Cancel does not roll back fil
 Control Runs with `POST /api/v1/orchestration-runs/{runId}/pause`, `/resume`, or `/cancel`, using `{}` and receiving `{run}`. After a terminal state, `/rerun` accepts required `idempotencyKey` and optional `input`. It returns a new `{run}` with `rerunOfRunId` lineage.
 
 Cancel a task through `POST /api/v1/agent-tasks/{taskId}/cancel` with its current `expectedVersion`; retry through `/retry`. Do not pass Task IDs to Run endpoints or directly rewrite Attempt state to cancel work.
+
+<Accordion title="Control a Run when needed">
+
+These are alternative operational choices. Pause stops new scheduling; cancel requests termination of the Run. GET the Run afterward to confirm its state. Rerun creates a new Run rather than restoring an Attempt.
+
+<Tabs>
+<Tab title="Pause">
+
+```bash
+curl -sS --fail-with-body -X POST "$BASE_URL/api/v1/orchestration-runs/$RUN_ID/pause"
+```
+
+</Tab>
+<Tab title="Resume">
+
+```bash
+curl -sS --fail-with-body -X POST "$BASE_URL/api/v1/orchestration-runs/$RUN_ID/resume"
+```
+
+</Tab>
+<Tab title="Cancel">
+
+```bash
+curl -sS --fail-with-body -X POST "$BASE_URL/api/v1/orchestration-runs/$RUN_ID/cancel"
+```
+
+</Tab>
+<Tab title="Rerun">
+
+```bash
+curl -sS --fail-with-body "$BASE_URL/api/v1/orchestration-runs/$RUN_ID/rerun" \
+  -H "Content-Type: application/json" \
+  --data-binary @- <<'JSON'
+{
+  "idempotencyKey": "report-rerun-001"
+}
+JSON
+```
+
+</Tab>
+</Tabs>
+
+```bash
+curl -sS --fail-with-body "$BASE_URL/api/v1/orchestration-runs/$RUN_ID"
+```
+
+</Accordion>
 
 ## Three retry levels
 
@@ -63,6 +158,23 @@ Tool events, final replies, Attempt success and Issue acceptance are separate ev
 Reopen the original work and query saved events and current state. SSE ending is not proof of failure. Proxies should forward events promptly. Do not submit duplicate work with a new idempotency key merely because the frontend disconnected.
 
 ## Session diagnostics
+
+```bash
+curl -sS --fail-with-body -G "$BASE_URL/api/v1/sessions" \
+  --data-urlencode "tenant=$TENANT" \
+  --data-urlencode "namespace=$NAMESPACE" \
+  --data-urlencode "limit=25"
+```
+
+Use the UUID in `sessions[].session.id`. This identifies a runtime diagnostic record and is distinct from the business Session ID under `/agent-sessions`.
+
+```bash
+DIAGNOSTIC_SESSION_ID="SESSION_UUID_FROM_LIST"
+
+curl -sS --fail-with-body -G "$BASE_URL/api/v1/sessions/$DIAGNOSTIC_SESSION_ID" \
+  --data-urlencode "tenant=$TENANT" \
+  --data-urlencode "namespace=$NAMESPACE"
+```
 
 `GET /api/v1/sessions` lists authorized sessions; `GET /api/v1/sessions/{sessionRef}` reads one. Prefer the Attempt's `sessionRef` control-plane record ID. Do not interchange it with a runtime `sessionId` or `providerSessionId`. Include the correct tenant/namespace.
 

@@ -16,13 +16,12 @@ Check that the Session supports file storage and file input. Upload sends raw fi
 
 ```bash
 curl -sS --fail-with-body "$SESSION_URL/capabilities" \
-  -H "X-API-Key: $AGENTSCOPE_API_KEY" | jq '.capabilities | {files, file_input}'
+  | jq '.capabilities | {files, file_input}'
 ```
 
 ```bash
 FILE_JSON=$(
   curl -sS --fail-with-body "$SESSION_URL/files" \
-    -H "X-API-Key: $AGENTSCOPE_API_KEY" \
     -H "Idempotency-Key: report-file-001" \
     -H "X-File-Name: report.pdf" \
     -H "Content-Type: application/pdf" \
@@ -36,7 +35,6 @@ Reference the file ID in task input:
 ```bash
 TURN_JSON=$(
   curl -sS --fail-with-body "$SESSION_URL/turns" \
-    -H "X-API-Key: $AGENTSCOPE_API_KEY" \
     -H "Content-Type: application/json" \
     -H "Idempotency-Key: review-report-001" \
     --data-binary @- <<JSON
@@ -72,7 +70,6 @@ Use `GET /files` to list uploaded inputs. Downloading content still requires Ses
 
 ```bash
 curl -sS --fail-with-body -G "$SESSION_URL/files" \
-  -H "X-API-Key: $AGENTSCOPE_API_KEY" \
   --data-urlencode "limit=20" \
   --data-urlencode "offset=0"
 ```
@@ -81,7 +78,6 @@ The list returns `items` and `next_offset`. Use a non-null next offset in the ne
 
 ```bash
 curl -sS --fail-with-body "$SESSION_URL/files/$FILE_ID/content" \
-  -H "X-API-Key: $AGENTSCOPE_API_KEY" \
   --output downloaded-report.pdf
 ```
 
@@ -93,7 +89,6 @@ Register an uploaded, verified result file as a Managed artifact. `RESULT_FILE_I
 RESULT_FILE_ID="UPLOADED_RESULT_FILE_ID"
 ARTIFACT_JSON=$(
   curl -sS --fail-with-body "$SESSION_URL/artifacts" \
-    -H "X-API-Key: $AGENTSCOPE_API_KEY" \
     -H "Content-Type: application/json" \
     -H "Idempotency-Key: publish-report-001" \
     --data-binary @- <<JSON
@@ -108,21 +103,18 @@ ARTIFACT_ID=$(jq -er '.artifact_id' <<< "$ARTIFACT_JSON")
 List Session artifacts, then read the published artifact’s metadata:
 
 ```bash
-curl -sS --fail-with-body "$SESSION_URL/artifacts" \
-  -H "X-API-Key: $AGENTSCOPE_API_KEY"
+curl -sS --fail-with-body "$SESSION_URL/artifacts"
 ```
 
 ```bash
 ARTIFACT_METADATA=$(
-  curl -sS --fail-with-body "$SESSION_URL/artifacts/$ARTIFACT_ID" \
-    -H "X-API-Key: $AGENTSCOPE_API_KEY"
+  curl -sS --fail-with-body "$SESSION_URL/artifacts/$ARTIFACT_ID"
 )
 RESULT_FILE_ID=$(jq -er '.file_id' <<< "$ARTIFACT_METADATA")
 ```
 
 ```bash
 curl -sS --fail-with-body "$SESSION_URL/files/$RESULT_FILE_ID/content" \
-  -H "X-API-Key: $AGENTSCOPE_API_KEY" \
   --output result-report.pdf
 ```
 
@@ -132,7 +124,6 @@ Use `uri` for an external reference, without `file_id`. Substitute a real HTTPS 
 
 ```bash
 curl -sS --fail-with-body "$SESSION_URL/artifacts" \
-  -H "X-API-Key: $AGENTSCOPE_API_KEY" \
   -H "Content-Type: application/json" \
   -H "Idempotency-Key: publish-external-report-001" \
   --data-binary @- <<'JSON'
@@ -153,14 +144,12 @@ Team and Workflow executors report task artifacts. Read them from a Turn's `/art
 The following download route is for task artifacts reported by Teams and Workflows. Read the list first, then set `TURN_ARTIFACT_ID` to an actual artifact ID. It belongs to a different resource from the Managed artifact above.
 
 ```bash
-curl -sS --fail-with-body "$SESSION_URL/turns/$TURN_ID/artifacts" \
-  -H "X-API-Key: $AGENTSCOPE_API_KEY"
+curl -sS --fail-with-body "$SESSION_URL/turns/$TURN_ID/artifacts"
 ```
 
 ```bash
 TURN_ARTIFACT_ID="TASK_ARTIFACT_ID_FROM_RESPONSE"
 curl -sS --fail-with-body "$SESSION_URL/turns/$TURN_ID/artifacts/$TURN_ARTIFACT_ID" \
-  -H "X-API-Key: $AGENTSCOPE_API_KEY" \
   --output task-result.pdf
 ```
 

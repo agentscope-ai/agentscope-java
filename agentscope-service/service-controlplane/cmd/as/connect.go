@@ -239,6 +239,27 @@ func validateControlPlane(value string) (string, error) {
 }
 
 func promptPlatformLogin(ctx context.Context, server, configuredUsername string) (string, error) {
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, strings.TrimRight(server, "/")+"/api/auth/dev-session", nil)
+	if err != nil {
+		return "", err
+	}
+	response, err := (&http.Client{Timeout: 10 * time.Second}).Do(request)
+	if err != nil {
+		return "", fmt.Errorf("check development mode: %w", err)
+	}
+	defer response.Body.Close()
+	if response.StatusCode == http.StatusOK {
+		var session struct {
+			Token string `json:"token"`
+		}
+		if err := json.NewDecoder(io.LimitReader(response.Body, 1<<20)).Decode(&session); err != nil || session.Token == "" {
+			return "", fmt.Errorf("invalid development session")
+		}
+		return session.Token, nil
+	}
+	if response.StatusCode != http.StatusNotFound {
+		return "", fmt.Errorf("check development mode: HTTP %d", response.StatusCode)
+	}
 	if !term.IsTerminal(int(os.Stdin.Fd())) {
 		return "", fmt.Errorf("authentication is required; set AGENTSCOPE_API_TOKEN or AGENTSCOPE_RUNTIME_TOKEN, or rerun in an interactive terminal")
 	}

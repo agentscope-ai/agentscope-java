@@ -93,6 +93,59 @@ Read existing resources before submitting a clearly new test task:
 
 Use the original invocation ownership credentials or authorized platform identity. Recover Turn data, native Managed logs, workspace files, and encryption keys together. Expired event cursors require a fresh snapshot, not resubmission of completed work. See [API reference](/v2/en/service/api-reference).
 
+Use the user token and scope variables from [API setup](/v2/en/service/kubernetes#production-api-access).
+
+Use Agent, Session and Turn IDs saved before recovery for these readonly checks. Do not resubmit the original task to test recovery; that can repeat external operations.
+
+```bash
+curl -sS --fail-with-body "$BASE_URL/api/v1/agents/$AGENT_ID/bindings" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "X-AgentScope-Tenant: $TENANT" \
+  -H "X-AgentScope-Namespace: $NAMESPACE"
+```
+
+```bash
+SESSION_URL="$BASE_URL/api/v1/agent-sessions/$SESSION_ID"
+```
+
+```bash
+curl -sS --fail-with-body "$SESSION_URL" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "X-AgentScope-Tenant: $TENANT" \
+  -H "X-AgentScope-Namespace: $NAMESPACE"
+```
+
+```bash
+curl -sS --fail-with-body "$SESSION_URL/turns/$TURN_ID" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "X-AgentScope-Tenant: $TENANT" \
+  -H "X-AgentScope-Namespace: $NAMESPACE"
+```
+
+```bash
+curl -sS --fail-with-body "$SESSION_URL/snapshot" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "X-AgentScope-Tenant: $TENANT" \
+  -H "X-AgentScope-Namespace: $NAMESPACE"
+```
+
+```bash
+curl -sS --fail-with-body "$SESSION_URL/webhooks" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "X-AgentScope-Tenant: $TENANT" \
+  -H "X-AgentScope-Namespace: $NAMESPACE"
+```
+
+Read webhooks for Session notification state. For Automation inbound trigger records, read deliveries below. See [execution diagnostics](/v2/en/service/sessions) for Run, Task and Attempt queries.
+
+```bash
+curl -sS --fail-with-body -G "$BASE_URL/api/v1/automations/$AUTOMATION_ID/deliveries" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "X-AgentScope-Tenant: $TENANT" \
+  -H "X-AgentScope-Namespace: $NAMESPACE" \
+  --data-urlencode "limit=25"
+```
+
 ## Reopen service after recovery
 
 Keep scheduled rules and external traffic controlled while verifying login, history, files and credentials with test work. Confirm Runtime Hosts reconnect before restoring schedules and application traffic. Restoring a snapshot does not undo external messages or writes made after it; reconcile idempotency records and unfinished work before rerunning.
@@ -151,7 +204,7 @@ Save the Session ID, Turn ID, idempotency key, and error code. Read `/api/v1/age
 | Accepted input has no visible effect | Query the command receipt; acceptance does not mean model consumption |
 | SSE 410/cursor_expired | Replace the UI from a fresh snapshot and resume after as_of without resubmitting work |
 | A member finished but the call is active | Inspect Turn and steps, not just member output |
-| Resume unavailable | Respect available_commands; backend support differs and public checkpoint restore is unavailable |
+| Resume unavailable | Respect available_commands; backend support differs and Managed checkpoint restore also requires a restorable Session; see [recovery](/v2/en/service/session-event-log#continue-from-a-checkpoint) |
 
 `/api/v1/events` is a WebSocket refresh notification, not durable Turn SSE. See [Unified service API](/v2/en/service/service-api).
 
@@ -168,7 +221,7 @@ Keep the session ID, turn ID, latest event ID, HTTP status and sanitized error. 
 | Task stays running after run.ended / item.completed | Wait for the target turn outcome; an attempt, message or tool is not the whole task |
 | 400 / 409 cursor error | Verify session scope and reload snapshot; never parse or increment cursors yourself |
 | Resource pagination returns 410 | Restart from its first page; resource-page cursors are not SSE cursors |
-| Answer submitted but the tool does not continue | Read required_actions and GET turns/{turn}/actions; accepted is receipt, rejected requires checking reason and pending |
+| Answer submitted but the tool does not continue | Read required_actions and GET turns/{turn}/actions; accepted confirms receipt; query the command receipt and inspect error and pending actions if it is failed |
 | Steer returns 409 | The task may have ended or closed input; reread status, and use a new turn for a separate question |
 | Checkpoint restore returns 409 | Resolve open tasks, actions, pending inputs and unknown tool outcomes; restoring does not undo external operations |
 | Cost is incomplete or budget blocks execution | Inspect unpriced calls, usage and pricing in usage/budget; adjust limits and explicitly resume as task state permits |

@@ -44,18 +44,17 @@ Saving `tools` and `mcpServers` in this definition associates the configuration 
 Definition updates are not arbitrary partial merges. Read the current definition and retain unchanged writable fields before PATCH so other settings are not cleared. This example uses variables from the [Creation guide](/v2/en/service/create-managed-agent) and changes only system:
 
 ```bash
-DEFINITION=$(curl --fail-with-body -sS "$BASE_URL/api/v1/agents/$AGENT_ID/definition" \
-  -H "Authorization: Bearer $TOKEN" \
-  -H "X-AgentScope-Tenant: $TENANT" -H "X-AgentScope-Namespace: $NAMESPACE")
+DEFINITION=$(
+  curl -sS --fail-with-body "$BASE_URL/api/v1/agents/$AGENT_ID/definition"
+)
 UPDATED=$(printf '%s' "$DEFINITION" | jq '.definition | {
   name, description, system, model, maxIters, tools, mcpServers, skills, multiagent,
   workspaceId, workspacePath, workspaceBinding, defaultEnvironmentId,
   defaultVaultIds, defaultMemoryStoreIds, version
 } | .system = "Read supplied sources. Cite evidence and list open questions."')
-curl --fail-with-body -sS -X PATCH "$BASE_URL/api/v1/agents/$AGENT_ID/definition" \
-  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
-  -H "X-AgentScope-Tenant: $TENANT" -H "X-AgentScope-Namespace: $NAMESPACE" \
-  --data "$UPDATED"
+curl -sS --fail-with-body -X PATCH "$BASE_URL/api/v1/agents/$AGENT_ID/definition" \
+  -H "Content-Type: application/json" \
+  --data-binary "$UPDATED"
 ```
 
 When a Workspace is bound, instructions and tools must also follow workspaceBinding overrides/instructions rules. Changing a display name does not migrate the stable Agent key.
@@ -108,12 +107,12 @@ First create the required Environment, Memory Store, or Vault and retain the ret
 }
 ```
 
-Use `AGENT_ID` and the platform identity variables from the [creation guide](/v2/en/service/create-managed-agent). The command reads the complete definition, retains its other writable fields, and merges the resource defaults before submitting its version. Changing resources therefore does not clear tools or instructions.
+Use `AGENT_ID` and the local URL and default scope variables from the [creation guide](/v2/en/service/create-managed-agent). The command reads the complete definition, retains its other writable fields, and merges the resource defaults before submitting its version. Changing resources therefore does not clear tools or instructions.
 
 ```bash
-CURRENT=$(curl --fail-with-body -sS "$BASE_URL/api/v1/agents/$AGENT_ID/definition" \
-  -H "Authorization: Bearer $TOKEN" \
-  -H "X-AgentScope-Tenant: $TENANT" -H "X-AgentScope-Namespace: $NAMESPACE")
+CURRENT=$(
+  curl -sS --fail-with-body "$BASE_URL/api/v1/agents/$AGENT_ID/definition"
+)
 UPDATED=$(printf '%s' "$CURRENT" | jq --slurpfile resources resource-defaults.json '
   .definition | {
     name, description, system, model, maxIters, tools, mcpServers, skills, multiagent,
@@ -122,11 +121,9 @@ UPDATED=$(printf '%s' "$CURRENT" | jq --slurpfile resources resource-defaults.js
   } | . + ($resources[0] | with_entries(select(
     .key == "defaultEnvironmentId" or .key == "defaultMemoryStoreIds" or .key == "defaultVaultIds"
   )))')
-curl --fail-with-body -sS -X PATCH "$BASE_URL/api/v1/agents/$AGENT_ID/definition" \
-  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
-  -H "X-AgentScope-Tenant: $TENANT" -H "X-AgentScope-Namespace: $NAMESPACE" \
-  --data "$UPDATED" \
-  | jq '.definition | {version, defaultEnvironmentId, defaultMemoryStoreIds, defaultVaultIds}'
+curl -sS --fail-with-body -X PATCH "$BASE_URL/api/v1/agents/$AGENT_ID/definition" \
+  -H "Content-Type: application/json" \
+  --data-binary "$UPDATED"| jq '.definition | {version, defaultEnvironmentId, defaultMemoryStoreIds, defaultVaultIds}'
 ```
 
 Inspect the returned resource IDs and new definition version before creating a Session. A `409 Conflict` means the definition changed after you read it; reread and review before submitting again. Default bindings select available resources, while tool availability, confirmation policies, and external access permissions still apply separately.
@@ -159,3 +156,21 @@ Session creation freezes the Agent definition and runtime configuration. After a
 ## Change one layer at a time
 
 Verify text with the default model, then adjust responsibilities and iteration limits. Add Workspace, Environment, Memory, and Vault incrementally. Check provider/deployment for model resolution failures and Environment or pending actions for tool waits; raising maxIters does not repair a connection failure.
+
+<span id="curl-management"></span>
+
+## Inspect historical definition versions
+
+Use the platform identity and scope variables from [API setup](/v2/en/service/create-managed-agent#api-setup). Use resource IDs returned by creation or lookup.
+
+```bash
+curl -sS --fail-with-body "$BASE_URL/api/v1/agents/$AGENT_ID/versions"
+```
+
+Choose a real version from the list. Reading it does not change an existing Session’s version.
+
+```bash
+AGENT_VERSION="VERSION_FROM_LIST"
+
+curl -sS --fail-with-body "$BASE_URL/api/v1/agents/$AGENT_ID/versions/$AGENT_VERSION"
+```

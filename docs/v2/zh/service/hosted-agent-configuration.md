@@ -4,7 +4,7 @@ en_link: /v2/en/service/hosted-agent-configuration
 ---
 
 <Note>
-此为预览文档，正式版本尚未发布。
+本页使用 `2.1.0-BETA1` 预发布版本。
 </Note>
 
 如果尚未接入 Hosted Agent，先按[连接 Hosted Agent](/v2/zh/service/connect-hosted-agent)让执行主机上线并创建 Agent。本页用于在接入后调整运行配置；主机安装和日常维护可查阅[Runtime Host 安装与运维](/v2/zh/service/runtime-host)。
@@ -72,19 +72,20 @@ Agent 的 `system` 定义职责，`model` 提供可选模型覆盖。Model 非�
 
 `providerConfiguration` 是对象，`customArgs` 是 argv 字符串数组；参数合法性与保留选项按 provider 检查。不要修改共享 Runtime Profile 来实现某一个 Agent 的专属偏好。
 
-下面只调整并发，`AGENT_ID` 为已创建的 Agent UUID，`SERVICE_URL` 和 `TOKEN` 为管理连接配置：
+下面只调整并发，`AGENT_ID` 为已创建的 Agent UUID，`BASE_URL` 为本地 Service 地址：
 
 ```bash
-curl -sS "$SERVICE_URL/api/v1/agents/$AGENT_ID/hosted-settings" \
-  -H "Authorization: Bearer $TOKEN" > hosted-settings.json
+curl -sS --fail-with-body "$BASE_URL/api/v1/agents/$AGENT_ID/hosted-settings" \
+  > hosted-settings.json
 
 jq '{bindingVersion: .settings.bindingVersion,
      policyVersion: .settings.policyVersion,
      maxConcurrency: 2}' hosted-settings.json > hosted-settings-update.json
+```
 
-curl -sS -X PATCH "$SERVICE_URL/api/v1/agents/$AGENT_ID/hosted-settings" \
-  -H "Authorization: Bearer $TOKEN" \
-  -H 'Content-Type: application/json' \
+```bash
+curl -sS --fail-with-body -X PATCH "$BASE_URL/api/v1/agents/$AGENT_ID/hosted-settings" \
+  -H "Content-Type: application/json" \
   --data-binary @hosted-settings-update.json
 ```
 
@@ -152,11 +153,12 @@ Codex、Qoder 和 QwenPaw 适配器提供控制面工具确认接入。Claude Co
 
 ## 从 API 获取当前主机的能力
 
-文中的表格用于理解映射方式，实际可用项以主机上报为准。用平台账户 Bearer 请求：
+文中的表格用于理解映射方式，实际可用项以主机上报为准。请求：
 
 ```bash
-curl -sS "$SERVICE_URL/api/v1/agents/runtime-options?tenant=default&namespace=default" \
-  -H "Authorization: Bearer $TOKEN"
+curl -sS --fail-with-body -G "$BASE_URL/api/v1/agents/runtime-options" \
+  --data-urlencode "tenant=$TENANT" \
+  --data-urlencode "namespace=$NAMESPACE"
 ```
 
 在返回的 `runtimes` 中选择 provider；每项提供 `provider`、`version`、`runtimeProfileId`、`runtimePoolId`、`hostCount` 和 `capabilities`。能力对象包含 `instructions`、`workspace`、`skills`、`subagents`、`tools`、`shell`、`mcp`、`model`、`customArgs`、`approval` 和 `resume`。除 `resume` 为布尔值外，能力项通过 `supported`、`mode`、`target` 说明是否支持及如何映射。
@@ -164,3 +166,70 @@ curl -sS "$SERVICE_URL/api/v1/agents/runtime-options?tenant=default&namespace=de
 可以从 `GET /api/v1/runtime-hosts?tenant=...&namespace=...` 返回的 `items[].capabilities` 查看各 Host 的 provider 版本和描述。创建 Agent 时，把选项的 profile/pool UUID 写入 binding；更新 provider 专属参数使用 `/api/v1/agents/{agentId}/hosted-settings`，字段见[配置参考](/v2/zh/service/hosted-agent-configuration)。
 
 这里的 `resume` 描述 provider 的原生会话恢复，不直接等于应用可以执行的 Turn 恢复命令。应用应读取 Session 和 Turn 的 capabilities，只有 `available_commands` 明确列出某项操作时才显示对应按钮。
+
+<span id="curl-management"></span>
+
+## 查询并维护共享运行配置
+
+以下示例沿用[API 身份准备](/v2/zh/service/create-managed-agent#api-setup)中的本地地址和默认空间变量。将资源 ID 替换为前面创建或查询得到的值。
+
+```bash
+curl -sS --fail-with-body -G "$BASE_URL/api/v1/runtime-profiles" \
+  --data-urlencode "tenant=$TENANT" \
+  --data-urlencode "namespace=$NAMESPACE"
+```
+
+```bash
+curl -sS --fail-with-body -G "$BASE_URL/api/v1/runtime-pools" \
+  --data-urlencode "tenant=$TENANT" \
+  --data-urlencode "namespace=$NAMESPACE"
+```
+
+从列表取得名称；下面示范读取 Profile 并保留配置。先按 provider 参数编辑文件，再 PUT。此接口更新整个共享配置，会影响使用它的 Agent。
+
+```bash
+PROFILE_NAME="PROFILE_NAME_FROM_LIST"
+```
+
+```bash
+PROFILE_JSON=$(
+  curl -sS --fail-with-body -G "$BASE_URL/api/v1/runtime-profiles/$PROFILE_NAME" \
+    --data-urlencode "tenant=$TENANT" \
+    --data-urlencode "namespace=$NAMESPACE"
+)
+
+jq '.profile | {tenant,namespace,name,provider,runtime,configuration,requirements}' <<< "$PROFILE_JSON" > runtime-profile.json
+```
+
+```bash
+curl -sS --fail-with-body -X PUT "$BASE_URL/api/v1/runtime-profiles/$PROFILE_NAME" \
+  -H "Content-Type: application/json" \
+  --data-binary @runtime-profile.json
+```
+
+
+<Accordion title="维护共享 Runtime Pool">
+
+用列表返回的名称读取 Pool，编辑 hostSelector 或 configuration 后提交，保留其他字段。这里的 pool 名称不是 Runtime Host 的 UUID。
+
+```bash
+POOL_NAME="POOL_NAME_FROM_LIST"
+```
+
+```bash
+POOL_JSON=$(
+  curl -sS --fail-with-body -G "$BASE_URL/api/v1/runtime-pools/$POOL_NAME" \
+    --data-urlencode "tenant=$TENANT" \
+    --data-urlencode "namespace=$NAMESPACE"
+)
+
+jq '.pool | {tenant,namespace,name,hostSelector,configuration}' <<< "$POOL_JSON" > runtime-pool.json
+```
+
+```bash
+curl -sS --fail-with-body -X PUT "$BASE_URL/api/v1/runtime-pools/$POOL_NAME" \
+  -H "Content-Type: application/json" \
+  --data-binary @runtime-pool.json
+```
+
+</Accordion>

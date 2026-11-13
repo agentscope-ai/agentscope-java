@@ -4,7 +4,7 @@ zh_link: /v2/zh/service/create-team
 ---
 
 <Note>
-This is preview documentation. The official release is not yet available.
+This page uses the `2.1.0-BETA1` prerelease.
 </Note>
 
 A Team combines registered Agents into one unit that applications can assign work to or invoke. Its Leader interprets the objective, delegates to members, and consolidates delivery. Members exchange work through tasks and discussion, so applications do not need to implement every internal delegation step.
@@ -30,48 +30,91 @@ Members can use different execution types. Before configuring Runtime policy or 
 
 ## Create a review team
 
-The examples use Bash, `curl`, and `jq`. Set `SERVICE_URL` to your Service address, `TOKEN` to a user Bearer token, and `TENANT` / `NAMESPACE` to your authorized scope; see [API authentication](/v2/en/service/api-reference). Define this request helper:
+The examples use Bash, `curl`, and `jq`. Set `BASE_URL` to your Service address, and `TENANT` / `NAMESPACE` to the default scope; see [API authentication](/v2/en/service/api-reference). Run the following steps in the same Bash terminal:
 
 ```bash
-api() {
-  curl --fail-with-body --silent --show-error \
-    -H "Authorization: Bearer $TOKEN" \
-    -H "X-AgentScope-Tenant: $TENANT" \
-    -H "X-AgentScope-Namespace: $NAMESPACE" \
-    -H 'Content-Type: application/json' "$@"
-}
+set -euo pipefail
 ```
 
 Set `LEADER_AGENT_ID` to a material-organizing Agent and `REVIEWER_AGENT_ID` to a reviewer. The Leader is not repeated in `members`; member Agent IDs and roles must each be unique.
 
 ```bash
-created=$(api "$SERVICE_URL/api/v1/teams" --data "$(jq -n \
-  --arg tenant "$TENANT" --arg namespace "$NAMESPACE" \
-  --arg leader "$LEADER_AGENT_ID" --arg reviewer "$REVIEWER_AGENT_ID" \
-  '{tenant:$tenant,namespace:$namespace,name:"Research review team",leaderAgentId:$leader,
-    instructions:"The Leader drafts the report, delegates evidence checks to reviewer, then revises and consolidates delivery.",
-    policy:{maxActiveTasks:3,maxFanout:2,requireReview:true},
-    members:[{agentId:$reviewer,role:"reviewer",instructions:"Check facts, evidence, and unresolved information."}]}')")
-TEAM_ID=$(jq -r '.team.id' <<<"$created")
-api "$SERVICE_URL/api/v1/teams/$TEAM_ID/overview"
+TEAM_JSON=$(
+  curl -sS --fail-with-body "$BASE_URL/api/v1/teams" \
+    -H "Content-Type: application/json" \
+    --data-binary @- <<JSON
+{
+  "tenant": "$TENANT",
+  "namespace": "$NAMESPACE",
+  "name": "Evidence review team",
+  "leaderAgentId": "$LEADER_AGENT_ID",
+  "instructions": "The Leader drafts the report, delegates evidence and gap checks to the reviewer, then revises and delivers the final report.",
+  "policy": {
+    "maxActiveTasks": 3,
+    "maxFanout": 2,
+    "requireReview": true
+  },
+  "members": [
+    {
+      "agentId": "$REVIEWER_AGENT_ID",
+      "role": "reviewer",
+      "instructions": "Check facts, evidence and open questions."
+    }
+  ]
+}
+JSON
+)
+TEAM_ID=$(jq -er '.team.id' <<< "$TEAM_JSON")
+```
+
+```bash
+curl -sS --fail-with-body "$BASE_URL/api/v1/teams/$TEAM_ID/overview"
 ```
 
 Team `instructions` explain coordination, member instructions define responsibilities, and `policy` bounds concurrency, delegation, and review. The overview shows configuration and activity. Creation does not prove that every runtime is online: verify member availability and execute a small task. See [Team configuration](/v2/en/service/team-configuration) for policy options.
 
 ## Submit team work and read results
 
-Once the Team is ready, create a Session targeting it. This walkthrough continues with your platform identity. For a business backend, use an application credential granting this Team as explained in the [API guide](/v2/en/service/service-api).
+Once the Team is ready, create a Session targeting it. Call directly in local mode; production calling identities are described in [production deployment](/v2/en/service/kubernetes#production-application-credentials).
 
 ```bash
-session=$(api "$SERVICE_URL/api/v1/agent-sessions" --data "$(jq -n \
-  --arg team "$TEAM_ID" '{target:{type:"team",id:$team}}')")
-SESSION_ID=$(jq -er '.id' <<<"$session")
-turn=$(api "$SERVICE_URL/api/v1/agent-sessions/$SESSION_ID/turns" \
-  -H 'Idempotency-Key: team-report-001' \
-  --data '{"message":"Review this week’s material and deliver a report with sources."}')
-TURN_ID=$(jq -er '.id' <<<"$turn")
-api "$SERVICE_URL/api/v1/agent-sessions/$SESSION_ID/turns/$TURN_ID"
-api "$SERVICE_URL/api/v1/agent-sessions/$SESSION_ID/snapshot"
+SESSION_JSON=$(
+  curl -sS --fail-with-body "$BASE_URL/api/v1/agent-sessions" \
+    -H "Content-Type: application/json" \
+    -H "Idempotency-Key: team-session-001" \
+    --data-binary @- <<JSON
+{
+  "target": {
+    "type": "team",
+    "id": "$TEAM_ID"
+  }
+}
+JSON
+)
+SESSION_ID=$(jq -er '.id' <<< "$SESSION_JSON")
+SESSION_URL="$BASE_URL/api/v1/agent-sessions/$SESSION_ID"
+```
+
+```bash
+TURN_JSON=$(
+  curl -sS --fail-with-body "$SESSION_URL/turns" \
+    -H "Content-Type: application/json" \
+    -H "Idempotency-Key: team-report-001" \
+    --data-binary @- <<'JSON'
+{
+  "message": "Review this week’s material and deliver a report with sources."
+}
+JSON
+)
+TURN_ID=$(jq -er '.id' <<< "$TURN_JSON")
+```
+
+```bash
+curl -sS --fail-with-body "$SESSION_URL/turns/$TURN_ID"
+```
+
+```bash
+curl -sS --fail-with-body "$SESSION_URL/snapshot"
 ```
 
 Service dispatches the Leader and members in the background and projects progress into the Turn. Restore the application with a Session snapshot and event subscription. Use the root Turn's state to determine completion, not a member's completion notification. Open the associated Issue, Run, and graph in Console for diagnosis. [Work management](/v2/en/service/issues) remains available for manual assignment and acceptance; applications do not need to create those records themselves.
@@ -84,7 +127,7 @@ Update Team configuration with `PATCH /api/v1/teams/{teamId}` and the current `e
 
 ## Expose the Team to applications
 
-To call a Team, create a Session with `target:{"type":"team","id":"TEAM_ID"}` and submit work to `/turns`. Each Turn becomes an independent team task; the Session provides progress, actions, and artifacts. Issue credentials under an Application with an explicit grant for that Team. Callers do not need Agent or Team management rights. See the [API guide](/v2/en/service/service-api).
+To call a Team, create a Session with `target:{"type":"team","id":"TEAM_ID"}` and submit work to `/turns`. Each Turn becomes an independent team task; the Session provides progress, actions, and artifacts. See the [API guide](/v2/en/service/service-api).
 
 Agent API therefore also serves Teams: the external invocation contract is shared, while internal delegation follows the Team's collaboration mechanism. Team execution is not a Managed Agent resumable session. Managed-specific checkpoint and file APIs do not automatically apply to every member runtime.
 
@@ -103,7 +146,7 @@ Members can mix Managed, Hosted and External execution when they support the req
 
 ## Collaboration APIs for applications
 
-Use a user Bearer token and authorization to the relevant work. These endpoints operate durable business records without requiring the caller to know each member's runtime.
+Use the local development deployment directly. These endpoints operate durable business records without requiring the caller to know each member's runtime.
 
 | Operation | API and key parameters |
 | --- | --- |
@@ -181,3 +224,107 @@ Test a new member independently before verifying that the Leader uses the role c
 Recovery relies on persistent work and execution state. Fresh fallback reconstructs context without migrating the old process. Diagnose along Issue → Run → Node → Task → Attempt: check readiness/policy for missing dispatch, backend/approvals for stuck execution, and outstanding obligations/coordinator state for incomplete delivery.
 
 See the [Team API guide](/v2/en/service/create-team) for requests and [Console: Teams and orchestration](/v2/en/service/console/index#console-orchestration) for UI diagnostics.
+
+<span id="curl-management"></span>
+
+## Comment, child work and file delivery examples
+
+Use the local URL and default scope variables from [API setup](/v2/en/service/create-managed-agent#api-setup).
+
+Take ISSUE_ID from the actual team work. Preview routing before posting the same comment. For a progress-only record, use type:"progress" without mentions.
+
+```bash
+ISSUE_ID="YOUR_ISSUE_ID"
+```
+
+```bash
+curl -sS --fail-with-body "$BASE_URL/api/v1/issues/$ISSUE_ID/comments/preview-routing" \
+  -H "Content-Type: application/json" \
+  --data-binary @- <<JSON
+{
+  "content": "Please review the evidence and flag missing sources.",
+  "mentions": [
+    {
+      "type": "agent",
+      "ref": "$REVIEWER_AGENT_ID"
+    }
+  ]
+}
+JSON
+```
+
+```bash
+curl -sS --fail-with-body "$BASE_URL/api/v1/issues/$ISSUE_ID/comments" \
+  -H "Content-Type: application/json" \
+  --data-binary @- <<JSON
+{
+  "content": "Please review the evidence and flag missing sources.",
+  "mentions": [
+    {
+      "type": "agent",
+      "ref": "$REVIEWER_AGENT_ID"
+    }
+  ]
+}
+JSON
+```
+
+```bash
+curl -sS --fail-with-body -G "$BASE_URL/api/v1/issues/$ISSUE_ID/comments" \
+  --data-urlencode "limit=25" \
+  --data-urlencode "rootsOnly=true"
+```
+
+<Accordion title="Create independent child work">
+
+Create a child Issue when the subgoal needs independent acceptance. This dispatches new work.
+
+```bash
+curl -sS --fail-with-body "$BASE_URL/api/v1/issues/$ISSUE_ID/children" \
+  -H "Content-Type: application/json" \
+  --data-binary @- <<JSON
+{
+  "title": "Verify evidence dates",
+  "description": "Inspect supplied sources and list unconfirmed dates.",
+  "assigneeType": "agent",
+  "assigneeRef": "$REVIEWER_AGENT_ID",
+  "acceptanceCriteria": [
+    "Every date is cited or explicitly unconfirmed."
+  ]
+}
+JSON
+```
+
+```bash
+curl -sS --fail-with-body -G "$BASE_URL/api/v1/issues" \
+  --data-urlencode "tenant=$TENANT" \
+  --data-urlencode "namespace=$NAMESPACE" \
+  --data-urlencode "parentIssueId=$ISSUE_ID" \
+  --data-urlencode "limit=25"
+```
+
+</Accordion>
+
+Upload an existing local report.md and link it to this Issue. Let curl set the multipart Content-Type and boundary. Download returns file bytes; save them with --output.
+
+```bash
+ARTIFACT_JSON=$(
+  curl -sS --fail-with-body "$BASE_URL/api/v1/artifacts/uploads" \
+    --form-string "tenant=$TENANT" \
+    --form-string "namespace=$NAMESPACE" \
+    --form-string "targetType=issue" \
+    --form-string "targetRef=$ISSUE_ID" \
+    --form-string "relation=attachment" \
+    -F "file=@report.md;type=text/markdown"
+)
+ARTIFACT_ID=$(jq -er '.artifact.id' <<< "$ARTIFACT_JSON")
+```
+
+```bash
+curl -sS --fail-with-body "$BASE_URL/api/v1/issues/$ISSUE_ID/artifacts"
+```
+
+```bash
+curl -sS --fail-with-body -X POST "$BASE_URL/api/v1/artifacts/$ARTIFACT_ID/download" \
+  --output downloaded-report.md
+```

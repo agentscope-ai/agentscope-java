@@ -5,14 +5,14 @@ en_link: /v2/en/service/environments
 ---
 
 <Note>
-此为预览文档，正式版本尚未发布。
+本页使用 `2.1.0-BETA1` 预发布版本。
 </Note>
 
 Environment 为 Managed Agent 选择文件、Shell 等工具的执行后端。创建 Environment 后，还需要把它的 ID 保存到 Agent 定义的 `defaultEnvironmentId`，或在创建 Session 时通过 `environmentId` 指定。前者为该 Agent 的新会话提供默认值，后者只为这次会话选择执行位置。工具是否启用和是否需要确认，仍由 [Agent 工具配置](/v2/zh/service/tools)决定。
 
 Environment 与 [Workspace](/v2/zh/service/workspaces) 一起参与执行，但分工不同：Workspace 提供指令、Skills 和工具定义，Environment 决定文件和命令实际在哪里执行。即使使用 self_hosted Worker，Managed Agent 的模型调用和推理仍由 Dataplane 承担。Hosted Agent 的 Runtime Host 则负责运行另一类 Agent 运行时，不能用它的注册凭据代替 Environment Worker 凭据。
 
-下面沿用[API 身份准备](/v2/zh/service/create-managed-agent#api-setup)中的平台身份变量，并使用[第一个托管 Agent](/v2/zh/service/create-managed-agent)的 `AGENT_ID` 验证文件工具。如果已有合适的 Environment，可以直接取得它的 ID，跳到“绑定与配置”。自行创建时，需要同时准备对应的执行后端；资源创建成功不代表 Worker 已经上线或沙箱凭据已经可用。
+下面沿用[API 身份准备](/v2/zh/service/create-managed-agent#api-setup)中的本地地址和默认空间变量，并使用[第一个托管 Agent](/v2/zh/service/create-managed-agent)的 `AGENT_ID` 验证文件工具。如果已有合适的 Environment，可以直接取得它的 ID，跳到“绑定与配置”。自行创建时，需要同时准备对应的执行后端；资源创建成功不代表 Worker 已经上线或沙箱凭据已经可用。
 
 ## 选择类型
 
@@ -30,12 +30,21 @@ Docker 下 Local 指 Dataplane 容器内部，并不是宿主机的任意目录�
 下面创建一个 `self_hosted` Environment。Service 返回资源 ID 和只显示一次的 `apiKey`；ID 用于 Agent 或 Session 的资源选择，key 用于 Worker 连接平台。两者与执行管理 API 的用户 `TOKEN` 用途不同。
 
 ```bash
-ENVIRONMENT_JSON=$(curl --fail-with-body -sS "$BASE_URL/api/environments" \
-  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
-  -H "X-AgentScope-Tenant: $TENANT" -H "X-AgentScope-Namespace: $NAMESPACE" \
-  --data '{"name":"Report worker","type":"self_hosted","config":{}}')
-ENVIRONMENT_ID=$(printf '%s' "$ENVIRONMENT_JSON" | jq -er '.id')
-ENVIRONMENT_KEY=$(printf '%s' "$ENVIRONMENT_JSON" | jq -er '.apiKey')
+set -euo pipefail
+
+ENVIRONMENT_JSON=$(
+  curl -sS --fail-with-body "$BASE_URL/api/environments" \
+    -H "Content-Type: application/json" \
+    --data-binary @- <<'JSON'
+{
+  "name": "Report worker",
+  "type": "self_hosted",
+  "config": {}
+}
+JSON
+)
+ENVIRONMENT_ID=$(jq -er '.id' <<< "$ENVIRONMENT_JSON")
+ENVIRONMENT_KEY=$(jq -er '.apiKey' <<< "$ENVIRONMENT_JSON")
 ```
 
 请保留 `ENVIRONMENT_ID` 和 `ENVIRONMENT_KEY`，并继续启动下面的 Worker。若选择其他类型，应按该类型准备执行后端；Local 需要管理员允许本地执行，Sandbox 需要可用的 E2B 配置。修改 JSON 中的 `type` 不会替你完成这些准备。
@@ -71,14 +80,23 @@ docker run --rm \
 Worker 或其他执行后端就绪后，下面的请求把 `ENVIRONMENT_ID` 传给新 Session。它不会修改 Agent 的默认环境，因此适合验证一个新环境，或让同一个 Agent 在不同环境中处理各自的任务。请求中的资源 ID 必须对当前身份可用。
 
 ```bash
-SESSION_JSON=$(curl --fail-with-body -sS "$BASE_URL/api/v1/agent-sessions" \
-  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
-  -H "X-AgentScope-Tenant: $TENANT" -H "X-AgentScope-Namespace: $NAMESPACE" \
-  --data "$(jq -n --arg agent "$AGENT_ID" --arg env "$ENVIRONMENT_ID" \
-    '{target:{type:"agent",id:$agent},environmentId:$env}')")
-SESSION_ID=$(printf '%s' "$SESSION_JSON" | jq -er '.id')
+SESSION_JSON=$(
+  curl -sS --fail-with-body "$BASE_URL/api/v1/agent-sessions" \
+    -H "Content-Type: application/json" \
+    -H "Idempotency-Key: environment-session-001" \
+    --data-binary @- <<JSON
+{
+  "target": {
+    "type": "agent",
+    "id": "$AGENT_ID"
+  },
+  "environmentId": "$ENVIRONMENT_ID"
+}
+JSON
+)
+SESSION_ID=$(jq -er '.id' <<< "$SESSION_JSON")
 SESSION_URL="$BASE_URL/api/v1/agent-sessions/$SESSION_ID"
-printf '%s' "$SESSION_JSON" | jq '{id, target, environmentId}'
+printf '%s\n' "$SESSION_JSON" | jq '{id, target, environmentId}'
 ```
 
 ### 设为 Agent 的默认环境
@@ -92,6 +110,24 @@ jq -n --arg env "$ENVIRONMENT_ID" '{defaultEnvironmentId:$env}' > resource-defau
 保存后，新 Session 省略 `environmentId` 就会使用该默认值；显式传入其他 ID 时，只覆盖本次会话的环境。修改默认值不会把已有 Session 移到新环境。已有 Managed Session 可以通过自身的 PATCH 接口调整 `environmentId`，建议在当前任务结束后操作，并验证后续任务；切换绑定不会自动复制原环境中的工作文件。
 
 ### 检查实际执行
+
+```bash
+TURN_JSON=$(
+  curl -sS --fail-with-body "$SESSION_URL/turns" \
+    -H "Content-Type: application/json" \
+    -H "Idempotency-Key: environment-check-001" \
+    --data-binary @- <<'JSON'
+{
+  "message": "使用文件工具将 environment-check.txt 写为 environment ready，然后读回并报告内容。"
+}
+JSON
+)
+TURN_ID=$(jq -er '.id' <<< "$TURN_JSON")
+```
+
+```bash
+curl -sS --fail-with-body "$SESSION_URL/snapshot"
+```
 
 创建 Session 只记录环境选择，还没有执行文件工具。使用[第一个托管 Agent](/v2/zh/service/create-managed-agent)已经启用的读写工具，向 `$SESSION_URL/turns` 提交写入 `environment-check.txt` 并读回的任务，再检查快照和事件中的工具记录。文件应位于所选后端的工作目录，而不是运行 curl 的终端目录。对于 Worker，还应核对它领取和回传工具任务的记录。
 
@@ -145,7 +181,7 @@ Environment 的 `config` 是资源级配置，PATCH 会替换整个对象，因�
 
 ## 管理 API
 
-使用平台用户 Bearer token 和 `X-AgentScope-Tenant`、`X-AgentScope-Namespace` 请求头，变量准备见[API 身份准备](/v2/zh/service/create-managed-agent#api-setup)。列表按当前身份可检查的资源过滤；读取需要 inspect，修改需要 edit，创建需要空间资源创建权限。
+本地示例直接使用默认空间。生产授权配置见[生产部署指南](/v2/zh/service/kubernetes#production-api-access)。
 
 | 操作 | API | 参数与响应 |
 | --- | --- | --- |
@@ -158,3 +194,64 @@ Environment 的 `config` 是资源级配置，PATCH 会替换整个对象，因�
 | 删除 | `DELETE /api/environments/{id}` | 返回 204 |
 
 这些 Environment 修改接口没有版本条件参数。更新 config 前先读取并保留其他需要的设置；归档后的资源不能继续 PATCH。删除或归档前检查 Agent 与 Session 的使用情况，资源维护不是取消正在运行任务的接口。
+
+<span id="curl-management"></span>
+
+## 查询与维护示例
+
+以下示例沿用[API 身份准备](/v2/zh/service/create-managed-agent#api-setup)中的本地地址和默认空间变量。将资源 ID 替换为前面创建或查询得到的值。
+
+```bash
+curl -sS --fail-with-body -G "$BASE_URL/api/environments" \
+  --data-urlencode "limit=25" \
+  --data-urlencode "offset=0"
+```
+
+```bash
+ENVIRONMENT_JSON=$(
+  curl -sS --fail-with-body "$BASE_URL/api/environments/$ENVIRONMENT_ID"
+)
+```
+
+<Accordion title="调整配置或维护 Worker key">
+
+PATCH 替换整个 config。下面仅调整名称并保留现有配置。归档、轮换与删除是独立选择；轮换后旧 key 立即失效，请更新 Worker。维护资源不会取消 Turn。
+
+```bash
+jq '{name:"Report worker updated",config}' <<< "$ENVIRONMENT_JSON" > environment-update.json
+```
+
+```bash
+curl -sS --fail-with-body -X PATCH "$BASE_URL/api/environments/$ENVIRONMENT_ID" \
+  -H "Content-Type: application/json" \
+  --data-binary @environment-update.json
+```
+
+<Tabs>
+<Tab title="归档">
+
+```bash
+curl -sS --fail-with-body -X POST "$BASE_URL/api/environments/$ENVIRONMENT_ID/archive"
+```
+
+</Tab>
+<Tab title="轮换 key">
+
+```bash
+ROTATED_ENVIRONMENT=$(
+  curl -sS --fail-with-body -X POST "$BASE_URL/api/environments/$ENVIRONMENT_ID/rotate-key"
+)
+ENVIRONMENT_KEY=$(jq -er '.apiKey' <<< "$ROTATED_ENVIRONMENT")
+```
+
+</Tab>
+<Tab title="删除">
+
+```bash
+curl -sS --fail-with-body -X DELETE "$BASE_URL/api/environments/$ENVIRONMENT_ID"
+```
+
+</Tab>
+</Tabs>
+
+</Accordion>
