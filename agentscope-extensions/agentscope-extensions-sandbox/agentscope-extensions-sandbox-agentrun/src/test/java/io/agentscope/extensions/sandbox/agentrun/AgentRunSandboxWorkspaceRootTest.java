@@ -16,13 +16,23 @@
 package io.agentscope.extensions.sandbox.agentrun;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertNotSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
+import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.harness.agent.IsolationScope;
 import io.agentscope.harness.agent.sandbox.Sandbox;
 import io.agentscope.harness.agent.sandbox.SandboxContext;
+import io.agentscope.harness.agent.sandbox.SandboxException;
+import io.agentscope.harness.agent.sandbox.SandboxManager;
+import io.agentscope.harness.agent.sandbox.SessionSandboxStateStore;
 import io.agentscope.harness.agent.sandbox.WorkspaceSpec;
+import io.agentscope.harness.agent.sandbox.layout.FileEntry;
+import java.util.Optional;
 import org.junit.jupiter.api.Test;
 
 class AgentRunSandboxWorkspaceRootTest {
@@ -41,7 +51,7 @@ class AgentRunSandboxWorkspaceRootTest {
     }
 
     @Test
-    void resumeUsesWorkspaceSpecRootOverPersistedStateRoot() {
+    void resumeKeepsPersistedExecutionRootOverWorkspaceSpecRoot() {
         AgentRunSandboxClient client = new AgentRunSandboxClient(options(), null);
         AgentRunSandboxState state = new AgentRunSandboxState();
         state.setSessionId("session-1");
@@ -51,11 +61,12 @@ class AgentRunSandboxWorkspaceRootTest {
 
         client.resume(state);
 
-        assertEquals(SPEC_ROOT, state.getWorkspaceRoot());
+        assertEquals(AgentRunSandboxState.DEFAULT_WORKSPACE_ROOT, state.getWorkspaceRoot());
+        assertEquals(state.getWorkspaceRoot(), state.getWorkspaceSpec().getRoot());
     }
 
     @Test
-    void resumeResetsWorkspaceStateWhenRootChanges() {
+    void resumePreservesWorkspaceStateWhenLegacyManifestRootDiffers() {
         AgentRunSandboxClient client = new AgentRunSandboxClient(options(), null);
         AgentRunSandboxState state = new AgentRunSandboxState();
         state.setSessionId("session-1");
@@ -67,8 +78,10 @@ class AgentRunSandboxWorkspaceRootTest {
 
         client.resume(state);
 
-        assertFalse(state.isWorkspaceRootReady(), "the new root has not been initialized");
-        assertNull(state.getWorkspaceProjectionHash());
+        assertEquals(AgentRunSandboxState.DEFAULT_WORKSPACE_ROOT, state.getWorkspaceRoot());
+        assertEquals(state.getWorkspaceRoot(), state.getWorkspaceSpec().getRoot());
+        assertTrue(state.isWorkspaceRootReady());
+        assertEquals("old-projection", state.getWorkspaceProjectionHash());
     }
 
     @Test
@@ -138,6 +151,106 @@ class AgentRunSandboxWorkspaceRootTest {
         AgentRunSandboxState state = (AgentRunSandboxState) sandbox.getState();
         assertEquals("/mnt/data/ws", state.getWorkspaceRoot());
         assertTrue(state.isWorkspaceOnNas());
+    }
+
+    @Test
+    void createNormalizesRootAndCopiesCallerLayout() {
+        WorkspaceSpec supplied = workspaceSpec("/root/./workspace/unused/../");
+        supplied.getEntries().put("notes.txt", new FileEntry("initial"));
+        supplied.getEnvironment().put("MODE", "test");
+
+        Sandbox sandbox = new AgentRunSandboxClient(options(), null).create(supplied, null, null);
+        AgentRunSandboxState state = (AgentRunSandboxState) sandbox.getState();
+
+        assertEquals(SPEC_ROOT, state.getWorkspaceRoot());
+        assertEquals(SPEC_ROOT, state.getWorkspaceSpec().getRoot());
+        assertNotSame(supplied, state.getWorkspaceSpec());
+        assertEquals(supplied.getEntries(), state.getWorkspaceSpec().getEntries());
+        assertEquals(supplied.getEnvironment(), state.getWorkspaceSpec().getEnvironment());
+        state.getWorkspaceSpec().getEnvironment().put("MODE", "changed");
+        assertEquals("test", supplied.getEnvironment().get("MODE"));
+        assertEquals("/root/./workspace/unused/../", supplied.getRoot());
+    }
+
+    @Test
+    void untouchedOrAbsentWorkspaceSpecInheritsOptionsRoot() {
+        AgentRunSandboxClientOptions opts = options();
+        opts.setWorkspaceRoot("/custom/./execution");
+        AgentRunSandboxClient client = new AgentRunSandboxClient(opts, null);
+        WorkspaceSpec supplied = new WorkspaceSpec();
+        for (WorkspaceSpec spec : new WorkspaceSpec[] {supplied, null}) {
+            Sandbox sandbox = client.create(spec, null, null);
+            assertEquals("/custom/execution", sandbox.getState().getWorkspaceSpec().getRoot());
+        }
+        assertEquals("/workspace", supplied.getRoot());
+    }
+
+    @Test
+    void resumeCopiesNewCallLayoutToSavedRootAndPreservesNasMetadata() throws Exception {
+        AgentRunSandboxClient client = new AgentRunSandboxClient(options(), null);
+        AgentRunSandboxState saved = new AgentRunSandboxState();
+        saved.setSessionId("saved-session");
+        saved.setSandboxId("saved-sandbox");
+        saved.setWorkspaceRoot("/mnt/data/./saved/unused/../");
+        saved.setWorkspaceRootReady(true);
+        saved.setWorkspaceProjectionHash("saved-projection");
+        saved.setWorkspaceOnNas(true);
+        SessionSandboxStateStore store = mock(SessionSandboxStateStore.class);
+        when(store.load(any())).thenReturn(Optional.of(client.serializeState(saved)));
+        WorkspaceSpec newCall = workspaceSpec("/new/call");
+        newCall.getEntries().put("notes.txt", new FileEntry("current"));
+        newCall.getEnvironment().put("MODE", "current");
+        SandboxContext context =
+                SandboxContext.builder()
+                        .isolationScope(IsolationScope.SESSION)
+                        .workspaceSpec(newCall)
+                        .build();
+
+        Sandbox resumed =
+                new SandboxManager(client, store, "agent")
+                        .acquire(context, RuntimeContext.builder().sessionId("session").build())
+                        .getSandbox();
+        AgentRunSandboxState state = (AgentRunSandboxState) resumed.getState();
+
+        assertEquals("saved-sandbox", state.getSandboxId());
+        assertEquals("/mnt/data/saved", state.getWorkspaceRoot());
+        assertEquals(state.getWorkspaceRoot(), state.getWorkspaceSpec().getRoot());
+        assertTrue(state.isWorkspaceRootReady());
+        assertEquals("saved-projection", state.getWorkspaceProjectionHash());
+        assertTrue(state.isWorkspaceOnNas());
+        assertNotSame(newCall, state.getWorkspaceSpec());
+        assertEquals(newCall.getEntries(), state.getWorkspaceSpec().getEntries());
+        assertEquals(newCall.getEnvironment(), state.getWorkspaceSpec().getEnvironment());
+        assertEquals("/new/call", newCall.getRoot());
+    }
+
+    @Test
+    void legacyStateWithoutLayoutUsesSavedDefaultExecutionRoot() {
+        AgentRunSandboxClient client = new AgentRunSandboxClient(options(), null);
+        AgentRunSandboxState state =
+                (AgentRunSandboxState)
+                        client.deserializeState("{\"type\":\"agentrun\",\"sessionId\":\"legacy\"}");
+        state.setWorkspaceSpec(null);
+        client.resume(state);
+        assertEquals(AgentRunSandboxState.DEFAULT_WORKSPACE_ROOT, state.getWorkspaceRoot());
+        assertEquals(state.getWorkspaceRoot(), state.getWorkspaceSpec().getRoot());
+    }
+
+    @Test
+    void createAndResumeRejectBlankOrRelativeRoots() {
+        AgentRunSandboxClient client = new AgentRunSandboxClient(options(), null);
+        for (String root : new String[] {null, "", "relative/root"}) {
+            assertThrows(
+                    SandboxException.SandboxConfigurationException.class,
+                    () -> client.create(workspaceSpec(root), null, null));
+            if (root != null) {
+                AgentRunSandboxState state = new AgentRunSandboxState();
+                state.setWorkspaceRoot(root);
+                assertThrows(
+                        SandboxException.SandboxConfigurationException.class,
+                        () -> client.resume(state));
+            }
+        }
     }
 
     private static AgentRunNasMountConfig nasMount(String mountDir) {

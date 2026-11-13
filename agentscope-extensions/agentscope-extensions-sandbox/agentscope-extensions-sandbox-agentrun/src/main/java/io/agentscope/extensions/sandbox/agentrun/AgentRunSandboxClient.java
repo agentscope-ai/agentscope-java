@@ -27,7 +27,6 @@ import io.agentscope.harness.agent.sandbox.snapshot.RemoteSnapshotSpec;
 import io.agentscope.harness.agent.sandbox.snapshot.SandboxSnapshotSpec;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
-import java.util.Objects;
 import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -73,11 +72,13 @@ public class AgentRunSandboxClient implements SandboxClient<AgentRunSandboxClien
 
         String sessionId = UUID.randomUUID().toString();
         String sandboxId = deriveSandboxId(sessionId);
-        String workspaceRoot = resolveWorkspaceRoot(workspaceSpec, merged.getWorkspaceRoot());
+        String workspaceRoot =
+                normalizeWorkspaceRoot(
+                        resolveWorkspaceRoot(workspaceSpec, merged.getWorkspaceRoot()));
 
         AgentRunSandboxState state = new AgentRunSandboxState();
         state.setSessionId(sessionId);
-        state.setWorkspaceSpec(workspaceSpec);
+        state.setWorkspaceSpec(copyWorkspaceSpec(workspaceSpec, workspaceRoot));
         state.setWorkspaceRoot(workspaceRoot);
         state.setTemplateName(merged.getTemplateName());
         state.setAccountId(merged.getAccountId());
@@ -107,14 +108,11 @@ public class AgentRunSandboxClient implements SandboxClient<AgentRunSandboxClien
                     "Expected AgentRunSandboxState but got: " + state.getClass().getName());
         }
         AgentRunSandboxClientOptions merged = merge(null);
-        String previousRoot = ar.getWorkspaceRoot();
-        String workspaceRoot = resolveWorkspaceRoot(ar.getWorkspaceSpec(), previousRoot);
-        if (!Objects.equals(previousRoot, workspaceRoot)) {
-            ar.setWorkspaceRootReady(false);
-            ar.setWorkspaceProjectionHash(null);
-            ar.setWorkspaceRoot(workspaceRoot);
-            ar.setWorkspaceOnNas(isWorkspaceUnderMounts(workspaceRoot, merged));
-        }
+        // The saved execution directory remains authoritative even when SandboxManager
+        // replaces the workspace layout with the current call's configuration.
+        String workspaceRoot = normalizeWorkspaceRoot(ar.getWorkspaceRoot());
+        ar.setWorkspaceRoot(workspaceRoot);
+        ar.setWorkspaceSpec(copyWorkspaceSpec(ar.getWorkspaceSpec(), workspaceRoot));
         return build(ar, merged);
     }
 
@@ -192,10 +190,21 @@ public class AgentRunSandboxClient implements SandboxClient<AgentRunSandboxClien
     }
 
     private static String resolveWorkspaceRoot(WorkspaceSpec spec, String fallback) {
-        if (spec != null && spec.getRoot() != null && !spec.getRoot().isBlank()) {
-            return spec.getRoot();
+        return spec != null && spec.isRootExplicitlySet() ? spec.getRoot() : fallback;
+    }
+
+    static String normalizeWorkspaceRoot(String root) {
+        if (root == null || root.isBlank() || !root.startsWith("/")) {
+            throw new SandboxException.SandboxConfigurationException(
+                    "AgentRun workspace root must be an absolute path but was: " + root);
         }
-        return fallback;
+        return java.nio.file.Path.of(root).normalize().toString().replace('\\', '/');
+    }
+
+    private static WorkspaceSpec copyWorkspaceSpec(WorkspaceSpec spec, String root) {
+        WorkspaceSpec effective = spec != null ? spec.copy() : new WorkspaceSpec();
+        effective.setRoot(root);
+        return effective;
     }
 
     private AgentRunSandboxClientOptions merge(AgentRunSandboxClientOptions call) {
