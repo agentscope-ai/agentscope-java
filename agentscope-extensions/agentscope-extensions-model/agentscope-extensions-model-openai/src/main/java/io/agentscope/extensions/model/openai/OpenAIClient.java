@@ -27,6 +27,7 @@ import io.agentscope.core.util.JsonUtils;
 import io.agentscope.extensions.model.openai.dto.OpenAIChoice;
 import io.agentscope.extensions.model.openai.dto.OpenAIRequest;
 import io.agentscope.extensions.model.openai.dto.OpenAIResponse;
+import io.agentscope.extensions.model.openai.exception.IncompleteStreamException;
 import io.agentscope.extensions.model.openai.exception.OpenAIException;
 import java.net.URI;
 import java.net.URLEncoder;
@@ -35,6 +36,7 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.regex.Pattern;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -403,12 +405,26 @@ public class OpenAIClient {
                             .build();
 
             AtomicBoolean seenChunk = new AtomicBoolean(false);
+            // Completion-signal tracking: a healthy OpenAI-compatible stream terminates
+            // with the [DONE] sentinel and/or a chunk carrying finish_reason. A stream
+            // that ends without either was cut mid-generation (e.g. gateway closed the
+            // connection early) — without this check the truncated content would be
+            // silently accepted as a complete response.
+            AtomicBoolean sawCompletionSignal = new AtomicBoolean(false);
+            AtomicLong emittedChunks = new AtomicLong(0);
             return transport.stream(httpRequest)
                     // The SSE `[DONE]` sentinel terminates the stream: complete the Flux here
                     // rather than merely filtering it out, otherwise completion is deferred until
                     // the underlying connection closes (keep-alive gateways may stall this for the
                     // full idle timeout even though the model has finished responding).
-                    .takeWhile(data -> !SSE_DONE_MARKER.equals(data))
+                    .takeWhile(
+                            data -> {
+                                if (SSE_DONE_MARKER.equals(data)) {
+                                    sawCompletionSignal.set(true);
+                                    return false;
+                                }
+                                return true;
+                            })
                     .<OpenAIResponse>handle(
                             (data, sink) -> {
                                 OpenAIResponse response = parseStreamData(data);
@@ -440,10 +456,43 @@ public class OpenAIClient {
                                             summaryChoice.setMessage(null);
                                         }
                                     }
+                                    // A chunk carrying finish_reason is the provider's
+                                    // completion signal even when [DONE] is never sent
+                                    if (!sawCompletionSignal.get() && hasFinishReason(response)) {
+                                        sawCompletionSignal.set(true);
+                                    }
                                     sink.next(response);
+                                    emittedChunks.incrementAndGet();
                                 }
                                 // If response is null (malformed chunk), skip it silently
                             })
+                    // Reject streams that completed without any completion signal: the
+                    // connection ended before the provider finished the response
+                    .concatWith(
+                            Flux.defer(
+                                    () -> {
+                                        if (sawCompletionSignal.get()) {
+                                            return Flux.empty();
+                                        }
+                                        log.warn(
+                                                "OpenAI streaming response ended without"
+                                                        + " completion signal (no [DONE] sentinel"
+                                                        + " and no finish_reason chunk): url={},"
+                                                        + " chunks={}, partialContent={}",
+                                                url,
+                                                emittedChunks.get(),
+                                                emittedChunks.get() > 0);
+                                        return Flux.error(
+                                                new IncompleteStreamException(
+                                                        "Streaming response ended without [DONE]"
+                                                                + " sentinel or finish_reason chunk"
+                                                                + " (chunks received: "
+                                                                + emittedChunks.get()
+                                                                + ");"
+                                                                + " response is likely truncated",
+                                                        emittedChunks.get() > 0,
+                                                        emittedChunks.get()));
+                                    }))
                     .onErrorMap(
                             ex -> {
                                 if (ex instanceof HttpTransportException hte) {
@@ -508,6 +557,15 @@ public class OpenAIClient {
      * @param data the SSE data (without "data: " prefix)
      * @return the parsed OpenAIResponse, or null if parsing fails
      */
+    /** Whether any choice of the response chunk carries a finish_reason. */
+    private static boolean hasFinishReason(OpenAIResponse response) {
+        if (response.getChoices() == null) {
+            return false;
+        }
+        return response.getChoices().stream()
+                .anyMatch(c -> c != null && c.getFinishReason() != null);
+    }
+
     private OpenAIResponse parseStreamData(String data) {
         if (log.isDebugEnabled()) {
             log.debug("SSE data: {}", data);

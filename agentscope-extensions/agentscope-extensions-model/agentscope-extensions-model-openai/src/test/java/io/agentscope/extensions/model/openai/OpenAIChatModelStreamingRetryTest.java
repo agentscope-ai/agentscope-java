@@ -30,6 +30,7 @@ import io.agentscope.core.model.transport.HttpTransportConfig;
 import io.agentscope.core.model.transport.HttpTransportFactory;
 import io.agentscope.core.model.transport.JdkHttpTransport;
 import io.agentscope.core.model.transport.OkHttpTransport;
+import io.agentscope.extensions.model.openai.exception.IncompleteStreamException;
 import io.agentscope.extensions.model.openai.exception.OpenAIException;
 import io.agentscope.extensions.model.openai.formatter.OpenAIChatFormatter;
 import java.io.IOException;
@@ -113,6 +114,41 @@ class OpenAIChatModelStreamingRetryTest {
         assertEquals(MAX_ATTEMPTS, requestCount.get());
         assertTrue(responses != null && !responses.isEmpty(), "Expected at least one response");
         assertEquals("hello", firstText(responses.get(0)));
+    }
+
+    @Test
+    @DisplayName("Stream ended without [DONE] or finish_reason fails as incomplete")
+    void streamEndedWithoutCompletionSignalFails() {
+        // Simulates a gateway closing the connection mid-generation: content chunk
+        // arrives, then the stream just ends without finish_reason or [DONE].
+        // The truncated content must surface as an error, not a complete response.
+        mockServer.enqueue(
+                new MockResponse()
+                        .setResponseCode(200)
+                        .setHeader("Content-Type", "text/event-stream")
+                        .setBody(
+                                "data: {\"object\":\"chat.completion.chunk\",\"choices\":[{"
+                                        + "\"delta\":{\"content\":\"partial\"},"
+                                        + "\"finish_reason\":null}]}\n\n"));
+
+        OpenAIChatModel model = buildStreamingModel(defaultTransport());
+
+        StepVerifier.create(model.stream(List.of(singleUserMessage()), null, retryOptions()))
+                // The partial content chunk is still delivered before the stream ends
+                .expectNextCount(1)
+                .expectErrorSatisfies(
+                        e -> {
+                            Throwable root = rootCause(e);
+                            assertInstanceOf(IncompleteStreamException.class, root);
+                            assertTrue(
+                                    ((IncompleteStreamException) root).isContentEmitted(),
+                                    "Partial content was emitted before the cut");
+                        })
+                .verify(Duration.ofSeconds(10));
+
+        // PartialStreamContent is excluded from generic model-level retries
+        assertEquals(
+                1, mockServer.getRequestCount(), "Incomplete stream must not be blind-retried");
     }
 
     @Test
@@ -283,9 +319,14 @@ class OpenAIChatModelStreamingRetryTest {
     }
 
     private static String sseChunk(String content) {
+        // Spec-compliant stream: content chunk(s) followed by a finish_reason chunk.
+        // The transport layer strips the [DONE] sentinel, so finish_reason is the
+        // completion signal the client verifies (see IncompleteStreamException).
         return "data: {\"object\":\"chat.completion.chunk\",\"choices\":[{\"delta\":{\"content\":\""
                 + content
-                + "\"},\"finish_reason\":null}]}\n\n";
+                + "\"},\"finish_reason\":null}]}\n\n"
+                + "data:"
+                + " {\"object\":\"chat.completion.chunk\",\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}]}\n\n";
     }
 
     private static String sseDone() {
