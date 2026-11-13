@@ -167,7 +167,8 @@ public class ReasoningContext {
      * </ol>
      *
      * @hidden
-     * @return The complete reasoning message with all blocks, or null if no content
+     * @return The complete reasoning message with all blocks, or {@code null} only when
+     *         there is no thinking, text, or tool call at all
      */
     public Msg buildFinalMessage() {
         List<ContentBlock> blocks = new ArrayList<>();
