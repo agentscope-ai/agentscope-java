@@ -167,7 +167,8 @@ public final class ActionObservations {
         } catch (RuntimeException error) {
             log.warn(
                     "Action observation persisted but event delivery failed: {}",
-                    observation.actionId());
+                    observation.actionId(),
+                    error);
         }
     }
 
