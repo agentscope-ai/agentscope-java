@@ -35,6 +35,7 @@ import io.agentscope.core.event.TextBlockStartEvent;
 import io.agentscope.core.event.ThinkingBlockDeltaEvent;
 import io.agentscope.core.event.ThinkingBlockEndEvent;
 import io.agentscope.core.event.ThinkingBlockStartEvent;
+import io.agentscope.core.event.ToolCallDeltaEvent;
 import io.agentscope.core.event.ToolCallEndEvent;
 import io.agentscope.core.event.ToolCallStartEvent;
 import io.agentscope.core.event.ToolResultEndEvent;
@@ -60,6 +61,7 @@ import io.agentscope.core.state.AgentState;
 import io.agentscope.core.tool.AgentTool;
 import io.agentscope.core.tool.ToolCallParam;
 import io.agentscope.core.tool.Toolkit;
+import java.time.Duration;
 import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.List;
@@ -70,6 +72,8 @@ import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
 import java.util.function.Supplier;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
@@ -254,6 +258,97 @@ class ReActAgentNewLoopReplyTest {
         int firstModelStart = indexOf(events, ModelCallStartEvent.class);
         int secondModelStart = indexOfFrom(events, ModelCallStartEvent.class, firstModelStart + 1);
         assertTrue(secondModelStart > iToolResultEnd, "second iteration should follow tool result");
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {true, false})
+    void streamedToolCallKeepsOneIdThroughExecution(boolean providerIdPresent) {
+        String providerId = providerIdPresent ? "provided-call-id" : null;
+        ChatResponse start =
+                ChatResponse.builder()
+                        .content(
+                                List.of(
+                                        ToolUseBlock.builder()
+                                                .id(providerId)
+                                                .name("echo")
+                                                .content("{\"query\":")
+                                                .build()))
+                        .build();
+        ChatResponse continuation =
+                ChatResponse.builder()
+                        .content(
+                                List.of(
+                                        ToolUseBlock.builder()
+                                                .name("__fragment__")
+                                                .content("\"ping\"}")
+                                                .build()))
+                        .build();
+        ChatResponse end = ChatResponse.builder().content(List.of()).build();
+        ScriptedModel model =
+                new ScriptedModel(
+                        List.of(
+                                () ->
+                                        Flux.concat(
+                                                Mono.just(start),
+                                                Mono.delay(Duration.ofMillis(40))
+                                                        .thenReturn(continuation),
+                                                Mono.delay(Duration.ofMillis(40)).thenReturn(end)),
+                                () -> Flux.just(textResponse("done"))));
+
+        try (ReActAgent agent =
+                ReActAgent.builder()
+                        .name("asst")
+                        .model(model)
+                        .toolkit(toolkitWith(new EchoTool()))
+                        .build()) {
+            List<AgentEvent> events =
+                    agent.streamEvents(List.of()).collectList().block(Duration.ofSeconds(10));
+            assertNotNull(events);
+            String id =
+                    events.stream()
+                            .filter(ToolCallStartEvent.class::isInstance)
+                            .map(ToolCallStartEvent.class::cast)
+                            .findFirst()
+                            .orElseThrow()
+                            .getToolCallId();
+            assertNotNull(id);
+            if (providerIdPresent) {
+                assertEquals(providerId, id);
+            }
+            assertEquals(
+                    List.of(id, id),
+                    events.stream()
+                            .filter(ToolCallDeltaEvent.class::isInstance)
+                            .map(ToolCallDeltaEvent.class::cast)
+                            .map(ToolCallDeltaEvent::getToolCallId)
+                            .toList());
+            assertEquals(
+                    List.of(id),
+                    events.stream()
+                            .filter(ToolCallEndEvent.class::isInstance)
+                            .map(ToolCallEndEvent.class::cast)
+                            .map(ToolCallEndEvent::getToolCallId)
+                            .toList());
+            assertEquals(
+                    List.of(id),
+                    events.stream()
+                            .filter(ToolResultEndEvent.class::isInstance)
+                            .map(ToolResultEndEvent.class::cast)
+                            .map(ToolResultEndEvent::getToolCallId)
+                            .toList());
+            List<Msg> history = agent.getAgentState().getContext();
+            List<ToolUseBlock> calls =
+                    history.stream()
+                            .flatMap(msg -> msg.getContentBlocks(ToolUseBlock.class).stream())
+                            .toList();
+            List<ToolResultBlock> results =
+                    history.stream()
+                            .flatMap(msg -> msg.getContentBlocks(ToolResultBlock.class).stream())
+                            .toList();
+            assertEquals(List.of(id), calls.stream().map(ToolUseBlock::getId).toList());
+            assertEquals(List.of(id), results.stream().map(ToolResultBlock::getId).toList());
+            assertEquals("echo:ping", ((TextBlock) results.get(0).getOutput().get(0)).getText());
+        }
     }
 
     @Test
