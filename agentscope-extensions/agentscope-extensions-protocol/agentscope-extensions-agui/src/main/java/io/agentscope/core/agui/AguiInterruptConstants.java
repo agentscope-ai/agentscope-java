@@ -35,6 +35,12 @@ public final class AguiInterruptConstants {
     /** Interrupt metadata key: the tool name. */
     public static final String METADATA_TOOL_NAME = "toolName";
 
+    /**
+     * Interrupt metadata key: the tool's human-readable display title, carried only when the tool
+     * provides one.
+     */
+    public static final String METADATA_TOOL_TITLE = "toolTitle";
+
     /** Interrupt metadata key: the parsed tool arguments. */
     public static final String METADATA_TOOL_INPUT = "toolInput";
 

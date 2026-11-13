@@ -21,6 +21,7 @@ import static io.agentscope.core.agui.AguiInterruptConstants.METADATA_REPLY_ID;
 import static io.agentscope.core.agui.AguiInterruptConstants.METADATA_TOOL_CONTENT;
 import static io.agentscope.core.agui.AguiInterruptConstants.METADATA_TOOL_INPUT;
 import static io.agentscope.core.agui.AguiInterruptConstants.METADATA_TOOL_NAME;
+import static io.agentscope.core.agui.AguiInterruptConstants.METADATA_TOOL_TITLE;
 import static io.agentscope.core.agui.AguiInterruptConstants.TOOL_CALL_INTERRUPT_REASON;
 
 import io.agentscope.core.agui.event.AguiEvent;
@@ -54,6 +55,11 @@ import java.util.Set;
  * non-null. This matters because {@code ReActAgent.applyConfirmResults} fully replaces the stored
  * {@code ToolUseBlock}, and tool-input validation reads {@code content} directly with no fallback to
  * {@code input}; a null content would fail the resume with {@code argument "content" is null}.
+ *
+ * <p>Alongside {@code toolName} the metadata carries {@code toolTitle} — the human-readable display
+ * title from the tool definition — but <em>only</em> when the tool provides a non-blank one. The
+ * confirmation message text is deliberately left as the programmatic name so consumers matching on
+ * it keep working; the title is additive metadata for clients that render a label for an end user.
  *
  * <p>{@link UserConfirmResultEvent} silently adopts the validated tool-call ids so the new run
  * can deliver their results without replaying the previous run's tool-call events. Core emits
@@ -109,15 +115,20 @@ final class PermissionConfirmEventConverter implements AgentEventConverter {
                 throw new IllegalStateException(
                         "RequireUserConfirmEvent contains a tool call without a stable id");
             }
-            context.addInterrupt(buildInterrupt(replyId, toolUse));
+            context.addInterrupt(
+                    buildInterrupt(replyId, toolUse, context.toolDisplayTitle(toolUse.getName())));
         }
     }
 
-    private static AguiEvent.Interrupt buildInterrupt(String replyId, ToolUseBlock toolUse) {
+    private static AguiEvent.Interrupt buildInterrupt(
+            String replyId, ToolUseBlock toolUse, String displayTitle) {
         String toolCallId = toolUse.getId();
         Map<String, Object> metadata = new LinkedHashMap<>();
         if (!isBlank(toolUse.getName())) {
             metadata.put(METADATA_TOOL_NAME, toolUse.getName());
+        }
+        if (displayTitle != null) {
+            metadata.put(METADATA_TOOL_TITLE, displayTitle);
         }
         if (toolUse.getInput() != null && !toolUse.getInput().isEmpty()) {
             metadata.put(METADATA_TOOL_INPUT, toolUse.getInput());

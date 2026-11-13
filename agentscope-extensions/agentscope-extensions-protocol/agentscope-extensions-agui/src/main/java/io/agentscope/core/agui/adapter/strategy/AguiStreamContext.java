@@ -31,6 +31,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.function.Function;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
 import org.slf4j.Logger;
@@ -61,6 +62,7 @@ public class AguiStreamContext {
     private final Set<String> warnedMissingToolCallIdOperations = new LinkedHashSet<>();
     private final TokenUsageAccumulator tokenUsageAccumulator = new TokenUsageAccumulator();
     private final Predicate<String> isExternalTool;
+    private final Function<String, String> displayTitleResolver;
     private final Map<String, String> startedToolCallNames = new LinkedHashMap<>();
 
     public AguiStreamContext(String threadId, String runId, AguiAdapterConfig config) {
@@ -89,12 +91,35 @@ public class AguiStreamContext {
             AguiAdapterConfig config,
             RunAgentInput runInput,
             Predicate<String> isExternalTool) {
+        this(threadId, runId, config, runInput, isExternalTool, null);
+    }
+
+    /**
+     * Stream conversion context with a display-title resolver.
+     *
+     * <p>The {@code displayTitleResolver} maps a tool name to the human-readable title its
+     * definition carries (see {@code AgentTool#getTitle()}). Confirmation interrupts show an end
+     * user the title rather than the programmatic name. Pass {@code null} when no live toolkit is
+     * available, in which case no title is resolved and interrupts carry only the name, exactly as
+     * before.
+     *
+     * @param displayTitleResolver tool name to display title, either value may be {@code null}
+     */
+    public AguiStreamContext(
+            String threadId,
+            String runId,
+            AguiAdapterConfig config,
+            RunAgentInput runInput,
+            Predicate<String> isExternalTool,
+            Function<String, String> displayTitleResolver) {
         this.threadId = Objects.requireNonNull(threadId, "threadId cannot be null");
         this.runId = Objects.requireNonNull(runId, "runId cannot be null");
         this.config = Objects.requireNonNull(config, "config cannot be null");
         this.runInput = runInput;
         this.isExternalTool =
                 isExternalTool != null ? isExternalTool : defaultExternalToolDetector(runInput);
+        this.displayTitleResolver =
+                displayTitleResolver != null ? displayTitleResolver : name -> null;
     }
 
     public String getThreadId() {
@@ -384,6 +409,19 @@ public class AguiStreamContext {
     public boolean isExternalToolCall(String toolCallId) {
         String toolCallName = startedToolCallNames.get(toolCallId);
         return toolCallName != null && isExternalTool.test(toolCallName);
+    }
+
+    /**
+     * Human-readable title an end user should see for this tool, or {@code null} when the tool
+     * provides none. Blank values are reported as absent so a whitespace-only title can never
+     * render as an empty label.
+     */
+    public String toolDisplayTitle(String toolName) {
+        if (toolName == null || toolName.isBlank()) {
+            return null;
+        }
+        String title = displayTitleResolver.apply(toolName);
+        return title != null && !title.isBlank() ? title : null;
     }
 
     /**

@@ -36,6 +36,7 @@ import io.agentscope.core.message.ThinkingBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ToolSchema;
+import io.agentscope.core.tool.AgentTool;
 import io.agentscope.core.tool.SchemaOnlyTool;
 import io.agentscope.core.tool.ToolMergeMode;
 import io.agentscope.core.tool.ToolRequestConfig;
@@ -51,6 +52,7 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.Function;
 import java.util.function.Predicate;
 import java.util.function.Supplier;
 import reactor.core.publisher.Flux;
@@ -199,7 +201,12 @@ public class AguiAgentAdapter {
         if (agent instanceof ReActAgent reAct) {
             AguiStreamContext context =
                     new AguiStreamContext(
-                            threadId, runId, config, input, externalToolDetector(runtimeContext));
+                            threadId,
+                            runId,
+                            config,
+                            input,
+                            externalToolDetector(runtimeContext),
+                            displayTitleResolver(runtimeContext));
             Flux<AgentEvent> events =
                     Objects.requireNonNull(
                             reAct.streamEvents(msgs, runtimeContext), "agent stream is null");
@@ -209,7 +216,12 @@ public class AguiAgentAdapter {
         if (AguiUtil.isHarnessAgent(agent)) {
             AguiStreamContext context =
                     new AguiStreamContext(
-                            threadId, runId, config, input, externalToolDetector(runtimeContext));
+                            threadId,
+                            runId,
+                            config,
+                            input,
+                            externalToolDetector(runtimeContext),
+                            displayTitleResolver(runtimeContext));
             Flux<AgentEvent> events =
                     Objects.requireNonNull(
                             invokeHarnessStreamEvents(agent, msgs, runtimeContext),
@@ -381,6 +393,32 @@ public class AguiAgentAdapter {
         ToolRequestConfig requestConfig =
                 runtimeContext != null ? runtimeContext.getToolRequestConfig() : null;
         return name -> toolkit.isExternalTool(name, requestConfig);
+    }
+
+    /**
+     * Display-title resolver backed by the live toolkit, resolved against the per-call {@link
+     * ToolRequestConfig} the same way {@link #externalToolDetector(RuntimeContext)} is. Both halves
+     * of the decision - which tools are external, and what a tool is called for an end user - must
+     * consult the same view of the toolkit, or an interrupt could name a tool the argument
+     * emission already treated as internal.
+     *
+     * <p>Frontend-injected tools live in the request config rather than the shared registry, so
+     * resolution goes through {@link Toolkit#getTool(String, ToolRequestConfig)}. Returns {@code
+     * null} when the agent exposes no toolkit: confirmation interrupts then carry only the tool
+     * name, as they did before this resolver existed.
+     */
+    private Function<String, String> displayTitleResolver(RuntimeContext runtimeContext) {
+        Toolkit toolkit = agent.getToolkit();
+        if (toolkit == null) {
+            return null;
+        }
+        // buildRuntimeContext() always sets a per-call config (ToolRequestConfig.NONE at worst),
+        // so the context itself is never null on this path.
+        ToolRequestConfig requestConfig = runtimeContext.getToolRequestConfig();
+        return name -> {
+            AgentTool tool = toolkit.getTool(name, requestConfig);
+            return tool != null ? tool.getTitle() : null;
+        };
     }
 
     private Flux<AguiEvent> errorEvents(
