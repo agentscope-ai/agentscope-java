@@ -67,9 +67,12 @@ public class WorkspaceContextMiddleware implements HarnessRuntimeMiddleware {
     private static final String DOMAIN_KNOWLEDGE_GUIDANCE =
             """
             ## Domain Knowledge
-            The workspace `knowledge/` tree holds many detailed reference documents (not only a single summary file). When the task needs specs, procedures, schemas, or domain facts, treat that directory as the source of truth.
-            Below, `<domain_knowledge_context>` already includes what you need to navigate it: injected `knowledge/KNOWLEDGE.md` (if present) plus a **full list of knowledge file paths** under `knowledge/` — use that as the catalog of what exists and where.
-            For content not inlined here, open only the paths you need with read_file, grep, or glob (prefer targeted reads over loading entire trees into the reply).
+            Use the available reference material in <domain_knowledge_context> for specs, procedures, schemas, and domain facts relevant to the task.
+            """;
+
+    private static final String KNOWLEDGE_FILES_GUIDANCE =
+            """
+            The knowledge file catalog lists reference paths under `knowledge/`. Use the catalog in <domain_knowledge_context>; read only the paths you need with read_file, grep, or glob.
             """;
 
     private static final String MEMORY_RECALL_GUIDANCE =
@@ -233,6 +236,7 @@ public class WorkspaceContextMiddleware implements HarnessRuntimeMiddleware {
         String memoryContent =
                 includeMemoryContext ? workspaceManager.readMemoryMd(rc).strip() : "";
         String knowledgeContent = workspaceManager.readKnowledgeMd(rc).strip();
+        List<Path> knowledgeFiles = workspaceManager.listKnowledgeFiles(rc);
         Path workspace = workspaceManager.getWorkspace();
         AbstractFilesystem filesystem = workspaceManager.getFilesystem();
         Path effectiveWorkspace =
@@ -241,7 +245,7 @@ public class WorkspaceContextMiddleware implements HarnessRuntimeMiddleware {
                         : workspace;
         String sessionContext = buildSessionContextSection(effectiveWorkspace, rc);
 
-        String knowledgeBlock = buildKnowledgeBlock(rc, knowledgeContent, workspace);
+        String knowledgeBlock = buildKnowledgeBlock(knowledgeContent, knowledgeFiles, workspace);
         String additionalBlock = buildAdditionalContextBlock(rc);
 
         int fixedTokens =
@@ -263,7 +267,11 @@ public class WorkspaceContextMiddleware implements HarnessRuntimeMiddleware {
         String loadedContext =
                 buildLoadedContextSection(
                         agentsContent, memoryContent, knowledgeBlock, additionalBlock);
-        return assembleSection(sessionContext, buildGuidance(), workspaceParagraph, loadedContext);
+        return assembleSection(
+                sessionContext,
+                buildGuidance(knowledgeContent, knowledgeFiles),
+                workspaceParagraph,
+                loadedContext);
     }
 
     /**
@@ -274,9 +282,14 @@ public class WorkspaceContextMiddleware implements HarnessRuntimeMiddleware {
         return !(disableMemoryTools && disableMemoryHooks);
     }
 
-    private String buildGuidance() {
+    private String buildGuidance(String knowledgeContent, List<Path> knowledgeFiles) {
         StringBuilder sb = new StringBuilder();
-        sb.append(DOMAIN_KNOWLEDGE_GUIDANCE.strip()).append("\n\n");
+        if (!knowledgeContent.isBlank() || !knowledgeFiles.isEmpty()) {
+            sb.append(DOMAIN_KNOWLEDGE_GUIDANCE.strip()).append("\n\n");
+            if (!knowledgeFiles.isEmpty()) {
+                sb.append(KNOWLEDGE_FILES_GUIDANCE.strip()).append("\n\n");
+            }
+        }
         if (!disableMemoryTools) {
             sb.append(MEMORY_RECALL_GUIDANCE.strip()).append("\n\n");
         }
@@ -592,8 +605,8 @@ public class WorkspaceContextMiddleware implements HarnessRuntimeMiddleware {
         return text.substring(0, maxChars) + notice;
     }
 
-    private String buildKnowledgeBlock(RuntimeContext rc, String knowledgeContent, Path workspace) {
-        List<Path> knowledgeFiles = workspaceManager.listKnowledgeFiles(rc);
+    private String buildKnowledgeBlock(
+            String knowledgeContent, List<Path> knowledgeFiles, Path workspace) {
         StringBuilder sb = new StringBuilder();
 
         if (!knowledgeContent.isBlank()) {

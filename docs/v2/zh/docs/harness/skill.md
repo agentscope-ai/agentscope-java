@@ -318,7 +318,7 @@ agent 感知不到这种差异，`load_skill_through_path` 调起来都一样。
 
 ### `<files-root>` 和 shell 执行
 
-当一个 skill 自带脚本（例如 `scripts/run-checks.sh`），agent 需要绝对路径才能通过 `execute` 调用它。这个绝对路径就是 skill 条目里的 `<files-root>`。它怎么算出来取决于文件系统模式：
+当一个 skill 自带脚本（例如 `scripts/run-checks.sh`），agent 需要绝对路径才能通过 `execute` 调用它。提供 `<files-root>` 的条目通过该字段声明资源目录；没有此字段的条目仍可通过 `load_skill_through_path` 加载，但不声明可供 shell 访问的资源目录。文件列举和执行引导只适用于提供 `<files-root>` 的条目。它怎么算出来取决于文件系统模式：
 
 | 文件系统模式（是否有 shell） | 工作区 skill 的 `<files-root>` | 市场 skill 的 `<files-root>` |
 |---------------------------|----------------------------|---------------------------|

@@ -194,7 +194,7 @@ Key points:
 
 - **Re-assembled every turn.** Edit `AGENTS.md` or `MEMORY.md` and the next `call()` picks up the change — no restart, no rebuild.
 - **`MEMORY.md` is token-estimated before injection.** Overflow truncates by character count with a trailing note that nudges the model toward `memory_search`.
-- **`knowledge/` is a directory index + entry file.** The full tree never enters the prompt — only `KNOWLEDGE.md` plus a listing of paths; the agent reads what it needs with `read_file`.
+- **`knowledge/` is a directory index + entry file.** The full tree never enters the prompt — only `KNOWLEDGE.md` plus a listing of paths; the agent reads what it needs with `read_file`. Domain Knowledge guidance is omitted when both are empty; inline-only references do not promise a directory, and file navigation is described only when paths were collected.
 
 ### Two-layer reads (filesystem-first + local fallback)
 

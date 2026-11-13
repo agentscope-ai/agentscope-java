@@ -79,6 +79,66 @@ class WorkspaceContextMiddlewareMemoryPromptTest {
     }
 
     @Test
+    void inlineKnowledgeDoesNotPromiseAFileTree() {
+        WorkspaceManager wm =
+                track(
+                        new WorkspaceManager(workspace) {
+                            @Override
+                            public String readKnowledgeMd(RuntimeContext rc) {
+                                return "INLINE_KNOWLEDGE";
+                            }
+
+                            @Override
+                            public List<Path> listKnowledgeFiles(RuntimeContext rc) {
+                                return List.of();
+                            }
+                        });
+        String prompt =
+                new WorkspaceContextMiddleware(wm)
+                        .onSystemPrompt(null, RuntimeContext.empty(), "")
+                        .block();
+        assertTrue(prompt.contains("## Domain Knowledge"));
+        assertTrue(prompt.contains("INLINE_KNOWLEDGE"));
+        assertFalse(prompt.contains("knowledge file catalog"));
+    }
+
+    @Test
+    void knowledgeCatalogIsCollectedOnceAndSharedWithGuidance() {
+        java.util.concurrent.atomic.AtomicInteger listings =
+                new java.util.concurrent.atomic.AtomicInteger();
+        WorkspaceManager wm =
+                track(
+                        new WorkspaceManager(workspace) {
+                            @Override
+                            public List<Path> listKnowledgeFiles(RuntimeContext rc) {
+                                return listings.getAndIncrement() == 0
+                                        ? List.of(workspace.resolve("knowledge/guide.md"))
+                                        : List.of();
+                            }
+                        });
+        String prompt =
+                new WorkspaceContextMiddleware(wm)
+                        .onSystemPrompt(null, RuntimeContext.empty(), "")
+                        .block();
+        assertTrue(prompt.contains("## Domain Knowledge"));
+        assertTrue(prompt.contains("knowledge file catalog"));
+        assertTrue(prompt.contains(Path.of("knowledge", "guide.md").toString()));
+        org.junit.jupiter.api.Assertions.assertEquals(1, listings.get());
+    }
+
+    @Test
+    void hostKnowledgeFallbackEnablesGuidance() throws Exception {
+        Files.createDirectories(workspace.resolve("knowledge"));
+        Files.writeString(workspace.resolve("knowledge/KNOWLEDGE.md"), "HOST_KNOWLEDGE");
+        String prompt =
+                new WorkspaceContextMiddleware(track(new WorkspaceManager(workspace)))
+                        .onSystemPrompt(null, RuntimeContext.empty(), "")
+                        .block();
+        assertTrue(prompt.contains("## Domain Knowledge"));
+        assertTrue(prompt.contains("HOST_KNOWLEDGE"));
+    }
+
+    @Test
     void onSystemPromptHandlesNullAndNonNewlineBasePrompts() {
         WorkspaceManager wm = track(new WorkspaceManager(workspace));
         WorkspaceContextMiddleware mw = new WorkspaceContextMiddleware(wm);
@@ -88,7 +148,7 @@ class WorkspaceContextMiddlewareMemoryPromptTest {
 
         assertNotNull(promptWithoutBase);
         assertFalse(promptWithoutBase.startsWith("null"));
-        assertTrue(promptWithoutBase.contains("## Domain Knowledge"));
+        assertFalse(promptWithoutBase.contains("## Domain Knowledge"));
         assertNotNull(promptWithBase);
         assertTrue(promptWithBase.startsWith("BASE\n"));
     }
@@ -101,7 +161,7 @@ class WorkspaceContextMiddlewareMemoryPromptTest {
 
         String prompt = mw.onSystemPrompt(null, RuntimeContext.empty(), "BASE\n").block();
         assertNotNull(prompt);
-        assertTrue(prompt.contains("## Domain Knowledge"));
+        assertFalse(prompt.contains("## Domain Knowledge"));
         assertTrue(prompt.contains("## Memory Recall"));
         assertTrue(prompt.contains("memory_search"));
         assertTrue(prompt.contains("## Memory Persistence"));
@@ -120,7 +180,7 @@ class WorkspaceContextMiddlewareMemoryPromptTest {
 
         String prompt = mw.onSystemPrompt(null, RuntimeContext.empty(), "BASE\n").block();
         assertNotNull(prompt);
-        assertTrue(prompt.contains("## Domain Knowledge"));
+        assertFalse(prompt.contains("## Domain Knowledge"));
         assertFalse(prompt.contains("## Memory Recall"));
         assertFalse(prompt.contains("memory_search"));
         assertFalse(prompt.contains("memory_get"));
@@ -155,7 +215,7 @@ class WorkspaceContextMiddlewareMemoryPromptTest {
 
         String prompt = mw.onSystemPrompt(null, RuntimeContext.empty(), "BASE\n").block();
         assertNotNull(prompt);
-        assertTrue(prompt.contains("## Domain Knowledge"));
+        assertFalse(prompt.contains("## Domain Knowledge"));
         assertFalse(prompt.contains("## Memory Recall"));
         assertFalse(prompt.contains("## Memory Persistence"));
         assertFalse(prompt.contains("memory_search"));

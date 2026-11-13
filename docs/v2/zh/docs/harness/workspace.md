@@ -189,7 +189,7 @@ env:
 
 - **每轮都重新拼。** 你改了 `AGENTS.md` 或 `MEMORY.md`，下一次 `call()` 立刻生效，不需要重启或重建 agent。
 - **`MEMORY.md` 估算 token 后才注入。** 超出剩余预算就按字符截断并附一行提示，引导模型用 `memory_search` 工具查老内容。
-- **`knowledge/` 是目录索引 + 入口文件**。完整内容不会全量塞进 prompt——只把 `KNOWLEDGE.md` 全文加上其它文件的路径清单注入，让模型用 `read_file` 自己取需要的。
+- **`knowledge/` 是目录索引 + 入口文件**。完整内容不会全量塞进 prompt——只把 `KNOWLEDGE.md` 全文加上其它文件的路径清单注入，让模型用 `read_file` 自己取需要的。正文与路径清单均为空时省略 Domain Knowledge 引导；仅有内联参考正文时不承诺目录，只有收集到文件路径时才给出文件导航引导。
 
 ### 两层读架构（filesystem-first + 本地兜底）
 

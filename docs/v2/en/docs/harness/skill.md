@@ -318,7 +318,7 @@ The agent doesn't see this difference — `load_skill_through_path` always works
 
 ### `<files-root>` and shell execution
 
-When a skill ships scripts (e.g. `scripts/run-checks.sh`), the agent needs an absolute path to invoke them via `execute`. That path comes from the `<files-root>` element on each skill entry. Resolution depends on the filesystem mode:
+When a skill ships scripts (e.g. `scripts/run-checks.sh`), the agent needs an absolute path to invoke them via `execute`. For entries that provide `<files-root>`, that field declares the resource directory. Entries without it remain loadable through `load_skill_through_path`, but declare no shell-accessible resource directory. Only entries with `<files-root>` receive file-listing and execution guidance. Resolution depends on the filesystem mode:
 
 | FS mode (shell available?) | Workspace skill `<files-root>` | Marketplace skill `<files-root>` |
 |----------------------------|--------------------------------|-----------------------------------|
