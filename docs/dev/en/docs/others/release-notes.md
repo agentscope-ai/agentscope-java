@@ -8,6 +8,11 @@ This page tracks per-version changes for AgentScope Java 2.0. For the overall mi
 
 ---
 
+## Unreleased
+
+- Harness memory extraction consumes original Thread journal messages incrementally; legacy explicit-input extraction remains available.
+- `GenerateOptions.mergeOptions` treats a request-supplied `maxTokens` or `maxCompletionTokens` as overriding both inherited output limits. If neither is supplied, both defaults are retained; if both are explicitly supplied, both are preserved.
+
 ## 2.0.4
 
 > Status: Release draft (prepared on 2026-10-08)

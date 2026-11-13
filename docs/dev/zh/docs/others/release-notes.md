@@ -8,6 +8,11 @@ en_link: /dev/en/docs/others/release-notes
 
 ---
 
+## 未发布
+
+- Harness 记忆抽取按 Thread 日志增量消费原始消息，保留旧的显式输入抽取入口。
+- `GenerateOptions.mergeOptions` 中，请求显式提供 `maxTokens` 或 `maxCompletionTokens` 时，会覆盖两种继承的输出上限；两者均未提供时保留默认值，两者均显式提供时同时保留。
+
 ## 2.0.4
 
 > 状态：发布草稿（准备日期：2026-10-08）
