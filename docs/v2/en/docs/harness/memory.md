@@ -91,6 +91,8 @@ Common options:
 
 **Auto-recovery on overflow**: when the model returns `context_length_exceeded` (or similar), the framework forces one compaction and retries — but only when `compaction(...)` is configured; otherwise the error propagates.
 
+Lightweight argument truncation and tool-result pruning still take effect when the summary trigger is not reached or no safe prefix can be summarized. The recent tail and assistant/tool-result pairs remain protected.
+
 ### Want it lighter? Trim arguments first
 
 Tool calls like `write_file` carry huge arguments that nobody reads later. Before LLM summarization you can run a **non-LLM** string truncation:
