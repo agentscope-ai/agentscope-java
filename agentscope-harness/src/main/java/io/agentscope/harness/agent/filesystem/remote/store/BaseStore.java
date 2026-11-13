@@ -17,6 +17,7 @@ package io.agentscope.harness.agent.filesystem.remote.store;
 
 import java.util.List;
 import java.util.Map;
+import java.util.TreeSet;
 
 /**
  * Abstract interface for a namespace-based key-value store.
@@ -89,6 +90,35 @@ public interface BaseStore {
      * @return list of matching store items
      */
     List<StoreItem> search(List<String> namespace, int limit, int offset);
+
+    /**
+     * List the keys under {@code namespace} whose key starts with {@code keyPrefix}, without
+     * loading their values.
+     *
+     * <p>The default implementation pages through {@link #search} and filters client-side, so
+     * existing backends stay compatible; backends that can push the prefix into their query
+     * should override this to avoid transferring the values of every item in the namespace.
+     *
+     * @param namespace hierarchical namespace path
+     * @param keyPrefix required key prefix
+     * @return matching keys in ascending order
+     */
+    default List<String> listKeys(List<String> namespace, String keyPrefix) {
+        String prefix = keyPrefix == null ? "" : keyPrefix;
+        var keys = new TreeSet<String>();
+        final int pageSize = 256;
+        for (int offset = 0; ; offset += pageSize) {
+            var page = search(namespace, pageSize, offset);
+            for (var item : page) {
+                if (item.key().startsWith(prefix)) {
+                    keys.add(item.key());
+                }
+            }
+            if (page.size() < pageSize) {
+                return List.copyOf(keys);
+            }
+        }
+    }
 
     /**
      * Delete an item by namespace and key.

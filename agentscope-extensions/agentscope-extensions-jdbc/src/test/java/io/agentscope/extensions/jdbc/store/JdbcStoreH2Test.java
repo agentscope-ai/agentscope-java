@@ -156,4 +156,23 @@ class JdbcStoreH2Test {
         assertEquals("key1", page.get(0).key());
         assertEquals("key2", page.get(1).key());
     }
+
+    @Test
+    @DisplayName("listKeys returns only matching keys in order and escapes LIKE wildcards")
+    void listKeysReturnsOnlyMatchingKeysInOrder() {
+        List<String> ns = List.of("list-keys");
+        store.put(ns, "commits/b", Map.of("v", 2));
+        store.put(ns, "commits/a", Map.of("v", 1));
+        store.put(ns, "commits/literal_%!", Map.of("v", 3));
+        store.put(ns, "other/c", Map.of("v", 4));
+        store.put(List.of("list-keys", "child"), "commits/child", Map.of("v", 5));
+
+        assertEquals(
+                List.of("commits/a", "commits/b", "commits/literal_%!"),
+                store.listKeys(ns, "commits/"));
+        assertEquals(
+                List.of("commits/a", "commits/b", "commits/literal_%!", "other/c"),
+                store.listKeys(ns, ""));
+        assertTrue(store.listKeys(ns, "missing/").isEmpty());
+    }
 }

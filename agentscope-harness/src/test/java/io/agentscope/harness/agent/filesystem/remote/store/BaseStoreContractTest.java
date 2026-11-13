@@ -21,6 +21,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -121,6 +122,36 @@ class BaseStoreContractTest {
         // the item under ["a"] and items under child namespaces such as ["a","b"].
         assertEquals(Set.of("parent", "child"), keys);
         assertEquals(2, found.size());
+    }
+
+    @Test
+    void listKeys_filtersByPrefixAndSorts() {
+        BaseStore store = newStore();
+        List<String> ns = List.of("list");
+
+        store.put(ns, "commits/b", Map.of("v", 2));
+        store.put(ns, "commits/a", Map.of("v", 1));
+        store.put(ns, "other/c", Map.of("v", 3));
+
+        assertEquals(List.of("commits/a", "commits/b"), store.listKeys(ns, "commits/"));
+        assertEquals(List.of("commits/a", "commits/b", "other/c"), store.listKeys(ns, ""));
+        assertTrue(store.listKeys(ns, "missing/").isEmpty());
+    }
+
+    @Test
+    void listKeys_pagesBeyondOneSearchPage() {
+        BaseStore store = newStore();
+        List<String> ns = List.of("page");
+        List<String> expected = new ArrayList<>();
+
+        for (int i = 0; i < 300; i++) {
+            String key = String.format("commits/%03d", i);
+            store.put(ns, key, Map.of("v", i));
+            expected.add(key);
+        }
+        store.put(ns, "other/skip", Map.of("v", -1));
+
+        assertEquals(expected, store.listKeys(ns, "commits/"));
     }
 
     private static BaseStore newStore() {
