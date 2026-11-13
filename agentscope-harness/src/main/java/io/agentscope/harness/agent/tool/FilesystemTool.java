@@ -39,6 +39,8 @@ public class FilesystemTool {
     static final int DEFAULT_GREP_LIMIT = 100;
     static final int DEFAULT_GLOB_LIMIT = 200;
     static final int MAX_SEARCH_LIMIT = 1_000;
+    static final int DEFAULT_READ_CHARS = 16_000;
+    static final int MAX_READ_CHARS = 32_000;
 
     private final AbstractFilesystem abstractFilesystem;
     private final WorkspacePathNormalizer pathNormalizer;
@@ -111,8 +113,10 @@ public class FilesystemTool {
             name = "read_file",
             readOnly = true,
             description =
-                    "Read file content with line numbers. Supports pagination via offset and"
-                            + " limit.")
+                    "Read a file's content. Binary files come back base64-encoded. Select lines"
+                            + " with offset and limit. Output is bounded by max_chars (Unicode code"
+                            + " points). Continue with char_offset, keeping path, offset and limit"
+                            + " unchanged; read enough surrounding context before editing.")
     public String readFile(
             RuntimeContext runtimeContext,
             @ToolParam(name = "path", description = "File path to read") String path,
@@ -125,7 +129,26 @@ public class FilesystemTool {
                             name = "limit",
                             description = "Max lines to return. Default: 0 (all lines)",
                             required = false)
-                    Integer limit) {
+                    Integer limit,
+            @ToolParam(
+                            name = "char_offset",
+                            description =
+                                    "Unicode code point offset within the selected line range."
+                                            + " Default: 0",
+                            required = false)
+                    Integer charOffset,
+            @ToolParam(
+                            name = "max_chars",
+                            description =
+                                    "Maximum Unicode code points per page. Default: 16000; hard"
+                                            + " maximum: 32000",
+                            required = false)
+                    Integer maxChars) {
+        int start = charOffset != null ? charOffset : 0;
+        int size = maxChars != null ? Math.min(maxChars, MAX_READ_CHARS) : DEFAULT_READ_CHARS;
+        if (start < 0 || size < 1) {
+            return "Error: char_offset must be non-negative and max_chars must be greater than 0";
+        }
         int off = offset != null ? offset : 0;
         int lim = limit != null ? limit : 0;
         ReadResult r =
@@ -133,7 +156,29 @@ public class FilesystemTool {
         if (!r.isSuccess()) {
             return "Error: " + r.error();
         }
-        return r.fileData() != null ? r.fileData().content() : "";
+        String content = r.fileData() != null ? r.fileData().content() : "";
+        int total = content.codePointCount(0, content.length());
+        if (start > total) {
+            return "Error: char_offset exceeds the selected content length: " + total;
+        }
+        int end = start + Math.min(size, total - start);
+        String page =
+                content.substring(
+                        content.offsetByCodePoints(0, start), content.offsetByCodePoints(0, end));
+        if (end < total) {
+            page +=
+                    "\n[Output truncated. Continue with char_offset="
+                            + end
+                            + " and the same path, offset and limit. Offsets count Unicode code"
+                            + " points within the selected line range.]";
+        }
+        return page;
+    }
+
+    /** Read using the default character page size; retained for existing Java callers. */
+    public String readFile(
+            RuntimeContext runtimeContext, String path, Integer offset, Integer limit) {
+        return readFile(runtimeContext, path, offset, limit, null, null);
     }
 
     @Tool(
