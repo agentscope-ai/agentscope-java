@@ -25,7 +25,6 @@ import io.agentscope.harness.agent.sandbox.json.HarnessSandboxJacksonModule;
 import io.agentscope.harness.agent.sandbox.snapshot.RemoteSandboxSnapshot;
 import io.agentscope.harness.agent.sandbox.snapshot.RemoteSnapshotSpec;
 import io.agentscope.harness.agent.sandbox.snapshot.SandboxSnapshotSpec;
-import java.util.Objects;
 import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -61,8 +60,9 @@ public class E2bSandboxClient implements SandboxClient<E2bSandboxClientOptions> 
             E2bSandboxClientOptions options) {
         String sessionId = UUID.randomUUID().toString();
         E2bSandboxClientOptions merged = merge(options);
-        String workspaceRoot = resolveWorkspaceRoot(workspaceSpec, merged.getWorkspaceRoot());
-        requireAbsoluteWorkspaceRoot(workspaceRoot);
+        String workspaceRoot =
+                normalizeWorkspaceRoot(
+                        resolveWorkspaceRoot(workspaceSpec, merged.getWorkspaceRoot()));
 
         E2bSandboxState state = new E2bSandboxState();
         state.setSessionId(sessionId);
@@ -89,14 +89,8 @@ public class E2bSandboxClient implements SandboxClient<E2bSandboxClientOptions> 
             throw new IllegalArgumentException(
                     "Expected E2bSandboxState but got: " + state.getClass().getName());
         }
-        String previousRoot = e2b.getWorkspaceRoot();
-        String workspaceRoot = resolveWorkspaceRoot(e2b.getWorkspaceSpec(), previousRoot);
-        requireAbsoluteWorkspaceRoot(workspaceRoot);
-        if (!Objects.equals(previousRoot, workspaceRoot)) {
-            e2b.setWorkspaceRootReady(false);
-            e2b.setWorkspaceProjectionHash(null);
-        }
-        e2b.setWorkspaceRoot(workspaceRoot);
+        // Resume the directory that actually backed this sandbox. The constructor aligns
+        // legacy manifest metadata before the superclass captures its materialization root.
         E2bSandboxClientOptions resumed = merge(null);
         resumed.setCodec(e2b.getCodec());
         return new E2bSandbox(e2b, resumed);
@@ -190,15 +184,15 @@ public class E2bSandboxClient implements SandboxClient<E2bSandboxClientOptions> 
      * absolute in-sandbox path.
      *
      * @param workspaceRoot workspace root to check
+     * @return normalized absolute in-sandbox root
      */
-    private static void requireAbsoluteWorkspaceRoot(String workspaceRoot) {
-        if (workspaceRoot == null
-                || workspaceRoot.isBlank()
-                || !workspaceRoot.strip().startsWith("/")) {
+    static String normalizeWorkspaceRoot(String workspaceRoot) {
+        if (workspaceRoot == null || workspaceRoot.isBlank() || !workspaceRoot.startsWith("/")) {
             throw new SandboxException.SandboxConfigurationException(
                     "E2B workspaceRoot must be an absolute in-sandbox path but was: "
                             + workspaceRoot);
         }
+        return java.nio.file.Path.of(workspaceRoot).normalize().toString().replace('\\', '/');
     }
 
     /**
@@ -210,7 +204,7 @@ public class E2bSandboxClient implements SandboxClient<E2bSandboxClientOptions> 
      * @return the root to use for this sandbox
      */
     private static String resolveWorkspaceRoot(WorkspaceSpec spec, String fallback) {
-        if (spec != null && spec.getRoot() != null && !spec.getRoot().isBlank()) {
+        if (spec != null && spec.isRootExplicitlySet()) {
             return spec.getRoot();
         }
         return fallback;

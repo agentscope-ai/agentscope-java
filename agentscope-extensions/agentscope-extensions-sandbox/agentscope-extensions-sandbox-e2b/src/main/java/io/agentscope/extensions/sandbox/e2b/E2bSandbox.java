@@ -23,6 +23,7 @@ import io.agentscope.harness.agent.sandbox.ExecResult;
 import io.agentscope.harness.agent.sandbox.SandboxErrorCode;
 import io.agentscope.harness.agent.sandbox.SandboxException;
 import io.agentscope.harness.agent.sandbox.WorkspaceMountSupport;
+import io.agentscope.harness.agent.sandbox.WorkspaceSpec;
 import io.agentscope.harness.agent.sandbox.snapshot.SandboxSnapshot;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
@@ -70,10 +71,24 @@ public class E2bSandbox extends AbstractBaseSandbox {
     private NativeSnapshotPlan nativeSnapshotPlan = NativeSnapshotPlan.DEFAULT;
 
     public E2bSandbox(E2bSandboxState state, E2bSandboxClientOptions opt) {
-        super(state);
+        super(alignWorkspaceRoot(state));
         this.e2bState = state;
         this.opt = opt != null ? opt : new E2bSandboxClientOptions();
         this.platform = new E2bPlatformHttp(this.opt);
+    }
+
+    private static E2bSandboxState alignWorkspaceRoot(E2bSandboxState state) {
+        // Align before the superclass captures the root for workspace materialization.
+        // Older state may retain /workspace while execution uses another saved directory.
+        WorkspaceSpec workspace =
+                state.getWorkspaceSpec() != null
+                        ? state.getWorkspaceSpec().copy()
+                        : new WorkspaceSpec();
+        String root = E2bSandboxClient.normalizeWorkspaceRoot(state.getWorkspaceRoot());
+        state.setWorkspaceRoot(root);
+        workspace.setRoot(root);
+        state.setWorkspaceSpec(workspace);
+        return state;
     }
 
     @Override
@@ -311,8 +326,7 @@ public class E2bSandbox extends AbstractBaseSandbox {
         }
         nativeSnapshotPlan = NativeSnapshotPlan.DEFAULT;
         JsonNode created =
-                platform.createSandbox(
-                        e2bState.getTemplateId(), opt.getSandboxTimeoutSeconds());
+                platform.createSandbox(e2bState.getTemplateId(), opt.getSandboxTimeoutSeconds());
         markWorkspaceUnready();
         return created;
     }

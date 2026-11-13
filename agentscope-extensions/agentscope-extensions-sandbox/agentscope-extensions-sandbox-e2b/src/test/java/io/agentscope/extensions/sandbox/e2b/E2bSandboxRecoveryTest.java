@@ -283,9 +283,6 @@ class E2bSandboxRecoveryTest {
                         if ("/sandboxes".equals(request.getPath())) {
                             return sandboxResponse("fresh-sandbox");
                         }
-                        if (request.getPath().startsWith("/files")) {
-                            return new MockResponse().setResponseCode(200);
-                        }
                         return envdStartResponse();
                     }
                 });
@@ -300,9 +297,7 @@ class E2bSandboxRecoveryTest {
         RecordedRequest templateCreate = requests.get(0);
         assertEquals("/sandboxes", templateCreate.getPath());
         assertTrue(templateCreate.getBody().readUtf8().contains("\"base\""));
-        List<String> paths = requests.stream().map(RecordedRequest::getPath).toList();
-        // Hydrated: the archive was uploaded to the fresh sandbox and unpacked.
-        assertTrue(paths.stream().anyMatch(p -> p.startsWith("/files?path=")), "paths: " + paths);
+        // 2.0.x transfers the persisted archive through base64 shell commands, not /files.
         List<String> commands =
                 requests.stream()
                         .filter(r -> "/process.Process/Start".equals(r.getPath()))
@@ -317,7 +312,21 @@ class E2bSandboxRecoveryTest {
                         .toList();
         assertTrue(
                 commands.stream().anyMatch(c -> c.contains("mkdir -p")), "commands: " + commands);
-        assertTrue(commands.stream().anyMatch(c -> c.contains("tar -xf")), "commands: " + commands);
+        String encodedArchive =
+                java.util.Base64.getEncoder()
+                        .encodeToString("tar-bytes".getBytes(StandardCharsets.UTF_8));
+        assertTrue(
+                commands.stream().anyMatch(c -> c.contains(encodedArchive)),
+                "persisted archive must be uploaded: " + commands);
+        assertTrue(
+                commands.stream()
+                        .anyMatch(
+                                c ->
+                                        c.contains("base64.standard_b64decode")
+                                                && c.contains("subprocess.run")
+                                                && c.contains("tar")
+                                                && c.contains("check=True")),
+                "commands: " + commands);
         // Not the pre-fix symptom: no "workspace preserved" probe, i.e. Branch A was not taken.
         assertFalse(
                 commands.stream().anyMatch(c -> c.contains("test -d")), "commands: " + commands);
@@ -341,6 +350,27 @@ class E2bSandboxRecoveryTest {
         assertEquals("old-sandbox", state.getSandboxId());
         assertTrue(state.isWorkspaceRootReady());
         assertEquals("old-projection", state.getWorkspaceProjectionHash());
+    }
+
+    @Test
+    void startWithoutSandboxIdCreatesOnlyOneSandboxFromNativeSnapshot() throws Exception {
+        server.enqueue(sandboxResponse("restored-sandbox"));
+        server.enqueue(envdStartResponse());
+        E2bSandboxState state = stateWithNativeSnapshot("snap-123");
+        FakeSnapshot snapshot = (FakeSnapshot) state.getSnapshot();
+
+        new E2bSandbox(state, startOptions()).start();
+
+        assertEquals(2, server.getRequestCount(), "one sandbox creation and workspace setup only");
+        RecordedRequest create = server.takeRequest();
+        assertEquals("/sandboxes", create.getPath());
+        String body = create.getBody().readUtf8();
+        assertTrue(body.contains("snap-123"));
+        assertFalse(body.contains("\"base\""));
+        assertEquals("/process.Process/Start", server.takeRequest().getPath());
+        assertEquals(1, snapshot.restoreCount());
+        assertEquals("restored-sandbox", state.getSandboxId());
+        assertTrue(state.isWorkspaceRootReady());
     }
 
     @Test
@@ -491,8 +521,13 @@ class E2bSandboxRecoveryTest {
                         .addInterceptor(
                                 chain ->
                                         chain.proceed(
-                                                chain.request().newBuilder()
-                                                        .url(server.url(chain.request().url().encodedPath()))
+                                                chain.request()
+                                                        .newBuilder()
+                                                        .url(
+                                                                server.url(
+                                                                        chain.request()
+                                                                                .url()
+                                                                                .encodedPath()))
                                                         .build()))
                         .build());
         return options;

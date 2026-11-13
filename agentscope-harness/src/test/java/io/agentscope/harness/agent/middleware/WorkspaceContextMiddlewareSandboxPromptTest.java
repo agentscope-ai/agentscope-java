@@ -41,6 +41,32 @@ import org.junit.jupiter.api.io.TempDir;
  */
 class WorkspaceContextMiddlewareSandboxPromptTest {
 
+    @Test
+    void sandboxPromptUsesNormalizedActiveWorkspaceRoot(@TempDir Path workspace) {
+        var spec = new io.agentscope.harness.agent.sandbox.WorkspaceSpec();
+        spec.setRoot("/home/./user///");
+        var state = mock(io.agentscope.harness.agent.sandbox.SandboxState.class);
+        when(state.getWorkspaceSpec()).thenReturn(spec);
+        var sandbox = mock(io.agentscope.harness.agent.sandbox.Sandbox.class);
+        when(sandbox.getState()).thenReturn(state);
+        when(sandbox.isRunning()).thenReturn(true);
+        var context =
+                io.agentscope.core.agent.RuntimeContext.builder()
+                        .put(
+                                io.agentscope.harness.agent.sandbox.SandboxAcquireResult.class,
+                                io.agentscope.harness.agent.sandbox.SandboxAcquireResult
+                                        .selfManaged(sandbox))
+                        .build();
+        try (WorkspaceManager wm = new WorkspaceManager(workspace, mockSandboxFilesystem())) {
+            String prompt =
+                    new WorkspaceContextMiddleware(wm)
+                            .onSystemPrompt(null, context, "BASE\n")
+                            .block();
+            assertTrue(prompt.contains("Sandbox root: /home/user"), () -> prompt);
+            assertFalse(prompt.contains("Sandbox root: /workspace"), () -> prompt);
+        }
+    }
+
     private AbstractSandboxFilesystem mockSandboxFilesystem() {
         AbstractSandboxFilesystem fs = mock(AbstractSandboxFilesystem.class);
         when(fs.id()).thenReturn("sandbox-test");

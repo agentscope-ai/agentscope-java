@@ -248,7 +248,11 @@ public class KubernetesSandbox extends AbstractBaseSandbox implements SandboxFil
         if (result.getExitCode() != 0) {
             throw new SandboxException.SandboxRuntimeException(
                     SandboxErrorCode.WORKSPACE_START_ERROR,
-                    "mkdir failed (exit=" + result.getExitCode() + ") for " + directory + ": "
+                    "mkdir failed (exit="
+                            + result.getExitCode()
+                            + ") for "
+                            + directory
+                            + ": "
                             + result.getStderr());
         }
     }

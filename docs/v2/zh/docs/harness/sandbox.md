@@ -65,6 +65,8 @@ agent.call(msg, RuntimeContext.builder()
 - 容器没了 → 拿快照重新起一个，恢复工作区
 - 没快照 → 按 `WorkspaceSpec` 全量初始化（冷启动）
 
+E2B 快照读取或恢复失败时会让调用失败，不会静默启动空工作区。已确认快照不存在（包括原生快照返回 HTTP 404）时仍允许冷启动。
+
 快照存到哪里取决于你配的 `snapshotSpec`：
 
 | 选项 | 适合 |
@@ -188,6 +190,14 @@ SandboxContext callCtx = SandboxContext.builder()
 
 所有后端实现同一组接口，agent 代码、工具集、`AGENTS.md` 都不用变。
 
+### E2B 工作区根目录与执行超时
+
+E2B 默认使用 `/home/user`。`E2bFilesystemSpec.workspaceRoot(...)` 同时设置执行目录和工作区根目录；显式设置的 `workspaceSpec(...).root` 也会选择该目录。如果两者都显式设置，规范化后的绝对路径必须一致，否则构建上下文时立即失败。未显式设置根目录的 `WorkspaceSpec` 会继承执行目录，调用方的配置会被复制而不是修改。相对路径或空根目录会被拒绝。
+
+恢复时保留已保存的执行目录。Harness 文件路径规范化和沙箱工作区提示段落采用当前调用的活动根目录，而不是固定的 `/workspace` 前缀；已关闭的沙箱不能提供根目录。
+
+E2B 执行的 `timeoutSeconds = 0` 表示无期限；负数会被拒绝。正数限制执行时长，超时后会尽力在服务端终止进程。
+
 ## 运行时镜像约束
 
 沙箱镜像（Docker 的 `image`、Kubernetes agent-sandbox 的运行时镜像等）由你指定，但**不是任意镜像都能用**。Harness 的文件工具（`read_file` / `write_file` / `edit_file` / `grep_files` / `glob_files` / `list_files`）和快照机制全部通过在沙箱内执行 POSIX shell 命令实现，镜像必须满足下面的契约，否则工具会以难以排查的方式失败。
@@ -225,6 +235,8 @@ agent-sandbox 后端不通过 `kubectl exec` 进容器，而是访问运行时�
 | `POST /upload`（multipart，`filename` 为相对路径） | 写文件到文件 API 根目录下 |
 | `GET /download/{path}` | 按相对路径下载文件字节 |
 | `GET /list/{path}`、`GET /exists/{path}` | 目录列表 / 存在性检查 |
+
+命令 HTTP 交换以命令超时加 30 秒为共享预算，覆盖响应头、响应体、重试和退避。文件交换默认预算为 10 分钟。响应停滞时会在预算耗尽后失败，不增加新的运行时端点要求。工作区初始化和恢复时，`mkdir -p` 返回非零退出码也会导致失败。
 
 **文件 API 根目录必须与工作区根一致**（推荐都用 `/workspace`）。Harness 通过 `/upload` / `/download` 传输两类内容：工作区快照 tar 包（临时文件放在根目录下的 `.agentscope-tmp/`），以及 `write_file` / 文件下载涉及的单文件字节（路径在根目录之下时；Linux 对单个命令行参数有约 128 KiB 上限，走文件 API 的原生传输不受此限制）。根目录通过 `KubernetesSandboxClientOptions.fileApiBaseDir` 配置（默认 `/workspace`）；置空则退回 base64-over-exec 传输。
 

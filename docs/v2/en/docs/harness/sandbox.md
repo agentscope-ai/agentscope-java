@@ -65,6 +65,8 @@ The sandbox snapshots its workspace at each `call()` end and restores at the nex
 - Container gone → reboot from snapshot, restore workspace
 - No snapshot → full init from `WorkspaceSpec` (cold start)
 
+E2B snapshot read or restore failures fail the call rather than silently starting an empty workspace. A confirmed absent snapshot (including a native snapshot returning HTTP 404) still permits a cold start.
+
 Where snapshots land is decided by `snapshotSpec`:
 
 | Option | When |
@@ -189,6 +191,14 @@ Pass the same `externalSandbox` to each agent's `call()`, then `shutdown()` it y
 
 All stores implement the same interface; agent code, toolkit, and `AGENTS.md` don't change.
 
+### E2B workspace root and execution timeout
+
+E2B defaults to `/home/user`. `E2bFilesystemSpec.workspaceRoot(...)` sets both the execution directory and workspace root; an explicitly set `workspaceSpec(...).root` also selects that directory. If both are explicit, their normalized absolute paths must match or context creation fails. An untouched `WorkspaceSpec` default inherits the execution root, and the caller's specification is copied rather than modified. Relative or blank roots are rejected.
+
+Resume retains the saved execution directory. Harness file-path normalization and the sandbox workspace paragraph follow the active call's root, not a fixed `/workspace` prefix; a closed sandbox cannot supply a root.
+
+For E2B execution, `timeoutSeconds = 0` means no deadline; negative values are rejected. A positive timeout bounds the execution and triggers a best-effort server-side process kill on expiry.
+
 ## Runtime image contract
 
 You choose the sandbox image (Docker `image`, the Kubernetes agent-sandbox runtime image, etc.), but **not every image works**. Harness file tools (`read_file` / `write_file` / `edit_file` / `grep_files` / `glob_files` / `list_files`) and the snapshot machinery are all implemented by running POSIX shell commands inside the sandbox. The image must satisfy the contract below, or tools will fail in hard-to-diagnose ways.
@@ -226,6 +236,8 @@ The agent-sandbox backend does not `kubectl exec` into the container; it talks t
 | `POST /upload` (multipart; `filename` is a relative path) | writes a file under the file-API base directory |
 | `GET /download/{path}` | downloads file bytes by relative path |
 | `GET /list/{path}`, `GET /exists/{path}` | directory listing / existence check |
+
+Command HTTP exchanges share a budget of the command timeout plus 30 seconds across headers, response body, retries, and backoff. File exchanges default to 10 minutes. A stalled response fails when that budget expires; this does not introduce a new runtime endpoint requirement. Workspace initialization and restoration also fail if `mkdir -p` returns a nonzero exit code.
 
 **The file-API base directory must match the workspace root** (recommended: `/workspace` for both). Harness transfers two kinds of content through `/upload` / `/download`: workspace snapshot tarballs (temp files under `.agentscope-tmp/` inside that directory), and single-file bytes for `write_file` / file downloads when the path lies under the base directory (Linux caps a single command-line argument at about 128 KiB; native file-API transfer has no such limit). The base directory is configured via `KubernetesSandboxClientOptions.fileApiBaseDir` (default `/workspace`); setting it blank falls back to base64-over-exec transfer.
 
