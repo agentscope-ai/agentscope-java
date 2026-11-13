@@ -146,7 +146,29 @@ public class WorkspaceMessageBus implements MessageBus {
                             break;
                         }
                         String claimPath = fi.path() + ".claim";
-                        WriteResult claim = fs.write(RC, claimPath, "");
+                        WriteResult claim;
+                        try {
+                            claim = fs.write(RC, claimPath, "");
+                        } catch (Exception e) {
+                            // A thrown write does not establish ownership, even if it left a
+                            // marker behind. Never release an unacquired claim.
+                            if (result.isEmpty()) {
+                                throw new IllegalStateException(
+                                        "queueDrain: failed to claim entry "
+                                                + fi.path()
+                                                + " ("
+                                                + e.getMessage()
+                                                + ")",
+                                        e);
+                            }
+                            log.warn(
+                                    "queueDrain: failed to claim entry {} ({}); returning {}"
+                                            + " already-drained entries",
+                                    fi.path(),
+                                    e.getMessage(),
+                                    result.size());
+                            break;
+                        }
                         if (!claim.isSuccess()) {
                             if (!claim.isAlreadyExists()) {
                                 if (!result.isEmpty()) {
@@ -167,7 +189,18 @@ public class WorkspaceMessageBus implements MessageBus {
                             }
                             continue;
                         }
-                        String content = readQueueEntryContent(fi.path());
+                        String content;
+                        try {
+                            content = readQueueEntryContent(fi.path());
+                        } catch (Exception e) {
+                            log.warn(
+                                    "queueDrain: failed to read owned entry {} ({}), releasing"
+                                            + " claim",
+                                    fi.path(),
+                                    e.getMessage());
+                            releaseClaim(claimPath);
+                            continue;
+                        }
                         if (content == null) {
                             // A transient read failure is retryable because no entry was returned.
                             log.warn(
@@ -193,22 +226,26 @@ public class WorkspaceMessageBus implements MessageBus {
                                     e.getMessage());
                         }
 
-                        WriteResult deletion = deleteQueueEntry(fi.path());
-                        if (deletion.isSuccess()) {
-                            WriteResult claimDeletion = fs.delete(RC, claimPath);
-                            if (!claimDeletion.isSuccess()) {
+                        try {
+                            WriteResult deletion = deleteQueueEntry(fi.path());
+                            if (deletion.isSuccess()) {
+                                releaseClaim(claimPath);
+                            } else {
                                 log.warn(
-                                        "queueDrain: failed to delete claim {} ({}) after deleting"
-                                                + " its entry",
-                                        claimPath,
-                                        claimDeletion.error());
+                                        "queueDrain: failed to delete claimed entry {} ({});"
+                                                + " retaining claim to prevent duplicate delivery",
+                                        fi.path(),
+                                        deletion.error());
                             }
-                        } else {
+                        } catch (Exception e) {
+                            // The payload has already been accepted (or rejected as corrupt).
+                            // Keep its claim on any uncertain deletion outcome, and preserve all
+                            // accepted entries in this drain's result.
                             log.warn(
-                                    "queueDrain: failed to delete claimed entry {} ({});"
-                                            + " retaining claim to prevent duplicate delivery",
+                                    "queueDrain: failed to delete claimed entry {} ({}); retaining"
+                                            + " claim to prevent duplicate delivery",
                                     fi.path(),
-                                    deletion.error());
+                                    e.getMessage());
                         }
                     }
                     return result;
@@ -378,12 +415,21 @@ public class WorkspaceMessageBus implements MessageBus {
     }
 
     private void releaseClaim(String claimPath) {
-        WriteResult release = fs.delete(RC, claimPath);
-        if (!release.isSuccess()) {
+        try {
+            WriteResult release = fs.delete(RC, claimPath);
+            if (!release.isSuccess()) {
+                log.warn(
+                        "queueDrain: failed to release claim {} ({}); retaining claim for operator"
+                                + " recovery",
+                        claimPath,
+                        release.error());
+            }
+        } catch (Exception e) {
             log.warn(
-                    "queueDrain: failed to release claim {} ({}); entry will remain unavailable",
+                    "queueDrain: failed to release claim {} ({}); retaining claim for operator"
+                            + " recovery",
                     claimPath,
-                    release.error());
+                    e.getMessage());
         }
     }
 

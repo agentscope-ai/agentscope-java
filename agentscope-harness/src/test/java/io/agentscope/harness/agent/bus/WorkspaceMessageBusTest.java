@@ -385,6 +385,117 @@ class WorkspaceMessageBusTest {
         assertTrue(error.getMessage().contains("permission denied"));
     }
 
+    @ParameterizedTest
+    @ValueSource(ints = {1, 2})
+    void thrownClaimFailurePreservesPriorDeliveryAndNeverReleasesUnacquiredClaim(int failAt) {
+        ThrowingQueueFilesystem fs = new ThrowingQueueFilesystem(tempDir);
+        fs.failClaimAt = failAt;
+        fs.leaveUnacquiredClaim = true;
+        WorkspaceMessageBus testBus = new WorkspaceMessageBus(fs, "/bus");
+        testBus.queuePush("throw-claim", Map.of("value", "first")).block();
+        testBus.queuePush("throw-claim", Map.of("value", "second")).block();
+        if (failAt == 1) {
+            IllegalStateException error =
+                    assertThrows(
+                            IllegalStateException.class,
+                            () -> testBus.queueDrain("throw-claim", 2).block());
+            assertTrue(error.getMessage().contains("claim backend threw"));
+        } else {
+            List<BusEntry> result = testBus.queueDrain("throw-claim", 2).block();
+            assertEquals(1, result.size());
+            assertEquals("first", result.get(0).payload().get("value"));
+        }
+        assertTrue(Files.exists(tempDir.resolve(fs.failedClaimPath.substring(1))));
+        assertFalse(
+                fs.deletedClaims.contains(fs.failedClaimPath),
+                "a marker left by an uncertain write is not ours to release");
+        fs.failClaimAt = 0;
+        List<BusEntry> retry = testBus.queueDrain("throw-claim", 2).block();
+        assertEquals(failAt == 1 ? 1 : 0, retry.size());
+        if (!retry.isEmpty()) {
+            assertEquals("second", retry.get(0).payload().get("value"));
+        }
+    }
+
+    @Test
+    void thrownClaimFailureWithoutMarkerIsRetryable() {
+        ThrowingQueueFilesystem fs = new ThrowingQueueFilesystem(tempDir);
+        fs.failClaimAt = 1;
+        WorkspaceMessageBus testBus = new WorkspaceMessageBus(fs, "/bus");
+        testBus.queuePush("throw-claim", Map.of("value", "waiting")).block();
+        assertThrows(
+                IllegalStateException.class, () -> testBus.queueDrain("throw-claim", 1).block());
+        assertTrue(fs.deletedClaims.isEmpty());
+        fs.failClaimAt = 0;
+        assertEquals(
+                "waiting",
+                testBus.queueDrain("throw-claim", 1).block().get(0).payload().get("value"));
+    }
+
+    @ParameterizedTest
+    @ValueSource(ints = {1, 2})
+    void thrownReadFailureReleasesOwnedClaimAndRetryDoesNotLosePriorDelivery(int failAt) {
+        ThrowingQueueFilesystem fs = new ThrowingQueueFilesystem(tempDir);
+        fs.failReadAt = failAt;
+        WorkspaceMessageBus testBus = new WorkspaceMessageBus(fs, "/bus");
+        testBus.queuePush("throw-read", Map.of("value", "first")).block();
+        testBus.queuePush("throw-read", Map.of("value", "second")).block();
+        List<BusEntry> result = testBus.queueDrain("throw-read", 2).block();
+        assertEquals(1, result.size());
+        assertEquals(failAt == 1 ? "second" : "first", result.get(0).payload().get("value"));
+        String failedClaim = fs.failedReadPath.replace(".payload", ".ready.claim");
+        assertTrue(fs.deletedClaims.contains(failedClaim));
+        assertFalse(Files.exists(tempDir.resolve(failedClaim.substring(1))));
+        fs.failReadAt = 0;
+        List<BusEntry> retry = testBus.queueDrain("throw-read", 2).block();
+        assertEquals(1, retry.size());
+        assertEquals(failAt == 1 ? "first" : "second", retry.get(0).payload().get("value"));
+        assertTrue(testBus.queueDrain("throw-read", 2).block().isEmpty());
+    }
+
+    @Test
+    void thrownClaimReleaseFailureRetainsClaimAndPreservesLaterDelivery() {
+        ThrowingQueueFilesystem fs = new ThrowingQueueFilesystem(tempDir);
+        fs.failReadAt = 1;
+        fs.throwOnRelease = true;
+        WorkspaceMessageBus testBus = new WorkspaceMessageBus(fs, "/bus");
+        testBus.queuePush("throw-release", Map.of("value", "unread")).block();
+        testBus.queuePush("throw-release", Map.of("value", "delivered")).block();
+        List<BusEntry> result = testBus.queueDrain("throw-release", 2).block();
+        assertEquals(1, result.size());
+        assertEquals("delivered", result.get(0).payload().get("value"));
+        String failedClaim = fs.failedReadPath.replace(".payload", ".ready.claim");
+        assertTrue(Files.exists(tempDir.resolve(failedClaim.substring(1))));
+        assertTrue(fs.deletedClaims.contains(failedClaim));
+        fs.failReadAt = 0;
+        fs.throwOnRelease = false;
+        assertTrue(testBus.queueDrain("throw-release", 2).block().isEmpty());
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {".ready", ".payload", ".claim"})
+    void thrownDeletionAfterAcceptanceDoesNotLoseResultsOrRedeliver(String suffix) {
+        ThrowingQueueFilesystem fs = new ThrowingQueueFilesystem(tempDir);
+        fs.throwDeletionSuffix = suffix;
+        WorkspaceMessageBus testBus = new WorkspaceMessageBus(fs, "/bus");
+        testBus.queuePush("throw-delete", Map.of("value", "first")).block();
+        testBus.queuePush("throw-delete", Map.of("value", "second")).block();
+        List<BusEntry> result = testBus.queueDrain("throw-delete", 2).block();
+        assertEquals(2, result.size());
+        assertEquals("first", result.get(0).payload().get("value"));
+        assertEquals("second", result.get(1).payload().get("value"));
+        fs.throwDeletionSuffix = null;
+        assertTrue(testBus.queueDrain("throw-delete", 2).block().isEmpty());
+        assertTrue(
+                Files.exists(
+                        tempDir.resolve(
+                                "bus/queues/"
+                                        + WorkspaceMessageBus.hashKey("throw-delete")
+                                        + "/"
+                                        + result.get(0).entryId()
+                                        + ".ready.claim")));
+    }
+
     @Test
     void pushReturnsUniqueIds() {
         String id1 = bus.queuePush("q1", Map.of("v", 1)).block();
@@ -668,6 +779,61 @@ class WorkspaceMessageBusTest {
         } finally {
             // Global hook cleanup — must not leak into other tests in the JVM.
             TracerRegistry.resetToNoop();
+        }
+    }
+
+    /** Real persisted files, but selected backend operations throw instead of returning failure. */
+    private static final class ThrowingQueueFilesystem extends LocalFilesystem {
+        private int failClaimAt;
+        private int failReadAt;
+        private int claimAttempts;
+        private int readAttempts;
+        private boolean leaveUnacquiredClaim;
+        private boolean throwOnRelease;
+        private String throwDeletionSuffix;
+        private String failedClaimPath;
+        private String failedReadPath;
+        private final List<String> deletedClaims = new java.util.ArrayList<>();
+
+        private ThrowingQueueFilesystem(Path root) {
+            super(root, true, 10);
+        }
+
+        @Override
+        public WriteResult write(
+                io.agentscope.core.agent.RuntimeContext rc, String path, String content) {
+            if (path.endsWith(".claim") && ++claimAttempts == failClaimAt) {
+                failedClaimPath = path;
+                if (leaveUnacquiredClaim) {
+                    assertTrue(super.write(rc, path, content).isSuccess());
+                }
+                throw new IllegalStateException("claim backend threw");
+            }
+            return super.write(rc, path, content);
+        }
+
+        @Override
+        public ReadResult read(
+                io.agentscope.core.agent.RuntimeContext rc, String path, int offset, int limit) {
+            if (path.endsWith(".payload") && ++readAttempts == failReadAt) {
+                failedReadPath = path;
+                throw new IllegalStateException("read backend threw");
+            }
+            return super.read(rc, path, offset, limit);
+        }
+
+        @Override
+        public WriteResult delete(io.agentscope.core.agent.RuntimeContext rc, String path) {
+            if (path.endsWith(".claim")) {
+                deletedClaims.add(path);
+                if (throwOnRelease) {
+                    throw new IllegalStateException("release backend threw: diagnostic retained");
+                }
+            }
+            if (throwDeletionSuffix != null && path.endsWith(throwDeletionSuffix)) {
+                throw new IllegalStateException("deletion backend threw");
+            }
+            return super.delete(rc, path);
         }
     }
 
