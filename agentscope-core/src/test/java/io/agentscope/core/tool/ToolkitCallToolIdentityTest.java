@@ -15,11 +15,15 @@
  */
 package io.agentscope.core.tool;
 
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import io.agentscope.core.message.TextBlock;
@@ -32,6 +36,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
 
@@ -118,6 +124,78 @@ class ToolkitCallToolIdentityTest {
                         })
                 .verifyComplete();
         assertSame(caller, invocationThread.get());
+    }
+
+    @Test
+    void stampsNonJsonExplicitInputAsReactiveValidationErrorWithoutFallback() {
+        Toolkit toolkit = new Toolkit();
+        AgentTool tool = tool("test", Mono.just(ToolResultBlock.text("must not run")));
+        when(tool.getParameters())
+                .thenReturn(
+                        Map.of(
+                                "type",
+                                "object",
+                                "properties",
+                                Map.of("x", Map.of("type", "integer"))));
+        toolkit.registerAgentTool(tool);
+        ToolUseBlock use =
+                ToolUseBlock.builder()
+                        .id("non-json-direct")
+                        .name("test")
+                        .input(Map.of("x", 1))
+                        .content("{\"x\":1}")
+                        .build();
+        ToolCallParam param =
+                ToolCallParam.builder().toolUseBlock(use).input(Map.of("x", new Object())).build();
+
+        Mono<ToolResultBlock> publisher = assertDoesNotThrow(() -> toolkit.callTool(param));
+        StepVerifier.create(publisher)
+                .assertNext(result -> assertSerializationError(result, use))
+                .verifyComplete();
+        verify(tool, never()).callAsync(any(ToolCallParam.class));
+        assertEquals(1, use.getInput().get("x"));
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void stampsNonJsonBatchInputAsReactiveValidationErrorWithoutRawFallback(boolean parallel) {
+        Toolkit toolkit = new Toolkit(ToolkitConfig.builder().parallel(parallel).build());
+        AgentTool tool = tool("test", Mono.just(ToolResultBlock.text("must not run")));
+        when(tool.getParameters())
+                .thenReturn(
+                        Map.of(
+                                "type",
+                                "object",
+                                "properties",
+                                Map.of("x", Map.of("type", "integer"))));
+        toolkit.registerAgentTool(tool);
+        ToolUseBlock use =
+                ToolUseBlock.builder()
+                        .id("non-json-batch")
+                        .name("test")
+                        .input(Map.of("x", new Object()))
+                        .content("{\"x\":1}")
+                        .build();
+
+        Mono<List<ToolResultBlock>> publisher =
+                assertDoesNotThrow(() -> toolkit.callTools(List.of(use), null, null, null));
+        StepVerifier.create(publisher)
+                .assertNext(
+                        results -> {
+                            assertEquals(1, results.size());
+                            assertSerializationError(results.get(0), use);
+                        })
+                .verifyComplete();
+        verify(tool, never()).callAsync(any(ToolCallParam.class));
+    }
+
+    private static void assertSerializationError(ToolResultBlock result, ToolUseBlock use) {
+        assertEquals(use.getId(), result.getId());
+        assertEquals(use.getName(), result.getName());
+        assertEquals(ToolResultState.ERROR, result.getState());
+        String text = ((TextBlock) result.getOutput().get(0)).getText();
+        assertTrue(text.startsWith("Error: Parameter validation failed for tool 'test':"), text);
+        assertTrue(text.contains("serialize"), text);
     }
 
     private static AgentTool tool(String name, Mono<ToolResultBlock> result) {

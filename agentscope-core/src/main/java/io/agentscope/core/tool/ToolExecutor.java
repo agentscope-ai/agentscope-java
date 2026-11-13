@@ -24,12 +24,17 @@ import io.agentscope.core.shutdown.GracefulShutdownManager;
 import io.agentscope.core.tracing.TracerRegistry;
 import io.agentscope.core.util.ExceptionUtils;
 import io.agentscope.core.util.JsonUtils;
+import java.net.URI;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
+import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.function.BiConsumer;
 import java.util.function.Predicate;
@@ -232,10 +237,12 @@ class ToolExecutor {
         boolean externalTool = tool instanceof ToolBase tb && tb.isExternalTool();
         Map<String, Object> schema = tool.getParameters();
         Map<String, Object> mergedInput = new HashMap<>();
-        String validationJson;
+        String validationError;
         if (externalTool) {
             // External execution retains the original call arguments, without local presets.
-            validationJson = JsonUtils.resolveToolCallArgsJson(toolCall);
+            validationError =
+                    ToolValidator.validateInput(
+                            JsonUtils.resolveToolCallArgsJson(toolCall), schema);
         } else {
             // Select once for both validation and invocation. Registered presets remain
             // authoritative.
@@ -245,20 +252,22 @@ class ToolExecutor {
                     registered != null ? registered.getPresetParameters() : Map.of();
             mergedInput.putAll(presets);
             Map<String, Object> validationInput = new HashMap<>(mergedInput);
-            Map<?, ?> properties =
-                    schema != null && schema.get("properties") instanceof Map<?, ?> p
-                            ? p
-                            : Map.of();
+            Set<String> properties = getVisibleSchemaProperties(schema);
             // Presets omitted from the public schema are framework-controlled hidden parameters.
             // Do not serialize or validate them as additional caller-supplied properties.
             for (String preset : presets.keySet()) {
-                if (!properties.containsKey(preset)) {
+                if (!properties.contains(preset)) {
                     validationInput.remove(preset);
                 }
             }
-            validationJson = JsonUtils.getJsonCodec().toJson(validationInput);
+            try {
+                String validationJson = JsonUtils.getJsonCodec().toJson(validationInput);
+                validationError = ToolValidator.validateInput(validationJson, schema);
+            } catch (Exception e) {
+                // The selected input is authoritative; never fall back to lower-priority values.
+                validationError = "Schema validation error: " + ExceptionUtils.getErrorMessage(e);
+            }
         }
-        String validationError = ToolValidator.validateInput(validationJson, schema);
         if (validationError != null) {
             String errorMsg =
                     String.format(
@@ -329,6 +338,69 @@ class ToolExecutor {
                                 ToolResultBlock.error(
                                         "Tool execution failed: Tool completed without returning a"
                                                 + " result")));
+    }
+
+    /** Collect properties applying to the root input object, not nested object properties. */
+    private static Set<String> getVisibleSchemaProperties(Map<String, Object> schema) {
+        Set<String> properties = new HashSet<>();
+        collectSchemaProperties(
+                schema, schema, Collections.newSetFromMap(new IdentityHashMap<>()), properties);
+        return properties;
+    }
+
+    private static void collectSchemaProperties(
+            Object node, Map<String, Object> root, Set<Object> visited, Set<String> properties) {
+        if (!(node instanceof Map<?, ?> schema) || !visited.add(node)) {
+            return;
+        }
+        if (schema.get("properties") instanceof Map<?, ?> declared) {
+            for (Object name : declared.keySet()) {
+                if (name instanceof String property) {
+                    properties.add(property);
+                }
+            }
+        }
+        if (schema.get("$ref") instanceof String ref) {
+            collectSchemaProperties(
+                    resolveLocalSchemaReference(root, ref), root, visited, properties);
+        }
+        for (String composition : List.of("allOf", "anyOf", "oneOf")) {
+            if (schema.get(composition) instanceof List<?> branches) {
+                for (Object branch : branches) {
+                    collectSchemaProperties(branch, root, visited, properties);
+                }
+            }
+        }
+    }
+
+    private static Object resolveLocalSchemaReference(Map<String, Object> root, String ref) {
+        if (!ref.startsWith("#")) {
+            return null; // Never expand remote references.
+        }
+        try {
+            String pointer = URI.create(ref).getFragment();
+            if (pointer.isEmpty()) {
+                return root;
+            }
+            if (!pointer.startsWith("/")) {
+                return null;
+            }
+            Object node = root;
+            for (String token : pointer.substring(1).split("/", -1)) {
+                String key = token.replace("~1", "/").replace("~0", "~");
+                if (node instanceof Map<?, ?> map) {
+                    node = map.get(key);
+                } else if (node instanceof List<?> list && key.matches("0|[1-9][0-9]*")) {
+                    int index = Integer.parseInt(key);
+                    node = index < list.size() ? list.get(index) : null;
+                } else {
+                    return null;
+                }
+            }
+            return node;
+        } catch (IllegalArgumentException e) {
+            return null; // Invalid URI fragments or array indices are not visible properties.
+        }
     }
 
     /**

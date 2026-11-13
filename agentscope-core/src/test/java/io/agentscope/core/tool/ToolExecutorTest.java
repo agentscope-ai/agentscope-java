@@ -33,6 +33,7 @@ import java.time.Duration;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Function;
 import java.util.stream.Collectors;
@@ -40,6 +41,8 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import reactor.core.publisher.Mono;
 
 /**
@@ -307,25 +310,166 @@ class ToolExecutorTest {
         assertTrue(extractFirstText(rejected).startsWith("Error: Parameter validation failed"));
     }
 
+    @ParameterizedTest
+    @CsvSource({
+        "ref,false", "ref,true", "allOf,false", "allOf,true",
+        "anyOf,false", "anyOf,true", "oneOf,false", "oneOf,true"
+    })
+    void shouldRejectInvalidPresetExposedThroughRootSchema(String composition, boolean required) {
+        ValidatedInputTool tool =
+                new ValidatedInputTool(composedInputSchema(composition, required));
+        toolkit.registration()
+                .agentTool(tool)
+                .presetParameters(Map.of(tool.getName(), Map.of("x", -3)))
+                .apply();
+        ToolUseBlock use =
+                ToolUseBlock.builder()
+                        .id("invalid-composed-preset")
+                        .name(tool.getName())
+                        .input(Map.of("x", 1))
+                        .content("{\"x\":1}")
+                        .build();
+        ToolResultBlock result =
+                toolkit.callTool(
+                                ToolCallParam.builder()
+                                        .toolUseBlock(use)
+                                        .input(Map.of("x", 2))
+                                        .build())
+                        .block(TIMEOUT);
+        assertNotNull(result);
+        assertEquals("invalid-composed-preset", result.getId());
+        assertEquals(tool.getName(), result.getName());
+        String expectedError = ToolValidator.validateInput("{\"x\":-3}", tool.getParameters());
+        assertNotNull(expectedError, "The exposed preset violates the schema minimum");
+        assertEquals(
+                "Error: Parameter validation failed for tool 'validated_input': "
+                        + expectedError
+                        + "\nPlease correct the parameters and try again.",
+                extractFirstText(result));
+        assertEquals(0, tool.calls.get(), "Invalid authoritative presets must never execute");
+    }
+
+    @ParameterizedTest
+    @CsvSource({
+        "ref,false", "ref,true", "allOf,false", "allOf,true",
+        "anyOf,false", "anyOf,true", "oneOf,false", "oneOf,true"
+    })
+    void shouldAcceptExposedPresetAndExcludeHiddenObjectThroughRootSchema(
+            String composition, boolean required) {
+        ValidatedInputTool tool =
+                new ValidatedInputTool(composedInputSchema(composition, required));
+        Object frameworkContext = new Object();
+        toolkit.registration()
+                .agentTool(tool)
+                .presetParameters(
+                        Map.of(tool.getName(), Map.of("x", 7, "context", frameworkContext)))
+                .apply();
+        ToolUseBlock use =
+                ToolUseBlock.builder().name(tool.getName()).input(Map.of("x", -1)).build();
+        ToolResultBlock result =
+                toolkit.callTool(
+                                ToolCallParam.builder()
+                                        .toolUseBlock(use)
+                                        .input(Map.of("x", -2, "context", "caller-context"))
+                                        .build())
+                        .block(TIMEOUT);
+        assertNotNull(result);
+        assertEquals("x: 7", extractFirstText(result));
+        assertSame(frameworkContext, tool.lastInput.get("context"));
+        assertEquals(1, tool.calls.get());
+    }
+
+    private static Map<String, Object> composedInputSchema(String composition, boolean required) {
+        Map<String, Object> objectSchema = new HashMap<>();
+        objectSchema.put("type", "object");
+        objectSchema.put("properties", Map.of("x", Map.of("type", "integer", "minimum", 0)));
+        objectSchema.put("additionalProperties", false);
+        if (required) {
+            objectSchema.put("required", List.of("x"));
+        }
+        if ("ref".equals(composition)) {
+            return Map.of("$defs", Map.of("a/b~c", objectSchema), "$ref", "#/$defs/a~1b~0c");
+        }
+        return Map.of(
+                composition,
+                List.of(Map.of("$ref", "#/$defs/arguments")),
+                "$defs",
+                Map.of("arguments", objectSchema));
+    }
+
+    @Test
+    void shouldBoundRootVisibilityTraversalAcrossCyclicReferences() throws Exception {
+        Map<String, Object> schema =
+                Map.of(
+                        "$ref",
+                        "#/$defs/loop",
+                        "$defs",
+                        Map.of(
+                                "loop",
+                                Map.of(
+                                        "allOf",
+                                        List.of(
+                                                Map.of("$ref", "#/$defs/loop"),
+                                                Map.of("$ref", "#"),
+                                                Map.of(
+                                                        "properties",
+                                                        Map.of("x", Map.of("type", "integer")))))));
+        assertEquals(Set.of("x"), visibleSchemaProperties(schema));
+    }
+
+    @Test
+    void shouldOnlyFollowLocalRootInstanceSchemaPaths() throws Exception {
+        Map<String, Object> schema =
+                Map.of(
+                        "properties",
+                                Map.of("outer", Map.of("properties", Map.of("nested", Map.of()))),
+                        "$defs",
+                                Map.of(
+                                        "unused",
+                                        Map.of("properties", Map.of("hidden", Map.of())),
+                                        "space name",
+                                        Map.of("properties", Map.of("escaped", Map.of()))),
+                        "allOf",
+                                List.of(
+                                        Map.of("$ref", "https://example.invalid/schema"),
+                                        Map.of("$ref", "#/$defs/missing"),
+                                        Map.of("$ref", "#/$defs/space%20name"),
+                                        Map.of("$ref", "#/anyOf/0")),
+                        "anyOf", List.of(Map.of("properties", Map.of("arrayRef", Map.of()))));
+        assertEquals(Set.of("outer", "escaped", "arrayRef"), visibleSchemaProperties(schema));
+    }
+
+    private static Object visibleSchemaProperties(Map<String, Object> schema) throws Exception {
+        // Exercise the visibility guard only: cyclic-schema validation itself is outside this
+        // repair.
+        var method = ToolExecutor.class.getDeclaredMethod("getVisibleSchemaProperties", Map.class);
+        method.setAccessible(true);
+        return method.invoke(null, schema);
+    }
+
     private static final class ValidatedInputTool extends ToolBase {
         private final AtomicInteger calls = new AtomicInteger();
         private Map<String, Object> lastInput;
 
         private ValidatedInputTool() {
+            this(
+                    Map.of(
+                            "type",
+                            "object",
+                            "properties",
+                            Map.of("x", Map.of("type", "integer", "minimum", 0)),
+                            "required",
+                            List.of("x"),
+                            "additionalProperties",
+                            false));
+        }
+
+        private ValidatedInputTool(Map<String, Object> schema) {
             super(
                     ToolBase.builder()
                             .name("validated_input")
                             .description("Test selected input validation")
-                            .inputSchema(
-                                    Map.of(
-                                            "type",
-                                            "object",
-                                            "properties",
-                                            Map.of("x", Map.of("type", "integer", "minimum", 0)),
-                                            "required",
-                                            List.of("x"),
-                                            "additionalProperties",
-                                            false)));
+                            .inputSchema(schema));
         }
 
         @Override
