@@ -27,6 +27,12 @@ State is addressed by `(userId, sessionId)`:
 | `MysqlAgentStateStore` | `agentscope-extensions-mysql` | [Existing database infrastructure](/v2/en/integration/distributed/mysql) |
 | `OssAgentStateStore` | `agentscope-extensions-oss` | [Alibaba Cloud ecosystem](/v2/en/integration/distributed/oss) |
 
+## File-store concurrency
+
+`JsonFileAgentStateStore` uses unique temporary siblings with cleanup and a JVM-wide lock per session directory, shared across store instances and root aliases. Reads, saves and deletions for one session are serialized; different sessions remain independent. This is not a cross-process lock: one process must own each session. Use a database-backed store for shared multi-process sessions.
+
+Separate read-modify-write calls remain last-writer-wins. List data and hash files are not a two-file transaction; a failed hash write can leave a stale hash until the next save. Session listing and clearing are not global transactions.
+
 ## Standalone Configuration
 
 ```java

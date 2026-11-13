@@ -27,6 +27,12 @@ en_link: /v2/en/integration/session/overview
 | `MysqlAgentStateStore` | `agentscope-extensions-mysql` | [已有数据库的场景](/v2/zh/integration/distributed/mysql) |
 | `OssAgentStateStore` | `agentscope-extensions-oss` | [阿里云生态](/v2/zh/integration/distributed/oss) |
 
+## 文件存储并发
+
+`JsonFileAgentStateStore` 使用唯一临时同级文件并清理残留，同时按会话目录使用 JVM 级锁；不同存储实例和根目录别名共享同一把会话锁。同会话的读取、保存和删除会串行执行，不同会话互不阻塞。这不是跨进程锁：每个会话必须由单个进程负责；多进程共享会话请使用数据库后端。
+
+分开的读改写调用仍采用最后写入者胜出语义。列表数据与哈希文件不是双文件事务，哈希写入失败可能留下旧哈希，直到下次保存。会话列举和清理也不是全局事务。
+
 ## 单独配置
 
 ```java
