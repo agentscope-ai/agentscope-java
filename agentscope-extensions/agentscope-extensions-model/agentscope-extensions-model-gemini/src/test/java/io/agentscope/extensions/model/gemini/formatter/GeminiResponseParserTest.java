@@ -39,6 +39,7 @@ import java.time.Instant;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -179,6 +180,45 @@ class GeminiResponseParserTest {
         assertEquals("call-123", toolUse.getId());
         assertEquals("get_weather", toolUse.getName());
         assertEquals("Tokyo", toolUse.getInput().get("city"));
+    }
+
+    @Test
+    void testParallelCallsWithoutIdsGetDistinctUuidIds() {
+        List<Part> parts =
+                List.of("Tokyo", "Beijing").stream()
+                        .map(
+                                city ->
+                                        Part.builder()
+                                                .functionCall(
+                                                        FunctionCall.builder()
+                                                                .name("get_weather")
+                                                                .args(Map.of("city", city))
+                                                                .build())
+                                                .build())
+                        .toList();
+        GenerateContentResponse response =
+                GenerateContentResponse.builder()
+                        .candidates(
+                                List.of(
+                                        Candidate.builder()
+                                                .content(
+                                                        Content.builder()
+                                                                .role("model")
+                                                                .parts(parts)
+                                                                .build())
+                                                .build()))
+                        .build();
+        List<String> ids =
+                parser.parseResponse(response, startTime).getContent().stream()
+                        .map(block -> assertInstanceOf(ToolUseBlock.class, block).getId())
+                        .toList();
+
+        assertEquals(2, ids.size());
+        assertEquals(2, ids.stream().distinct().count());
+        for (String id : ids) {
+            assertTrue(id.startsWith("tool_call_"));
+            assertNotNull(UUID.fromString(id.substring("tool_call_".length())));
+        }
     }
 
     @Test

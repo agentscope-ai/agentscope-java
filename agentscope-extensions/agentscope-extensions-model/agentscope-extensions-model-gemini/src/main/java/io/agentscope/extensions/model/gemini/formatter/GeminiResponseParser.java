@@ -35,6 +35,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -173,7 +174,7 @@ public class GeminiResponseParser {
     protected void parseToolCall(
             FunctionCall functionCall, byte[] thoughtSignature, List<ContentBlock> blocks) {
         try {
-            String id = functionCall.id().orElse("tool_call_" + System.currentTimeMillis());
+            String id = functionCall.id().orElseGet(() -> "tool_call_" + UUID.randomUUID());
             String name = functionCall.name().orElse("");
 
             if (name.isEmpty()) {
