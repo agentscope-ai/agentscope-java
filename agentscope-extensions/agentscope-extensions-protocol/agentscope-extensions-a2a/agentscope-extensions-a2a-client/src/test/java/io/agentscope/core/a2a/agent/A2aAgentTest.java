@@ -744,6 +744,51 @@ public class A2aAgentTest {
         verify(a2aClient, never()).close();
     }
 
+    @Test
+    void testCompletedTaskArtifactsAndStatusPriority() {
+        assertTaskResult(TaskState.COMPLETED, true, "artifact answer");
+        org.mockito.Mockito.clearInvocations(a2aClient);
+        assertTaskResult(TaskState.COMPLETED, false, "status answer");
+        org.mockito.Mockito.clearInvocations(a2aClient);
+        assertTaskResult(TaskState.FAILED, true, "status answer");
+    }
+
+    private void assertTaskResult(TaskState state, boolean artifacts, String expected) {
+        Task task =
+                new Task.Builder()
+                        .id("taskId")
+                        .contextId("contextId")
+                        .status(new TaskStatus(state, A2A.toAgentMessage("status answer"), null))
+                        .artifacts(
+                                artifacts
+                                        ? List.of(
+                                                new Artifact.Builder()
+                                                        .artifactId("a1")
+                                                        .parts(new TextPart("artifact answer"))
+                                                        .build())
+                                        : List.of())
+                        .build();
+        doAnswer(
+                        invocation -> {
+                            List<BiConsumer<ClientEvent, AgentCard>> consumers =
+                                    invocation.getArgument(1);
+                            consumers.forEach(c -> c.accept(new TaskEvent(task), agentCard));
+                            return null;
+                        })
+                .when(a2aClient)
+                .sendMessage(any(Message.class), anyList(), any());
+        A2aAgent agent =
+                A2aAgent.builder()
+                        .name("test-agent")
+                        .agentCard(agentCard)
+                        .clientReplacer(this::useMockClient)
+                        .build();
+        assertEquals(
+                expected,
+                agent.call(Msg.builder().textContent("test").build()).block().getTextContent());
+        verify(a2aClient).close();
+    }
+
     private Client useMockClient(Client built) {
         built.close();
         return a2aClient;

@@ -18,6 +18,7 @@ package io.agentscope.core.a2a.agent.event;
 
 import io.a2a.client.TaskEvent;
 import io.a2a.spec.Task;
+import io.a2a.spec.TaskState;
 import io.agentscope.core.a2a.agent.utils.LoggerUtil;
 import io.agentscope.core.a2a.agent.utils.MessageConvertUtil;
 import io.agentscope.core.message.Msg;
@@ -64,7 +65,12 @@ public class TaskEventHandler implements ClientEventHandler<TaskEvent> {
         }
 
         Msg msg;
-        if (task.getStatus() != null && task.getStatus().message() != null) {
+        boolean hasArtifacts = task.getArtifacts() != null && !task.getArtifacts().isEmpty();
+        if (TaskState.COMPLETED == task.getStatus().state() && hasArtifacts) {
+            msg =
+                    MessageConvertUtil.convertFromArtifact(
+                            task.getArtifacts(), context.getAgent().getName());
+        } else if (task.getStatus() != null && task.getStatus().message() != null) {
             msg =
                     MessageConvertUtil.convertFromMessage(
                             task.getStatus().message(), context.getAgent().getName());
