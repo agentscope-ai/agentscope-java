@@ -3564,7 +3564,8 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             if (toolCalls == null || toolCalls.isEmpty()) {
                 return Mono.just(new PermissionGate(List.of(), Set.of()));
             }
-            boolean useEngine = !permissionEngine.getContext().isTrivial();
+            // Confirmed rules update the call's state, not the engine's initial context.
+            boolean useEngine = !state.getPermissionContext().isTrivial();
             return Flux.fromIterable(toolCalls)
                     .concatMap(use -> evaluateOne(use, useEngine))
                     .collectList()
