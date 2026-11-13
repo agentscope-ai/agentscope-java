@@ -15,6 +15,12 @@ The payoff: you can switch between three deployment modes **without changing age
 - Shared store — multiple replicas / pods share the same long-term memory;
 - Sandbox — files and commands run in an isolated container; the same workspace state is restored across calls.
 
+## Conditional text updates
+
+`AbstractFilesystem.atomicTextFile(rc, path, inheritLower)` exposes UTF-8 reads and `compareAndSet(expected, updated)`. A missing file reads as `null`, distinct from an empty file; a stale expected value returns `false`. `inheritLower` controls whether an overlay reads lower-layer content before its first write. Local files use an OS file lock and atomic replacement. Remote files require a `BaseStore` that supports versioned writes. Unsupported backends report an error rather than falling back to an unprotected write.
+
+Memory appends use this protocol. Writers sharing a file must use the same protocol; external editors, shell writes and archival moves are outside its transaction. Custom filesystems implement `atomicTextFile` for their storage backend.
+
 ## Three declarative modes
 
 Pick one with `filesystem(...)` on `HarnessAgent.Builder` (no call = mode 3 by default):
