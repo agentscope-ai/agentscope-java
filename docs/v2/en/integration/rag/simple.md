@@ -67,6 +67,8 @@ The `io.agentscope.core.rag.reader` package contains readers for common formats;
 
 The resulting `Document` objects already carry metadata; pair with `TextChunker` and `SplitStrategy` for chunking.
 
+The default `TikaReader` creates a fresh content handler for every read subscription, so sequential and concurrent reads do not accumulate earlier documents. For custom handlers, use `TikaReader.perReadHandler(512, SplitStrategy.PARAGRAPH, 50, () -> new BodyContentHandler(-1))` (with `org.apache.tika.sax.BodyContentHandler`). The existing constructor accepting a `ContentHandler` remains compatible but is deprecated since 2.0.5: it still reuses that instance across reads.
+
 ## Built-in embedding providers
 
 | Class | Service | Mode |

@@ -67,6 +67,8 @@ List<Document> hits = knowledge.retrieve(
 
 读取出来的 `Document` 已经带有元数据，配合 `TextChunker` 与 `SplitStrategy` 做分块。
 
+默认 `TikaReader` 每次读取订阅都会创建新的内容处理器，顺序和并发读取不会累积此前文档的内容。自定义处理器请使用 `TikaReader.perReadHandler(512, SplitStrategy.PARAGRAPH, 50, () -> new BodyContentHandler(-1))`（`BodyContentHandler` 来自 `org.apache.tika.sax`）。原有接受 `ContentHandler` 的构造器保持兼容，但自 2.0.5 起已弃用：它仍会在多次读取中复用同一实例。
+
 ## 内置 Embedding 提供方
 
 | 类 | 服务 | 模式 |
