@@ -30,6 +30,7 @@ import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.Model;
+import io.agentscope.core.model.ModelContextWindows;
 import io.agentscope.core.model.ModelCreationContext;
 import io.agentscope.core.model.ModelRegistry;
 import io.agentscope.core.model.transport.HttpRequest;
@@ -108,7 +109,10 @@ class DeepSeekModelProviderTest {
 
         Model model = new DeepSeekModelProvider().create("deepseek:deepseek-v4-pro", context);
 
-        assertEquals(1_000_000, model.getContextWindowSize());
+        assertEquals(1_048_576, model.getContextWindowSize());
+        assertEquals(
+                ModelContextWindows.lookup("deepseek-v4-pro", ModelContextWindows.DEEPSEEK),
+                model.getContextWindowSize());
         assertFalse(model.supportsNativeStructuredOutput());
         assertFalse(model.supportsNativeStructuredOutputWithTools());
     }
