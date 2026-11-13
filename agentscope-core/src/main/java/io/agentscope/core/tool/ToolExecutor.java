@@ -15,6 +15,9 @@
  */
 package io.agentscope.core.tool;
 
+import com.networknt.schema.SchemaRegistryConfig;
+import com.networknt.schema.regex.RegularExpression;
+import com.networknt.schema.regex.RegularExpressionFactory;
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.message.ToolResultBlock;
@@ -66,6 +69,10 @@ import reactor.util.retry.Retry;
 class ToolExecutor {
 
     private static final Logger logger = LoggerFactory.getLogger(ToolExecutor.class);
+    // ToolValidator uses the default registry config too: preserve its regex rewrites and find
+    // semantics.
+    private static final RegularExpressionFactory REGULAR_EXPRESSION_FACTORY =
+            SchemaRegistryConfig.builder().build().getRegularExpressionFactory();
 
     private final Toolkit toolkit;
     private final ToolRegistry toolRegistry;
@@ -252,15 +259,16 @@ class ToolExecutor {
                     registered != null ? registered.getPresetParameters() : Map.of();
             mergedInput.putAll(presets);
             Map<String, Object> validationInput = new HashMap<>(mergedInput);
-            Set<String> properties = getVisibleSchemaProperties(schema);
-            // Presets omitted from the public schema are framework-controlled hidden parameters.
-            // Do not serialize or validate them as additional caller-supplied properties.
-            for (String preset : presets.keySet()) {
-                if (!properties.contains(preset)) {
-                    validationInput.remove(preset);
-                }
-            }
             try {
+                Set<String> properties = getVisibleSchemaProperties(schema, presets.keySet());
+                // Presets omitted from the public schema are framework-controlled hidden
+                // parameters.
+                // Do not serialize or validate them as additional caller-supplied properties.
+                for (String preset : presets.keySet()) {
+                    if (!properties.contains(preset)) {
+                        validationInput.remove(preset);
+                    }
+                }
                 String validationJson = JsonUtils.getJsonCodec().toJson(validationInput);
                 validationError = ToolValidator.validateInput(validationJson, schema);
             } catch (Exception e) {
@@ -340,16 +348,28 @@ class ToolExecutor {
                                                 + " result")));
     }
 
-    /** Collect properties applying to the root input object, not nested object properties. */
-    private static Set<String> getVisibleSchemaProperties(Map<String, Object> schema) {
+    /**
+     * Collect public names at the root instance, not inside property values or array items.
+     * Branch declarations are conservatively public; only ToolValidator decides branch validity.
+     */
+    private static Set<String> getVisibleSchemaProperties(
+            Map<String, Object> schema, Set<String> presetNames) {
         Set<String> properties = new HashSet<>();
         collectSchemaProperties(
-                schema, schema, Collections.newSetFromMap(new IdentityHashMap<>()), properties);
+                schema,
+                schema,
+                Collections.newSetFromMap(new IdentityHashMap<>()),
+                properties,
+                presetNames);
         return properties;
     }
 
     private static void collectSchemaProperties(
-            Object node, Map<?, ?> root, Set<Object> visited, Set<String> properties) {
+            Object node,
+            Map<?, ?> root,
+            Set<Object> visited,
+            Set<String> properties,
+            Set<String> presetNames) {
         if (!(node instanceof Map<?, ?> schema) || !visited.add(node)) {
             return;
         }
@@ -357,26 +377,71 @@ class ToolExecutor {
             root = schema; // Fragment references belong to this schema resource.
         }
         if (schema.get("properties") instanceof Map<?, ?> declared) {
-            for (Object name : declared.keySet()) {
-                if (name instanceof String property) {
-                    properties.add(property);
+            addPropertyNames(declared.keySet(), properties);
+        }
+        if (schema.get("required") instanceof List<?> required) {
+            addPropertyNames(required, properties);
+        }
+        if (schema.get("patternProperties") instanceof Map<?, ?> patterns) {
+            for (Object pattern : patterns.keySet()) {
+                if (pattern instanceof String regex) {
+                    RegularExpression expression =
+                            REGULAR_EXPRESSION_FACTORY.getRegularExpression(regex);
+                    for (String preset : presetNames) {
+                        if (expression.matches(preset)) {
+                            properties.add(preset);
+                        }
+                    }
                 }
             }
         }
         if (schema.get("$ref") instanceof String ref) {
-            resolveLocalSchemaReference(root, ref, visited, properties);
+            resolveLocalSchemaReference(root, ref, visited, properties, presetNames);
         }
         for (String composition : List.of("allOf", "anyOf", "oneOf")) {
             if (schema.get(composition) instanceof List<?> branches) {
                 for (Object branch : branches) {
-                    collectSchemaProperties(branch, root, visited, properties);
+                    collectSchemaProperties(branch, root, visited, properties, presetNames);
+                }
+            }
+        }
+        collectSchemaProperties(schema.get("not"), root, visited, properties, presetNames);
+        if (schema.containsKey("if")) {
+            for (String conditional : List.of("if", "then", "else")) {
+                collectSchemaProperties(
+                        schema.get(conditional), root, visited, properties, presetNames);
+            }
+        }
+        if (schema.get("dependentSchemas") instanceof Map<?, ?> dependencies) {
+            addPropertyNames(dependencies.keySet(), properties);
+            for (Object dependency : dependencies.values()) {
+                collectSchemaProperties(dependency, root, visited, properties, presetNames);
+            }
+        }
+        if (schema.get("dependentRequired") instanceof Map<?, ?> dependencies) {
+            addPropertyNames(dependencies.keySet(), properties);
+            for (Object dependency : dependencies.values()) {
+                if (dependency instanceof List<?> required) {
+                    addPropertyNames(required, properties);
                 }
             }
         }
     }
 
+    private static void addPropertyNames(Collection<?> names, Set<String> properties) {
+        for (Object name : names) {
+            if (name instanceof String property) {
+                properties.add(property);
+            }
+        }
+    }
+
     private static void resolveLocalSchemaReference(
-            Map<?, ?> root, String ref, Set<Object> visited, Set<String> properties) {
+            Map<?, ?> root,
+            String ref,
+            Set<Object> visited,
+            Set<String> properties,
+            Set<String> presetNames) {
         if (!ref.startsWith("#")) {
             return; // Never expand remote references.
         }
@@ -390,7 +455,17 @@ class ToolExecutor {
                                     root,
                                     root,
                                     pointer,
+                                    "$anchor",
                                     Collections.newSetFromMap(new IdentityHashMap<>()));
+                    if (node == null) {
+                        node =
+                                findLocalSchemaAnchor(
+                                        root,
+                                        root,
+                                        pointer,
+                                        "$dynamicAnchor",
+                                        Collections.newSetFromMap(new IdentityHashMap<>()));
+                    }
                 } else {
                     for (String token : pointer.substring(1).split("/", -1)) {
                         String key = token.replace("~1", "/").replace("~0", "~");
@@ -410,31 +485,58 @@ class ToolExecutor {
                     }
                 }
             }
-            collectSchemaProperties(node, root, visited, properties);
+            collectSchemaProperties(node, root, visited, properties, presetNames);
         } catch (IllegalArgumentException e) {
             // Invalid URI fragments or array indices are not visible properties.
         }
     }
 
     private static Object findLocalSchemaAnchor(
-            Object node, Map<?, ?> root, String anchor, Set<Object> visited) {
-        if (!(node instanceof Map<?, ?> || node instanceof List<?>) || !visited.add(node)) {
+            Object node, Map<?, ?> root, String anchor, String anchorKeyword, Set<Object> visited) {
+        if (!(node instanceof Map<?, ?> schema) || !visited.add(node)) {
             return null;
         }
-        Collection<?> children;
-        if (node instanceof Map<?, ?> schema) {
-            if (node != root && schema.get("$id") instanceof String id && !id.isEmpty()) {
-                return null; // An embedded schema resource has its own anchors.
+        if (node != root && schema.get("$id") instanceof String id && !id.isEmpty()) {
+            return null; // An embedded schema resource has its own anchors.
+        }
+        if (anchor.equals(schema.get(anchorKeyword))) {
+            return schema;
+        }
+        // Draft 2020-12 schema positions only: annotation data is never an anchor namespace.
+        List<Object> children = new ArrayList<>();
+        for (String keyword :
+                List.of(
+                        "$defs",
+                        "definitions",
+                        "properties",
+                        "patternProperties",
+                        "dependentSchemas")) {
+            if (schema.get(keyword) instanceof Map<?, ?> schemas) {
+                children.addAll(schemas.values());
             }
-            if (anchor.equals(schema.get("$anchor"))) {
-                return schema;
+        }
+        for (String keyword : List.of("allOf", "anyOf", "oneOf", "prefixItems")) {
+            if (schema.get(keyword) instanceof List<?> schemas) {
+                children.addAll(schemas);
             }
-            children = schema.values();
-        } else {
-            children = (List<?>) node;
+        }
+        for (String keyword :
+                List.of(
+                        "not",
+                        "if",
+                        "then",
+                        "else",
+                        "items",
+                        "contains",
+                        "additionalProperties",
+                        "unevaluatedProperties",
+                        "unevaluatedItems",
+                        "propertyNames",
+                        "contentSchema")) {
+            children.add(schema.get(keyword));
         }
         for (Object child : children) {
-            Object target = findLocalSchemaAnchor(child, root, anchor, visited);
+            Object target = findLocalSchemaAnchor(child, root, anchor, anchorKeyword, visited);
             if (target != null) {
                 return target;
             }

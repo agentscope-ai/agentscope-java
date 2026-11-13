@@ -34,6 +34,7 @@ import io.agentscope.core.util.JsonUtils;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -525,7 +526,7 @@ class ToolExecutorTest {
         Map<String, Object> schema = new HashMap<>();
         List<Object> branches = new ArrayList<>();
         schema.put("$ref", "#arguments");
-        schema.put("$defs", branches);
+        schema.put("$defs", Map.of("wrapper", Map.of("allOf", branches)));
         branches.add(schema);
         branches.add(branches);
         Map<String, Object> target =
@@ -641,12 +642,72 @@ class ToolExecutorTest {
         assertEquals(1, tool.calls.get());
     }
 
+    @ParameterizedTest
+    @CsvSource({
+        "$defs",
+        "definitions",
+        "properties",
+        "patternProperties",
+        "dependentSchemas",
+        "allOf",
+        "anyOf",
+        "oneOf",
+        "prefixItems",
+        "items",
+        "contains",
+        "additionalProperties",
+        "unevaluatedProperties",
+        "unevaluatedItems",
+        "propertyNames",
+        "not",
+        "if",
+        "then",
+        "else"
+    })
+    void shouldSearchOnlySchemaBearingAnchorLocations(String location) throws Exception {
+        Map<String, Object> target =
+                Map.of(
+                        "$anchor",
+                        "arguments",
+                        "properties",
+                        Map.of("x", Map.of("type", "integer", "minimum", 0)));
+        Object children;
+        if (Set.of("$defs", "definitions", "properties", "patternProperties", "dependentSchemas")
+                .contains(location)) {
+            children = Map.of("inner", target);
+        } else if (Set.of("allOf", "anyOf", "oneOf", "prefixItems").contains(location)) {
+            children = List.of(target);
+        } else {
+            children = target;
+        }
+        Map<String, Object> schema = new LinkedHashMap<>();
+        schema.put("$ref", "#arguments");
+        schema.put("default", Map.of("$anchor", "arguments", "properties", Map.of()));
+        schema.put("$defs", Map.of("wrapper", Map.of(location, children)));
+        assertEquals(Set.of("x"), visibleSchemaProperties(schema));
+    }
+
+    @ParameterizedTest
+    @CsvSource({"default", "examples", "enum", "const", "x-annotation"})
+    void shouldNeverDiscoverAnchorsInsideAnnotationData(String annotation) throws Exception {
+        Map<String, Object> decoy =
+                Map.of("$anchor", "arguments", "properties", Map.of("context", Map.of()));
+        Object value = Set.of("examples", "enum").contains(annotation) ? List.of(decoy) : decoy;
+        Map<String, Object> schema = Map.of("$ref", "#arguments", annotation, value);
+        assertEquals(Set.of(), visibleSchemaProperties(schema));
+        assertNotNull(
+                ToolValidator.validateInput("{}", schema),
+                "networknt must not resolve an annotation anchor");
+    }
+
     private static Object visibleSchemaProperties(Map<String, Object> schema) throws Exception {
         // Exercise the visibility guard only: cyclic-schema validation itself is outside this
         // repair.
-        var method = ToolExecutor.class.getDeclaredMethod("getVisibleSchemaProperties", Map.class);
+        var method =
+                ToolExecutor.class.getDeclaredMethod(
+                        "getVisibleSchemaProperties", Map.class, Set.class);
         method.setAccessible(true);
-        return method.invoke(null, schema);
+        return method.invoke(null, schema, Set.of());
     }
 
     private static final class ValidatedInputTool extends ToolBase {
