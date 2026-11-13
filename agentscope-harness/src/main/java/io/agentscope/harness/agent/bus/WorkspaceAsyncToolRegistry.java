@@ -26,6 +26,7 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Mono;
@@ -112,10 +113,30 @@ public class WorkspaceAsyncToolRegistry implements AsyncToolRegistry {
                             continue;
                         }
                         AsyncToolRecord rec = readRecord(fi.path());
-                        if (rec != null
-                                && AsyncToolRecord.RUNNING.equals(rec.status())
-                                && rec.createdAt().isBefore(cutoff)) {
+                        if (rec == null) {
+                            continue;
+                        }
+                        // The directory is sanitize(sessionId), which maps every character outside
+                        // [a-zA-Z0-9._-] to "_", so two different session ids can share one
+                        // directory ("team/alpha" and "team_alpha" do). Listing the directory is
+                        // therefore not the same as matching the session: without this check the
+                        // scan hands another session's running call to the caller, which then
+                        // reports to its model a tool it never invoked.
+                        if (!Objects.equals(sessionId, rec.sessionId())) {
+                            continue;
+                        }
+                        if (!rec.createdAt().isBefore(cutoff)) {
+                            continue;
+                        }
+                        if (AsyncToolRecord.RUNNING.equals(rec.status())) {
                             stale.add(rec);
+                        } else {
+                            // A terminal record has no reader: findStale is the only reader and it
+                            // reports RUNNING only, so leaving it behind makes every later scan pay
+                            // a full read - a network round-trip on a remote backend - for a status
+                            // nobody will look at again. The TTL that already declares a RUNNING
+                            // record dead doubles as the retention window here.
+                            reclaim(fi.path());
                         }
                     }
                     return stale;
@@ -144,6 +165,15 @@ public class WorkspaceAsyncToolRegistry implements AsyncToolRegistry {
                                     "createdAt", rec.createdAt().toString());
                     fs.write(RC, path, JsonUtils.getJsonCodec().toJson(data));
                 });
+    }
+
+    /** Deletes one record file, leaving the scan running if the backend refuses the delete. */
+    private void reclaim(String path) {
+        try {
+            fs.delete(RC, path);
+        } catch (Exception e) {
+            log.debug("Failed to reclaim async tool record at {}: {}", path, e.getMessage());
+        }
     }
 
     private AsyncToolRecord readRecord(String path) {
