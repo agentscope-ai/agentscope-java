@@ -557,7 +557,9 @@ public class Toolkit {
      * @return Mono containing execution result
      */
     public Mono<ToolResultBlock> callTool(ToolCallParam param) {
-        return executor.execute(param);
+        ToolUseBlock toolCall = param.getToolUseBlock();
+        return executor.execute(param)
+                .map(result -> result.withIdAndName(toolCall.getId(), toolCall.getName()));
     }
 
     /**
