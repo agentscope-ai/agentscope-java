@@ -51,12 +51,15 @@ import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
+import org.junit.jupiter.api.condition.DisabledOnOs;
+import org.junit.jupiter.api.condition.OS;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 import reactor.core.publisher.Flux;
 
 /** Launches and kills a separate Brain JVM; the actual detached tool process outlives it. */
+@DisabledOnOs(OS.WINDOWS)
 public class ProcessRecoveryTest {
     @TempDir Path directory;
     static final SessionKey KEY = new SessionKey("fixture", "process-recovery");

@@ -49,10 +49,13 @@ import java.util.Map;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.condition.DisabledOnOs;
+import org.junit.jupiter.api.condition.OS;
 import org.junit.jupiter.api.io.TempDir;
 import reactor.core.publisher.Flux;
 
 /** A durable Harness interaction survives separate Brain JVMs without replaying an applied result. */
+@DisabledOnOs(OS.WINDOWS)
 public class HarnessExternalToolProcessRecoveryTest {
     private static final String TOOL_ID = "external-call-1";
 

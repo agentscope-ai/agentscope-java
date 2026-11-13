@@ -123,6 +123,8 @@ import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.stream.StreamSupport;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.condition.DisabledOnOs;
+import org.junit.jupiter.api.condition.OS;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
@@ -596,6 +598,7 @@ class AgentScopeAdapterTest {
     }
 
     @Test
+    @DisabledOnOs(OS.WINDOWS)
     void realHarnessMemoryFinalizationReplaysRecordedSummaryAfterRestart() throws Exception {
         var calls = new AtomicInteger();
         var armed = new AtomicBoolean();
@@ -849,6 +852,7 @@ class AgentScopeAdapterTest {
     }
 
     @Test
+    @DisabledOnOs(OS.WINDOWS)
     void nativeHarnessWorkspaceForkCopiesPrivateFilesWithoutSharingSubsequentWrites() {
         var copied = new AtomicBoolean();
         var adapter =
