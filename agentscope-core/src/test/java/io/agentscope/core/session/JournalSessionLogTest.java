@@ -19,7 +19,11 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.agentscope.core.util.JsonUtils;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.util.ArrayList;
+import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -31,6 +35,50 @@ class JournalSessionLogTest {
 
     private SessionEvent event(long seq, String type) {
         return new SessionEvent(1, "e" + seq, seq, 1, type, "r", "t", true, "{}");
+    }
+
+    private static List<SessionEvent> collect(Iterable<SessionEvent> events) {
+        var result = new ArrayList<SessionEvent>();
+        for (var event : events) result.add(event);
+        return result;
+    }
+
+    private static byte[] json(Object value) {
+        return JsonUtils.getJsonCodec().toJson(value).getBytes(StandardCharsets.UTF_8);
+    }
+
+    private static final class CountingStorage implements AtomicSessionStorage {
+        final Map<String, Value> values = new HashMap<>();
+        int listPathsCalls;
+        int readAllCalls;
+        int readAllPathCount;
+
+        public Value read(String path) {
+            return values.get(path);
+        }
+
+        public boolean compareAndSet(String path, long version, byte[] bytes) {
+            var old = values.get(path);
+            if ((old == null ? 0 : old.version()) != version) return false;
+            values.put(path, new Value(version + 1, bytes));
+            return true;
+        }
+
+        @Override
+        public List<String> listPaths(String prefix) {
+            listPathsCalls++;
+            return values.keySet().stream()
+                    .filter(path -> path.startsWith(prefix))
+                    .sorted()
+                    .toList();
+        }
+
+        @Override
+        public Map<String, Value> readAll(Collection<String> paths) {
+            readAllCalls++;
+            readAllPathCount += paths.size();
+            return AtomicSessionStorage.super.readAll(paths);
+        }
     }
 
     @Test
@@ -150,6 +198,168 @@ class JournalSessionLogTest {
     }
 
     @Test
+    void incrementalScanReadsOnlyTheLocatedSegments() {
+        var storage = new CountingStorage();
+        var log = new JournalSessionLog(storage, "test");
+        var writer = log.acquire("w", Duration.ofMinutes(2));
+        var batch = List.of(event(1, "run/start"), event(2, "run/end"));
+        log.commit(writer, "b", 0, batch);
+        storage.listPathsCalls = 0;
+        storage.readAllCalls = 0;
+        storage.readAllPathCount = 0;
+        assertEquals(List.of(batch.get(1)), collect(log.scan(1, 2)));
+        assertEquals(1, storage.listPathsCalls);
+        assertEquals(1, storage.readAllCalls);
+        assertEquals(1, storage.readAllPathCount);
+    }
+
+    @Test
+    void fullReplayStillBulkLoadsCommitSegments() {
+        var storage = new CountingStorage();
+        var log = new JournalSessionLog(storage, "test");
+        var writer = log.acquire("w", Duration.ofMinutes(2));
+        var first = List.of(event(1, "run/start"), event(2, "run/end"));
+        var second = List.of(event(3, "run/start"), event(4, "run/end"));
+        log.commit(writer, "a", 0, first);
+        log.commit(writer, "b", 2, second);
+        storage.listPathsCalls = 0;
+        storage.readAllCalls = 0;
+        assertEquals(4, collect(log.scan(0, 4)).size());
+        assertEquals(1, storage.listPathsCalls);
+        assertEquals(1, storage.readAllCalls);
+    }
+
+    @Test
+    void incrementalAndBulkReplayReturnTheSameEvents() {
+        var storage = new CountingStorage();
+        var log = new JournalSessionLog(storage, "test");
+        var writer = log.acquire("w", Duration.ofMinutes(2));
+        var first = List.of(event(1, "run/start"), event(2, "run/end"));
+        var second = List.of(event(3, "run/start"), event(4, "run/end"));
+        log.commit(writer, "a", 0, first);
+        log.commit(writer, "b", 2, second);
+        var full = collect(log.scan(0, 4));
+        assertEquals(first.size() + second.size(), full.size());
+        assertEquals(full.subList(2, 4), collect(log.scan(2, 4)));
+    }
+
+    @Test
+    void sequenceNamedSegmentsLocateOnlyTheRequestedTail() {
+        var storage = new CountingStorage();
+        var log = new JournalSessionLog(storage, "test");
+        var writer = log.acquire("w", Duration.ofMinutes(2));
+        long seq = 0;
+        for (int i = 0; i < 320; i++) {
+            var batch = new ArrayList<SessionEvent>();
+            for (int j = 0; j < 10; j++) batch.add(event(++seq, "batch/item"));
+            log.commit(writer, "b" + i, seq - 10, batch);
+        }
+        assertEquals(3200, log.head().seq());
+        var keys = storage.listPaths("test/commits/");
+        assertEquals(320, keys.size());
+        assertTrue(keys.stream().allMatch(path -> path.matches(".*/\\d{20}\\.json")));
+        assertEquals("test/commits/00000000000000000001.json", keys.get(0));
+        assertEquals("test/commits/00000000000000003191.json", keys.get(keys.size() - 1));
+        storage.listPathsCalls = 0;
+        storage.readAllCalls = 0;
+        storage.readAllPathCount = 0;
+        var events = collect(log.scan(3005, 3200));
+        assertEquals(195, events.size());
+        assertEquals(3006, events.get(0).seq());
+        assertEquals(3200, events.get(events.size() - 1).seq());
+        assertEquals(1, storage.listPathsCalls);
+        assertEquals(1, storage.readAllCalls);
+        assertTrue(storage.readAllPathCount < 25, "read " + storage.readAllPathCount + " segments");
+    }
+
+    @Test
+    void locatingInsideASegmentMatchesFullReplay() {
+        var storage = new CountingStorage();
+        var log = new JournalSessionLog(storage, "test");
+        var writer = log.acquire("w", Duration.ofMinutes(2));
+        long seq = 0;
+        for (int i = 0; i < 10; i++) {
+            var batch = new ArrayList<SessionEvent>();
+            for (int j = 0; j < 4; j++) batch.add(event(++seq, "batch/item"));
+            log.commit(writer, "b" + i, seq - 4, batch);
+        }
+        var full = collect(log.scan(0, 40));
+        assertEquals(40, full.size());
+        assertEquals(full.subList(23, 40), collect(log.scan(23, 40)));
+    }
+
+    @Test
+    void scanBoundariesKeepFullReplayAndTerminalBehavior() {
+        var storage = new CountingStorage();
+        var log = new JournalSessionLog(storage, "test");
+        var writer = log.acquire("w", Duration.ofMinutes(2));
+        log.commit(writer, "a", 0, List.of(event(1, "run/start"), event(2, "run/end")));
+        log.commit(writer, "b", 2, List.of(event(3, "run/start"), event(4, "run/end")));
+        storage.listPathsCalls = 0;
+        storage.readAllCalls = 0;
+        storage.readAllPathCount = 0;
+        assertEquals(4, collect(log.scan(0, 4)).size());
+        assertEquals(1, storage.listPathsCalls);
+        assertEquals(1, storage.readAllCalls);
+        assertEquals(2, storage.readAllPathCount);
+        assertTrue(collect(log.scan(4, 4)).isEmpty());
+        assertThrows(IllegalArgumentException.class, () -> collect(log.scan(5, 5)));
+        assertThrows(IllegalArgumentException.class, () -> collect(log.scan(4, 3)));
+    }
+
+    @Test
+    void mixedLegacyAndSequenceNamedSegmentsFallBackToChainWalk() {
+        var storage = new CountingStorage();
+        var log = new JournalSessionLog(storage, "test");
+        var legacyEvents = List.of(event(1, "run/start"), event(2, "run/end"));
+        var legacyId = JournalSessionLog.hash("legacy-batch".getBytes(StandardCharsets.UTF_8));
+        var legacy =
+                new JournalSessionLog.Commit(
+                        "legacy",
+                        null,
+                        1,
+                        2,
+                        JournalSessionLog.hash(json(legacyEvents)),
+                        legacyEvents,
+                        Map.of());
+        storage.values.put(
+                "test/commits/" + legacyId + ".json",
+                new AtomicSessionStorage.Value(1, json(legacy)));
+        storage.values.put(
+                "test/head.json",
+                new AtomicSessionStorage.Value(
+                        1, json(new SessionLog.Head(2, 0, null, 0, legacyId))));
+        var writer = log.acquire("w", Duration.ofMinutes(2));
+        var next = List.of(event(3, "run/start"), event(4, "run/end"));
+        log.commit(writer, "next", 2, next);
+        storage.listPathsCalls = 0;
+        storage.readAllCalls = 0;
+        storage.readAllPathCount = 0;
+        assertEquals(next, collect(log.scan(2, 4)));
+        assertEquals(1, storage.listPathsCalls);
+        assertEquals(0, storage.readAllCalls);
+    }
+
+    @Test
+    void unparseableSegmentKeyFallsBackToChainWalk() {
+        var storage = new CountingStorage();
+        var log = new JournalSessionLog(storage, "test");
+        var writer = log.acquire("w", Duration.ofMinutes(2));
+        log.commit(writer, "a", 0, List.of(event(1, "run/start"), event(2, "run/end")));
+        log.commit(writer, "b", 2, List.of(event(3, "run/start"), event(4, "run/end")));
+        storage.values.put(
+                "test/commits/not-a-sequence.json",
+                new AtomicSessionStorage.Value(1, json(Map.of("orphan", true))));
+        storage.listPathsCalls = 0;
+        storage.readAllCalls = 0;
+        storage.readAllPathCount = 0;
+        var events = collect(log.scan(1, 4));
+        assertEquals(List.of(2L, 3L, 4L), events.stream().map(SessionEvent::seq).toList());
+        assertEquals(1, storage.listPathsCalls);
+        assertEquals(0, storage.readAllCalls);
+    }
+
+    @Test
     void permanentSealFencesPausedAcquisitionAndCommitButAllowsANewRun() {
         class Storage implements AtomicSessionStorage {
             final Map<String, Value> values = new HashMap<>();
@@ -196,5 +406,6 @@ class JournalSessionLogTest {
         restarted.sealWriter("paused"); // must not revoke this unrelated writer
         restarted.commit(resume, "resumed", 1, List.of(event(2, "run/start")));
         assertEquals(2, restarted.head().seq());
+        assertEquals(List.of(event(2, "run/start")), restarted.readAfter(1, 10));
     }
 }
