@@ -222,12 +222,22 @@ public final class SkillLoadTool implements AgentTool {
     //  Formatting helpers
     // ---------------------------------------------------------------------
 
-    /**
-     * Wrapping fence used to demarcate file content from the surrounding tool-result header.
-     * Four backticks so it stays unambiguous even when the wrapped body contains the more common
-     * triple-backtick code fences.
-     */
-    private static final String CONTENT_FENCE = "````";
+    /** Uses a fence longer than every backtick run in the wrapped content. */
+    private static String contentFence(String content) {
+        int length = 4;
+        int run = 0;
+        if (content != null) {
+            for (int i = 0; i < content.length(); i++) {
+                if (content.charAt(i) == '`') {
+                    run++;
+                    length = Math.max(length, run + 1);
+                } else {
+                    run = 0;
+                }
+            }
+        }
+        return "`".repeat(length);
+    }
 
     private String formatSkillMarkdown(HarnessSkillEntry entry) {
         AgentSkill skill = entry.skill();
@@ -245,17 +255,19 @@ public final class SkillLoadTool implements AgentTool {
         // anything near the frontmatter boundary, since the parser eats that whitespace.
         String fullMarkdown =
                 MarkdownSkillParser.generate(skill.getMetadata(), skill.getSkillContent());
+        String fence = contentFence(fullMarkdown);
         sb.append("\nContent (").append("SKILL.md").append("):\n");
-        sb.append(CONTENT_FENCE).append("markdown\n");
+        sb.append(fence).append("markdown\n");
         sb.append(fullMarkdown);
         if (!fullMarkdown.endsWith("\n")) {
             sb.append("\n");
         }
-        sb.append(CONTENT_FENCE).append("\n");
+        sb.append(fence).append("\n");
         return sb.toString();
     }
 
     private String formatResource(HarnessSkillEntry entry, String path, String content) {
+        String fence = contentFence(content);
         StringBuilder sb = new StringBuilder();
         sb.append("Successfully loaded resource from skill: ")
                 .append(entry.skill().getSkillId())
@@ -265,12 +277,12 @@ public final class SkillLoadTool implements AgentTool {
             sb.append("Files root: ").append(entry.filesRoot()).append("\n");
         }
         sb.append("\nContent (").append(path).append("):\n");
-        sb.append(CONTENT_FENCE).append("\n");
+        sb.append(fence).append("\n");
         sb.append(content);
         if (content == null || !content.endsWith("\n")) {
             sb.append("\n");
         }
-        sb.append(CONTENT_FENCE).append("\n");
+        sb.append(fence).append("\n");
         return sb.toString();
     }
 

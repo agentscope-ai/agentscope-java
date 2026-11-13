@@ -100,6 +100,29 @@ class SkillLoadToolFrontmatterViewTest {
         assertEquals(2, fenceCount, "expected exactly one open + one close fence, got " + text);
     }
 
+    @Test
+    void fencesAreLongerThanAllRunsInMarkdownAndResources() {
+        String body = "# Body\n``````nested\n";
+        String resource = "before\n````````\nafter\n";
+        AgentSkill skill =
+                new AgentSkill("alpha", "alpha skill", body, Map.of("ref.txt", resource), "custom");
+        RuntimeContext ctx = RuntimeContext.empty();
+        ctx.put(
+                SkillCatalog.class,
+                SkillCatalog.of(java.util.List.of(HarnessSkillEntry.of(skill, null))));
+        SkillLoadTool tool = new SkillLoadTool();
+        String markdown =
+                runTool(tool, ctx, Map.of("skillId", skill.getSkillId(), "path", "SKILL.md"));
+        assertTrue(markdown.contains("```````markdown\n"));
+        assertTrue(markdown.endsWith("```````\n"));
+        assertTrue(markdown.contains(body));
+        String output =
+                runTool(tool, ctx, Map.of("skillId", skill.getSkillId(), "path", "ref.txt"));
+        assertTrue(output.contains("Content (ref.txt):\n`````````\n"));
+        assertTrue(output.endsWith("`````````\n"));
+        assertTrue(output.contains(resource));
+    }
+
     private static String runTool(
             SkillLoadTool tool, RuntimeContext ctx, Map<String, Object> input) {
         ToolUseBlock useBlock =

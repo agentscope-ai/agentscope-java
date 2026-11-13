@@ -302,7 +302,7 @@ Each entry carries just enough metadata for the agent to decide whether to load 
 
 To activate a skill the agent calls a built-in tool — `load_skill_through_path`:
 
-- `load_skill_through_path(skillId, path="SKILL.md")` returns the markdown body
+- `load_skill_through_path(skillId, path="SKILL.md")` returns the full SKILL.md document, including frontmatter and body
 - `load_skill_through_path(skillId, path="references/style-guide.md")` returns any other file under the skill directory
 
 How the file gets fetched depends on where the skill came from:
@@ -314,7 +314,7 @@ How the file gets fetched depends on where the skill came from:
 | `workspace/skills/` shared (Layer 3) | preloaded into memory at registration |
 | `<userId>/skills/` per-user (Layer 4) | SKILL.md preloaded; other files read on demand through `AbstractFilesystem` (per-user namespace + sandbox routing honored automatically) |
 
-The agent doesn't see this difference — `load_skill_through_path` always works the same way. The fallback chain is "in-memory hit → filesystem read → error with an enumeration of every path actually available," so a wrong path returns a useful list rather than a dead end.
+The agent doesn't see this difference — `load_skill_through_path` always works the same way. After an in-memory lookup, a repository-provided lazy reader takes precedence. For repositories without that capability, a skill with `originDir` reads its support files lazily from that directory. Absolute paths, traversal, directories, and symlink escapes are rejected; missing resources list readable relative paths. Binary reads preserve the original bytes (text tool output encodes binary data with `base64:`). Loaded content uses a backtick fence longer than any backtick run in the body.
 
 ### `<files-root>` and shell execution
 

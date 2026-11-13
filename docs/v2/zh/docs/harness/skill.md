@@ -302,7 +302,7 @@ agent 每次 call 时，harness 会在 system prompt 里构建一个 `<available
 
 加载某个 skill 时 agent 会调用内置工具 `load_skill_through_path`：
 
-- `load_skill_through_path(skillId, path="SKILL.md")` 返回 markdown 正文
+- `load_skill_through_path(skillId, path="SKILL.md")` 返回完整 SKILL.md 文档（含 frontmatter 与正文）
 - `load_skill_through_path(skillId, path="references/style-guide.md")` 返回该 skill 目录下的任意文件
 
 具体怎么取文件，取决于 skill 来自哪里：
@@ -314,7 +314,7 @@ agent 每次 call 时，harness 会在 system prompt 里构建一个 `<available
 | `workspace/skills/` 共用（Layer 3） | 注册时预载到内存 |
 | `<userId>/skills/` 用户隔离（Layer 4） | SKILL.md 预载；其它文件按需通过 `AbstractFilesystem` 读取（自动遵循 per-user namespace + sandbox 路由） |
 
-agent 感知不到这种差异，`load_skill_through_path` 调起来都一样。底层查找顺序是"内存命中 → 文件系统读取 → 找不到时返回所有真正可用的路径列表"，所以传错 path 也只会拿到清单而不是死路。
+agent 感知不到这种差异，`load_skill_through_path` 调起来都一样。先查内存资源，再优先使用仓库提供的延迟读取器；只有仓库不提供该能力且 skill 有 `originDir` 时，才按需从原始目录读取支持文件。拒绝绝对路径、路径穿越、目录和逃逸到目录外的符号链接；缺失资源会列出可读的相对路径。二进制读取保留原始字节（文本工具输出以 `base64:` 编码二进制数据）。加载内容使用比正文中任何连续反引号都更长的围栏。
 
 ### `<files-root>` 和 shell 执行
 
