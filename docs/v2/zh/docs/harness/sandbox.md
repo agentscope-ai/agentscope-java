@@ -85,6 +85,20 @@ E2B 快照读取或恢复失败时会让调用失败，不会静默启动空工�
 
 `AGENTS.md` / `skills/` / `subagents/` / `knowledge/` 等宿主侧的工作区文件会在每次沙箱启动时同步进沙箱（按内容哈希增量）。你改了 `skills/` 里的脚本，下次 `call()` 沙箱里就是新版。
 
+### 沙箱镜像的释放等待
+
+对于自管理沙箱，`agentscope.sandbox.mirror.release-timeout-millis` 控制**每次释放时同步等待**正在进行的会话镜像上传的时间。它是进程级 JVM 系统属性，同一 JVM 的所有 Agent 共用并在每次释放时读取；没有按 Agent 设置的 builder 覆盖项。
+
+取值为整数毫秒，默认 `1000`；`0` 表示不等待。负数、格式错误或超出整数范围的值会记录警告并回退到 `1000`。例如：
+
+```bash
+java -Dagentscope.sandbox.mirror.release-timeout-millis=5000 -jar your-agent-app.jar
+```
+
+释放时先拒绝新的镜像上传，再等待已有上传，随后调用沙箱管理器的释放操作。每次释放都可能用完整个等待额度。该配置仅限制镜像等待时间，不是单次上传超时或整体关闭截止时间。跨调用保持运行的用户管理沙箱不使用这段等待。
+
+等待耗尽后仍会继续释放，尚未完成的镜像上传可能失败。日志 `Mirror upload still in flight after ... ms; releasing sandbox` 表示发生了这种情况。增大值能给慢上传更多时间，但会增加释放延迟；`0` 不给已有镜像留出完成时间。调整时同时观察警告和调用完成延迟；移除 JVM 参数恢复默认值。该参数不会改变由 `agentscope.state.home` 控制的 Agent 状态存储目录。
+
 ## 分布式部署
 
 多副本部署同一个 agent，要让任意副本都能接住同一用户的对话，需要：

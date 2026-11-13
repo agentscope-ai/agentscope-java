@@ -85,6 +85,20 @@ Where snapshots land is decided by `snapshotSpec`:
 
 Host-side workspace files (`AGENTS.md` / `skills/` / `subagents/` / `knowledge/`) are synced into the sandbox at each start, content-hash-gated. So if you edit a script under `skills/`, the next `call()` has the new version inside the sandbox.
 
+### Sandbox mirror release wait
+
+For self-managed sandboxes, `agentscope.sandbox.mirror.release-timeout-millis` controls the **synchronous wait per release** for session mirror uploads already in progress. It is a process-wide JVM system property, shared by all agents and read at each release; there is no per-agent builder override.
+
+The value is an integer number of milliseconds. The default is `1000`; `0` disables waiting. Negative, malformed, or out-of-range values warn and fall back to `1000`. For example:
+
+```bash
+java -Dagentscope.sandbox.mirror.release-timeout-millis=5000 -jar your-agent-app.jar
+```
+
+Release first rejects new mirrors, then waits for active uploads before calling the sandbox manager's release operation. Each release can consume the full budget. This limits only the mirror wait, not individual uploads or total shutdown. User-managed sandboxes that remain alive across calls do not use this wait.
+
+If the budget expires, release proceeds and an in-flight mirror may fail. The warning `Mirror upload still in flight after ... ms; releasing sandbox` identifies this case. Increasing the value gives slow uploads more time but adds release latency; `0` gives active mirrors no time to finish. Monitor this warning and call completion latency; remove the JVM option to restore the default. This does not change the agent state-store location controlled by `agentscope.state.home`.
+
 ## Distributed deployment
 
 When multiple replicas run the same agent and any replica must be able to pick up the same user's conversation, you need:
