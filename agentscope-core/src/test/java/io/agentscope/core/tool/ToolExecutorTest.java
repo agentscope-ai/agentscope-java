@@ -26,6 +26,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
+import io.agentscope.core.message.ToolResultState;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ToolSchema;
 import io.agentscope.core.tool.test.SampleTools;
@@ -46,7 +47,9 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.MethodSource;
 import reactor.core.publisher.Mono;
 
 /**
@@ -425,6 +428,155 @@ class ToolExecutorTest {
                                                         "properties",
                                                         Map.of("x", Map.of("type", "integer")))))));
         assertEquals(Set.of("x"), visibleSchemaProperties(schema));
+    }
+
+    @ParameterizedTest
+    @MethodSource("resourceScopedReferenceCases")
+    void shouldValidateResourceScopedPresetsRegardlessOfReferenceMapIdentity(
+            boolean shared, boolean required, int preset, boolean reversed, String execution)
+            throws Exception {
+        Map<String, Object> schema = resourceScopedInputSchema(shared, required, reversed);
+        String before = JsonUtils.getJsonCodec().toJson(schema);
+        assertEquals(
+                before,
+                JsonUtils.getJsonCodec()
+                        .toJson(resourceScopedInputSchema(!shared, required, reversed)));
+        assertNotNull(ToolValidator.validateInput("{\"x\":-3}", schema));
+        assertNull(ToolValidator.validateInput("{\"x\":7}", schema));
+        String expectedError = ToolValidator.validateInput("{\"x\":" + preset + "}", schema);
+        toolkit =
+                new Toolkit(ToolkitConfig.builder().parallel("parallel".equals(execution)).build());
+        ValidatedInputTool tool = new ValidatedInputTool(schema);
+        Object hiddenContext = new Object();
+        Map<String, Object> presets = Map.of("x", preset, "context", hiddenContext);
+        toolkit.registration()
+                .agentTool(tool)
+                .presetParameters(Map.of(tool.getName(), presets))
+                .apply();
+        ToolUseBlock use =
+                ToolUseBlock.builder()
+                        .id("resource-scoped-preset")
+                        .name(tool.getName())
+                        .input(Map.of("x", 1))
+                        .content("{\"x\":1}")
+                        .build();
+        Map<String, Object> explicitInput = Map.of("x", 2);
+        ToolResultBlock result;
+        if ("direct".equals(execution)) {
+            result =
+                    toolkit.callTool(
+                                    ToolCallParam.builder()
+                                            .toolUseBlock(use)
+                                            .input(explicitInput)
+                                            .build())
+                            .block(TIMEOUT);
+        } else {
+            List<ToolResultBlock> results =
+                    toolkit.callTools(List.of(use), null, null, null).block(TIMEOUT);
+            assertNotNull(results);
+            assertEquals(1, results.size());
+            result = results.get(0);
+        }
+        assertNotNull(result);
+        assertEquals(use.getId(), result.getId());
+        assertEquals(use.getName(), result.getName());
+        if (preset < 0) {
+            assertNotNull(expectedError);
+            assertEquals(ToolResultState.ERROR, result.getState());
+            assertEquals(
+                    "Error: Parameter validation failed for tool 'validated_input': "
+                            + expectedError
+                            + "\nPlease correct the parameters and try again.",
+                    extractFirstText(result));
+            assertEquals(0, tool.calls.get());
+            assertNull(tool.lastInput);
+        } else {
+            assertNull(expectedError);
+            assertEquals("x: 7", extractFirstText(result));
+            assertEquals(7, tool.lastInput.get("x"));
+            assertSame(hiddenContext, tool.lastInput.get("context"));
+            assertEquals(1, tool.calls.get());
+        }
+        assertEquals(Set.of("a", "x"), visibleSchemaProperties(schema));
+        assertEquals(before, JsonUtils.getJsonCodec().toJson(schema));
+        assertEquals(Map.of("x", 1), use.getInput());
+        assertEquals("{\"x\":1}", use.getContent());
+        assertEquals(Map.of("x", 2), explicitInput);
+        assertEquals(Map.of("x", preset, "context", hiddenContext), presets);
+        List<?> resources = (List<?>) schema.get("allOf");
+        Object firstRef = ((List<?>) ((Map<?, ?>) resources.get(0)).get("allOf")).get(0);
+        Object secondRef = ((List<?>) ((Map<?, ?>) resources.get(1)).get("allOf")).get(0);
+        assertEquals(shared, firstRef == secondRef);
+    }
+
+    private static List<Arguments> resourceScopedReferenceCases() {
+        List<Arguments> cases = new ArrayList<>();
+        for (boolean shared : List.of(false, true)) {
+            for (boolean required : List.of(false, true)) {
+                for (int preset : List.of(-3, 7)) {
+                    for (boolean reversed : List.of(false, true)) {
+                        for (String execution : List.of("direct", "sequential", "parallel")) {
+                            cases.add(Arguments.of(shared, required, preset, reversed, execution));
+                        }
+                    }
+                }
+            }
+        }
+        return cases;
+    }
+
+    private static Map<String, Object> resourceScopedInputSchema(
+            boolean shared, boolean required, boolean reversed) {
+        Map<String, Object> ref = Map.of("$ref", "#/$defs/input");
+        Map<String, Object> input = new LinkedHashMap<>();
+        input.put("properties", Map.of("x", Map.of("type", "integer", "minimum", 0)));
+        if (required) {
+            input.put("required", List.of("x"));
+        }
+        Map<String, Object> resourceA =
+                Map.of(
+                        "$id", "https://example.test/a",
+                        "allOf", List.of(ref),
+                        "$defs",
+                                Map.of(
+                                        "input",
+                                        Map.of(
+                                                "properties",
+                                                Map.of("a", Map.of("type", "integer")))));
+        Map<String, Object> resourceB =
+                Map.of(
+                        "$id", "https://example.test/b",
+                        "allOf", List.of(shared ? ref : Map.of("$ref", "#/$defs/input")),
+                        "$defs", Map.of("input", input));
+        return Map.of(
+                "type",
+                "object",
+                "allOf",
+                reversed ? List.of(resourceB, resourceA) : List.of(resourceA, resourceB));
+    }
+
+    @ParameterizedTest
+    @CsvSource({"false", "true"})
+    void shouldBoundSharedReferenceTraversalAcrossCyclicResourceMaps(boolean reversed) {
+        Map<String, Object> schema = resourceScopedInputSchema(true, false, reversed);
+        List<?> resources = (List<?>) schema.get("allOf");
+        Map<String, Object> first = new HashMap<>((Map<String, Object>) resources.get(0));
+        Map<String, Object> second = new HashMap<>((Map<String, Object>) resources.get(1));
+        Object ref = ((List<?>) first.get("allOf")).get(0);
+        List<Object> firstBranches = new ArrayList<>(List.of(ref, second));
+        firstBranches.add(first);
+        firstBranches.add(firstBranches);
+        first.put("allOf", firstBranches);
+        second.put("allOf", List.of(ref, first, second));
+        Map<String, Object> cyclic = Map.of("allOf", List.of(first, second));
+        // Do not serialize or validate a cyclic Java graph: only the local visibility guard.
+        assertTimeoutPreemptively(
+                TIMEOUT, () -> assertEquals(Set.of("a", "x"), visibleSchemaProperties(cyclic)));
+        assertSame(second, firstBranches.get(1));
+        assertSame(first, firstBranches.get(2));
+        assertSame(firstBranches, firstBranches.get(3));
+        assertSame(ref, ((List<?>) second.get("allOf")).get(0));
+        assertEquals(4, firstBranches.size());
     }
 
     @Test

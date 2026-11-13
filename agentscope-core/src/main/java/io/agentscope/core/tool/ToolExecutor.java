@@ -355,26 +355,27 @@ class ToolExecutor {
     private static Set<String> getVisibleSchemaProperties(
             Map<String, Object> schema, Set<String> presetNames) {
         Set<String> properties = new HashSet<>();
-        collectSchemaProperties(
-                schema,
-                schema,
-                Collections.newSetFromMap(new IdentityHashMap<>()),
-                properties,
-                presetNames);
+        collectSchemaProperties(schema, schema, new IdentityHashMap<>(), properties, presetNames);
         return properties;
     }
 
     private static void collectSchemaProperties(
             Object node,
             Map<?, ?> root,
-            Set<Object> visited,
+            IdentityHashMap<Map<?, ?>, Set<Object>> visited,
             Set<String> properties,
             Set<String> presetNames) {
-        if (!(node instanceof Map<?, ?> schema) || !visited.add(node)) {
+        if (!(node instanceof Map<?, ?> schema)) {
             return;
         }
         if (schema.get("$id") instanceof String id && !id.isEmpty()) {
             root = schema; // Fragment references belong to this schema resource.
+        }
+        // A shared node can resolve differently in each effective resource scope.
+        if (!visited.computeIfAbsent(
+                        root, key -> Collections.newSetFromMap(new IdentityHashMap<>()))
+                .add(node)) {
+            return;
         }
         if (schema.get("properties") instanceof Map<?, ?> declared) {
             addPropertyNames(declared.keySet(), properties);
@@ -439,7 +440,7 @@ class ToolExecutor {
     private static void resolveLocalSchemaReference(
             Map<?, ?> root,
             String ref,
-            Set<Object> visited,
+            IdentityHashMap<Map<?, ?>, Set<Object>> visited,
             Set<String> properties,
             Set<String> presetNames) {
         if (!ref.startsWith("#")) {
