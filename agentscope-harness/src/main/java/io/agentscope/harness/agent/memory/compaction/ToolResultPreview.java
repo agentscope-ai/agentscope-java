@@ -37,6 +37,12 @@ public final class ToolResultPreview {
     /**
      * Retains a shared head/tail text allowance while preserving non-text block order.
      *
+     * <p>A boundary that lands inside a surrogate pair is moved outwards by one {@code char}, so
+     * the preview never keeps half a code point: a head ending between the halves of an emoji
+     * drops the high surrogate, and a tail starting on a low surrogate skips it. Astral
+     * characters in tool output therefore survive pruning instead of turning into unpaired
+     * surrogates in the model-visible, persisted message.
+     *
      * @param blocks original content blocks
      * @param charsPerEnd non-negative character allowance at each end of the complete text
      * @param prefix text prepended to the first text block
@@ -73,9 +79,9 @@ public final class ToolResultPreview {
             }
             String preview =
                     remainingPrefix
-                            + text.substring(0, headLength)
+                            + text.substring(0, headBoundary(text, headLength))
                             + gap
-                            + text.substring(tailOffset);
+                            + text.substring(tailBoundary(text, tailOffset));
             if (!preview.isEmpty()) {
                 output.add(TextBlock.builder().text(preview).build());
             }
@@ -83,5 +89,32 @@ public final class ToolResultPreview {
             consumed += text.length();
         }
         return output;
+    }
+
+    /**
+     * Moves a head boundary left when it would cut a surrogate pair in half: the char at {@code
+     * headLength} may be the low half of a pair whose high half is the last retained char.
+     */
+    private static int headBoundary(String text, int headLength) {
+        if (headLength > 0
+                && headLength < text.length()
+                && Character.isHighSurrogate(text.charAt(headLength - 1))
+                && Character.isLowSurrogate(text.charAt(headLength))) {
+            return headLength - 1;
+        }
+        return headLength;
+    }
+
+    /**
+     * Moves a tail boundary right when it would start on the low half of a surrogate pair, so the
+     * preview never keeps half a code point.
+     */
+    private static int tailBoundary(String text, int tailOffset) {
+        if (tailOffset > 0
+                && tailOffset < text.length()
+                && Character.isLowSurrogate(text.charAt(tailOffset))) {
+            return tailOffset + 1;
+        }
+        return tailOffset;
     }
 }
