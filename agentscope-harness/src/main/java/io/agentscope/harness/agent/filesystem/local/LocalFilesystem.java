@@ -477,7 +477,8 @@ public class LocalFilesystem implements AbstractFilesystem {
             return GrepResult.success(List.of());
         }
 
-        if (!Files.exists(basePath)) {
+        if (!Files.exists(basePath)
+                || (Files.isRegularFile(basePath) && isAtomicWriteArtifact(basePath))) {
             return GrepResult.success(List.of());
         }
 
