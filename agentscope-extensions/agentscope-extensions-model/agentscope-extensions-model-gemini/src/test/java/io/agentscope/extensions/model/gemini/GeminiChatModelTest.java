@@ -17,14 +17,18 @@ package io.agentscope.extensions.model.gemini;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.google.genai.types.ClientOptions;
 import com.google.genai.types.HttpOptions;
 import com.google.genai.types.ProxyOptions;
+import com.sun.net.httpserver.HttpServer;
 import io.agentscope.core.message.Msg;
+import io.agentscope.core.message.UserMessage;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.ExecutionConfig;
 import io.agentscope.core.model.GenerateOptions;
@@ -33,16 +37,23 @@ import io.agentscope.core.model.ToolChoice;
 import io.agentscope.core.model.ToolSchema;
 import io.agentscope.core.model.test.ModelTestUtils;
 import io.agentscope.core.model.transport.ProxyConfig;
+import io.agentscope.core.util.JsonUtils;
 import io.agentscope.extensions.model.gemini.formatter.GeminiChatFormatter;
 import io.agentscope.extensions.model.gemini.formatter.GeminiMultiAgentFormatter;
+import java.io.OutputStream;
 import java.lang.reflect.Field;
+import java.net.InetSocketAddress;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import reactor.core.publisher.Flux;
 
 /**
@@ -529,6 +540,114 @@ class GeminiChatModelTest {
                         .build();
 
         assertNotNull(model);
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    @DisplayName("Default tool choice and per-call overrides reach the Gemini transport")
+    void testEffectiveToolChoiceOnTransport(boolean streaming) throws Exception {
+        AtomicReference<String> requestBody = new AtomicReference<>();
+        HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        server.createContext(
+                "/",
+                exchange -> {
+                    requestBody.set(
+                            new String(
+                                    exchange.getRequestBody().readAllBytes(),
+                                    StandardCharsets.UTF_8));
+                    String response =
+                            "{\"candidates\":[{\"content\":{\"role\":\"model\","
+                                    + "\"parts\":[{\"text\":\"ok\"}]},\"finishReason\":\"STOP\"}]}";
+                    byte[] body =
+                            (streaming ? "data: " + response + "\n\n" : response)
+                                    .getBytes(StandardCharsets.UTF_8);
+                    exchange.getResponseHeaders()
+                            .add(
+                                    "Content-Type",
+                                    streaming ? "text/event-stream" : "application/json");
+                    exchange.sendResponseHeaders(200, body.length);
+                    try (OutputStream out = exchange.getResponseBody()) {
+                        out.write(body);
+                    }
+                });
+        server.start();
+        GeminiChatModel model = null;
+        try {
+            model =
+                    GeminiChatModel.builder()
+                            .apiKey(mockApiKey)
+                            .baseUrl("http://127.0.0.1:" + server.getAddress().getPort())
+                            .modelName("gemini-test")
+                            .streamEnabled(streaming)
+                            .httpOptions(HttpOptions.builder().timeout(3000).build())
+                            .defaultOptions(
+                                    GenerateOptions.builder()
+                                            .toolChoice(new ToolChoice.None())
+                                            .executionConfig(
+                                                    ExecutionConfig.builder()
+                                                            .maxAttempts(1)
+                                                            .build())
+                                            .build())
+                            .build();
+            List<ToolSchema> tools =
+                    List.of(ModelTestUtils.createSimpleToolSchema("get_weather", "Get weather"));
+
+            assertEquals(
+                    "NONE",
+                    invokeForToolConfig(model, tools, null, requestBody).path("mode").asText());
+            assertEquals(
+                    "NONE",
+                    invokeForToolConfig(
+                                    model,
+                                    tools,
+                                    GenerateOptions.builder().temperature(0.5).build(),
+                                    requestBody)
+                            .path("mode")
+                            .asText());
+            // The formatter represents AUTO by omitting toolConfig, the API default.
+            assertTrue(
+                    invokeForToolConfig(
+                                    model,
+                                    tools,
+                                    GenerateOptions.builder()
+                                            .toolChoice(new ToolChoice.Auto())
+                                            .build(),
+                                    requestBody)
+                            .isMissingNode());
+            JsonNode specific =
+                    invokeForToolConfig(
+                            model,
+                            tools,
+                            GenerateOptions.builder()
+                                    .toolChoice(new ToolChoice.Specific("get_weather"))
+                                    .build(),
+                            requestBody);
+            assertEquals("ANY", specific.path("mode").asText());
+            assertEquals("get_weather", specific.path("allowedFunctionNames").path(0).asText());
+            assertTrue(invokeForToolConfig(model, List.of(), null, requestBody).isMissingNode());
+        } finally {
+            if (model != null) {
+                model.close();
+            }
+            server.stop(0);
+        }
+    }
+
+    private static JsonNode invokeForToolConfig(
+            GeminiChatModel model,
+            List<ToolSchema> tools,
+            GenerateOptions options,
+            AtomicReference<String> requestBody) {
+        requestBody.set(null);
+        assertNotNull(
+                model.stream(List.of(new UserMessage("Hello")), tools, options)
+                        .blockLast(Duration.ofSeconds(5)));
+        assertNotNull(requestBody.get());
+        JsonNode request = JsonUtils.getJsonCodec().fromJson(requestBody.get(), JsonNode.class);
+        if (tools.isEmpty()) {
+            assertFalse(request.has("toolConfig"));
+        }
+        return request.path("toolConfig").path("functionCallingConfig");
     }
 
     @Test

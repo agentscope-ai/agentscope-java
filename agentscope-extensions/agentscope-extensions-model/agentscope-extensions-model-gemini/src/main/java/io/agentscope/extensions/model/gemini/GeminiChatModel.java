@@ -263,9 +263,11 @@ public class GeminiChatModel extends ChatModelBase {
                                     formatter.applyTools(configBuilder, tools);
 
                                     // Apply tool choice if present
-                                    if (options != null && options.getToolChoice() != null) {
+                                    GenerateOptions effectiveOptions =
+                                            GenerateOptions.mergeOptions(options, defaultOptions);
+                                    if (effectiveOptions.getToolChoice() != null) {
                                         formatter.applyToolChoice(
-                                                configBuilder, options.getToolChoice());
+                                                configBuilder, effectiveOptions.getToolChoice());
                                     }
                                 }
 
