@@ -146,11 +146,6 @@ public class AguiAgentAdapter {
                     RuntimeContext effectiveRuntimeContext =
                             buildRuntimeContext(input, runtimeContext);
 
-                    // Convert AG-UI messages and official resume entries to AgentScope messages.
-                    List<Msg> msgs =
-                            messageConverter.toMsgList(
-                                    input, resumeInterrupts(effectiveRuntimeContext));
-
                     // Create stream options - use incremental mode for true streaming
                     StreamOptions options =
                             StreamOptions.builder()
@@ -160,6 +155,11 @@ public class AguiAgentAdapter {
 
                     AgentStream agentStream;
                     try {
+                        // Convert AG-UI messages and official resume entries to AgentScope
+                        // messages.
+                        List<Msg> msgs =
+                                messageConverter.toMsgList(
+                                        input, resumeInterrupts(effectiveRuntimeContext));
                         agentStream =
                                 streamWithRuntimeContext(
                                         msgs, options, effectiveRuntimeContext, input);
