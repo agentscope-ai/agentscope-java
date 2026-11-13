@@ -175,25 +175,23 @@ public class OpenAIChatModel extends ChatModelBase {
                                             .filter(Objects::nonNull))
                     .subscribeOn(Schedulers.boundedElastic());
         } else {
-            // Non-streaming mode: make a single call and return as Flux
-            return Flux.defer(
+            // Each retry gets a fresh blocking call with cancellation-aware error handling.
+            return ModelUtils.fromBlockingCallable(
                             () -> {
                                 try {
                                     OpenAIResponse response =
                                             client.call(apiKey, baseUrl, request, effectiveOptions);
-                                    ChatResponse chatResponse =
-                                            formatter.parseResponse(response, start);
-                                    return Flux.just(chatResponse);
+                                    return Objects.requireNonNull(
+                                            formatter.parseResponse(response, start));
                                 } catch (Exception e) {
-                                    return Flux.error(
-                                            new ModelException(
-                                                    "Failed to call OpenAI API: " + e.getMessage(),
-                                                    e,
-                                                    modelName,
-                                                    "openai"));
+                                    throw new ModelException(
+                                            "Failed to call OpenAI API: " + e.getMessage(),
+                                            e,
+                                            modelName,
+                                            "openai");
                                 }
                             })
-                    .subscribeOn(Schedulers.boundedElastic());
+                    .flux();
         }
     }
 
