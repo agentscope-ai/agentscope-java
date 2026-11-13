@@ -501,6 +501,14 @@ ReActAgent agent =
 
 - **`HarnessAgent`** — the harness module ships workspace-aware shell and file tools (`execute`, `read_file`, `write_file`, etc.) out of the box; no extra registration needed.
 
+#### Shell whitelist and approval
+
+`ShellCommandTool` retains 2.0.x behavior: with its default validators, a null or empty whitelist permits unrestricted shell execution without invoking the approval callback. This also applies to the default constructor and after `clearAllowedCommands()`. Configure a nonempty whitelist for restricted execution; custom validators define their own policy.
+
+With a nonempty whitelist, even a whitelisted executable requires approval when the command uses shell expansions, pipes, redirection, command separators, grouping, or incomplete quoting/escaping. On Unix this includes `$()` and backticks, even inside double quotes; single-quoted literals remain literal. On Windows, `%`/`!` expansion and unsafe `cmd /c` outer-quote stripping are checked conservatively. Safe relative executables still need whitelist membership.
+
+Rejected validation passes the **original complete command** to the approval callback. Only `true` permits execution; a missing callback, `false`, `null`, or an exception returns `SecurityError` without execution. Approved commands run unchanged via `sh -c` or `cmd.exe /c`. The whitelist is not a sandbox: allowed programs can still execute other programs or modify files through their arguments. Use isolation for untrusted workloads.
+
 ### Skill + ToolGroup: on-demand tool disclosure
 
 `SkillToolGroup` binds a group of tools to a skill name — the group activates automatically when the agent loads that skill, and stays hidden from the model's schema otherwise, reducing context noise.

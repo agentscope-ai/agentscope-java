@@ -501,6 +501,14 @@ ReActAgent agent =
 
 - **`HarnessAgent`** —— harness 模块自带 workspace 感知的 shell 与文件工具（`execute`、`read_file`、`write_file` 等），无需额外注册。
 
+#### Shell 白名单与审批
+
+`ShellCommandTool` 保留 2.0.x 行为：使用默认 validator 时，null 或空白名单允许不受限的 shell 执行，不调用审批 callback。默认构造器以及 `clearAllowedCommands()` 后也遵循这一行为。要限制执行，请配置非空白名单；自定义 validator 自行定义策略。
+
+白名单非空时，即使可执行程序在白名单中，包含 shell 展开、管道、重定向、命令分隔符、分组或不完整引号/转义的命令仍需审批。Unix 下包括 `$()` 和反引号，即使位于双引号内；单引号中的字面量仍按字面量处理。Windows 下保守检查 `%`/`!` 展开以及 `cmd /c` 去除外层引号带来的风险。安全的相对路径可执行程序也必须属于白名单。
+
+校验拒绝后，审批 callback 接收**原始完整命令**。只有返回 `true` 才执行；未配置 callback、返回 `false`、`null` 或抛出异常时，返回 `SecurityError` 且不执行。获批命令原样通过 `sh -c` 或 `cmd.exe /c` 运行。白名单不是沙箱：获准程序仍可能通过参数运行其他程序或修改文件。不可信工作负载应使用隔离环境。
+
 ### Skill + ToolGroup：按需披露工具
 
 `SkillToolGroup` 把一组 tool 绑定到某个 skill name —— agent 加载该 skill 时 tool group 自动激活，未加载时 tool 不出现在模型 schema 中，减少上下文噪音。
