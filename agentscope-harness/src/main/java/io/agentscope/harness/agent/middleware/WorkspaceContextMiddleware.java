@@ -27,6 +27,9 @@ import io.agentscope.harness.agent.sandbox.SandboxWorkspaceRoot;
 import io.agentscope.harness.agent.workspace.LocalFsMode;
 import io.agentscope.harness.agent.workspace.PathPolicy;
 import io.agentscope.harness.agent.workspace.WorkspaceManager;
+import java.nio.ByteBuffer;
+import java.nio.CharBuffer;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
@@ -127,6 +130,20 @@ public class WorkspaceContextMiddleware implements HarnessRuntimeMiddleware {
     private static final String TRUNCATION_NOTICE_PLAIN = "\n\n... (memory truncated) ...\n";
 
     private static final int DEFAULT_MAX_CONTEXT_TOKENS = 8000;
+    private static final int MAX_AGENTS_MD_BYTES = 100 * 1024;
+
+    /** Caps the UTF-8 body without splitting a code point, then appends a visible marker. */
+    private static String truncateUtf8(String content, int maxBytes) {
+        ByteBuffer out = ByteBuffer.allocate(maxBytes);
+        if (StandardCharsets.UTF_8
+                .newEncoder()
+                .encode(CharBuffer.wrap(content), out, true)
+                .isUnderflow()) {
+            return content;
+        }
+        return new String(out.array(), 0, out.position(), StandardCharsets.UTF_8)
+                + "\n\n[File truncated: AGENTS.md]";
+    }
 
     private final WorkspaceManager workspaceManager;
     private final String agentName;
@@ -210,7 +227,8 @@ public class WorkspaceContextMiddleware implements HarnessRuntimeMiddleware {
     }
 
     private String buildWorkspaceSection(RuntimeContext rc) {
-        String agentsContent = workspaceManager.readAgentsMd(rc).strip();
+        String agentsContent =
+                truncateUtf8(workspaceManager.readAgentsMd(rc).strip(), MAX_AGENTS_MD_BYTES);
         boolean includeMemoryContext = includeMemoryContext();
         String memoryContent =
                 includeMemoryContext ? workspaceManager.readMemoryMd(rc).strip() : "";

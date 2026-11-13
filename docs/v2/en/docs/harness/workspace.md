@@ -185,7 +185,7 @@ Before every reasoning step, `WorkspaceContextMiddleware` (`io.agentscope.harnes
 | `## Domain Knowledge` / `## Memory Recall` / `## Memory Persistence` guidance | Built-in templates (teach the model how to use memory + navigate knowledge). Memory sections are omitted / trimmed when `disableMemoryTools()` / `disableMemoryHooks()` are set | no |
 | `## Workspace` section | Template, **branches per filesystem mode** (see below) — tells the model whether it runs locally / sandboxed / on a remote store | no |
 | `## Workspace Files (Injected)` notice | Framework auto-loads the following files from the workspace into a `<loaded_context>` XML block | see below |
-| `<agents_context>` | Full `AGENTS.md` | unlimited |
+| `<agents_context>` | `AGENTS.md`, stripped then head-truncated without splitting a UTF-8 code point | 100 KiB of content, plus `[File truncated: AGENTS.md]` when truncated |
 | `<memory_context>` | `MEMORY.md`, char-truncated when over the remaining budget with a "use memory_search for older entries" note (plain truncate note when tools are disabled; omitted entirely when both memory tools and hooks are disabled) | `maxContextTokens`, default 8000 |
 | `<domain_knowledge_context>` | Full `knowledge/KNOWLEDGE.md` + listing of every file under `knowledge/` | unlimited (filenames only as the catalog) |
 | `<x_md>` / `<y_md>` | Anything you added with `additionalContextFile("X.md")` | unlimited |

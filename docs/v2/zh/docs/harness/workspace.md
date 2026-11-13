@@ -180,7 +180,7 @@ env:
 | `## Domain Knowledge` / `## Memory Recall` / `## Memory Persistence` 引导段 | 内置模板（教模型怎么用记忆 + 怎么查 knowledge）。Memory 相关段会随 `disableMemoryTools()` / `disableMemoryHooks()` 裁剪或整段省略 | 否 |
 | `## Workspace` 段 | 模板生成，**按 filesystem 模式分支**（详见下面）—— 告诉模型自己跑在本机 / 沙箱 / 远端 | 否 |
 | `## Workspace Files (Injected)` 段 | 框架自动从工作区把以下文件拉成 `<loaded_context>` XML 块注入 | 见下 |
-| `<agents_context>` | `AGENTS.md` 全文 | 无限 |
+| `<agents_context>` | `AGENTS.md` 去除首尾空白后按 UTF-8 码点边界保留头部 | 正文上限 100 KiB；截断时附加 `[File truncated: AGENTS.md]` |
 | `<memory_context>` | `MEMORY.md`（剩余预算下，超出按字符截断 + 提示「用 memory_search 查更早」；关 tools 时只硬截断不提工具；tools + hooks 都关时整段不注入） | `maxContextTokens` 默认 8000 |
 | `<domain_knowledge_context>` | `knowledge/KNOWLEDGE.md` 全文 + `knowledge/` 下所有文件路径列表 | 无限（仅文件名做索引） |
 | `<x_md>` / `<y_md>` | 你 `additionalContextFile("X.md")` 添加的任意文件 | 无限 |
