@@ -22,10 +22,13 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.IOException;
+import java.lang.reflect.Array;
+import java.lang.reflect.Field;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.Callable;
@@ -37,7 +40,6 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
-import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.Assumptions;
@@ -236,31 +238,50 @@ class JsonFileAgentStateStoreTest {
     }
 
     @Test
-    @DisplayName("Should not block another session whose path collided under striped locks")
-    void unrelatedSessionsDoNotShareLocks(@TempDir Path tempDir) throws Exception {
+    @DisplayName("Should keep a bounded lock registry after missing and deleted session churn")
+    void sessionLockRegistryIsBoundedUnderChurn(@TempDir Path tempDir) throws Exception {
+        JsonFileAgentStateStore store = new JsonFileAgentStateStore(tempDir);
+        Field field = JsonFileAgentStateStore.class.getDeclaredField("SESSION_LOCKS");
+        field.setAccessible(true);
+        for (int i = 0; i < 4096; i++) {
+            String session = "churn" + i;
+            assertFalse(store.exists("user", session));
+            assertTrue(store.get("user", session, "k", TestState.class).isEmpty());
+            assertTrue(store.getList("user", session, "k", TestState.class).isEmpty());
+            store.delete("user", session, "k");
+            store.delete("user", session);
+            if (i % 8 == 0) {
+                store.save("user", session, "k", new TestState("saved", i));
+                store.save("user", session, "k", List.of(new TestState("saved", i)));
+                store.delete("user", session, "k");
+                assertFalse(store.exists("user", session));
+            }
+        }
+        Object registry = field.get(null);
+        int count = registry instanceof Map<?, ?> locks ? locks.size() : Array.getLength(registry);
+        assertTrue(count <= 256, "session lock registry grew to " + count);
+        assertTrue(store.listSessionIds("user").isEmpty());
+    }
+
+    @Test
+    @DisplayName("Should not block a session assigned to a different lock stripe")
+    void sessionsOnDifferentStripesDoNotBlock(@TempDir Path tempDir) throws Exception {
         List<JsonFileAgentStateStore> stores = twoStoresOnSameRoot(tempDir);
         JsonFileAgentStateStore holder = stores.get(0);
-        // Stripe count of the removed lock table; one extra session forces a collision.
-        int formerLockStripes = 64;
-        List<String> collidingSessions =
-                IntStream.range(0, formerLockStripes + 1)
+        String heldSession = "session0";
+        int heldStripe = Math.floorMod(holder.getSessionDir(null, heldSession).hashCode(), 256);
+        String otherSession =
+                IntStream.range(1, 257)
                         .mapToObj(i -> "session" + i)
-                        .collect(
-                                Collectors.groupingBy(
-                                        session ->
-                                                Math.floorMod(
+                        .filter(
+                                session ->
+                                        Math.floorMod(
                                                         holder.getSessionDir(null, session)
-                                                                .toAbsolutePath()
-                                                                .normalize()
                                                                 .hashCode(),
-                                                        formerLockStripes)))
-                        .values()
-                        .stream()
-                        .filter(sessions -> sessions.size() > 1)
+                                                        256)
+                                                != heldStripe)
                         .findFirst()
                         .orElseThrow();
-        String heldSession = collidingSessions.get(0);
-        String otherSession = collidingSessions.get(1);
         TestState first = new TestState("first", 1);
         holder.save(null, heldSession, "k", List.of(first));
         BlockingState blocking = new BlockingState();
@@ -297,6 +318,26 @@ class JsonFileAgentStateStoreTest {
             blocking.release.countDown();
             pool.shutdownNow();
         }
+    }
+
+    @Test
+    @DisplayName("Should serialize queued alias saves after deleting and recreating a session")
+    void recreatedSessionKeepsQueuedAliasListSaveAtomic(@TempDir Path tempDir) throws Exception {
+        List<JsonFileAgentStateStore> stores = twoStoresOnSameRoot(tempDir);
+        assertSessionOperationWaits(store -> store.delete(null, "session1"), stores);
+        assertFalse(stores.get(0).exists(null, "session1"));
+        List<TestState> replacement = List.of(new TestState("queued", 7));
+        assertSessionOperationWaits(
+                store -> store.save(null, "session1", "memory_messages", replacement), stores);
+        assertEquals(
+                replacement,
+                stores.get(0).getList(null, "session1", "memory_messages", TestState.class));
+        // Another save of the same snapshot must not append a duplicate after recreation.
+        stores.get(0).save(null, "session1", "memory_messages", replacement);
+        assertEquals(
+                replacement,
+                stores.get(1).getList(null, "session1", "memory_messages", TestState.class));
+        assertNoTmpFiles(tempDir);
     }
 
     @ParameterizedTest(name = "{0}")

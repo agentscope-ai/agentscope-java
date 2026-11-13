@@ -40,7 +40,6 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.regex.Pattern;
 import java.util.stream.Stream;
@@ -72,11 +71,11 @@ import reactor.core.scheduler.Schedulers;
  * <p>Features: atomic file operations, UTF-8 encoding, graceful handling of missing
  * sessions, hash-based append-or-rewrite for list state.
  *
- * <p>Concurrency: operations on a session share a JVM-wide lock for that session directory.
- * The root is resolved to its real path, so stores opened through root aliases share locks. The
- * locks do not span processes: a session must be owned by one process at a time. File locks are
- * advisory and unreliable on network file systems such as NFS, so deployments that share sessions
- * across processes should use a database-backed {@link AgentStateStore} instead.
+ * <p>Concurrency: operations on a session share a JVM-wide lock stripe for that session directory.
+ * The root is resolved to its real path, so stores opened through root aliases share locks. Unrelated
+ * sessions may share a stripe. The locks do not span processes: a session must be owned by one process
+ * at a time. File locks are advisory and unreliable on network file systems such as NFS, so deployments
+ * that share sessions across processes should use a database-backed {@link AgentStateStore} instead.
  */
 public class JsonFileAgentStateStore implements AgentStateStore {
 
@@ -86,9 +85,14 @@ public class JsonFileAgentStateStore implements AgentStateStore {
     /** Pattern for file-system safe characters: alphanumeric, underscore, hyphen, dot. */
     private static final Pattern SAFE_FILENAME_PATTERN = Pattern.compile("^[a-zA-Z0-9_\\-.]+$");
 
-    // Keep locks after session deletion so queued operations and later saves use the same lock.
-    private static final ConcurrentHashMap<Path, ReentrantLock> SESSION_LOCKS =
-            new ConcurrentHashMap<>();
+    // Fixed stripes retain no session paths and keep active, queued, and later operations aligned.
+    private static final ReentrantLock[] SESSION_LOCKS = new ReentrantLock[256];
+
+    static {
+        for (int i = 0; i < SESSION_LOCKS.length; i++) {
+            SESSION_LOCKS[i] = new ReentrantLock();
+        }
+    }
 
     private final Path rootDirectory;
 
@@ -427,8 +431,9 @@ public class JsonFileAgentStateStore implements AgentStateStore {
     }
 
     private static ReentrantLock lockFor(Path sessionDir) {
-        return SESSION_LOCKS.computeIfAbsent(
-                sessionDir.toAbsolutePath().normalize(), ignored -> new ReentrantLock());
+        return SESSION_LOCKS[
+                Math.floorMod(
+                        sessionDir.toAbsolutePath().normalize().hashCode(), SESSION_LOCKS.length)];
     }
 
     // Unique tmp names are never overwritten by a later write, so a failed one must be
