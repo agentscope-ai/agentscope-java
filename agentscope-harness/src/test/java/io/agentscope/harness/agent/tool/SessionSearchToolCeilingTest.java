@@ -36,10 +36,8 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 /**
- * Regression tests for the model-supplied result-limit clamp (#3270): {@code session_search}
- * and {@code session_history} are excluded from {@code ToolResultEvictionConfig} on the
- * "bounded results" rationale, so an unbounded model-supplied limit bypasses every downstream
- * trim.
+ * Regression tests for the model-supplied result-limit clamp (#3270) on {@code thread_search}
+ * and {@code thread_history}.
  */
 class SessionSearchToolCeilingTest {
 
@@ -82,7 +80,7 @@ class SessionSearchToolCeilingTest {
     }
 
     @Test
-    void sessionSearchClampsModelSuppliedMaxResults() {
+    void threadSearchClampsModelSuppliedMaxResults() {
         var tool = seedMessages(150);
         var out =
                 assertText(
@@ -92,7 +90,7 @@ class SessionSearchToolCeilingTest {
     }
 
     @Test
-    void sessionHistoryClampsModelSuppliedLastN() {
+    void threadHistoryClampsModelSuppliedLastN() {
         var tool = seedMessages(150);
         var out =
                 assertText(
@@ -102,7 +100,7 @@ class SessionSearchToolCeilingTest {
     }
 
     @Test
-    void sessionHistoryBoundaryLastN99And101() {
+    void threadHistoryBoundaryLastN99And101() {
         var tool = seedMessages(150);
         assertEquals(
                 99,

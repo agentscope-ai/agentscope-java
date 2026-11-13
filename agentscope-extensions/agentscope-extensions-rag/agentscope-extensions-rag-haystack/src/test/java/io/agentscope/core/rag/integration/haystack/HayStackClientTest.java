@@ -257,6 +257,25 @@ class HayStackClientTest {
         assertTrue(ex.getMessage().contains("Invalid query"));
     }
 
+    @Test
+    void testHttpErrorStatusFailsWithoutBodyCode() {
+        // A gateway error body carries no code field, so only the HTTP status marks the failure.
+        mockWebServer.enqueue(
+                new MockResponse()
+                        .setResponseCode(503)
+                        .setHeader("Content-Type", "application/json")
+                        .setBody("{\"error\": \"service unavailable\"}"));
+
+        HayStackClient client = new HayStackClient(createConfig());
+
+        HayStackApiException ex =
+                assertThrows(
+                        HayStackApiException.class,
+                        () -> client.retrieve("bad query", null, null).block());
+
+        assertEquals(503, ex.getStatusCode());
+    }
+
     // ========= Constructor =========
 
     @Test
