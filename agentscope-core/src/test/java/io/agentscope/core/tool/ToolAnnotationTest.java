@@ -15,7 +15,10 @@
  */
 package io.agentscope.core.tool;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.tool.test.SampleTools;
@@ -141,5 +144,100 @@ class ToolAnnotationTest {
         // So registered count might be less than or equal to total methods
         assertTrue(
                 registeredTools <= methods.length, "Should not register more tools than methods");
+    }
+
+    @Test
+    @DisplayName("Should not include additionalProperties when strict not set")
+    void testAdditionalPropertiesAbsentByDefault() {
+        toolkit.registerTool(
+                new Object() {
+                    @Tool(name = "query_data", description = "Query data")
+                    public String queryData(
+                            @ToolParam(name = "keyword", description = "keyword") String keyword) {
+                        return "result";
+                    }
+                });
+
+        Map<String, Object> schema = toolkit.getToolSchemas().get(0).getParameters();
+
+        assertFalse(
+                schema.containsKey("additionalProperties"),
+                "Default behavior should NOT add additionalProperties to schema");
+    }
+
+    @Test
+    @DisplayName("Should reject hallucinated params when strict=true")
+    void testRejectHallucinatedParamsWhenStrict() {
+        toolkit.registerTool(
+                new Object() {
+                    @Tool(name = "query_data", description = "Query data", strict = true)
+                    public String queryData(
+                            @ToolParam(name = "keyword", description = "keyword") String keyword) {
+                        return "result";
+                    }
+                });
+
+        Map<String, Object> schema = toolkit.getToolSchemas().get(0).getParameters();
+        String hallucinatedInput = "{\"keyword\": \"test\", \"owners\": [\"admin\"]}";
+
+        String validationError = ToolValidator.validateInput(hallucinatedInput, schema);
+
+        assertNotNull(
+                validationError,
+                "ToolValidator should reject hallucinated params when strict=true");
+        assertTrue(
+                validationError.contains("owners"),
+                "Error message should mention the hallucinated param");
+    }
+
+    @Test
+    @DisplayName("Should allow extra params by default (backward compatible)")
+    void testAllowExtraParamsByDefault() {
+        toolkit.registerTool(
+                new Object() {
+                    @Tool(name = "query_data", description = "Query data")
+                    public String queryData(
+                            @ToolParam(name = "keyword", description = "keyword") String keyword) {
+                        return "result";
+                    }
+                });
+
+        Map<String, Object> schema = toolkit.getToolSchemas().get(0).getParameters();
+        String hallucinatedInput = "{\"keyword\": \"test\", \"owners\": [\"admin\"]}";
+
+        String validationError = ToolValidator.validateInput(hallucinatedInput, schema);
+
+        assertNull(
+                validationError,
+                "Default behavior should allow extra params (backward compatible)");
+    }
+
+    @SuppressWarnings("unchecked")
+    @Test
+    @DisplayName("strict=true should inject additionalProperties=false into the schema")
+    void testStrictInjectsAdditionalPropertiesFalse() {
+        toolkit.registerTool(
+                new Object() {
+                    @Tool(name = "strict_tool", description = "Strict tool", strict = true)
+                    public String execute(
+                            @ToolParam(name = "keyword", description = "keyword") String keyword) {
+                        return "result";
+                    }
+                });
+
+        Map<String, Object> schema = toolkit.getToolSchemas().get(0).getParameters();
+
+        assertTrue(
+                schema.containsKey("additionalProperties"),
+                "Schema should contain additionalProperties=false when strict=true");
+        assertEquals(
+                false,
+                schema.get("additionalProperties"),
+                "strict=true should force additionalProperties=false");
+
+        Map<String, Object> properties = (Map<String, Object>) schema.get("properties");
+        assertFalse(
+                properties.containsKey("additionalProperties"),
+                "additionalProperties should NOT be inside properties map");
     }
 }

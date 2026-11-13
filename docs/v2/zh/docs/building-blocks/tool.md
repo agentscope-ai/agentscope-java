@@ -118,6 +118,7 @@ toolkit.registerTool(new SimpleTools());
 |------|------|------|
 | `name` | `String` | tool 名（默认取方法名） |
 | `description` | `String` | 面向 agent 的描述 |
+| `strict` | `boolean` | 递归为对象 schema 添加 `additionalProperties: false`，保留显式设置（默认 `false`）；执行前拒绝未声明的参数 |
 | `readOnly` | `boolean` | 是否只读（默认 `false`） |
 | `concurrencySafe` | `boolean` | 是否可并发调用（默认 `false`） |
 | `stateInjected` | `boolean` | 是否在调用时注入 `AgentState` 作为额外参数（默认 `false`） |

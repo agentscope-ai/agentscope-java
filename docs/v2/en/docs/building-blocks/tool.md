@@ -118,6 +118,7 @@ Common `@Tool` attributes:
 |-----------|------|-------------|
 | `name` | `String` | Tool name (defaults to the method name) |
 | `description` | `String` | Description shown to the agent |
+| `strict` | `boolean` | Recursively add `additionalProperties: false` to object schemas, preserving explicit values (default `false`); unknown arguments are rejected before execution |
 | `readOnly` | `boolean` | Whether the tool is read-only (default `false`) |
 | `concurrencySafe` | `boolean` | Whether the tool is safe for concurrent calls (default `false`) |
 | `stateInjected` | `boolean` | Inject `AgentState` as an extra parameter (default `false`) |
