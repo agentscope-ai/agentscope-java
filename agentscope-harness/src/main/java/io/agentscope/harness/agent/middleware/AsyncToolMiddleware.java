@@ -47,7 +47,9 @@ import org.slf4j.LoggerFactory;
 import reactor.core.Disposable;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.FluxSink;
+import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
+import reactor.util.context.ContextView;
 
 /**
  * Middleware that offloads long-running tool calls to background execution.
@@ -106,12 +108,35 @@ public class AsyncToolMiddleware implements HarnessRuntimeMiddleware {
 
         return Flux.create(
                 sink -> {
+                    ContextView callerContext = sink.contextView();
+                    if (log.isDebugEnabled()) {
+                        log.debug(
+                                "Async tool subscription inheriting caller context: session={},"
+                                        + " contextKeys={}",
+                                ctx != null ? ctx.getSessionId() : null,
+                                callerContext.size());
+                    }
                     AtomicBoolean completed = new AtomicBoolean(false);
                     AtomicBoolean timedOut = new AtomicBoolean(false);
                     List<AgentEvent> backgroundBuffer = new CopyOnWriteArrayList<>();
 
                     Disposable sub =
                             next.apply(input)
+                                    // Preserve the caller's emitter as well as request metadata in
+                                    // this detached subscription. Completing the acting sink after
+                                    // offload does not close the external emitter, whose lifetime
+                                    // is
+                                    // owned by the caller. Background emissions may still reach a
+                                    // live consumer; a closed stream may discard them. Separately,
+                                    // returned tool events are buffered and their text is delivered
+                                    // through the inbox for the next reasoning step. These are
+                                    // distinct
+                                    // channels, not an exactly-once or deduplicated delivery
+                                    // contract:
+                                    // a consumer observing both may see the same content twice.
+                                    // Delivery guarantees follow-up:
+                                    // https://github.com/agentscope-ai/agentscope-java/issues/3336
+                                    .contextWrite(context -> context.putAll(callerContext))
                                     .subscribe(
                                             event -> {
                                                 if (!timedOut.get()) {
@@ -135,9 +160,12 @@ public class AsyncToolMiddleware implements HarnessRuntimeMiddleware {
                                                                         : error.getClass()
                                                                                 .getSimpleName();
                                                         for (ToolUseBlock tc : input.toolCalls()) {
-                                                            asyncToolRegistry
-                                                                    .fail(tc.getId(), errMsg)
-                                                                    .subscribe();
+                                                            subscribeWithContext(
+                                                                    asyncToolRegistry.fail(
+                                                                            tc.getId(), errMsg),
+                                                                    callerContext,
+                                                                    "fail async tool "
+                                                                            + tc.getId());
                                                         }
                                                     }
                                                 }
@@ -150,7 +178,8 @@ public class AsyncToolMiddleware implements HarnessRuntimeMiddleware {
                                                         deliverBackgroundResult(
                                                                 backgroundBuffer,
                                                                 input.toolCalls(),
-                                                                ctx);
+                                                                ctx,
+                                                                callerContext);
                                                     }
                                                 }
                                             });
@@ -170,7 +199,11 @@ public class AsyncToolMiddleware implements HarnessRuntimeMiddleware {
                                                                     ? ctx.getSessionId()
                                                                     : "null");
                                                     emitPlaceholderAndComplete(
-                                                            sink, input.toolCalls(), agent, ctx);
+                                                            sink,
+                                                            input.toolCalls(),
+                                                            agent,
+                                                            ctx,
+                                                            callerContext);
                                                 }
                                             },
                                             offloadTimeout.toMillis(),
@@ -191,23 +224,25 @@ public class AsyncToolMiddleware implements HarnessRuntimeMiddleware {
             FluxSink<AgentEvent> sink,
             List<ToolUseBlock> toolCalls,
             Agent agent,
-            RuntimeContext ctx) {
+            RuntimeContext ctx,
+            ContextView callerContext) {
         String replyId = UUID.randomUUID().toString().replace("-", "");
         AgentState state = RuntimeContext.resolveAgentState(ctx, agent);
 
         String sessionId = ctx != null ? ctx.getSessionId() : null;
         for (ToolUseBlock toolCall : toolCalls) {
             if (asyncToolRegistry != null && sessionId != null) {
-                asyncToolRegistry
-                        .register(
+                subscribeWithContext(
+                        asyncToolRegistry.register(
                                 new AsyncToolRecord(
                                         toolCall.getId(),
                                         sessionId,
                                         toolCall.getName(),
                                         toolCall.getId(),
                                         AsyncToolRecord.RUNNING,
-                                        Instant.now()))
-                        .subscribe();
+                                        Instant.now())),
+                        callerContext,
+                        "register async tool " + toolCall.getId());
             }
 
             String placeholderText =
@@ -243,7 +278,10 @@ public class AsyncToolMiddleware implements HarnessRuntimeMiddleware {
     }
 
     private void deliverBackgroundResult(
-            List<AgentEvent> backgroundBuffer, List<ToolUseBlock> toolCalls, RuntimeContext ctx) {
+            List<AgentEvent> backgroundBuffer,
+            List<ToolUseBlock> toolCalls,
+            RuntimeContext ctx,
+            ContextView callerContext) {
         String sessionId = ctx != null ? ctx.getSessionId() : null;
         if (sessionId == null) {
             log.warn("Cannot deliver background tool result: no sessionId in RuntimeContext");
@@ -276,28 +314,36 @@ public class AsyncToolMiddleware implements HarnessRuntimeMiddleware {
         if (asyncToolRegistry != null) {
             String resultStr = resultText.length() > 0 ? resultText.toString() : "(no output)";
             for (ToolUseBlock tc : toolCalls) {
-                asyncToolRegistry.complete(tc.getId(), resultStr).subscribe();
+                subscribeWithContext(
+                        asyncToolRegistry.complete(tc.getId(), resultStr),
+                        callerContext,
+                        "complete async tool " + tc.getId());
             }
         }
 
-        messageBus.inboxPush(sessionId, hintPayload).subscribe();
+        subscribeWithContext(
+                messageBus.inboxPush(sessionId, hintPayload),
+                callerContext,
+                "push background result for session " + sessionId);
 
         String agentId = ctx.get("agentId");
         String userId = ctx.getUserId();
-        messageBus
-                .enqueueWakeup(
-                        userId != null ? userId : "", sessionId, agentId != null ? agentId : "")
-                .subscribe(
-                        unused -> {},
-                        error ->
-                                log.warn(
-                                        "Failed to enqueue wakeup for session {}: {}",
-                                        sessionId,
-                                        error.getMessage()));
+        subscribeWithContext(
+                messageBus.enqueueWakeup(
+                        userId != null ? userId : "", sessionId, agentId != null ? agentId : ""),
+                callerContext,
+                "enqueue wakeup for session " + sessionId);
 
         log.info(
                 "Background tool '{}' completed, pushed result to inbox: session={}",
                 toolNames,
                 sessionId);
+    }
+
+    private void subscribeWithContext(
+            Mono<?> operation, ContextView callerContext, String description) {
+        operation
+                .contextWrite(context -> context.putAll(callerContext))
+                .subscribe(unused -> {}, error -> log.warn("Failed to {}", description, error));
     }
 }
