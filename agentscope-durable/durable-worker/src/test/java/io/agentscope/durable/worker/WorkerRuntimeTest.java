@@ -548,9 +548,9 @@ class WorkerRuntimeTest {
                         JdbcRecordStore.sqlite(directory.resolve("fence.db")));
         store.admit(request);
         var key = store.keys(null, 1).get(0);
-        var old = store.claim(key, "old", Duration.ofMillis(100)).orElseThrow();
+        var old = store.claim(key, "old", Duration.ofSeconds(1)).orElseThrow();
         store.begin(old);
-        Thread.sleep(140);
+        store.release(old, Duration.ZERO);
         var current = store.claim(key, "new", Duration.ofSeconds(1)).orElseThrow();
         assertThrows(
                 DurableException.class,

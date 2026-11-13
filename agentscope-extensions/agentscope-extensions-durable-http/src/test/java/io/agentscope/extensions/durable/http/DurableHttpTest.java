@@ -156,11 +156,16 @@ class DurableHttpTest {
     }
 
     @AfterEach
-    void close() {
-        if (server != null) server.stop(0);
-        if (threads != null) threads.shutdownNow();
+    void close() throws InterruptedException {
         if (apiRuntime != null) apiRuntime.close();
+        if (server != null) server.stop(0);
+        boolean terminated = true;
+        if (threads != null) {
+            threads.shutdownNow();
+            terminated = threads.awaitTermination(5, TimeUnit.SECONDS);
+        }
         if (backend != null) backend.close();
+        assertTrue(terminated, "HTTP test executor did not terminate");
     }
 
     @Test

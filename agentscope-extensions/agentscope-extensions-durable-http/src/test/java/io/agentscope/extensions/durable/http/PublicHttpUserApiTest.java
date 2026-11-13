@@ -15,6 +15,8 @@
  */
 package io.agentscope.extensions.durable.http;
 
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
 import com.sun.net.httpserver.HttpServer;
 import io.agentscope.durable.DurableRuntime;
 import io.agentscope.durable.SessionBackend;
@@ -26,6 +28,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.AfterEach;
 
 class PublicHttpUserApiTest extends DurableUserApiTest {
@@ -58,9 +61,13 @@ class PublicHttpUserApiTest extends DurableUserApiTest {
     }
 
     @AfterEach
-    void stopServers() {
-        servers.forEach(s -> s.stop(0));
+    void stopServers() throws InterruptedException {
+        if (api != null) api.close();
         hosts.forEach(DurableRuntime::close);
+        servers.forEach(s -> s.stop(0));
         requests.shutdownNow();
+        assertTrue(
+                requests.awaitTermination(5, TimeUnit.SECONDS),
+                "HTTP test executor did not terminate");
     }
 }
