@@ -57,6 +57,9 @@ public class WorkspaceIndex implements AutoCloseable {
     private static final String INDEX_DIR = ".index";
     private static final String INDEX_DB = "workspace.db";
 
+    /** Escape character declared by {@code ESCAPE} on every prefix lookup; see {@link #likePrefix}. */
+    private static final char LIKE_ESCAPE = '\\';
+
     /**
      * Path prefixes (workspace-relative) that are eligible for indexing.
      * Only files under one of these prefixes will be tracked.
@@ -86,6 +89,9 @@ public class WorkspaceIndex implements AutoCloseable {
             Path dbFile = indexDir.resolve(INDEX_DB);
             String url = "jdbc:sqlite:" + dbFile.toAbsolutePath();
             Connection c = DriverManager.getConnection(url);
+            try (Statement st = c.createStatement()) {
+                st.execute("PRAGMA case_sensitive_like = ON");
+            }
             WorkspaceIndex idx = new WorkspaceIndex(c);
             idx.initSchema();
             return idx;
@@ -262,8 +268,9 @@ public class WorkspaceIndex implements AutoCloseable {
         }
         try (PreparedStatement ps =
                 conn.prepareStatement(
-                        "SELECT path FROM files WHERE path LIKE ? AND present_local=1")) {
-            ps.setString(1, prefix + "%");
+                        "SELECT path FROM files WHERE path LIKE ? ESCAPE '\\' AND"
+                                + " present_local=1")) {
+            ps.setString(1, likePrefix(prefix));
             try (ResultSet rs = ps.executeQuery()) {
                 while (rs.next()) {
                     result.add(rs.getString(1));
@@ -280,10 +287,14 @@ public class WorkspaceIndex implements AutoCloseable {
      * {@link #listByPrefix} when only presence is needed.
      */
     public boolean hasPrefix(String prefix) {
+        if (prefix == null) {
+            return false;
+        }
         try (PreparedStatement ps =
                 conn.prepareStatement(
-                        "SELECT 1 FROM files WHERE path LIKE ? AND present_local=1 LIMIT 1")) {
-            ps.setString(1, prefix + "%");
+                        "SELECT 1 FROM files WHERE path LIKE ? ESCAPE '\\' AND present_local=1"
+                                + " LIMIT 1")) {
+            ps.setString(1, likePrefix(prefix));
             try (ResultSet rs = ps.executeQuery()) {
                 return rs.next();
             }
@@ -368,5 +379,26 @@ public class WorkspaceIndex implements AutoCloseable {
             }
         }
         return false;
+    }
+
+    /**
+     * Turns a literal path prefix into a {@code LIKE} pattern matching that prefix followed by
+     * anything. Agent, session and file names arrive verbatim from configuration and callers, so
+     * {@code '_'} and {@code '%'} in them must be escaped: otherwise {@code agents/bot_1/...}
+     * would also match {@code agents/bot21/...} ({@code '_'} is the single-character wildcard),
+     * and a caller subtracting the prefix length from such a row reads it as a child of a
+     * directory it does not live in. The backslash escapes are declared by {@code ESCAPE '\\'} in
+     * the statements that use this pattern.
+     */
+    static String likePrefix(String prefix) {
+        StringBuilder pattern = new StringBuilder(prefix.length() + 8);
+        for (int i = 0; i < prefix.length(); i++) {
+            char c = prefix.charAt(i);
+            if (c == '%' || c == '_' || c == LIKE_ESCAPE) {
+                pattern.append(LIKE_ESCAPE);
+            }
+            pattern.append(c);
+        }
+        return pattern.append('%').toString();
     }
 }
