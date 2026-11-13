@@ -24,6 +24,7 @@ import java.sql.Statement;
 import java.util.UUID;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import javax.sql.DataSource;
 import org.postgresql.PGConnection;
@@ -34,6 +35,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Sinks;
+import reactor.core.scheduler.Schedulers;
 
 /**
  * Wakes session-event readers without continuously polling the event table.
@@ -96,6 +98,17 @@ public class SessionEventNotifier {
         if (!postgres) {
             return;
         }
+        // Spring still holds the committed transaction's connection during afterCommit.
+        // Publish remotely after returning, so a full pool cannot block all commit callbacks.
+        try {
+            Schedulers.boundedElastic().schedule(() -> publishPostgres(sessionId));
+        } catch (RejectedExecutionException ex) {
+            // A missed wakeup is recovered by polling; it must not interrupt commit callbacks.
+            log.debug("Failed to schedule session-event notification for {}", sessionId, ex);
+        }
+    }
+
+    private void publishPostgres(String sessionId) {
         try (Connection connection = dataSource.getConnection();
                 PreparedStatement statement =
                         connection.prepareStatement("SELECT pg_notify('" + CHANNEL + "', ?)")) {

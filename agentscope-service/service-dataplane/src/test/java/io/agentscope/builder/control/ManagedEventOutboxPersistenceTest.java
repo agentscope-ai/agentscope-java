@@ -21,6 +21,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import io.agentscope.builder.web.persistence.jpa.SessionEventFenceEntity;
 import io.agentscope.builder.web.persistence.jpa.SessionEventFenceRepository;
 import io.agentscope.builder.web.persistence.jpa.SessionEventOutboxEntity;
+import io.agentscope.builder.web.persistence.jpa.SessionEventOutboxOperationsImpl;
 import io.agentscope.builder.web.persistence.jpa.SessionEventOutboxRepository;
 import io.agentscope.builder.web.persistence.jpa.SessionExecutionScopeEntity;
 import io.agentscope.builder.web.persistence.jpa.SessionExecutionScopeRepository;
@@ -28,6 +29,7 @@ import org.hibernate.cfg.Configuration;
 import org.junit.jupiter.api.Test;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.jpa.repository.support.JpaRepositoryFactory;
+import org.springframework.data.repository.core.support.RepositoryComposition.RepositoryFragments;
 import org.springframework.orm.jpa.JpaTransactionManager;
 import org.springframework.orm.jpa.SharedEntityManagerCreator;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -49,7 +51,13 @@ class ManagedEventOutboxPersistenceTest {
             var repositories =
                     new JpaRepositoryFactory(
                             SharedEntityManagerCreator.createSharedEntityManager(factory));
-            var events = repositories.getRepository(SessionEventOutboxRepository.class);
+            var events =
+                    repositories.getRepository(
+                            SessionEventOutboxRepository.class,
+                            RepositoryFragments.just(
+                                    new SessionEventOutboxOperationsImpl(
+                                            SharedEntityManagerCreator.createSharedEntityManager(
+                                                    factory))));
             var scopes = repositories.getRepository(SessionExecutionScopeRepository.class);
             var fences = repositories.getRepository(SessionEventFenceRepository.class);
             var tx = new TransactionTemplate(new JpaTransactionManager(factory));

@@ -21,6 +21,7 @@ import io.agentscope.builder.web.managed.service.SessionEventScope;
 import io.agentscope.builder.web.persistence.jpa.SessionEventFenceEntity;
 import io.agentscope.builder.web.persistence.jpa.SessionEventFenceRepository;
 import io.agentscope.builder.web.persistence.jpa.SessionEventOutboxEntity;
+import io.agentscope.builder.web.persistence.jpa.SessionEventOutboxOperations.StoredReport;
 import io.agentscope.builder.web.persistence.jpa.SessionEventOutboxRepository;
 import io.agentscope.builder.web.persistence.jpa.SessionExecutionScopeEntity;
 import io.agentscope.builder.web.persistence.jpa.SessionExecutionScopeRepository;
@@ -73,19 +74,20 @@ public class ManagedEventOutbox {
         if (!TransactionSynchronizationManager.isActualTransactionActive())
             throw new IllegalStateException("Mirror outbox requires the source event transaction");
         String report = json(client.sessionEventReport(event, scope));
-        var old = events.findById(event.id());
-        if (old.isPresent()) {
-            if (!old.get().sessionId.equals(event.sessionId())
-                    || !old.get().attemptId.equals(scope.attemptId())
-                    || !tree(old.get().reportJson).equals(tree(report)))
-                throw new IllegalStateException(
-                        "Mirror event identity or fence changed: " + event.id());
+        var fence = lockFence(event.sessionId(), scope.attemptId());
+        if (fence.sealed || (fence.closing && !scope.nativeFact())) {
+            // Closing forbids new facts but still permits replaying an already committed report.
+            var existing =
+                    events.lockReportById(event.id())
+                            .orElseThrow(
+                                    () ->
+                                            new IllegalStateException(
+                                                    "Managed Attempt events are permanently sealed:"
+                                                            + " "
+                                                            + scope.attemptId()));
+            validateReplay(existing, event, scope, report);
             return;
         }
-        var fence = lockFence(event.sessionId(), scope.attemptId());
-        if (fence.sealed || (fence.closing && !scope.nativeFact()))
-            throw new IllegalStateException(
-                    "Managed Attempt events are permanently sealed: " + scope.attemptId());
         var row = new SessionEventOutboxEntity();
         row.eventId = event.id();
         row.sessionId = event.sessionId();
@@ -93,7 +95,16 @@ public class ManagedEventOutbox {
         row.eventSeq = event.seq();
         row.reportJson = report;
         row.createdAt = System.currentTimeMillis();
-        events.saveAndFlush(row);
+        validateReplay(events.insertIfAbsent(row), event, scope, report);
+    }
+
+    private void validateReplay(
+            StoredReport existing, SessionEventDto event, SessionEventScope scope, String report) {
+        if (!existing.sessionId().equals(event.sessionId())
+                || !existing.attemptId().equals(scope.attemptId())
+                || !tree(existing.reportJson()).equals(tree(report)))
+            throw new IllegalStateException(
+                    "Mirror event identity or fence changed: " + event.id());
     }
 
     public void beginAdmission(String session, String admission, SessionEventScope scope) {

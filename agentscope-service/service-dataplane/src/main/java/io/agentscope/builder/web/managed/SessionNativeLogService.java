@@ -43,6 +43,8 @@ import org.springframework.data.domain.Sort;
 import org.springframework.http.HttpStatus;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.web.server.ResponseStatusException;
 
 /** Repairable committed-fact outbox. This never builds an agent or executes a model/tool. */
@@ -302,8 +304,41 @@ public class SessionNativeLogService {
         var log =
                 store.open(
                         new SessionKey(source.userId, source.agentId, source.sessionId), context);
-        new SessionLogExporter(log.inbox(), sink(source.sessionId)).drain();
-        new SessionLogExporter(log, sink(source.sessionId)).drain();
+        export(source.sessionId, log.inbox(), sink(source.sessionId));
+        export(source.sessionId, log, sink(source.sessionId));
+    }
+
+    private void export(String session, SessionLog log, SessionExportSink sink) {
+        new SessionLogExporter(log, sink)
+                .drain(
+                        acknowledgement ->
+                                acknowledgeAfterCommit(session, sink.name(), acknowledgement));
+    }
+
+    private void acknowledgeAfterCommit(String session, String sink, Runnable acknowledgement) {
+        if (!TransactionSynchronizationManager.isActualTransactionActive()) {
+            acknowledgement.run();
+            return;
+        }
+        // Event appends join command admission/recovery transactions. A cursor must never
+        // acknowledge SQL events that could still roll back with that enclosing transaction.
+        TransactionSynchronizationManager.registerSynchronization(
+                new TransactionSynchronization() {
+                    @Override
+                    public void afterCommit() {
+                        try {
+                            acknowledgement.run();
+                        } catch (RuntimeException error) {
+                            // SQL is already committed. Keep the cursor available for repair
+                            // without failing the command or skipping later commit callbacks.
+                            LOG.warn(
+                                    "Session {} export cursor for sink {} pending retry: {}",
+                                    session,
+                                    sink,
+                                    error.toString());
+                        }
+                    }
+                });
     }
 
     @Scheduled(fixedDelayString = "${builder.agent-api.export-poll-ms:5000}")
