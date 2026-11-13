@@ -41,8 +41,13 @@ import java.util.Map;
  * <p>This class provides default implementations for all {@link AbstractFilesystem} methods by
  * delegating
  * to shell commands via {@link #execute}. File listing, grep, and glob use standard Unix
- * commands. Read uses server-side commands for paginated access. Write delegates content
- * transfer to {@link #uploadFiles}. Edit uses server-side commands for string replacement.
+ * commands. Read uses server-side commands for paginated access. Non-empty writes delegate
+ * content transfer to {@link #uploadFiles}. Edit uses server-side commands for string replacement.
+ * Exclusive writes require {@link #execute} to run a POSIX-compatible shell whose {@code set -C}
+ * prevents overwriting an existing file. Empty files use that exclusive placeholder directly;
+ * non-empty writes require {@link #uploadFiles} to replace it. A backend without the exclusive
+ * create guarantee must not back an atomic
+ * {@link io.agentscope.harness.agent.bus.WorkspaceMessageBus}.
  *
  * <p>Subclasses must implement:
  * <ul>
@@ -198,22 +203,31 @@ public abstract class BaseSandboxFilesystem implements AbstractSandboxFilesystem
         // contain double-quoted command substitution before the container shell sees them
         // (upstream #3850), while an unquoted substitution would word-split parents that
         // contain spaces. Compute the parent in Java and pass it as a single-quoted literal.
+        String parent = quotedParentDir(filePath);
+        String mkdirPrefix = parent != null ? "mkdir -p " + parent + " 2>&1 || exit 1; " : "";
         String checkCmd =
-                "if [ -e "
+                mkdirPrefix
+                        + "if (set -C; : > "
                         + escapedPath
-                        + " ]; then echo 'EXISTS'; exit 1; fi"
-                        + parentDirMkdir(filePath);
+                        + ") 2>/dev/null; then exit 0; fi; if [ -e "
+                        + escapedPath
+                        + " ] || [ -L "
+                        + escapedPath
+                        + " ]; then echo 'EXISTS'; else echo 'CREATE_FAILED'; fi; exit 1";
 
         ExecuteResponse checkResult = execute(runtimeContext, checkCmd, null);
-        if (checkResult.exitCode() != null && checkResult.exitCode() != 0) {
-            if (checkResult.output() != null && checkResult.output().contains("EXISTS")) {
-                return WriteResult.fail(
-                        "Cannot write to "
-                                + filePath
-                                + " because it already exists. Read and then make an"
-                                + " edit, or write to a new path.");
+        Integer exitCode = checkResult.exitCode();
+        if (exitCode == null || exitCode != 0) {
+            if (exitCode != null
+                    && checkResult.output() != null
+                    && checkResult.output().strip().equals("EXISTS")) {
+                return WriteResult.alreadyExists(filePath);
             }
-            return WriteResult.fail("Failed to write file '" + filePath + "'");
+            return WriteResult.fail(executeFailureMessage(checkResult, "writing", filePath));
+        }
+
+        if (content.isEmpty()) {
+            return WriteResult.ok(filePath);
         }
 
         List<FileUploadResponse> responses =
@@ -227,7 +241,12 @@ public abstract class BaseSandboxFilesystem implements AbstractSandboxFilesystem
         if (responses.isEmpty() || !responses.get(0).isSuccess()) {
             String err =
                     responses.isEmpty() ? "upload returned no response" : responses.get(0).error();
-            return WriteResult.fail("Failed to write file '" + filePath + "': " + err);
+            WriteResult cleanup = delete(runtimeContext, filePath);
+            String error = "Failed to write file '" + filePath + "': " + err;
+            if (!cleanup.isSuccess()) {
+                error += "; failed to remove placeholder: " + cleanup.error();
+            }
+            return WriteResult.fail(error);
         }
 
         return WriteResult.ok(filePath);
@@ -476,19 +495,6 @@ public abstract class BaseSandboxFilesystem implements AbstractSandboxFilesystem
                         ? result.output()
                         : "exit code " + result.exitCode();
         return "Error " + operation + " '" + target + "': " + detail;
-    }
-
-    /**
-     * Builds the {@code mkdir -p} segment for the parent directory of {@code filePath}, or an
-     * empty string when the file sits at the filesystem root or in the current directory and
-     * needs no parent creation.
-     */
-    private static String parentDirMkdir(String filePath) {
-        String parent = quotedParentDir(filePath);
-        if (parent == null) {
-            return "";
-        }
-        return "; mkdir -p " + parent + " 2>&1";
     }
 
     /**
