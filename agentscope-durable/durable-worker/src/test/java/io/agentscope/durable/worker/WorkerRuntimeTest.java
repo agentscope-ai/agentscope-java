@@ -22,8 +22,10 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -161,6 +163,7 @@ class WorkerRuntimeTest {
         var running = new CountDownLatch(1);
         var finish = new CountDownLatch(1);
         var cancelled = new CountDownLatch(1);
+        var renewed = new CountDownLatch(1);
         var recovered =
                 new ExecutionRequest(
                         "previous", request.thread(), request.turnId(), request.call());
@@ -187,7 +190,16 @@ class WorkerRuntimeTest {
                                     ExecutionState.CANCELLED, "original", null, null);
                         });
         try (var records = JdbcRecordStore.sqlite(directory.resolve("lanes.db"))) {
-            var store = new TransactionalExecutionStore(records);
+            var store = spy(new TransactionalExecutionStore(records));
+            doAnswer(
+                            invocation -> {
+                                invocation.callRealMethod();
+                                ExecutionStore.Work work = invocation.getArgument(0);
+                                if (request.equals(work.request())) renewed.countDown();
+                                return null;
+                            })
+                    .when(store)
+                    .renew(any(ExecutionStore.Work.class), any(Duration.class));
             store.admit(recovered);
             var previous = store.claim(recovered, "previous", Duration.ofSeconds(1)).orElseThrow();
             store.begin(previous);
@@ -200,16 +212,17 @@ class WorkerRuntimeTest {
                             .executor("remote", provider)
                             .parallelism(1)
                             .recoveryParallelism(1)
-                            .leaseDuration(Duration.ofSeconds(2))
+                            .leaseDuration(Duration.ofSeconds(4))
                             .pollInterval(Duration.ofMillis(10))
                             .build()) {
                 worker.localExecutor().startExecution(request);
                 worker.start();
                 try {
                     assertTrue(running.await(5, TimeUnit.SECONDS));
+                    assertTrue(renewed.await(5, TimeUnit.SECONDS));
                     worker.localExecutor().cancel(recovered, null);
                     assertTrue(cancelled.await(5, TimeUnit.SECONDS));
-                    assertFalse(worker.drain(Duration.ofMillis(2500)));
+                    assertFalse(worker.drain(Duration.ofMillis(400)));
                     assertFalse(worker.status().accepting());
                     assertEquals(
                             DurableException.Code.UNAVAILABLE,
