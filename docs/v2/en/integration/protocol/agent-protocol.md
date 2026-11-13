@@ -216,6 +216,12 @@ Optional `context` fields:
 
 Response on success: `{ "task_id", "status": "pending" }`.
 
+Within one `AgentProtocolTaskStore` instance, concurrent submissions of the same
+`task_id` do not start another run while its execution is in progress. Different
+task IDs can execute independently. Submitting an already completed task ID returns
+HTTP 409. This in-process coordination does not deduplicate submissions across
+server replicas.
+
 ### Poll / wait / cancel
 
 | Method | Path | Notes |
