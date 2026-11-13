@@ -668,6 +668,61 @@ public class A2aAgentTest {
         }
     }
 
+    @Test
+    void testResolveAgentCardOncePerExecution() {
+        io.agentscope.core.a2a.agent.card.AgentCardResolver resolver =
+                mock(io.agentscope.core.a2a.agent.card.AgentCardResolver.class);
+        when(resolver.getAgentCard("test-agent")).thenReturn(agentCard);
+        A2aAgent agent =
+                A2aAgent.builder()
+                        .name("test-agent")
+                        .agentCardResolver(resolver)
+                        .clientReplacer(this::useMockClient)
+                        .build();
+        org.mockito.Mockito.clearInvocations(resolver);
+        doAnswer(mockSuccessMessage())
+                .when(a2aClient)
+                .sendMessage(any(Message.class), anyList(), any());
+        assertEquals(
+                "mock success.",
+                agent.call(Msg.builder().textContent("call").build()).block().getTextContent());
+        verify(resolver).getAgentCard("test-agent");
+        assertNotNull(
+                agent.stream(Msg.builder().textContent("stream").build()).collectList().block());
+        verify(resolver, org.mockito.Mockito.times(2)).getAgentCard("test-agent");
+        verify(a2aClient, org.mockito.Mockito.times(2)).close();
+    }
+
+    @Test
+    void testAgentCardResolutionFailureOnNextCall() {
+        io.agentscope.core.a2a.agent.card.AgentCardResolver resolver =
+                mock(io.agentscope.core.a2a.agent.card.AgentCardResolver.class);
+        when(resolver.getAgentCard("test-agent")).thenReturn(agentCard);
+        A2aAgent agent =
+                A2aAgent.builder()
+                        .name("test-agent")
+                        .agentCardResolver(resolver)
+                        .clientReplacer(this::useMockClient)
+                        .build();
+        org.mockito.Mockito.clearInvocations(resolver);
+        RuntimeException failure = new RuntimeException("discovery failed");
+        when(resolver.getAgentCard("test-agent")).thenReturn(agentCard).thenThrow(failure);
+        doAnswer(mockSuccessMessage())
+                .when(a2aClient)
+                .sendMessage(any(Message.class), anyList(), any());
+        assertEquals(
+                "mock success.",
+                agent.call(Msg.builder().textContent("first").build()).block().getTextContent());
+        org.junit.jupiter.api.Assertions.assertSame(
+                failure,
+                assertThrows(
+                        RuntimeException.class,
+                        () -> agent.call(Msg.builder().textContent("next").build()).block()));
+        verify(resolver, org.mockito.Mockito.times(2)).getAgentCard("test-agent");
+        verify(a2aClient).close();
+        verify(a2aClient).sendMessage(any(Message.class), anyList(), any());
+    }
+
     private Client useMockClient(Client built) {
         built.close();
         return a2aClient;

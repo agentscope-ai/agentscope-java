@@ -116,12 +116,10 @@ public class A2aAgent extends AgentBase {
 
     private A2aCall startCall() {
         String requestId = UUID.randomUUID().toString();
-        Client client = buildA2aClient(getName());
+        AgentCard agentCard = agentCardResolver.getAgentCard(getName());
+        Client client = buildA2aClient(agentCard);
         LoggerUtil.debug(
-                log,
-                "[{}] A2aAgent build A2a Client with Agent Card: {}.",
-                requestId,
-                agentCardResolver.getAgentCard(getName()));
+                log, "[{}] A2aAgent build A2a Client with Agent Card: {}.", requestId, agentCard);
         A2aCall call = new A2aCall(requestId, client, new ClientEventContext(requestId, this));
         currentCall.set(call);
         return call;
@@ -208,8 +206,8 @@ public class A2aAgent extends AgentBase {
         return memory;
     }
 
-    private Client buildA2aClient(String name) {
-        ClientBuilder builder = Client.builder(this.agentCardResolver.getAgentCard(name));
+    private Client buildA2aClient(AgentCard agentCard) {
+        ClientBuilder builder = Client.builder(agentCard);
         if (this.a2aAgentConfig.clientTransports().isEmpty()) {
             // Default Add The Basic JSON-RPC Transport
             builder.withTransport(JSONRPCTransport.class, new JSONRPCTransportConfig());
