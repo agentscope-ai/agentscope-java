@@ -190,7 +190,11 @@ The final budget also includes System, history, state and tool schemas; unresolv
 the request. MEMORY.md is excluded when both memory tools and hooks are disabled.
 Knowledge loads the entry and index; other files are read on demand.
 
-Environment guidance labels the host workspace and JVM temporary directory as host facts; these paths do not establish a remote tool's working directory. A sandbox root is shown only when the current call's active sandbox supplies workspace metadata. Unknown roots and container IDs are not inferred from filesystem proxy IDs. Local execution identifies the host shell (`cmd.exe /c` on Windows, `sh -c` otherwise); sandbox commands use the backend's shell, installed runtimes, and temporary paths. Routed backends distinguish the primary shell backend from mounted file routes. Each `execute` call starts a fresh shell, and `working_directory` is relative to that shell's starting directory for that call. Artifact guidance exports final deliverables when delivery is configured and reports failed delivery as incomplete. Session ID and date remain runtime facts sampled at call entry.
+Environment guidance labels the host operating system, host workspace and JVM temporary
+directory as host facts for local and remote-template-fallback deployments. Under a pure
+sandbox execution backend those host facts are omitted: they are not actionable there and
+would contradict the sandbox description of file and shell paths. A sandbox root is shown only
+when the current call's active sandbox supplies workspace metadata. Unknown roots and container IDs are not inferred from filesystem proxy IDs. Local execution identifies the host shell (`cmd.exe /c` on Windows, `sh -c` otherwise); sandbox commands use the backend's shell, installed runtimes, and temporary paths. Routed backends distinguish the primary shell backend from mounted file routes. Each `execute` call starts a fresh shell, and `working_directory` is relative to that shell's starting directory for that call. Artifact guidance exports final deliverables when delivery is configured and reports failed delivery as incomplete. Session ID and date remain runtime facts sampled at call entry.
 
 Write ordinary Markdown in AGENTS.md. An applicability note rides the first line of the
 injected body and states that project rules do not override system, developer, or direct user instructions.

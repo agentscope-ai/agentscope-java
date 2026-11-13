@@ -59,6 +59,7 @@ import reactor.core.scheduler.Schedulers;
  */
 public class WorkspaceContextMiddleware implements HarnessRuntimeMiddleware {
 
+    /** Host-side environment facts for local and remote-template-fallback surfaces. */
     private static final String SESSION_CONTEXT_SECTION_TEMPLATE =
             """
             ## Runtime Environment
@@ -66,6 +67,17 @@ public class WorkspaceContextMiddleware implements HarnessRuntimeMiddleware {
             The host operating system is: %s
             The host workspace directory is: %s
             The host JVM temporary directory is: %s
+            %s
+            """;
+
+    /**
+     * Identity-only variant for pure sandbox execution backends: host OS, host workspace and host
+     * JVM temporary directory are not actionable there, so they stay out of the prompt.
+     */
+    private static final String SESSION_CONTEXT_SECTION_SANDBOX_TEMPLATE =
+            """
+            ## Runtime Environment
+            You are the %s agent.
             %s
             """;
 
@@ -226,7 +238,7 @@ public class WorkspaceContextMiddleware implements HarnessRuntimeMiddleware {
                 detectLocalUpper(filesystem) != null
                         ? workspaceManager.resolveRuntimeDataPath(rc, "")
                         : workspace;
-        String sessionContext = buildSessionContextSection(effectiveWorkspace);
+        String sessionContext = buildSessionContextSection(effectiveWorkspace, filesystem);
 
         String knowledgeBlock = buildKnowledgeBlock(knowledgeContent, knowledgeFiles, workspace);
         String additionalBlock = buildAdditionalContextBlock(rc);
@@ -423,11 +435,11 @@ public class WorkspaceContextMiddleware implements HarnessRuntimeMiddleware {
                                 "\nShell commands run on the host in the filesystem's per-call"
                                         + " working directory.\n");
             }
-        } else if (fs instanceof AbstractSandboxFilesystem && !(fs instanceof OverlayFilesystem)) {
+        } else if (isPureSandbox(fs)) {
             sb.append(
-                    "File and shell paths follow the configured execution backend; host paths"
-                            + " above do not establish its working directory. Use that backend's"
-                            + " shell syntax, installed runtimes, and temporary paths.\n");
+                    "File and shell paths follow the configured execution backend; use that"
+                            + " backend's shell syntax, installed runtimes, and temporary"
+                            + " paths.\n");
             SandboxAcquireResult acquired = rc.get(SandboxAcquireResult.class);
             if (acquired != null && !acquired.isReleased()) {
                 String root = SandboxWorkspaceRoot.resolve(rc, null);
@@ -468,9 +480,7 @@ public class WorkspaceContextMiddleware implements HarnessRuntimeMiddleware {
                                     : "sh -c")
                     .append(" on the host.\n");
         }
-        if (artifactDeliveryEnabled
-                && fs instanceof AbstractSandboxFilesystem
-                && !(fs instanceof OverlayFilesystem)) {
+        if (artifactDeliveryEnabled && isPureSandbox(fs)) {
             sb.append(
                     "**Artifact Delivery**\n"
                             + "Automatically call deliver_artifact for final deliverables to export"
@@ -532,12 +542,18 @@ public class WorkspaceContextMiddleware implements HarnessRuntimeMiddleware {
         };
     }
 
-    private String buildSessionContextSection(Path workspace) {
-        String platform = System.getProperty("os.name") + " " + System.getProperty("os.version");
-        String tempDir = System.getProperty("java.io.tmpdir");
+    private String buildSessionContextSection(Path workspace, AbstractFilesystem fs) {
         String environmentMemoryPart =
                 environmentMemory != null && !environmentMemory.isBlank() ? environmentMemory : "";
-
+        if (isPureSandbox(fs)) {
+            return String.format(
+                            SESSION_CONTEXT_SECTION_SANDBOX_TEMPLATE,
+                            agentName,
+                            environmentMemoryPart)
+                    .strip();
+        }
+        String platform = System.getProperty("os.name") + " " + System.getProperty("os.version");
+        String tempDir = System.getProperty("java.io.tmpdir");
         return String.format(
                         SESSION_CONTEXT_SECTION_TEMPLATE,
                         agentName,
@@ -546,6 +562,17 @@ public class WorkspaceContextMiddleware implements HarnessRuntimeMiddleware {
                         tempDir,
                         environmentMemoryPart)
                 .strip();
+    }
+
+    /**
+     * A pure sandbox surface: a sandbox filesystem that is neither a direct local shell nor a
+     * local overlay. Only this branch drops host facts; direct local shell, local overlay, plain
+     * local and composite deployments keep them.
+     */
+    private static boolean isPureSandbox(AbstractFilesystem fs) {
+        return fs instanceof AbstractSandboxFilesystem
+                && !(fs instanceof OverlayFilesystem)
+                && !(fs instanceof LocalFilesystemWithShell);
     }
 
     /**
