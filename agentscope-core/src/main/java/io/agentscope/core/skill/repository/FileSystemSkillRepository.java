@@ -177,6 +177,41 @@ public class FileSystemSkillRepository implements AgentSkillRepository {
 
     @Override
     public List<AgentSkill> getAllSkills() {
+        // If baseDir itself is a skill directory, return only that skill
+        Path baseDirKey = baseDir.toAbsolutePath().normalize();
+        Path baseSkillFile = baseDirKey.resolve(SKILL_FILE_NAME);
+        if (Files.exists(baseSkillFile)) {
+            try {
+                BasicFileAttributes attrs =
+                        Files.readAttributes(baseSkillFile, BasicFileAttributes.class);
+                long mtime = attrs.lastModifiedTime().toMillis();
+                long size = attrs.size();
+                Snapshot cached = skillCache.get(baseDirKey);
+                if (cached != null && cached.mtime == mtime && cached.size == size) {
+                    return List.of(cached.skill);
+                }
+                AgentSkill skill =
+                        SkillFileSystemHelper.loadSkillFromDirectory(
+                                baseDirKey, getSource(), !lazy);
+                skillCache.put(baseDirKey, new Snapshot(mtime, size, skill));
+                return List.of(skill);
+            } catch (IOException e) {
+                logger.warn(
+                        "Failed to stat SKILL.md for baseDir '{}': {}",
+                        baseDirKey,
+                        e.getMessage(),
+                        e);
+                return List.of();
+            } catch (Exception e) {
+                logger.warn(
+                        "Failed to load skill from baseDir '{}': {}",
+                        baseDirKey,
+                        e.getMessage(),
+                        e);
+                return List.of();
+            }
+        }
+
         List<AgentSkill> out = new ArrayList<>();
         Set<Path> seenDirs = new HashSet<>();
         try (Stream<Path> subdirs = Files.list(baseDir)) {
