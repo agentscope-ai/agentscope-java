@@ -18,6 +18,7 @@ package io.agentscope.core.tool;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -32,6 +33,7 @@ import io.agentscope.core.message.ToolResultState;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ExecutionConfig;
 import java.time.Duration;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicReference;
@@ -187,6 +189,55 @@ class ToolkitCallToolIdentityTest {
                         })
                 .verifyComplete();
         verify(tool, never()).callAsync(any(ToolCallParam.class));
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void stampsNamedAnchorPresetValidationAndPreservesAuthoritativeInput(boolean required) {
+        Toolkit toolkit = new Toolkit();
+        AgentTool tool = tool("test", Mono.just(ToolResultBlock.text("done")));
+        Map<String, Object> target = new HashMap<>();
+        target.put("$anchor", "arguments");
+        target.put("type", "object");
+        target.put("properties", Map.of("x", Map.of("type", "integer", "minimum", 0)));
+        target.put("additionalProperties", false);
+        if (required) {
+            target.put("required", List.of("x"));
+        }
+        Map<String, Object> schema = Map.of("$ref", "#arguments", "$defs", Map.of("input", target));
+        when(tool.getParameters()).thenReturn(schema);
+        Object context = new Object();
+        int preset = required ? 7 : -3;
+        toolkit.registration()
+                .agentTool(tool)
+                .presetParameters(Map.of("test", Map.of("x", preset, "context", context)))
+                .apply();
+        AtomicReference<ToolCallParam> invocation = new AtomicReference<>();
+        when(tool.callAsync(any(ToolCallParam.class)))
+                .thenAnswer(
+                        call -> {
+                            invocation.set(call.getArgument(0));
+                            return Mono.just(ToolResultBlock.text("done"));
+                        });
+
+        ToolResultBlock result = call(toolkit, "test", "{\"x\":1}");
+        String expectedError = ToolValidator.validateInput("{\"x\":" + preset + "}", schema);
+        if (required) {
+            assertNull(expectedError);
+            assertEquals("done", ((TextBlock) result.getOutput().get(0)).getText());
+            assertNotNull(invocation.get());
+            assertEquals(7, invocation.get().getInput().get("x"));
+            assertSame(context, invocation.get().getInput().get("context"));
+        } else {
+            assertNotNull(expectedError);
+            assertEquals(ToolResultState.ERROR, result.getState());
+            assertEquals(
+                    "Error: Parameter validation failed for tool 'test': "
+                            + expectedError
+                            + "\nPlease correct the parameters and try again.",
+                    ((TextBlock) result.getOutput().get(0)).getText());
+            verify(tool, never()).callAsync(any(ToolCallParam.class));
+        }
     }
 
     private static void assertSerializationError(ToolResultBlock result, ToolUseBlock use) {

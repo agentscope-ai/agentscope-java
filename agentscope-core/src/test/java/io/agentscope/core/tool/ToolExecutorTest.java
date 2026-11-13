@@ -18,7 +18,9 @@ package io.agentscope.core.tool;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.message.ContentBlock;
@@ -30,6 +32,7 @@ import io.agentscope.core.tool.test.SampleTools;
 import io.agentscope.core.tool.test.ToolTestUtils;
 import io.agentscope.core.util.JsonUtils;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -313,7 +316,8 @@ class ToolExecutorTest {
     @ParameterizedTest
     @CsvSource({
         "ref,false", "ref,true", "allOf,false", "allOf,true",
-        "anyOf,false", "anyOf,true", "oneOf,false", "oneOf,true"
+        "anyOf,false", "anyOf,true", "oneOf,false", "oneOf,true",
+        "anchor,false", "anchor,true"
     })
     void shouldRejectInvalidPresetExposedThroughRootSchema(String composition, boolean required) {
         ValidatedInputTool tool =
@@ -352,7 +356,8 @@ class ToolExecutorTest {
     @ParameterizedTest
     @CsvSource({
         "ref,false", "ref,true", "allOf,false", "allOf,true",
-        "anyOf,false", "anyOf,true", "oneOf,false", "oneOf,true"
+        "anyOf,false", "anyOf,true", "oneOf,false", "oneOf,true",
+        "anchor,false", "anchor,true"
     })
     void shouldAcceptExposedPresetAndExcludeHiddenObjectThroughRootSchema(
             String composition, boolean required) {
@@ -389,6 +394,10 @@ class ToolExecutorTest {
         }
         if ("ref".equals(composition)) {
             return Map.of("$defs", Map.of("a/b~c", objectSchema), "$ref", "#/$defs/a~1b~0c");
+        }
+        if ("anchor".equals(composition)) {
+            objectSchema.put("$anchor", "arguments");
+            return Map.of("$defs", Map.of("input", objectSchema), "$ref", "#arguments");
         }
         return Map.of(
                 composition,
@@ -428,15 +437,208 @@ class ToolExecutorTest {
                                         "unused",
                                         Map.of("properties", Map.of("hidden", Map.of())),
                                         "space name",
-                                        Map.of("properties", Map.of("escaped", Map.of()))),
+                                        Map.of("properties", Map.of("escaped", Map.of())),
+                                        "a/b~c name",
+                                        Map.of("properties", Map.of("mixedPointer", Map.of()))),
                         "allOf",
                                 List.of(
                                         Map.of("$ref", "https://example.invalid/schema"),
                                         Map.of("$ref", "#/$defs/missing"),
                                         Map.of("$ref", "#/$defs/space%20name"),
+                                        Map.of("$ref", "#/$defs/a~1b~0c%20name"),
                                         Map.of("$ref", "#/anyOf/0")),
                         "anyOf", List.of(Map.of("properties", Map.of("arrayRef", Map.of()))));
-        assertEquals(Set.of("outer", "escaped", "arrayRef"), visibleSchemaProperties(schema));
+        assertEquals(
+                Set.of("outer", "escaped", "mixedPointer", "arrayRef"),
+                visibleSchemaProperties(schema));
+    }
+
+    @ParameterizedTest
+    @CsvSource({"false,false", "false,true", "true,false", "true,true"})
+    void shouldValidateNamedAnchorPresetsInBatches(boolean required, boolean parallel) {
+        toolkit = new Toolkit(ToolkitConfig.builder().parallel(parallel).build());
+        ValidatedInputTool tool = new ValidatedInputTool(composedInputSchema("anchor", required));
+        int preset = required ? 7 : -3;
+        toolkit.registration()
+                .agentTool(tool)
+                .presetParameters(Map.of(tool.getName(), Map.of("x", preset)))
+                .apply();
+        ToolUseBlock use =
+                ToolUseBlock.builder()
+                        .id("anchor-batch")
+                        .name(tool.getName())
+                        .input(Map.of("x", 1))
+                        .content("{\"x\":1}")
+                        .build();
+
+        List<ToolResultBlock> results =
+                toolkit.callTools(List.of(use), null, null, null).block(TIMEOUT);
+        assertNotNull(results);
+        assertEquals(1, results.size());
+        ToolResultBlock result = results.get(0);
+        assertEquals(use.getId(), result.getId());
+        assertEquals(use.getName(), result.getName());
+        String expectedError =
+                ToolValidator.validateInput("{\"x\":" + preset + "}", tool.getParameters());
+        if (required) {
+            assertNull(expectedError);
+            assertEquals("x: 7", extractFirstText(result));
+            assertEquals(7, tool.lastInput.get("x"));
+            assertEquals(1, tool.calls.get());
+        } else {
+            assertNotNull(expectedError);
+            assertEquals(
+                    "Error: Parameter validation failed for tool 'validated_input': "
+                            + expectedError
+                            + "\nPlease correct the parameters and try again.",
+                    extractFirstText(result));
+            assertEquals(0, tool.calls.get());
+        }
+        assertEquals(1, use.getInput().get("x"));
+    }
+
+    @Test
+    void shouldFindDecodedAnchorWithoutExposingNestedOrUnreferencedProperties() throws Exception {
+        Map<String, Object> target =
+                Map.of(
+                        "$anchor",
+                        "arguments",
+                        "properties",
+                        Map.of(
+                                "x", Map.of("type", "integer"),
+                                "outer", Map.of("properties", Map.of("context", Map.of()))));
+        Map<String, Object> schema =
+                Map.of(
+                        "$ref",
+                        "#%61rguments",
+                        "$defs",
+                        Map.of(
+                                "unused", Map.of("properties", Map.of("hidden", Map.of())),
+                                "wrapper", Map.of("allOf", List.of(target))));
+        String before = JsonUtils.getJsonCodec().toJson(schema);
+        assertEquals(Set.of("x", "outer"), visibleSchemaProperties(schema));
+        assertEquals(before, JsonUtils.getJsonCodec().toJson(schema));
+    }
+
+    @Test
+    void shouldBoundAnchorSearchAcrossMapAndListCyclesAndMissingAnchors() {
+        Map<String, Object> schema = new HashMap<>();
+        List<Object> branches = new ArrayList<>();
+        schema.put("$ref", "#arguments");
+        schema.put("$defs", branches);
+        branches.add(schema);
+        branches.add(branches);
+        Map<String, Object> target =
+                Map.of("$anchor", "arguments", "properties", Map.of("x", Map.of()));
+        branches.add(target);
+        assertTimeoutPreemptively(
+                TIMEOUT, () -> assertEquals(Set.of("x"), visibleSchemaProperties(schema)));
+        schema.put("$ref", "#missing");
+        assertTimeoutPreemptively(
+                TIMEOUT, () -> assertEquals(Set.of(), visibleSchemaProperties(schema)));
+        assertSame(schema, branches.get(0));
+        assertSame(branches, branches.get(1));
+        assertSame(target, branches.get(2));
+        assertEquals(3, branches.size());
+    }
+
+    @Test
+    void shouldNotMatchAnAnchorInAnotherSchemaResource() throws Exception {
+        Map<String, Object> schema =
+                Map.of(
+                        "$id", "https://example.invalid/root",
+                        "$ref", "#arguments",
+                        "$defs",
+                                Map.of(
+                                        "scoped",
+                                        Map.of(
+                                                "$id", "scoped",
+                                                "$anchor", "arguments",
+                                                "properties",
+                                                        Map.of("x", Map.of("type", "integer")))));
+        assertEquals(Set.of(), visibleSchemaProperties(schema));
+        String error = ToolValidator.validateInput("{\"x\":7}", schema);
+        assertNotNull(error);
+        assertTrue(error.contains("Reference arguments cannot be resolved"), error);
+    }
+
+    @ParameterizedTest
+    @CsvSource({"#missing", "#%61rguments"})
+    void shouldPreserveExistingValidatorErrorsForUnresolvedAnchors(String ref) {
+        Map<String, Object> schema = new HashMap<>(composedInputSchema("anchor", true));
+        schema.put("$ref", ref);
+        ValidatedInputTool tool = new ValidatedInputTool(schema);
+        toolkit.registration()
+                .agentTool(tool)
+                .presetParameters(Map.of(tool.getName(), Map.of("x", 7, "context", new Object())))
+                .apply();
+        String expectedError = ToolValidator.validateInput("{\"x\":7}", schema);
+        assertNotNull(expectedError);
+        assertTrue(expectedError.contains("cannot be resolved"), expectedError);
+        ToolResultBlock result =
+                toolkit.callTool(
+                                ToolCallParam.builder()
+                                        .toolUseBlock(
+                                                ToolUseBlock.builder()
+                                                        .name(tool.getName())
+                                                        .input(Map.of("x", 1))
+                                                        .build())
+                                        .build())
+                        .block(TIMEOUT);
+        assertNotNull(result);
+        assertEquals(
+                "Error: Parameter validation failed for tool 'validated_input': "
+                        + expectedError
+                        + "\nPlease correct the parameters and try again.",
+                extractFirstText(result));
+        assertEquals(0, tool.calls.get());
+    }
+
+    @ParameterizedTest
+    @CsvSource({"#/$defs/scoped", "#/$defs/scoped/allOf/0"})
+    void shouldResolveNamedAnchorsWithinTheReferencedSchemaResource(String ref) throws Exception {
+        Map<String, Object> scoped = new HashMap<>(composedInputSchema("anchor", true));
+        scoped.put("$id", "scoped");
+        scoped.put("allOf", List.of(Map.of("$ref", "#arguments")));
+        Map<String, Object> schema =
+                Map.of(
+                        "$id",
+                        "https://example.invalid/root",
+                        "$ref",
+                        ref,
+                        "$defs",
+                        Map.of(
+                                "outer",
+                                Map.of(
+                                        "$anchor",
+                                        "arguments",
+                                        "properties",
+                                        Map.of("context", Map.of())),
+                                "scoped",
+                                scoped));
+        assertNull(ToolValidator.validateInput("{\"x\":7}", schema));
+        assertNotNull(ToolValidator.validateInput("{\"x\":-3}", schema));
+        assertEquals(Set.of("x"), visibleSchemaProperties(schema));
+        ValidatedInputTool tool = new ValidatedInputTool(schema);
+        Object context = new Object();
+        toolkit.registration()
+                .agentTool(tool)
+                .presetParameters(Map.of(tool.getName(), Map.of("x", 7, "context", context)))
+                .apply();
+        ToolResultBlock result =
+                toolkit.callTool(
+                                ToolCallParam.builder()
+                                        .toolUseBlock(
+                                                ToolUseBlock.builder()
+                                                        .name(tool.getName())
+                                                        .input(Map.of("x", -3))
+                                                        .build())
+                                        .build())
+                        .block(TIMEOUT);
+        assertNotNull(result);
+        assertEquals("x: 7", extractFirstText(result));
+        assertSame(context, tool.lastInput.get("context"));
+        assertEquals(1, tool.calls.get());
     }
 
     private static Object visibleSchemaProperties(Map<String, Object> schema) throws Exception {

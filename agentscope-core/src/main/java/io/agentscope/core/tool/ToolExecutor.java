@@ -349,9 +349,12 @@ class ToolExecutor {
     }
 
     private static void collectSchemaProperties(
-            Object node, Map<String, Object> root, Set<Object> visited, Set<String> properties) {
+            Object node, Map<?, ?> root, Set<Object> visited, Set<String> properties) {
         if (!(node instanceof Map<?, ?> schema) || !visited.add(node)) {
             return;
+        }
+        if (schema.get("$id") instanceof String id && !id.isEmpty()) {
+            root = schema; // Fragment references belong to this schema resource.
         }
         if (schema.get("properties") instanceof Map<?, ?> declared) {
             for (Object name : declared.keySet()) {
@@ -361,8 +364,7 @@ class ToolExecutor {
             }
         }
         if (schema.get("$ref") instanceof String ref) {
-            collectSchemaProperties(
-                    resolveLocalSchemaReference(root, ref), root, visited, properties);
+            resolveLocalSchemaReference(root, ref, visited, properties);
         }
         for (String composition : List.of("allOf", "anyOf", "oneOf")) {
             if (schema.get(composition) instanceof List<?> branches) {
@@ -373,34 +375,71 @@ class ToolExecutor {
         }
     }
 
-    private static Object resolveLocalSchemaReference(Map<String, Object> root, String ref) {
+    private static void resolveLocalSchemaReference(
+            Map<?, ?> root, String ref, Set<Object> visited, Set<String> properties) {
         if (!ref.startsWith("#")) {
-            return null; // Never expand remote references.
+            return; // Never expand remote references.
         }
         try {
             String pointer = URI.create(ref).getFragment();
-            if (pointer.isEmpty()) {
-                return root;
-            }
-            if (!pointer.startsWith("/")) {
-                return null;
-            }
             Object node = root;
-            for (String token : pointer.substring(1).split("/", -1)) {
-                String key = token.replace("~1", "/").replace("~0", "~");
-                if (node instanceof Map<?, ?> map) {
-                    node = map.get(key);
-                } else if (node instanceof List<?> list && key.matches("0|[1-9][0-9]*")) {
-                    int index = Integer.parseInt(key);
-                    node = index < list.size() ? list.get(index) : null;
+            if (!pointer.isEmpty()) {
+                if (!pointer.startsWith("/")) {
+                    node =
+                            findLocalSchemaAnchor(
+                                    root,
+                                    root,
+                                    pointer,
+                                    Collections.newSetFromMap(new IdentityHashMap<>()));
                 } else {
-                    return null;
+                    for (String token : pointer.substring(1).split("/", -1)) {
+                        String key = token.replace("~1", "/").replace("~0", "~");
+                        if (node instanceof Map<?, ?> map) {
+                            node = map.get(key);
+                        } else if (node instanceof List<?> list && key.matches("0|[1-9][0-9]*")) {
+                            int index = Integer.parseInt(key);
+                            node = index < list.size() ? list.get(index) : null;
+                        } else {
+                            return;
+                        }
+                        if (node instanceof Map<?, ?> schema
+                                && schema.get("$id") instanceof String id
+                                && !id.isEmpty()) {
+                            root = schema; // Retain the target's lexical resource scope.
+                        }
+                    }
                 }
             }
-            return node;
+            collectSchemaProperties(node, root, visited, properties);
         } catch (IllegalArgumentException e) {
-            return null; // Invalid URI fragments or array indices are not visible properties.
+            // Invalid URI fragments or array indices are not visible properties.
         }
+    }
+
+    private static Object findLocalSchemaAnchor(
+            Object node, Map<?, ?> root, String anchor, Set<Object> visited) {
+        if (!(node instanceof Map<?, ?> || node instanceof List<?>) || !visited.add(node)) {
+            return null;
+        }
+        Collection<?> children;
+        if (node instanceof Map<?, ?> schema) {
+            if (node != root && schema.get("$id") instanceof String id && !id.isEmpty()) {
+                return null; // An embedded schema resource has its own anchors.
+            }
+            if (anchor.equals(schema.get("$anchor"))) {
+                return schema;
+            }
+            children = schema.values();
+        } else {
+            children = (List<?>) node;
+        }
+        for (Object child : children) {
+            Object target = findLocalSchemaAnchor(child, root, anchor, visited);
+            if (target != null) {
+                return target;
+            }
+        }
+        return null;
     }
 
     /**
