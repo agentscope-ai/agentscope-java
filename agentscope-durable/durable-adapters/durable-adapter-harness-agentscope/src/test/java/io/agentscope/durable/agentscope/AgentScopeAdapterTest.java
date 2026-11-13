@@ -1939,7 +1939,9 @@ class AgentScopeAdapterTest {
                 var receipt =
                         backend.submit(
                                 new ThreadKey(key, "main"), "direct", DurableJson.value("hello"));
-                long deadline = System.nanoTime() + Duration.ofSeconds(5).toNanos();
+                // The full reactor runs many modules concurrently, and a loaded CI host can
+                // delay the runtime worker even though the local wakeup has already fired.
+                long deadline = System.nanoTime() + Duration.ofSeconds(30).toNanos();
                 while (!backend.turn(new ThreadKey(key, "main"), receipt.turnId())
                                 .status()
                                 .terminal()
