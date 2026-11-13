@@ -30,7 +30,7 @@ import java.util.List;
  *
  * <ul>
  *   <li>Only the first message can be a system message (handled via system parameter)
- *   <li>Tool results must be in separate user messages
+ *   <li>All results for a tool batch must be in one following user message
  *   <li>Supports thinking blocks natively (extended thinking feature)
  * </ul>
  */

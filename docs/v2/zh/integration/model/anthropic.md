@@ -58,6 +58,10 @@ AnthropicChatModel model = AnthropicChatModel.builder()
 `IllegalArgumentException`。
 这些鉴权请求头由 SDK 管理，请通过 builder 配置，不要通过 `GenerateOptions.additionalHeaders` 添加。
 
+## 并行工具调用
+
+Formatter 会将并行的 `tool_use` 块保留在同一条 assistant 消息中，并将连续工具结果合并为紧随其后的一条 user 消息，其中所有 `tool_result` 块位于附带文本或媒体之前。这样可以保留 Anthropic 兼容端点所要求的工具批次，而不是拆分为单个调用交替出现的消息。
+
 ## Spring Boot
 
 Spring Boot 应用可以使用 Anthropic starter：

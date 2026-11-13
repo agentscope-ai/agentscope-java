@@ -59,6 +59,10 @@ construction to fail with an `IllegalArgumentException`.
 Configure authentication through the builder rather than `GenerateOptions.additionalHeaders`,
 because the SDK owns these authentication headers.
 
+## Parallel tool calls
+
+The formatter keeps parallel `tool_use` blocks together in one assistant message. Consecutive tool results are grouped into one following user message, with all `tool_result` blocks before accompanying text or media. This preserves the batch expected by Anthropic-compatible endpoints instead of splitting it into alternating single-call messages.
+
 ## Spring Boot
 
 Spring Boot applications can use the Anthropic starter:
