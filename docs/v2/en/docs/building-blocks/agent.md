@@ -576,6 +576,8 @@ The framework automatically selects the implementation path based on model capab
 
 Either way, the caller's code is identical — path selection is transparent.
 
+After a successful fallback call, the agent removes the internal `generate_response` exchange and old structured-output reminders from conversation history. In a mixed batch, business tool calls and their matching results are retained for later calls and persisted sessions. Usage already carried by the final structured result is not counted again on the retained mixed message.
+
 ```
 ┌─── call(msgs, Schema.class) ───┐
 │                                │
