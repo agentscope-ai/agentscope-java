@@ -723,6 +723,27 @@ public class A2aAgentTest {
         verify(a2aClient).sendMessage(any(Message.class), anyList(), any());
     }
 
+    @Test
+    void testMissingAgentCardFailsWithClearMessage() {
+        io.agentscope.core.a2a.agent.card.AgentCardResolver resolver =
+                mock(io.agentscope.core.a2a.agent.card.AgentCardResolver.class);
+        A2aAgent agent =
+                A2aAgent.builder()
+                        .name("test-agent")
+                        .agentCardResolver(resolver)
+                        .clientReplacer(this::useMockClient)
+                        .build();
+        IllegalStateException failure =
+                assertThrows(
+                        IllegalStateException.class,
+                        () -> agent.call(Msg.builder().textContent("call").build()).block());
+        assertTrue(failure.getMessage().contains("No AgentCard found"));
+        assertTrue(failure.getMessage().contains("'test-agent'"));
+        assertTrue(failure.getMessage().contains(resolver.getClass().getSimpleName()));
+        verify(a2aClient, never()).sendMessage(any(Message.class), anyList(), any());
+        verify(a2aClient, never()).close();
+    }
+
     private Client useMockClient(Client built) {
         built.close();
         return a2aClient;

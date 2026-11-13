@@ -27,7 +27,7 @@ public interface AgentCardResolver {
      * Produce AgentCard for target agent name.
      *
      * @param agentName name of agent
-     * @return {@link AgentCard}
+     * @return {@link AgentCard}, or {@code null} if no card is found for the given name
      */
     AgentCard getAgentCard(String agentName);
 }
