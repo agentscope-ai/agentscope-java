@@ -105,10 +105,9 @@ jobs:
         if: runner.os == 'Windows'
         run: |
           # Use standard Maven because mvnd's embedded distribution broke Surefire IPC.
-          # Linux provides the full test run. Windows still compiles all test sources and
-          # verifies formatting/packaging, but does not execute process-heavy durable tests,
-          # whose child JVM and detached-process timing is not stable on hosted runners.
-          mvn -B -T1C "-Dmaven.javadoc.skip=true" "-Dmaven.source.skip=true" "-Djacoco.skip=true" "-DskipTests=true" clean verify
+          # Linux provides full coverage for process-heavy durable modules and examples whose
+          # child JVM and detached-process timing is not stable on hosted Windows runners.
+          mvn -B -T1C "-Dmaven.javadoc.skip=true" "-Dmaven.source.skip=true" "-Djacoco.skip=true" "-DskipDurableWindowsTests=true" clean verify
 
       - name: Upload coverage reports to Codecov
         # Secrets are unavailable to fork PRs, and Codecov rejects tokenless uploads to a

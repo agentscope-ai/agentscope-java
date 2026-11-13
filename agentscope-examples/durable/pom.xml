@@ -46,4 +46,18 @@
             </dependency>
         </dependencies>
     </dependencyManagement>
+    <profiles>
+        <profile>
+            <id>skip-durable-windows-tests</id>
+            <activation>
+                <property>
+                    <name>skipDurableWindowsTests</name>
+                    <value>true</value>
+                </property>
+            </activation>
+            <properties>
+                <skipTests>true</skipTests>
+            </properties>
+        </profile>
+    </profiles>
 </project>

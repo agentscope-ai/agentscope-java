@@ -8,4 +8,11 @@
 <dependency><groupId>io.agentscope</groupId><artifactId>agentscope-harness</artifactId></dependency>
 <dependency><groupId>io.agentscope</groupId><artifactId>agentscope-extensions-durable-jdbc</artifactId><version>${revision}</version><scope>test</scope></dependency>
 </dependencies>
+<profiles>
+<profile>
+<id>skip-durable-windows-tests</id>
+<activation><property><name>skipDurableWindowsTests</name><value>true</value></property></activation>
+<properties><skipTests>true</skipTests></properties>
+</profile>
+</profiles>
 </project>
