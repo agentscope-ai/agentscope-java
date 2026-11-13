@@ -58,6 +58,8 @@ List<Document> hits = knowledge.retrieve(
 
 ## Self-hosted Dify
 
+Retrieval accepts both Dify Cloud's string query (`"query": "..."`) and the self-hosted object form (`"query": {"content": "..."}`). Both map to `DifyResponse.Query`; an unrecognized informational query shape does not discard retrieved records.
+
 Point `baseUrl` at your deployment:
 
 ```java

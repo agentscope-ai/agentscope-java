@@ -58,6 +58,8 @@ List<Document> hits = knowledge.retrieve(
 
 ## 自托管 Dify
 
+检索响应同时支持 Dify Cloud 的字符串 query（`"query": "..."`）与自托管的对象形式（`"query": {"content": "..."}`），两者均映射为 `DifyResponse.Query`。query 仅用于信息展示，无法识别的形式不会导致检索记录被丢弃。
+
 如果你部署了自己的 Dify，把 `baseUrl` 指过去：
 
 ```java
