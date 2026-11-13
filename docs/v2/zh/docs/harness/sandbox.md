@@ -196,6 +196,8 @@ E2B 默认使用 `/home/user`。`E2bFilesystemSpec.workspaceRoot(...)` 同时设
 
 恢复时保留已保存的执行目录。Harness 文件路径规范化和沙箱工作区提示段落采用当前调用的活动根目录，而不是固定的 `/workspace` 前缀；已关闭的沙箱不能提供根目录。
 
+AgentRun 默认使用 `/home/agentscope/workspace`，通过 `AgentRunFilesystemSpec` 遵循相同的显式根目录一致性和调用方配置复制规则。即使当前调用提供不同的工作区布局，恢复时也保留已保存的执行根目录、NAS 元数据、就绪状态和投影哈希；复制后的布局会对齐到已保存的根目录。
+
 E2B 执行的 `timeoutSeconds = 0` 表示无期限；负数会被拒绝。正数限制执行时长，超时后会尽力在服务端终止进程。
 
 ## 运行时镜像约束

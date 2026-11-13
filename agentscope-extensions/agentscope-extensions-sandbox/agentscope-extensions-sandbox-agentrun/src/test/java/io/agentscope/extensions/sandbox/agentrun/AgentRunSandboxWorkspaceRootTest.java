@@ -186,6 +186,72 @@ class AgentRunSandboxWorkspaceRootTest {
     }
 
     @Test
+    void filesystemSpecRejectsExplicitConflictsInBothOrders() {
+        WorkspaceSpec supplied = workspaceSpec(SPEC_ROOT);
+        assertThrows(
+                IllegalArgumentException.class,
+                () ->
+                        new AgentRunFilesystemSpec()
+                                .workspaceSpec(supplied)
+                                .workspaceRoot("/different")
+                                .toSandboxContext());
+        assertThrows(
+                IllegalArgumentException.class,
+                () ->
+                        new AgentRunFilesystemSpec()
+                                .workspaceRoot("/different")
+                                .workspaceSpec(supplied)
+                                .toSandboxContext());
+        assertEquals(SPEC_ROOT, supplied.getRoot());
+    }
+
+    @Test
+    void filesystemSpecAcceptsNormalizedMatchesInBothOrdersAndIsolatesCaller() {
+        WorkspaceSpec supplied = workspaceSpec(SPEC_ROOT);
+        supplied.getEnvironment().put("MODE", "test");
+        AgentRunFilesystemSpec[] builders = {
+            new AgentRunFilesystemSpec()
+                    .workspaceSpec(supplied)
+                    .workspaceRoot("/root/./workspace/unused/../"),
+            new AgentRunFilesystemSpec()
+                    .workspaceRoot("/root/./workspace/unused/../")
+                    .workspaceSpec(supplied)
+        };
+        for (AgentRunFilesystemSpec builder : builders) {
+            SandboxContext context = builder.toSandboxContext();
+            assertEquals(SPEC_ROOT, context.getWorkspaceSpec().getRoot());
+            assertEquals(
+                    SPEC_ROOT,
+                    ((AgentRunSandboxClientOptions) context.getClientOptions()).getWorkspaceRoot());
+            context.getWorkspaceSpec().getEnvironment().put("MODE", "changed");
+        }
+        assertEquals(SPEC_ROOT, supplied.getRoot());
+        assertEquals("test", supplied.getEnvironment().get("MODE"));
+    }
+
+    @Test
+    void filesystemSpecDefaultRootInheritsAndExplicitSpecSelectsExecutionRoot() {
+        WorkspaceSpec untouched = new WorkspaceSpec();
+        SandboxContext inherited =
+                new AgentRunFilesystemSpec()
+                        .workspaceSpec(untouched)
+                        .workspaceRoot(SPEC_ROOT)
+                        .toSandboxContext();
+        assertEquals(SPEC_ROOT, inherited.getWorkspaceSpec().getRoot());
+        assertEquals("/workspace", untouched.getRoot());
+        SandboxContext selected =
+                new AgentRunFilesystemSpec()
+                        .workspaceSpec(workspaceSpec(SPEC_ROOT))
+                        .toSandboxContext();
+        assertEquals(
+                SPEC_ROOT,
+                ((AgentRunSandboxClientOptions) selected.getClientOptions()).getWorkspaceRoot());
+        assertEquals(
+                AgentRunSandboxState.DEFAULT_WORKSPACE_ROOT,
+                new AgentRunFilesystemSpec().toSandboxContext().getWorkspaceSpec().getRoot());
+    }
+
+    @Test
     void resumeCopiesNewCallLayoutToSavedRootAndPreservesNasMetadata() throws Exception {
         AgentRunSandboxClient client = new AgentRunSandboxClient(options(), null);
         AgentRunSandboxState saved = new AgentRunSandboxState();

@@ -197,6 +197,8 @@ E2B defaults to `/home/user`. `E2bFilesystemSpec.workspaceRoot(...)` sets both t
 
 Resume retains the saved execution directory. Harness file-path normalization and the sandbox workspace paragraph follow the active call's root, not a fixed `/workspace` prefix; a closed sandbox cannot supply a root.
 
+AgentRun defaults to `/home/agentscope/workspace` and follows the same explicit-root matching and caller-copy rules through `AgentRunFilesystemSpec`. Resume keeps the saved execution root, NAS metadata, readiness, and projection hash even when the current call supplies a different workspace layout; the copied layout is aligned to that saved root.
+
 For E2B execution, `timeoutSeconds = 0` means no deadline; negative values are rejected. A positive timeout bounds the execution and triggers a best-effort server-side process kill on expiry.
 
 ## Runtime image contract

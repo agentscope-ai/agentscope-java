@@ -28,7 +28,8 @@ public class AgentRunFilesystemSpec extends SandboxFilesystemSpec {
     private SandboxClient<?> client;
     private final AgentRunSandboxClientOptions options = new AgentRunSandboxClientOptions();
     private SandboxSnapshotSpec snapshotSpec = new NoopSnapshotSpec();
-    private WorkspaceSpec defaultWorkspaceSpec = new WorkspaceSpec();
+    private WorkspaceSpec defaultWorkspaceSpec;
+    private boolean explicitWorkspaceRoot;
 
     public AgentRunFilesystemSpec client(SandboxClient<?> client) {
         this.client = client;
@@ -87,7 +88,7 @@ public class AgentRunFilesystemSpec extends SandboxFilesystemSpec {
 
     public AgentRunFilesystemSpec workspaceRoot(String workspaceRoot) {
         options.setWorkspaceRoot(workspaceRoot);
-        defaultWorkspaceSpec.setRoot(workspaceRoot);
+        explicitWorkspaceRoot = true;
         return this;
     }
 
@@ -112,12 +113,13 @@ public class AgentRunFilesystemSpec extends SandboxFilesystemSpec {
     }
 
     public AgentRunFilesystemSpec workspaceSpec(WorkspaceSpec workspaceSpec) {
-        this.defaultWorkspaceSpec = workspaceSpec;
+        this.defaultWorkspaceSpec = workspaceSpec != null ? workspaceSpec.copy() : null;
         return this;
     }
 
     @Override
     protected SandboxClient<?> createClient() {
+        options.setWorkspaceRoot(resolveWorkspaceRoot());
         return client != null ? client : options.createClient();
     }
 
@@ -133,6 +135,23 @@ public class AgentRunFilesystemSpec extends SandboxFilesystemSpec {
 
     @Override
     protected WorkspaceSpec workspaceSpec() {
-        return defaultWorkspaceSpec;
+        WorkspaceSpec effective =
+                defaultWorkspaceSpec != null ? defaultWorkspaceSpec.copy() : new WorkspaceSpec();
+        effective.setRoot(resolveWorkspaceRoot());
+        return effective;
+    }
+
+    private String resolveWorkspaceRoot() {
+        String optionRoot =
+                AgentRunSandboxClient.normalizeWorkspaceRoot(options.getWorkspaceRoot());
+        String specRoot =
+                defaultWorkspaceSpec != null && defaultWorkspaceSpec.isRootExplicitlySet()
+                        ? AgentRunSandboxClient.normalizeWorkspaceRoot(
+                                defaultWorkspaceSpec.getRoot())
+                        : null;
+        if (explicitWorkspaceRoot && specRoot != null && !optionRoot.equals(specRoot)) {
+            throw new IllegalArgumentException("workspaceRoot and workspaceSpec.root must match");
+        }
+        return specRoot != null ? specRoot : optionRoot;
     }
 }
