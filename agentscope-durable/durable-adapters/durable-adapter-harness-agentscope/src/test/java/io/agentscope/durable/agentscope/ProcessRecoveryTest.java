@@ -195,7 +195,13 @@ public class ProcessRecoveryTest {
                     Files.writeString(workspace.resolve("ready"), "ready");
                     Thread.sleep(30000);
                 }
-                Thread.sleep(10);
+                try {
+                    Thread.sleep(10);
+                } catch (InterruptedException ignored) {
+                    // The fixture must keep ticking until the acceptResult proxy records the
+                    // terminal handoff. A runtime wakeup may interrupt this polling sleep.
+                    Thread.interrupted();
+                }
             }
         }
     }
