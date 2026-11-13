@@ -37,6 +37,7 @@ import io.agentscope.core.model.ToolSchema;
 import io.agentscope.core.permission.PermissionBehavior;
 import io.agentscope.core.permission.PermissionContextState;
 import io.agentscope.core.permission.PermissionDecision;
+import io.agentscope.core.permission.PermissionMode;
 import io.agentscope.core.permission.PermissionRule;
 import io.agentscope.core.state.AgentStateStore;
 import io.agentscope.core.state.InMemoryAgentStateStore;
@@ -48,6 +49,8 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Supplier;
 import java.util.stream.Stream;
@@ -58,6 +61,7 @@ import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
+import reactor.core.publisher.Sinks;
 import reactor.test.StepVerifier;
 
 /** Verifies replacement semantics for builder-provided permission contexts. */
@@ -68,6 +72,7 @@ class ReActAgentPermissionRulesTest {
     private static final class DeployTool extends ToolBase {
 
         private final AtomicInteger calls = new AtomicInteger();
+        private final List<PermissionContextState> checkedContexts = new ArrayList<>();
 
         DeployTool() {
             super(ToolBase.builder().name(TOOL).description(TOOL).inputSchema(schema()));
@@ -80,6 +85,7 @@ class ReActAgentPermissionRulesTest {
         @Override
         public Mono<PermissionDecision> checkPermissions(
                 Map<String, Object> toolInput, PermissionContextState context) {
+            checkedContexts.add(context);
             return Mono.just(PermissionDecision.passthrough(getName()));
         }
 
@@ -192,6 +198,124 @@ class ReActAgentPermissionRulesTest {
 
     private static RuntimeContext session(String sessionId) {
         return RuntimeContext.builder().userId("u1").sessionId(sessionId).build();
+    }
+
+    static Stream<Arguments> replacementCases() {
+        PermissionContextState trivial = PermissionContextState.builder().build();
+        PermissionContextState deny = rules(PermissionBehavior.DENY);
+        PermissionContextState dontAsk =
+                PermissionContextState.builder().mode(PermissionMode.DONT_ASK).build();
+        return Stream.of(false, true)
+                .flatMap(
+                        store ->
+                                Stream.of(
+                                        Arguments.of(deny, trivial, true, false, store, false),
+                                        Arguments.of(trivial, deny, false, true, store, false),
+                                        Arguments.of(dontAsk, trivial, true, false, store, true),
+                                        Arguments.of(trivial, dontAsk, false, true, store, true)));
+    }
+
+    @ParameterizedTest
+    @MethodSource("replacementCases")
+    void admittedCallKeepsPermissionsWhileReplacementAppliesToNextCall(
+            PermissionContextState initial,
+            PermissionContextState replacement,
+            boolean admittedDenied,
+            boolean nextDenied,
+            boolean withStore,
+            boolean modeOnly) {
+        CountDownLatch admitted = new CountDownLatch(1);
+        Sinks.One<ChatResponse> response = Sinks.one();
+        ScriptedModel model =
+                new ScriptedModel(
+                        List.of(
+                                () ->
+                                        Flux.defer(
+                                                () -> {
+                                                    admitted.countDown();
+                                                    return response.asMono().flux();
+                                                }),
+                                () -> Flux.just(textResponse("done")),
+                                () -> Flux.just(toolCall("next")),
+                                () -> Flux.just(textResponse("done"))));
+        DeployTool tool = new DeployTool();
+        RuntimeContext ctx = session("admission");
+        try (ReActAgent agent =
+                agent(model, initial, withStore ? new InMemoryAgentStateStore() : null, tool)) {
+            StepVerifier.create(agent.streamEvents(List.of(userMsg("deploy?")), ctx).collectList())
+                    .then(
+                            () -> {
+                                try {
+                                    assertTrue(admitted.await(10, TimeUnit.SECONDS));
+                                } catch (InterruptedException e) {
+                                    Thread.currentThread().interrupt();
+                                    throw new AssertionError(e);
+                                }
+                                if (modeOnly) {
+                                    agent.setPermissionMode(ctx, replacement.getMode());
+                                } else {
+                                    agent.replacePermissionContext("u1", "admission", replacement);
+                                }
+                                assertEquals(
+                                        replacement,
+                                        agent.getAgentState(ctx).getPermissionContext());
+                                assertEquals(
+                                        Sinks.EmitResult.OK,
+                                        response.tryEmitValue(toolCall("admitted")));
+                            })
+                    .assertNext(
+                            events -> {
+                                assertEquals(
+                                        admittedDenied,
+                                        events.stream()
+                                                .anyMatch(
+                                                        event ->
+                                                                event
+                                                                                instanceof
+                                                                                ToolResultEndEvent
+                                                                                        end
+                                                                        && "admitted"
+                                                                                .equals(
+                                                                                        end
+                                                                                                .getToolCallId())
+                                                                        && end.getState()
+                                                                                == ToolResultState
+                                                                                        .DENIED));
+                                assertEquals(admittedDenied ? 0 : 1, tool.callCount());
+                                assertTrue(
+                                        tool.checkedContexts.stream().allMatch(initial::equals),
+                                        "tool self-checks must use the admitted context");
+                            })
+                    .expectComplete()
+                    .verify(Duration.ofSeconds(10));
+            assertEquals(replacement, agent.getAgentState(ctx).getPermissionContext());
+            StepVerifier.create(agent.streamEvents(List.of(userMsg("again")), ctx).collectList())
+                    .assertNext(
+                            events -> {
+                                assertEquals(
+                                        nextDenied,
+                                        events.stream()
+                                                .anyMatch(
+                                                        event ->
+                                                                event
+                                                                                instanceof
+                                                                                ToolResultEndEvent
+                                                                                        end
+                                                                        && "next"
+                                                                                .equals(
+                                                                                        end
+                                                                                                .getToolCallId())
+                                                                        && end.getState()
+                                                                                == ToolResultState
+                                                                                        .DENIED));
+                                assertEquals(
+                                        (admittedDenied ? 0 : 1) + (nextDenied ? 0 : 1),
+                                        tool.callCount());
+                            })
+                    .expectComplete()
+                    .verify(Duration.ofSeconds(10));
+            assertEquals(replacement, agent.getAgentState(ctx).getPermissionContext());
+        }
     }
 
     static Stream<Arguments> confirmedRuleCases() {

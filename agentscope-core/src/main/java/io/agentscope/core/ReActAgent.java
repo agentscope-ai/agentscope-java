@@ -1781,6 +1781,9 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         AgentState state;
         PermissionEngine permissionEngine;
 
+        /** Captured at admission and extended only by this call's accepted confirmation rules. */
+        private PermissionContextState effectivePermissionContext;
+
         /** Exact identity used for this call's loads and saves; never parsed from the slot key. */
         final String userId;
 
@@ -1902,6 +1905,14 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                 long loadedVersion) {
             this.state = state;
             this.permissionEngine = permissionEngine;
+            // A cached engine may already contain confirmed rules from earlier no-store calls;
+            // getContext() alone still exposes its original, possibly trivial context.
+            List<PermissionRule> currentRules = new ArrayList<>();
+            permissionEngine.getAllowRules().values().forEach(currentRules::addAll);
+            permissionEngine.getDenyRules().values().forEach(currentRules::addAll);
+            permissionEngine.getAskRules().values().forEach(currentRules::addAll);
+            this.effectivePermissionContext =
+                    permissionEngine.getContext().withAddedRules(currentRules);
             this.userId = userId;
             this.sessionId = sessionId;
             this.slotKey = slotKey(userId, sessionId);
@@ -2214,6 +2225,10 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                         // the stored permission context, so engine-only
                         // additions are lost (issue #3369).
                         if (!accepted.isEmpty()) {
+                            effectivePermissionContext =
+                                    effectivePermissionContext.withAddedRules(accepted);
+                            // Extend the current session context, not the admitted snapshot:
+                            // an administrator may have replaced it for subsequent calls.
                             state.setPermissionContext(
                                     state.getPermissionContext().withAddedRules(accepted));
                         }
@@ -3564,8 +3579,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             if (toolCalls == null || toolCalls.isEmpty()) {
                 return Mono.just(new PermissionGate(List.of(), Set.of()));
             }
-            // Confirmed rules update the call's state, not the engine's initial context.
-            boolean useEngine = !state.getPermissionContext().isTrivial();
+            boolean useEngine = !effectivePermissionContext.isTrivial();
             return Flux.fromIterable(toolCalls)
                     .concatMap(use -> evaluateOne(use, useEngine))
                     .collectList()
@@ -3607,7 +3621,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                                         ? PermissionBehavior.ASK
                                                         : decision.getBehavior()));
             }
-            return tb.checkPermissions(input, state.getPermissionContext())
+            return tb.checkPermissions(input, effectivePermissionContext)
                     .map(
                             decision -> {
                                 if (decision == null) {
