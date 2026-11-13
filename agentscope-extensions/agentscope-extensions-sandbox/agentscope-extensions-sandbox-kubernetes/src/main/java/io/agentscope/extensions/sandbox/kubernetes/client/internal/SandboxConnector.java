@@ -225,13 +225,42 @@ public class SandboxConnector {
             int maxRetries,
             Duration exchangeTimeout)
             throws IOException, InterruptedException {
+        return sendRequest(method, endpoint, body, contentType, maxRetries, exchangeTimeout, null);
+    }
+
+    /**
+     * Sends a request with an explicit response-header timeout and a shared exchange deadline.
+     * Long-running commands may wait for headers until their command budget expires.
+     *
+     * @param method HTTP method
+     * @param endpoint path relative to base URL
+     * @param body request body, or null for GET
+     * @param contentType content type header
+     * @param maxRetries max attempts (0 = default)
+     * @param exchangeTimeout HTTP exchange budget; null uses the connector default
+     * @param attemptTimeout response-header timeout; null uses the connector default
+     * @return HTTP response
+     */
+    public HttpResponse<String> sendRequest(
+            String method,
+            String endpoint,
+            HttpRequest.BodyPublisher body,
+            String contentType,
+            int maxRetries,
+            Duration exchangeTimeout,
+            Duration attemptTimeout)
+            throws IOException, InterruptedException {
         long deadlineNanos = deadline(exchangeTimeout);
         ensureConnected();
         int limit = maxRetries > 0 ? maxRetries : MAX_ATTEMPTS;
         IOException lastException = null;
 
         for (int attempt = 0; attempt < limit; attempt++) {
-            HttpRequest.Builder reqBuilder = buildRequest(endpoint, contentType, perAttemptTimeout);
+            HttpRequest.Builder reqBuilder =
+                    buildRequest(
+                            endpoint,
+                            contentType,
+                            attemptTimeout != null ? attemptTimeout : perAttemptTimeout);
             if (body == null) {
                 reqBuilder.GET();
             } else {

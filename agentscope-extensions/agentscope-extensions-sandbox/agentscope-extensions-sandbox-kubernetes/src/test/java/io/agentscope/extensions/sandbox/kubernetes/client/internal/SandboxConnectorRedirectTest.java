@@ -22,6 +22,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 import com.sun.net.httpserver.HttpServer;
+import io.agentscope.extensions.sandbox.kubernetes.client.CommandExecutor;
 import io.agentscope.extensions.sandbox.kubernetes.client.config.DirectConnectionConfig;
 import io.agentscope.extensions.sandbox.kubernetes.client.internal.strategy.ConnectionStrategy;
 import java.io.OutputStream;
@@ -31,8 +32,10 @@ import java.net.http.HttpTimeoutException;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -51,13 +54,16 @@ class SandboxConnectorRedirectTest {
     private static final int STALL_HOLD_SECONDS = 30;
 
     private HttpServer server;
+    private ExecutorService serverExecutor;
     private SandboxConnector connector;
     private volatile CountDownLatch stallLatch;
+    private final AtomicInteger delayedHeaderRequests = new AtomicInteger();
 
     @BeforeEach
     void setUp() throws Exception {
         server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
-        server.setExecutor(Executors.newSingleThreadExecutor());
+        serverExecutor = Executors.newSingleThreadExecutor();
+        server.setExecutor(serverExecutor);
         // First hit on the encoded path answers 307 (gateway normalization); the decoded
         // target serves the payload, proving the client followed the redirect.
         server.createContext(
@@ -83,7 +89,20 @@ class SandboxConnectorRedirectTest {
                         try (OutputStream out = exchange.getResponseBody()) {}
                         return;
                     }
-                    body = TAR_BYTES.getBytes(StandardCharsets.UTF_8);
+                    if ("/execute".equals(exchange.getRequestURI().getRawPath())) {
+                        delayedHeaderRequests.incrementAndGet();
+                        try {
+                            Thread.sleep(500);
+                        } catch (InterruptedException e) {
+                            Thread.currentThread().interrupt();
+                            return;
+                        }
+                        body =
+                                "{\"stdout\":\"done\",\"stderr\":\"\",\"exit_code\":0}"
+                                        .getBytes(StandardCharsets.UTF_8);
+                    } else {
+                        body = TAR_BYTES.getBytes(StandardCharsets.UTF_8);
+                    }
                     exchange.sendResponseHeaders(200, body.length);
                     try (OutputStream out = exchange.getResponseBody()) {
                         out.write(body);
@@ -98,6 +117,7 @@ class SandboxConnectorRedirectTest {
             connector.close();
         }
         server.stop(0);
+        serverExecutor.shutdownNow();
     }
 
     @Test
@@ -162,5 +182,40 @@ class SandboxConnectorRedirectTest {
     private HttpResponse<byte[]> download() throws Exception {
         return connector.sendRequestForBytes(
                 "GET", "download/.agentscope-tmp%2Fws-persist.tar", null, null);
+    }
+
+    @Test
+    void commandWaitsPastConfiguredPerAttemptTimeoutForHeaders() throws Exception {
+        connectWithShortPerAttemptTimeout();
+
+        assertEquals(
+                "done",
+                new CommandExecutor(connector).run("slow", Duration.ofSeconds(2)).getStdout());
+        assertEquals(1, delayedHeaderRequests.get());
+    }
+
+    @Test
+    void otherRequestsKeepConfiguredPerAttemptTimeout() throws Exception {
+        connectWithShortPerAttemptTimeout();
+
+        assertThrows(
+                HttpTimeoutException.class,
+                () ->
+                        connector.sendRequest(
+                                "GET", "execute", null, null, 1, Duration.ofSeconds(2)));
+    }
+
+    private void connectWithShortPerAttemptTimeout() throws Exception {
+        connector =
+                new SandboxConnector(
+                        "sbx-test",
+                        "default",
+                        new DirectConnectionConfig(
+                                "http://127.0.0.1:" + server.getAddress().getPort()),
+                        null,
+                        null,
+                        null,
+                        Duration.ofMillis(200));
+        connector.connect();
     }
 }

@@ -288,6 +288,20 @@ public class SandboxException extends RuntimeException {
         public ExecTimeoutException(String command, int timeoutSeconds) {
             super(SandboxErrorCode.EXEC_TIMEOUT, "Command timed out after " + timeoutSeconds + "s");
         }
+
+        /**
+         * Creates an exec timeout exception with the underlying timeout cause.
+         *
+         * @param command the command that timed out (not included in the message)
+         * @param timeoutSeconds the timeout that was exceeded
+         * @param cause the underlying timeout
+         */
+        public ExecTimeoutException(String command, int timeoutSeconds, Throwable cause) {
+            super(
+                    SandboxErrorCode.EXEC_TIMEOUT,
+                    "Command timed out after " + timeoutSeconds + "s",
+                    cause);
+        }
     }
 
     /**

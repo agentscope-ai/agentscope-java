@@ -64,6 +64,7 @@ class CommandExecutorTest {
                         any(HttpRequest.BodyPublisher.class),
                         eq("application/json"),
                         anyInt(),
+                        eq(Duration.ofSeconds(90)),
                         eq(Duration.ofSeconds(90)));
 
         ExecutionResult result = executor.run("echo hello");
@@ -86,6 +87,7 @@ class CommandExecutorTest {
                         any(HttpRequest.BodyPublisher.class),
                         eq("application/json"),
                         anyInt(),
+                        any(Duration.class),
                         any(Duration.class));
 
         ExecutionResult result = executor.run("nonexistent");
@@ -107,6 +109,7 @@ class CommandExecutorTest {
                         any(HttpRequest.BodyPublisher.class),
                         eq("application/json"),
                         anyInt(),
+                        any(Duration.class),
                         any(Duration.class));
 
         assertThrows(SandboxRequestException.class, () -> executor.run("test"));
@@ -122,6 +125,7 @@ class CommandExecutorTest {
                         any(HttpRequest.BodyPublisher.class),
                         eq("application/json"),
                         eq(1),
+                        eq(Duration.ofSeconds(330)),
                         eq(Duration.ofSeconds(330)));
 
         assertThrows(
