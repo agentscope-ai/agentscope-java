@@ -18,6 +18,7 @@ package io.agentscope.core.nacos.a2a.utils;
 
 import com.alibaba.nacos.api.ai.model.a2a.AgentCapabilities;
 import com.alibaba.nacos.api.ai.model.a2a.AgentCard;
+import com.alibaba.nacos.api.ai.model.a2a.AgentExtension;
 import com.alibaba.nacos.api.ai.model.a2a.AgentInterface;
 import com.alibaba.nacos.api.ai.model.a2a.AgentProvider;
 import com.alibaba.nacos.api.ai.model.a2a.AgentSkill;
@@ -120,10 +121,26 @@ public class AgentCardConverterUtil {
             return new io.a2a.spec.AgentCapabilities.Builder().build();
         }
 
-        return new io.a2a.spec.AgentCapabilities.Builder()
-                .streaming(nacosCapabilities.getStreaming())
-                .pushNotifications(nacosCapabilities.getPushNotifications())
-                .stateTransitionHistory(nacosCapabilities.getStateTransitionHistory())
+        io.a2a.spec.AgentCapabilities.Builder builder =
+                new io.a2a.spec.AgentCapabilities.Builder()
+                        .streaming(nacosCapabilities.getStreaming())
+                        .pushNotifications(nacosCapabilities.getPushNotifications())
+                        .stateTransitionHistory(nacosCapabilities.getStateTransitionHistory());
+        if (nacosCapabilities.getExtensions() != null) {
+            builder.extensions(
+                    nacosCapabilities.getExtensions().stream()
+                            .map(AgentCardConverterUtil::convertToA2aAgentExtension)
+                            .toList());
+        }
+        return builder.build();
+    }
+
+    private static io.a2a.spec.AgentExtension convertToA2aAgentExtension(AgentExtension extension) {
+        return new io.a2a.spec.AgentExtension.Builder()
+                .uri(extension.getUri())
+                .description(extension.getDescription())
+                .required(Boolean.TRUE.equals(extension.getRequired()))
+                .params(extension.getParams())
                 .build();
     }
 
@@ -188,7 +205,23 @@ public class AgentCardConverterUtil {
         nacosCapabilities.setStreaming(capabilities.streaming());
         nacosCapabilities.setPushNotifications(capabilities.pushNotifications());
         nacosCapabilities.setStateTransitionHistory(capabilities.stateTransitionHistory());
+        if (capabilities.extensions() != null) {
+            nacosCapabilities.setExtensions(
+                    capabilities.extensions().stream()
+                            .map(AgentCardConverterUtil::convertToNacosAgentExtension)
+                            .toList());
+        }
         return nacosCapabilities;
+    }
+
+    private static AgentExtension convertToNacosAgentExtension(
+            io.a2a.spec.AgentExtension extension) {
+        AgentExtension nacosExtension = new AgentExtension();
+        nacosExtension.setUri(extension.uri());
+        nacosExtension.setDescription(extension.description());
+        nacosExtension.setRequired(extension.required());
+        nacosExtension.setParams(extension.params());
+        return nacosExtension;
     }
 
     private static AgentSkill convertToNacosAgentSkill(io.a2a.spec.AgentSkill agentSkill) {

@@ -363,6 +363,69 @@ class AgentCardConverterUtilTest {
         assertNull(result.getSecuritySchemes());
     }
 
+    @Test
+    void testCapabilityExtensionsRoundTripPreservesStateTransitionHistory() {
+        AgentCard card = createSampleNacosAgentCard();
+        com.alibaba.nacos.api.ai.model.a2a.AgentExtension extension =
+                new com.alibaba.nacos.api.ai.model.a2a.AgentExtension();
+        extension.setUri("https://example.com/extensions/audit");
+        extension.setDescription("Audit metadata");
+        extension.setRequired(true);
+        extension.setParams(
+                Map.of("formats", List.of("json", "text"), "nested", Map.of("enabled", true)));
+        card.getCapabilities().setExtensions(List.of(extension));
+        io.a2a.spec.AgentCard converted = AgentCardConverterUtil.convertToA2aAgentCard(card);
+        io.a2a.spec.AgentExtension result = converted.capabilities().extensions().get(0);
+        assertEquals(extension.getUri(), result.uri());
+        assertEquals(extension.getDescription(), result.description());
+        assertTrue(result.required());
+        assertEquals(extension.getParams(), result.params());
+        assertTrue(converted.capabilities().stateTransitionHistory());
+        AgentCard roundTrip = AgentCardConverterUtil.convertToNacosAgentCard(converted);
+        assertEquals(List.of(extension), roundTrip.getCapabilities().getExtensions());
+        assertTrue(roundTrip.getCapabilities().getStateTransitionHistory());
+        assertEquals(
+                converted.capabilities().extensions(),
+                AgentCardConverterUtil.convertToA2aAgentCard(roundTrip)
+                        .capabilities()
+                        .extensions());
+    }
+
+    @Test
+    void testMissingExtensionRequiredBecomesFalse() {
+        AgentCard card = createSampleNacosAgentCard();
+        com.alibaba.nacos.api.ai.model.a2a.AgentExtension extension =
+                new com.alibaba.nacos.api.ai.model.a2a.AgentExtension();
+        extension.setUri("https://example.com/extensions/optional");
+        extension.setRequired(null);
+        card.getCapabilities().setExtensions(List.of(extension));
+        io.a2a.spec.AgentCard converted = AgentCardConverterUtil.convertToA2aAgentCard(card);
+        assertFalse(converted.capabilities().extensions().get(0).required());
+        assertNull(converted.capabilities().extensions().get(0).description());
+        assertNull(converted.capabilities().extensions().get(0).params());
+    }
+
+    @Test
+    void testNullAndEmptyExtensionsRoundTrip() {
+        AgentCard card = createSampleNacosAgentCard();
+        card.getCapabilities().setExtensions(null);
+        io.a2a.spec.AgentCard converted = AgentCardConverterUtil.convertToA2aAgentCard(card);
+        assertNull(converted.capabilities().extensions());
+        assertNull(
+                AgentCardConverterUtil.convertToNacosAgentCard(converted)
+                        .getCapabilities()
+                        .getExtensions());
+        card.getCapabilities().setExtensions(List.of());
+        converted = AgentCardConverterUtil.convertToA2aAgentCard(card);
+        assertEquals(List.of(), converted.capabilities().extensions());
+        assertEquals(
+                List.of(),
+                AgentCardConverterUtil.convertToNacosAgentCard(converted)
+                        .getCapabilities()
+                        .getExtensions());
+        assertTrue(converted.capabilities().stateTransitionHistory());
+    }
+
     /**
      * Helper method to create a sample Nacos AgentCard for testing.
      */
