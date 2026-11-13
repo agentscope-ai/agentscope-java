@@ -38,7 +38,9 @@ class QuartzFixedDelayIntegrationTest {
     @AfterEach
     void tearDown() {
         if (scheduler != null) {
-            scheduler.shutdown();
+            // This test verifies fixed-delay rescheduling, not graceful draining. Waiting for a
+            // job that raced cancellation can pin the Windows Surefire fork indefinitely.
+            scheduler.shutdown(false);
         }
     }
 
