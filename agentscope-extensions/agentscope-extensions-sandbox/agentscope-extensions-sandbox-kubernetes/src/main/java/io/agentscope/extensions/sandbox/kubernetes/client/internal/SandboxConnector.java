@@ -38,6 +38,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Supplier;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -385,19 +386,35 @@ public class SandboxConnector {
 
     /**
      * Sends the request asynchronously and blocks until the exchange completes — response
-     * headers and body — within {@code budget}. On expiry the underlying future is cancelled,
-     * which closes the stalled exchange, and an {@link HttpTimeoutException} is thrown.
+     * headers and body — within {@code budget}. On expiry the underlying future is cancelled.
+     * A known HTTP failure retains its status rather than becoming a command timeout.
      */
     private <T> HttpResponse<T> sendAwait(
             HttpRequest request, HttpResponse.BodyHandler<T> bodyHandler, Duration budget)
             throws IOException, InterruptedException {
-        CompletableFuture<HttpResponse<T>> future = httpClient.sendAsync(request, bodyHandler);
+        AtomicInteger responseStatus = new AtomicInteger();
+        CompletableFuture<HttpResponse<T>> future =
+                httpClient.sendAsync(
+                        request,
+                        info -> {
+                            responseStatus.set(info.statusCode());
+                            return bodyHandler.apply(info);
+                        });
         try {
             return future.get(budget.toMillis(), TimeUnit.MILLISECONDS);
         } catch (ExecutionException e) {
             throw asIOException(request, e);
         } catch (TimeoutException e) {
             future.cancel(true);
+            int status = responseStatus.get();
+            if (status != 0 && (status < 200 || status >= 300)) {
+                throw new SandboxRequestException(
+                        "Sandbox response body incomplete (status="
+                                + status
+                                + "): "
+                                + request.uri(),
+                        status);
+            }
             throw exchangeTimeout(request, budget);
         } catch (InterruptedException e) {
             future.cancel(true);

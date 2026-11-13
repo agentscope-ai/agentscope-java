@@ -16,29 +16,40 @@
 package io.agentscope.extensions.sandbox.kubernetes.client.internal;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 import com.sun.net.httpserver.HttpServer;
 import io.agentscope.extensions.sandbox.kubernetes.client.CommandExecutor;
 import io.agentscope.extensions.sandbox.kubernetes.client.config.DirectConnectionConfig;
+import io.agentscope.extensions.sandbox.kubernetes.client.exceptions.SandboxRequestException;
+import io.agentscope.extensions.sandbox.kubernetes.client.exceptions.SandboxTimeoutException;
 import io.agentscope.extensions.sandbox.kubernetes.client.internal.strategy.ConnectionStrategy;
+import java.io.IOException;
 import java.io.OutputStream;
+import java.lang.reflect.Field;
 import java.net.InetSocketAddress;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.net.http.HttpTimeoutException;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
 
 /**
  * Verifies the connector follows redirects on file API downloads. Gateways in front of the
@@ -75,10 +86,11 @@ class SandboxConnectorRedirectTest {
                         exchange.sendResponseHeaders(307, -1);
                         return;
                     }
-                    if (STALL_PATH.equals(exchange.getRequestURI().getRawPath())) {
+                    String path = exchange.getRequestURI().getRawPath();
+                    if (STALL_PATH.equals(path) || "/stall-503".equals(path)) {
                         // Headers go out immediately (so the per-attempt
                         // header timeout never fires), then the body never arrives.
-                        exchange.sendResponseHeaders(200, 0);
+                        exchange.sendResponseHeaders("/stall-503".equals(path) ? 503 : 200, 0);
                         try {
                             if (stallLatch != null) {
                                 stallLatch.await(STALL_HOLD_SECONDS, TimeUnit.SECONDS);
@@ -179,9 +191,138 @@ class SandboxConnectorRedirectTest {
         }
     }
 
+    @Test
+    @Timeout(10)
+    void stalled503BodyRetainsStatusAndIsNotACommandTimeout() throws Exception {
+        stallLatch = new CountDownLatch(1);
+        ConnectionStrategy strategy = mock(ConnectionStrategy.class);
+        when(strategy.connect()).thenReturn("http://127.0.0.1:" + server.getAddress().getPort());
+        connector =
+                new SandboxConnector(strategy, "sbx-test", "default", 8888) {
+                    @Override
+                    public HttpResponse<String> sendRequest(
+                            String method,
+                            String endpoint,
+                            HttpRequest.BodyPublisher body,
+                            String contentType,
+                            int maxRetries,
+                            Duration exchangeTimeout,
+                            Duration attemptTimeout)
+                            throws IOException, InterruptedException {
+                        // Exercise the real transport with a short test-only command budget.
+                        return super.sendRequest(
+                                method,
+                                "stall-503",
+                                body,
+                                contentType,
+                                maxRetries,
+                                Duration.ofSeconds(2),
+                                attemptTimeout);
+                    }
+                };
+        connector.connect();
+        long started = System.nanoTime();
+        try {
+            SandboxRequestException failure =
+                    assertThrows(
+                            SandboxRequestException.class,
+                            () ->
+                                    new CommandExecutor(connector)
+                                            .run("test", Duration.ofSeconds(2)));
+            assertFalse(failure instanceof SandboxTimeoutException);
+            assertEquals(503, failure.getStatusCode());
+            assertTrue(failure.getMessage().contains("503"));
+            assertTrue(Duration.ofNanos(System.nanoTime() - started).toMillis() < 5000);
+        } finally {
+            stallLatch.countDown();
+        }
+    }
+
+    @Test
+    @Timeout(10)
+    void byteResponseBodyTimeoutIsBounded() throws Exception {
+        stallLatch = new CountDownLatch(1);
+        connectWithShortPerAttemptTimeout();
+        try {
+            assertThrows(
+                    HttpTimeoutException.class,
+                    () ->
+                            connector.sendRequestForBytes(
+                                    "GET", "stall", null, null, Duration.ofSeconds(2)));
+        } finally {
+            stallLatch.countDown();
+        }
+    }
+
+    @Test
+    @Timeout(10)
+    void stalled503ByteBodyRetainsStatus() throws Exception {
+        stallLatch = new CountDownLatch(1);
+        connectWithShortPerAttemptTimeout();
+        try {
+            SandboxRequestException failure =
+                    assertThrows(
+                            SandboxRequestException.class,
+                            () ->
+                                    connector.sendRequestForBytes(
+                                            "GET", "stall-503", null, null, Duration.ofSeconds(2)));
+            assertEquals(503, failure.getStatusCode());
+        } finally {
+            stallLatch.countDown();
+        }
+    }
+
+    @Test
+    @Timeout(10)
+    void interruptionCancelsUnderlyingExchange() throws Exception {
+        ConnectionStrategy strategy = mock(ConnectionStrategy.class);
+        when(strategy.connect()).thenReturn("http://127.0.0.1:" + server.getAddress().getPort());
+        connector = new SandboxConnector(strategy, "sbx-test", "default", 8888);
+        connector.connect();
+        HttpClient httpClient = mock(HttpClient.class);
+        CompletableFuture<HttpResponse<String>> exchange = new CompletableFuture<>();
+        CountDownLatch sent = new CountDownLatch(1);
+        when(httpClient.<String>sendAsync(any(), any()))
+                .thenAnswer(
+                        invocation -> {
+                            sent.countDown();
+                            return exchange;
+                        });
+        Field field = SandboxConnector.class.getDeclaredField("httpClient");
+        field.setAccessible(true);
+        field.set(connector, httpClient);
+        AtomicReference<Throwable> failure = new AtomicReference<>();
+        Thread caller =
+                new Thread(
+                        () -> {
+                            try {
+                                connector.sendRequest(
+                                        "GET", "stall", null, null, 1, Duration.ofSeconds(30));
+                            } catch (Throwable e) {
+                                failure.set(e);
+                            }
+                        });
+        caller.start();
+        try {
+            assertTrue(sent.await(2, TimeUnit.SECONDS));
+            caller.interrupt();
+            caller.join(2000);
+            assertFalse(caller.isAlive());
+            assertTrue(failure.get() instanceof InterruptedException);
+            assertTrue(exchange.isCancelled());
+        } finally {
+            caller.interrupt();
+            caller.join(2000);
+        }
+    }
+
     private HttpResponse<byte[]> download() throws Exception {
         return connector.sendRequestForBytes(
-                "GET", "download/.agentscope-tmp%2Fws-persist.tar", null, null);
+                "GET",
+                "download/.agentscope-tmp%2Fws-persist.tar",
+                null,
+                null,
+                Duration.ofSeconds(2));
     }
 
     @Test
