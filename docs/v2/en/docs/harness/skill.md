@@ -26,6 +26,8 @@ code-reviewer/
 
 Save `SKILL.md` as UTF-8. A byte order mark (BOM) before the opening `---` is supported.
 
+Close the YAML frontmatter with an unindented line containing only `---` and optional spaces or tabs. A `---` inside a description or an indented YAML block scalar remains part of the metadata.
+
 SKILL.md format:
 
 ```markdown
