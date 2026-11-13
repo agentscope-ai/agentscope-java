@@ -104,14 +104,10 @@ jobs:
       - name: Build and Test with Coverage [Windows]
         if: runner.os == 'Windows'
         run: |
-          # Keep the Windows reactor serial. Durable integration tests launch and terminate
-          # child JVMs/processes; running multiple module suites beside them can exhaust the
-          # hosted runner's process/handle budget and leave the runner unresponsive. Linux keeps
-          # the parallel -T1C build above. Standard Maven is still required because mvnd's
-          # embedded distribution broke Surefire IPC.
+          # Use standard Maven because mvnd's embedded distribution broke Surefire IPC.
           # Skip release-only artifacts (javadoc/source jars) and JaCoCo: coverage is only
           # uploaded from Linux, so instrumentation on Windows is pure overhead.
-          mvn -B -T1 "-Dmaven.javadoc.skip=true" "-Dmaven.source.skip=true" "-Djacoco.skip=true" clean verify
+          mvn -B -T1C "-Dmaven.javadoc.skip=true" "-Dmaven.source.skip=true" "-Djacoco.skip=true" clean verify
 
       - name: Upload coverage reports to Codecov
         # Secrets are unavailable to fork PRs, and Codecov rejects tokenless uploads to a

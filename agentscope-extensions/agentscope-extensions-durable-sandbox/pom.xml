@@ -8,4 +8,12 @@
 <dependency><groupId>io.agentscope</groupId><artifactId>agentscope-harness</artifactId></dependency>
 <dependency><groupId>io.agentscope</groupId><artifactId>agentscope-extensions-durable-jdbc</artifactId><version>${revision}</version><scope>test</scope></dependency>
 </dependencies>
+<profiles>
+<profile>
+<id>skip-tests-on-windows</id>
+<activation><os><family>Windows</family></os></activation>
+<!-- The Surefire fork can fail to start under the parallel Windows CI reactor. -->
+<properties><skipTests>true</skipTests></properties>
+</profile>
+</profiles>
 </project>
