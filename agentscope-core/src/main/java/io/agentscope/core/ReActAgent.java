@@ -147,6 +147,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
@@ -481,16 +482,25 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         AgentState toSave = scope.state;
         return Mono.<Void>fromRunnable(
                         () -> {
-                            long newVersion =
-                                    persistAgentStateCas(
-                                            ref.userId,
-                                            ref.sessionId,
-                                            scope.slotKey,
-                                            toSave,
-                                            scope.loadedVersion,
-                                            scope.loadedContextSize);
-                            if (newVersion != AgentStateStore.UNVERSIONED) {
-                                scope.loadedVersion = newVersion;
+                            CompletableFuture<Void> write = scope.beginStateWrite();
+                            if (write == null) {
+                                // Cancellation closed ownership before the scheduled write started.
+                                return;
+                            }
+                            try {
+                                long newVersion =
+                                        persistAgentStateCas(
+                                                ref.userId,
+                                                ref.sessionId,
+                                                scope.slotKey,
+                                                toSave,
+                                                scope.loadedVersion,
+                                                scope.loadedContextSize);
+                                if (newVersion != AgentStateStore.UNVERSIONED) {
+                                    scope.loadedVersion = newVersion;
+                                }
+                            } finally {
+                                write.complete(null);
                             }
                         })
                 .subscribeOn(Schedulers.boundedElastic());
@@ -735,6 +745,11 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         }
         String uid = rc != null ? rc.getUserId() : null;
         return slotKey(uid, sid);
+    }
+
+    @Override
+    protected Mono<Void> onCallCancelled(Object scope) {
+        return scope instanceof CallExecution ce ? Mono.defer(ce::closeStateWrites) : Mono.empty();
     }
 
     @Override
@@ -1766,6 +1781,30 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
 
         /** Context size at load time; used by {@link ConflictPolicy#APPEND_MERGE}. */
         int loadedContextSize;
+
+        /** Guards state-write admission and cancellation. */
+        private final Object stateWriteLock = new Object();
+
+        private CompletableFuture<Void> stateWriteInFlight =
+                CompletableFuture.completedFuture(null);
+        private boolean stateWritesClosed;
+
+        /** Registers a write, or returns null when cancellation has closed ownership. */
+        CompletableFuture<Void> beginStateWrite() {
+            synchronized (stateWriteLock) {
+                if (stateWritesClosed) return null;
+                stateWriteInFlight = new CompletableFuture<>();
+                return stateWriteInFlight;
+            }
+        }
+
+        /** Stops new writes and waits for the write already running, without cancelling it. */
+        Mono<Void> closeStateWrites() {
+            synchronized (stateWriteLock) {
+                stateWritesClosed = true;
+                return Mono.fromFuture(stateWriteInFlight, true);
+            }
+        }
 
         /**
          * Per-call system message, propagated across PreCallEvent → PreReasoningEvent /

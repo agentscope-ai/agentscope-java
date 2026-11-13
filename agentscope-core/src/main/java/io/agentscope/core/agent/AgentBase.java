@@ -32,15 +32,18 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
 import java.util.function.Supplier;
 import reactor.core.Disposable;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.FluxSink;
 import reactor.core.publisher.Mono;
+import reactor.core.publisher.SignalType;
 import reactor.core.publisher.Sinks;
 import reactor.core.scheduler.Schedulers;
 
@@ -103,7 +106,7 @@ public abstract class AgentBase implements Agent {
      * Per-key call serialization tails. Each entry holds the completion signal of the most recently
      * enqueued call for that key; the next call for the same key chains after it, so calls sharing a
      * key run one-at-a-time (FIFO) while different keys run concurrently. See {@link
-     * #callSerializationKey(RuntimeContext)} and {@link #serializeOnKey(Object, Mono)}.
+     * #callSerializationKey(RuntimeContext)} and {@link #serializeOnKey(Object, Mono, Supplier)}.
      */
     private final ConcurrentHashMap<Object, Mono<Void>> callGates = new ConcurrentHashMap<>();
 
@@ -282,13 +285,45 @@ public abstract class AgentBase implements Agent {
                     }
                     shutdown.unregisterRequest(requestId);
                 };
+        // Scope capture belongs to this subscription, including cancellation during admission.
+        AtomicReference<Mono<Void>> cancelCleanup = new AtomicReference<>(Mono.empty());
         // Resolve session state only after admission. Retire before releasing the queue gate so a
         // retry cannot have its new registration removed by the preceding attempt's cleanup.
         Mono<Msg> lifecycle =
-                Mono.defer(() -> runLifecycleBody(msgs, rc, doCallFn, requestId, control, gateKey))
+                Mono.defer(
+                                () -> {
+                                    CompletableFuture<Object> scopeReady =
+                                            new CompletableFuture<>();
+                                    cancelCleanup.set(
+                                            Mono.fromFuture(scopeReady, true)
+                                                    .flatMap(this::onCallCancelled)
+                                                    .onErrorResume(error -> Mono.empty())
+                                                    .doOnTerminate(retire)
+                                                    .cache());
+                                    try {
+                                        return runLifecycleBody(
+                                                msgs,
+                                                rc,
+                                                doCallFn,
+                                                requestId,
+                                                control,
+                                                gateKey,
+                                                scopeReady);
+                                    } catch (Throwable error) {
+                                        scopeReady.complete(null);
+                                        return Mono.error(error);
+                                    }
+                                })
                         .doOnTerminate(retire)
                         .doOnCancel(retire);
-        Mono<Msg> gated = gateKey == null ? lifecycle : serializeOnKey(gateKey, lifecycle);
+        Mono<Msg> gated =
+                gateKey == null
+                        ? lifecycle.doFinally(
+                                signal -> {
+                                    if (signal == SignalType.CANCEL)
+                                        cancelCleanup.get().subscribe();
+                                })
+                        : serializeOnKey(gateKey, lifecycle, cancelCleanup::get);
         return control.guard(gated)
                 .singleOrEmpty()
                 .doOnSuccess(
@@ -318,9 +353,11 @@ public abstract class AgentBase implements Agent {
             Function<List<Msg>, Mono<Msg>> doCallFn,
             String requestId,
             RunControl control,
-            Object gateKey) {
+            Object gateKey,
+            CompletableFuture<Object> scopeReady) {
         GracefulShutdownManager.getInstance().ensureAcceptingRequests();
         if (!control.start()) {
+            scopeReady.complete(null);
             return Mono.error(
                     new java.util.concurrent.CancellationException("Agent run cancelled"));
         }
@@ -332,6 +369,7 @@ public abstract class AgentBase implements Agent {
         // shutdown interrupts / saves the exact (userId, sessionId) session rather than the agent's
         // no-arg "most-recently-active" accessors.
         GracefulShutdownManager.getInstance().bindRequestState(requestId, stateForCall(scope));
+        scopeReady.complete(scope);
         Mono<Msg> body =
                 TracerRegistry.get()
                         .callAgent(
@@ -366,12 +404,23 @@ public abstract class AgentBase implements Agent {
     }
 
     /**
+     * Cancellation cleanup for the admitted call's scope. The same-key gate stays held until
+     * this publisher terminates, including on error. Queued cancellation has no scope to clean up.
+     * Implementations can wait here for blocking work that cancellation cannot abort.
+     */
+    protected Mono<Void> onCallCancelled(Object scope) {
+        return Mono.empty();
+    }
+
+    /**
      * Serializes {@code action} against other actions sharing {@code key}: this call waits for the
      * previously-enqueued call with the same key to terminate before running, then becomes the tail
      * the next same-key call waits on. Releases its slot on any terminal signal (complete, error, or
-     * cancel) so a failed/cancelled call never blocks the queue.
+     * cancel) so a failed/cancelled call never blocks the queue. Cancellation waits for the
+     * call-scoped cleanup before releasing ownership of the key.
      */
-    private <T> Mono<T> serializeOnKey(Object key, Mono<T> action) {
+    private <T> Mono<T> serializeOnKey(
+            Object key, Mono<T> action, Supplier<Mono<Void>> cancelCleanup) {
         return Mono.defer(
                 () -> {
                     Sinks.Empty<Void> release = Sinks.empty();
@@ -392,7 +441,19 @@ public abstract class AgentBase implements Agent {
                             ignored -> {},
                             ignored -> callGates.remove(key, tail),
                             () -> callGates.remove(key, tail));
-                    return previous[0].then(action).doFinally(signal -> release.tryEmitEmpty());
+                    return previous[0]
+                            .then(action)
+                            .doFinally(
+                                    signal -> {
+                                        if (signal == SignalType.CANCEL) {
+                                            Mono.defer(cancelCleanup)
+                                                    .onErrorResume(error -> Mono.empty())
+                                                    .doFinally(ignored -> release.tryEmitEmpty())
+                                                    .subscribe();
+                                        } else {
+                                            release.tryEmitEmpty();
+                                        }
+                                    });
                 });
     }
 

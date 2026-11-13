@@ -203,7 +203,7 @@ At the start of each `call()`, the agent automatically loads the `AgentState` (c
 
 <Tip>
 
-Calls targeting the same `(userId, sessionId)` are **serialized** — a second request waits for the first to complete. Calls targeting different sessions run in parallel.
+Calls targeting the same `(userId, sessionId)` are **serialized** — a second request waits for the first to complete. If a subscriber cancels during an already-started state-store write, the same-session gate stays held until that write finishes; cancellation does not roll it back. A write cancelled before it starts is skipped. Calls targeting different sessions run in parallel.
 
 </Tip>
 
