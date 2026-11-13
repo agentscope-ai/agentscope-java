@@ -41,9 +41,11 @@ import io.milvus.v2.service.database.request.CreateDatabaseReq;
 import io.milvus.v2.service.database.response.ListDatabasesResp;
 import io.milvus.v2.service.vector.request.DeleteReq;
 import io.milvus.v2.service.vector.request.InsertReq;
+import io.milvus.v2.service.vector.request.QueryReq;
 import io.milvus.v2.service.vector.request.SearchReq;
 import io.milvus.v2.service.vector.response.DeleteResp;
 import io.milvus.v2.service.vector.response.InsertResp;
+import io.milvus.v2.service.vector.response.QueryResp;
 import io.milvus.v2.service.vector.response.SearchResp;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -1157,15 +1159,38 @@ class MilvusStoreTest {
 
     // ==================== Delete Method Tests ====================
 
+    /** Delete requests sent by the store created by {@link #createMockStoreForDelete}. */
+    private final List<DeleteReq> deleteRequests = new ArrayList<>();
+
     private MilvusStore createMockStoreForDelete(long deleteCnt) throws VectorStoreException {
+        return createMockStoreForDelete(deleteCnt, deleteCnt > 0);
+    }
+
+    /**
+     * @param deleteCnt the count Milvus reports for a delete
+     * @param chunkExists whether a primary-key lookup finds the chunk
+     */
+    private MilvusStore createMockStoreForDelete(long deleteCnt, boolean chunkExists)
+            throws VectorStoreException {
         try (MockedConstruction<MilvusClientV2> ignored =
                 mockConstruction(
                         MilvusClientV2.class,
                         (mock, context) -> {
                             when(mock.hasCollection(any(HasCollectionReq.class))).thenReturn(true);
+                            List<QueryResp.QueryResult> found =
+                                    chunkExists
+                                            ? List.of(QueryResp.QueryResult.builder().build())
+                                            : List.of();
+                            when(mock.query(any(QueryReq.class)))
+                                    .thenReturn(QueryResp.builder().queryResults(found).build());
                             DeleteResp deleteResp = mock(DeleteResp.class);
                             when(deleteResp.getDeleteCnt()).thenReturn(deleteCnt);
-                            when(mock.delete(any(DeleteReq.class))).thenReturn(deleteResp);
+                            when(mock.delete(any(DeleteReq.class)))
+                                    .thenAnswer(
+                                            invocation -> {
+                                                deleteRequests.add(invocation.getArgument(0));
+                                                return deleteResp;
+                                            });
                         })) {
             return MilvusStore.builder()
                     .uri(TEST_URI)
@@ -1204,13 +1229,30 @@ class MilvusStoreTest {
     }
 
     @Test
-    @DisplayName("Should delete document successfully and return true")
+    @DisplayName("Should delete one chunk by primary key and return true")
     void testDeleteSuccess() throws VectorStoreException {
         store = createMockStoreForDelete(1);
 
-        StepVerifier.create(store.delete("doc-1"))
+        StepVerifier.create(store.delete("chunk-1"))
                 .assertNext(Assertions::assertTrue)
                 .verifyComplete();
+
+        DeleteReq request = deleteRequests.get(0);
+        assertEquals(List.of("chunk-1"), request.getIds());
+        assertTrue(request.getFilter() == null || request.getFilter().isEmpty());
+    }
+
+    @Test
+    @DisplayName("Should return false for a missing chunk even though Milvus reports a count")
+    void testDeleteMissingChunkIgnoresReportedCount() throws VectorStoreException {
+        // Milvus reports the number of primary keys requested, not the number that existed.
+        store = createMockStoreForDelete(1, false);
+
+        StepVerifier.create(store.delete("missing-chunk"))
+                .assertNext(Assertions::assertFalse)
+                .verifyComplete();
+
+        assertTrue(deleteRequests.isEmpty());
     }
 
     @Test
@@ -1224,13 +1266,39 @@ class MilvusStoreTest {
     }
 
     @Test
-    @DisplayName("Should delete multiple chunks with same doc ID")
-    void testDeleteMultipleChunks() throws VectorStoreException {
+    @DisplayName(
+            "deleteByDocId should delete every chunk with the doc ID through a filter template")
+    void testDeleteByDocIdMultipleChunks() throws VectorStoreException {
         store = createMockStoreForDelete(5);
 
-        StepVerifier.create(store.delete("doc-with-multiple-chunks"))
+        StepVerifier.create(store.deleteByDocId("doc-with-\"quotes\""))
                 .assertNext(Assertions::assertTrue)
                 .verifyComplete();
+
+        DeleteReq request = deleteRequests.get(0);
+        assertEquals("doc_id == {docId}", request.getFilter());
+        assertEquals(Map.of("docId", "doc-with-\"quotes\""), request.getFilterTemplateValues());
+        assertTrue(request.getIds() == null || request.getIds().isEmpty());
+    }
+
+    @Test
+    @DisplayName("deleteByDocId should return false when no chunk matches")
+    void testDeleteByDocIdNotFound() throws VectorStoreException {
+        store = createMockStoreForDelete(0);
+
+        StepVerifier.create(store.deleteByDocId("non-existent-doc"))
+                .assertNext(Assertions::assertFalse)
+                .verifyComplete();
+    }
+
+    @Test
+    @DisplayName("deleteByDocId should reject a blank doc ID")
+    void testDeleteByDocIdBlank() throws VectorStoreException {
+        store = createMockStoreForDelete(0);
+
+        StepVerifier.create(store.deleteByDocId(" "))
+                .expectError(IllegalArgumentException.class)
+                .verify();
     }
 
     @Test
