@@ -79,6 +79,8 @@ String tpl = prompts.getPrompt("system-prompt", Map.of(
 
 监听器内部维护本地缓存，Nacos 上 prompt 更新时会自动推送进来，下一次 `getPrompt(...)` 立即拿到新版本，无需重启。
 
+使用 `agentscope-nacos-spring-boot-starter` 时，Nacos Prompt 加载和基于 Nacos 的 ReActAgent 需要显式启用：设置 `agentscope.nacos.prompt.enabled=true`。属性未配置或为 `false` 时，不会自动配置 Nacos Prompt ReActAgent，仍使用核心 starter 的常规 Agent 配置。
+
 ## Skill 仓库
 
 `agentscope-extensions-nacos-skill` 提供一个 `AgentSkillRepository` 实现，把 Nacos AI 模块管理的技能 ZIP 包下载下来解析。

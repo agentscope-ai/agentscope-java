@@ -79,6 +79,8 @@ String tpl = prompts.getPrompt("system-prompt", Map.of(
 
 The listener maintains a local cache; when prompts change in Nacos, updates are pushed in. The next `getPrompt(...)` call returns the new version with no restart.
 
+With `agentscope-nacos-spring-boot-starter`, Nacos prompt loading and the Nacos-backed ReActAgent require explicit opt-in: set `agentscope.nacos.prompt.enabled=true`. If the property is absent or `false`, the Nacos prompt ReActAgent is not auto-configured; the core starter's normal agent configuration remains in effect.
+
 ## Skill repository
 
 `agentscope-extensions-nacos-skill` provides an `AgentSkillRepository` implementation that downloads and parses skill ZIP packages managed by the Nacos AI module.
