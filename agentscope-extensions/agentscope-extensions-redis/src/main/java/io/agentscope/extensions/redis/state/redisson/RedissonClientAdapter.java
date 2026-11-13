@@ -118,9 +118,24 @@ import org.redisson.client.codec.StringCodec;
  */
 public class RedissonClientAdapter implements RedisClientAdapter {
 
+    static final String INCOMPATIBLE_REDISSON_API =
+            "Redisson state-store integration requires the Redisson 4.x API"
+                    + " (RScript.ReturnType.LONG); Redisson 3.x is incompatible."
+                    + " Align your Redisson dependencies, including any starter, with"
+                    + " the Redisson version managed by agentscope-dependencies-bom.";
+
+    private static final String LOADED_API_VERSION_CLAUSE =
+            " Loaded Redisson API implementation version: ";
+
     private final RedissonClient redissonClient;
+    private final RScript.ReturnType scriptReturnType;
 
     private RedissonClientAdapter(RedissonClient redissonClient) {
+        try {
+            this.scriptReturnType = RScript.ReturnType.valueOf("LONG");
+        } catch (IllegalArgumentException e) {
+            throw new IllegalStateException(incompatibleRedissonApiMessage(), e);
+        }
         this.redissonClient = redissonClient;
     }
 
@@ -132,9 +147,56 @@ public class RedissonClientAdapter implements RedisClientAdapter {
      *
      * @param redissonClient the RedissonClient instance
      * @return a new RedissonClientAdapter
+     * @throws IllegalStateException if the loaded Redisson API lacks {@code
+     *     RScript.ReturnType.LONG} (the Redisson 4.x baseline managed by
+     *     {@code agentscope-dependencies-bom})
      */
     public static RedissonClientAdapter of(RedissonClient redissonClient) {
         return new RedissonClientAdapter(redissonClient);
+    }
+
+    /**
+     * Explains that the loaded Redisson API lacks {@code RScript.ReturnType.LONG}.
+     *
+     * <p>The implementation-version clause is appended only when {@link
+     * #loadedRedissonApiVersion()} is a real version. It is omitted when that version cannot be
+     * determined, instead of printing {@code null} or a {@code CodeSource} location.
+     *
+     * @return the incompatibility message for the Redisson API currently on the classpath
+     */
+    static String incompatibleRedissonApiMessage() {
+        return incompatibleRedissonApiMessage(loadedRedissonApiVersion());
+    }
+
+    /**
+     * Explains that the loaded Redisson API lacks {@code RScript.ReturnType.LONG}.
+     *
+     * @param version package implementation version, or blank when it is unknown
+     * @return the incompatibility message, without a version clause when {@code version} is missing
+     */
+    static String incompatibleRedissonApiMessage(String version) {
+        if (version == null || version.isBlank()) {
+            return INCOMPATIBLE_REDISSON_API;
+        }
+        return INCOMPATIBLE_REDISSON_API + LOADED_API_VERSION_CLAUSE + version;
+    }
+
+    /**
+     * Package implementation version of the loaded {@code org.redisson.api} classes.
+     *
+     * @return the implementation version, or {@code null} when none can be determined. A
+     *     code-source location is not a version and is never returned.
+     */
+    static String loadedRedissonApiVersion() {
+        Package apiPackage = RScript.class.getPackage();
+        if (apiPackage == null) {
+            return null;
+        }
+        String version = apiPackage.getImplementationVersion();
+        if (version == null || version.isBlank()) {
+            return null;
+        }
+        return version;
     }
 
     @Override
@@ -225,7 +287,7 @@ public class RedissonClientAdapter implements RedisClientAdapter {
                         .eval(
                                 RScript.Mode.READ_WRITE,
                                 script,
-                                RScript.ReturnType.LONG,
+                                scriptReturnType,
                                 keyObjects,
                                 args.toArray());
         if (result instanceof Number number) {
