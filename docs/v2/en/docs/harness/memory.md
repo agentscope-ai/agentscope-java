@@ -93,6 +93,8 @@ Common options:
 
 Lightweight argument truncation and tool-result pruning still take effect when the summary trigger is not reached or no safe prefix can be summarized. The recent tail and assistant/tool-result pairs remain protected.
 
+Argument truncation preserves message IDs, metadata, timestamps, usage, and tool-call metadata/state. Changed arguments replace stale raw JSON so formatters use the truncated values. `maxArgLength` must be at least 20 characters.
+
 ### Want it lighter? Trim arguments first
 
 Tool calls like `write_file` carry huge arguments that nobody reads later. Before LLM summarization you can run a **non-LLM** string truncation:

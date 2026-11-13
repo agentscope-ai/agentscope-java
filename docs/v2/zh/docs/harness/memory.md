@@ -92,6 +92,8 @@ HarnessAgent agent = HarnessAgent.builder()
 
 即使未达到摘要触发阈值，或没有可安全摘要的前缀，轻量参数截断和工具结果裁剪仍会生效。最近的尾部消息及 assistant/工具结果配对仍受保护。
 
+参数截断会保留消息 ID、metadata、时间戳、usage，以及工具调用的 metadata/state。参数变更后会清除旧的原始 JSON，确保格式化器使用截断后的值。`maxArgLength` 至少为 20 个字符。
+
 ### 想再轻一些？预处理参数截断
 
 `write_file` 这种工具调用，参数体量很大但后期没人再看。在 LLM 摘要之前，可以先做一个**不走 LLM** 的字符串截断：
