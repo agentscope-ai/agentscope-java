@@ -19,6 +19,8 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.harness.agent.filesystem.local.LocalFilesystem;
+import io.agentscope.harness.agent.filesystem.remote.RemoteFilesystem;
+import io.agentscope.harness.agent.filesystem.remote.store.InMemoryStore;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.time.Instant;
@@ -149,5 +151,31 @@ class WorkspaceAsyncToolRegistryTest {
         List<AsyncToolRecord> stale = registry2.findStale("s1", Duration.ofMinutes(5)).block();
         assertEquals(1, stale.size());
         assertEquals("r1", stale.get(0).id());
+    }
+
+    @Test
+    void byIdUpdatesWorkOnRemoteFilesystem() {
+        RemoteFilesystem remoteFs = new RemoteFilesystem(new InMemoryStore(), List.of("ns"));
+        WorkspaceAsyncToolRegistry remoteRegistry =
+                new WorkspaceAsyncToolRegistry(remoteFs, "/async-tools");
+        for (String id : List.of("r1", "r2", "r3")) {
+            remoteRegistry
+                    .register(
+                            new AsyncToolRecord(
+                                    id,
+                                    "s1",
+                                    "tool",
+                                    "tc-" + id,
+                                    AsyncToolRecord.RUNNING,
+                                    Instant.now().minus(Duration.ofMinutes(10))))
+                    .block();
+        }
+
+        remoteRegistry.complete("r1", "done").block();
+        remoteRegistry.fail("r2", "boom").block();
+        remoteRegistry.markTimeout("r3").block();
+
+        List<AsyncToolRecord> stale = remoteRegistry.findStale("s1", Duration.ofMinutes(5)).block();
+        assertTrue(stale.isEmpty());
     }
 }
