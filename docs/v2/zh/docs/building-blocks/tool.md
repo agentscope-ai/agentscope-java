@@ -8,6 +8,8 @@ en_link: /v2/en/docs/building-blocks/tool
 
 Tool 是 agent 与外部世界交互的方式 —— 执行业务操作、调用 API、读写数据等。每个 tool 通过 JSON Schema 暴露给 LLM，agent 通过统一接口完成调用。
 
+默认 `JacksonJsonCodec` 只读取一个完整的 JSON 值。允许尾随空白；额外的 JSON 值或其他尾随内容会抛出 `JsonException`。当原始工具参数含有尾随垃圾内容时，工具参数校验会回退到结构化 input。
+
 AgentScope 把 tool 相关的构件组织成三个概念：
 
 - **Tool** —— 任意实现 `AgentTool` 接口（通常通过继承 `ToolBase`）或在普通类的方法上标注 `@Tool` 注解的对象。Java 端把后者称为 *reflective function tool*，由 `Toolkit#registerTool(Object)` 自动反射注册。

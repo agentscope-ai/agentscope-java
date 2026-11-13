@@ -48,6 +48,13 @@ public class ToolGroup {
     private final Set<String> tools; // Tool names in this group
 
     /**
+     * Whether this is a system capability exempt from grant-layer trimming. Group-level only:
+     * exempts the group's enumeration and activation; member tools are governed by their own
+     * {@code system} markers.
+     */
+    private final boolean system;
+
+    /**
      * Protected constructor for subclass use.
      *
      * @param name The group name (required)
@@ -62,15 +69,45 @@ public class ToolGroup {
             boolean active,
             ToolGroupScope scope,
             Set<String> tools) {
+        this(name, description, active, scope, tools, false);
+    }
+
+    /**
+     * Protected constructor for subclass use, with the system-capability flag.
+     *
+     * <p>{@code system} is independent of {@code scope} (the activation-ownership axis): a
+     * system group bypasses grant-layer trimming while still obeying activation semantics.
+     *
+     * @param name The group name (required)
+     * @param description The group description
+     * @param active Initial activation state
+     * @param scope The group scope
+     * @param tools Initial set of tool names
+     * @param system Whether this is a system capability exempt from grant-layer trimming
+     */
+    protected ToolGroup(
+            String name,
+            String description,
+            boolean active,
+            ToolGroupScope scope,
+            Set<String> tools,
+            boolean system) {
         this.name = Objects.requireNonNull(name, "name cannot be null");
         this.description = description != null ? description : "";
         this.active = active;
         this.scope = scope;
         this.tools = new HashSet<>(tools);
+        this.system = system;
     }
 
     private ToolGroup(Builder builder) {
-        this(builder.name, builder.description, builder.active, builder.scope, builder.tools);
+        this(
+                builder.name,
+                builder.description,
+                builder.active,
+                builder.scope,
+                builder.tools,
+                builder.system);
     }
 
     /**
@@ -116,6 +153,19 @@ public class ToolGroup {
      */
     public ToolGroupScope getScope() {
         return scope;
+    }
+
+    /**
+     * Whether this group is a system capability exempt from grant-layer (per-user capability)
+     * trimming. Group-level only: the group stays enumerable and activatable under any grant
+     * set; member tools are NOT exempt unless each is itself marked system. Independent of
+     * {@link #getScope()} (the activation-ownership axis).
+     *
+     * @return {@code true} if this group bypasses grant-layer trimming for enumeration and
+     *     activation; {@code false} by default
+     */
+    public boolean isSystem() {
+        return system;
     }
 
     /**
@@ -167,6 +217,7 @@ public class ToolGroup {
                 .active(active)
                 .scope(scope)
                 .tools(tools)
+                .system(system)
                 .build();
     }
 
@@ -187,6 +238,7 @@ public class ToolGroup {
         private boolean active = true;
         private ToolGroupScope scope = ToolGroupScope.META;
         private Set<String> tools = new HashSet<>();
+        private boolean system = false;
 
         /**
          * Sets the name of the tool group.
@@ -241,6 +293,21 @@ public class ToolGroup {
          */
         public Builder tools(Set<String> tools) {
             this.tools = new HashSet<>(tools);
+            return this;
+        }
+
+        /**
+         * Marks the group as a system capability exempt from grant-layer (per-user capability)
+         * trimming — group-level only: enumeration and activation stay available under any
+         * grant set, while member tools are exempt only when each is itself marked system.
+         * Independent of {@link #scope(ToolGroupScope)}.
+         *
+         * @param system true to exempt this group's enumeration/activation from grant-layer
+         *     trimming
+         * @return This builder for method chaining
+         */
+        public Builder system(boolean system) {
+            this.system = system;
             return this;
         }
 

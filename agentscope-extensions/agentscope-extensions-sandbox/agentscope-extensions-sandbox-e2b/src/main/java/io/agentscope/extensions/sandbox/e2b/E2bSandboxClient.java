@@ -26,7 +26,6 @@ import io.agentscope.harness.agent.sandbox.snapshot.RemoteSandboxSnapshot;
 import io.agentscope.harness.agent.sandbox.snapshot.RemoteSnapshotSpec;
 import io.agentscope.harness.agent.sandbox.snapshot.SandboxSnapshotSpec;
 import java.util.List;
-import java.util.Objects;
 import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -93,14 +92,10 @@ public class E2bSandboxClient implements SandboxClient<E2bSandboxClientOptions> 
             throw new IllegalArgumentException(
                     "Expected E2bSandboxState but got: " + state.getClass().getName());
         }
-        String previousRoot = e2b.getWorkspaceRoot();
-        String workspaceRoot = resolveWorkspaceRoot(e2b.getWorkspaceSpec(), previousRoot);
+        // Resume the directory that actually backed this sandbox. The constructor aligns
+        // legacy manifest metadata before the superclass captures its materialization root.
+        String workspaceRoot = e2b.getWorkspaceRoot();
         requireAbsoluteWorkspaceRoot(workspaceRoot);
-        if (!Objects.equals(previousRoot, workspaceRoot)) {
-            e2b.setWorkspaceRootReady(false);
-            e2b.setWorkspaceProjectionHash(null);
-        }
-        e2b.setWorkspaceRoot(workspaceRoot);
         e2b.setWorkspaceOnVolume(isWorkspaceOnVolume(workspaceRoot, e2b.getVolumeMounts()));
         E2bSandboxClientOptions resumed = copy(defaultOptions);
         resumed.setCodec(e2b.getCodec());
