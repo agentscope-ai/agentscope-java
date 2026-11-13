@@ -77,25 +77,31 @@ public class WorkspaceIndex implements AutoCloseable {
      * Opens (or creates) the workspace index for the given workspace root.
      *
      * <p>Returns {@code null} if the index cannot be initialized — callers should treat a
-     * {@code null} index as "unavailable" and fall back to remote scan.
+     * {@code null} index as "unavailable" and fall back to remote scan. Any connection acquired
+     * during a failed initialization is closed; a successfully returned index owns its connection
+     * until {@link #close()} is called.
      *
      * @param workspaceRoot absolute path to the workspace root directory
      * @return a ready-to-use {@link WorkspaceIndex}, or {@code null} on failure
      */
     public static WorkspaceIndex open(Path workspaceRoot) {
+        WorkspaceIndex idx = null;
         try {
             Path indexDir = workspaceRoot.resolve(INDEX_DIR);
             Files.createDirectories(indexDir);
             Path dbFile = indexDir.resolve(INDEX_DB);
             String url = "jdbc:sqlite:" + dbFile.toAbsolutePath();
             Connection c = DriverManager.getConnection(url);
+            idx = new WorkspaceIndex(c);
             try (Statement st = c.createStatement()) {
                 st.execute("PRAGMA case_sensitive_like = ON");
             }
-            WorkspaceIndex idx = new WorkspaceIndex(c);
             idx.initSchema();
             return idx;
         } catch (Exception e) {
+            if (idx != null) {
+                idx.close();
+            }
             log.warn("WorkspaceIndex unavailable (non-fatal): {}", e.getMessage());
             return null;
         }

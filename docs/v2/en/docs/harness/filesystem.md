@@ -56,6 +56,8 @@ HarnessAgent agent = HarnessAgent.builder()
 | `addSharedPrefix(String)` | Route additional workspace-relative prefixes to the KV (e.g. `"prompts/"`, `"configs/"`) | none |
 | `workspaceIndex(WorkspaceIndex)` | SQLite index to accelerate remote ls/glob/grep | none (falls back to full store scan) |
 
+`WorkspaceIndex.open(workspaceRoot)` returns `null` when the optional local index cannot initialize, for example if `.index/workspace.db` is corrupt. It closes any connection acquired during that failed attempt, so callers can fall back to remote scans without retaining the failed connection. A successfully returned index keeps its connection until `close()` is called.
+
 #### Built-in routing rules
 
 The framework automatically routes the following paths to the shared KV, each in its own namespace segment to prevent key collisions:
