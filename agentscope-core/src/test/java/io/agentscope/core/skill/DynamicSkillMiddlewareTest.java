@@ -293,6 +293,27 @@ class DynamicSkillMiddlewareTest {
             "12cf4fa8d7ce1d654ed2e5625b41b5e990bf5658db1c2deb7548413ffea1b7e3";
 
     @Test
+    void signatureReadsEachResourceOnceWithoutCopyingTheResourceMap() throws Exception {
+        AgentSkill skill =
+                org.mockito.Mockito.spy(
+                        new AgentSkill(
+                                "legacy_under_score",
+                                "Legacy name",
+                                "instructions",
+                                java.util.Map.of("z.txt", "last", "a.txt", "first")));
+        java.lang.reflect.Method compute =
+                DynamicSkillMiddleware.class.getDeclaredMethod("computeSignature", List.class);
+        compute.setAccessible(true);
+        String signature = (String) compute.invoke(null, List.of(skill));
+
+        assertEquals(64, signature.length());
+        org.mockito.Mockito.verify(skill, org.mockito.Mockito.times(1)).getResourcePaths();
+        org.mockito.Mockito.verify(skill, org.mockito.Mockito.times(1)).getResource("a.txt");
+        org.mockito.Mockito.verify(skill, org.mockito.Mockito.times(1)).getResource("z.txt");
+        org.mockito.Mockito.verify(skill, org.mockito.Mockito.never()).getResources();
+    }
+
+    @Test
     void signatureValueUnchangedAfterPerKeyResourceAccess() throws Exception {
         java.util.LinkedHashMap<String, Object> alphaMeta = new java.util.LinkedHashMap<>();
         alphaMeta.put("name", "alpha");
