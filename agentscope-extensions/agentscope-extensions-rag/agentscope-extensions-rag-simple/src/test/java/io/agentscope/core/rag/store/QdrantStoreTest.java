@@ -27,6 +27,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.mockConstruction;
 import static org.mockito.Mockito.mockStatic;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.google.common.util.concurrent.Futures;
@@ -54,6 +55,9 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.NullSource;
+import org.junit.jupiter.params.provider.ValueSource;
+import org.mockito.ArgumentCaptor;
 import org.mockito.MockedConstruction;
 import org.mockito.MockedStatic;
 import reactor.test.StepVerifier;
@@ -91,6 +95,47 @@ class QdrantStoreTest {
     void testBuilderCreation() {
         QdrantStore.Builder builder = QdrantStore.builder();
         assertNotNull(builder);
+    }
+
+    @ParameterizedTest
+    @NullSource
+    @ValueSource(strings = "body")
+    void searchRequestsOnlyTheNamedVectorWhenSpecified(String vectorName) throws Exception {
+        try (MockedConstruction<QdrantGrpcClient> ignored =
+                        mockConstruction(QdrantGrpcClient.class);
+                MockedConstruction<QdrantClient> clients =
+                        mockConstruction(
+                                QdrantClient.class,
+                                (client, context) -> {
+                                    when(client.collectionExistsAsync(anyString()))
+                                            .thenReturn(Futures.immediateFuture(true));
+                                    when(client.queryAsync(any(Points.QueryPoints.class)))
+                                            .thenReturn(Futures.immediateFuture(List.of()));
+                                })) {
+            store =
+                    QdrantStore.builder()
+                            .location(TEST_LOCATION)
+                            .collectionName(TEST_COLLECTION)
+                            .dimensions(TEST_DIMENSIONS)
+                            .build();
+            store.search(
+                            SearchDocumentDto.builder()
+                                    .vectorName(vectorName)
+                                    .queryEmbedding(new double[TEST_DIMENSIONS])
+                                    .limit(1)
+                                    .build())
+                    .block();
+
+            var query = ArgumentCaptor.forClass(Points.QueryPoints.class);
+            verify(clients.constructed().get(0)).queryAsync(query.capture());
+            var selector = query.getValue().getWithVectors();
+            if (vectorName == null) {
+                assertEquals(true, selector.getEnable());
+            } else {
+                assertEquals(vectorName, query.getValue().getUsing());
+                assertEquals(List.of(vectorName), selector.getInclude().getNamesList());
+            }
+        }
     }
 
     @Test
