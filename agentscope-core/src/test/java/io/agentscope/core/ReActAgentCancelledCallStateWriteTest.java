@@ -123,14 +123,18 @@ class ReActAgentCancelledCallStateWriteTest {
             CompletableFuture<Msg> c = null;
             try {
                 assertTrue(store.entered.await(5, TimeUnit.SECONDS));
+                // Check cross-key liveness while A's write is still held and A is not yet
+                // disposed. Disposing A releases its boundedElastic worker while the blocked
+                // write still occupies the executor thread, and Reactor may hand that worker
+                // to a later subscription, which would park s2 behind the blocked write.
+                Msg other = agent.call(List.of(userMsg("other")), context("s2")).block(TIMEOUT);
+                assertNotNull(other, "another key must make progress while s1 is held");
+                assertEquals(1, store.sameKeyLoads.get(), "only A may have activated so far");
                 a.dispose();
                 // Subscribe synchronously: both entries are enqueued before the assertions.
                 b = agent.call(List.of(userMsg("B-cancelled")), context("s1")).toFuture();
                 b.cancel(true);
                 c = agent.call(List.of(userMsg("C")), context("s1")).toFuture();
-                Msg other = agent.call(List.of(userMsg("other")), context("s2")).block(TIMEOUT);
-                assertNotNull(other, "another key must make progress while s1 is held");
-                assertEquals(1, store.sameKeyLoads.get(), "neither B nor C may activate yet");
                 assertFalse(c.isDone(), "C must wait behind A even though B was cancelled");
                 assertFalse(store.finished.isDone(), "the blocked write really is still running");
                 store.release.countDown();
