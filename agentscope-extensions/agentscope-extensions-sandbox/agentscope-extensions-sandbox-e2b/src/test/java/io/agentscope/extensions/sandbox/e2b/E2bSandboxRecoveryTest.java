@@ -24,7 +24,10 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.harness.agent.sandbox.SandboxErrorCode;
 import io.agentscope.harness.agent.sandbox.SandboxException;
+import io.agentscope.harness.agent.sandbox.WorkspaceProjectionApplier;
 import io.agentscope.harness.agent.sandbox.WorkspaceSpec;
+import io.agentscope.harness.agent.sandbox.layout.FileEntry;
+import io.agentscope.harness.agent.sandbox.layout.WorkspaceProjectionEntry;
 import io.agentscope.harness.agent.sandbox.snapshot.SandboxSnapshot;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
@@ -32,6 +35,8 @@ import java.io.InputStream;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
@@ -43,8 +48,11 @@ import okio.Buffer;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 class E2bSandboxRecoveryTest {
+
+    @TempDir Path tempDir;
 
     private MockWebServer server;
 
@@ -396,6 +404,60 @@ class E2bSandboxRecoveryTest {
         assertEquals(1, snapshot.restoreCount(), "the peeked archive must be reused");
         assertEquals("restored-sandbox", state.getSandboxId());
         assertTrue(state.isWorkspaceRootReady());
+        assertEquals("old-projection", state.getWorkspaceProjectionHash());
+        assertTrue(envdCommand(setupWorkspace).contains("test -d"));
+    }
+
+    @Test
+    void nativeRestoreAfterConnectFailurePreservesEditsAndUnchangedProjection() throws Exception {
+        server.enqueue(new MockResponse().setResponseCode(500).setBody("connect failed"));
+        server.enqueue(sandboxResponse("restored-sandbox"));
+        server.enqueue(envdStartResponse());
+        E2bSandboxState state = stateForResumeWithNativeSnapshot("snap-123");
+        Path workspace = Files.createDirectory(tempDir.resolve("workspace"));
+        Path source = Files.createDirectory(tempDir.resolve("source"));
+        Files.writeString(workspace.resolve("notes.txt"), "user edits");
+        Files.writeString(source.resolve("projected.txt"), "unchanged source");
+        state.setWorkspaceRoot(workspace.toString());
+        WorkspaceSpec spec = new WorkspaceSpec();
+        spec.setRoot(workspace.toString());
+        spec.getEntries().put("notes.txt", new FileEntry("initial contents"));
+        WorkspaceProjectionEntry projection = new WorkspaceProjectionEntry();
+        projection.setSourceRoot(source.toString());
+        projection.setIncludeRoots(List.of("projected.txt"));
+        spec.getEntries().put("projection", projection);
+        state.setWorkspaceSpec(spec);
+        String savedHash = WorkspaceProjectionApplier.build(spec).hash();
+        state.setWorkspaceProjectionHash(savedHash);
+
+        new E2bSandbox(state, startOptions()).start();
+
+        assertEquals("user edits", Files.readString(workspace.resolve("notes.txt")));
+        assertEquals(savedHash, state.getWorkspaceProjectionHash());
+        assertTrue(state.isWorkspaceRootReady());
+        assertEquals(3, server.getRequestCount(), "no workspace setup or projection hydration");
+        assertEquals("/sandboxes/old-sandbox/connect", server.takeRequest().getPath());
+        assertTrue(server.takeRequest().getBody().readUtf8().contains("snap-123"));
+        assertTrue(envdCommand(server.takeRequest()).contains("test -d"));
+    }
+
+    @Test
+    void missingAnd404NativeSnapshotsClearFlagsBeforeColdStart() throws Exception {
+        for (boolean restorable : new boolean[] {false, true}) {
+            server.enqueue(new MockResponse().setResponseCode(500).setBody("connect failed"));
+            if (restorable) {
+                server.enqueue(new MockResponse().setResponseCode(404).setBody("snapshot missing"));
+            }
+            server.enqueue(sandboxResponse("fresh-sandbox"));
+            E2bSandboxState state = stateForResumeWithNativeSnapshot("snap-123");
+            state.setSnapshot(new FakeSnapshot(nativeArchive("snap-123"), restorable));
+
+            invokeEnsureSandbox(new E2bSandbox(state, options()));
+
+            assertFalse(state.isWorkspaceRootReady());
+            assertNull(state.getWorkspaceProjectionHash());
+            assertEquals("fresh-sandbox", state.getSandboxId());
+        }
     }
 
     /**
