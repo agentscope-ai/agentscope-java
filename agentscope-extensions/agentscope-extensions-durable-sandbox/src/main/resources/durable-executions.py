@@ -3,6 +3,7 @@
 """Durable per-execution sandbox journal. Control RPCs never run a long tool inline."""
 import base64
 import codecs
+import gzip
 import json
 import os
 from pathlib import Path
@@ -190,8 +191,8 @@ def control(request):
             job.mkdir()
             sync_directory(job.parent)
             atomic(job / "request.json", request)
-            code = base64.b64encode(Path(__file__).read_bytes()).decode() if "__file__" in globals() else request["program"]
-            process = subprocess.Popen(["python3", "-c", "import base64;exec(base64.b64decode('" + code + "'))", "run", str(root), execution], cwd=root, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+            code = base64.b64encode(gzip.compress(Path(__file__).read_bytes())).decode() if "__file__" in globals() else request["program"]
+            process = subprocess.Popen(["python3", "-c", "import base64,gzip;exec(gzip.decompress(base64.b64decode('" + code + "')))", "run", str(root), execution], cwd=root, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
             # The runner may not have reached owner.json when the next query arrives.
             # Preserve its process identity without authorizing another launch.
             atomic(job / "launcher.json", {"pid": process.pid, "identity": identity(process.pid)})

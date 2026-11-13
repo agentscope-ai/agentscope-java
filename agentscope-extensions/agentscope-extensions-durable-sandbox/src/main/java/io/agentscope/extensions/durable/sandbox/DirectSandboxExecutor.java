@@ -26,12 +26,14 @@ import io.agentscope.durable.DurableTypes.ExecutionState;
 import io.agentscope.durable.DurableTypes.OutputPage;
 import io.agentscope.durable.Executor;
 import io.agentscope.harness.agent.sandbox.Sandbox;
+import java.io.ByteArrayOutputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.zip.GZIPOutputStream;
 
 /**
  * Detached execution and an operation journal inside a pinned POSIX/Python 3 Sandbox.
@@ -147,9 +149,9 @@ public final class DirectSandboxExecutor implements Executor {
                                         .toString()
                                         .getBytes(StandardCharsets.UTF_8));
         String command =
-                "python3 -c 'import base64;exec(base64.b64decode(\""
+                "python3 -c 'import base64,gzip;exec(gzip.decompress(base64.b64decode(\""
                         + PROGRAM
-                        + "\"))' <<'DURABLE_REQUEST'\n"
+                        + "\")))' <<'DURABLE_REQUEST'\n"
                         + encoded
                         + "\nDURABLE_REQUEST\n";
         try {
@@ -168,7 +170,11 @@ public final class DirectSandboxExecutor implements Executor {
                 DirectSandboxExecutor.class.getResourceAsStream("/durable-executions.py")) {
             if (stream == null)
                 throw new IllegalStateException("Sandbox execution program missing");
-            return Base64.getEncoder().encodeToString(stream.readAllBytes());
+            var compressed = new ByteArrayOutputStream();
+            try (var gzip = new GZIPOutputStream(compressed)) {
+                stream.transferTo(gzip);
+            }
+            return Base64.getEncoder().encodeToString(compressed.toByteArray());
         } catch (Exception error) {
             throw new ExceptionInInitializerError(error);
         }

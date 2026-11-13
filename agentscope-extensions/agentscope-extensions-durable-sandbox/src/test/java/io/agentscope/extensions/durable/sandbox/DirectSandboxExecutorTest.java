@@ -46,6 +46,7 @@ class DirectSandboxExecutorTest {
         return new DirectSandboxExecutor(
                 "sandbox-fixture",
                 (request, command) -> {
+                    assertTrue(command.length() < 32767, "Control command exceeds Windows limit");
                     var process =
                             new ProcessBuilder("sh", "-c", command)
                                     .directory(directory.toFile())
