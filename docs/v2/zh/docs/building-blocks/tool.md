@@ -125,6 +125,12 @@ toolkit.registerTool(new SimpleTools());
 | `dangerousFiles` / `dangerousDirectories` | `String[]` | 追加自定义危险路径列表 |
 | `converter` | `Class<? extends ToolResultConverter>` | 自定义返回值到 `ToolResultBlock` 的转换器 |
 
+#### 完成确认与错误反馈
+
+使用默认 converter 时，注解工具的 `void` 或 `Void` 返回值，以及成功完成的 `Mono<Void>`、`CompletableFuture<Void>`，会向模型返回 `(completed with no output)`。普通 `null` 返回值仍为 `null`；错误和取消不会生成这条成功确认。已有 String 输出保持不变。
+
+对于客户端工具，Anthropic formatter 将 `ERROR`、`DENIED`、`INTERRUPTED` 映射为 `is_error: true`，同时保留调用 ID 和输出内容块。`SUCCESS` 和 `RUNNING` 不会被判为错误。
+
 ### 自定义 Tool（继承 `ToolBase`）
 
 需要自定义权限策略、外部执行或更复杂的 schema 时，继承 `ToolBase`：

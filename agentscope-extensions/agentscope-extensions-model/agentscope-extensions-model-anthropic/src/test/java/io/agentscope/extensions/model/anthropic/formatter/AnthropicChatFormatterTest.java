@@ -33,6 +33,7 @@ import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
+import io.agentscope.core.message.ToolResultState;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.GenerateOptions;
@@ -499,5 +500,48 @@ class AnthropicChatFormatterTest extends AnthropicFormatterTestBase {
         assertEquals(1, result.size());
         // Tool results are converted to USER messages
         assertEquals(MessageParam.Role.USER, result.get(0).role());
+    }
+
+    @Test
+    void defaultFormatterPreservesSystemTextNewlines() {
+        Msg system =
+                Msg.builder().role(MsgRole.SYSTEM).textContent("first\nsecond\n\nthird").build();
+        var params =
+                MessageCreateParams.builder()
+                        .model("claude-test")
+                        .maxTokens(32)
+                        .messages(
+                                List.of(
+                                        MessageParam.builder()
+                                                .role(MessageParam.Role.USER)
+                                                .content("hello")
+                                                .build()));
+        formatter.applySystemMessage(params, List.of(system));
+        assertEquals("first\nsecond\n\nthird", params.build().system().orElseThrow().asString());
+    }
+
+    @Test
+    void defaultFormatterMarksFailedToolResultAsError() {
+        Msg error =
+                Msg.builder()
+                        .role(MsgRole.TOOL)
+                        .content(
+                                ToolResultBlock.builder()
+                                        .id("failed-call")
+                                        .name("search")
+                                        .state(ToolResultState.ERROR)
+                                        .output(TextBlock.builder().text("diagnostic").build())
+                                        .build())
+                        .build();
+        var result =
+                formatter
+                        .format(List.of(error))
+                        .get(0)
+                        .content()
+                        .asBlockParams()
+                        .get(0)
+                        .asToolResult();
+        assertEquals("failed-call", result.toolUseId());
+        assertTrue(result.isError().orElse(false));
     }
 }

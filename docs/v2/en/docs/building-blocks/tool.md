@@ -125,6 +125,12 @@ Common `@Tool` attributes:
 | `dangerousFiles` / `dangerousDirectories` | `String[]` | Append custom dangerous paths |
 | `converter` | `Class<? extends ToolResultConverter>` | Custom conversion of return values into `ToolResultBlock` |
 
+#### Completion and error feedback
+
+With the default converter, annotated tools returning `void` or `Void`, including successful `Mono<Void>` and `CompletableFuture<Void>` completion, return `(completed with no output)` to the model. An ordinary `null` return remains `null`; errors and cancellation do not produce this success acknowledgement. Existing String outputs remain unchanged.
+
+For client tools, the Anthropic formatter maps `ERROR`, `DENIED`, and `INTERRUPTED` to `is_error: true`, preserving the tool-call ID and output blocks. `SUCCESS` and `RUNNING` are not classified as errors.
+
 ### Custom tools (extending `ToolBase`)
 
 When you need a custom permission policy, external execution, or a more complex schema, extend `ToolBase`:
