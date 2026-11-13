@@ -402,7 +402,8 @@ not grant access to their local task or allow cancelling it. Shared scopes (`AGE
 `GLOBAL`) retain their configured sharing behavior. When supplying a custom filesystem and
 namespace factory, configure both to use the same isolation boundary. For nested prefix routes,
 task backend inspection follows the actual backend path at each layer; file I/O still uses the
-original filesystem wrappers.
+original filesystem wrappers. Listed paths remain readable through those wrappers whether route
+prefixes include a leading slash or not.
 
 Background task state is written by default to `workspace/agents/<parentAgentId>/tasks/<sessionId>.json`. So:
 

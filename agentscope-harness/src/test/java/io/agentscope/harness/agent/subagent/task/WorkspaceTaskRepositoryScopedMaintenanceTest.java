@@ -82,13 +82,27 @@ class WorkspaceTaskRepositoryScopedMaintenanceTest {
     })
     void nestedRoutesRegisterAndFailRestartedOrphanOnlyInOriginalScope(
             TaskRoute route, IsolationScope scope) {
+        assertNestedRestart(route, scope, true);
+    }
+
+    @ParameterizedTest
+    @CsvSource({
+        "COMPOSITE, USER", "COMPOSITE, SESSION",
+        "OUTER_ROUTED, USER", "OUTER_ROUTED, SESSION",
+        "INNER_ROUTED, USER", "INNER_ROUTED, SESSION"
+    })
+    void slashlessNestedRoutesRegisterAndFailRestartedOrphanOnlyInOriginalScope(
+            TaskRoute route, IsolationScope scope) {
+        assertNestedRestart(route, scope, false);
+    }
+
+    private void assertNestedRestart(
+            TaskRoute route, IsolationScope scope, boolean canonicalPrefixes) {
         var namespaces = WorkspaceTaskRepositoryNamespaceTest.nestedNamespaces(scope);
         var remote = new RemoteFilesystem(store, namespaces);
-        // Maintenance uses the constructor's documented leading-slash prefixes. Nested glob
-        // remapping of slashless prefixes is a separate filesystem issue, not inspection.
         var fs =
                 WorkspaceTaskRepositoryNamespaceTest.nestedFilesystem(
-                        new LocalFilesystem(workspace, true, 10), remote, route, true);
+                        new LocalFilesystem(workspace, true, 10), remote, route, canonicalPrefixes);
         var owner = context("owner-user", "owner-session");
         var foreign = context("foreign-user", "foreign-session");
         var expected = List.of(scope == IsolationScope.USER ? "owner-user" : "owner-session");
@@ -110,8 +124,12 @@ class WorkspaceTaskRepositoryScopedMaintenanceTest {
                         new LocalFilesystem(workspace, true, 10),
                         new RemoteFilesystem(store, namespaces),
                         route,
-                        true);
+                        canonicalPrefixes);
         try (var restored = new WorkspaceManager(workspace, restoredFs, null, namespaces)) {
+            var listed = fs.glob(owner, "*.json", "agents/parent/tasks");
+            assertTrue(listed.isSuccess());
+            assertEquals(1, listed.matches().size());
+            assertTrue(fs.read(owner, listed.matches().get(0).path(), 0, 0).isSuccess());
             var scanned = List.copyOf(restored.listTaskRecordsForMaintenance("parent"));
             repository(restored)
                     .sweepOrphanedTasks(
@@ -190,6 +208,18 @@ class WorkspaceTaskRepositoryScopedMaintenanceTest {
             value = IsolationScope.class,
             names = {"USER", "SESSION"})
     void nestedBoundRestartMaintenanceUsesInnerDispatchIdentity(IsolationScope scope) {
+        assertNestedBoundRestart(scope, true);
+    }
+
+    @ParameterizedTest
+    @EnumSource(
+            value = IsolationScope.class,
+            names = {"USER", "SESSION"})
+    void slashlessNestedBoundRestartMaintenanceUsesInnerDispatchIdentity(IsolationScope scope) {
+        assertNestedBoundRestart(scope, false);
+    }
+
+    private void assertNestedBoundRestart(IsolationScope scope, boolean canonicalPrefixes) {
         var namespaces = WorkspaceTaskRepositoryNamespaceTest.nestedNamespaces(scope);
         var inner = context("inner-user", "inner-session");
         var outer = context("outer-user", "outer-session");
@@ -202,7 +232,7 @@ class WorkspaceTaskRepositoryScopedMaintenanceTest {
                                 new BakedContextFilesystem(
                                         new RemoteFilesystem(store, namespaces), inner),
                                 TaskRoute.OUTER_ROUTED,
-                                true),
+                                canonicalPrefixes),
                         outer);
         try (var original = new WorkspaceManager(workspace, fs, null, namespaces)) {
             var orphan = new TaskRecord("orphan", "child", "parent", "same-session", null);
@@ -225,7 +255,7 @@ class WorkspaceTaskRepositoryScopedMaintenanceTest {
                                         new RemoteFilesystem(store, namespaces),
                                         context("inner-user", "inner-session")),
                                 TaskRoute.OUTER_ROUTED,
-                                true),
+                                canonicalPrefixes),
                         context("outer-user", "outer-session"));
         try (var restored = new WorkspaceManager(workspace, restoredFs, null, namespaces)) {
             var scanned = List.copyOf(restored.listTaskRecordsForMaintenance("parent"));

@@ -29,6 +29,8 @@ import io.agentscope.harness.agent.filesystem.model.FileInfo;
 import io.agentscope.harness.agent.filesystem.model.FileUploadResponse;
 import io.agentscope.harness.agent.filesystem.model.GlobResult;
 import io.agentscope.harness.agent.filesystem.model.ReadResult;
+import io.agentscope.harness.agent.filesystem.remote.RemoteFilesystem;
+import io.agentscope.harness.agent.filesystem.remote.store.InMemoryStore;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -38,6 +40,8 @@ import java.util.Map;
 import java.util.stream.Collectors;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 
 /**
  * Verifies that {@link CompositeFilesystem#uploadFiles} faithfully propagates each backend's
@@ -48,6 +52,92 @@ class CompositeFilesystemTest {
     private static final RuntimeContext CTX = RuntimeContext.empty();
 
     @TempDir Path tmp;
+
+    @ParameterizedTest
+    @CsvSource({
+        "agents/, parent/tasks/, ls",
+        "agents/, parent/tasks/, glob",
+        "agents/, parent/tasks/, grep",
+        "agents/, parent/tasks/, root-glob",
+        "agents/, parent/tasks/, root-grep",
+        "/agents/, parent/tasks/, ls",
+        "/agents/, parent/tasks/, glob",
+        "/agents/, parent/tasks/, grep",
+        "/agents/, parent/tasks/, root-glob",
+        "/agents/, parent/tasks/, root-grep",
+        "agents/, /parent/tasks/, ls",
+        "agents/, /parent/tasks/, glob",
+        "agents/, /parent/tasks/, grep",
+        "agents/, /parent/tasks/, root-glob",
+        "agents/, /parent/tasks/, root-grep",
+        "/agents/, /parent/tasks/, ls",
+        "/agents/, /parent/tasks/, glob",
+        "/agents/, /parent/tasks/, grep",
+        "/agents/, /parent/tasks/, root-glob",
+        "/agents/, /parent/tasks/, root-grep"
+    })
+    void nestedListingsReturnPathsReadableThroughOriginalWrappers(
+            String outerPrefix, String innerPrefix, String operation) {
+        var shared = new LocalFilesystem(tmp, true, 10);
+        var remote = new RemoteFilesystem(new InMemoryStore(), rc -> List.of("_default"));
+        var inner = new CompositeFilesystem(shared, Map.of(innerPrefix, remote));
+        var filesystem = new CompositeFilesystem(shared, Map.of(outerPrefix, inner));
+        assertTrue(
+                filesystem
+                        .write(CTX, "agents/parent/tasks/same-session.json", "nested content")
+                        .isSuccess());
+        List<String> paths;
+        switch (operation) {
+            case "ls" -> {
+                var result = filesystem.ls(CTX, "agents/parent/tasks");
+                assertTrue(result.isSuccess());
+                paths = result.entries().stream().map(FileInfo::path).toList();
+            }
+            case "glob", "root-glob" -> {
+                var result =
+                        filesystem.glob(
+                                CTX,
+                                "**/*.json",
+                                operation.equals("root-glob") ? "/" : "agents/parent/tasks");
+                assertTrue(result.isSuccess());
+                paths = result.matches().stream().map(FileInfo::path).toList();
+            }
+            case "grep", "root-grep" -> {
+                var result =
+                        filesystem.grep(
+                                CTX,
+                                "nested",
+                                operation.equals("root-grep") ? "/" : "agents/parent/tasks",
+                                "*.json");
+                assertTrue(result.isSuccess());
+                paths = result.matches().stream().map(match -> match.path()).toList();
+            }
+            default -> throw new AssertionError(operation);
+        }
+        String expected = outerPrefix + "parent/tasks/same-session.json";
+        assertEquals(List.of(expected), paths);
+        var read = filesystem.read(CTX, paths.get(0), 0, 0);
+        assertTrue(read.isSuccess());
+        assertEquals("nested content", read.fileData().content());
+    }
+
+    @Test
+    void listingDefaultAndExactRoutesKeepsTheirPathsReadable() {
+        var remote = new RemoteFilesystem(new InMemoryStore(), rc -> List.of("_default"));
+        var filesystem = new CompositeFilesystem(remote, Map.of("config.json", remote));
+        assertTrue(filesystem.write(CTX, "/config.json", "exact content").isSuccess());
+        assertTrue(filesystem.write(CTX, "/default.json", "default content").isSuccess());
+        var result = filesystem.glob(CTX, "*.json", "/");
+        assertTrue(result.isSuccess());
+        var paths = result.matches().stream().map(FileInfo::path).toList();
+        assertTrue(paths.contains("config.json"));
+        assertTrue(paths.contains("/default.json"));
+        assertEquals(
+                "exact content", filesystem.read(CTX, "config.json", 0, 0).fileData().content());
+        assertEquals(
+                "default content",
+                filesystem.read(CTX, "/default.json", 0, 0).fileData().content());
+    }
 
     @Test
     void uploadFiles_propagatesBackendFailure() {

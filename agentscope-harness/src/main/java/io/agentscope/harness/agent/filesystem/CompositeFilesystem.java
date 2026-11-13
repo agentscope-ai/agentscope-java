@@ -162,7 +162,7 @@ public class CompositeFilesystem implements AbstractFilesystem {
             return routePrefix;
         }
         String base = routePrefix.substring(0, routePrefix.length() - 1);
-        return base + backendPath;
+        return base + (backendPath.startsWith("/") ? backendPath : "/" + backendPath);
     }
 
     private static FileInfo remapFileInfo(FileInfo fi, String routePrefix) {
