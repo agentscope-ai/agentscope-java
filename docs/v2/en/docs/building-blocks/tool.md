@@ -484,6 +484,8 @@ ReActAgent agent =
                 .build();
 ```
 
+`WriteFileTool.write_text_file` ranges for existing files are 1-based and inclusive. Zero or negative starts, reversed ranges, and starts beyond the file length return errors without modifying the file; an end beyond the file length is clamped. Range replacement preserves the original trailing-newline presence. New-file creation still ignores `ranges`.
+
 - **`HarnessAgent`** — the harness module ships workspace-aware shell and file tools (`execute`, `read_file`, `write_file`, etc.) out of the box; no extra registration needed.
 
 ### Skill + ToolGroup: on-demand tool disclosure

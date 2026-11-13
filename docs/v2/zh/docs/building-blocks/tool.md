@@ -484,6 +484,8 @@ ReActAgent agent =
                 .build();
 ```
 
+`WriteFileTool.write_text_file` 对已有文件的范围使用从 1 开始的行号，包含起止行。起始行为零或负数、范围反向、起始行超过文件长度时返回错误且不修改文件；结束行超过文件长度时截至文件末尾。范围替换保留原文件是否带末尾换行的状态。创建新文件时仍忽略 `ranges`。
+
 - **`HarnessAgent`** —— harness 模块自带 workspace 感知的 shell 与文件工具（`execute`、`read_file`、`write_file` 等），无需额外注册。
 
 ### Skill + ToolGroup：按需披露工具
