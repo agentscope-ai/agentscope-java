@@ -60,6 +60,8 @@ BaseStore store = JdbcStore.builder(dataSource)
 
 Supported dialects (auto-detected): MySQL, PostgreSQL, H2, SQLite.
 
+New MySQL tables use `utf8mb4_bin` for namespace, item, session, state and snapshot keys. Existing tables are not altered automatically: follow the [SQL migration instructions](/v2/en/integration/session/mysql#migrating-tables-created-before-this-change) before relying on case-sensitive keys. Migration changes `=` and prefix `LIKE` comparisons; previously overwritten case-variant keys cannot be recovered.
+
 ### 3. JdbcSnapshotSpec
 
 Sandbox snapshots as LONGBLOB in a database table.

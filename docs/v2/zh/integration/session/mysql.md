@@ -74,8 +74,8 @@ AgentStateStore stateStore = new MysqlAgentStateStore(
 
 ```sql
 CREATE TABLE IF NOT EXISTS agentscope_sessions (
-    session_id VARCHAR(255) NOT NULL,
-    state_key  VARCHAR(255) NOT NULL,
+    session_id VARCHAR(255) COLLATE utf8mb4_bin NOT NULL,
+    state_key  VARCHAR(255) COLLATE utf8mb4_bin NOT NULL,
     item_index INT NOT NULL DEFAULT 0,
     state_data LONGTEXT NOT NULL,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -83,6 +83,32 @@ CREATE TABLE IF NOT EXISTS agentscope_sessions (
     PRIMARY KEY (session_id, state_key, item_index)
 ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 ```
+
+两个键列显式指定 `utf8mb4_bin`，而表级默认排序规则仍为 `utf8mb4_unicode_ci`：`session_id` 与 `state_key` 是大小写敏感的标识符，而表级默认排序规则大小写不敏感，若不指定二进制排序规则，两个仅大小写不同的 id 会在主键上冲突、共用同一行。注意 `utf8mb4_bin` 为 PAD SPACE 语义——仅尾部空格不同的值仍视为相等。
+
+### 迁移在此改动之前创建的表
+
+`CREATE TABLE IF NOT EXISTS` 不会修改已存在的表，因此更早部署的实例仍保持大小写不敏感，需要由运维执行迁移。`agentscope_store`、`agentscope_sessions`、`agentscope_snapshots` 三张表的主键都是调用方提供的标识符，道理相同：
+
+```sql
+ALTER TABLE agentscope_store
+    MODIFY namespace_path VARCHAR(512) COLLATE utf8mb4_bin NOT NULL,
+    MODIFY item_key       VARCHAR(255) COLLATE utf8mb4_bin NOT NULL;
+
+ALTER TABLE agentscope_sessions
+    MODIFY session_id VARCHAR(255) COLLATE utf8mb4_bin NOT NULL,
+    MODIFY state_key  VARCHAR(255) COLLATE utf8mb4_bin NOT NULL;
+
+ALTER TABLE agentscope_snapshots
+    MODIFY snapshot_id VARCHAR(512) COLLATE utf8mb4_bin NOT NULL;
+```
+
+若配置过表前缀或逐表名称覆盖，请相应替换表名。创建 `agentscope_snapshots` 的两条路径——`agentscope-extensions-jdbc` 方言与 legacy 的 `agentscope-extensions-mysql` 快照客户端——现在钉的是同一个排序规则，因此更早部署的实例只需执行上面的语句。
+
+有两点需要提前考虑：
+
+- **读取语义随排序规则一起改变。** 比较与前缀查询（`session_id = ?`、`LIKE 'prefix%'`）变为大小写敏感，原先用小写 `sess-1` 能查到 `SESS-1` 的场景将不再匹配。请在会话空闲窗口执行迁移。
+- **已有数据可能已经丢失。** 若迁移前曾写入两个仅大小写不同的键，第二次写入会通过 `ON DUPLICATE KEY UPDATE` 覆盖第一次，那一行无法从表中恢复。
 
 - `(userId, sessionId)` 二元组会被打包进 `session_id` 列，形如 `{userSegment}:{sessionId}`（`userSegment` 为 `userId`，匿名 session 用 `__anon__`）。
 - 单值：`item_index = 0`

@@ -75,6 +75,8 @@ BaseStore store = JdbcStore.builder(dataSource)
 
 **并发安全**：`putIfVersion` 通过单语句 CAS `UPDATE ... WHERE version = ?` 实现。
 
+新建 MySQL 表的命名空间、条目、会话、状态和快照键使用 `utf8mb4_bin`。已有表不会自动修改：依赖大小写敏感键之前，请按 [MySQL 状态存储中的 SQL 迁移说明](/v2/zh/integration/session/mysql) 手动迁移。迁移会改变 `=` 和前缀 `LIKE` 的比较语义；此前被覆盖的大小写变体键无法恢复。
+
 ### 3. JdbcSnapshotSpec
 
 沙箱快照以 LONGBLOB 存储到数据库表。
