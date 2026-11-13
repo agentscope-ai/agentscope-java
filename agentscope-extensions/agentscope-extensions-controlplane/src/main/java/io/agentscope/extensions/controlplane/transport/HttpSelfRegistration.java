@@ -175,12 +175,25 @@ public final class HttpSelfRegistration implements AutoCloseable {
                 tryRegister();
                 return;
             }
-            int code =
+            ControlPlaneHttpClient.Response response =
                     request(
                             "POST",
                             "/api/v1/dataplanes/" + id + "/heartbeat",
                             Map.of("generation", generation.get()));
-            if (code == 404) {
+            if (response.status() < 200 || response.status() >= 300) {
+                // A 404 means the control plane forgot this instance; a 401 (rotated internal
+                // token), 409 (generation conflict) or 5xx is just as fatal for the lease. The
+                // control plane expires an instance once heartbeats stop refreshing its
+                // last-seen timestamp (45s by default), which silently flips the agent from
+                // ready to unavailable, so every non-2xx takes the same recovery path.
+                LOG.warning(
+                        "controlplane: heartbeat for instance "
+                                + id
+                                + " returned HTTP "
+                                + response.status()
+                                + " ("
+                                + abbreviate(response.body())
+                                + "); re-registering");
                 registered.set(false);
                 tryRegister();
             }
@@ -269,7 +282,8 @@ public final class HttpSelfRegistration implements AutoCloseable {
         }
     }
 
-    private int request(String method, String path, Object body) throws Exception {
+    private ControlPlaneHttpClient.Response request(String method, String path, Object body)
+            throws Exception {
         ControlPlaneHttpClient.Response resp = http.send(method, path, body);
         if (resp.status() >= 200 && resp.status() < 300 && resp.body() != null) {
             // Touch response for future heartbeatInterval parsing; ignore unknown shapes.
@@ -282,6 +296,14 @@ public final class HttpSelfRegistration implements AutoCloseable {
                 // ignore
             }
         }
-        return resp.status();
+        return resp;
+    }
+
+    private static String abbreviate(String body) {
+        if (body == null || body.isBlank()) {
+            return "empty body";
+        }
+        String flat = body.strip();
+        return flat.length() <= 200 ? flat : flat.substring(0, 200) + "...";
     }
 }

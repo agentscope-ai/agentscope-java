@@ -27,6 +27,7 @@ import java.time.Duration;
 import java.util.Optional;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
 import org.springframework.web.server.ResponseStatusException;
@@ -107,18 +108,39 @@ class TurnLeaseServiceTest {
                 new TurnLeaseService(
                         store, new BuilderInstanceId("brain-a", "ignored"), Duration.ofMillis(150));
 
+        // Heartbeat errors must not signal lease loss immediately: the signal fires only at
+        // the first heartbeat tick at/after the 150ms lease deadline (ticks run at ttl/3 =
+        // 50ms). The former "not yet fired after a 70ms wait" assert raced test-thread
+        // starvation under -T1C (#4075): when the test thread resumed past the deadline the
+        // signal had legitimately fired and the isFalse() check failed. Anchoring the
+        // tolerance measurement to elapsed-time-since-acquisition keeps the semantics
+        // deterministic — a bug firing on the first failing tick lands at ~50ms, while any
+        // legitimate firing is at/after the 150ms deadline, comfortably above the 120ms
+        // bound measured from this pre-acquisition timestamp. The 2s upper wait only
+        // widens the failure deadline (the signal normally fires within ~200ms).
+        long acquiredAt = System.nanoTime();
+        AtomicLong lostAt = new AtomicLong();
         TurnLeaseService.TurnLease lease =
                 service.acquireOrConflictFenced(
                         "session-a",
                         "owner-a",
                         request -> {
-                            if ("turn_lease_lost".equals(request.reason())) {
+                            if ("turn_lease_lost".equals(request.reason())
+                                    && lostAt.compareAndSet(0, System.nanoTime())) {
                                 leaseLost.countDown();
                             }
                         });
 
-        assertThat(leaseLost.await(70, TimeUnit.MILLISECONDS)).isFalse();
-        assertThat(leaseLost.await(500, TimeUnit.MILLISECONDS)).isTrue();
-        lease.close();
+        try {
+            assertThat(leaseLost.await(2, TimeUnit.SECONDS))
+                    .as("lease must be lost after the local deadline")
+                    .isTrue();
+            long toleratedMs = TimeUnit.NANOSECONDS.toMillis(lostAt.get() - acquiredAt);
+            assertThat(toleratedMs)
+                    .as("heartbeat errors must be tolerated until the 150ms deadline")
+                    .isGreaterThanOrEqualTo(120);
+        } finally {
+            lease.close();
+        }
     }
 }
