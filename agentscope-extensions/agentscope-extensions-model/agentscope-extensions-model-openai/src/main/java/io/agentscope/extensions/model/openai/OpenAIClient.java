@@ -598,15 +598,17 @@ public class OpenAIClient {
         boolean first = !baseUrl.contains("?");
 
         for (Map.Entry<String, String> entry : queryParams.entrySet()) {
-            url.append(first ? "?" : "&");
-            first = false;
             String key = entry.getKey();
             String value = entry.getValue();
-            if (key != null && value != null) {
-                url.append(URLEncoder.encode(key, StandardCharsets.UTF_8))
-                        .append("=")
-                        .append(URLEncoder.encode(value, StandardCharsets.UTF_8));
+            if (key == null || value == null) {
+                log.warn("Skipping null query parameter: key={}, value={}", key, value);
+                continue;
             }
+            url.append(first ? "?" : "&");
+            first = false;
+            url.append(URLEncoder.encode(key, StandardCharsets.UTF_8))
+                    .append("=")
+                    .append(URLEncoder.encode(value, StandardCharsets.UTF_8));
         }
 
         return url.toString();

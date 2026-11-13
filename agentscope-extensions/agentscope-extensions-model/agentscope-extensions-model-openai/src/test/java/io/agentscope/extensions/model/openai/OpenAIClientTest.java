@@ -26,8 +26,10 @@ import io.agentscope.extensions.model.openai.dto.OpenAIRequest;
 import io.agentscope.extensions.model.openai.dto.OpenAIResponse;
 import io.agentscope.extensions.model.openai.exception.OpenAIException;
 import java.io.IOException;
+import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ExecutorService;
@@ -523,6 +525,36 @@ class OpenAIClientTest {
         RecordedRequest request = mockServer.takeRequest(1, TimeUnit.SECONDS);
         assertNotNull(request);
         assertTrue(request.getPath().contains("custom=param"));
+    }
+
+    @Test
+    @DisplayName("Should skip null query parameters without leaving dangling separators")
+    void testBuildUrlSkipsNullQueryParams() throws Exception {
+        Map<String, String> nullValueFirst = new LinkedHashMap<>();
+        nullValueFirst.put("missing", null);
+        nullValueFirst.put("custom", "param");
+        assertEquals("http://host/v1?custom=param", buildUrl("http://host/v1", nullValueFirst));
+
+        Map<String, String> nullValueLast = new LinkedHashMap<>();
+        nullValueLast.put("custom", "param");
+        nullValueLast.put("missing", null);
+        assertEquals("http://host/v1?custom=param", buildUrl("http://host/v1", nullValueLast));
+
+        Map<String, String> nullKey = new LinkedHashMap<>();
+        nullKey.put(null, "orphan");
+        nullKey.put("custom", "param");
+        assertEquals("http://host/v1?custom=param", buildUrl("http://host/v1", nullKey));
+
+        Map<String, String> onlyNulls = new LinkedHashMap<>();
+        onlyNulls.put("missing", null);
+        assertEquals("http://host/v1", buildUrl("http://host/v1", onlyNulls));
+
+        Map<String, String> baseUrlWithQuery = new LinkedHashMap<>();
+        baseUrlWithQuery.put("missing", null);
+        baseUrlWithQuery.put("custom", "param");
+        assertEquals(
+                "http://host/v1?api_version=2&custom=param",
+                buildUrl("http://host/v1?api_version=2", baseUrlWithQuery));
     }
 
     @Test
@@ -1120,5 +1152,16 @@ class OpenAIClientTest {
         // Cannot accurately match word boundary 429, so fallback to default 400
         assertEquals(400, exception.getStatusCode());
         assertEquals("err_4291_token", exception.getErrorCode());
+    }
+
+    private static String buildUrl(String baseUrl, Map<String, String> queryParams)
+            throws Exception {
+        GenerateOptions options =
+                GenerateOptions.builder().additionalQueryParams(queryParams).build();
+        Method method =
+                OpenAIClient.class.getDeclaredMethod(
+                        "buildUrl", String.class, GenerateOptions.class);
+        method.setAccessible(true);
+        return (String) method.invoke(new OpenAIClient(), baseUrl, options);
     }
 }
