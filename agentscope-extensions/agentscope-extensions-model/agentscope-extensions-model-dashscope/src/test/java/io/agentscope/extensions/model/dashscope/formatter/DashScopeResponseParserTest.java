@@ -532,7 +532,7 @@ class DashScopeResponseParserTest {
                 DashScopeToolCall.builder()
                         .id("call_abc")
                         .type("function")
-                        .function(DashScopeFunction.of("get_weather", "{\"city\":\"SF\""))
+                        .function(DashScopeFunction.of("get_weather", "{\"city\":\"SF"))
                         .build();
         DashScopeFunction fragmentFunction = new DashScopeFunction();
         fragmentFunction.setArguments("\"}");
@@ -556,5 +556,7 @@ class DashScopeResponseParserTest {
         assertEquals(1, toolCalls.size(), "Fragment must merge into its parent tool call");
         assertEquals("call_abc", toolCalls.get(0).getId());
         assertEquals("get_weather", toolCalls.get(0).getName());
+        assertEquals("{\"city\":\"SF\"}", toolCalls.get(0).getContent());
+        assertEquals("SF", toolCalls.get(0).getInput().get("city"));
     }
 }
