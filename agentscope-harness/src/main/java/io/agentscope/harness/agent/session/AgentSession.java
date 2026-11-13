@@ -24,6 +24,7 @@ import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolResultMessage;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.message.UserMessage;
+import io.agentscope.core.model.Model;
 import io.agentscope.core.session.SessionEvent;
 import io.agentscope.core.session.SessionExecution;
 import io.agentscope.core.session.SessionInbox;
@@ -81,9 +82,10 @@ public final class AgentSession implements AutoCloseable {
 
     public AgentSession(HarnessAgent agent, RuntimeContext context) {
         this.agent = Objects.requireNonNull(agent);
-        // A durable session spans many runs: a caller's per-call modelId must not stick to
-        // every future turn. Queued and resumed turns run the agent's build-time model.
-        this.context = RuntimeContext.builder(context).modelId(null).build();
+        // A durable session spans many runs: a caller's pinned model must not stick to every
+        // future turn. Queued and resumed turns run the agent's build-time model.
+        this.context = RuntimeContext.builder(context).build();
+        this.context.put(Model.class, null);
         this.context.put(SessionRecorder.TURN_ID_KEY, null);
         this.context.put(SessionExecution.CONTEXT_KEY, null);
         this.key = agent.sessionKey(this.context);

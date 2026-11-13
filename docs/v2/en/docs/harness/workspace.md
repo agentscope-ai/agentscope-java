@@ -201,16 +201,16 @@ for message examples, dynamic sources and budgeting.
 
 ### Two-layer reads (filesystem-first + local fallback)
 
-For every "file injected into the prompt" (`AGENTS.md` / `MEMORY.md` / `knowledge/KNOWLEDGE.md` / `additionalContextFile`), `WorkspaceManager.readWithOverride()` does a **two-layer read**:
+Reads ask the configured `AbstractFilesystem` first — the path resolves inside the caller's namespace, so a per-caller copy wins — then fall back to local disk. Where the fallback lands depends on who owns the data:
 
-```
-1. Ask the configured AbstractFilesystem: do you have this relative path?
-   ├─ yes → return that content (the "override" layer)
-   └─ no  → fall through to step 2
-2. Read local disk at workspace.resolve(relativePath)
-```
+| Data | Filesystem layer | Local fallback |
+|---|---|---|
+| `AGENTS.md` / `knowledge/KNOWLEDGE.md` / `additionalContextFile` / `tools.json` | `<namespace>/<path>` | `workspace/<path>` (shared template) |
+| `MEMORY.md` / `memory/*.md` / task records | `<namespace>/<path>` | `<namespace>/<path>` |
 
-Writes always go through layer 1 (the filesystem store), never directly to local disk.
+The root copy of shared configuration is a template any caller may read, so it serves as the fallback. The root copy of per-identity data belongs to no identity, so that data falls back inside the caller's namespace only; a root-level leftover is no longer served to identified callers — move it into the namespace directory when upgrading. Contexts without a namespace or a configured filesystem keep the root read for both.
+
+Writes always go through the filesystem store, never directly to local disk.
 
 This pattern earns its keep in **shared-store mode**: the first replica starts with the team-git-synced `AGENTS.md` template available on local disk, so it works immediately; later any override (e.g. from an admin console editor) lands in the shared KV, and every replica's next `call()` reads the latest version. Template is fallback, remote override is truth.
 
@@ -340,7 +340,7 @@ Write path:
 
 Read path:
 
-- Framework reads `MEMORY.md` itself (two-layer; filesystem first).
+- The framework reads the caller's namespaced `MEMORY.md` itself (two-layer; filesystem first).
 - Agent can actively call `memory_search` / `memory_get` for older entries. See [Memory](/v2/en/docs/harness/memory).
 
 ### How namespace isolation maps to physical location

@@ -250,8 +250,35 @@ public final class ModelCreationContext {
             return this;
         }
 
+        /**
+         * Explicit cache identity for {@link CachePolicy#ENABLED} resolutions. Must not contain
+         * {@code '#'} — that character is reserved for the rotation-generation suffix {@link
+         * ModelRegistry} appends to named creation contexts; keeping it out of hand-built ids is
+         * what makes the two namespaces collision-free.
+         *
+         * @throws IllegalArgumentException if the trimmed cacheId contains {@code #}
+         */
         public Builder cacheId(String cacheId) {
-            this.cacheId = trimToNull(cacheId);
+            String trimmed = trimToNull(cacheId);
+            if (trimmed != null && trimmed.indexOf('#') >= 0) {
+                throw new IllegalArgumentException(
+                        "cacheId must not contain '#' — it is reserved for the"
+                                + " rotation-generation suffix ModelRegistry appends to named"
+                                + " creation contexts (contextId#generation): \""
+                                + trimmed
+                                + "\"");
+            }
+            this.cacheId = trimmed;
+            return this;
+        }
+
+        /**
+         * Registry-internal variant of {@link #cacheId(String)}, used only when {@link
+         * ModelRegistry} normalizes a named creation context: the registry appends the reserved
+         * {@code #<generation>} suffix itself, which the public setter rejects.
+         */
+        Builder registryCacheId(String registryCacheId) {
+            this.cacheId = registryCacheId;
             return this;
         }
 

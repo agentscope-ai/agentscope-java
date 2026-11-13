@@ -366,6 +366,9 @@ HarnessAgent agent = HarnessAgent.builder()
 | `addRoot(Path)` | Extra host directory the agent may access | none |
 | `additionalRoots(Collection)` | Batch-set extra directories | none |
 | `projectWritable(boolean)` | Route non-workspace writes to the project directory instead of workspace | `false` |
+| `namespaceBoundary(Boolean)` | Override the namespace boundary (absolute paths confined to the caller's own namespace under the workspace root, [isolation scopes](#isolationscope--bucketing-across-users-and-replicas)); `true`/`false` force, omit for the default | on for `ROOTED` |
+
+> **Upgrading — absolute paths under the workspace root:** the namespace boundary is on by default for `ROOTED` workspaces, so an absolute key such as `<workspace>/skills/tool.md` no longer reaches shared content at the workspace root (previously any session could address another session's directory that way). Shared content stays reachable through workspace-relative paths, which the overlay resolves against the read-only project layer; on a vetted single-tenant workspace that needs the old behaviour, pass `.namespaceBoundary(false)`.
 
 #### Path resolution policy (`LocalFsMode`)
 
@@ -550,7 +553,9 @@ Under shared-store mode, `tools.json` also follows the "remote upper, local temp
 
 ## Two-layer reading in the workspace
 
-Key files like `AGENTS.md`, `MEMORY.md`, `KNOWLEDGE.md` have a "two-layer fallback" on reads: look in your configured filesystem first, fall back to local disk if not found. This is useful for **"template files" in mode 1 (shared store)**: the first replica's local has the template `AGENTS.md` so it works immediately; later replicas read the up-to-date version from the shared store.
+Key files like `AGENTS.md`, `KNOWLEDGE.md` have a "two-layer fallback" on reads: look in your configured filesystem first, fall back to local disk if not found. This is useful for **"template files" in mode 1 (shared store)**: the first replica's local has the template `AGENTS.md` so it works immediately; later replicas read the up-to-date version from the shared store.
+
+Per-identity runtime data (`MEMORY.md`, `memory/*.md`, task records) falls back **inside the caller's namespace**, never the workspace root. See [Workspace](/v2/en/docs/harness/workspace#two-layer-reads-filesystem-first--local-fallback) for the rule.
 
 Writes always go through the configured filesystem store.
 

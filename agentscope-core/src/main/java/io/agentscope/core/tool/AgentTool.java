@@ -146,6 +146,16 @@ public interface AgentTool {
     }
 
     /**
+     * Whether this is a framework-provided system capability that must remain available for the
+     * agent to operate (e.g. meta tools). System tools bypass grant-layer trimming but still
+     * obey group activation. Marking a business tool {@code system=true} exempts it from grant
+     * trimming — an explicit declaration by the assembler (trusted boundary).
+     */
+    default boolean isSystem() {
+        return false;
+    }
+
+    /**
      * Whether this tool manages its own timeout, bypassing the ordinary tool execution timeout.
      * Parent cancellation still propagates to the tool.
      *

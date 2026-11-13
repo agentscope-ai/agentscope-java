@@ -15,6 +15,7 @@
  */
 package io.agentscope.core.skill;
 
+import io.agentscope.core.agent.CapabilitySurface;
 import io.agentscope.core.skill.util.SkillFileSystemHelper;
 import io.agentscope.core.skill.util.SkillUtil;
 import io.agentscope.core.tool.AgentTool;
@@ -114,8 +115,8 @@ public class SkillBox {
     }
 
     private SkillBox(SkillBox source, Toolkit toolkit) {
-        for (String id : source.getAllSkillIds()) {
-            skillRegistry.registerSkill(id, source.getSkill(id));
+        for (String skillId : source.getAllSkillIds()) {
+            skillRegistry.registerSkill(skillId, source.getSkill(skillId));
         }
         skillPromptProvider = source.skillPromptProvider.copyFor(skillRegistry);
         skillToolFactory = new SkillToolFactory(skillRegistry, toolkit);
@@ -157,6 +158,33 @@ public class SkillBox {
      */
     public String getSkillPrompt(SkillFilter filter) {
         return skillPromptProvider.getSkillSystemPrompt(filter);
+    }
+
+    /**
+     * Gets the skill system prompt trimmed to the given capability grant surface.
+     *
+     * <p>Package-private on purpose: this serves the static {@link SkillHook} injection path
+     * only. A public same-arity overload of {@code getSkillPrompt} would make the existing
+     * {@code getSkillPrompt(null)} call (null = all visible, a documented contract of the
+     * {@link SkillFilter} overload) ambiguous and break source compatibility.
+     *
+     * <p>{@code null} and unrestricted ({@code ALLOW_ALL}-shaped) surfaces keep the
+     * unfiltered prompt — byte-identical to {@link #getSkillPrompt()}. A restricted surface
+     * renders only the skills it grants (system-marked skills always pass), through the same
+     * provider pipeline as every other render — a single renderer, no second format. The
+     * per-skill decision is the surface's own {@code allowsSkill} predicate, the same one
+     * the dynamic skill middleware applies, so full-skillId (exact-copy) grant entries keep
+     * their precision. When nothing is granted the result is an empty string, which callers
+     * skip injecting.
+     *
+     * @param surface the per-call grant surface, or {@code null} for no trimming
+     * @return The trimmed skill system prompt, or empty string if no skill passes
+     */
+    String getSkillPrompt(CapabilitySurface surface) {
+        if (surface == null || surface.isUnrestricted()) {
+            return getSkillPrompt();
+        }
+        return skillPromptProvider.getSkillSystemPrompt(surface::allowsSkill);
     }
 
     /**
@@ -273,7 +301,11 @@ public class SkillBox {
             throw new IllegalArgumentException("Missing or empty required parameter: path");
         }
         return skillToolFactory.loadSkillResourceImpl(
-                skillId, path, skillToolFactory.resolveToolContext(param));
+                skillId,
+                path,
+                skillToolFactory.resolveToolContext(param),
+                // Not gated here: the single decision lives in loadSkillResourceImpl.
+                param.getRuntimeContext());
     }
 
     /**

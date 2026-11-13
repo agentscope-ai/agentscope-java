@@ -27,6 +27,7 @@ import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
+import io.agentscope.core.model.Model;
 import io.agentscope.core.session.SessionExecution;
 import io.agentscope.core.session.SessionExportSink;
 import io.agentscope.core.session.SessionRecorder;
@@ -409,13 +410,18 @@ public class SubAgentTool implements AgentTool {
     }
 
     /**
-     * Drops the caller's per-call model choice before handing the context to a subagent: a
-     * subagent's model is a build-time contract and must not be overridden by the caller's
-     * runtime selection. The derived copy keeps everything else (ids, attributes, run
-     * correlation); when no model id is set the original context is passed through unchanged.
+     * Drops the caller's pinned model before handing the context to a subagent: a subagent's
+     * model is a build-time contract and must not be overridden by the caller's runtime
+     * selection. The derived copy keeps everything else (ids, attributes, run correlation);
+     * when nothing is pinned the original context is passed through unchanged.
      */
     private static RuntimeContext stripCallerModel(RuntimeContext rc) {
-        return rc.getModelId() == null ? rc : RuntimeContext.builder(rc).modelId(null).build();
+        if (rc.get(Model.class) == null) {
+            return rc;
+        }
+        RuntimeContext stripped = RuntimeContext.builder(rc).build();
+        stripped.put(Model.class, null); // the typed bag carries the caller run's pinned model
+        return stripped;
     }
 
     /**

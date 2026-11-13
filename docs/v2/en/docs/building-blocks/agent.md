@@ -603,6 +603,8 @@ The framework automatically selects the implementation path based on model capab
 
 Either way, the caller's code is identical — path selection is transparent.
 
+On the fallback path, successful output-tool cleanup preserves business tool calls and their results, including when the model returns them alongside `generate_response` in one response. Only the internal output-tool exchange is removed, so subsequent turns retain paired business-tool history.
+
 When a `ModelRequestPreparer` is configured, including Harness's context compiler, the tool reminder and required `generate_response` schema are assembled before final preparation. The model receives the prepared messages, tools, and options. The reminder is a request-only projection, so it is included in budget checks without changing durable user messages or entering conversation history. A fallback model prepares the request again for its own limits.
 
 ```

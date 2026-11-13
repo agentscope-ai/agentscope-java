@@ -33,7 +33,9 @@ import java.util.Set;
  *   <li>{@code sessionId} — non-null, non-blank; identifies a conversation / session.
  *   <li>{@code userId} — nullable. {@code null} represents an anonymous / single-tenant
  *       caller (CLI usage, tests). Implementations group all anonymous sessions under a
- *       single namespace.
+ *       single namespace. A blank {@code userId} and the reserved value {@code "__anon__"}
+ *       must resolve to that same namespace, because {@code ReActAgent} treats all three as
+ *       the same anonymous caller.
  * </ul>
  *
  * <p>Implementations decide how to combine the pair into a storage key (filesystem path,

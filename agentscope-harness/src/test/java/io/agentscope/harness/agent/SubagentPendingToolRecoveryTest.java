@@ -50,8 +50,10 @@ import io.agentscope.harness.agent.testing.HarnessQuiescence;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.util.EnumSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -183,6 +185,11 @@ class SubagentPendingToolRecoveryTest {
                         .middleware(
                                 new MiddlewareBase() {
                                     @Override
+                                    public Set<ExtensionPoint> activePoints() {
+                                        return EnumSet.of(ExtensionPoint.ON_ACTING);
+                                    }
+
+                                    @Override
                                     public Flux<AgentEvent> onActing(
                                             Agent agent,
                                             RuntimeContext context,
@@ -289,6 +296,11 @@ class SubagentPendingToolRecoveryTest {
                         .enablePendingToolRecovery(true)
                         .middleware(
                                 new MiddlewareBase() {
+                                    @Override
+                                    public Set<ExtensionPoint> activePoints() {
+                                        return EnumSet.of(ExtensionPoint.ON_ACTING);
+                                    }
+
                                     @Override
                                     public Flux<AgentEvent> onActing(
                                             Agent agent,

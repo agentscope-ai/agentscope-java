@@ -19,6 +19,8 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.agentscope.core.agent.CapabilitySurface;
+import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
@@ -55,6 +57,16 @@ class ToolExecutorTest {
 
     private Toolkit toolkit;
 
+    /**
+     * Direct-execution tests bypass the agent {@code call()} entry, so the grant layer's
+     * fail-closed semantics would deny every backend tool. Seed ALLOW_ALL explicitly.
+     */
+    private static RuntimeContext grantRc() {
+        RuntimeContext rc = RuntimeContext.empty();
+        rc.put(CapabilitySurface.class, CapabilitySurface.ALLOW_ALL);
+        return rc;
+    }
+
     @BeforeEach
     void setUp() {
         toolkit = new Toolkit();
@@ -83,7 +95,8 @@ class ToolExecutorTest {
                         .build();
 
         List<ToolResultBlock> responses =
-                toolkit.callTools(List.of(addCall, concatCall), null, null, null).block(TIMEOUT);
+                toolkit.callTools(List.of(addCall, concatCall), null, null, grantRc())
+                        .block(TIMEOUT);
 
         assertNotNull(responses, "Executor should return responses for tool calls");
         assertEquals(2, responses.size(), "All tool calls should be executed");
@@ -125,6 +138,94 @@ class ToolExecutorTest {
     }
 
     @Test
+    @DisplayName("Should not execute malformed-argument calls through direct Toolkit paths")
+    void shouldNotExecuteMalformedCallWithPartialInput() {
+        // A truncated call carries merged input beside the malformed marker — the merged args
+        // can even look complete; the executor must refuse the call like the agent loop
+        // does, instead of executing it from that input.
+        ToolUseBlock truncated =
+                ToolUseBlock.builder()
+                        .id("call-malformed")
+                        .name("add")
+                        .input(Map.of("a", 10, "b", 20))
+                        .content("{}")
+                        .metadata(Map.of(ToolUseBlock.METADATA_MALFORMED_ARGUMENTS, true))
+                        .build();
+
+        ToolResultBlock response =
+                toolkit.callTool(ToolCallParam.builder().toolUseBlock(truncated).build())
+                        .block(TIMEOUT);
+
+        assertNotNull(response);
+        assertEquals(
+                ToolResultState.ERROR,
+                response.getState(),
+                "malformed calls must be refused, not executed from merged input: "
+                        + extractFirstText(response));
+        // The guard must be the rejecting layer here: "{}" content would also fail schema
+        // validation (add's parameters are required), so the message pins which one fired.
+        assertTrue(
+                extractFirstText(response).contains("malformed"),
+                "expected the malformed guard, got: " + extractFirstText(response));
+    }
+
+    @Test
+    @DisplayName("Should not execute malformed calls with blank content through direct Toolkit")
+    void shouldNotExecuteMalformedCallWithBlankContent() {
+        // Marker with no usable content must resolve to "{}" (not fall back to the merged
+        // input), keeping direct Toolkit paths aligned with the agent loop's refusal.
+        ToolUseBlock truncated =
+                ToolUseBlock.builder()
+                        .id("call-malformed-blank")
+                        .name("add")
+                        .input(Map.of("a", 10, "b", 20))
+                        .metadata(Map.of(ToolUseBlock.METADATA_MALFORMED_ARGUMENTS, true))
+                        .build();
+
+        ToolResultBlock response =
+                toolkit.callTool(ToolCallParam.builder().toolUseBlock(truncated).build())
+                        .block(TIMEOUT);
+
+        assertNotNull(response);
+        assertEquals(
+                ToolResultState.ERROR,
+                response.getState(),
+                "malformed calls with blank content must not execute from merged input: "
+                        + extractFirstText(response));
+        assertTrue(
+                extractFirstText(response).contains("malformed"),
+                "expected the malformed guard, got: " + extractFirstText(response));
+    }
+
+    @Test
+    @DisplayName("Should not execute malformed calls with valid content through direct Toolkit")
+    void shouldNotExecuteMalformedCallWithValidContent() {
+        // The merged input beside a malformed marker can coincidentally form a complete,
+        // schema-valid object; execution must still be refused like the agent loop does,
+        // instead of running a call whose raw arguments were truncated or corrupt.
+        ToolUseBlock truncated =
+                ToolUseBlock.builder()
+                        .id("call-malformed-valid")
+                        .name("add")
+                        .input(Map.of("a", 10, "b", 20))
+                        .content("{\"a\":10,\"b\":20}")
+                        .metadata(Map.of(ToolUseBlock.METADATA_MALFORMED_ARGUMENTS, true))
+                        .build();
+
+        ToolResultBlock response =
+                toolkit.callTool(ToolCallParam.builder().toolUseBlock(truncated).build())
+                        .block(TIMEOUT);
+
+        assertNotNull(response);
+        assertEquals(
+                ToolResultState.ERROR,
+                response.getState(),
+                "malformed calls must not execute even when the merged input looks complete:"
+                        + " "
+                        + extractFirstText(response));
+    }
+
+    @Test
     @DisplayName("Should wrap tool errors inside executor response")
     void shouldReturnErrorWhenToolThrows() {
         Map<String, Object> errorInput = Map.of("message", "test failure");
@@ -137,7 +238,7 @@ class ToolExecutorTest {
                         .build();
 
         List<ToolResultBlock> responses =
-                toolkit.callTools(List.of(errorCall), null, null, null).block(TIMEOUT);
+                toolkit.callTools(List.of(errorCall), null, null, grantRc()).block(TIMEOUT);
 
         assertNotNull(responses, "Executor should return an error response");
         assertEquals(1, responses.size(), "Single failing call should yield one response");
@@ -185,7 +286,7 @@ class ToolExecutorTest {
                         .build();
 
         List<ToolResultBlock> responses =
-                toolkit.callTools(List.of(emptyCall), null, null, null).block(TIMEOUT);
+                toolkit.callTools(List.of(emptyCall), null, null, grantRc()).block(TIMEOUT);
 
         assertNotNull(responses, "Executor should return an error response");
         assertEquals(1, responses.size(), "Empty completion should still yield one response");
@@ -221,7 +322,7 @@ class ToolExecutorTest {
                         .build();
 
         List<ToolResultBlock> responses =
-                toolkit.callTools(List.of(externalCall), null, null, null).block(TIMEOUT);
+                toolkit.callTools(List.of(externalCall), null, null, grantRc()).block(TIMEOUT);
 
         assertNotNull(responses, "Executor should return a suspended response");
         assertEquals(1, responses.size(), "Single external call should yield one response");
@@ -263,7 +364,8 @@ class ToolExecutorTest {
                         .build();
 
         List<ToolResultBlock> responses =
-                toolkit.callTools(List.of(invalidExternalCall), null, null, null).block(TIMEOUT);
+                toolkit.callTools(List.of(invalidExternalCall), null, null, grantRc())
+                        .block(TIMEOUT);
 
         assertNotNull(responses, "Executor should return a validation response");
         assertEquals(1, responses.size(), "Single external call should yield one response");
@@ -312,7 +414,7 @@ class ToolExecutorTest {
                         .build();
 
         List<ToolResultBlock> responses =
-                toolkit.callTools(List.of(externalCall), null, null, null).block(TIMEOUT);
+                toolkit.callTools(List.of(externalCall), null, null, grantRc()).block(TIMEOUT);
 
         assertNotNull(responses, "Executor should return an authorization response");
         assertEquals(1, responses.size(), "Single external call should yield one response");
@@ -369,7 +471,7 @@ class ToolExecutorTest {
                         .build();
 
         List<ToolResultBlock> responses =
-                toolkit.callTools(List.of(interruptedCall), null, null, null).block(TIMEOUT);
+                toolkit.callTools(List.of(interruptedCall), null, null, grantRc()).block(TIMEOUT);
 
         assertNotNull(responses, "Should return error response");
         assertEquals(1, responses.size(), "Should have one response");
@@ -449,7 +551,8 @@ class ToolExecutorTest {
                         .build();
 
         List<ToolResultBlock> responses =
-                toolkit.callTools(List.of(call1, call2, call3), null, null, null).block(TIMEOUT);
+                toolkit.callTools(List.of(call1, call2, call3), null, null, grantRc())
+                        .block(TIMEOUT);
 
         assertNotNull(responses, "Should return responses");
         assertEquals(3, responses.size(), "Should have three responses");
@@ -506,6 +609,7 @@ class ToolExecutorTest {
                                 ToolCallParam.builder()
                                         .toolUseBlock(toolCall)
                                         .input(explicitInput)
+                                        .runtimeContext(grantRc())
                                         .build())
                         .block(TIMEOUT);
 
@@ -540,7 +644,11 @@ class ToolExecutorTest {
                         .build();
 
         ToolResultBlock result =
-                toolkit.callTool(ToolCallParam.builder().toolUseBlock(toolCall).build())
+                toolkit.callTool(
+                                ToolCallParam.builder()
+                                        .toolUseBlock(toolCall)
+                                        .runtimeContext(grantRc())
+                                        .build())
                         .block(TIMEOUT);
 
         assertNotNull(result, "Result should not be null");
@@ -599,7 +707,11 @@ class ToolExecutorTest {
                         .build();
 
         ToolResultBlock result =
-                executor.execute(ToolCallParam.builder().toolUseBlock(toolCall).build())
+                executor.execute(
+                                ToolCallParam.builder()
+                                        .toolUseBlock(toolCall)
+                                        .runtimeContext(grantRc())
+                                        .build())
                         .block(TIMEOUT);
 
         assertNotNull(result, "Result should not be null");
@@ -675,7 +787,7 @@ class ToolExecutorTest {
                         .build();
 
         List<ToolResultBlock> responses =
-                toolkit.callTools(List.of(npeCall, argCall), null, null, null).block(TIMEOUT);
+                toolkit.callTools(List.of(npeCall, argCall), null, null, grantRc()).block(TIMEOUT);
 
         assertNotNull(responses, "Should return responses");
         assertEquals(2, responses.size(), "Should have two responses");

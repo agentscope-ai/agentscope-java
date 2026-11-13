@@ -24,6 +24,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/agentscope-ai/agentscope-java/agentscope-service/service-controlplane/v2/internal/artifact"
@@ -195,4 +196,125 @@ func TestPublicManagedSessionAccountFilesAndNativeBridge(t *testing.T) {
 		t.Fatal("Application owner cannot list its Session")
 	}
 
+}
+
+// A failed managed turn is terminal in the public API but still blocks later
+// turns in the dataplane, so cancelling it must reach the dataplane.
+func TestPublicManagedSessionCancelDiscardsFailedTurn(t *testing.T) {
+	dsn := os.Getenv("CONTROL_PLANE_TEST_POSTGRES_DSN")
+	if dsn == "" {
+		t.Skip("CONTROL_PLANE_TEST_POSTGRES_DSN not set")
+	}
+	user := "failed-turn-user-" + uuid.NewString()[:8]
+	var mu sync.Mutex
+	nativeStatus, nativeCancels := "failed", 0
+	runtime := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		defer mu.Unlock()
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case r.Method == "POST" && strings.HasSuffix(r.URL.Path, "/turns"):
+			w.WriteHeader(202)
+			io.WriteString(w, `{"id":"native-turn","status":"queued"}`)
+		case r.Method == "POST" && strings.HasSuffix(r.URL.Path, "/turns/native-turn/cancel"):
+			nativeCancels++
+			nativeStatus = "cancelled"
+			io.WriteString(w, `{"id":"native-turn","status":"cancelled"}`)
+		case r.Method == "GET" && strings.HasSuffix(r.URL.Path, "/turns/native-turn"):
+			io.WriteString(w, `{"id":"native-turn","status":"`+nativeStatus+`","errorCode":"model_error"}`)
+		case strings.HasSuffix(r.URL.Path, "/events"):
+			io.WriteString(w, `{"data":[],"next_cursor":"native-cursor","has_more":false}`)
+		case strings.HasSuffix(r.URL.Path, "/snapshot"):
+			io.WriteString(w, `{"items":[],"turns":[],"runs":[],"tools":[],"required_actions":[],"artifacts":[],"usage":{}}`)
+		default:
+			t.Log("unexpected dataplane request", r.Method, r.URL.Path)
+			w.WriteHeader(404)
+		}
+	}))
+	defer runtime.Close()
+	cfg := product.DefaultConfig()
+	cfg.DSN = dsn
+	cfg.SeedUsers = false
+	cfg.WorkspaceRoot = t.TempDir()
+	cfg.DataURL = runtime.URL
+	cfg.InternalToken = "session-internal"
+	p, err := product.Open(t.Context(), cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer p.Close()
+	db, err := pgxpool.New(t.Context(), dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	hash, _ := bcrypt.GenerateFromPassword([]byte("test-password"), bcrypt.MinCost)
+	if _, err = db.Exec(t.Context(), `INSERT INTO cp.users(user_id,username,password_hash,roles_csv,created_at) VALUES($1,$1,$2,'user',0)`, user, string(hash)); err != nil {
+		t.Fatal(err)
+	}
+	st, err := store.Open(t.Context(), acceptancePostgresConfig(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	s := NewServer(ServerOptions{Store: st, Product: p, AuthToken: "console", ArtifactProvider: &artifact.LocalProvider{Root: t.TempDir()}})
+	token := ""
+	call := func(method, path, body, key string) *httptest.ResponseRecorder {
+		r := httptest.NewRequest(method, path, bytes.NewBufferString(body))
+		r.Header.Set("Content-Type", "application/json")
+		r.Header.Set("Idempotency-Key", key)
+		if token != "" {
+			r.Header.Set("Authorization", "Bearer "+token)
+		}
+		w := httptest.NewRecorder()
+		s.router.ServeHTTP(w, r)
+		return w
+	}
+	commands := func(turnBase string) []any {
+		v := decodeSessionTest(t, call("GET", turnBase+"/capabilities", "", ""), 200)
+		return v["available_commands"].([]any)
+	}
+	token = decodeSessionTest(t, call("POST", "/api/auth/login", `{"username":"`+user+`","password":"test-password"}`, ""), 200)["token"].(string)
+	a := decodeSessionTest(t, call("POST", "/api/v1/agents", `{"agentKey":"worker","displayName":"Worker","binding":{"kind":"managed"},"definition":{"name":"Worker","system":"Read the input"}}`, ""), 201)
+	agentID := a["agent"].(map[string]any)["id"].(string)
+	v := decodeSessionTest(t, call("POST", "/api/v1/agent-sessions", `{"target":{"type":"agent","id":"`+agentID+`"}}`, "session"), 201)
+	base := "/api/v1/agent-sessions/" + v["id"].(string)
+	turn := decodeSessionTest(t, call("POST", base+"/turns", `{"message":"hello"}`, "turn"), 202)
+	turnBase := base + "/turns/" + turn["id"].(string)
+	if state := decodeSessionTest(t, call("GET", turnBase, "", ""), 200); state["status"] != "failed" {
+		t.Fatal("native failure was not projected", state)
+	}
+	if got := commands(turnBase); len(got) != 1 || got[0] != "cancel" {
+		t.Fatal("failed turn must offer only cancel", got)
+	}
+	if w := call("POST", turnBase+"/resume", `{}`, "resume"); w.Code != 409 || !strings.Contains(w.Body.String(), "cancel it to continue") {
+		t.Fatal("resume of a failed turn must point to cancellation", w.Code, w.Body)
+	}
+	accepted := decodeSessionTest(t, call("POST", turnBase+"/cancel", `{}`, "discard"), 202)
+	inv, err := st.Endpoints().GetInvocation(t.Context(), uuid.MustParse(turn["id"].(string)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = s.sweepServiceInvocation(t.Context(), inv); err != nil {
+		t.Fatal(err)
+	}
+	commandID := accepted["command"].(map[string]any)["id"].(string)
+	if command := decodeSessionTest(t, call("GET", turnBase+"/commands/"+commandID, "", ""), 200)["command"].(map[string]any); command["status"] != "completed" {
+		t.Fatal("discard command did not complete", command)
+	}
+	mu.Lock()
+	cancels := nativeCancels
+	mu.Unlock()
+	if cancels != 1 {
+		t.Fatalf("dataplane cancel calls = %d, want 1", cancels)
+	}
+	if state := decodeSessionTest(t, call("GET", turnBase, "", ""), 200); state["status"] != "failed" {
+		t.Fatal("discarding changed the public outcome", state)
+	}
+	if got := commands(turnBase); len(got) != 0 {
+		t.Fatal("discarded turn still offers commands", got)
+	}
+	if w := call("POST", turnBase+"/cancel", `{}`, "again"); w.Code != 409 {
+		t.Fatal("discarded turn accepted another command", w.Code, w.Body)
+	}
 }

@@ -76,6 +76,30 @@ Flux<AguiEvent> events = Flux.using(
 
 `RunAgentInput` 由前端传入，包含 `threadId`、`runId`、`messages`、`tools`、`state`等。适配器内部完成消息转换、调用 Agent 流式 API，再把事件映射到 AG-UI。
 
+## 自定义请求处理器
+
+手动配置 Spring MVC 或 WebFlux 时，可以传入 `AguiRequestProcessor`，使用自定义 Agent 解析器和请求处理配置：
+
+```java
+import io.agentscope.core.agui.processor.AguiRequestProcessor;
+import io.agentscope.spring.boot.agui.mvc.AguiMvcController;
+import io.agentscope.spring.boot.agui.webflux.AguiWebFluxHandler;
+
+AguiRequestProcessor processor = AguiRequestProcessor.builder()
+    .agentResolver(customAgentResolver)
+    .build();
+
+AguiMvcController controller = AguiMvcController.builder()
+    .requestProcessor(processor)
+    .build();
+
+AguiWebFluxHandler handler = AguiWebFluxHandler.builder()
+    .requestProcessor(processor)
+    .build();
+```
+
+配置自定义处理器后，MVC 控制器和 WebFlux Handler 不再要求 Agent 注册表。它们 Builder 的 `agentRegistry`、`sessionManager`、`serverSideMemory`、`config`、`adapterFactory` 和 `runtimeContextResolver` 选项会被忽略，请在传入的处理器上配置相应行为。MVC 的 `sseTimeout`，以及两者共有的 `agentIdHeader` 和 `interruptOnDisconnect` 等传输层选项仍然生效。不设置 `requestProcessor`（或传入 `null`）时，继续使用默认处理器并要求提供注册表。
+
 ## 事件映射
 
 v2 正常链路以 `AgentEvent` 为输入，内置 converter 负责语义映射，未映射事件会回退为官方 `RAW` 事件。

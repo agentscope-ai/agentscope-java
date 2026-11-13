@@ -174,6 +174,20 @@ import io.agentscope.extensions.redis.snapshot.RedisSnapshotSpec;
 SandboxSnapshotSpec spec = new RedisSnapshotSpec(jedis, "myapp:snapshot:", 3600);
 ```
 
+也支持 Lettuce 客户端——传入 `byte[]` 连接的同步命令即可：
+
+```java
+// 单机 / 哨兵
+StatefulRedisConnection<byte[], byte[]> connection =
+    redisClient.connect(ByteArrayCodec.INSTANCE);
+SandboxSnapshotSpec spec = new RedisSnapshotSpec(connection.sync(), "myapp:snapshot:", 3600);
+
+// 集群
+StatefulRedisClusterConnection<byte[], byte[]> clusterConnection =
+    redisClusterClient.connect(ByteArrayCodec.INSTANCE);
+SandboxSnapshotSpec spec = new RedisSnapshotSpec(clusterConnection.sync(), "myapp:snapshot:", 3600);
+```
+
 > 注意 Redis 内存代价——大工作区（>50MB）建议用 OSS。
 
 ### 4. RedisSandboxExecutionGuard
