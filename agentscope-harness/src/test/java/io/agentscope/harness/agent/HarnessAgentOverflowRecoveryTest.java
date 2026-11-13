@@ -34,7 +34,11 @@ import static org.mockito.Mockito.when;
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.event.AgentEvent;
+import io.agentscope.core.event.ConfirmResult;
 import io.agentscope.core.event.ModelCallStartEvent;
+import io.agentscope.core.hook.Hook;
+import io.agentscope.core.hook.HookEvent;
+import io.agentscope.core.hook.PreCallEvent;
 import io.agentscope.core.message.AudioBlock;
 import io.agentscope.core.message.Base64Source;
 import io.agentscope.core.message.GenerateReason;
@@ -53,12 +57,20 @@ import io.agentscope.core.model.ChatUsage;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.Model;
 import io.agentscope.core.model.ToolSchema;
+import io.agentscope.core.permission.AdditionalWorkingDirectory;
+import io.agentscope.core.permission.PermissionBehavior;
+import io.agentscope.core.permission.PermissionContextState;
+import io.agentscope.core.permission.PermissionDecision;
+import io.agentscope.core.permission.PermissionMode;
+import io.agentscope.core.permission.PermissionRule;
 import io.agentscope.core.state.AgentState;
 import io.agentscope.core.state.AgentStateStore;
 import io.agentscope.core.state.InMemoryAgentStateStore;
 import io.agentscope.core.state.JsonFileAgentStateStore;
 import io.agentscope.core.state.State;
 import io.agentscope.core.tool.Tool;
+import io.agentscope.core.tool.ToolBase;
+import io.agentscope.core.tool.ToolCallParam;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.harness.agent.filesystem.spec.SandboxFilesystemSpec;
 import io.agentscope.harness.agent.memory.MemoryConfig;
@@ -85,6 +97,7 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
@@ -93,6 +106,7 @@ import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
 import reactor.core.publisher.Sinks;
 import reactor.core.scheduler.Schedulers;
 import reactor.test.StepVerifier;
@@ -801,6 +815,238 @@ class HarnessAgentOverflowRecoveryTest {
         }
         assertEquals(before + 4, model.mainInputs.size());
         assertEquals(2, model.summaryInputs.size());
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"json-file", "in-memory"})
+    void overflowRetryKeepsAdmittedPolicyAndPrecallAdministrationWins(String kind)
+            throws Exception {
+        AgentStateStore store = store(kind);
+        ScriptedModel model = new ScriptedModel();
+        PolicyProbe probe = new PolicyProbe();
+        Toolkit toolkit = new Toolkit();
+        toolkit.registerAgentTool(probe);
+        PermissionContextState template = policy(PermissionBehavior.DENY);
+        PermissionContextState precall = policy(PermissionBehavior.ALLOW);
+        RuntimeContext ctx = RuntimeContext.builder().sessionId(SESSION_ID).build();
+        try (HarnessAgent agent =
+                agentBuilder(model, store, toolkit).permissionContext(template).build()) {
+            agent.getDelegate().replacePermissionContext(null, SESSION_ID, precall);
+            runPriorTurns(agent);
+            assertEquals(precall, agent.getDelegate().getAgentState(ctx).getPermissionContext());
+            PendingResponse summary = new PendingResponse();
+            model.summaries.add(summary.stream());
+            model.script(overflow());
+            var older = agent.call("admitted before administration", ctx).toFuture();
+            try {
+                await(summary.subscribed);
+                PermissionContextState replacement = policy(PermissionBehavior.DENY);
+                agent.getDelegate().replacePermissionContext(null, SESSION_ID, replacement);
+                assertEquals(
+                        replacement, agent.getDelegate().getAgentState(ctx).getPermissionContext());
+                assertFalse(hasSummary(persistedContext(store)));
+                model.script(toolUse("older-policy", "policy_probe"));
+                summary.complete(textResponse("recovered history"));
+                assertEquals("ok", older.get(5, TimeUnit.SECONDS).getTextContent());
+                assertEquals(1, probe.calls.get(), "older retry must retain its admitted ALLOW");
+                assertTrue(
+                        probe.checkedContexts.stream().allMatch(precall::equals),
+                        "ToolBase checks must see the same admitted context after recovery");
+                model.script(toolUse("next-policy", "policy_probe"));
+                assertEquals(
+                        "ok",
+                        agent.call("next policy", ctx)
+                                .block(Duration.ofSeconds(5))
+                                .getTextContent());
+                assertEquals(1, probe.calls.get(), "next call must use administered DENY");
+                assertDenied(persistedContext(store), "next-policy");
+                assertEquals(
+                        replacement, agent.getDelegate().getAgentState(ctx).getPermissionContext());
+                assertEquals(
+                        replacement,
+                        store.get(null, SESSION_ID, "agent_state", AgentState.class)
+                                .orElseThrow()
+                                .getPermissionContext());
+                assertEquals(
+                        policy(PermissionBehavior.DENY),
+                        template,
+                        "administration must not mutate the builder template");
+            } finally {
+                older.cancel(true);
+            }
+        }
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"json-file", "in-memory"})
+    void acceptedRulesReachCurrentAdminCacheAcrossOverflowAndTheNextCall(String kind)
+            throws Exception {
+        AgentStateStore store = store(kind);
+        ScriptedModel model = new ScriptedModel();
+        PolicyProbe probe = new PolicyProbe();
+        Toolkit toolkit = new Toolkit();
+        toolkit.registerAgentTool(probe);
+        AtomicInteger confirmations = new AtomicInteger();
+        toolkit.registerAgentTool(
+                new ToolBase(
+                        ToolBase.builder()
+                                .name("confirm")
+                                .description("confirm")
+                                .inputSchema(Map.of("type", "object"))) {
+                    @Override
+                    public Mono<PermissionDecision> checkPermissions(
+                            Map<String, Object> input, PermissionContextState context) {
+                        return Mono.just(PermissionDecision.ask("confirm"));
+                    }
+
+                    @Override
+                    public Mono<ToolResultBlock> callAsync(ToolCallParam param) {
+                        confirmations.incrementAndGet();
+                        return Mono.just(ToolResultBlock.text("confirmed"));
+                    }
+                });
+        AtomicBoolean holdNext = new AtomicBoolean();
+        CountDownLatch admitted = new CountDownLatch(1);
+        Sinks.Empty<Void> release = Sinks.empty();
+        Hook holdConfirmation =
+                new Hook() {
+                    @Override
+                    public <T extends HookEvent> Mono<T> onEvent(T event) {
+                        if (event instanceof PreCallEvent && holdNext.compareAndSet(true, false)) {
+                            admitted.countDown();
+                            return release.asMono().thenReturn(event);
+                        }
+                        return Mono.just(event);
+                    }
+                };
+        try (HarnessAgent agent =
+                agentBuilder(model, store, toolkit)
+                        .permissionContext(policy(PermissionBehavior.ALLOW))
+                        .hook(holdConfirmation)
+                        .build()) {
+            RuntimeContext ctx = runPriorTurns(agent);
+            model.script(toolUse("confirm-policy", "confirm"));
+            Msg prompt = agent.call("confirm policy", ctx).block(Duration.ofSeconds(5));
+            assertNotNull(prompt);
+            assertEquals(GenerateReason.PERMISSION_ASKING, prompt.getGenerateReason());
+            PermissionRule rule =
+                    new PermissionRule(
+                            "policy_probe", null, PermissionBehavior.DENY, "confirmation");
+            Msg acceptance =
+                    Msg.builder()
+                            .role(MsgRole.USER)
+                            .textContent("")
+                            .metadata(
+                                    Map.of(
+                                            Msg.METADATA_CONFIRM_RESULTS,
+                                            List.of(
+                                                    new ConfirmResult(
+                                                            true,
+                                                            prompt.getContentBlocks(
+                                                                            ToolUseBlock.class)
+                                                                    .get(0),
+                                                            List.of(rule)))))
+                            .build();
+            PendingResponse summary = new PendingResponse();
+            model.summaries.add(summary.stream());
+            model.script(overflow());
+            holdNext.set(true);
+            var accepting = agent.call(acceptance, ctx).toFuture();
+            try {
+                await(admitted);
+                PermissionContextState admin =
+                        PermissionContextState.builder()
+                                .mode(PermissionMode.BYPASS)
+                                .addWorkingDirectory(
+                                        "admin",
+                                        new AdditionalWorkingDirectory(
+                                                workspace.toString(), "admin"))
+                                .addDenyRule(
+                                        "audit",
+                                        new PermissionRule(
+                                                "audit",
+                                                null,
+                                                PermissionBehavior.DENY,
+                                                "administrator"))
+                                .build();
+                agent.getDelegate().replacePermissionContext(null, SESSION_ID, admin);
+                assertEquals(Sinks.EmitResult.OK, release.tryEmitEmpty());
+                await(summary.subscribed);
+                PermissionContextState expected = admin.withAddedRules(List.of(rule));
+                assertEquals(
+                        expected,
+                        agent.getDelegate().getAgentState(ctx).getPermissionContext(),
+                        "confirmation must update CURRENT cache without replacing admin settings");
+                assertEquals(1, confirmations.get());
+                model.script(toolUse("confirmed-retry", "policy_probe"));
+                summary.complete(textResponse("recovered history"));
+                assertEquals("ok", accepting.get(5, TimeUnit.SECONDS).getTextContent());
+                assertDenied(persistedContext(store), "confirmed-retry");
+                model.script(toolUse("confirmed-next", "policy_probe"));
+                assertEquals(
+                        "ok",
+                        agent.call("next confirmed policy", ctx)
+                                .block(Duration.ofSeconds(5))
+                                .getTextContent());
+                assertDenied(persistedContext(store), "confirmed-next");
+                assertEquals(0, probe.calls.get());
+                assertEquals(
+                        expected, agent.getDelegate().getAgentState(ctx).getPermissionContext());
+                assertEquals(
+                        expected,
+                        store.get(null, SESSION_ID, "agent_state", AgentState.class)
+                                .orElseThrow()
+                                .getPermissionContext());
+            } finally {
+                release.tryEmitEmpty();
+                accepting.cancel(true);
+            }
+        }
+    }
+
+    private static PermissionContextState policy(PermissionBehavior behavior) {
+        return PermissionContextState.builder()
+                .build()
+                .withAddedRules(
+                        List.of(new PermissionRule("policy_probe", null, behavior, "policy")));
+    }
+
+    private static void assertDenied(List<Msg> messages, String id) {
+        assertTrue(
+                messages.stream()
+                        .flatMap(m -> m.getContentBlocks(ToolResultBlock.class).stream())
+                        .anyMatch(
+                                r ->
+                                        id.equals(r.getId())
+                                                && r.getState()
+                                                        == io.agentscope.core.message
+                                                                .ToolResultState.DENIED));
+    }
+
+    private static final class PolicyProbe extends ToolBase {
+        private final AtomicInteger calls = new AtomicInteger();
+        private final List<PermissionContextState> checkedContexts = new CopyOnWriteArrayList<>();
+
+        PolicyProbe() {
+            super(
+                    ToolBase.builder()
+                            .name("policy_probe")
+                            .description("policy probe")
+                            .inputSchema(Map.of("type", "object")));
+        }
+
+        @Override
+        public Mono<PermissionDecision> checkPermissions(
+                Map<String, Object> input, PermissionContextState context) {
+            checkedContexts.add(context);
+            return Mono.just(PermissionDecision.passthrough(getName()));
+        }
+
+        @Override
+        public Mono<ToolResultBlock> callAsync(ToolCallParam param) {
+            calls.incrementAndGet();
+            return Mono.just(ToolResultBlock.text("observed"));
+        }
     }
 
     private static void await(CountDownLatch latch) throws InterruptedException {
