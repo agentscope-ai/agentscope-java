@@ -37,8 +37,13 @@ import java.io.InputStreamReader;
  * <p><b>Configuration:</b>
  * <pre>
  *   export MCP_HTTP_URL=http://localhost:3000/mcp
+ *   export MCP_HTTP_BEARER_TOKEN=optional_bearer_token   # OR:
  *   export MCP_HTTP_API_KEY=optional_api_key
  * </pre>
+ *
+ * <p>Only one credential style is accepted — the example refuses to start when both
+ * {@code MCP_HTTP_BEARER_TOKEN} and {@code MCP_HTTP_API_KEY} are set, so a silently overridden
+ * header cannot go unnoticed.
  *
  * <p><b>Run:</b>
  * <pre>
@@ -75,12 +80,25 @@ public class McpStreamableHttpExample {
         // ── Build MCP client with streamable HTTP transport ───────────────────────────
         //
         // streamableHttpTransport(url) — connects to the HTTP streaming endpoint.
-        // header(name, value) — adds an HTTP request header (e.g. X-API-Key).
+        // header(name, value) — adds an HTTP request header (Authorization or X-API-Key).
         McpClientBuilder builder =
                 McpClientBuilder.create("http-server").streamableHttpTransport(httpUrl);
 
+        // Optional credentials: Bearer token or API key — mutually exclusive.
+        String bearerToken = System.getenv("MCP_HTTP_BEARER_TOKEN");
         String httpApiKey = System.getenv("MCP_HTTP_API_KEY");
-        if (httpApiKey != null && !httpApiKey.isBlank()) {
+        boolean hasBearer = bearerToken != null && !bearerToken.isBlank();
+        boolean hasApiKey = httpApiKey != null && !httpApiKey.isBlank();
+        if (hasBearer && hasApiKey) {
+            System.err.println(
+                    "Error: both MCP_HTTP_BEARER_TOKEN and MCP_HTTP_API_KEY are set —"
+                            + " choose one credential style.");
+            System.exit(1);
+        }
+        if (hasBearer) {
+            builder.header("Authorization", "Bearer " + bearerToken);
+            System.out.println("Authorization: Bearer header added.");
+        } else if (hasApiKey) {
             builder.header("X-API-Key", httpApiKey);
             System.out.println("X-API-Key header added.");
         }
@@ -89,51 +107,55 @@ public class McpStreamableHttpExample {
         McpClientWrapper mcpClient = builder.buildAsync().block();
         System.out.println(" Connected!\n");
 
-        Toolkit toolkit = new Toolkit();
-        System.out.print("Registering MCP tools ...");
-        toolkit.registerMcpClient(mcpClient).block();
-        System.out.println(" Done (registered: " + toolkit.getToolNames() + ")\n");
+        // try-with-resources: the wrapper is AutoCloseable — the underlying MCP session
+        // (and the HTTP connection) is shut down deterministically when the chat ends.
+        try (mcpClient) {
+            Toolkit toolkit = new Toolkit();
+            System.out.print("Registering MCP tools ...");
+            toolkit.registerMcpClient(mcpClient).block();
+            System.out.println(" Done (registered: " + toolkit.getToolNames() + ")\n");
 
-        ReActAgent agent =
-                ReActAgent.builder()
-                        .name("HttpMcpAgent")
-                        .sysPrompt(
-                                "You are a helpful assistant with access to tools via MCP over"
-                                        + " HTTP.")
-                        .model(
-                                DashScopeChatModel.builder()
-                                        .apiKey(apiKey)
-                                        .modelName("qwen-max")
-                                        .stream(true)
-                                        .formatter(new DashScopeChatFormatter())
-                                        .build())
-                        .toolkit(toolkit)
-                        .build();
+            ReActAgent agent =
+                    ReActAgent.builder()
+                            .name("HttpMcpAgent")
+                            .sysPrompt(
+                                    "You are a helpful assistant with access to tools via MCP"
+                                            + " over HTTP.")
+                            .model(
+                                    DashScopeChatModel.builder()
+                                            .apiKey(apiKey)
+                                            .modelName("qwen-max")
+                                            .stream(true)
+                                            .formatter(new DashScopeChatFormatter())
+                                            .build())
+                            .toolkit(toolkit)
+                            .build();
 
-        BufferedReader reader = new BufferedReader(new InputStreamReader(System.in));
-        System.out.println("Chat started. Type 'exit' to quit.\n");
+            BufferedReader reader = new BufferedReader(new InputStreamReader(System.in));
+            System.out.println("Chat started. Type 'exit' to quit.\n");
 
-        while (true) {
-            System.out.print("You: ");
-            String input = reader.readLine();
-            if (input == null || input.trim().equalsIgnoreCase("exit")) {
-                System.out.println("\nGoodbye!");
-                break;
+            while (true) {
+                System.out.print("You: ");
+                String input = reader.readLine();
+                if (input == null || input.trim().equalsIgnoreCase("exit")) {
+                    System.out.println("\nGoodbye!");
+                    break;
+                }
+                if (input.isBlank()) {
+                    continue;
+                }
+                Msg userMsg = new UserMessage(input.trim());
+                System.out.print("\nAgent: ");
+                agent.streamEvents(userMsg)
+                        .doOnNext(
+                                event -> {
+                                    if (event instanceof TextBlockDeltaEvent e) {
+                                        System.out.print(e.getDelta());
+                                    }
+                                })
+                        .blockLast();
+                System.out.println("\n");
             }
-            if (input.isBlank()) {
-                continue;
-            }
-            Msg userMsg = new UserMessage(input.trim());
-            System.out.print("\nAgent: ");
-            agent.streamEvents(userMsg)
-                    .doOnNext(
-                            event -> {
-                                if (event instanceof TextBlockDeltaEvent e) {
-                                    System.out.print(e.getDelta());
-                                }
-                            })
-                    .blockLast();
-            System.out.println("\n");
         }
     }
 }
