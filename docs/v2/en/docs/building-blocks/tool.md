@@ -27,7 +27,7 @@ When you only call `registerTool(Object)`, every `@Tool` method on the registere
 
 ## Java tools
 
-Direct `Toolkit.callTool(ToolCallParam)` results carry the input tool call's `id` and `name`, including execution, lookup, and validation errors. In 2.0.x this direct path does not add the batch execution timeout or thread scheduling policy.
+Direct `Toolkit.callTool(ToolCallParam)` results carry the input tool call's `id` and `name`, including execution, lookup, and validation errors. In 2.0.x this direct path does not add the batch execution timeout or thread scheduling policy. For local execution, non-empty `ToolCallParam.input` takes precedence over `ToolUseBlock.input`, and registered preset values take precedence over both. Schema validation checks these selected values, excluding preset parameters hidden from the schema; external tools still validate and suspend the original tool call without local preset injection.
 
 A Java tool is any object satisfying the `AgentTool` contract. AgentScope ships an abstract base class `ToolBase` for declaring tools with explicit parameter schemas, plus a reflective adapter that wraps plain methods into tools.
 

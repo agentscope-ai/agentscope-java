@@ -16,7 +16,9 @@
 package io.agentscope.core.tool;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.message.ContentBlock;
@@ -121,6 +123,217 @@ class ToolExecutorTest {
                 "30",
                 extractFirstText(response),
                 "Schema validation must validate the parsed input when raw content is absent");
+    }
+
+    @Test
+    void shouldRejectInvalidExplicitInputDespiteValidToolBlock() {
+        ValidatedInputTool tool = new ValidatedInputTool();
+        toolkit.registerTool(tool);
+        for (String content : new String[] {null, "{\"x\":1}"}) {
+            ToolUseBlock toolCall =
+                    ToolUseBlock.builder()
+                            .id("conflict-invalid")
+                            .name(tool.getName())
+                            .input(Map.of("x", 1))
+                            .content(content)
+                            .build();
+            ToolResultBlock result =
+                    toolkit.callTool(
+                                    ToolCallParam.builder()
+                                            .toolUseBlock(toolCall)
+                                            .input(Map.of("x", -1))
+                                            .build())
+                            .block(TIMEOUT);
+            assertNotNull(result);
+            assertEquals("conflict-invalid", result.getId());
+            assertEquals(tool.getName(), result.getName());
+            assertTrue(extractFirstText(result).startsWith("Error: Parameter validation failed"));
+        }
+        assertEquals(0, tool.calls.get(), "Invalid selected input must never reach the tool");
+    }
+
+    @Test
+    void shouldAcceptValidExplicitInputDespiteInvalidToolBlock() {
+        ValidatedInputTool tool = new ValidatedInputTool();
+        toolkit.registerTool(tool);
+        for (String content : new String[] {null, "{\"x\":-1}"}) {
+            ToolUseBlock toolCall =
+                    ToolUseBlock.builder()
+                            .name(tool.getName())
+                            .input(Map.of("x", -1))
+                            .content(content)
+                            .build();
+            ToolResultBlock result =
+                    toolkit.callTool(
+                                    ToolCallParam.builder()
+                                            .toolUseBlock(toolCall)
+                                            .input(Map.of("x", 1))
+                                            .build())
+                            .block(TIMEOUT);
+            assertNotNull(result);
+            assertEquals("x: 1", extractFirstText(result));
+        }
+        assertEquals(2, tool.calls.get());
+    }
+
+    @Test
+    void shouldValidateSelectedToolBlockInputRatherThanConflictingRawContent() {
+        ValidatedInputTool tool = new ValidatedInputTool();
+        toolkit.registerTool(tool);
+        ToolUseBlock toolCall =
+                ToolUseBlock.builder()
+                        .name(tool.getName())
+                        .input(Map.of("x", -1))
+                        .content("{\"x\":1}")
+                        .build();
+        ToolResultBlock result =
+                toolkit.callTool(ToolCallParam.builder().toolUseBlock(toolCall).build())
+                        .block(TIMEOUT);
+        assertNotNull(result);
+        assertTrue(extractFirstText(result).startsWith("Error: Parameter validation failed"));
+        assertEquals(0, tool.calls.get());
+    }
+
+    @Test
+    void shouldValidateVisiblePresetAndExcludeHiddenPresetFromClosedSchema() {
+        ValidatedInputTool tool = new ValidatedInputTool();
+        Object frameworkContext = new Object();
+        Map<String, Object> presets = Map.of("x", 7, "context", frameworkContext);
+        toolkit.registration()
+                .agentTool(tool)
+                .presetParameters(Map.of(tool.getName(), presets))
+                .apply();
+        ToolUseBlock toolCall =
+                ToolUseBlock.builder()
+                        .name(tool.getName())
+                        .input(Map.of("x", -1, "context", "block-context"))
+                        .build();
+        ToolCallParam param =
+                ToolCallParam.builder()
+                        .toolUseBlock(toolCall)
+                        .input(Map.of("x", -2, "context", "caller-context"))
+                        .build();
+        for (int i = 0; i < 2; i++) {
+            ToolResultBlock result = toolkit.callTool(param).block(TIMEOUT);
+            assertNotNull(result);
+            assertEquals("x: 7", extractFirstText(result));
+            assertSame(frameworkContext, tool.lastInput.get("context"));
+        }
+        assertEquals(2, tool.calls.get());
+        assertEquals(-1, toolCall.getInput().get("x"));
+        assertEquals(-2, param.getInput().get("x"));
+        assertEquals(7, presets.get("x"));
+        assertSame(frameworkContext, presets.get("context"));
+
+        // Hidden presets are exempt, but unrelated unknown caller fields are not.
+        ToolResultBlock unknown =
+                toolkit.callTool(
+                                ToolCallParam.builder()
+                                        .toolUseBlock(toolCall)
+                                        .input(Map.of("x", 1, "unknown", true))
+                                        .build())
+                        .block(TIMEOUT);
+        assertNotNull(unknown);
+        assertTrue(extractFirstText(unknown).startsWith("Error: Parameter validation failed"));
+        assertEquals(2, tool.calls.get());
+
+        toolkit.updateToolPresetParameters(tool.getName(), Map.of("x", -3));
+        ToolResultBlock invalidPreset = toolkit.callTool(param).block(TIMEOUT);
+        assertNotNull(invalidPreset);
+        assertTrue(
+                extractFirstText(invalidPreset).startsWith("Error: Parameter validation failed"));
+        assertEquals(2, tool.calls.get(), "Visible preset values must themselves pass validation");
+    }
+
+    @Test
+    void shouldKeepMalformedRawFallbackAndExternalSuspension() {
+        ValidatedInputTool tool = new ValidatedInputTool();
+        toolkit.registerTool(tool);
+        ToolUseBlock malformed =
+                ToolUseBlock.builder()
+                        .name(tool.getName())
+                        .input(Map.of("x", 1))
+                        .content("{\"x\":")
+                        .build();
+        ToolResultBlock local =
+                toolkit.callTool(ToolCallParam.builder().toolUseBlock(malformed).build())
+                        .block(TIMEOUT);
+        assertNotNull(local);
+        assertEquals("x: 1", extractFirstText(local));
+
+        toolkit.registration()
+                .agentTool(
+                        new SchemaOnlyTool(
+                                ToolSchema.builder()
+                                        .name("external_validated")
+                                        .description("External execution")
+                                        .parameters(tool.getParameters())
+                                        .build()))
+                .presetParameters(Map.of("external_validated", Map.of("x", 7)))
+                .apply();
+        ToolUseBlock externalCall =
+                ToolUseBlock.builder()
+                        .id("external-malformed")
+                        .name("external_validated")
+                        .input(Map.of("x", 1))
+                        .content("{\"x\":")
+                        .build();
+        ToolResultBlock suspended =
+                toolkit.callTool(
+                                ToolCallParam.builder()
+                                        .toolUseBlock(externalCall)
+                                        .input(Map.of("x", -1))
+                                        .build())
+                        .block(TIMEOUT);
+        assertNotNull(suspended);
+        assertTrue(suspended.isSuspended());
+        assertEquals(externalCall.getId(), suspended.getId());
+        assertEquals(externalCall.getName(), suspended.getName());
+        assertEquals("[Awaiting external execution]", extractFirstText(suspended));
+        assertEquals(Map.of("x", 1), externalCall.getInput());
+        assertEquals(1, tool.calls.get(), "External tools must not invoke a local tool");
+
+        ToolUseBlock invalidExternal =
+                ToolUseBlock.builder()
+                        .name("external_validated")
+                        .input(Map.of("x", -1))
+                        .content("{\"x\":")
+                        .build();
+        ToolResultBlock rejected =
+                toolkit.callTool(ToolCallParam.builder().toolUseBlock(invalidExternal).build())
+                        .block(TIMEOUT);
+        assertNotNull(rejected);
+        assertFalse(rejected.isSuspended(), "Presets must not mask invalid external input");
+        assertTrue(extractFirstText(rejected).startsWith("Error: Parameter validation failed"));
+    }
+
+    private static final class ValidatedInputTool extends ToolBase {
+        private final AtomicInteger calls = new AtomicInteger();
+        private Map<String, Object> lastInput;
+
+        private ValidatedInputTool() {
+            super(
+                    ToolBase.builder()
+                            .name("validated_input")
+                            .description("Test selected input validation")
+                            .inputSchema(
+                                    Map.of(
+                                            "type",
+                                            "object",
+                                            "properties",
+                                            Map.of("x", Map.of("type", "integer", "minimum", 0)),
+                                            "required",
+                                            List.of("x"),
+                                            "additionalProperties",
+                                            false)));
+        }
+
+        @Override
+        public Mono<ToolResultBlock> callAsync(ToolCallParam param) {
+            calls.incrementAndGet();
+            lastInput = param.getInput();
+            return Mono.just(ToolResultBlock.text("x: " + lastInput.get("x")));
+        }
     }
 
     @Test

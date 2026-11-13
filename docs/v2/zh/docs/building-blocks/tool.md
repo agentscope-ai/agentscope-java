@@ -27,7 +27,7 @@ toolkit.registerTool(new MyCustomTools());
 
 ## Java Tool
 
-直接调用 `Toolkit.callTool(ToolCallParam)` 的结果携带输入工具调用的 `id` 和 `name`，包括执行、查找和参数校验错误。在 2.0.x 中，这条直接调用路径不会额外应用批量执行的超时或线程调度策略。
+直接调用 `Toolkit.callTool(ToolCallParam)` 的结果携带输入工具调用的 `id` 和 `name`，包括执行、查找和参数校验错误。在 2.0.x 中，这条直接调用路径不会额外应用批量执行的超时或线程调度策略。本地执行时，非空的 `ToolCallParam.input` 优先于 `ToolUseBlock.input`，注册的预设参数值优先于两者。Schema 校验检查实际选中的值，但不校验 schema 中隐藏的预设参数；外部工具仍校验并挂起原始工具调用，不注入本地预设参数。
 
 Java tool 是任意满足 `AgentTool` 契约的对象。AgentScope 同时提供了一个 `ToolBase` 抽象基类用于显式建模带参数 schema 的 tool，以及一个反射适配器用于把普通方法包装成 tool。
 

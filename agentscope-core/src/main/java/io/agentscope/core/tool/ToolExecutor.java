@@ -229,12 +229,36 @@ class ToolExecutor {
             return Mono.just(ToolResultBlock.error(errorMsg));
         }
 
-        // Validate input against schema. Resolve the effective arguments the same way the
-        // invocation path does (raw content when valid, otherwise the parsed input map), so
-        // input-only tool calls are not rejected with a misleading NPE-derived error.
-        String validationError =
-                ToolValidator.validateInput(
-                        JsonUtils.resolveToolCallArgsJson(toolCall), tool.getParameters());
+        boolean externalTool = tool instanceof ToolBase tb && tb.isExternalTool();
+        Map<String, Object> schema = tool.getParameters();
+        Map<String, Object> mergedInput = new HashMap<>();
+        String validationJson;
+        if (externalTool) {
+            // External execution retains the original call arguments, without local presets.
+            validationJson = JsonUtils.resolveToolCallArgsJson(toolCall);
+        } else {
+            // Select once for both validation and invocation. Registered presets remain
+            // authoritative.
+            mergedInput.putAll(
+                    !param.getInput().isEmpty() ? param.getInput() : toolCall.getInput());
+            Map<String, Object> presets =
+                    registered != null ? registered.getPresetParameters() : Map.of();
+            mergedInput.putAll(presets);
+            Map<String, Object> validationInput = new HashMap<>(mergedInput);
+            Map<?, ?> properties =
+                    schema != null && schema.get("properties") instanceof Map<?, ?> p
+                            ? p
+                            : Map.of();
+            // Presets omitted from the public schema are framework-controlled hidden parameters.
+            // Do not serialize or validate them as additional caller-supplied properties.
+            for (String preset : presets.keySet()) {
+                if (!properties.containsKey(preset)) {
+                    validationInput.remove(preset);
+                }
+            }
+            validationJson = JsonUtils.getJsonCodec().toJson(validationInput);
+        }
+        String validationError = ToolValidator.validateInput(validationJson, schema);
         if (validationError != null) {
             String errorMsg =
                     String.format(
@@ -248,7 +272,7 @@ class ToolExecutor {
         // External tool short-circuit: once availability and schema are validated, surface the call
         // without preset injection or local invocation. SchemaOnlyTool and any
         // @Tool(externalTool=true) method end up here.
-        if (tool instanceof ToolBase tb && tb.isExternalTool()) {
+        if (externalTool) {
             return Mono.just(ToolResultBlock.suspended(toolCall));
         }
 
@@ -269,18 +293,6 @@ class ToolExecutor {
         // Create emitter for streaming
         ToolEmitter toolEmitter =
                 new DefaultToolEmitter(toolCall, getEffectiveChunkCallback(internalChunkCallback));
-
-        // Merge input with preset parameters. Preset values win so framework-controlled
-        // parameters remain immutable from the caller/LLM perspective.
-        Map<String, Object> mergedInput = new HashMap<>();
-        if (!param.getInput().isEmpty()) {
-            mergedInput.putAll(param.getInput());
-        } else if (!toolCall.getInput().isEmpty()) {
-            mergedInput.putAll(toolCall.getInput());
-        }
-        if (registered != null) {
-            mergedInput.putAll(registered.getPresetParameters());
-        }
 
         // Build final execution param
         ToolCallParam executionParam =
