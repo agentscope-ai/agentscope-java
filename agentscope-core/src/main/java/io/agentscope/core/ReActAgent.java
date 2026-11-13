@@ -282,6 +282,9 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
      */
     private final PermissionContextState initialPermissionContext;
 
+    /** Slots that have applied this instance's declared permission context once. */
+    private final Set<String> permissionContextAppliedSlots = ConcurrentHashMap.newKeySet();
+
     // ==================== 2.0 Core Fields ====================
 
     /** Cache of state per {@code (userId, sessionId)} slot key. */
@@ -705,14 +708,23 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                                     initialActiveToolGroups)
                                             .value());
         }
+        boolean applyInitialPermissionContext =
+                initialPermissionContext != null && permissionContextAppliedSlots.add(slot);
+        PermissionContextState effectivePermissionContext =
+                applyInitialPermissionContext
+                        ? initialPermissionContext
+                        : loaded.getPermissionContext();
+        if (applyInitialPermissionContext) {
+            loaded.setPermissionContext(effectivePermissionContext);
+        }
         PermissionEngine loadedEngine;
         if (stateStore != null) {
-            loadedEngine = new PermissionEngine(loaded.getPermissionContext());
+            loadedEngine = new PermissionEngine(effectivePermissionContext);
             permissionEngineCache.put(slot, loadedEngine);
         } else {
             loadedEngine =
                     permissionEngineCache.computeIfAbsent(
-                            slot, k -> new PermissionEngine(loaded.getPermissionContext()));
+                            slot, k -> new PermissionEngine(effectivePermissionContext));
         }
         return new CallExecution(loaded, loadedEngine, slot, loadedVersion);
     }
@@ -3527,7 +3539,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             if (toolCalls == null || toolCalls.isEmpty()) {
                 return Mono.just(new PermissionGate(List.of(), Set.of()));
             }
-            boolean useEngine = !state.getPermissionContext().isTrivial();
+            boolean useEngine = !permissionEngine.getContext().isTrivial();
             return Flux.fromIterable(toolCalls)
                     .concatMap(use -> evaluateOne(use, useEngine))
                     .collectList()
@@ -5452,8 +5464,13 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         }
 
         /**
-         * Sets the {@link PermissionContextState} consulted by the {@link PermissionEngine} during tool
-         * execution. When unset, an empty permission context is used (PASSTHROUGH for all tools).
+         * Sets the {@link PermissionContextState} consulted by the {@link PermissionEngine} during
+         * tool execution.
+         *
+         * <p>A non-null context replaces the slot's persisted context the first time this agent
+         * activates that slot. Passing {@code null} leaves an existing slot untouched. To preserve
+         * runtime permission state across a rebuild, read the old context from {@link
+         * #getAgentState(String, String)} and construct the new context from it.
          */
         public Builder permissionContext(PermissionContextState permissionContext) {
             this.permissionContext = permissionContext;
