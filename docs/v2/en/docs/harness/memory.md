@@ -254,6 +254,7 @@ When the model sees a "MEMORY truncated" note in the prompt, it typically calls 
 For example, `query="deploy blue" matchMode="all"` matches `deploy using the blue configuration`, while the default phrase mode does not.
 A record is one line for Memory and one entry for Session; keywords are not combined across records.
 Matching is case-insensitive and regex metacharacters are literal. There is no automatic Chinese word segmentation or date-expression parsing.
+Session search matches transcript text, tool names and arguments, and textual tool results. JSON field names added by the transcript format are excluded. A phrase must occur within one searchable field.
 An omitted or `null` mode defaults to `phrase`; other values (including an empty string) return an error. Multi-keyword modes ignore extra whitespace and duplicate terms; whitespace-only queries never match all records.
 Result formatting, ordering and limits are unchanged; `any` does not introduce relevance ranking. Existing Java method signatures remain available.
 
