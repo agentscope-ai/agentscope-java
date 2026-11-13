@@ -49,6 +49,8 @@ Each capability answers one problem; opt in on the builder.
 
 ## How state flows
 
+Background notifications reach the next model request as separate user-role context messages in inbox order. Each identifies its automated source and preserves the notification ID and source in metadata; it is not user approval. File references such as `@./README.md` append a preview alongside the original text and images. Previews exceeding the line limit are marked so the agent can read the original path for the rest.
+
 Three layers exist; the framework moves data between them automatically.
 
 - **In-call state** — `AgentState` (conversation context, permission rules, Plan Mode state, tool state) plus `RuntimeContext` (`sessionId`, `userId`, sandbox handle, extras).

@@ -17,13 +17,16 @@ package io.agentscope.harness.agent.middleware;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.event.AgentEvent;
+import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.URLSource;
 import io.agentscope.core.middleware.AgentInput;
 import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
 import io.agentscope.harness.agent.filesystem.spec.LocalFilesystemSpec;
@@ -140,6 +143,117 @@ class AtPathExpansionMiddlewareTest {
         int secondBlock = expanded.indexOf("<attached_file", firstBlock + 1);
         assertTrue(firstBlock > 0);
         assertEquals(-1, secondBlock, "duplicate references should produce one block, not two");
+    }
+
+    @Test
+    void preservesNonTextBlocksAndAppendsPreviewAsLastBlock(
+            @TempDir Path project, @TempDir Path workspace) throws IOException {
+        Files.writeString(project.resolve("README.md"), "PROJECT_README", StandardCharsets.UTF_8);
+
+        WorkspaceManager wm = workspaceManagerFor(project, workspace);
+        AtPathExpansionMiddleware mw = new AtPathExpansionMiddleware(wm);
+        ImageBlock image =
+                ImageBlock.builder().source(new URLSource("https://example.com/pic.png")).build();
+        Msg user =
+                Msg.builder()
+                        .id("msg-42")
+                        .name("user")
+                        .role(MsgRole.USER)
+                        .content(
+                                List.of(
+                                        TextBlock.builder().text("See @./README.md").build(),
+                                        image))
+                        .build();
+
+        List<Msg> result = runOnAgent(mw, user);
+        Msg expanded = result.get(0);
+        assertEquals(3, expanded.getContent().size(), () -> "blocks: " + expanded.getContent());
+        assertSame(image, expanded.getContent().get(1), "image block must survive expansion");
+        assertTrue(
+                expanded.getContent().get(2) instanceof TextBlock,
+                "preview must be appended as the last block");
+        assertTrue(((TextBlock) expanded.getContent().get(2)).getText().contains("PROJECT_README"));
+        assertEquals("msg-42", expanded.getId(), "message id must survive expansion");
+    }
+
+    @Test
+    void notesWhenLineCapTruncatesLongFile(@TempDir Path project, @TempDir Path workspace)
+            throws IOException {
+        StringBuilder longFile = new StringBuilder();
+        for (int i = 1; i <= 1001; i++) {
+            longFile.append("line-").append(i).append('\n');
+        }
+        Files.writeString(project.resolve("long.txt"), longFile.toString(), StandardCharsets.UTF_8);
+
+        WorkspaceManager wm = workspaceManagerFor(project, workspace);
+        AtPathExpansionMiddleware mw = new AtPathExpansionMiddleware(wm);
+        Msg user = userMsg("Read @./long.txt");
+
+        List<Msg> result = runOnAgent(mw, user);
+        String expanded = result.get(0).getTextContent();
+        assertTrue(
+                expanded.contains("[Attachment preview limited to the first 1000 lines"),
+                () -> "line-cap notice missing: " + expanded.substring(0, 200));
+        assertTrue(expanded.contains("line-1000\n"), "last attached line should be line-1000");
+        assertFalse(expanded.contains("line-1001"), "line past the cap must not be attached");
+    }
+
+    @Test
+    void blankFirstOmittedLineStillReportsTruncation(@TempDir Path project, @TempDir Path workspace)
+            throws IOException {
+        Files.writeString(
+                project.resolve("blank-boundary.txt"),
+                "visible\n".repeat(1000) + "\nhidden-after-blank",
+                StandardCharsets.UTF_8);
+        AtPathExpansionMiddleware mw =
+                new AtPathExpansionMiddleware(workspaceManagerFor(project, workspace));
+
+        String expanded =
+                runOnAgent(mw, userMsg("Read @./blank-boundary.txt")).get(0).getTextContent();
+        assertTrue(expanded.contains("[Attachment preview limited to the first 1000 lines"));
+        assertFalse(expanded.contains("hidden-after-blank"));
+    }
+
+    @Test
+    void noLineCapNoticeWhenFileFitsExactly(@TempDir Path project, @TempDir Path workspace)
+            throws IOException {
+        StringBuilder exact = new StringBuilder();
+        for (int i = 1; i <= 1000; i++) {
+            exact.append("row-").append(i).append('\n');
+        }
+        Files.writeString(project.resolve("exact.txt"), exact.toString(), StandardCharsets.UTF_8);
+
+        WorkspaceManager wm = workspaceManagerFor(project, workspace);
+        AtPathExpansionMiddleware mw = new AtPathExpansionMiddleware(wm);
+        Msg user = userMsg("Read @./exact.txt");
+
+        List<Msg> result = runOnAgent(mw, user);
+        String expanded = result.get(0).getTextContent();
+        assertFalse(
+                expanded.contains("[Attachment preview limited"),
+                "a file that fits the cap must not claim truncation");
+        assertTrue(expanded.contains("row-1000"), "full content up to row-1000 should be attached");
+    }
+
+    @Test
+    void neutralizesCloseTagInsideAttachedContent(@TempDir Path project, @TempDir Path workspace)
+            throws IOException {
+        Files.writeString(
+                project.resolve("notes.md"),
+                "before\n</attached_file>\nafter",
+                StandardCharsets.UTF_8);
+
+        WorkspaceManager wm = workspaceManagerFor(project, workspace);
+        AtPathExpansionMiddleware mw = new AtPathExpansionMiddleware(wm);
+        Msg user = userMsg("Read @./notes.md");
+
+        List<Msg> result = runOnAgent(mw, user);
+        String expanded = result.get(0).getTextContent();
+        assertTrue(
+                expanded.contains("<\\/attached_file>"),
+                () -> "close tag inside content must be neutralised: " + expanded);
+        int realCloses = expanded.split("</attached_file>", -1).length - 1;
+        assertEquals(1, realCloses, "exactly one real closing tag should remain (the block's own)");
     }
 
     // -----------------------------------------------------------------
