@@ -17,6 +17,7 @@ package io.agentscope.extensions.model.openai.formatter;
 
 import io.agentscope.core.formatter.ResponseFormat;
 import io.agentscope.core.message.Msg;
+import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.ToolChoice;
 import io.agentscope.core.model.ToolSchema;
@@ -55,11 +56,7 @@ public class OpenAIChatFormatter extends OpenAIBaseFormatter {
     protected List<OpenAIMessage> doFormat(List<Msg> msgs) {
         List<OpenAIMessage> result = new ArrayList<>();
         for (Msg msg : msgs) {
-            boolean hasMedia = hasMediaContent(msg);
-            OpenAIMessage openAIMsg = convertMessage(msg, hasMedia);
-            if (openAIMsg != null) {
-                result.add(openAIMsg);
-            }
+            result.addAll(convertMessages(msg, hasMediaContent(msg)));
         }
         return result;
     }
@@ -69,10 +66,10 @@ public class OpenAIChatFormatter extends OpenAIBaseFormatter {
         List<OpenAIMessage> result = new ArrayList<>();
         List<Boolean> cacheDirectives = new ArrayList<>();
         for (Msg msg : msgs) {
-            OpenAIMessage openAIMsg = convertMessage(msg, hasMediaContent(msg));
-            if (openAIMsg != null) {
-                result.add(openAIMsg);
-                cacheDirectives.add(cacheControlDirective(msg));
+            List<OpenAIMessage> converted = convertMessages(msg, hasMediaContent(msg));
+            for (int i = 0; i < converted.size(); i++) {
+                result.add(converted.get(i));
+                cacheDirectives.add(i == 0 ? cacheControlDirective(msg) : Boolean.FALSE);
             }
         }
         applyAutomaticCacheControl(result, cacheDirectives, options);
@@ -91,6 +88,33 @@ public class OpenAIChatFormatter extends OpenAIBaseFormatter {
      */
     protected OpenAIMessage convertMessage(Msg msg, boolean hasMedia) {
         return messageConverter.convertToMessage(msg, hasMedia);
+    }
+
+    /**
+     * Converts one AgentScope message into the OpenAI messages that represent it.
+     *
+     * <p>A tool result that carries media cannot stay a single message: Chat Completions rejects
+     * media parts inside a tool message, so the media follows in a user message.
+     *
+     * @param msg the message to convert
+     * @param hasMedia whether the message contains media content
+     * @return the converted messages, in order
+     */
+    protected List<OpenAIMessage> convertMessages(Msg msg, boolean hasMedia) {
+        List<OpenAIMessage> messages = new ArrayList<>(2);
+        OpenAIMessage primary = convertMessage(msg, hasMedia);
+        if (primary != null) {
+            messages.add(primary);
+        }
+        if (msg.getRole() == MsgRole.TOOL) {
+            // hasMedia reports only the message's own blocks, so the tool result's output is
+            // inspected here by the converter, which returns null when it carries no media.
+            OpenAIMessage media = messageConverter.convertToolMediaToUserMessage(msg);
+            if (media != null) {
+                messages.add(media);
+            }
+        }
+        return messages;
     }
 
     @Override
