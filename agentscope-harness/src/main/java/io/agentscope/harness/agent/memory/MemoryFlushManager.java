@@ -231,12 +231,12 @@ public class MemoryFlushManager {
                         java.time.Instant.now().toString(), content);
 
         String dailyRelPath = WorkspaceConstants.MEMORY_DIR + "/" + today + ".md";
-        workspaceManager.appendUtf8WorkspaceRelative(rc, dailyRelPath, dailyEntry);
+        workspaceManager.appendMemoryFileUtf8(rc, dailyRelPath, dailyEntry);
     }
 
     private String readExistingContent(RuntimeContext rc, String relativePath) {
         try {
-            String content = workspaceManager.readManagedWorkspaceFileUtf8(rc, relativePath);
+            String content = workspaceManager.readMemoryFileUtf8(rc, relativePath);
             return content != null ? content : "";
         } catch (Exception e) {
             log.debug("Could not read {}: {}", relativePath, e.getMessage());
