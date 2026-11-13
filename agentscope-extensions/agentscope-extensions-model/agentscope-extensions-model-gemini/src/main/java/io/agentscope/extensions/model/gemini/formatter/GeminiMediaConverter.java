@@ -228,10 +228,10 @@ public class GeminiMediaConverter {
      * @return File extension in lowercase (without dot)
      */
     private String extractExtension(String url) {
-        int lastDotIndex = url.lastIndexOf('.');
-        if (lastDotIndex == -1 || lastDotIndex == url.length() - 1) {
+        String extension = MediaUtils.getExtension(url);
+        if (extension.isBlank()) {
             throw new IllegalArgumentException("Cannot extract file extension from: " + url);
         }
-        return url.substring(lastDotIndex + 1).toLowerCase();
+        return extension.toLowerCase();
     }
 }
