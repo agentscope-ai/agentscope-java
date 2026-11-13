@@ -143,6 +143,11 @@ public class TaskUpdateEventHandler implements ClientEventHandler<TaskUpdateEven
                         "[{}] A2aAgent task status updated to: {}.",
                         currentRequestId,
                         taskStatus.state());
+                if (taskStatus.state() == TaskState.INPUT_REQUIRED
+                        || taskStatus.state() == TaskState.AUTH_REQUIRED) {
+                    TaskEventHandler.completeWaiting(event.getTaskId(), taskStatus, context);
+                    return;
+                }
                 if (null == taskStatus.message()) {
                     return;
                 }

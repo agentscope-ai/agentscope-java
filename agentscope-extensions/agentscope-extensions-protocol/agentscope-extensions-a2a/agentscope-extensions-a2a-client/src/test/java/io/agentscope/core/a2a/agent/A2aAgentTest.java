@@ -106,6 +106,9 @@ public class A2aAgentTest {
 
         lenient().when(a2aAgentConfig.clientTransports()).thenReturn(new HashMap<>());
         lenient().when(a2aAgentConfig.clientConfig()).thenReturn(null);
+        lenient()
+                .when(agentCard.capabilities())
+                .thenReturn(new io.a2a.spec.AgentCapabilities.Builder().streaming(true).build());
         lenient().when(agentCard.preferredTransport()).thenReturn("JSONRPC");
         lenient().when(agentCard.url()).thenReturn("http://localhost:8080");
         AgentInterface defaultInterface = new AgentInterface("JSONRPC", "http://localhost:8080");
@@ -844,6 +847,126 @@ public class A2aAgentTest {
         assertNotNull(events);
         assertEquals(expected, events.get(events.size() - 1).getMessage().getTextContent());
         verify(a2aClient, org.mockito.Mockito.times(2)).close();
+    }
+
+    @Test
+    void testNonStreamingPendingTasksFailWithoutPolling() {
+        for (TaskState state : List.of(TaskState.SUBMITTED, TaskState.WORKING)) {
+            for (boolean cardStreaming : List.of(false, true)) {
+                when(agentCard.capabilities())
+                        .thenReturn(
+                                new io.a2a.spec.AgentCapabilities.Builder()
+                                        .streaming(cardStreaming)
+                                        .build());
+                A2aAgentConfig config =
+                        A2aAgentConfig.builder()
+                                .clientConfig(
+                                        io.a2a.client.config.ClientConfig.builder()
+                                                .setStreaming(!cardStreaming)
+                                                .build())
+                                .build();
+                Task task =
+                        new Task.Builder()
+                                .id("pending-task")
+                                .contextId("c1")
+                                .status(new TaskStatus(state))
+                                .build();
+                doAnswer(
+                                invocation -> {
+                                    List<BiConsumer<ClientEvent, AgentCard>> consumers =
+                                            invocation.getArgument(1);
+                                    consumers.forEach(
+                                            c -> c.accept(new TaskEvent(task), agentCard));
+                                    return null;
+                                })
+                        .when(a2aClient)
+                        .sendMessage(any(Message.class), anyList(), any());
+                A2aAgent agent =
+                        A2aAgent.builder()
+                                .name("test-agent")
+                                .agentCard(agentCard)
+                                .a2aAgentConfig(config)
+                                .clientReplacer(this::useMockClient)
+                                .build();
+                IllegalStateException failure =
+                        assertThrows(
+                                IllegalStateException.class,
+                                () ->
+                                        agent.call(Msg.builder().textContent("test").build())
+                                                .block(java.time.Duration.ofSeconds(3)));
+                assertTrue(failure.getMessage().contains("pending-task"));
+                assertTrue(failure.getMessage().contains(state.name()));
+                assertTrue(failure.getMessage().contains("does not poll"));
+                verify(a2aClient).close();
+                org.mockito.Mockito.clearInvocations(a2aClient);
+            }
+        }
+    }
+
+    @Test
+    void testWaitingTaskAndUpdateReturnStatusMetadata() {
+        for (TaskState state : List.of(TaskState.INPUT_REQUIRED, TaskState.AUTH_REQUIRED)) {
+            for (boolean update : List.of(false, true)) {
+                for (boolean message : List.of(false, true)) {
+                    TaskStatus status =
+                            new TaskStatus(
+                                    state,
+                                    message ? A2A.toAgentMessage("please respond") : null,
+                                    null);
+                    Task task =
+                            new Task.Builder()
+                                    .id("waiting-task")
+                                    .contextId("c1")
+                                    .status(status)
+                                    .build();
+                    ClientEvent event =
+                            update
+                                    ? new TaskUpdateEvent(
+                                            task,
+                                            new TaskStatusUpdateEvent(
+                                                    "waiting-task", status, "c1", false, Map.of()))
+                                    : new TaskEvent(task);
+                    doAnswer(
+                                    invocation -> {
+                                        List<BiConsumer<ClientEvent, AgentCard>> consumers =
+                                                invocation.getArgument(1);
+                                        consumers.forEach(c -> c.accept(event, agentCard));
+                                        return null;
+                                    })
+                            .when(a2aClient)
+                            .sendMessage(any(Message.class), anyList(), any());
+                    A2aAgent agent =
+                            A2aAgent.builder()
+                                    .name("test-agent")
+                                    .agentCard(agentCard)
+                                    .clientReplacer(this::useMockClient)
+                                    .build();
+                    Msg result =
+                            agent.call(Msg.builder().textContent("test").build())
+                                    .block(java.time.Duration.ofSeconds(3));
+                    assertNotNull(result);
+                    assertEquals(
+                            "waiting-task",
+                            result.getMetadata()
+                                    .get(
+                                            io.agentscope.core.a2a.agent.message.MessageConstants
+                                                    .TASK_ID_METADATA_KEY));
+                    assertEquals(
+                            state.name(),
+                            result.getMetadata()
+                                    .get(
+                                            io.agentscope.core.a2a.agent.message.MessageConstants
+                                                    .TASK_STATE_METADATA_KEY));
+                    assertTrue(
+                            message
+                                    ? result.getTextContent().equals("please respond")
+                                    : result.getTextContent().contains(state.name()));
+                    verify(a2aClient, never()).cancelTask(any(TaskIdParams.class), any());
+                    verify(a2aClient).close();
+                    org.mockito.Mockito.clearInvocations(a2aClient);
+                }
+            }
+        }
     }
 
     private Client useMockClient(Client built) {

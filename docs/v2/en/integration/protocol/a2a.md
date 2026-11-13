@@ -63,6 +63,8 @@ A2aAgent remote = A2aAgent.builder()
 
 For completed tasks, `call()` prefers output artifacts; when no artifacts are present, it returns the final status message instead.
 
+A non-streaming reply that leaves a task in `SUBMITTED` or `WORKING` fails with `IllegalStateException`; `A2aAgent` does not poll unfinished tasks. Tasks in `INPUT_REQUIRED` or `AUTH_REQUIRED` return their status message (or a waiting-state hint) with `_agentscope_a2a_task_id` and `_agentscope_a2a_task_state` metadata, leaving the remote task open for the caller to continue.
+
 ## Server: expose a ReActAgent as an A2A Server
 
 ### Add the dependency

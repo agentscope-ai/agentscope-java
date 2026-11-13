@@ -19,6 +19,7 @@ package io.agentscope.core.a2a.agent;
 import io.a2a.client.Client;
 import io.a2a.client.ClientBuilder;
 import io.a2a.client.ClientEvent;
+import io.a2a.client.config.ClientConfig;
 import io.a2a.client.transport.jsonrpc.JSONRPCTransport;
 import io.a2a.client.transport.jsonrpc.JSONRPCTransportConfig;
 import io.a2a.spec.A2AClientException;
@@ -132,7 +133,12 @@ public class A2aAgent extends AgentBase {
         Client client = buildA2aClient(agentCard);
         LoggerUtil.debug(
                 log, "[{}] A2aAgent build A2a Client with Agent Card: {}.", requestId, agentCard);
-        A2aCall call = new A2aCall(requestId, client, new ClientEventContext(requestId, this));
+        A2aCall call =
+                new A2aCall(
+                        requestId,
+                        client,
+                        new ClientEventContext(requestId, this),
+                        isStreaming(agentCard));
         currentCall.set(call);
         return call;
     }
@@ -218,6 +224,14 @@ public class A2aAgent extends AgentBase {
         return memory;
     }
 
+    /** Whether the client streams, decided the same way as the SDK. */
+    private boolean isStreaming(AgentCard agentCard) {
+        ClientConfig clientConfig = this.a2aAgentConfig.clientConfig();
+        return (null == clientConfig || clientConfig.isStreaming())
+                && null != agentCard.capabilities()
+                && agentCard.capabilities().streaming();
+    }
+
     private Client buildA2aClient(AgentCard agentCard) {
         ClientBuilder builder = Client.builder(agentCard);
         if (this.a2aAgentConfig.clientTransports().isEmpty()) {
@@ -273,11 +287,28 @@ public class A2aAgent extends AgentBase {
                                 }
                                 eventContext.completeExceptionally(err);
                             });
+                    if (!call.streaming() && !eventContext.isTerminalDelivered()) {
+                        eventContext.completeExceptionally(
+                                new IllegalStateException(unfinishedTaskMessage(eventContext)));
+                    }
                 });
     }
 
+    private static String unfinishedTaskMessage(ClientEventContext eventContext) {
+        io.a2a.spec.Task task = eventContext.getTask();
+        if (null == task) {
+            return "A2A reply ended without a final response.";
+        }
+        return "A2A task "
+                + task.getId()
+                + " is still in state "
+                + (null != task.getStatus() ? task.getStatus().state() : null)
+                + " after a non-streaming reply; A2aAgent does not poll unfinished tasks.";
+    }
+
     /** The client and the event context of one call. */
-    private record A2aCall(String requestId, Client client, ClientEventContext eventContext) {}
+    private record A2aCall(
+            String requestId, Client client, ClientEventContext eventContext, boolean streaming) {}
 
     public static class Builder {
 

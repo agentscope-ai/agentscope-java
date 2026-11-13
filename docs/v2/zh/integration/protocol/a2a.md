@@ -63,6 +63,8 @@ A2aAgent remote = A2aAgent.builder()
 
 对于已完成任务，`call()` 优先返回输出 artifacts；没有 artifacts 时则返回最终状态消息。
 
+非流式响应若使任务仍处于 `SUBMITTED` 或 `WORKING`，会抛出 `IllegalStateException`；`A2aAgent` 不轮询未完成任务。`INPUT_REQUIRED` 或 `AUTH_REQUIRED` 任务返回状态消息（没有消息时返回等待状态提示），并携带 `_agentscope_a2a_task_id` 和 `_agentscope_a2a_task_state` 元数据，远端任务保持开放，供调用方继续。
+
 ## 服务端：把 ReActAgent 暴露成 A2A Server
 
 ### 添加依赖
