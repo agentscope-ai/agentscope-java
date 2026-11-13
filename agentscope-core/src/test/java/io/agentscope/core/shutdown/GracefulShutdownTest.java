@@ -57,11 +57,13 @@ class GracefulShutdownTest {
     void setUp() {
         manager = GracefulShutdownManager.getInstance();
         manager.resetForTesting();
+        manager.setConfig(GracefulShutdownConfig.DEFAULT);
     }
 
     @AfterEach
     void tearDown() {
         manager.resetForTesting();
+        manager.setConfig(GracefulShutdownConfig.DEFAULT);
     }
 
     // ==================== ShutdownState & Config ====================
