@@ -152,16 +152,17 @@ class TextReaderTest {
     }
 
     @Test
-    @DisplayName("Should handle empty text")
+    @DisplayName("Should produce no documents for empty text")
     void testEmptyText() throws ReaderException {
+        // #3305: blank input produces no documents — an empty-content Document would enter
+        // the embedding pipeline with nothing to embed.
         TextReader reader = new TextReader(10, SplitStrategy.CHARACTER, 0);
         ReaderInput input = ReaderInput.fromString("");
 
         List<Document> documents = reader.read(input).block();
 
         assertNotNull(documents);
-        assertEquals(1, documents.size());
-        assertEquals("", documents.get(0).getMetadata().getContentText());
+        assertTrue(documents.isEmpty(), () -> "blank input must produce no documents");
     }
 
     @Test
