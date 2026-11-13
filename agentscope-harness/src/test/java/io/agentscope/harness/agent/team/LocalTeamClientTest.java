@@ -19,13 +19,156 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.agentscope.harness.agent.bus.BusEntry;
+import io.agentscope.harness.agent.bus.WorkspaceMessageBus;
+import io.agentscope.harness.agent.filesystem.local.LocalFilesystem;
 import io.agentscope.harness.agent.filesystem.remote.store.InMemoryStore;
+import io.agentscope.harness.agent.middleware.TeamsMiddleware;
+import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.api.parallel.ResourceLock;
 
+@ResourceLock("team-wakeups")
 class LocalTeamClientTest {
+
+    @TempDir Path tempDir;
+
+    @Test
+    void sendMessage_isolatesSameNamedMembersByNamespace() {
+        try (ScopedTeams teams = new ScopedTeams("namespace-messages", tempDir)) {
+            teams.client
+                    .sendMessage("namespace-a", teams.teamName, "lead", "worker", "message for A")
+                    .block();
+
+            teams.assertNotice("namespace-a", "worker", "message for A");
+            assertEquals(
+                    "message for A",
+                    teams.client
+                            .listMessages("namespace-a", teams.teamName, 50)
+                            .block()
+                            .get(0)
+                            .content());
+            assertTrue(
+                    teams.client.listMessages("namespace-b", teams.teamName, 50).block().isEmpty());
+
+            teams.client
+                    .sendMessage("namespace-b", teams.teamName, "lead", "worker", "message for B")
+                    .block();
+
+            teams.assertNotice("namespace-b", "worker", "message for B");
+            assertEquals(
+                    1, teams.client.listMessages("namespace-a", teams.teamName, 50).block().size());
+            assertEquals(
+                    "message for B",
+                    teams.client
+                            .listMessages("namespace-b", teams.teamName, 50)
+                            .block()
+                            .get(0)
+                            .content());
+        }
+    }
+
+    @Test
+    void createTaskWithOwner_isolatesAssignmentNoticeByNamespace() {
+        try (ScopedTeams teams = new ScopedTeams("namespace-create-task", tempDir)) {
+            TeamTask task =
+                    teams.client
+                            .createTask(
+                                    "namespace-a",
+                                    teams.teamName,
+                                    "collect A docs",
+                                    "",
+                                    List.of(),
+                                    "worker")
+                            .block();
+
+            teams.assertNotice("namespace-a", "worker", "collect A docs");
+            assertEquals(TeamTask.PENDING, task.state());
+            assertTrue(teams.client.listTasks("namespace-b", teams.teamName).block().isEmpty());
+            assertTrue(
+                    teams.client.listMessages("namespace-b", teams.teamName, 50).block().isEmpty());
+        }
+    }
+
+    @Test
+    void assignTask_isolatesAssignmentNoticeByNamespace() {
+        try (ScopedTeams teams = new ScopedTeams("namespace-assign-task", tempDir)) {
+            TeamTask task =
+                    teams.client
+                            .createTask(
+                                    "namespace-a",
+                                    teams.teamName,
+                                    "assigned A work",
+                                    "",
+                                    List.of(),
+                                    "")
+                            .block();
+
+            TeamTask assigned =
+                    teams.client
+                            .assignTask(
+                                    "namespace-a",
+                                    teams.teamName,
+                                    task.taskId(),
+                                    "worker",
+                                    task.version())
+                            .block();
+
+            teams.assertNotice("namespace-a", "worker", "assigned A work");
+            assertEquals("worker", assigned.owner());
+            assertTrue(teams.client.listTasks("namespace-b", teams.teamName).block().isEmpty());
+            assertTrue(
+                    teams.client.listMessages("namespace-b", teams.teamName, 50).block().isEmpty());
+        }
+    }
+
+    @Test
+    void completeTask_isolatesResultNoticeByNamespace() {
+        try (ScopedTeams teams = new ScopedTeams("namespace-complete-task", tempDir)) {
+            TeamTask task = teams.claimTaskInA();
+
+            TeamTask completed =
+                    teams.client
+                            .completeTask("namespace-a", teams.teamName, task.taskId(), "A result")
+                            .block();
+
+            teams.assertNotice("namespace-a", "lead", "A result");
+            assertEquals(TeamTask.COMPLETED, completed.state());
+            assertEquals("A result", completed.result());
+            assertEquals(
+                    TeamTask.PENDING,
+                    teams.client.listTasks("namespace-b", teams.teamName).block().get(0).state());
+            assertTrue(
+                    teams.client.listMessages("namespace-b", teams.teamName, 50).block().isEmpty());
+        }
+    }
+
+    @Test
+    void failTask_isolatesFailureNoticeByNamespace() {
+        try (ScopedTeams teams = new ScopedTeams("namespace-fail-task", tempDir)) {
+            TeamTask task = teams.claimTaskInA();
+
+            TeamTask failed =
+                    teams.client
+                            .failTask("namespace-a", teams.teamName, task.taskId(), "A failure")
+                            .block();
+
+            teams.assertNotice("namespace-a", "lead", "A failure");
+            assertEquals(TeamTask.FAILED, failed.state());
+            assertEquals("A failure", failed.result());
+            assertEquals(
+                    TeamTask.PENDING,
+                    teams.client.listTasks("namespace-b", teams.teamName).block().get(0).state());
+            assertTrue(
+                    teams.client.listMessages("namespace-b", teams.teamName, 50).block().isEmpty());
+        }
+    }
 
     @Test
     void assignThenOwnerClaim_selfClaimRejectedForOthers() {
@@ -224,5 +367,99 @@ class LocalTeamClientTest {
         assertEquals(1, wins.get());
         assertEquals(1, conflicts.get());
         assertTrue(client.listClaimableTasks("ns", "race").block().isEmpty());
+    }
+
+    private static final class ScopedTeams implements AutoCloseable {
+
+        private final LocalTeamClient client = new LocalTeamClient(new InMemoryStore());
+        private final WorkspaceMessageBus bus;
+        private final String teamName;
+        private final List<String> sessions = new ArrayList<>();
+
+        private ScopedTeams(String teamName, Path tempDir) {
+            this.teamName = teamName;
+            this.bus = new WorkspaceMessageBus(new LocalFilesystem(tempDir, true, 10), "/bus");
+            for (String namespace : List.of("namespace-a", "namespace-b")) {
+                client.createTeam(
+                                new TeamCreateSpec(
+                                        teamName,
+                                        namespace,
+                                        "test namespace isolation",
+                                        "lead-agent",
+                                        "",
+                                        List.of(
+                                                new TeamMemberSpec(
+                                                        "worker", "worker-agent", "", "byo"))))
+                        .block();
+                for (String member : List.of("lead", "worker")) {
+                    TeamsMiddleware middleware =
+                            new TeamsMiddleware(
+                                    client,
+                                    new TeamContext(
+                                            teamName,
+                                            namespace,
+                                            "test namespace isolation",
+                                            member,
+                                            "lead".equals(member),
+                                            List.of(),
+                                            List.of()));
+                    middleware.wireMessageBus(bus, agentId(namespace, member));
+                    String sessionId = sessionId(namespace, member);
+                    middleware.bindSession(sessionId);
+                    sessions.add(sessionId);
+                }
+            }
+        }
+
+        private TeamTask claimTaskInA() {
+            TeamTask task = null;
+            for (String namespace : List.of("namespace-a", "namespace-b")) {
+                TeamTask created =
+                        client.createTask(namespace, teamName, "scoped work", "", List.of(), "")
+                                .block();
+                if ("namespace-a".equals(namespace)) {
+                    task = created;
+                }
+            }
+            return client.claimTask(
+                            "namespace-a", teamName, task.taskId(), "worker", task.version())
+                    .block();
+        }
+
+        private void assertNotice(String namespace, String member, String content) {
+            String targetSession = sessionId(namespace, member);
+            List<BusEntry> inbox = bus.inboxDrain(targetSession, 50).block();
+            assertEquals(1, inbox.size(), "notification must reach " + targetSession);
+            Map<String, Object> payload = inbox.get(0).payload();
+            assertEquals("hint", payload.get("type"));
+            assertEquals("team_event", payload.get("source"));
+            assertTrue(payload.get("hint").toString().contains(content));
+            for (String otherSession : sessions) {
+                if (!targetSession.equals(otherSession)) {
+                    assertTrue(
+                            bus.inboxDrain(otherSession, 50).block().isEmpty(),
+                            "notification must not reach " + otherSession);
+                }
+            }
+            List<BusEntry> wakeups = bus.queueDrain("agentscope:wakeups", 50).block();
+            assertEquals(1, wakeups.size());
+            assertEquals(targetSession, wakeups.get(0).payload().get("sessionId"));
+            assertEquals(agentId(namespace, member), wakeups.get(0).payload().get("agentId"));
+        }
+
+        private String sessionId(String namespace, String member) {
+            return teamName + ":" + namespace + ":" + member;
+        }
+
+        private static String agentId(String namespace, String member) {
+            return namespace + "-" + member;
+        }
+
+        @Override
+        public void close() {
+            for (String sessionId : sessions) {
+                TeamsMiddleware.unregisterSession(sessionId);
+            }
+        }
     }
 }
