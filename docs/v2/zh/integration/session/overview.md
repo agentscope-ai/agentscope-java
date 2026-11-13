@@ -15,7 +15,9 @@ en_link: /v2/en/integration/session/overview
 状态通过 `(userId, sessionId)` 二元组寻址：
 
 - `sessionId`——非空、非空白，标识一次会话 / session。
-- `userId`——可空。`null` 表示匿名 / 单租户调用方（CLI、测试等）。
+- `userId`——可空。`null` 表示匿名 / 单租户调用方（CLI、测试等）；空白值和保留值 `__anon__` 使用相同匿名命名空间。
+
+每次调用保存时使用与加载相同的调用方身份。含 `/`（包括末尾斜杠）的 sessionId 不会被拆分或改写。旧版本写到错误身份下的记录不会自动迁移。内部槽位 key 保持不变；同一 agent 实例应避免 `(u1/a, b)` 与 `(u1, a/b)` 这类歧义身份组合。
 
 ## 可用实现
 

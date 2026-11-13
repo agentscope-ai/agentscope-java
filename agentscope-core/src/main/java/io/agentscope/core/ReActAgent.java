@@ -398,20 +398,13 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
     /**
      * Internal slot identifier — {@code (userId or "__anon__") + "/" + sessionId}.
      * Not part of the public API.
+     *
+     * <p>This key is opaque: session IDs may contain slashes. Per-call persistence uses the
+     * exact userId and sessionId captured on CallExecution, never a split of this key.
      */
     private static String slotKey(String userId, String sessionId) {
         Objects.requireNonNull(sessionId, "sessionId must not be null");
         return (userId == null || userId.isBlank() ? "__anon__" : userId) + "/" + sessionId;
-    }
-
-    /** Reverse of {@link #slotKey}: the parsed {@code (userId, sessionId)} pair. */
-    private record SlotRef(String userId, String sessionId) {
-        static SlotRef parse(String slotKey) {
-            int slash = slotKey.lastIndexOf('/');
-            String u = slotKey.substring(0, slash);
-            String s = slotKey.substring(slash + 1);
-            return new SlotRef("__anon__".equals(u) ? null : u, s);
-        }
     }
 
     /**
@@ -481,7 +474,6 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         if (stateStore == null) {
             return Mono.empty();
         }
-        SlotRef ref = SlotRef.parse(scope.slotKey);
         AgentState toSave = scope.state;
         return Mono.<Void>fromRunnable(
                         () -> {
@@ -493,8 +485,8 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                             try {
                                 long newVersion =
                                         persistAgentStateCas(
-                                                ref.userId,
-                                                ref.sessionId,
+                                                scope.userId,
+                                                scope.sessionId,
                                                 scope.slotKey,
                                                 toSave,
                                                 scope.loadedVersion,
@@ -726,7 +718,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                     permissionEngineCache.computeIfAbsent(
                             slot, k -> new PermissionEngine(effectivePermissionContext));
         }
-        return new CallExecution(loaded, loadedEngine, slot, loadedVersion);
+        return new CallExecution(loaded, loadedEngine, finalUid, finalSid, loadedVersion);
     }
 
     // ==================== Config assembly helpers ====================
@@ -1783,7 +1775,14 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         InterruptControl interruption = new InterruptControl();
         AgentState state;
         PermissionEngine permissionEngine;
-        String slotKey;
+
+        /** Exact identity used for this call's loads and saves; never parsed from the slot key. */
+        final String userId;
+
+        final String sessionId;
+
+        /** Opaque cache, serialization and interrupt-routing key. */
+        final String slotKey;
 
         /**
          * Store version observed when this call loaded {@link #state}. Used for CAS on save.
@@ -1890,18 +1889,17 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         /** Native structured-output format set on the per-call scope for native-path calls. */
         ResponseFormat nativeResponseFormat;
 
-        CallExecution(AgentState state, PermissionEngine permissionEngine, String slotKey) {
-            this(state, permissionEngine, slotKey, AgentStateStore.UNVERSIONED);
-        }
-
         CallExecution(
                 AgentState state,
                 PermissionEngine permissionEngine,
-                String slotKey,
+                String userId,
+                String sessionId,
                 long loadedVersion) {
             this.state = state;
             this.permissionEngine = permissionEngine;
-            this.slotKey = slotKey;
+            this.userId = userId;
+            this.sessionId = sessionId;
+            this.slotKey = slotKey(userId, sessionId);
             this.loadedVersion = loadedVersion;
             this.loadedContextSize = state != null ? state.getContext().size() : 0;
         }

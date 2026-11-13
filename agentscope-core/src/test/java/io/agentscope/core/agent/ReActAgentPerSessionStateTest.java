@@ -49,17 +49,24 @@ import java.lang.reflect.Field;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
+import java.util.stream.Stream;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
@@ -270,6 +277,93 @@ class ReActAgentPerSessionStateTest {
         AgentState other = reborn.getAgentState("u1", "other");
         assertFalse(other.getPlanModeContext().isPlanActive());
         assertEquals("", other.getSummary());
+    }
+
+    // ==================== sessionIds containing '/' (#2475) ====================
+
+    /** DingTalk-style openConversationId: standard Base64, so it can legitimately contain '/'. */
+    private static final String BASE64_SESSION_ID = "cidTestConversationAbC12/xYz9KlMnOpQrStU=";
+
+    /** Records every {@code (userId, sessionId)} pair that {@code agent_state} is written under. */
+    private static final class IdentityRecordingStore extends InMemoryAgentStateStore {
+        final Set<List<String>> agentStateWrites = ConcurrentHashMap.newKeySet();
+
+        @Override
+        public void save(String userId, String sessionId, String key, State value) {
+            recordWrite(userId, sessionId, key);
+            super.save(userId, sessionId, key, value);
+        }
+
+        @Override
+        public long saveIfVersion(
+                String userId, String sessionId, String key, State value, long expectedVersion) {
+            recordWrite(userId, sessionId, key);
+            return super.saveIfVersion(userId, sessionId, key, value, expectedVersion);
+        }
+
+        private void recordWrite(String userId, String sessionId, String key) {
+            if ("agent_state".equals(key)) {
+                agentStateWrites.add(Arrays.asList(userId, sessionId));
+            }
+        }
+    }
+
+    static Stream<Arguments> sessionIdsContainingSlash() {
+        return Stream.of(
+                Arguments.of("u1", BASE64_SESSION_ID),
+                Arguments.of("u1", "tenant/chat/42"),
+                // A trailing '/' used to split into a blank sessionId, which the store rejects.
+                Arguments.of("u1", "conv/"),
+                // null, blank and "__anon__" all identify the anonymous caller.
+                Arguments.of(null, BASE64_SESSION_ID),
+                Arguments.of("", BASE64_SESSION_ID),
+                Arguments.of("__anon__", BASE64_SESSION_ID));
+    }
+
+    @ParameterizedTest(name = "userId={0}, sessionId={1}")
+    @MethodSource("sessionIdsContainingSlash")
+    @DisplayName("call() persists agent_state under the caller's identity when sessionId has '/'")
+    void callPersistsUnderCallerIdentityWhenSessionIdContainsSlash(
+            String userId, String sessionId) {
+        IdentityRecordingStore store = new IdentityRecordingStore();
+        RuntimeContext ctx = RuntimeContext.builder().userId(userId).sessionId(sessionId).build();
+
+        agent(store).call(List.of(userMsg("hello")), ctx).block(Duration.ofSeconds(5));
+
+        AgentState saved =
+                store.get(userId, sessionId, "agent_state", AgentState.class)
+                        .orElseThrow(
+                                () ->
+                                        new AssertionError(
+                                                "agent_state must be stored under the caller's"
+                                                        + " (userId, sessionId)"));
+        assertTrue(allText(saved).contains("hello"), "the persisted state must hold this turn");
+        assertEquals(
+                Set.of(Arrays.asList(userId, sessionId)),
+                store.agentStateWrites,
+                "agent_state must never be written under a pair re-derived from the slot key");
+    }
+
+    @ParameterizedTest(name = "userId={0}, sessionId={1}")
+    @MethodSource("sessionIdsContainingSlash")
+    @DisplayName("history of a sessionId containing '/' survives calls and agent restarts")
+    void historySurvivesCallsAndRestartsWhenSessionIdContainsSlash(
+            String userId, String sessionId) {
+        InMemoryAgentStateStore store = new InMemoryAgentStateStore();
+        RuntimeContext ctx = RuntimeContext.builder().userId(userId).sessionId(sessionId).build();
+        ReActAgent agent = agent(store);
+
+        agent.call(List.of(userMsg("first")), ctx).block(Duration.ofSeconds(5));
+        agent.call(List.of(userMsg("second")), ctx).block(Duration.ofSeconds(5));
+
+        // Each call reloads the slot from the store, so the second save must see the first save's
+        // version instead of hitting a CAS conflict.
+        assertEquals(0, agent.getStateConflictCount(), "same-session turns must not conflict");
+        // A rebuilt agent starts with an empty cache, so it only sees what the calls persisted.
+        List<String> history = allText(agent(store).getAgentState(userId, sessionId));
+        assertTrue(
+                history.containsAll(List.of("first", "second")),
+                "every turn must be replayable from the store; was " + history);
     }
 
     @Test

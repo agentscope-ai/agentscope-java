@@ -161,7 +161,11 @@ class ReActAgentCancelledCallStateWriteTest {
             ReActAgent.CallExecution scope =
                     agent
                     .new CallExecution(
-                            state, new PermissionEngine(state.getPermissionContext()), "u1/s1");
+                            state,
+                            new PermissionEngine(state.getPermissionContext()),
+                            "u1",
+                            "s1",
+                            io.agentscope.core.state.AgentStateStore.UNVERSIONED);
             Scheduler scheduler = Schedulers.newSingle("queued-state-write");
             CountDownLatch entered = new CountDownLatch(1);
             CountDownLatch release = new CountDownLatch(1);

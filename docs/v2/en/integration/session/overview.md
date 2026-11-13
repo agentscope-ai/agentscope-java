@@ -15,7 +15,9 @@ zh_link: /v2/zh/integration/session/overview
 State is addressed by `(userId, sessionId)`:
 
 - `sessionId` — required, non-blank, identifies a session.
-- `userId` — optional. `null` means anonymous / single-tenant (CLI, tests, etc.).
+- `userId` — optional. `null` means anonymous / single-tenant (CLI, tests, etc.); blank and reserved `__anon__` use the same anonymous namespace.
+
+Per-call saves use the exact caller identity used for loading. Session IDs containing `/`, including trailing slashes, are supported without splitting or rewriting the identity. Rows saved under corrupted identities by older versions are not automatically migrated. The internal slot key remains unchanged; avoid ambiguous pairs such as `(u1/a, b)` and `(u1, a/b)` on one agent instance.
 
 ## Available Implementations
 
