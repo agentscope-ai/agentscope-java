@@ -66,7 +66,9 @@ public interface Sandbox extends AutoCloseable {
      *
      * @param runtimeContext per-call agent context (session, user, attributes); may be {@code null}
      * @param command shell command
-     * @param timeoutSeconds max wait; {@code null} for implementation default
+     * @param timeoutSeconds max wait in seconds; {@code null} for implementation default.
+     *     {@code 0} is implementation-specific: it may mean no deadline (E2B) or an
+     *     immediate timeout (Docker)
      */
     ExecResult exec(RuntimeContext runtimeContext, String command, Integer timeoutSeconds)
             throws Exception;
