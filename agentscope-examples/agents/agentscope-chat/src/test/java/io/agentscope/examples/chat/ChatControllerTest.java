@@ -28,13 +28,32 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.Map;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.api.parallel.ResourceLock;
+import org.junit.jupiter.api.parallel.Resources;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.reactive.server.WebTestClient;
 
+@ResourceLock(Resources.SYSTEM_PROPERTIES)
 class ChatControllerTest {
     @TempDir Path workspace;
+    @TempDir Path stateHome;
+    private String previousStateHome;
+
+    @BeforeEach
+    void isolateLegacyState() {
+        previousStateHome = System.getProperty("agentscope.state.home");
+        System.setProperty("agentscope.state.home", stateHome.toString());
+    }
+
+    @AfterEach
+    void restoreLegacyStateHome() {
+        if (previousStateHome == null) System.clearProperty("agentscope.state.home");
+        else System.setProperty("agentscope.state.home", previousStateHome);
+    }
 
     @Test
     void httpUsesExplicitCreationAndTargetedIdempotentControls() throws Exception {

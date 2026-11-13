@@ -37,11 +37,30 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.function.Predicate;
 import java.util.stream.StreamSupport;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.api.parallel.ResourceLock;
+import org.junit.jupiter.api.parallel.Resources;
 
+@ResourceLock(Resources.SYSTEM_PROPERTIES)
 class ChatSessionsTest {
     @TempDir Path workspace;
+    @TempDir Path stateHome;
+    private String previousStateHome;
+
+    @BeforeEach
+    void isolateLegacyState() {
+        previousStateHome = System.getProperty("agentscope.state.home");
+        System.setProperty("agentscope.state.home", stateHome.toString());
+    }
+
+    @AfterEach
+    void restoreLegacyStateHome() {
+        if (previousStateHome == null) System.clearProperty("agentscope.state.home");
+        else System.setProperty("agentscope.state.home", previousStateHome);
+    }
 
     private ChatSessions open() {
         return new ChatSessions(
