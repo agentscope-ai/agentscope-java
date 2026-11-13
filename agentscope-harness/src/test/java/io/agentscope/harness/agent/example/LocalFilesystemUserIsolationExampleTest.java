@@ -499,6 +499,8 @@ class LocalFilesystemUserIsolationExampleTest {
                         // Same as above: keep the async flush/consolidation out of the race.
                         .disableMemoryHooks()
                         .workspace(workspace)
+                        // Keep background extraction/consolidation from creating caller memory.
+                        .disableMemoryHooks()
                         .build()) {
 
             agent.call(userMsg("hi"), ctx("s1", "alice")).block();

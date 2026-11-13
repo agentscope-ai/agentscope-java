@@ -326,6 +326,8 @@ for (var event : log.scan(0, through)) {
 | 单独配置日志后端 | `.sessionLogStore(store)` 指定的后端 |
 | AgentScope Service 托管 | 由服务配置原生日志和公共事件存储，见 [Service 会话日志](/v2/zh/service/session-event-log) |
 
+使用 `RemoteFilesystemSpec` 时，原生会话日志写入远程 `sessions` 后端，并遵循配置的隔离范围。自行装配 `CompositeFilesystem` 时，可通过构造器的第三个参数显式指定会话后端，文件路径路由仍独立工作。已有的本地 journal 不会自动迁移。
+
 Linux 和 macOS 的本地存储会先同步临时文件，再通过原子替换提交记录，并同步父目录。Windows 的 Java 文件系统不能打开目录来执行这种同步，因此本地 Session 存储改用 `.agentscope-runtime/journal.sqlite3` 中的 SQLite 事务，启用回滚日志和 `synchronous=EXTRA`。写入仍需通过原子的版本比较，存储错误也会返回给调用方。应用继续通过 SDK 读取记录；备份 Windows 工作区时，应先暂停所有写入再复制数据库，或者使用 SQLite 的一致性备份。POSIX 文件和 Windows 数据库存放的是同一套逻辑对象，但物理格式不同，跨平台迁移历史时需要进行日志迁移，或者使用共享后端。
 
 这里的“当前身份”由 `SessionKey(userId, agentId, sessionId)` 和 Filesystem 的 namespace 共同确定。开启用户或会话隔离后，实际根目录会随身份变化，因此不能把所有会话都理解为写入 Workspace 下同一个固定目录。多副本必须连接同一份日志存储，并使用一致的身份与 namespace；仅让每个副本使用同名的本地目录并不能共享会话。

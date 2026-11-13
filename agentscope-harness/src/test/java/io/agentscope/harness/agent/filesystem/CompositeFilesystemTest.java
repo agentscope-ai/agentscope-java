@@ -17,13 +17,17 @@ package io.agentscope.harness.agent.filesystem;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.core.session.AtomicSessionStorage;
 import io.agentscope.harness.agent.filesystem.local.LocalFilesystem;
 import io.agentscope.harness.agent.filesystem.model.FileInfo;
 import io.agentscope.harness.agent.filesystem.model.FileUploadResponse;
@@ -48,6 +52,42 @@ class CompositeFilesystemTest {
     private static final RuntimeContext CTX = RuntimeContext.empty();
 
     @TempDir Path tmp;
+
+    @Test
+    void explicitSessionBackendDoesNotChangeFileRouting() {
+        var local = mock(AbstractFilesystem.class);
+        var sessions = mock(AbstractFilesystem.class);
+        var storage = mock(AtomicSessionStorage.class);
+        when(sessions.sessionStorage(CTX)).thenReturn(storage);
+        var composite = new CompositeFilesystem(local, Map.of("agents/", local), sessions);
+        assertSame(storage, composite.sessionStorage(CTX));
+        assertSame(local, composite.filesystemFor("agents/test"));
+    }
+
+    @Test
+    void legacyConstructorPreservesSessionBackendSelection() {
+        var local = mock(AbstractFilesystem.class);
+        var routed = mock(AbstractFilesystem.class);
+        var localStorage = mock(AtomicSessionStorage.class);
+        var routedStorage = mock(AtomicSessionStorage.class);
+        when(local.sessionStorage(CTX)).thenReturn(localStorage);
+        when(routed.sessionStorage(CTX)).thenReturn(routedStorage);
+        assertSame(localStorage, new CompositeFilesystem(local, Map.of()).sessionStorage(CTX));
+        assertSame(
+                routedStorage,
+                new CompositeFilesystem(local, Map.of("agents/", routed)).sessionStorage(CTX));
+    }
+
+    @Test
+    void unsupportedSessionBackendDoesNotFallBackToLocal() {
+        var local = mock(AbstractFilesystem.class);
+        var sessions = mock(AbstractFilesystem.class);
+        when(sessions.sessionStorage(CTX))
+                .thenThrow(new UnsupportedOperationException("unsupported"));
+        var composite = new CompositeFilesystem(local, Map.of(), sessions);
+        assertThrows(UnsupportedOperationException.class, () -> composite.sessionStorage(CTX));
+        verifyNoInteractions(local);
+    }
 
     @Test
     void uploadFiles_propagatesBackendFailure() {
