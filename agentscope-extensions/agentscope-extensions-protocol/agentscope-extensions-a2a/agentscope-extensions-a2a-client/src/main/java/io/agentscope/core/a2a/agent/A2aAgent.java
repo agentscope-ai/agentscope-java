@@ -41,6 +41,7 @@ import io.agentscope.core.memory.InMemoryMemory;
 import io.agentscope.core.memory.Memory;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.TextBlock;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
@@ -52,6 +53,7 @@ import java.util.function.UnaryOperator;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Scheduler;
 import reactor.core.scheduler.Schedulers;
 
 /**
@@ -79,6 +81,8 @@ public class A2aAgent extends AgentBase {
     private static final Logger log = LoggerFactory.getLogger(A2aAgent.class);
 
     private static final String INTERRUPT_HINT_PATTERN = "Task %s interrupt successfully.";
+
+    private static final Duration AUTOMATIC_CANCELLATION_BUDGET = Duration.ofSeconds(2);
 
     private final AgentCardResolver agentCardResolver;
 
@@ -179,7 +183,23 @@ public class A2aAgent extends AgentBase {
         io.a2a.spec.Task task = call.eventContext().getTask();
         if (call.cancelled().get() && task != null && task.getId() != null) {
             try {
-                Schedulers.boundedElastic().schedule(() -> cancelAndClose(call, task.getId()));
+                Mono.fromRunnable(() -> cancelAndClose(call, task.getId()))
+                        // Cancelling subscribeOn interrupts the SDK's synchronous HttpClient.send.
+                        .subscribeOn(cancellationScheduler())
+                        .timeout(AUTOMATIC_CANCELLATION_BUDGET)
+                        // Also close on timeout/rejection, without waiting for remote completion.
+                        .doFinally(ignored -> closeClient(call))
+                        .subscribe(
+                                ignored -> {},
+                                e ->
+                                        LoggerUtil.warn(
+                                                log,
+                                                "[{}] A2aAgent remote task {} cancellation failed"
+                                                        + " or exceeded the {} ms budget.",
+                                                call.requestId(),
+                                                task.getId(),
+                                                AUTOMATIC_CANCELLATION_BUDGET.toMillis(),
+                                                e));
                 return;
             } catch (RuntimeException e) {
                 LoggerUtil.warn(
@@ -190,6 +210,11 @@ public class A2aAgent extends AgentBase {
             }
         }
         closeClient(call);
+    }
+
+    /** Package-private seam for testing scheduler rejection without stopping shared schedulers. */
+    Scheduler cancellationScheduler() {
+        return Schedulers.boundedElastic();
     }
 
     private void cancelAndClose(A2aCall call, String taskId) {

@@ -1192,6 +1192,109 @@ public class A2aAgentTest {
     }
 
     @Test
+    void testBudgetClosesClientEvenWhenCustomCancellationCompletesLate() throws Exception {
+        var interrupted = new java.util.concurrent.CountDownLatch(1);
+        var release = new java.util.concurrent.CountDownLatch(1);
+        var entered = new java.util.concurrent.CountDownLatch(1);
+        var scheduler =
+                reactor.core.scheduler.Schedulers.newBoundedElastic(1, 10, "cancel-budget-test");
+        mockKnownWorkingTask();
+        when(a2aClient.cancelTask(any(TaskIdParams.class), any()))
+                .thenAnswer(
+                        invocation -> {
+                            entered.countDown();
+                            try {
+                                release.await();
+                            } catch (InterruptedException e) {
+                                interrupted.countDown();
+                                // A caller-owned transport may ignore interruption and complete
+                                // late.
+                                release.await();
+                            }
+                            return null;
+                        });
+        A2aAgent agent =
+                org.mockito.Mockito.spy(
+                        A2aAgent.builder()
+                                .name("test-agent")
+                                .agentCard(agentCard)
+                                .clientReplacer(this::useMockClient)
+                                .build());
+        org.mockito.Mockito.doReturn(scheduler).when(agent).cancellationScheduler();
+        reactor.core.Disposable call =
+                agent.call(Msg.builder().textContent("test").build()).subscribe();
+        try {
+            long cancelledAt = System.nanoTime();
+            call.dispose();
+            assertTrue(entered.await(1, TimeUnit.SECONDS));
+            assertTrue(
+                    interrupted.await(3, TimeUnit.SECONDS),
+                    "budget must interrupt cancellation worker");
+            verify(a2aClient, org.mockito.Mockito.timeout(1000)).close();
+            assertTrue(System.nanoTime() - cancelledAt < TimeUnit.SECONDS.toNanos(3));
+            assertEquals(1, release.getCount(), "close must not depend on remote completion");
+            doAnswer(mockSuccessMessage())
+                    .when(a2aClient)
+                    .sendMessage(any(Message.class), anyList(), any());
+            assertEquals(
+                    "mock success.",
+                    agent.call(Msg.builder().textContent("next").build())
+                            .block(java.time.Duration.ofSeconds(1))
+                            .getTextContent());
+            verify(a2aClient, org.mockito.Mockito.times(2)).close();
+            release.countDown();
+            var drained = new java.util.concurrent.CountDownLatch(1);
+            scheduler.schedule(drained::countDown);
+            assertTrue(drained.await(3, TimeUnit.SECONDS));
+            verify(a2aClient, org.mockito.Mockito.times(2)).close();
+            verify(a2aClient).cancelTask(any(TaskIdParams.class), any());
+        } finally {
+            call.dispose();
+            release.countDown();
+            scheduler.dispose();
+        }
+    }
+
+    @Test
+    void testRejectedCancellationSchedulingStillClosesClient() {
+        mockKnownWorkingTask();
+        var scheduler =
+                reactor.core.scheduler.Schedulers.newBoundedElastic(1, 10, "rejected-cancel-test");
+        scheduler.dispose();
+        A2aAgent agent =
+                org.mockito.Mockito.spy(
+                        A2aAgent.builder()
+                                .name("test-agent")
+                                .agentCard(agentCard)
+                                .clientReplacer(this::useMockClient)
+                                .build());
+        org.mockito.Mockito.doReturn(scheduler).when(agent).cancellationScheduler();
+        reactor.core.Disposable call =
+                agent.call(Msg.builder().textContent("test").build()).subscribe();
+        call.dispose();
+        verify(a2aClient).close();
+        verify(a2aClient, never()).cancelTask(any(TaskIdParams.class), any());
+    }
+
+    private void mockKnownWorkingTask() {
+        doAnswer(
+                        invocation -> {
+                            List<BiConsumer<ClientEvent, AgentCard>> consumers =
+                                    invocation.getArgument(1);
+                            Task task =
+                                    new Task.Builder()
+                                            .id("taskId")
+                                            .contextId("c1")
+                                            .status(new TaskStatus(TaskState.WORKING))
+                                            .build();
+                            consumers.forEach(c -> c.accept(new TaskEvent(task), agentCard));
+                            return null;
+                        })
+                .when(a2aClient)
+                .sendMessage(any(Message.class), anyList(), any());
+    }
+
+    @Test
     void testCompletedCallDoesNotCancelRemoteTask() {
         doAnswer(mockSuccessMessage())
                 .when(a2aClient)

@@ -65,7 +65,7 @@ For completed tasks, `call()` prefers output artifacts; when no artifacts are pr
 
 A non-streaming reply that leaves a task in `SUBMITTED` or `WORKING` fails with `IllegalStateException`; `A2aAgent` does not poll unfinished tasks. Tasks in `INPUT_REQUIRED` or `AUTH_REQUIRED` return their status message (or a waiting-state hint) with `_agentscope_a2a_task_id` and `_agentscope_a2a_task_state` metadata, leaving the remote task open for the caller to continue.
 
-Cancelling or timing out a call closes the default JSON-RPC SSE stream and attempts to cancel the remote task when its id is known. Configured custom transports remain responsible for closing their own streams.
+Cancelling or timing out a call immediately closes the default JSON-RPC SSE stream and attempts to cancel the remote task when its id is known. Automatic remote cancellation is best-effort, runs off-thread with a two-second budget, and interrupts the default SDK's synchronous HTTP request when that budget expires. The client is closed even if remote cancellation has not completed. Configured custom transports remain responsible for closing their own streams and honoring interruption.
 
 ## Server: expose a ReActAgent as an A2A Server
 
