@@ -129,6 +129,7 @@ import java.net.http.HttpClient;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -141,6 +142,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Schedulers;
 
 /**
  * HarnessAgent is the user-facing harness API that wraps a {@link ReActAgent} with workspace /
@@ -1060,13 +1062,20 @@ public class HarnessAgent implements Agent, AutoCloseable {
                         "Context overflow: no compaction configured, unable to recover"));
     }
 
+    /**
+     * Compacts the failed call's context, persists it before reloading, and retries once.
+     * Input already present by message id is not appended again, even if folded into the summary.
+     */
     private Mono<Msg> forceCompactAndRetry(List<Msg> msgs, RuntimeContext effective) {
-        AgentState state = RuntimeContext.resolveAgentState(effective, delegate);
+        RuntimeContext ctx = effective != null ? effective : RuntimeContext.empty();
+        AgentState state = RuntimeContext.resolveAgentState(ctx, delegate);
         List<Msg> allMsgs = state.contextMutable();
         if (allMsgs.isEmpty()) {
             return Mono.error(
                     new RuntimeException("Context overflow: context is empty, cannot compact"));
         }
+        // Decide before compaction, which may fold the input into the summary.
+        List<Msg> retryInput = isInContext(msgs, allMsgs) ? List.of() : msgs;
         String agentId = getName();
         String sessionId =
                 effective != null && effective.getSessionId() != null
@@ -1083,26 +1092,35 @@ public class HarnessAgent implements Agent, AutoCloseable {
         ConversationCompactor compactor = new ConversationCompactor(getModel(), fm);
 
         return compactor
-                .compactIfNeeded(
-                        effective != null ? effective : RuntimeContext.empty(),
-                        allMsgs,
-                        forceConfig,
-                        agentId,
-                        sessionId)
+                .compactIfNeeded(ctx, allMsgs, forceConfig, agentId, sessionId)
                 .flatMap(
                         opt -> {
-                            if (opt.isPresent()) {
-                                state.contextMutable().clear();
-                                state.contextMutable().addAll(opt.get());
-                                return delegate.call(
-                                        msgs,
-                                        effective != null ? effective : RuntimeContext.empty());
+                            if (opt.isEmpty()) {
+                                return Mono.error(
+                                        new RuntimeException(
+                                                "Context overflow: emergency compaction yielded no"
+                                                        + " result"));
                             }
-                            return Mono.error(
-                                    new RuntimeException(
-                                            "Context overflow: emergency compaction yielded no"
-                                                    + " result"));
+                            state.contextMutable().clear();
+                            state.contextMutable().addAll(opt.get());
+                            return Mono.fromRunnable(() -> delegate.saveAgentState(ctx))
+                                    .subscribeOn(Schedulers.boundedElastic())
+                                    .then(Mono.defer(() -> delegate.call(retryInput, ctx)));
                         });
+    }
+
+    /** Whether every message of {@code input} is already present in {@code context}, by id. */
+    private static boolean isInContext(List<Msg> input, List<Msg> context) {
+        if (input == null || input.isEmpty()) {
+            return false;
+        }
+        Set<String> contextIds = new HashSet<>();
+        for (Msg msg : context) {
+            if (msg.getId() != null) {
+                contextIds.add(msg.getId());
+            }
+        }
+        return input.stream().allMatch(m -> m.getId() != null && contextIds.contains(m.getId()));
     }
 
     private static boolean isContextOverflowError(Throwable e) {

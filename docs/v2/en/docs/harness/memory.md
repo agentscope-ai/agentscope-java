@@ -89,7 +89,7 @@ Common options:
 | `summaryPrompt` | see `DEFAULT_SUMMARY_PROMPT` | Path-3 summary prompt (must contain `{messages}`) |
 | `model` | `null` (uses the agent's primary model) | Dedicated model for the compaction summarization call |
 
-**Auto-recovery on overflow**: when the model returns `context_length_exceeded` (or similar), the framework forces one compaction and retries — but only when `compaction(...)` is configured; otherwise the error propagates.
+**Auto-recovery on overflow**: when the model returns `context_length_exceeded` (or similar), the framework forces one compaction and retries — but only when `compaction(...)` is configured; otherwise the error propagates. The compacted context is saved through the configured state store before retrying, on a worker for blocking I/O. Input already present by message ID is not appended again; completed tool results are retained. Save and retry errors propagate.
 
 Lightweight argument truncation and tool-result pruning still take effect when the summary trigger is not reached or no safe prefix can be summarized. The recent tail and assistant/tool-result pairs remain protected.
 

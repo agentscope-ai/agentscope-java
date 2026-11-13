@@ -88,7 +88,7 @@ HarnessAgent agent = HarnessAgent.builder()
 | `summaryPrompt` | 见 `DEFAULT_SUMMARY_PROMPT` | 路径 3 的摘要 prompt（必须含 `{messages}` 占位符） |
 | `model` | `null`（使用 agent 主模型） | 压缩摘要使用的独立模型 |
 
-**上下文溢出自动恢复**：模型真的返回 `context_length_exceeded` 等错误时，框架会强制做一轮压缩然后重试一次——前提是你配了 `compaction(...)`，否则错误直接抛回上层。
+**上下文溢出自动恢复**：模型真的返回 `context_length_exceeded` 等错误时，框架会强制做一轮压缩然后重试一次——前提是你配了 `compaction(...)`，否则错误直接抛回上层。重试前通过已配置的状态存储保存压缩后的上下文，阻塞 I/O 在工作线程上执行。按消息 ID 已存在的输入不会再次追加，已完成的工具结果会保留。保存及重试错误会向上传播。
 
 即使未达到摘要触发阈值，或没有可安全摘要的前缀，轻量参数截断和工具结果裁剪仍会生效。最近的尾部消息及 assistant/工具结果配对仍受保护。
 
