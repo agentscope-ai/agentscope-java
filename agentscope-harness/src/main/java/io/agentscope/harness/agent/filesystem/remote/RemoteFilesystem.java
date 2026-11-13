@@ -145,6 +145,62 @@ public class RemoteFilesystem implements AbstractFilesystem {
         return rc -> frozen;
     }
 
+    /** Registers minimal routing metadata in a separate namespace for trusted task maintenance. */
+    public void registerTaskScope(RuntimeContext rc, String agentId) {
+        RuntimeContext context = rc != null ? rc : RuntimeContext.empty();
+        List<String> namespace = getNamespace(context);
+        if (namespace.equals(getNamespace(RuntimeContext.empty()))) {
+            return;
+        }
+        store.put(
+                taskScopeNamespace(agentId),
+                scopeKey(namespace),
+                Map.of(
+                        "namespace", List.copyOf(namespace),
+                        "userId", context.getUserId() == null ? "" : context.getUserId(),
+                        "sessionId", context.getSessionId() == null ? "" : context.getSessionId()));
+    }
+
+    /** Enumerates registered contexts without expanding ordinary filesystem visibility. */
+    public List<RuntimeContext> taskMaintenanceContexts(String agentId) {
+        List<RuntimeContext> contexts = new ArrayList<>();
+        contexts.add(RuntimeContext.empty());
+        final int pageSize = 64;
+        for (int offset = 0; ; offset += pageSize) {
+            List<StoreItem> page = store.search(taskScopeNamespace(agentId), pageSize, offset);
+            for (StoreItem item : page) {
+                Map<String, Object> value = item.value();
+                RuntimeContext context =
+                        RuntimeContext.builder()
+                                .userId((String) value.get("userId"))
+                                .sessionId((String) value.get("sessionId"))
+                                .build();
+                // Ignore scopes registered with incompatible namespace configurations.
+                if (getNamespace(context).equals(value.get("namespace"))) {
+                    contexts.add(context);
+                }
+            }
+            if (page.size() < pageSize) {
+                return contexts;
+            }
+        }
+    }
+
+    private List<String> taskScopeNamespace(String agentId) {
+        return List.of(
+                "harness", "task-scopes", scopeKey(getNamespace(RuntimeContext.empty())), agentId);
+    }
+
+    private static String scopeKey(List<String> namespace) {
+        return namespace.stream()
+                .map(
+                        segment ->
+                                Base64.getUrlEncoder()
+                                        .withoutPadding()
+                                        .encodeToString(segment.getBytes(StandardCharsets.UTF_8)))
+                .collect(java.util.stream.Collectors.joining("."));
+    }
+
     private List<String> getNamespace(RuntimeContext rc) {
         List<String> ns = namespaceFactory.getNamespace(rc);
         if (ns == null || ns.isEmpty()) {
