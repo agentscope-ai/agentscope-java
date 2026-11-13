@@ -128,10 +128,13 @@ public final class ModelContextWindows {
 
     public static final Map<String, Integer> ANTHROPIC =
             Map.ofEntries(
+                    Map.entry("claude-opus-5", 1_000_000),
                     Map.entry("claude-opus-4", 200_000),
                     Map.entry("claude-sonnet-5", 1_000_000),
                     Map.entry("claude-sonnet-4", 200_000),
+                    Map.entry("claude-haiku-5", 1_000_000),
                     Map.entry("claude-haiku-4", 200_000),
+                    Map.entry("claude-fable-5", 1_000_000),
                     Map.entry("claude-3-7", 200_000),
                     Map.entry("claude-3-5", 200_000),
                     Map.entry("claude-3", 200_000));
