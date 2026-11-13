@@ -291,6 +291,8 @@ public class MyTool extends ToolBase {
 
 当权限引擎对某个工具调用返回 ASK 决策时，agent 不会直接执行，而是暂停并返回一个 `GenerateReason.PERMISSION_ASKING` 的响应。返回的 `Msg` 中包含处于 `ASKING` 状态的 `ToolUseBlock`，调用方据此向用户展示待确认的操作，收集决策后通过 `ConfirmResult` 恢复 agent。
 
+配置 `AgentStateStore` 后，待确认的 `ASKING` 状态和确认 reply ID 会先保存，再发布 `RequireUserConfirmEvent` 或转发给父 agent。保存失败会传播错误，不发布提示。持久化后端支持断连后重建实例恢复；内存存储不能承受进程丢失。提示不保证恰好一次送达：保存成功后断连可能留下用户尚未看到的已持久化请求。
+
 ### 交互流程
 
 1. 配置 ASK 规则，标记需要人工确认的工具

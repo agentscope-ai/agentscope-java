@@ -291,6 +291,8 @@ The `ToolBase` dangerous-path list is maintained in `ToolDangerousPathConstants`
 
 When the permission engine returns an ASK decision for a tool call, the agent pauses instead of executing and returns a response with `GenerateReason.PERMISSION_ASKING`. The returned `Msg` contains the `ToolUseBlock`s in `ASKING` state. The caller extracts them, presents the pending operation to the user, and resumes the agent with `ConfirmResult` objects.
 
+With an `AgentStateStore` configured, the pending `ASKING` state and confirmation reply ID are saved before `RequireUserConfirmEvent` is published or forwarded to a parent. Save failures propagate without publishing the prompt. A durable backend permits instance-rebuild recovery after disconnect; in-memory storage does not survive process loss. Delivery is not exactly-once: a successful save followed by disconnect may leave a persisted request that the user never saw.
+
 ### Interaction flow
 
 1. Configure ASK rules for tools that require human confirmation

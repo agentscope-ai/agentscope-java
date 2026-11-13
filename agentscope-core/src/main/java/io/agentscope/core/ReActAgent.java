@@ -494,6 +494,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                 if (newVersion != AgentStateStore.UNVERSIONED) {
                                     scope.loadedVersion = newVersion;
                                 }
+                                scope.loadedContextSize = toSave.getContext().size();
                             } finally {
                                 write.complete(null);
                             }
@@ -635,6 +636,10 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                     throw new ConcurrentSessionModificationException(
                             userId, sessionId, "agent_state", latest.version());
                 }
+                // Retain merged history for the later call-end save in this execution.
+                List<Msg> mergedContext = List.copyOf(baseline.getContext());
+                toSave.contextMutable().clear();
+                toSave.contextMutable().addAll(mergedContext);
                 slotVersions.put(slot, merged);
                 stateCache.put(slot, baseline);
                 log.info(
@@ -1790,7 +1795,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
          */
         long loadedVersion;
 
-        /** Context size at load time; used by {@link ConflictPolicy#APPEND_MERGE}. */
+        /** Context size at load or last successful save; used by {@link ConflictPolicy#APPEND_MERGE}. */
         int loadedContextSize;
 
         /** Guards state-write admission and cancellation. */
@@ -3260,7 +3265,18 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                                         "permission asking",
                                                         GenerateReason.PERMISSION_ASKING)));
                             })
-                    .doOnNext(this::publishEvent);
+                    .concatMap(
+                            event -> {
+                                if (event instanceof RequireUserConfirmEvent) {
+                                    // The pending ASKING state and replyId must be recoverable
+                                    // before either a subscriber or a parent sees the prompt.
+                                    return saveStateToSession(this)
+                                            .thenReturn(event)
+                                            .doOnNext(this::publishEvent);
+                                }
+                                publishEvent(event);
+                                return Mono.just(event);
+                            });
         }
 
         /**
