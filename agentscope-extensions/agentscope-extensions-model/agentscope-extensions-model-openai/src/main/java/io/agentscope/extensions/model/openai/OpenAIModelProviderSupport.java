@@ -35,6 +35,7 @@ public final class OpenAIModelProviderSupport {
     private static final String OPTION_NATIVE_STRUCTURED_OUTPUT = "nativeStructuredOutput";
     private static final String OPTION_NATIVE_STRUCTURED_OUTPUT_WITH_TOOLS =
             "nativeStructuredOutputWithTools";
+    private static final String OPTION_STRICT_JSON_SCHEMA = "strictJsonSchema";
 
     private OpenAIModelProviderSupport() {}
 
@@ -76,6 +77,10 @@ public final class OpenAIModelProviderSupport {
                 booleanOption(context, OPTION_NATIVE_STRUCTURED_OUTPUT_WITH_TOOLS);
         if (nativeStructuredOutputWithTools != null) {
             builder.nativeStructuredOutputWithTools(nativeStructuredOutputWithTools);
+        }
+        Boolean strictJsonSchema = booleanOption(context, OPTION_STRICT_JSON_SCHEMA);
+        if (strictJsonSchema != null) {
+            builder.strictJsonSchema(strictJsonSchema);
         }
     }
 }

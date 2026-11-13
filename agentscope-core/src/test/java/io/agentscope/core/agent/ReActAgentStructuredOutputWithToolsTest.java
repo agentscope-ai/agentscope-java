@@ -19,6 +19,7 @@ package io.agentscope.core.agent;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.ReActAgent;
@@ -272,6 +273,9 @@ class ReActAgentStructuredOutputWithToolsTest {
         assertTrue(
                 model.optionsHaveResponseFormat(),
                 "Native path should set response_format in options");
+        assertNull(
+                model.getCapturedOptions().getResponseFormat().getJsonSchema().getStrict(),
+                "Agent should leave strict to the model-level configuration");
         assertFalse(
                 model.toolListContainsGenerateResponse(),
                 "Native path should not inject generate_response tool");

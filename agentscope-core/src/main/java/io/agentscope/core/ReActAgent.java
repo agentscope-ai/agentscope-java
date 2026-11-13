@@ -1323,7 +1323,6 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                     JsonSchema.builder()
                                             .name(STRUCTURED_OUTPUT_TOOL_NAME)
                                             .schema(jsonSchema)
-                                            .strict(true)
                                             .build());
 
                     int contextSizeBefore = scope.state.contextMutable().size();
