@@ -33,6 +33,7 @@ import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.model.ExecutionConfig;
 import java.util.Arrays;
 import java.util.List;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -63,6 +64,11 @@ class OpenAITextEmbeddingEmbedTest {
                         .dimensions(TEST_DIMENSIONS)
                         .executionConfig(ExecutionConfig.builder().maxAttempts(1).build())
                         .build();
+    }
+
+    @AfterEach
+    void tearDown() {
+        model.close();
     }
 
     @Test
