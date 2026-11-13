@@ -95,6 +95,8 @@ Lightweight argument truncation and tool-result pruning still take effect when t
 
 A summary replaces history only after the stream completes with nonempty text-only output and no reported output-token limit, and the wrapped summary plus retained tail is strictly smaller under the existing token estimate. Exceptions, empty output, tool calls, and truncated or non-reducing summaries leave history intact except for successful lightweight reductions; no failure placeholder is injected. Interrupts and cancellation still propagate. Missing or unrecognized finish reasons remain supported.
 
+Summary input includes tool argument names and short values; long values are previewed individually with marked head/tail omissions (600 characters per value). Short raw JSON is preserved verbatim. Tool results include error identity and a head/tail preview. The summary is established background for direct continuation, with a full-history file reference only when offloading succeeds. The default summary prompt remains unchanged.
+
 Argument truncation preserves message IDs, metadata, timestamps, usage, and tool-call metadata/state. Changed arguments replace stale raw JSON so formatters use the truncated values. `maxArgLength` must be at least 20 characters.
 
 ### Want it lighter? Trim arguments first
