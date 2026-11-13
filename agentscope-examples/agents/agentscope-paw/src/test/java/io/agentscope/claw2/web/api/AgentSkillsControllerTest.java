@@ -476,6 +476,56 @@ class AgentSkillsControllerTest {
         assertEquals(HttpStatus.BAD_GATEWAY, ex.getStatusCode());
     }
 
+    @Test
+    void listWorkspaceSkills_parsesFrontmatterBehindUtf8Bom() throws Exception {
+        writeSkillFile(
+                "bom-dir",
+                "\uFEFF---\nname: bom-skill\ndescription: Saved with a BOM\n---\n# body\n");
+
+        List<AgentSkillsController.WorkspaceSkillInfo> list =
+                controller.listWorkspaceSkills(AGENT_ID).block();
+
+        assertNotNull(list);
+        assertEquals(1, list.size());
+        // The directory name deliberately differs from the frontmatter name: before the fix
+        // both fields silently degraded (name fell back to the directory, description to null).
+        assertEquals("bom-skill", list.get(0).name());
+        assertEquals("Saved with a BOM", list.get(0).description());
+    }
+
+    @Test
+    void listWorkspaceSkills_parsesFrontmatterWithCrLineEndings() throws Exception {
+        writeSkillFile("cr-dir", "---\rname: cr-skill\rdescription: CR endings\r---\r# body\r");
+
+        List<AgentSkillsController.WorkspaceSkillInfo> list =
+                controller.listWorkspaceSkills(AGENT_ID).block();
+
+        assertNotNull(list);
+        assertEquals(1, list.size());
+        assertEquals("cr-skill", list.get(0).name());
+        assertEquals("CR endings", list.get(0).description());
+    }
+
+    @Test
+    void listWorkspaceSkills_parsesFrontmatterEndingAtEof() throws Exception {
+        writeSkillFile("eof-dir", "---\nname: eof-skill\ndescription: No trailing newline\n---");
+
+        List<AgentSkillsController.WorkspaceSkillInfo> list =
+                controller.listWorkspaceSkills(AGENT_ID).block();
+
+        assertNotNull(list);
+        assertEquals(1, list.size());
+        assertEquals("eof-skill", list.get(0).name());
+        assertEquals("No trailing newline", list.get(0).description());
+    }
+
+    /** Writes a SKILL.md as raw UTF-8 bytes so the on-disk encoding is exactly as intended. */
+    private void writeSkillFile(String dirName, String markdown) throws Exception {
+        Path dir = workspace.resolve("skills").resolve(dirName);
+        Files.createDirectories(dir);
+        Files.write(dir.resolve("SKILL.md"), markdown.getBytes(StandardCharsets.UTF_8));
+    }
+
     // =====================================================================
     //  In-memory test fixture
     // =====================================================================

@@ -94,7 +94,8 @@ public class AgentSkillsController {
     private static final Logger log = LoggerFactory.getLogger(AgentSkillsController.class);
 
     private static final Pattern FRONT_MATTER =
-            Pattern.compile("^---\\s*\\n(.*?)\\n---\\s*\\n", Pattern.DOTALL);
+            Pattern.compile(
+                    "^\\uFEFF?---\\s*[\\r\\n]+(.*?)[\\r\\n]+---(?:\\s*[\\r\\n]+)?", Pattern.DOTALL);
     private static final Pattern DESCRIPTION_LINE =
             Pattern.compile("^\\s*description\\s*:\\s*(.+?)\\s*$", Pattern.MULTILINE);
     private static final Pattern NAME_LINE =
