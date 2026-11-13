@@ -77,6 +77,19 @@ public class DockerFilesystemSpec extends SandboxFilesystemSpec {
     }
 
     /**
+     * Sets the per-stream byte cap applied to stdout and stderr captured from {@code docker
+     * exec} commands. Defaults to 512 KB; raise it when a command must return more in one
+     * piece (e.g. base64-encoded assets read back from the sandbox).
+     *
+     * @param outputTruncateBytes cap in bytes, or {@code null} to restore the default
+     * @return this spec
+     */
+    public DockerFilesystemSpec outputTruncateBytes(Integer outputTruncateBytes) {
+        options.outputTruncateBytes(outputTruncateBytes);
+        return this;
+    }
+
+    /**
      * Appends raw arguments to {@code docker run}. Repeated calls accumulate in call order;
      * {@code null} or blank entries are ignored.
      *

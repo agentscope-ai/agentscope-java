@@ -75,7 +75,7 @@ public class DockerSandbox extends AbstractBaseSandbox implements SandboxFileTra
 
     private static final Logger log = LoggerFactory.getLogger(DockerSandbox.class);
 
-    private static final int OUTPUT_TRUNCATE_BYTES = 512 * 1024; // 512 KB per stream
+    private static final int DEFAULT_OUTPUT_TRUNCATE_BYTES = 512 * 1024; // 512 KB per stream
     private static final int CONTAINER_START_TIMEOUT_SECONDS = 60;
     private static final int CONTAINER_STOP_TIMEOUT_SECONDS = 30;
     private static final int TAR_TIMEOUT_SECONDS = 120;
@@ -172,10 +172,11 @@ public class DockerSandbox extends AbstractBaseSandbox implements SandboxFileTra
                             return t;
                         });
 
+        int cap = outputTruncateBytes();
         Future<String> stdoutFuture =
-                drainer.submit(() -> readStream(process.getInputStream(), OUTPUT_TRUNCATE_BYTES));
+                drainer.submit(() -> readStream(process.getInputStream(), cap));
         Future<String> stderrFuture =
-                drainer.submit(() -> readStream(process.getErrorStream(), OUTPUT_TRUNCATE_BYTES));
+                drainer.submit(() -> readStream(process.getErrorStream(), cap));
         drainer.shutdown();
 
         boolean exited = process.waitFor(timeoutSeconds, TimeUnit.SECONDS);
@@ -189,9 +190,7 @@ public class DockerSandbox extends AbstractBaseSandbox implements SandboxFileTra
         String stderr = stderrFuture.get();
         int exitCode = process.exitValue();
 
-        boolean truncated =
-                stdout.length() >= OUTPUT_TRUNCATE_BYTES
-                        || stderr.length() >= OUTPUT_TRUNCATE_BYTES;
+        boolean truncated = stdout.length() >= cap || stderr.length() >= cap;
         ExecResult result = new ExecResult(exitCode, stdout, stderr, truncated);
         if (!result.ok()) {
             throw new SandboxException.ExecException(exitCode, stdout, stderr);
@@ -233,7 +232,7 @@ public class DockerSandbox extends AbstractBaseSandbox implements SandboxFileTra
                         });
         Future<String> stderrFuture =
                 stderrDrainer.submit(
-                        () -> readStream(process.getErrorStream(), OUTPUT_TRUNCATE_BYTES));
+                        () -> readStream(process.getErrorStream(), DEFAULT_OUTPUT_TRUNCATE_BYTES));
         stderrDrainer.shutdown();
 
         ByteArrayOutputStream buffer = new ByteArrayOutputStream();
@@ -309,7 +308,7 @@ public class DockerSandbox extends AbstractBaseSandbox implements SandboxFileTra
 
         Future<String> stderrFuture =
                 ioExecutor.submit(
-                        () -> readStream(process.getErrorStream(), OUTPUT_TRUNCATE_BYTES));
+                        () -> readStream(process.getErrorStream(), DEFAULT_OUTPUT_TRUNCATE_BYTES));
         ioExecutor.shutdown();
 
         writeFuture.get(TAR_TIMEOUT_SECONDS, TimeUnit.SECONDS);
@@ -742,6 +741,16 @@ public class DockerSandbox extends AbstractBaseSandbox implements SandboxFileTra
                     SandboxErrorCode.WORKSPACE_START_ERROR,
                     "docker command failed (exit=" + exitCode + "): " + stderr);
         }
+    }
+
+    /**
+     * Returns the configured per-stream cap for exec output capture, falling back to the
+     * default when the persisted state has no value. Non-positive persisted values (e.g. from
+     * hand-edited state JSON, which bypasses the options-side validation) also fall back.
+     */
+    private int outputTruncateBytes() {
+        Integer configured = dockerState.getOutputTruncateBytes();
+        return configured != null && configured > 0 ? configured : DEFAULT_OUTPUT_TRUNCATE_BYTES;
     }
 
     /**
