@@ -206,7 +206,7 @@ Model model = ModelRegistry.resolve("openai:gpt-4.1-mini", context);
 
 If `CachePolicy.ENABLED` is used with `option(...)` or `component(...)`, the user must provide a `cacheId`.
 
-Calling `registerFactory` evicts cached instances whose model id matches the new pattern, so the next resolution of those ids uses the new factory. Evicted instances are not closed, since callers may still hold them. Concurrent first resolutions of the same cached id share one creation and receive the same instance.
+Calling `registerFactory` evicts cached instances whose model id matches the new pattern, so the next resolution of those ids uses the new factory. Evicted instances are not closed, since callers may still hold them. Concurrent first resolutions of the same cached id share one creation and receive the same instance. Cyclic dependencies between cached factories fail instead of waiting indefinitely, including across threads; failed creations can be retried.
 
 ### ModelProvider SPI
 

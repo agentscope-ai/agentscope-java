@@ -21,14 +21,14 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.Collection;
-import java.util.HashSet;
+import java.util.HashMap;
 import java.util.HexFormat;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.ServiceConfigurationError;
 import java.util.ServiceLoader;
-import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.ConcurrentHashMap;
@@ -61,9 +61,11 @@ public final class ModelRegistry {
     private static final ConcurrentHashMap<ModelCacheKey, CompletableFuture<Model>> resolvedCache =
             new ConcurrentHashMap<>();
 
-    /** Cache keys the current thread is creating, to fail fast on recursive self-resolution. */
-    private static final ThreadLocal<Set<ModelCacheKey>> CREATING =
-            ThreadLocal.withInitial(HashSet::new);
+    // Only publication and dependency bookkeeping use this lock, never factory creation or join.
+    private static final Object creationLock = new Object();
+    // Track futures rather than keys: eviction can leave an older creation still in flight.
+    private static final Map<CompletableFuture<Model>, Thread> creators = new HashMap<>();
+    private static final Map<Thread, CompletableFuture<Model>> waitingFor = new HashMap<>();
 
     private static volatile List<ModelProvider> serviceProviders;
 
@@ -159,17 +161,16 @@ public final class ModelRegistry {
             return create(trimmed, context);
         }
         CompletableFuture<Model> pending = new CompletableFuture<>();
-        CompletableFuture<Model> existing = resolvedCache.putIfAbsent(cacheKey, pending);
-        if (existing != null) {
-            if (!existing.isDone() && CREATING.get().contains(cacheKey)) {
-                // A factory resolving its own id would otherwise wait on itself forever.
-                throw new IllegalStateException(
-                        "Recursive resolution of model id while it is being created: " + trimmed);
+        CompletableFuture<Model> existing;
+        synchronized (creationLock) {
+            existing = resolvedCache.putIfAbsent(cacheKey, pending);
+            if (existing == null) {
+                creators.put(pending, Thread.currentThread());
             }
-            return awaitCached(existing);
         }
-        Set<ModelCacheKey> creating = CREATING.get();
-        creating.add(cacheKey);
+        if (existing != null) {
+            return awaitCached(existing, trimmed);
+        }
         try {
             Model created = create(trimmed, context);
             pending.complete(created);
@@ -180,11 +181,29 @@ public final class ModelRegistry {
             pending.completeExceptionally(e);
             throw e;
         } finally {
-            creating.remove(cacheKey);
+            synchronized (creationLock) {
+                creators.remove(pending);
+            }
         }
     }
 
-    private static Model awaitCached(CompletableFuture<Model> future) {
+    private static Model awaitCached(CompletableFuture<Model> future, String modelId) {
+        Thread current = Thread.currentThread();
+        synchronized (creationLock) {
+            CompletableFuture<Model> dependency = future;
+            while (dependency != null && !dependency.isDone()) {
+                Thread creator = creators.get(dependency);
+                if (creator == current) {
+                    throw new IllegalStateException(
+                            "Recursive resolution of model id while it is being created: "
+                                    + modelId);
+                }
+                dependency = creator == null ? null : waitingFor.get(creator);
+            }
+            if (!future.isDone()) {
+                waitingFor.put(current, future);
+            }
+        }
         try {
             return future.join();
         } catch (CompletionException e) {
@@ -195,6 +214,10 @@ public final class ModelRegistry {
                 throw cause;
             }
             throw e;
+        } finally {
+            synchronized (creationLock) {
+                waitingFor.remove(current);
+            }
         }
     }
 

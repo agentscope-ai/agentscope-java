@@ -33,11 +33,14 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -214,6 +217,161 @@ class ModelRegistryTest {
         // The failed attempt must not leave a stuck entry behind.
         assertEquals("self:m", ModelRegistry.resolve("self:m").getModelName());
         assertEquals(2, factoryCalls.get());
+    }
+
+    @Test
+    void resolve_crossThreadFactoryCycle_failsAndCanRetry() throws Exception {
+        CountDownLatch creatorsStarted = new CountDownLatch(2);
+        AtomicBoolean cyclic = new AtomicBoolean(true);
+        AtomicInteger aCalls = new AtomicInteger();
+        AtomicInteger bCalls = new AtomicInteger();
+        ModelRegistry.registerFactory(
+                "cycle:a",
+                id -> {
+                    aCalls.incrementAndGet();
+                    if (!cyclic.get()) {
+                        return new StubModel(id);
+                    }
+                    creatorsStarted.countDown();
+                    await(creatorsStarted);
+                    return ModelRegistry.resolve("cycle:b");
+                });
+        ModelRegistry.registerFactory(
+                "cycle:b",
+                id -> {
+                    bCalls.incrementAndGet();
+                    if (!cyclic.get()) {
+                        return ModelRegistry.resolve("cycle:a");
+                    }
+                    creatorsStarted.countDown();
+                    await(creatorsStarted);
+                    return ModelRegistry.resolve("cycle:a");
+                });
+        // Daemon workers keep a broken join implementation from stranding the test JVM.
+        ExecutorService pool = newDaemonPool();
+        try {
+            Future<Model> a = pool.submit(() -> ModelRegistry.resolve("cycle:a"));
+            Future<Model> b = pool.submit(() -> ModelRegistry.resolve("cycle:b"));
+            assertTrue(creatorsStarted.await(5, TimeUnit.SECONDS));
+            assertCycleFailure(a);
+            assertCycleFailure(b);
+
+            // Reuse both the ids and workers without resetting or registering new factories.
+            cyclic.set(false);
+            Future<Model> retryA = pool.submit(() -> ModelRegistry.resolve("cycle:a"));
+            Future<Model> retryB = pool.submit(() -> ModelRegistry.resolve("cycle:b"));
+            Model recovered = retryA.get(5, TimeUnit.SECONDS);
+            assertSame(recovered, retryB.get(5, TimeUnit.SECONDS));
+            assertSame(recovered, ModelRegistry.resolve("cycle:a"));
+            assertSame(recovered, ModelRegistry.resolve("cycle:b"));
+            assertEquals(2, aCalls.get());
+            assertEquals(2, bCalls.get());
+        } finally {
+            pool.shutdownNow();
+        }
+    }
+
+    @Test
+    void resolve_nestedFactoryCanWaitForAnotherThread_withoutCycle() throws Exception {
+        CountDownLatch bStarted = new CountDownLatch(1);
+        CountDownLatch releaseB = new CountDownLatch(1);
+        CountDownLatch aResolvingB = new CountDownLatch(1);
+        AtomicReference<Thread> aThread = new AtomicReference<>();
+        AtomicInteger bCalls = new AtomicInteger();
+        ModelRegistry.registerFactory(
+                "nested:b",
+                id -> {
+                    bCalls.incrementAndGet();
+                    bStarted.countDown();
+                    await(releaseB);
+                    return new StubModel(id);
+                });
+        ModelRegistry.registerFactory("nested:a", id -> ModelRegistry.resolve("nested:inner"));
+        ModelRegistry.registerFactory(
+                "nested:inner",
+                id -> {
+                    aResolvingB.countDown();
+                    return ModelRegistry.resolve("nested:b");
+                });
+        ExecutorService pool = newDaemonPool();
+        try {
+            Future<Model> b = pool.submit(() -> ModelRegistry.resolve("nested:b"));
+            assertTrue(bStarted.await(5, TimeUnit.SECONDS));
+            Future<Model> a =
+                    pool.submit(
+                            () -> {
+                                aThread.set(Thread.currentThread());
+                                return ModelRegistry.resolve("nested:a");
+                            });
+            assertTrue(aResolvingB.await(5, TimeUnit.SECONDS));
+            assertTimeoutPreemptively(
+                    Duration.ofSeconds(5),
+                    () -> {
+                        while (aThread.get().getState() != Thread.State.WAITING) {
+                            Thread.onSpinWait();
+                        }
+                    });
+            assertFalse(a.isDone(), "A must actually wait for B's in-flight creation");
+            releaseB.countDown();
+            assertSame(b.get(5, TimeUnit.SECONDS), a.get(5, TimeUnit.SECONDS));
+            assertEquals(1, bCalls.get());
+        } finally {
+            releaseB.countDown();
+            pool.shutdownNow();
+        }
+    }
+
+    @Test
+    void resolve_crossThreadCycleThroughNestedFactory_failsInsteadOfHanging() throws Exception {
+        CountDownLatch creatorsStarted = new CountDownLatch(2);
+        ModelRegistry.registerFactory(
+                "nested-cycle:a",
+                id -> {
+                    creatorsStarted.countDown();
+                    await(creatorsStarted);
+                    return ModelRegistry.resolve("nested-cycle:inner");
+                });
+        ModelRegistry.registerFactory(
+                "nested-cycle:inner", id -> ModelRegistry.resolve("nested-cycle:b"));
+        ModelRegistry.registerFactory(
+                "nested-cycle:b",
+                id -> {
+                    creatorsStarted.countDown();
+                    await(creatorsStarted);
+                    return ModelRegistry.resolve("nested-cycle:a");
+                });
+        ExecutorService pool = newDaemonPool();
+        try {
+            Future<Model> a = pool.submit(() -> ModelRegistry.resolve("nested-cycle:a"));
+            Future<Model> b = pool.submit(() -> ModelRegistry.resolve("nested-cycle:b"));
+            assertTrue(creatorsStarted.await(5, TimeUnit.SECONDS));
+            assertCycleFailure(a);
+            assertCycleFailure(b);
+        } finally {
+            pool.shutdownNow();
+        }
+    }
+
+    private static ExecutorService newDaemonPool() {
+        return Executors.newFixedThreadPool(
+                2,
+                task -> {
+                    Thread thread = new Thread(task);
+                    thread.setDaemon(true);
+                    return thread;
+                });
+    }
+
+    private static void assertCycleFailure(Future<Model> result) {
+        ExecutionException failure =
+                assertThrows(ExecutionException.class, () -> result.get(5, TimeUnit.SECONDS));
+        assertInstanceOf(IllegalArgumentException.class, failure.getCause());
+        Throwable cause = failure.getCause();
+        while (cause.getCause() != null) {
+            cause = cause.getCause();
+        }
+        assertInstanceOf(IllegalStateException.class, cause);
+        assertTrue(cause.getMessage().contains("Recursive resolution"));
     }
 
     @Test
