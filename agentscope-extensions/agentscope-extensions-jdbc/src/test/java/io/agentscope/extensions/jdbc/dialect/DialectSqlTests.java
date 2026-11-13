@@ -187,6 +187,19 @@ class DialectSqlTests {
         assertTrue(new H2Dialect().storeCreateTableDdls().get(0).contains("CLOB"));
     }
 
+    @Test
+    @DisplayName("PostgreSQL and H2 item keys match the workspace namespace width")
+    void postgresAndH2ItemKeysSupportLongWorkspacePaths() {
+        for (AbstractJdbcDialect dialect : List.of(new PostgresDialect(), new H2Dialect())) {
+            String ddl = normalise(dialect.storeCreateTableDdls().get(0));
+            assertTrue(ddl.contains("namespace_path VARCHAR(2048) NOT NULL"));
+            assertTrue(ddl.contains("item_key VARCHAR(2048) NOT NULL"));
+        }
+        assertTrue(
+                normalise(new MysqlDialect().storeCreateTableDdls().get(0))
+                        .contains("item_key VARCHAR(255) COLLATE utf8mb4_bin NOT NULL"));
+    }
+
     // ------------------------------------------------------------------
     //  Secondary indexes (namespace_path / session_id)
     // ------------------------------------------------------------------

@@ -77,6 +77,22 @@ BaseStore store = JdbcStore.builder(dataSource)
 
 新建 MySQL 表的命名空间、条目、会话、状态和快照键使用 `utf8mb4_bin`。已有表不会自动修改：依赖大小写敏感键之前，请按 [MySQL 状态存储中的 SQL 迁移说明](/v2/zh/integration/session/mysql) 手动迁移。迁移会改变 `=` 和前缀 `LIKE` 的比较语义；此前被覆盖的大小写变体键无法恢复。
 
+#### 长工作区与会话键（统一 JDBC 存储）
+
+`agentscope-extensions-jdbc` 中的 `io.agentscope.extensions.jdbc.store.JdbcStore` 在 PostgreSQL 和 H2 新建表时使用 `item_key VARCHAR(2048)`，以容纳工作区和会话转录路径。MySQL 保持 255 字符，避免联合主键超出 InnoDB utf8mb4 索引上限。legacy 的 `io.agentscope.extensions.mysql.store.JdbcStore` 仍保留原有的新建表长度。
+
+已有表不会自动修改。请先备份数据库，在维护窗口执行对应迁移（如配置了表名或 schema，请替换或限定表名）：
+
+```sql
+-- PostgreSQL
+ALTER TABLE agentscope_store ALTER COLUMN item_key TYPE VARCHAR(2048);
+
+-- H2
+ALTER TABLE agentscope_store ALTER COLUMN item_key VARCHAR(2048);
+```
+
+仅执行与你的数据库对应的语句，不要将此扩容应用于 MySQL。自动表结构检查不会迁移已有列长度。
+
 ### 3. JdbcSnapshotSpec
 
 沙箱快照以 LONGBLOB 存储到数据库表。
