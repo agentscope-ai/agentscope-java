@@ -16,6 +16,7 @@
 package io.agentscope.core.agui.model;
 
 import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import java.util.Collections;
@@ -236,6 +237,7 @@ public class AguiMessage {
      *
      * @return The content, may be null
      */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
     public MessageContent getContent() {
         return content;
     }
@@ -248,6 +250,7 @@ public class AguiMessage {
      *
      * @return The text value, or null if content is not plain text
      */
+    @JsonIgnore
     public String getTextContent() {
         if (content instanceof MessageContent.Text text) {
             return text.value();
@@ -269,6 +272,7 @@ public class AguiMessage {
      *
      * @return The tool calls as an immutable list, empty if none
      */
+    @JsonInclude(JsonInclude.Include.NON_EMPTY)
     public List<AguiToolCall> getToolCalls() {
         return toolCalls;
     }
@@ -278,6 +282,7 @@ public class AguiMessage {
      *
      * @return The tool call ID, or null if not a tool message
      */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
     public String getToolCallId() {
         return toolCallId;
     }
@@ -297,6 +302,7 @@ public class AguiMessage {
      *
      * @return true if role is "user"
      */
+    @JsonIgnore
     public boolean isUserMessage() {
         return "user".equalsIgnoreCase(role);
     }
@@ -306,6 +312,7 @@ public class AguiMessage {
      *
      * @return true if role is "assistant"
      */
+    @JsonIgnore
     public boolean isAssistantMessage() {
         return "assistant".equalsIgnoreCase(role);
     }
@@ -315,6 +322,7 @@ public class AguiMessage {
      *
      * @return true if role is "system"
      */
+    @JsonIgnore
     public boolean isSystemMessage() {
         return "system".equalsIgnoreCase(role);
     }
@@ -324,6 +332,7 @@ public class AguiMessage {
      *
      * @return true if role is "tool"
      */
+    @JsonIgnore
     public boolean isToolMessage() {
         return "tool".equalsIgnoreCase(role);
     }
