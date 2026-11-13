@@ -214,6 +214,8 @@ HarnessAgent.builder()
 | `sessionRetentionDays` | `180` | 多少天后清掉 `*.log.jsonl` |
 | `flushTrigger` | `FlushTrigger.always()` | `ALWAYS` / `NEVER` / `THROTTLED(Duration)` |
 
+工具结果裁剪和卸载仅缩短文本：图片、音频等非文本块按原顺序保留。所有文本块共用首尾预览额度，同时保留结果/消息的标识、metadata、state 和 usage。卸载写入失败时保留原始结果。
+
 ## 大工具结果卸载
 
 对话压缩中的累计工具结果裁剪会将每个结果独立计入保护预算和最小裁剪 token 预算，即使一条消息包含多个结果。

@@ -215,6 +215,8 @@ HarnessAgent.builder()
 | `sessionRetentionDays` | `180` | Days before a `*.log.jsonl` is pruned |
 | `flushTrigger` | `FlushTrigger.always()` | `ALWAYS` / `NEVER` / `THROTTLED(Duration)` |
 
+Tool-result pruning and offloading shorten text only: images, audio, and other non-text blocks keep their original order. One head/tail allowance is shared across all text blocks, while result/message identity, metadata, state, and usage are preserved. Failed offload writes leave the original result intact.
+
 ## Large tool-result offloading
 
 Within compaction, aggregate tool-result pruning counts each result independently toward its protection and minimum-pruning token budgets, even when multiple results share one message.
