@@ -23,6 +23,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.fasterxml.jackson.core.type.TypeReference;
 import io.agentscope.core.agui.event.AguiEvent;
 import io.agentscope.core.agui.model.AguiFunctionCall;
 import io.agentscope.core.agui.model.AguiMessage;
@@ -58,6 +59,8 @@ import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 /**
  * Unit tests for AguiMessageConverter.
@@ -304,8 +307,9 @@ class AguiMessageConverterTest {
         }
     }
 
-    @Test
-    void testConvertToolMessageWithBlankErrorStaysSuccess() {
+    @ParameterizedTest
+    @ValueSource(strings = {"", " \t\n"})
+    void testConvertToolMessageWithBlankErrorStaysSuccess(String error) {
         AguiMessage aguiMsg =
                 new AguiMessage(
                         "msg-t1",
@@ -313,14 +317,105 @@ class AguiMessageConverterTest {
                         new MessageContent.Text("Tool result here"),
                         null,
                         "tc-1",
-                        "   ");
+                        error);
 
-        Msg msg = converter.toMsg(aguiMsg);
+        String json = JsonUtils.getJsonCodec().toJson(aguiMsg);
+        Msg msg = converter.toMsg(JsonUtils.getJsonCodec().fromJson(json, AguiMessage.class));
 
         ToolResultBlock result = msg.getFirstContentBlock(ToolResultBlock.class);
         assertNotNull(result);
         assertEquals(ToolResultState.SUCCESS, result.getState());
         assertEquals("Tool result here", resultText(result));
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"", " \t\n"})
+    void testBlankErrorSingletonSurvivesJsonRoundTrip(String text) {
+        Msg source =
+                Msg.builder()
+                        .id("blank-error")
+                        .role(MsgRole.TOOL)
+                        .content(blankErrorResult("tc-blank", text))
+                        .build();
+
+        AguiMessage wire = converter.toAguiMessage(source);
+        assertEquals(List.of(wire), converter.toAguiMessages(source));
+        assertBlankErrorWireRoundTrip(wire, text);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"", " \t\n"})
+    void testBlankErrorPluralSurvivesJsonRoundTrip(String text) {
+        Msg source =
+                Msg.builder()
+                        .id("plural-blank-error")
+                        .role(MsgRole.TOOL)
+                        .content(
+                                blankErrorResult("tc-blank", text),
+                                ToolResultBlock.text(text).withIdAndName("tc-ok", "lookup"))
+                        .build();
+
+        List<AguiMessage> wire = converter.toAguiMessages(source);
+        assertEquals(wire, converter.toAguiMessageList(List.of(source)));
+        String json = JsonUtils.getJsonCodec().toJson(wire);
+        List<AguiMessage> decoded =
+                JsonUtils.getJsonCodec().fromJson(json, new TypeReference<List<AguiMessage>>() {});
+        assertEquals(2, decoded.size());
+        assertEquals("plural-blank-error", decoded.get(0).getId());
+        assertEquals("plural-blank-error-1", decoded.get(1).getId());
+        assertBlankErrorWireRoundTrip(decoded.get(0), text);
+        assertEquals(text, decoded.get(1).getTextContent());
+        assertNull(decoded.get(1).getError());
+        ToolResultBlock success =
+                converter.toMsg(decoded.get(1)).getFirstContentBlock(ToolResultBlock.class);
+        assertEquals("tc-ok", success.getId());
+        assertEquals(ToolResultState.SUCCESS, success.getState());
+        assertEquals(text, resultText(success));
+    }
+
+    @Test
+    void testErrorWithoutOutputHasNonblankWireError() {
+        Msg source =
+                Msg.builder()
+                        .role(MsgRole.TOOL)
+                        .content(
+                                ToolResultBlock.builder()
+                                        .id("tc-blank")
+                                        .state(ToolResultState.ERROR)
+                                        .build())
+                        .build();
+
+        assertBlankErrorWireRoundTrip(converter.toAguiMessage(source), "");
+    }
+
+    private static ToolResultBlock blankErrorResult(String id, String text) {
+        return ToolResultBlock.builder()
+                .id(id)
+                .state(ToolResultState.ERROR)
+                .output(TextBlock.builder().text(text).build())
+                .build();
+    }
+
+    private void assertBlankErrorWireRoundTrip(AguiMessage wire, String text) {
+        String json = JsonUtils.getJsonCodec().toJson(wire);
+        Map<?, ?> fields = JsonUtils.getJsonCodec().fromJson(json, Map.class);
+        assertEquals(text, fields.get("content"), "preserve blank output in content");
+        assertEquals("[ERROR] Tool execution failed", fields.get("error"));
+        AguiMessage decoded = JsonUtils.getJsonCodec().fromJson(json, AguiMessage.class);
+        Msg restored = converter.toMsg(decoded);
+        assertEquals(wire.getId(), restored.getId());
+        ToolResultBlock result = restored.getFirstContentBlock(ToolResultBlock.class);
+        assertEquals("tc-blank", result.getId());
+        assertEquals(ToolResultState.ERROR, result.getState());
+        String expected = wire.getError() + (text.isEmpty() ? "" : "\n" + text);
+        assertEquals(expected, resultText(result));
+        for (int i = 0; i < 2; i++) {
+            json = JsonUtils.getJsonCodec().toJson(converter.toAguiMessage(restored));
+            restored = converter.toMsg(JsonUtils.getJsonCodec().fromJson(json, AguiMessage.class));
+            result = restored.getFirstContentBlock(ToolResultBlock.class);
+            assertEquals(ToolResultState.ERROR, result.getState());
+            assertEquals(expected, resultText(result));
+        }
     }
 
     @Test

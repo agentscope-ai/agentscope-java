@@ -189,7 +189,7 @@ public class AguiMessageConverter {
             } else if (block instanceof ToolResultBlock trb) {
                 toolCallId = trb.getId();
                 if (toolMessage && trb.getState() == ToolResultState.ERROR) {
-                    error = toolResultText(trb);
+                    error = toolResultErrorText(trb);
                 }
                 for (ContentBlock output : trb.getOutput()) {
                     if (output instanceof TextBlock tb) {
@@ -232,6 +232,12 @@ public class AguiMessageConverter {
         return text.toString();
     }
 
+    /** Keep ERROR results distinguishable from frontend blank-error success messages. */
+    private static String toolResultErrorText(ToolResultBlock result) {
+        String text = toolResultText(result);
+        return text.isBlank() ? "[ERROR] Tool execution failed" : text;
+    }
+
     /**
      * Build one AG-UI tool message from a single AgentScope tool result.
      *
@@ -244,7 +250,12 @@ public class AguiMessageConverter {
         boolean error = result.getState() == ToolResultState.ERROR;
         MessageContent content = new MessageContent.Text(text);
         return new AguiMessage(
-                id, convertRole(msg.getRole()), content, null, result.getId(), error ? text : null);
+                id,
+                convertRole(msg.getRole()),
+                content,
+                null,
+                result.getId(),
+                error ? toolResultErrorText(result) : null);
     }
 
     /**
