@@ -17,6 +17,8 @@ This protection applies only to the `RUN_ERROR` message, not to the entire event
 
 `AguiMessageConverter.toAguiMessageList()` and `toAguiMessages()` expand a TOOL `Msg` containing multiple `ToolResultBlock`s into one AG-UI tool message per tool result, preserving each tool-call ID and error state. For compatibility, `toAguiMessage()` still accepts multiple tool results, joins their text, and retains the last tool-call ID; use the plural APIs to avoid losing individual result identities. Conversion currently preserves text and tool-call fields only; image, audio, video, and document content blocks are not serialized back into AG-UI message content.
 
+Frontend tool messages with a non-blank `error` become ERROR tool results. Outbound error tool results keep their text in both `content` and `error`; repeated wire round trips do not duplicate matching error text.
+
 ## When To Use
 
 - You need to connect an AgentScope agent to an AG-UI-compatible front end or a custom chat UI.

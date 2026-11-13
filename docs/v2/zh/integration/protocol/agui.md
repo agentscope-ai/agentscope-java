@@ -17,6 +17,8 @@ en_link: /v2/en/integration/protocol/agui
 
 `AguiMessageConverter.toAguiMessageList()` 和 `toAguiMessages()` 会把包含多个 `ToolResultBlock` 的 TOOL `Msg` 展开成每个 tool result 一条 AG-UI tool message，分别保留工具调用 ID 和错误状态。为保持兼容，`toAguiMessage()` 仍接受多个工具结果，拼接其文本并保留最后一个工具调用 ID；需要保留各结果身份时请使用复数形式的 API。目前仍只保留文本和工具调用字段；image、audio、video、document 内容块不会被序列化回 AG-UI message content。
 
+前端工具消息中的非空白 `error` 会转换为 ERROR 工具结果。出站错误工具结果会在 `content` 和 `error` 中同时保留文本；多次通过协议往返转换时，不会重复拼接相同的错误文本。
+
 ## 何时使用
 
 - 需要把 AgentScope agent 接入 AG-UI 兼容前端或自研 Chat UI。

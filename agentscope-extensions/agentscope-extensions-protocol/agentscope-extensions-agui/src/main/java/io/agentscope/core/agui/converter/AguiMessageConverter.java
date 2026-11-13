@@ -190,14 +190,13 @@ public class AguiMessageConverter {
                 toolCallId = trb.getId();
                 if (toolMessage && trb.getState() == ToolResultState.ERROR) {
                     error = toolResultText(trb);
-                } else {
-                    for (ContentBlock output : trb.getOutput()) {
-                        if (output instanceof TextBlock tb) {
-                            if (content.length() > 0) {
-                                content.append("\n");
-                            }
-                            content.append(tb.getText());
+                }
+                for (ContentBlock output : trb.getOutput()) {
+                    if (output instanceof TextBlock tb) {
+                        if (content.length() > 0) {
+                            content.append("\n");
                         }
+                        content.append(tb.getText());
                     }
                 }
             }
@@ -243,8 +242,7 @@ public class AguiMessageConverter {
         String id = index == 0 ? msg.getId() : msg.getId() + "-" + index;
         String text = toolResultText(result);
         boolean error = result.getState() == ToolResultState.ERROR;
-        MessageContent content =
-                error ? new MessageContent.Text("") : new MessageContent.Text(text);
+        MessageContent content = new MessageContent.Text(text);
         return new AguiMessage(
                 id, convertRole(msg.getRole()), content, null, result.getId(), error ? text : null);
     }
@@ -387,7 +385,9 @@ public class AguiMessageConverter {
                                 .output(
                                         TextBlock.builder()
                                                 .text(
-                                                        text == null || text.isEmpty()
+                                                        text == null
+                                                                        || text.isEmpty()
+                                                                        || error.equals(text)
                                                                 ? error
                                                                 : error + "\n" + text)
                                                 .build())
