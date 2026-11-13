@@ -49,7 +49,13 @@ public final class JevClient {
     public static final String DEFAULT_MODEL = "jev-latest";
     public static final Duration DEFAULT_TIMEOUT = Duration.ofSeconds(5);
     private static final String SYSTEM_ONE_ENDPOINT = "/v1/systemone";
-    private static final double PROBABILITY_SUM_TOLERANCE_PER_OPTION = 0.000001;
+
+    /**
+     * The System One API returns probabilities rounded to 4 decimal places, so each value
+     * carries up to 5e-5 of rounding error. The sum of n values may therefore drift from 1
+     * by up to n * 5e-5 without any individual probability being wrong.
+     */
+    private static final double PROBABILITY_SUM_TOLERANCE_PER_OPTION = 0.00005;
 
     static final ObjectMapper MAPPER =
             new ObjectMapper()
