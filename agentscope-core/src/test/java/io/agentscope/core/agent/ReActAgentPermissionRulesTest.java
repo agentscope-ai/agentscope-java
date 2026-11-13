@@ -20,9 +20,13 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.ReActAgent;
+import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.event.ConfirmResult;
 import io.agentscope.core.event.RequireUserConfirmEvent;
 import io.agentscope.core.event.ToolResultEndEvent;
+import io.agentscope.core.hook.Hook;
+import io.agentscope.core.hook.HookEvent;
+import io.agentscope.core.hook.PreCallEvent;
 import io.agentscope.core.message.GenerateReason;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
@@ -34,6 +38,7 @@ import io.agentscope.core.model.ChatModelBase;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.ToolSchema;
+import io.agentscope.core.permission.AdditionalWorkingDirectory;
 import io.agentscope.core.permission.PermissionBehavior;
 import io.agentscope.core.permission.PermissionContextState;
 import io.agentscope.core.permission.PermissionDecision;
@@ -46,6 +51,7 @@ import io.agentscope.core.tool.ToolCallParam;
 import io.agentscope.core.tool.Toolkit;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -491,6 +497,319 @@ class ReActAgentPermissionRulesTest {
                             : GenerateReason.MODEL_STOP,
                     later.getGenerateReason());
             assertEquals(2, deploy.callCount(), "confirmed rules must survive the next call");
+        }
+    }
+
+    static Stream<Arguments> adminConfirmationCases() {
+        PermissionContextState trivial = PermissionContextState.builder().build();
+        PermissionContextState bypass = trivial.withMode(PermissionMode.BYPASS);
+        PermissionContextState admin =
+                PermissionContextState.builder()
+                        .mode(PermissionMode.BYPASS)
+                        .addWorkingDirectory(
+                                "admin",
+                                new AdditionalWorkingDirectory(
+                                        System.getProperty("java.io.tmpdir"), "admin"))
+                        .addDenyRule(
+                                "audit",
+                                new PermissionRule("audit", null, PermissionBehavior.DENY, "admin"))
+                        .build();
+        PermissionRule deny = new PermissionRule(TOOL, null, PermissionBehavior.DENY, "confirm");
+        PermissionRule ask = new PermissionRule(TOOL, null, PermissionBehavior.ASK, "confirm");
+        PermissionRule allow = new PermissionRule(TOOL, null, PermissionBehavior.ALLOW, "confirm");
+        return Stream.of(false, true)
+                .flatMap(
+                        store ->
+                                Stream.of(
+                                        Arguments.of(
+                                                trivial,
+                                                false,
+                                                store,
+                                                true,
+                                                List.of(deny),
+                                                PermissionBehavior.DENY,
+                                                PermissionBehavior.DENY),
+                                        Arguments.of(
+                                                bypass,
+                                                true,
+                                                store,
+                                                true,
+                                                List.of(deny),
+                                                PermissionBehavior.DENY,
+                                                PermissionBehavior.DENY),
+                                        Arguments.of(
+                                                admin.withAddedRules(List.of(allow)),
+                                                false,
+                                                store,
+                                                true,
+                                                List.of(ask),
+                                                PermissionBehavior.ASK,
+                                                PermissionBehavior.ASK),
+                                        Arguments.of(
+                                                admin.withMode(PermissionMode.DONT_ASK),
+                                                false,
+                                                store,
+                                                true,
+                                                List.of(allow),
+                                                PermissionBehavior.ALLOW,
+                                                PermissionBehavior.ALLOW),
+                                        Arguments.of(
+                                                admin.withAddedRules(List.of(deny)),
+                                                false,
+                                                store,
+                                                true,
+                                                List.of(allow),
+                                                PermissionBehavior.ALLOW,
+                                                PermissionBehavior.DENY),
+                                        Arguments.of(
+                                                admin.withAddedRules(List.of(ask)),
+                                                false,
+                                                store,
+                                                true,
+                                                List.of(allow),
+                                                PermissionBehavior.ALLOW,
+                                                PermissionBehavior.ASK),
+                                        Arguments.of(
+                                                trivial,
+                                                false,
+                                                store,
+                                                false,
+                                                List.of(deny),
+                                                PermissionBehavior.ALLOW,
+                                                PermissionBehavior.ALLOW),
+                                        Arguments.of(
+                                                bypass,
+                                                true,
+                                                store,
+                                                true,
+                                                null,
+                                                PermissionBehavior.ALLOW,
+                                                PermissionBehavior.ALLOW),
+                                        Arguments.of(
+                                                trivial,
+                                                false,
+                                                store,
+                                                true,
+                                                Collections.singletonList(null),
+                                                PermissionBehavior.ALLOW,
+                                                PermissionBehavior.ALLOW)));
+    }
+
+    @ParameterizedTest
+    @MethodSource("adminConfirmationCases")
+    void acceptedRulesReconcileAdminReplacementBeforeNextCall(
+            PermissionContextState replacement,
+            boolean modeOnly,
+            boolean withStore,
+            boolean confirmed,
+            List<PermissionRule> suppliedRules,
+            PermissionBehavior admittedOutcome,
+            PermissionBehavior nextOutcome) {
+        CountDownLatch admitted = new CountDownLatch(1);
+        Sinks.One<Void> release = Sinks.one();
+        AtomicInteger preCalls = new AtomicInteger();
+        Hook holdConfirmation =
+                new Hook() {
+                    @Override
+                    public <T extends HookEvent> Mono<T> onEvent(T event) {
+                        if (event instanceof PreCallEvent && preCalls.incrementAndGet() == 2) {
+                            admitted.countDown();
+                            return release.asMono().thenReturn(event);
+                        }
+                        return Mono.just(event);
+                    }
+                };
+        DeployTool deploy = new DeployTool();
+        AtomicInteger confirmCalls = new AtomicInteger();
+        Toolkit toolkit = new Toolkit();
+        toolkit.registerAgentTool(deploy);
+        toolkit.registerAgentTool(
+                new ToolBase(
+                        ToolBase.builder()
+                                .name("confirm")
+                                .description("confirm")
+                                .inputSchema(schema())) {
+                    @Override
+                    public Mono<PermissionDecision> checkPermissions(
+                            Map<String, Object> input, PermissionContextState context) {
+                        return Mono.just(PermissionDecision.ask("confirm"));
+                    }
+
+                    @Override
+                    public Mono<ToolResultBlock> callAsync(ToolCallParam param) {
+                        confirmCalls.incrementAndGet();
+                        return Mono.just(ToolResultBlock.text("confirmed"));
+                    }
+                });
+        ChatResponse ask =
+                ChatResponse.builder()
+                        .content(
+                                List.of(
+                                        ToolUseBlock.builder()
+                                                .id("confirm-1")
+                                                .name("confirm")
+                                                .input(Map.of())
+                                                .build()))
+                        .build();
+        ScriptedModel model =
+                new ScriptedModel(
+                        List.of(
+                                () -> Flux.just(ask),
+                                () -> Flux.just(toolCall("after-confirm")),
+                                () -> Flux.just(textResponse("done")),
+                                () -> Flux.just(toolCall("next")),
+                                () -> Flux.just(textResponse("done")),
+                                () -> Flux.just(toolCall("other-session")),
+                                () -> Flux.just(textResponse("done")),
+                                () -> Flux.just(toolCall("other-user")),
+                                () -> Flux.just(textResponse("done"))));
+        PermissionContextState initial = PermissionContextState.builder().build();
+        RuntimeContext ctx = session("admin-confirmation");
+        try (ReActAgent agent =
+                ReActAgent.builder()
+                        .name("asst")
+                        .model(model)
+                        .toolkit(toolkit)
+                        .permissionContext(initial)
+                        .stateStore(withStore ? new InMemoryAgentStateStore() : null)
+                        .hook(holdConfirmation)
+                        .build()) {
+            Msg prompt =
+                    agent.call(List.of(userMsg("confirm?")), ctx).block(Duration.ofSeconds(10));
+            assertNotNull(prompt);
+            assertEquals(GenerateReason.PERMISSION_ASKING, prompt.getGenerateReason());
+            assertEquals(initial, agent.getAgentState(ctx).getPermissionContext());
+            Msg reply =
+                    confirmation(
+                            confirmed,
+                            prompt.getContentBlocks(ToolUseBlock.class).get(0),
+                            suppliedRules);
+            PermissionContextState expected =
+                    replacement.withAddedRules(confirmed ? suppliedRules : null);
+            StepVerifier.create(agent.streamEvents(List.of(reply), ctx).collectList())
+                    .then(
+                            () -> {
+                                try {
+                                    assertTrue(admitted.await(10, TimeUnit.SECONDS));
+                                } catch (InterruptedException e) {
+                                    Thread.currentThread().interrupt();
+                                    throw new AssertionError(e);
+                                }
+                                // Admission is complete, but confirmation rules have not been
+                                // applied.
+                                if (modeOnly) {
+                                    agent.setPermissionMode(ctx, replacement.getMode());
+                                } else {
+                                    agent.replacePermissionContext(
+                                            "u1", "admin-confirmation", replacement);
+                                }
+                                assertEquals(
+                                        replacement,
+                                        agent.getAgentState(ctx).getPermissionContext());
+                                assertEquals(Sinks.EmitResult.OK, release.tryEmitEmpty());
+                            })
+                    .assertNext(
+                            events -> {
+                                assertOutcome(events, "after-confirm", admittedOutcome);
+                                assertEquals(confirmed ? 1 : 0, confirmCalls.get());
+                                assertEquals(
+                                        admittedOutcome == PermissionBehavior.ALLOW ? 1 : 0,
+                                        deploy.callCount());
+                                assertTrue(
+                                        deploy.checkedContexts.stream().allMatch(initial::equals),
+                                        "the administrator context must not replace the admitted"
+                                                + " context");
+                            })
+                    .expectComplete()
+                    .verify(Duration.ofSeconds(10));
+            assertEquals(expected, agent.getAgentState(ctx).getPermissionContext());
+            if (admittedOutcome == PermissionBehavior.ASK) {
+                rejectPendingDeploy(agent, ctx, "after-confirm");
+            }
+            int beforeNext = deploy.callCount();
+            StepVerifier.create(agent.streamEvents(List.of(userMsg("next")), ctx).collectList())
+                    .assertNext(
+                            events -> {
+                                assertOutcome(events, "next", nextOutcome);
+                                assertEquals(
+                                        beforeNext
+                                                + (nextOutcome == PermissionBehavior.ALLOW ? 1 : 0),
+                                        deploy.callCount(),
+                                        "accepted DENY/ASK must prevent the next execution");
+                            })
+                    .expectComplete()
+                    .verify(Duration.ofSeconds(10));
+            if (nextOutcome == PermissionBehavior.ASK) {
+                rejectPendingDeploy(agent, ctx, "next");
+            }
+            assertEquals(expected, agent.getAgentState(ctx).getPermissionContext());
+            assertEquals("u1", agent.getAgentState(ctx).getUserId());
+            assertEquals("admin-confirmation", agent.getAgentState(ctx).getSessionId());
+            int beforeIsolation = deploy.callCount();
+            RuntimeContext otherSession = session("other-session");
+            RuntimeContext otherUser =
+                    RuntimeContext.builder().userId("u2").sessionId("admin-confirmation").build();
+            agent.call(List.of(userMsg("isolated")), otherSession).block(Duration.ofSeconds(10));
+            agent.call(List.of(userMsg("isolated")), otherUser).block(Duration.ofSeconds(10));
+            assertEquals(beforeIsolation + 2, deploy.callCount());
+            assertEquals(initial, agent.getAgentState(otherSession).getPermissionContext());
+            assertEquals(initial, agent.getAgentState(otherUser).getPermissionContext());
+            assertEquals(expected, agent.getAgentState(ctx).getPermissionContext());
+            assertTrue(initial.isTrivial(), "the builder context must remain untouched");
+        }
+    }
+
+    private static Msg confirmation(
+            boolean confirmed, ToolUseBlock tool, List<PermissionRule> rules) {
+        return Msg.builder()
+                .role(MsgRole.USER)
+                .textContent("")
+                .metadata(
+                        Map.of(
+                                Msg.METADATA_CONFIRM_RESULTS,
+                                List.of(new ConfirmResult(confirmed, tool, rules))))
+                .build();
+    }
+
+    private static void rejectPendingDeploy(ReActAgent agent, RuntimeContext ctx, String id) {
+        Msg rejected =
+                confirmation(
+                        false,
+                        ToolUseBlock.builder()
+                                .id(id)
+                                .name(TOOL)
+                                .input(Map.of("env", "prod"))
+                                .build(),
+                        null);
+        agent.call(List.of(rejected), ctx).block(Duration.ofSeconds(10));
+    }
+
+    private static void assertOutcome(
+            List<AgentEvent> events, String id, PermissionBehavior outcome) {
+        if (outcome == PermissionBehavior.ASK) {
+            assertTrue(
+                    events.stream()
+                            .anyMatch(
+                                    event ->
+                                            event instanceof RequireUserConfirmEvent ask
+                                                    && ask.getToolCalls().stream()
+                                                            .anyMatch(
+                                                                    tool ->
+                                                                            id.equals(
+                                                                                    tool
+                                                                                            .getId()))));
+        } else {
+            ToolResultState expected =
+                    outcome == PermissionBehavior.DENY
+                            ? ToolResultState.DENIED
+                            : ToolResultState.SUCCESS;
+            assertTrue(
+                    events.stream()
+                            .anyMatch(
+                                    event ->
+                                            event instanceof ToolResultEndEvent end
+                                                    && id.equals(end.getToolCallId())
+                                                    && end.getState() == expected));
         }
     }
 

@@ -2231,6 +2231,16 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                             // an administrator may have replaced it for subsequent calls.
                             state.setPermissionContext(
                                     state.getPermissionContext().withAddedRules(accepted));
+                            // No-store calls reuse the current cached engine, which an
+                            // administrator may have replaced since this call's admission.
+                            permissionEngineCache.computeIfPresent(
+                                    slotKey,
+                                    (slot, current) -> {
+                                        if (current != permissionEngine) {
+                                            accepted.forEach(current::addRule);
+                                        }
+                                        return current;
+                                    });
                         }
                     }
                 } else {
