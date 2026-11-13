@@ -320,6 +320,8 @@ HarnessAgent agent = HarnessAgent.builder()
 - **`sessions.json`** —— 该 agent 的会话索引（key 是 sessionId，value 是 summary + updatedAt）。
 - **`<sessionId>.log.jsonl`** —— **永不压缩**的原始对话日志，append-only。`session_search` / `session_history` 工具就是查它。
 
+`session_search.maxResults` 默认为 10，`session_history.lastN` 默认为 20；两者上限均为 100，传入更大的值也会限制到 100。
+
 > 默认的 `JsonFileAgentStateStore` 仅适合单机。生产多副本必须换成分布式后端（`RedisAgentStateStore` / `MysqlAgentStateStore` ……）。如果你已经在用 `filesystem(SandboxFilesystemSpec)` 或 `filesystem(RemoteFilesystemSpec)` 但没换成分布式状态存储，`build()` 会直接抛 `IllegalStateException`—— 强制提醒你别让运行时状态成为单点。
 
 完整细节（恢复链路、跨节点接续、`(userId, sessionId)` 寻址）见 [Context](/v2/zh/docs/building-blocks/context)。

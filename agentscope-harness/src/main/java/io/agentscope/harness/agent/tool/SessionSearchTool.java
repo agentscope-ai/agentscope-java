@@ -43,6 +43,8 @@ public class SessionSearchTool {
 
     private static final Logger log = LoggerFactory.getLogger(SessionSearchTool.class);
 
+    static final int MAX_RESULTS_CEILING = 100;
+
     private final WorkspaceManager workspaceManager;
 
     public SessionSearchTool(WorkspaceManager workspaceManager) {
@@ -66,7 +68,9 @@ public class SessionSearchTool {
                     String agentId,
             @ToolParam(
                             name = "maxResults",
-                            description = "Maximum number of results to return (default: 10)",
+                            description =
+                                    "Maximum number of results to return (default: 10, capped at"
+                                            + " 100)",
                             required = false)
                     Integer maxResults) {
         if (query == null || query.isBlank()) {
@@ -74,7 +78,10 @@ public class SessionSearchTool {
         }
 
         RuntimeContext rc = runtimeContext != null ? runtimeContext : RuntimeContext.empty();
-        int limit = maxResults != null && maxResults > 0 ? maxResults : 10;
+        int limit =
+                Math.min(
+                        maxResults != null && maxResults > 0 ? maxResults : 10,
+                        MAX_RESULTS_CEILING);
         String effectiveAgentId = agentId != null && !agentId.isBlank() ? agentId : null;
         String lowerQuery = query.toLowerCase();
 
@@ -175,7 +182,9 @@ public class SessionSearchTool {
                     String sessionId,
             @ToolParam(
                             name = "lastN",
-                            description = "Number of recent messages to return (default: 20)",
+                            description =
+                                    "Number of recent messages to return (default: 20, capped at"
+                                            + " 100)",
                             required = false)
                     Integer lastN) {
         if (agentId == null || agentId.isBlank() || sessionId == null || sessionId.isBlank()) {
@@ -183,7 +192,7 @@ public class SessionSearchTool {
         }
 
         RuntimeContext rc = runtimeContext != null ? runtimeContext : RuntimeContext.empty();
-        int limit = lastN != null && lastN > 0 ? lastN : 20;
+        int limit = Math.min(lastN != null && lastN > 0 ? lastN : 20, MAX_RESULTS_CEILING);
 
         Path contextFile = workspaceManager.resolveSessionContextFile(rc, agentId, sessionId);
         if (!Files.isRegularFile(contextFile)) {

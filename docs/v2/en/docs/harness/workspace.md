@@ -325,6 +325,8 @@ Distinct from `AgentState`, the workspace holds the **conversation logs** under 
 - **`sessions.json`** — the agent's session index (key = sessionId, value = summary + updatedAt).
 - **`<sessionId>.log.jsonl`** — the **never-compacted** raw conversation log, append-only. `session_search` / `session_history` query it.
 
+`session_search.maxResults` defaults to 10 and `session_history.lastN` defaults to 20; both are capped at 100, including requests with larger limits.
+
 > The default `JsonFileAgentStateStore` is single-machine only. Multi-replica production must switch to a distributed store (`RedisAgentStateStore` / `MysqlAgentStateStore` / …). If you have configured `filesystem(SandboxFilesystemSpec)` or `filesystem(RemoteFilesystemSpec)` without swapping in a distributed state store, `build()` raises `IllegalStateException` — a forced reminder not to make runtime state a single point of failure.
 
 Full details (recovery flow, cross-node continuation, `(userId, sessionId)` addressing) live in [Context](/v2/en/docs/building-blocks/context).
