@@ -58,6 +58,8 @@ HarnessAgent agent = HarnessAgent.builder()
 
 During reasoning, the agent sees skills from the repo and calls `load_skill_through_path` for whichever one it needs.
 
+Core `DynamicSkillMiddleware` reloads repositories, computes the content signature, and materializes skill files on Reactor's `boundedElastic` scheduler, not the subscribing event-loop thread. Repository reads still run for each call, including cache hits; unchanged content reuses the cached `SkillBox`.
+
 ## Marketplace stores
 
 `skillRepository(...)` is the unified entry point — pass any store.

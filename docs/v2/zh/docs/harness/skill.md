@@ -58,6 +58,8 @@ HarnessAgent agent = HarnessAgent.builder()
 
 后续推理时 agent 看得到这个仓库里的 skill，需要哪个就调 `load_skill_through_path` 加载详情。
 
+Core 的 `DynamicSkillMiddleware` 在 Reactor 的 `boundedElastic` 调度器上读取仓库、计算内容签名并物化技能文件，不占用订阅方的事件循环线程。每次调用仍会读取仓库，包括缓存命中时；内容不变时复用缓存的 `SkillBox`。
+
 ## 接技能市场
 
 `skillRepository(...)` 是统一入口，传什么后端都可以。
