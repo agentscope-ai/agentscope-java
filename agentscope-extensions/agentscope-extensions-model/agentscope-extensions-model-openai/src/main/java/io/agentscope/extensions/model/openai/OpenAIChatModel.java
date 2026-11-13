@@ -267,6 +267,7 @@ public class OpenAIChatModel extends ChatModelBase {
         private Boolean nativeStructuredOutput;
         private Boolean nativeStructuredOutputWithTools;
         private Boolean strictJsonSchema;
+        private Boolean supportsToolChoiceSpecific;
 
         /**
          * Sets the API key for OpenAI authentication.
@@ -470,6 +471,18 @@ public class OpenAIChatModel extends ChatModelBase {
         }
 
         /**
+         * Enables named tool choice only for endpoints confirmed to support it.
+         * Defaults to false for unknown OpenAI-compatible endpoints.
+         *
+         * @param supportsToolChoiceSpecific whether named tool choice is supported
+         * @return this builder instance
+         */
+        public Builder supportsToolChoiceSpecific(boolean supportsToolChoiceSpecific) {
+            this.supportsToolChoiceSpecific = supportsToolChoiceSpecific;
+            return this;
+        }
+
+        /**
          * Builds the OpenAIChatModel instance.
          *
          * @return configured OpenAIChatModel instance
@@ -516,6 +529,9 @@ public class OpenAIChatModel extends ChatModelBase {
                     nativeStructuredOutput != null ? nativeStructuredOutput : true);
             if (nativeStructuredOutputWithTools != null) {
                 model.setNativeStructuredOutputWithTools(nativeStructuredOutputWithTools);
+            }
+            if (supportsToolChoiceSpecific != null) {
+                model.setSupportsToolChoiceSpecific(supportsToolChoiceSpecific);
             }
             return model;
         }

@@ -82,5 +82,9 @@ public final class OpenAIModelProviderSupport {
         if (strictJsonSchema != null) {
             builder.strictJsonSchema(strictJsonSchema);
         }
+        Boolean supportsToolChoiceSpecific = booleanOption(context, "supportsToolChoiceSpecific");
+        if (supportsToolChoiceSpecific != null) {
+            builder.supportsToolChoiceSpecific(supportsToolChoiceSpecific);
+        }
     }
 }

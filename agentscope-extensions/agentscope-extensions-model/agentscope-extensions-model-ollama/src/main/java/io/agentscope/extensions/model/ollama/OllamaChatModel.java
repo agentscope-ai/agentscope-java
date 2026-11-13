@@ -135,6 +135,11 @@ public class OllamaChatModel extends ChatModelBase {
         return this.modelName;
     }
 
+    @Override
+    public boolean supportsToolChoiceSpecific() {
+        return true;
+    }
+
     public boolean isStreaming() {
         return this.stream;
     }

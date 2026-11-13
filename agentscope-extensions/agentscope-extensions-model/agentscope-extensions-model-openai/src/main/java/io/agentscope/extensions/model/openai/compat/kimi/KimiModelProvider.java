@@ -103,6 +103,10 @@ public final class KimiModelProvider implements ModelProvider {
                         .endpointPath(endpointPath)
                         .formatter(new KimiFormatter())
                         .nativeStructuredOutput(false)
+                        .supportsToolChoiceSpecific(
+                                DEFAULT_BASE_URL.equals(baseUrl)
+                                        && !KimiFormatter.isAlwaysThinkingModel(modelName)
+                                        && !KimiFormatter.hasConfigurableThinking(modelName))
                         .contextWindowSize(
                                 ModelContextWindows.lookup(modelName, ModelContextWindows.KIMI));
 

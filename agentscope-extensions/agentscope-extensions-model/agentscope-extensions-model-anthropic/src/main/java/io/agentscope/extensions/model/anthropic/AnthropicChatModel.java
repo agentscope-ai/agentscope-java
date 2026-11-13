@@ -72,6 +72,11 @@ public class AnthropicChatModel extends ChatModelBase {
     private final GenerateOptions defaultOptions;
     private final AnthropicBaseFormatter formatter;
 
+    @Override
+    public boolean supportsToolChoiceSpecific() {
+        return true;
+    }
+
     public AnthropicChatModel(
             String baseUrl,
             String apiKey,

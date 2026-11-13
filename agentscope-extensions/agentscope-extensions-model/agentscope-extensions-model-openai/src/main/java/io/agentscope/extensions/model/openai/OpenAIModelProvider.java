@@ -71,6 +71,7 @@ public final class OpenAIModelProvider implements ModelProvider {
                         .endpointPath(endpointPath)
                         .formatter(new OpenAIChatFormatter())
                         .nativeStructuredOutput(true)
+                        .supportsToolChoiceSpecific(DEFAULT_BASE_URL.equals(baseUrl))
                         .contextWindowSize(
                                 ModelContextWindows.lookup(modelName, ModelContextWindows.OPENAI));
         applyAdvancedOptions(builder, context);

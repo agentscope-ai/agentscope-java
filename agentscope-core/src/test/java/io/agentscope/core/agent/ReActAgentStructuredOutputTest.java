@@ -19,6 +19,8 @@ package io.agentscope.core.agent;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.test.MockModel;
@@ -35,9 +37,15 @@ import io.agentscope.core.message.ThinkingBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.ChatUsage;
+import io.agentscope.core.model.GenerateOptions;
+import io.agentscope.core.model.Model;
+import io.agentscope.core.model.ToolChoice;
+import io.agentscope.core.model.ToolSchema;
+import io.agentscope.core.state.InMemoryAgentStateStore;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.core.util.JsonUtils;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
@@ -45,6 +53,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.RepeatedTest;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfSystemProperty;
+import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
 
@@ -188,6 +197,162 @@ class ReActAgentStructuredOutputTest {
             assertNotNull(result);
             assertEquals("Paris", result.getStructuredData(WeatherResponse.class).location);
             assertEquals(1, model.getCallCount());
+        }
+    }
+
+    @Test
+    void testMissingStructuredOutputRetriesAreBoundedAndRequestLocal() {
+        for (boolean supportsSpecific : new boolean[] {false, true}) {
+            for (int succeedAt : new int[] {2, 4, 0}) {
+                RetryModel model = new RetryModel(supportsSpecific, succeedAt);
+                GenerateOptions shared =
+                        GenerateOptions.builder()
+                                .temperature(0.2)
+                                .toolChoice(new ToolChoice.Auto())
+                                .build();
+                InMemoryAgentStateStore store = new InMemoryAgentStateStore();
+                RuntimeContext ctx =
+                        RuntimeContext.builder().userId("user").sessionId("retry").build();
+                ReActAgent agent =
+                        ReActAgent.builder()
+                                .name("retry")
+                                .model(model)
+                                .toolkit(toolkit)
+                                .generateOptions(shared)
+                                .stateStore(store)
+                                .maxIters(1)
+                                .build();
+                Msg user = Msg.builder().role(MsgRole.USER).textContent("Weather").build();
+                Msg result =
+                        agent.call(List.of(user), WeatherResponse.class, ctx)
+                                .block(Duration.ofSeconds(5));
+                assertNotNull(result);
+                assertEquals(succeedAt == 0 ? 4 : succeedAt, model.requests.size());
+                if (succeedAt == 0) {
+                    assertFalse(result.hasStructuredData());
+                } else {
+                    assertEquals("Paris", result.getStructuredData(WeatherResponse.class).location);
+                }
+                for (int i = 0; i < model.requests.size(); i++) {
+                    List<Msg> request = model.requests.get(i);
+                    assertEquals(MsgRole.USER, request.get(request.size() - 1).getRole());
+                    long reminders =
+                            request.stream()
+                                    .filter(m -> m.getTextContent().contains("<system-reminder>"))
+                                    .count();
+                    assertEquals(1, reminders);
+                    assertTrue(
+                            model.schemas.get(i).stream()
+                                    .anyMatch(t -> "generate_response".equals(t.getName())));
+                    ToolChoice choice = model.options.get(i).getToolChoice();
+                    if (supportsSpecific && i > 0) {
+                        assertEquals(new ToolChoice.Specific("generate_response"), choice);
+                    } else {
+                        assertEquals(new ToolChoice.Auto(), choice);
+                    }
+                    assertEquals(0.2, model.options.get(i).getTemperature());
+                }
+                assertEquals("Weather", user.getTextContent());
+                assertEquals(new ToolChoice.Auto(), shared.getToolChoice());
+                assertFalse(toolkit.getToolNames().contains("generate_response"));
+                assertNoStructuredReminder(agent.getAgentState(ctx).getContext());
+                assertNoStructuredReminder(
+                        store.get(
+                                        "user",
+                                        "retry",
+                                        "agent_state",
+                                        io.agentscope.core.state.AgentState.class)
+                                .orElseThrow()
+                                .getContext());
+                agent.call("Ordinary next call", ctx).block(Duration.ofSeconds(5));
+                assertNoStructuredReminder(model.requests.get(model.requests.size() - 1));
+                assertEquals(
+                        new ToolChoice.Auto(),
+                        model.options.get(model.options.size() - 1).getToolChoice());
+                assertTrue(model.schemas.get(model.schemas.size() - 1).isEmpty());
+            }
+        }
+    }
+
+    @Test
+    void testFallbackModelWithUnknownCapabilityUsesReminderOnly() {
+        RetryModel primary =
+                new RetryModel(true, 2) {
+                    @Override
+                    public Flux<ChatResponse> stream(
+                            List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
+                        return Flux.error(new IllegalStateException("offline fixture"));
+                    }
+                };
+        RetryModel fallback = new RetryModel(false, 2);
+        ReActAgent agent =
+                ReActAgent.builder()
+                        .name("failover")
+                        .model(primary)
+                        .fallbackModel(fallback)
+                        .maxIters(1)
+                        .build();
+        Msg result = agent.call("Weather", WeatherResponse.class).block(Duration.ofSeconds(5));
+        assertNotNull(result);
+        assertEquals("Paris", result.getStructuredData(WeatherResponse.class).location);
+        assertEquals(2, fallback.options.size());
+        assertNull(fallback.options.get(1).getToolChoice());
+    }
+
+    private static void assertNoStructuredReminder(List<Msg> messages) {
+        assertFalse(
+                messages.stream().anyMatch(m -> m.getTextContent().contains("<system-reminder>")));
+    }
+
+    private static class RetryModel implements Model {
+        final boolean supportsSpecific;
+        final int succeedAt;
+        final List<List<Msg>> requests = new ArrayList<>();
+        final List<List<ToolSchema>> schemas = new ArrayList<>();
+        final List<GenerateOptions> options = new ArrayList<>();
+
+        RetryModel(boolean supportsSpecific, int succeedAt) {
+            this.supportsSpecific = supportsSpecific;
+            this.succeedAt = succeedAt;
+        }
+
+        @Override
+        public boolean supportsToolChoiceSpecific() {
+            return supportsSpecific;
+        }
+
+        @Override
+        public String getModelName() {
+            return "retry-fixture";
+        }
+
+        @Override
+        public Flux<ChatResponse> stream(
+                List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
+            requests.add(List.copyOf(messages));
+            schemas.add(List.copyOf(tools));
+            this.options.add(options);
+            if (requests.size() == succeedAt) {
+                return Flux.just(
+                        ChatResponse.builder()
+                                .content(
+                                        List.of(
+                                                ToolUseBlock.builder()
+                                                        .id("format")
+                                                        .name("generate_response")
+                                                        .input(
+                                                                Map.of(
+                                                                        "response",
+                                                                        Map.of(
+                                                                                "location",
+                                                                                "Paris")))
+                                                        .build()))
+                                .build());
+            }
+            return Flux.just(
+                    ChatResponse.builder()
+                            .content(List.of(TextBlock.builder().text("free-form weather").build()))
+                            .build());
         }
     }
 

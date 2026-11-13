@@ -96,6 +96,7 @@ import io.agentscope.core.model.ExecutionConfig;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.Model;
 import io.agentscope.core.model.ModelRegistry;
+import io.agentscope.core.model.ToolChoice;
 import io.agentscope.core.model.ToolSchema;
 import io.agentscope.core.permission.PermissionBehavior;
 import io.agentscope.core.permission.PermissionContextState;
@@ -1605,8 +1606,6 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                     contentText = responseData.toString();
                                 }
                             }
-                            log.debug("Structured output generated: {}", contentText);
-
                             Msg responseMsg =
                                     AssistantMessage.builder()
                                             .name(getName())
@@ -1828,6 +1827,9 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
 
         /** The tool result message from the successful {@code generate_response} call. */
         Msg soResultMsg;
+
+        /** Per-call forced structured-output retries, capped at three. */
+        int soForceToolChoiceCount;
 
         /** Placeholder sentence written to the tool_result of a returnDirect tool. */
         private static final String RETURN_DIRECT_PLACEHOLDER =
@@ -2617,6 +2619,21 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
 
                                 // Check finish conditions
                                 if (isFinished(eventMsg)) {
+                                    if (soTool != null && !soCompleted) {
+                                        if (soForceToolChoiceCount < 3) {
+                                            soForceToolChoiceCount++;
+                                            // Recovery is independently bounded: maxIters=1 still
+                                            // permits up to three forced output requests.
+                                            return reasoning(iter + 1, true);
+                                        }
+                                        log.warn(
+                                                "Structured output tool '{}' not called after {}"
+                                                        + " forced retries; finishing without"
+                                                        + " structured data (agent={})",
+                                                STRUCTURED_OUTPUT_TOOL_NAME,
+                                                soForceToolChoiceCount,
+                                                getName());
+                                    }
                                     return Mono.justOrEmpty(eventMsg);
                                 }
 
@@ -2693,11 +2710,63 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                             });
         }
 
+        /** Prepare only the outgoing request, never the caller's messages or session history. */
+        private ModelCallInput appendTransientSoToolReminder(ModelCallInput input) {
+            if (soTool == null) {
+                return input;
+            }
+            List<Msg> messages = new ArrayList<>(input.messages());
+            TextBlock reminder =
+                    TextBlock.builder()
+                            .text(
+                                    "<system-reminder>\n"
+                                        + "You MUST call the `generate_response` tool to generate"
+                                        + " your final structured response. Do NOT output free-form"
+                                        + " text as the final answer.\n"
+                                        + "</system-reminder>")
+                            .build();
+            int lastIndex = messages.size() - 1;
+            if (lastIndex >= 0 && messages.get(lastIndex).getRole() == MsgRole.USER) {
+                Msg last = messages.get(lastIndex);
+                List<ContentBlock> content = new ArrayList<>(last.getContent());
+                content.add(reminder);
+                messages.set(lastIndex, last.withContent(List.copyOf(content)));
+            } else {
+                messages.add(UserMessage.builder().name("user").content(List.of(reminder)).build());
+            }
+            List<ToolSchema> tools = input.tools();
+            if (tools.stream().noneMatch(t -> STRUCTURED_OUTPUT_TOOL_NAME.equals(t.getName()))) {
+                tools = new ArrayList<>(tools);
+                tools.add(
+                        ToolSchema.builder()
+                                .name(soTool.getName())
+                                .description(soTool.getDescription())
+                                .parameters(soTool.getParameters())
+                                .strict(soTool.getStrict())
+                                .outputSchema(soTool.getOutputSchema())
+                                .build());
+            }
+            GenerateOptions options = input.options();
+            if (soForceToolChoiceCount > 0 && input.model().supportsToolChoiceSpecific()) {
+                options =
+                        GenerateOptions.mergeOptions(
+                                GenerateOptions.builder()
+                                        .toolChoice(
+                                                new ToolChoice.Specific(
+                                                        STRUCTURED_OUTPUT_TOOL_NAME))
+                                        .build(),
+                                options);
+            }
+            return new ModelCallInput(
+                    List.copyOf(messages), List.copyOf(tools), options, input.model());
+        }
+
         private Flux<AgentEvent> modelCallStream(
-                ReasoningContext context, ModelCallInput mci, boolean withToolEvents) {
+                ReasoningContext context, ModelCallInput input, boolean withToolEvents) {
 
             String replyId = UUID.randomUUID().toString().replace("-", "");
             ModelCallBlockLifecycle blockLifecycle = new ModelCallBlockLifecycle(replyId);
+            ModelCallInput mci = appendTransientSoToolReminder(input);
 
             Flux<AgentEvent> modelEvents =
                     mci.model().stream(mci.messages(), mci.tools(), mci.options())
@@ -4397,6 +4466,13 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             @Override
             public boolean supportsNativeStructuredOutput() {
                 return activeModel.get().supportsNativeStructuredOutput();
+            }
+
+            @Override
+            public boolean supportsToolChoiceSpecific() {
+                // The same request may reach either provider during first-signal failover.
+                return model.supportsToolChoiceSpecific()
+                        && fallbackModel.supportsToolChoiceSpecific();
             }
 
             @Override

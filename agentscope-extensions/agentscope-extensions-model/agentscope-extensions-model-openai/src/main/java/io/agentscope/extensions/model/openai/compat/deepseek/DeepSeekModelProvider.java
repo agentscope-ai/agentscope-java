@@ -73,6 +73,7 @@ public final class DeepSeekModelProvider implements ModelProvider {
                         .endpointPath(endpointPath)
                         .formatter(new DeepSeekFormatter())
                         .nativeStructuredOutput(false)
+                        .supportsToolChoiceSpecific(DEFAULT_BASE_URL.equals(baseUrl))
                         .contextWindowSize(
                                 ModelContextWindows.lookup(
                                         modelName, ModelContextWindows.DEEPSEEK));

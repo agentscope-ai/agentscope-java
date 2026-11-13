@@ -79,6 +79,11 @@ public class GeminiChatModel extends ChatModelBase {
     private final Formatter<Content, GenerateContentResponse, GenerateContentConfig.Builder>
             formatter;
 
+    @Override
+    public boolean supportsToolChoiceSpecific() {
+        return true;
+    }
+
     /**
      * Creates a new Gemini chat model instance.
      *

@@ -572,9 +572,11 @@ The framework automatically selects the implementation path based on model capab
 | Path | Condition | Behavior |
 |------|-----------|----------|
 | **Native** | Model supports `response_format` with tools (OpenAI, DashScope, etc.) | JSON Schema is passed directly to the model API via `response_format`; the model guarantees valid JSON output, and the loop terminates naturally |
-| **Fallback** | Model lacks native structured output (Anthropic, Ollama, etc.) | A synthetic `generate_response` tool is injected with an instruction hint; the model calls this tool to emit its structured result |
+| **Fallback** | Model lacks native structured output, or native generation fails | A request-local `generate_response` tool and reminder ask the model to emit its structured result |
 
 Either way, the caller's code is identical — path selection is transparent.
+
+If the fallback model finishes with free-form text instead of calling `generate_response`, the agent makes up to three additional recovery requests, even when `maxIters` is exhausted. Each request includes a transient reminder; retries also force `ToolChoice.Specific` when the model reports support via `supportsToolChoiceSpecific()` (default `false` for custom models). Reminders, retry counters, and forced options never enter session state or shared configuration. At the retry limit, the agent logs a warning and returns without structured data; callers must check for a missing result.
 
 After a successful fallback call, the agent removes the internal `generate_response` exchange and old structured-output reminders from conversation history. In a mixed batch, business tool calls and their matching results are retained for later calls and persisted sessions. Usage already carried by the final structured result is not counted again on the retained mixed message.
 

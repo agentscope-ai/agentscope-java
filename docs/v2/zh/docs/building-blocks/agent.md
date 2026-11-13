@@ -572,9 +572,11 @@ System.out.println(weather.temperature());   // "18°C"
 | 路径 | 条件 | 行为 |
 |------|------|------|
 | **原生路径** | 模型支持 `response_format` + tools 并行（OpenAI、DashScope 等） | 将 JSON Schema 通过 `response_format` 直接传给模型 API，模型保证输出合法 JSON，循环自然结束 |
-| **降级路径** | 模型不支持原生结构化输出（Anthropic、Ollama 等） | 注入 `generate_response` 合成工具 + 指令提示，模型以 tool call 方式输出结构化结果 |
+| **降级路径** | 模型不支持原生结构化输出，或原生生成失败 | 为当前请求加入 `generate_response` 合成工具与提醒，要求模型以工具调用返回结构化结果 |
 
 无论哪条路径，调用方的代码完全相同——路径选择对用户透明。
+
+若降级模型以自由文本结束而未调用 `generate_response`，智能体最多追加三次恢复请求，即使已达到 `maxIters`。每次请求包含临时提醒；当模型通过 `supportsToolChoiceSpecific()` 声明支持时，重试还会强制使用 `ToolChoice.Specific`（自定义模型默认返回 `false`）。提醒、重试计数及强制选项不会写入会话状态或共享配置。达到重试上限后，智能体记录警告并返回不含结构化数据的结果；调用方需要检查结果是否缺失。
 
 降级调用成功后，智能体会从对话历史移除内部 `generate_response` 调用及结果，以及旧的结构化输出提醒。混合批次中的业务工具调用与对应结果会保留，供后续调用及持久化会话使用。最终结构化结果已携带的用量不会在保留的混合消息中重复计入。
 
