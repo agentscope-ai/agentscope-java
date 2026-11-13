@@ -23,6 +23,7 @@ import io.agentscope.core.agent.AgentRun;
 import io.agentscope.core.agent.CapabilityResolver;
 import io.agentscope.core.agent.CapabilitySurface;
 import io.agentscope.core.agent.Event;
+import io.agentscope.core.agent.EventStreamingAgent;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.agent.StreamOptions;
 import io.agentscope.core.agent.ThreadKey;
@@ -194,7 +195,7 @@ import reactor.core.scheduler.Schedulers;
  * {@link io.agentscope.core.agent.RuntimeContext}'s {@code (userId, sessionId)} to isolate state.
  * Calls targeting the same session are serialized automatically; different sessions run in parallel.
  */
-public class HarnessAgent implements Agent, AutoCloseable {
+public class HarnessAgent implements Agent, EventStreamingAgent, AutoCloseable {
 
     private static final Logger log = LoggerFactory.getLogger(HarnessAgent.class);
 
@@ -633,13 +634,23 @@ public class HarnessAgent implements Agent, AutoCloseable {
     }
 
     /**
-     * @deprecated Use {@link #getDelegate()}{@code .getAgentState(RuntimeContext)} or
-     *     {@code .getAgentState(String, String)} with explicit session identity.
+     * @deprecated Use {@link #getAgentState(RuntimeContext)} or {@link #getAgentState(String,
+     *     String)} with explicit session identity.
      */
     @Deprecated
     @Override
     public AgentState getAgentState() {
         return delegate.getAgentState();
+    }
+
+    @Override
+    public AgentState getAgentState(String userId, String sessionId) {
+        return delegate.getAgentState(userId, sessionId);
+    }
+
+    @Override
+    public AgentState getAgentState(RuntimeContext ctx) {
+        return delegate.getAgentState(ctx);
     }
 
     @Override
@@ -672,6 +683,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
      *
      * @param ctx runtime context identifying the session to interrupt
      */
+    @Override
     public void interrupt(RuntimeContext ctx) {
         delegate.interrupt(ctx);
     }
@@ -683,6 +695,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
      * @param ctx runtime context identifying the session to interrupt
      * @param msg optional user message to attach to the interrupt signal
      */
+    @Override
     public void interrupt(RuntimeContext ctx, Msg msg) {
         delegate.interrupt(ctx, msg);
     }
@@ -693,6 +706,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
      * @param userId user identity for the slot ({@code null} = anonymous / single-tenant)
      * @param sessionId session identity; {@code null} or blank uses the default session id
      */
+    @Override
     public void interrupt(String userId, String sessionId) {
         delegate.interrupt(userId, sessionId);
     }
@@ -701,6 +715,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
      * Interrupts the in-flight call for a specific {@code (userId, sessionId)} session with an
      * associated user message.
      */
+    @Override
     public void interrupt(String userId, String sessionId, Msg msg) {
         delegate.interrupt(userId, sessionId, msg);
     }
@@ -955,6 +970,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
      * @deprecated Use {@link #streamEvents(Msg, RuntimeContext)} with explicit runtime context.
      */
     @Deprecated(since = "2.2.0")
+    @Override
     public Flux<AgentEvent> streamEvents(Msg msg) {
         return streamEvents(List.of(msg), RuntimeContext.empty());
     }
@@ -963,6 +979,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
      * @deprecated Use {@link #streamEvents(List, RuntimeContext)} with explicit runtime context.
      */
     @Deprecated(since = "2.2.0")
+    @Override
     public Flux<AgentEvent> streamEvents(List<Msg> msgs) {
         return streamEvents(msgs, RuntimeContext.empty());
     }
@@ -975,6 +992,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
      * @param ctx runtime context to propagate into the call
      * @return event stream covering the full agent invocation lifecycle
      */
+    @Override
     public Flux<AgentEvent> streamEvents(Msg msg, RuntimeContext ctx) {
         return streamEvents(List.of(msg), ctx);
     }
@@ -983,6 +1001,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
      * @deprecated Use {@link #streamEvents(String, RuntimeContext)} with explicit runtime context.
      */
     @Deprecated(since = "2.2.0")
+    @Override
     public Flux<AgentEvent> streamEvents(String text) {
         return streamEvents(new UserMessage(text), RuntimeContext.empty());
     }
@@ -995,6 +1014,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
      * @param ctx  runtime context to propagate into the call
      * @return event stream covering the full agent invocation lifecycle
      */
+    @Override
     public Flux<AgentEvent> streamEvents(String text, RuntimeContext ctx) {
         return streamEvents(new UserMessage(text), ctx);
     }
@@ -1014,6 +1034,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
      * @param ctx runtime context to propagate into the call
      * @return event stream covering the full agent invocation lifecycle
      */
+    @Override
     public Flux<AgentEvent> streamEvents(List<Msg> msgs, RuntimeContext ctx) {
         RuntimeContext effective =
                 ensureSessionDefaults(ctx != null ? ctx : RuntimeContext.empty());
