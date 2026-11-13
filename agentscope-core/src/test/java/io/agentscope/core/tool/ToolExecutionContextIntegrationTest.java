@@ -24,6 +24,7 @@ import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
+import io.agentscope.core.tool.test.GrantTestUtils;
 import io.agentscope.core.util.JsonUtils;
 import java.util.HashMap;
 import java.util.Map;
@@ -189,12 +190,16 @@ class ToolExecutionContextIntegrationTest {
                         .content(JsonUtils.getJsonCodec().toJson(input))
                         .build();
 
-        // Execute tool with context
+        // Execute tool with context (seeded with the grant surface for the direct path)
         ToolResultBlock result =
                 toolkit.callTool(
                                 ToolCallParam.builder()
                                         .toolUseBlock(toolUse)
-                                        .context(agentContext)
+                                        .runtimeContext(
+                                                GrantTestUtils.withGrant(
+                                                        RuntimeContext.builder()
+                                                                .toolExecutionContext(agentContext)
+                                                                .build()))
                                         .build())
                         .block();
 
@@ -239,7 +244,7 @@ class ToolExecutionContextIntegrationTest {
                 toolkit.callTool(
                                 ToolCallParam.builder()
                                         .toolUseBlock(toolUse)
-                                        .runtimeContext(requestContext)
+                                        .runtimeContext(GrantTestUtils.withGrant(requestContext))
                                         .build())
                         .block();
 
@@ -287,9 +292,14 @@ class ToolExecutionContextIntegrationTest {
                 toolkit.callTool(
                                 ToolCallParam.builder()
                                         .toolUseBlock(toolUse)
-                                        .context(
-                                                ToolExecutionContext.merge(
-                                                        callContext, agentContext))
+                                        .runtimeContext(
+                                                GrantTestUtils.withGrant(
+                                                        RuntimeContext.builder()
+                                                                .toolExecutionContext(
+                                                                        ToolExecutionContext.merge(
+                                                                                callContext,
+                                                                                agentContext))
+                                                                .build()))
                                         .build())
                         .block();
 
@@ -325,7 +335,12 @@ class ToolExecutionContextIntegrationTest {
                         .build();
 
         ToolResultBlock result =
-                toolkit.callTool(ToolCallParam.builder().toolUseBlock(toolUse).build()).block();
+                toolkit.callTool(
+                                ToolCallParam.builder()
+                                        .toolUseBlock(toolUse)
+                                        .runtimeContext(GrantTestUtils.grantRc())
+                                        .build())
+                        .block();
 
         assertNotNull(result);
         assertTrue(isError(result));
@@ -367,7 +382,12 @@ class ToolExecutionContextIntegrationTest {
                         .build();
 
         ToolResultBlock result =
-                toolkit.callTool(ToolCallParam.builder().toolUseBlock(toolUse).build()).block();
+                toolkit.callTool(
+                                ToolCallParam.builder()
+                                        .toolUseBlock(toolUse)
+                                        .runtimeContext(GrantTestUtils.grantRc())
+                                        .build())
+                        .block();
 
         assertNotNull(result);
         String text = getText(result);
@@ -418,7 +438,12 @@ class ToolExecutionContextIntegrationTest {
                         .build();
 
         ToolResultBlock result =
-                toolkit.callTool(ToolCallParam.builder().toolUseBlock(toolUse).build()).block();
+                toolkit.callTool(
+                                ToolCallParam.builder()
+                                        .toolUseBlock(toolUse)
+                                        .runtimeContext(GrantTestUtils.grantRc())
+                                        .build())
+                        .block();
 
         assertNotNull(result);
         String text = getText(result);

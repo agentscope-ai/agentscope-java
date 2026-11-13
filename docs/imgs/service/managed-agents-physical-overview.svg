@@ -1,0 +1,108 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1800" height="950" viewBox="0 0 1800 950" role="img" aria-labelledby="title desc">
+  <title id="title">Managed Agents 物理组件与粗略依赖关系</title>
+  <desc id="desc">Gateway 路由会话 API 至 Session Portal、资源 API 至 Control Plane。Portal 向 MQ 提交 Turn 并向 Redis 写交互输入。DataPlane 消费 Turn、发布运行事件、读取 Redis 和数据库。Hands Worker 消费事件、保存日志与结果、执行 Sandbox 工具，并向 MQ 回写工具结果。</desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 8 8" markerWidth="9" markerHeight="9" refX="8" refY="4" orient="auto-start-reverse">
+      <path d="M0 0 L8 4 L0 8 Z" fill="#59625d"/>
+    </marker>
+    <style>
+      text { font-family: "Arial", "PingFang SC", "Microsoft YaHei", sans-serif; fill: #26332d; text-anchor: middle; }
+      .edge { fill: none; stroke: #59625d; stroke-width: 2.5; stroke-linejoin: round; marker-end: url(#arrow); }
+      .control-edge { stroke: #7c8780; stroke-width: 2; stroke-dasharray: 8 6; }
+      .both { marker-start: url(#arrow); }
+      .node { stroke: #59625d; stroke-width: 2; rx: 3; }
+      .entry { fill: #ffffff; }
+      .runtime { fill: #efcb75; }
+      .storage { fill: #d1e7d4; }
+      .sandbox { fill: #f4e7bd; }
+      .node-title { font-size: 28px; font-weight: 400; }
+      .node-detail { font-size: 23px; }
+      .label { font-size: 23px; }
+      .label rect { fill: #ffffff; }
+    </style>
+  </defs>
+  <rect width="1800" height="950" fill="#ffffff"/>
+
+  <g id="connections">
+    <path class="edge" d="M8 440 H60"/>
+    <path class="edge" d="M240 440 H450"/>
+    <path class="edge" d="M240 475 L450 815"/>
+    <path class="edge" d="M570 370 V70 H1590 V140"/>
+    <path class="edge" d="M690 425 L920 225"/>
+    <path class="edge" d="M690 490 L920 815"/>
+    <path class="edge" d="M690 850 H920"/>
+    <path class="edge" d="M980 510 V260"/>
+    <path class="edge" d="M1040 510 V345 H1490 V260"/>
+    <path class="edge" d="M1570 260 V435 H1140 V510"/>
+    <path class="edge" d="M1535 260 V510"/>
+    <path class="edge" d="M1680 510 V260"/>
+    <path class="edge control-edge" d="M1450 550 H1380 V292 H1140 V260"/>
+    <path class="edge" d="M1060 660 V790"/>
+    <path class="edge" d="M1450 645 L1200 815"/>
+    <path class="edge both" d="M1590 660 V790"/>
+  </g>
+
+  <g id="components">
+    <g id="gateway">
+      <rect class="node entry" x="60" y="370" width="180" height="140"/>
+      <text class="node-title" x="150" y="449">Gateway</text>
+    </g>
+    <g id="portal">
+      <rect class="node runtime" x="450" y="370" width="240" height="140"/>
+      <text class="node-title" x="570" y="433">Session</text>
+      <text class="node-title" x="570" y="470">Portal</text>
+    </g>
+    <g id="controlplane">
+      <rect class="node entry" x="450" y="790" width="240" height="120"/>
+      <text class="node-title" x="570" y="859">Control Plane</text>
+    </g>
+    <g id="redis">
+      <rect class="node storage" x="920" y="140" width="280" height="120"/>
+      <text class="node-title" x="1060" y="210">Redis</text>
+    </g>
+    <g id="mq">
+      <rect class="node storage" x="1450" y="140" width="280" height="120"/>
+      <text class="node-title" x="1590" y="190">MQ</text>
+      <text class="node-detail" x="1590" y="226">RocketMQ</text>
+    </g>
+    <g id="dataplane">
+      <rect class="node runtime" x="920" y="510" width="280" height="150"/>
+      <text class="node-title" x="1060" y="552">DataPlane</text>
+      <text class="node-detail" x="1060" y="593">Managed Agent / Brain</text>
+      <text class="node-detail" x="1060" y="628">含模型调用</text>
+    </g>
+    <g id="database">
+      <rect class="node storage" x="920" y="790" width="280" height="120"/>
+      <text class="node-title" x="1060" y="859">RDS / DB</text>
+    </g>
+    <g id="hands">
+      <rect class="node runtime" x="1450" y="510" width="280" height="150"/>
+      <text class="node-title" x="1590" y="581">Hands Worker</text>
+      <text class="node-detail" x="1590" y="620">事件处理 / 工具调度</text>
+    </g>
+    <g id="sandbox">
+      <rect class="node sandbox" x="1450" y="790" width="280" height="120"/>
+      <text class="node-title" x="1590" y="840">Sandbox</text>
+      <text class="node-detail" x="1590" y="878">cloud / self_hosted</text>
+    </g>
+  </g>
+
+  <g id="labels">
+    <g class="label"><rect x="64.4140625" y="307" width="171.171875" height="34"/><text x="150" y="332">用户 / 业务应用</text></g>
+    <g class="label"><rect x="264.484375" y="385" width="161.03125" height="65"/><text x="345" y="410">Session / Turn</text><text x="345" y="441">Events / SSE</text></g>
+    <g class="label"><rect x="228.76318359375" y="607" width="222.43994140625" height="65"/><text x="340" y="632">Agent / Environment</text><text x="340" y="663">资源管理</text></g>
+    <g class="label"><rect x="1010.5859375" y="53" width="158.828125" height="34"/><text x="1090" y="78">Turn 写入队列</text></g>
+    <g class="label"><rect x="744" y="295" width="152" height="34"/><text x="820" y="320">交互输入写入</text></g>
+    <g class="label"><rect x="724.3984375" y="620" width="171.203125" height="65"/><text x="810" y="645">会话受理</text><text x="810" y="676">结果查询 / SSE</text></g>
+    <g class="label"><rect x="717.5" y="833" width="175" height="34"/><text x="805" y="858">定义与配置写入</text></g>
+    <g class="label"><rect x="874" y="383" width="152" height="34"/><text x="950" y="408">读取交互输入</text></g>
+    <g class="label"><rect x="1204" y="328" width="152" height="34"/><text x="1280" y="353">发布运行事件</text></g>
+    <g class="label"><rect x="1233.5859375" y="418" width="112.828125" height="34"/><text x="1290" y="443">消费 Turn</text></g>
+    <g class="label"><rect x="1464" y="453" width="152" height="34"/><text x="1540" y="478">消费运行事件</text></g>
+    <g class="label"><rect x="1625.5" y="339" width="129" height="65"/><text x="1690" y="364">写入工具</text><text x="1690" y="395">进度与结果</text></g>
+    <g class="label"><rect x="1174" y="275" width="152" height="34"/><text x="1250" y="300">读取取消信号</text></g>
+    <g class="label"><rect x="984" y="689" width="152" height="65"/><text x="1060" y="714">配置 / 恢复</text><text x="1060" y="745">工具结果读取</text></g>
+    <g class="label"><rect x="1204.1171875" y="695" width="251.765625" height="65"/><text x="1330" y="720">Session Log / 公开事件</text><text x="1330" y="751">工具结果写入</text></g>
+    <g class="label"><rect x="1502.5" y="689" width="175" height="65"/><text x="1590" y="714">工具执行 / 停止</text><text x="1590" y="745">进度与结果回收</text></g>
+  </g>
+</svg>

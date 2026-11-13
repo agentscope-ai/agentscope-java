@@ -305,7 +305,9 @@ class AguiAgentAdapterTest {
                         invocation -> {
                             RuntimeContext rc = invocation.getArgument(2);
                             assertTrue(
-                                    toolkit.getToolSchemas(List.of(), rc.getToolRequestConfig())
+                                    // no surface: un-trimmed compose (2-arg is package-private)
+                                    toolkit.getToolSchemas(
+                                                    List.of(), rc.getToolRequestConfig(), null)
                                             .isEmpty());
                             assertNull(toolkit.getTool("backend", rc.getToolRequestConfig()));
                             assertNotNull(toolkit.getTool("backend"));

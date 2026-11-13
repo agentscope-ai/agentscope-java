@@ -24,6 +24,7 @@ import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.ModelContextWindows;
 import io.agentscope.core.model.ModelException;
+import io.agentscope.core.model.ModelSchedulers;
 import io.agentscope.core.model.ModelUtils;
 import io.agentscope.core.model.ToolChoice;
 import io.agentscope.core.model.ToolSchema;
@@ -46,7 +47,6 @@ import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Flux;
-import reactor.core.scheduler.Schedulers;
 
 /**
  * DashScope Chat Model using native HTTP API.
@@ -378,7 +378,7 @@ public class DashScopeChatModel extends ChatModelBase {
                                                     e));
                                 }
                             })
-                    .subscribeOn(Schedulers.boundedElastic());
+                    .subscribeOn(ModelSchedulers.requests());
         }
     }
 

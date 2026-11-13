@@ -56,6 +56,15 @@ public abstract class BaseReActAgentRunner implements AgentRunner {
             throw new IllegalStateException("Agent already exists for taskId: " + taskId);
         }
         ReActAgent agent = buildReActAgent();
+        if (agent.getStateStore() == null && carriesConfirmResults(requestMessages)) {
+            // Without a state store the agent cannot restore the paused run and would handle
+            // the confirmation as the start of a new conversation.
+            return Flux.error(
+                    new IllegalStateException(
+                            "The request confirms tool calls of a paused run, but the agent has"
+                                    + " no AgentStateStore to restore that run from. Configure"
+                                    + " stateStore(...) on the agent."));
+        }
         RunningTask task = new RunningTask(agent, buildRuntimeContext(options));
         if (agentCache.putIfAbsent(taskId, task) != null) {
             throw new IllegalStateException("Agent already exists for taskId: " + taskId);
@@ -67,6 +76,18 @@ public abstract class BaseReActAgentRunner implements AgentRunner {
             agentCache.remove(taskId, task);
             throw e;
         }
+    }
+
+    private static boolean carriesConfirmResults(List<Msg> messages) {
+        return messages != null
+                && messages.stream()
+                        .anyMatch(
+                                msg ->
+                                        msg.getMetadata() != null
+                                                && msg.getMetadata()
+                                                                .get(Msg.METADATA_CONFIRM_RESULTS)
+                                                        instanceof List<?> results
+                                                && !results.isEmpty());
     }
 
     /**

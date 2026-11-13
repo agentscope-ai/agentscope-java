@@ -24,17 +24,17 @@ import static org.mockito.Mockito.when;
 
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.core.agent.ThreadKey;
+import io.agentscope.core.journal.InMemoryThreadJournalStore;
+import io.agentscope.core.journal.InvocationRecorder;
+import io.agentscope.core.journal.JournalEvent;
+import io.agentscope.core.journal.ThreadJournal;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolResultState;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ExecutionConfig;
 import io.agentscope.core.model.ToolSchema;
-import io.agentscope.core.session.InMemorySessionLogStore;
-import io.agentscope.core.session.SessionEvent;
-import io.agentscope.core.session.SessionKey;
-import io.agentscope.core.session.SessionLog;
-import io.agentscope.core.session.SessionRecorder;
 import io.agentscope.core.state.AgentState;
 import io.agentscope.core.util.JsonUtils;
 import java.time.Duration;
@@ -583,16 +583,16 @@ class ToolCallInterceptorTest {
                                 .build());
         toolkit.registerTool(echo);
 
-        SessionLog log =
-                new InMemorySessionLogStore()
-                        .open(new SessionKey("u", "agent", "s"), RuntimeContext.empty());
-        SessionRecorder recorder = new SessionRecorder(log, "turn-1");
+        ThreadJournal log =
+                new InMemoryThreadJournalStore()
+                        .open(new ThreadKey("u", "agent", "s", "main"), RuntimeContext.empty());
+        InvocationRecorder recorder = new InvocationRecorder(log, "turn-1");
         RuntimeContext context =
                 RuntimeContext.builder()
                         .userId("u")
                         .sessionId("s")
                         .agentState(AgentState.builder().build())
-                        .put(SessionRecorder.CONTEXT_KEY, recorder)
+                        .put(InvocationRecorder.CONTEXT_KEY, recorder)
                         .build();
 
         try {
@@ -609,7 +609,7 @@ class ToolCallInterceptorTest {
                     asMap(
                             log.readAfter(0, 1000).stream()
                                     .filter(e -> e.type().equals("tool/dispatch"))
-                                    .map(SessionEvent::data)
+                                    .map(JournalEvent::data)
                                     .findFirst()
                                     .orElseThrow()
                                     .get("arguments"));
@@ -622,14 +622,14 @@ class ToolCallInterceptorTest {
         }
 
         // Denial path on the same log's next turn (one active writer per log)
-        SessionRecorder deniedRecorder = new SessionRecorder(log, "turn-2");
+        InvocationRecorder deniedRecorder = new InvocationRecorder(log, "turn-2");
         try {
             RuntimeContext deniedContext =
                     RuntimeContext.builder()
                             .userId("u")
                             .sessionId("s")
                             .agentState(AgentState.builder().build())
-                            .put(SessionRecorder.CONTEXT_KEY, deniedRecorder)
+                            .put(InvocationRecorder.CONTEXT_KEY, deniedRecorder)
                             .build();
             Toolkit denyingToolkit =
                     new Toolkit(
@@ -658,7 +658,7 @@ class ToolCallInterceptorTest {
             deniedRecorder.close();
         }
 
-        List<SessionEvent> turn2 =
+        List<JournalEvent> turn2 =
                 log.readAfter(0, 1000).stream().filter(e -> "turn-2".equals(e.turnId())).toList();
         assertTrue(
                 turn2.stream().noneMatch(e -> e.type().equals("tool/dispatch")),
