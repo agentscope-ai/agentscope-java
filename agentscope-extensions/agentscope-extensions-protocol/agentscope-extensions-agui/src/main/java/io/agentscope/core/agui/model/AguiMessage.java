@@ -50,9 +50,10 @@ public class AguiMessage {
     private final List<AguiToolCall> toolCalls;
     private final String toolCallId;
     private final String error;
+    private final String subagentRunId;
 
     /**
-     * Creates a new AguiMessage without an error payload.
+     * Creates a new AguiMessage without an error payload or subagent attribution.
      *
      * @param id The unique message ID
      * @param role The message role (user, assistant, system, tool)
@@ -66,7 +67,28 @@ public class AguiMessage {
             MessageContent content,
             List<AguiToolCall> toolCalls,
             String toolCallId) {
-        this(id, role, content, toolCalls, toolCallId, null);
+        this(id, role, content, toolCalls, toolCallId, null, null);
+    }
+
+    /**
+     * Creates a new AguiMessage without subagent attribution.
+     *
+     * @param id The unique message ID
+     * @param role The message role (user, assistant, system, tool, reasoning)
+     * @param content The message content (plain text or structured blocks), may be null
+     * @param toolCalls Tool calls for assistant messages (optional)
+     * @param toolCallId Tool call ID for tool messages (optional)
+     * @param error The error a frontend tool reported, per the AG-UI protocol's {@code error}
+     *     field on tool messages; may be null
+     */
+    public AguiMessage(
+            String id,
+            String role,
+            MessageContent content,
+            List<AguiToolCall> toolCalls,
+            String toolCallId,
+            String error) {
+        this(id, role, content, toolCalls, toolCallId, error, null);
     }
 
     /**
@@ -79,6 +101,9 @@ public class AguiMessage {
      * @param toolCallId Tool call ID for tool messages (optional)
      * @param error The error a frontend tool reported, per the AG-UI protocol's {@code error}
      *     field on tool messages; may be null
+     * @param subagentRunId Optional subagent invocation this message belongs to; absent means
+     *     the parent agent. Nested {@link AguiToolCall}s inherit this attribution and do not
+     *     carry their own {@code subagentRunId}.
      */
     @JsonCreator
     public AguiMessage(
@@ -87,7 +112,8 @@ public class AguiMessage {
             @JsonProperty("content") MessageContent content,
             @JsonProperty("toolCalls") List<AguiToolCall> toolCalls,
             @JsonProperty("toolCallId") String toolCallId,
-            @JsonProperty("error") String error) {
+            @JsonProperty("error") String error,
+            @JsonProperty("subagentRunId") String subagentRunId) {
         this.id = Objects.requireNonNull(id, "id cannot be null");
         this.role = Objects.requireNonNull(role, "role cannot be null");
         this.content = content;
@@ -97,6 +123,7 @@ public class AguiMessage {
                         : Collections.emptyList();
         this.toolCallId = toolCallId;
         this.error = error;
+        this.subagentRunId = subagentRunId;
     }
 
     /**
@@ -310,6 +337,20 @@ public class AguiMessage {
     }
 
     /**
+     * Get the optional subagent invocation this message belongs to.
+     *
+     * <p>{@code MESSAGES_SNAPSHOT} itself is not attributable; attribution is carried
+     * per-message via this field. Nested tool calls inherit the containing message's
+     * attribution and do not declare their own.
+     *
+     * @return The subagent run id, or null if produced by the parent agent
+     */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    public String getSubagentRunId() {
+        return subagentRunId;
+    }
+
+    /**
      * Check if this is a user message.
      *
      * @return true if role is "user"
@@ -382,6 +423,8 @@ public class AguiMessage {
                 + toolCallId
                 + "', error='"
                 + error
+                + "', subagentRunId='"
+                + subagentRunId
                 + "'}";
     }
 
@@ -395,11 +438,12 @@ public class AguiMessage {
                 && Objects.equals(content, that.content)
                 && Objects.equals(toolCalls, that.toolCalls)
                 && Objects.equals(toolCallId, that.toolCallId)
-                && Objects.equals(error, that.error);
+                && Objects.equals(error, that.error)
+                && Objects.equals(subagentRunId, that.subagentRunId);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(id, role, content, toolCalls, toolCallId, error);
+        return Objects.hash(id, role, content, toolCalls, toolCallId, error, subagentRunId);
     }
 }

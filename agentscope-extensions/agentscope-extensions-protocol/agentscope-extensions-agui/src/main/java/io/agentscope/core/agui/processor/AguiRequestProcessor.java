@@ -390,6 +390,7 @@ public class AguiRequestProcessor {
         return RunAgentInput.builder()
                 .threadId(input.getThreadId())
                 .runId(input.getRunId())
+                .protocolVersion(input.getProtocolVersion())
                 .messages(after)
                 .tools(input.getTools())
                 .context(input.getContext())
