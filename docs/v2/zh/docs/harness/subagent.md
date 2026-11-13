@@ -397,7 +397,8 @@ ChatUiChannel chat = agent.channel(ChatUiChannel.create());  // 恢复能力自�
 `WorkspaceTaskRepository` 按工作空间命名空间、父会话 ID 和任务 ID 隔离本地任务句柄。
 在按用户隔离的工作空间中，即使知道其他用户的任务 ID，也不能访问或取消其本地任务。
 共享范围（`AGENT`、`GLOBAL`）保留配置的共享行为。使用自定义文件系统和命名空间工厂时，
-应确保两者采用相同的隔离边界。
+应确保两者采用相同的隔离边界。对于嵌套前缀路由，任务后端检查逐层使用实际后端路径；
+文件 I/O 仍通过原文件系统包装器执行。
 
 后台任务的状态默认写到 `workspace/agents/<parentAgentId>/tasks/<sessionId>.json`。这意味着：
 

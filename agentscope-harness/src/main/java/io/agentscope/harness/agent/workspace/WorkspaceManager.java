@@ -718,6 +718,7 @@ public class WorkspaceManager implements AutoCloseable {
 
     private TaskFilesystem taskFilesystem(RuntimeContext rc, String rel) {
         AbstractFilesystem fs = filesystem;
+        String currentPath = rel;
         RuntimeContext context = rc != null ? rc : RuntimeContext.empty();
         boolean contextBound = false;
         while (fs != null) {
@@ -726,9 +727,13 @@ public class WorkspaceManager implements AutoCloseable {
                 contextBound = true;
                 fs = baked.delegate();
             } else if (fs instanceof CompositeFilesystem composite) {
-                fs = composite.filesystemFor(rel);
+                String mappedPath = composite.backendPathFor(currentPath);
+                fs = composite.filesystemFor(currentPath);
+                currentPath = mappedPath;
             } else if (fs instanceof RoutedSandboxFilesystem routed) {
-                fs = routed.backendFor(rel);
+                String mappedPath = routed.backendPathFor(currentPath);
+                fs = routed.backendFor(currentPath);
+                currentPath = mappedPath;
             } else if (fs instanceof OverlayFilesystem overlay) {
                 fs = overlay.upper();
             } else {

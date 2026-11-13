@@ -62,6 +62,11 @@ public final class RoutedSandboxFilesystem implements AbstractSandboxFilesystem 
         return composite.filesystemFor(path);
     }
 
+    /** Returns the path used by the backend selected by {@link #backendFor(String)}. */
+    public String backendPathFor(String path) {
+        return composite.backendPathFor(path);
+    }
+
     @Override
     public String id() {
         return primary.id();

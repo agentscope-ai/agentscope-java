@@ -34,9 +34,15 @@ import io.agentscope.core.state.InMemoryAgentStateStore;
 import io.agentscope.harness.agent.HarnessAgent;
 import io.agentscope.harness.agent.IsolationScope;
 import io.agentscope.harness.agent.example.support.InMemorySandboxFilesystemSpec;
+import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
+import io.agentscope.harness.agent.filesystem.BakedContextFilesystem;
+import io.agentscope.harness.agent.filesystem.CompositeFilesystem;
+import io.agentscope.harness.agent.filesystem.RoutedSandboxFilesystem;
+import io.agentscope.harness.agent.filesystem.local.LocalFilesystem;
 import io.agentscope.harness.agent.filesystem.remote.RemoteFilesystem;
 import io.agentscope.harness.agent.filesystem.remote.store.InMemoryStore;
 import io.agentscope.harness.agent.filesystem.remote.store.NamespaceFactory;
+import io.agentscope.harness.agent.filesystem.sandbox.SandboxBackedFilesystem;
 import io.agentscope.harness.agent.filesystem.spec.LocalFilesystemSpec;
 import io.agentscope.harness.agent.filesystem.spec.RemoteFilesystemSpec;
 import io.agentscope.harness.agent.workspace.WorkspaceManager;
@@ -44,14 +50,238 @@ import java.nio.file.Path;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.EnumSource;
 
 class WorkspaceTaskRepositoryNamespaceTest {
     @TempDir Path workspace;
+
+    enum TaskRoute {
+        COMPOSITE,
+        OUTER_ROUTED,
+        INNER_ROUTED,
+        EXACT,
+        DEFAULT
+    }
+
+    static NamespaceFactory nestedNamespaces(IsolationScope scope) {
+        var factory = scope.toNamespaceFactory();
+        return rc -> {
+            var namespace = factory.getNamespace(rc);
+            return namespace.isEmpty() ? List.of("_default") : namespace;
+        };
+    }
+
+    static AbstractFilesystem nestedFilesystem(
+            AbstractFilesystem shared, AbstractFilesystem remote, TaskRoute route) {
+        return nestedFilesystem(shared, remote, route, false);
+    }
+
+    static AbstractFilesystem nestedFilesystem(
+            AbstractFilesystem shared,
+            AbstractFilesystem remote,
+            TaskRoute route,
+            boolean canonicalPrefixes) {
+        String agentsPrefix = canonicalPrefixes ? "/agents/" : "agents/";
+        String tasksPrefix = canonicalPrefixes ? "/parent/tasks/" : "parent/tasks/";
+        var inner = new CompositeFilesystem(shared, Map.of(tasksPrefix, remote));
+        return switch (route) {
+            case COMPOSITE -> new CompositeFilesystem(shared, Map.of(agentsPrefix, inner));
+            case OUTER_ROUTED ->
+                    new RoutedSandboxFilesystem(
+                            new SandboxBackedFilesystem(), Map.of(agentsPrefix, inner));
+            case INNER_ROUTED ->
+                    new CompositeFilesystem(
+                            shared,
+                            Map.of(
+                                    agentsPrefix,
+                                    new RoutedSandboxFilesystem(
+                                            new SandboxBackedFilesystem(),
+                                            Map.of(tasksPrefix, remote))));
+            case EXACT ->
+                    new CompositeFilesystem(
+                            shared, Map.of("agents/parent/tasks/same-session.json", remote));
+            case DEFAULT ->
+                    new CompositeFilesystem(
+                            new CompositeFilesystem(remote, Map.of("unused/", shared)),
+                            Map.of("other/", shared));
+        };
+    }
+
+    static String remoteTaskKey(TaskRoute route) {
+        return switch (route) {
+            case EXACT -> "/agents/parent/tasks/same-session.json";
+            case DEFAULT -> "agents/parent/tasks/same-session.json";
+            default -> "/same-session.json";
+        };
+    }
+
+    @ParameterizedTest
+    @CsvSource({
+        "COMPOSITE, USER", "COMPOSITE, SESSION",
+        "OUTER_ROUTED, USER", "OUTER_ROUTED, SESSION",
+        "INNER_ROUTED, USER", "INNER_ROUTED, SESSION",
+        "EXACT, USER", "EXACT, SESSION",
+        "DEFAULT, USER", "DEFAULT, SESSION"
+    })
+    void nestedRoutesKeepForeignHandlesAndCancellationIsolated(
+            TaskRoute route, IsolationScope scope) {
+        var namespaces = nestedNamespaces(scope);
+        var store = new InMemoryStore();
+        var remote = new RemoteFilesystem(store, namespaces);
+        var shared = new LocalFilesystem(workspace, true, 10);
+        var fs = nestedFilesystem(shared, remote, route);
+        var owner =
+                RuntimeContext.builder().userId("owner-user").sessionId("owner-session").build();
+        var foreign =
+                RuntimeContext.builder()
+                        .userId("foreign-user")
+                        .sessionId(
+                                scope == IsolationScope.USER ? "owner-session" : "foreign-session")
+                        .build();
+        var expected = List.of(scope == IsolationScope.USER ? "owner-user" : "owner-session");
+        var future = new CompletableFuture<String>();
+        try (var manager = new WorkspaceManager(workspace, fs, null, namespaces)) {
+            var repository = WorkspaceTaskRepository.forTests(manager, "parent");
+            try {
+                var handle =
+                        repository.putTask(
+                                owner,
+                                "task",
+                                "child",
+                                "same-session",
+                                new TaskRunSpec.AdoptedTaskRunSpec(future));
+                var key = remoteTaskKey(route);
+                assertTrue(remote.read(owner, key, 0, 0).fileData().content().contains("task"));
+                assertTrue(
+                        store.get(expected, key)
+                                .value()
+                                .get("content")
+                                .toString()
+                                .contains("task"));
+                assertTrue(
+                        manager.readTaskRecord(foreign, "parent", "same-session", "task")
+                                .isEmpty());
+                var foreignHandle = repository.getTask(foreign, "same-session", "task");
+                boolean cancelled = repository.cancelTask(foreign, "same-session", "task");
+                assertAll(
+                        () -> assertEquals(expected, remote.storageNamespace(owner)),
+                        () ->
+                                assertEquals(
+                                        expected,
+                                        manager.taskStorageNamespace(
+                                                owner, "parent", "same-session")),
+                        () ->
+                                assertNull(
+                                        foreignHandle,
+                                        "isolated persisted storage must not be bypassed"),
+                        () -> assertFalse(cancelled, "foreign caller has no task"),
+                        () -> assertFalse(future.isDone(), "owner future must remain active"),
+                        () ->
+                                assertSame(
+                                        handle, repository.getTask(owner, "same-session", "task")));
+            } finally {
+                future.complete("done");
+                repository.shutdown();
+            }
+        }
+    }
+
+    @ParameterizedTest
+    @EnumSource(
+            value = IsolationScope.class,
+            names = {"USER", "SESSION"})
+    void nestedRoutesUseInnermostBindingRatherThanOuterCaller(IsolationScope scope) {
+        var namespaces = nestedNamespaces(scope);
+        var store = new InMemoryStore();
+        var remote = new RemoteFilesystem(store, namespaces);
+        var shared = new LocalFilesystem(workspace, true, 10);
+        var inner =
+                RuntimeContext.builder().userId("inner-user").sessionId("inner-session").build();
+        var outer =
+                RuntimeContext.builder().userId("outer-user").sessionId("outer-session").build();
+        var fs =
+                new BakedContextFilesystem(
+                        nestedFilesystem(
+                                shared,
+                                new BakedContextFilesystem(remote, inner),
+                                TaskRoute.COMPOSITE),
+                        outer);
+        var expected = List.of(scope == IsolationScope.USER ? "inner-user" : "inner-session");
+        var future = new CompletableFuture<String>();
+        try (var manager = new WorkspaceManager(workspace, fs, null, namespaces)) {
+            var repository = WorkspaceTaskRepository.forTests(manager, "parent");
+            try {
+                var handle =
+                        repository.putTask(
+                                context("caller"),
+                                "task",
+                                "child",
+                                "same-session",
+                                new TaskRunSpec.AdoptedTaskRunSpec(future));
+                assertTrue(
+                        store.get(expected, "/same-session.json")
+                                .value()
+                                .get("content")
+                                .toString()
+                                .contains("task"));
+                assertEquals(
+                        expected,
+                        manager.taskStorageNamespace(context("caller"), "parent", "same-session"));
+                // Different callers of the same bound view intentionally share the inner identity.
+                assertSame(
+                        handle,
+                        repository.getTask(context("other-caller"), "same-session", "task"));
+                assertSame(handle, repository.getTask(null, "same-session", "task"));
+                assertTrue(repository.cancelTask(context("other-caller"), "same-session", "task"));
+                assertTrue(future.isCancelled());
+            } finally {
+                future.complete("done");
+                repository.shutdown();
+            }
+        }
+    }
+
+    @Test
+    void nestedUserRoutesKeepEmptyContextInLegalAnonymousNamespace() {
+        var namespaces = nestedNamespaces(IsolationScope.USER);
+        var store = new InMemoryStore();
+        var remote = new RemoteFilesystem(store, namespaces);
+        var fs =
+                nestedFilesystem(
+                        new LocalFilesystem(workspace, true, 10), remote, TaskRoute.COMPOSITE);
+        try (var manager = new WorkspaceManager(workspace, fs, null, namespaces)) {
+            var repository = WorkspaceTaskRepository.forTests(manager, "parent");
+            try {
+                var handle =
+                        repository.putTask(
+                                RuntimeContext.empty(),
+                                "task",
+                                "child",
+                                "same-session",
+                                new TaskRunSpec.AdoptedTaskRunSpec(
+                                        CompletableFuture.completedFuture("anonymous")));
+                assertTrue(
+                        store.get(List.of("_default"), "/same-session.json")
+                                .value()
+                                .get("content")
+                                .toString()
+                                .contains("anonymous"));
+                assertEquals(
+                        List.of("_default"),
+                        manager.taskStorageNamespace(null, "parent", "same-session"));
+                assertSame(handle, repository.getTask(null, "same-session", "task"));
+                assertNull(repository.getTask(context("authenticated"), "same-session", "task"));
+            } finally {
+                repository.shutdown();
+            }
+        }
+    }
 
     private WorkspaceManager manager() {
         return manager(IsolationScope.USER);

@@ -400,7 +400,9 @@ While awaiting confirmation, task status stays `RUNNING` (`awaitingConfirm=true`
 session ID, and task ID. With user-isolated workspaces, knowing another user's task ID does
 not grant access to their local task or allow cancelling it. Shared scopes (`AGENT` and
 `GLOBAL`) retain their configured sharing behavior. When supplying a custom filesystem and
-namespace factory, configure both to use the same isolation boundary.
+namespace factory, configure both to use the same isolation boundary. For nested prefix routes,
+task backend inspection follows the actual backend path at each layer; file I/O still uses the
+original filesystem wrappers.
 
 Background task state is written by default to `workspace/agents/<parentAgentId>/tasks/<sessionId>.json`. So:
 

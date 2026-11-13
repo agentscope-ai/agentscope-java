@@ -15,6 +15,7 @@
  */
 package io.agentscope.harness.agent.subagent.task;
 
+import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -28,8 +29,12 @@ import io.agentscope.core.state.AgentStateStore;
 import io.agentscope.core.state.InMemoryAgentStateStore;
 import io.agentscope.harness.agent.HarnessAgent;
 import io.agentscope.harness.agent.IsolationScope;
+import io.agentscope.harness.agent.filesystem.BakedContextFilesystem;
+import io.agentscope.harness.agent.filesystem.local.LocalFilesystem;
+import io.agentscope.harness.agent.filesystem.remote.RemoteFilesystem;
 import io.agentscope.harness.agent.filesystem.remote.store.InMemoryStore;
 import io.agentscope.harness.agent.filesystem.spec.RemoteFilesystemSpec;
+import io.agentscope.harness.agent.subagent.task.WorkspaceTaskRepositoryNamespaceTest.TaskRoute;
 import io.agentscope.harness.agent.tool.TaskTool;
 import io.agentscope.harness.agent.workspace.WorkspaceManager;
 import java.nio.file.Path;
@@ -40,11 +45,13 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.Callable;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.Executors;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.EnumSource;
 
 class WorkspaceTaskRepositoryScopedMaintenanceTest {
@@ -53,6 +60,7 @@ class WorkspaceTaskRepositoryScopedMaintenanceTest {
 
     private static class HookedStore extends InMemoryStore {
         boolean failRegistration;
+        final List<Map<String, Object>> registrations = new CopyOnWriteArrayList<>();
 
         @Override
         public void put(List<String> namespace, String key, Map<String, Object> value) {
@@ -60,6 +68,216 @@ class WorkspaceTaskRepositoryScopedMaintenanceTest {
                 throw new IllegalStateException("synthetic registry outage");
             }
             super.put(namespace, key, value);
+            if (namespace.contains("task-scopes")) {
+                registrations.add(Map.copyOf(value));
+            }
+        }
+    }
+
+    @ParameterizedTest
+    @CsvSource({
+        "COMPOSITE, USER", "COMPOSITE, SESSION",
+        "OUTER_ROUTED, USER", "OUTER_ROUTED, SESSION",
+        "INNER_ROUTED, USER", "INNER_ROUTED, SESSION"
+    })
+    void nestedRoutesRegisterAndFailRestartedOrphanOnlyInOriginalScope(
+            TaskRoute route, IsolationScope scope) {
+        var namespaces = WorkspaceTaskRepositoryNamespaceTest.nestedNamespaces(scope);
+        var remote = new RemoteFilesystem(store, namespaces);
+        // Maintenance uses the constructor's documented leading-slash prefixes. Nested glob
+        // remapping of slashless prefixes is a separate filesystem issue, not inspection.
+        var fs =
+                WorkspaceTaskRepositoryNamespaceTest.nestedFilesystem(
+                        new LocalFilesystem(workspace, true, 10), remote, route, true);
+        var owner = context("owner-user", "owner-session");
+        var foreign = context("foreign-user", "foreign-session");
+        var expected = List.of(scope == IsolationScope.USER ? "owner-user" : "owner-session");
+        try (var original = new WorkspaceManager(workspace, fs, null, namespaces)) {
+            var orphan = new TaskRecord("orphan", "child", "parent", "same-session", null);
+            orphan.setStatus(TaskStatus.RUNNING);
+            original.writeTaskRecord(owner, "parent", "same-session", orphan);
+        }
+        assertTrue(
+                store.get(expected, "/same-session.json")
+                        .value()
+                        .get("content")
+                        .toString()
+                        .contains("RUNNING"));
+        var registrations = List.copyOf(store.registrations);
+        // Recreate wrappers and manager, not just their context; only the real store survives.
+        var restoredFs =
+                WorkspaceTaskRepositoryNamespaceTest.nestedFilesystem(
+                        new LocalFilesystem(workspace, true, 10),
+                        new RemoteFilesystem(store, namespaces),
+                        route,
+                        true);
+        try (var restored = new WorkspaceManager(workspace, restoredFs, null, namespaces)) {
+            var scanned = List.copyOf(restored.listTaskRecordsForMaintenance("parent"));
+            repository(restored)
+                    .sweepOrphanedTasks(
+                            Duration.ofMinutes(10),
+                            Duration.ofHours(1),
+                            Instant.now().plus(Duration.ofMinutes(11)));
+            var originalRecord =
+                    restored.readTaskRecord(owner, "parent", "same-session", "orphan")
+                            .orElseThrow();
+            assertAll(
+                    () -> assertFalse(registrations.isEmpty(), "scope registry must be written"),
+                    () ->
+                            assertTrue(
+                                    registrations.stream()
+                                            .allMatch(
+                                                    value ->
+                                                            expected.equals(value.get("namespace"))
+                                                                    && "owner-user"
+                                                                            .equals(
+                                                                                    value.get(
+                                                                                            "userId"))
+                                                                    && "owner-session"
+                                                                            .equals(
+                                                                                    value.get(
+                                                                                            "sessionId")))),
+                    () ->
+                            assertEquals(
+                                    1,
+                                    scanned.size(),
+                                    "restart must discover the original RUNNING orphan"),
+                    () ->
+                            assertTrue(
+                                    scanned.stream()
+                                            .allMatch(
+                                                    record ->
+                                                            record.record().getStatus()
+                                                                            == TaskStatus.RUNNING
+                                                                    && record.record()
+                                                                            .getTaskId()
+                                                                            .equals("orphan")
+                                                                    && expected.equals(
+                                                                            namespaces.getNamespace(
+                                                                                    record
+                                                                                            .context())))),
+                    () -> assertEquals(TaskStatus.FAILED, originalRecord.getStatus()),
+                    () ->
+                            assertTrue(
+                                    originalRecord.getErrorMessage() != null
+                                            && originalRecord
+                                                    .getErrorMessage()
+                                                    .contains("executor lost")),
+                    () ->
+                            assertTrue(
+                                    restored.readTaskRecord(
+                                                    foreign, "parent", "same-session", "orphan")
+                                            .isEmpty()),
+                    () ->
+                            assertTrue(
+                                    restored.readTaskRecord(
+                                                    RuntimeContext.empty(),
+                                                    "parent",
+                                                    "same-session",
+                                                    "orphan")
+                                            .isEmpty()),
+                    () ->
+                            assertNull(
+                                    store.get(
+                                            namespaces.getNamespace(foreign),
+                                            "/same-session.json")),
+                    () -> assertNull(store.get(List.of("_default"), "/same-session.json")));
+        }
+    }
+
+    @ParameterizedTest
+    @EnumSource(
+            value = IsolationScope.class,
+            names = {"USER", "SESSION"})
+    void nestedBoundRestartMaintenanceUsesInnerDispatchIdentity(IsolationScope scope) {
+        var namespaces = WorkspaceTaskRepositoryNamespaceTest.nestedNamespaces(scope);
+        var inner = context("inner-user", "inner-session");
+        var outer = context("outer-user", "outer-session");
+        var expected = List.of(scope == IsolationScope.USER ? "inner-user" : "inner-session");
+        var shared = new LocalFilesystem(workspace, true, 10);
+        var fs =
+                new BakedContextFilesystem(
+                        WorkspaceTaskRepositoryNamespaceTest.nestedFilesystem(
+                                shared,
+                                new BakedContextFilesystem(
+                                        new RemoteFilesystem(store, namespaces), inner),
+                                TaskRoute.OUTER_ROUTED,
+                                true),
+                        outer);
+        try (var original = new WorkspaceManager(workspace, fs, null, namespaces)) {
+            var orphan = new TaskRecord("orphan", "child", "parent", "same-session", null);
+            orphan.setStatus(TaskStatus.RUNNING);
+            original.writeTaskRecord(
+                    context("caller-user", "caller-session"), "parent", "same-session", orphan);
+        }
+        assertTrue(
+                store.get(expected, "/same-session.json")
+                        .value()
+                        .get("content")
+                        .toString()
+                        .contains("RUNNING"));
+        var registrations = List.copyOf(store.registrations);
+        var restoredFs =
+                new BakedContextFilesystem(
+                        WorkspaceTaskRepositoryNamespaceTest.nestedFilesystem(
+                                new LocalFilesystem(workspace, true, 10),
+                                new BakedContextFilesystem(
+                                        new RemoteFilesystem(store, namespaces),
+                                        context("inner-user", "inner-session")),
+                                TaskRoute.OUTER_ROUTED,
+                                true),
+                        context("outer-user", "outer-session"));
+        try (var restored = new WorkspaceManager(workspace, restoredFs, null, namespaces)) {
+            var scanned = List.copyOf(restored.listTaskRecordsForMaintenance("parent"));
+            repository(restored)
+                    .sweepOrphanedTasks(
+                            Duration.ofMinutes(10),
+                            Duration.ofHours(1),
+                            Instant.now().plus(Duration.ofMinutes(11)));
+            assertAll(
+                    () -> assertFalse(registrations.isEmpty()),
+                    () ->
+                            assertTrue(
+                                    registrations.stream()
+                                            .allMatch(
+                                                    value ->
+                                                            expected.equals(value.get("namespace"))
+                                                                    && "inner-user"
+                                                                            .equals(
+                                                                                    value.get(
+                                                                                            "userId"))
+                                                                    && "inner-session"
+                                                                            .equals(
+                                                                                    value.get(
+                                                                                            "sessionId")))),
+                    () -> assertEquals(1, scanned.size()),
+                    () ->
+                            assertTrue(
+                                    scanned.stream()
+                                            .allMatch(
+                                                    record ->
+                                                            "inner-user"
+                                                                            .equals(
+                                                                                    record.context()
+                                                                                            .getUserId())
+                                                                    && "inner-session"
+                                                                            .equals(
+                                                                                    record.context()
+                                                                                            .getSessionId())
+                                                                    && record.record().getStatus()
+                                                                            == TaskStatus.RUNNING)),
+                    () ->
+                            assertEquals(
+                                    TaskStatus.FAILED,
+                                    restored.readTaskRecord(
+                                                    null, "parent", "same-session", "orphan")
+                                            .orElseThrow()
+                                            .getStatus()),
+                    () ->
+                            assertNull(
+                                    store.get(
+                                            namespaces.getNamespace(outer), "/same-session.json")),
+                    () -> assertNull(store.get(List.of("_default"), "/same-session.json")));
         }
     }
 

@@ -105,6 +105,11 @@ public class CompositeFilesystem implements AbstractFilesystem {
         return routeForPath(path).backend();
     }
 
+    /** Returns the path used by the backend selected by {@link #filesystemFor(String)}. */
+    public String backendPathFor(String path) {
+        return routeForPath(path).backendPath();
+    }
+
     private RouteResult routeForPath(String path) {
         // Canonicalize both sides by stripping any leading slash before matching so callers can
         // pass either "/skills/foo" (the {@link AbstractFilesystem} contract) or "skills/foo"
