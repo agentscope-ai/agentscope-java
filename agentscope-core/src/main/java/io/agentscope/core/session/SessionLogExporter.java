@@ -27,10 +27,17 @@ public final class SessionLogExporter {
 
     public synchronized void drain() {
         long cursor = log.exportCursor(sink.name());
+        long last = cursor;
+        int pending = 0;
         for (var event : log.scan(cursor, log.head().seq())) {
             sink.accept(event);
-            log.advanceExportCursor(sink.name(), cursor, event.seq());
-            cursor = event.seq();
+            last = event.seq();
+            if (++pending >= 200) {
+                log.advanceExportCursor(sink.name(), cursor, last);
+                cursor = last;
+                pending = 0;
+            }
         }
+        if (pending > 0) log.advanceExportCursor(sink.name(), cursor, last);
     }
 }

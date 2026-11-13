@@ -38,6 +38,23 @@ public interface SessionLog {
         throw new UnsupportedOperationException("Export cursor persistence not implemented");
     }
 
+    /**
+     * Sequence of the most recent {@code state/checkpoint}, {@code migration/baseline}, or {@code
+     * state/restored} event, or {@code 0} when unknown. Recovery can begin replaying from here
+     * instead of the start of the journal.
+     */
+    default long lastCheckpointSeq() {
+        return 0;
+    }
+
+    /**
+     * Sequence of the most recent {@code run/start} event, or {@code 0} when unknown. Recovery
+     * must include it so that active runs and uncertain tool calls stay visible.
+     */
+    default long lastRunStartSeq() {
+        return 0;
+    }
+
     /** Stable-prefix scan. Implementations can avoid repeatedly traversing a commit chain. */
     default Iterable<SessionEvent> scan(long after, long through) {
         return () ->

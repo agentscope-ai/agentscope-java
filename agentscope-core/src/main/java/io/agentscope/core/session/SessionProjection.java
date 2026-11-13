@@ -38,8 +38,31 @@ public record SessionProjection(
         var results = new LinkedHashMap<String, ToolResultBlock>();
         var verifications = new ArrayList<io.agentscope.core.state.TaskVerification>();
         var extensions = new ArrayList<SessionEvent>();
+        // Replay from the latest recovery anchors instead of the whole journal. A checkpoint is
+        // preferred for stateJson, but a run/start that precedes it must also be replayed so the
+        // active run set stays intact. Anchors are resolved before the upper bound so a
+        // concurrent commit can only raise the bound, never leave start > upper.
+        long checkpoint = log.lastCheckpointSeq();
+        long runStart = log.lastRunStartSeq();
         long upper = log.head().seq();
-        for (var event : log.scan(0, upper)) {
+        if (checkpoint > upper || runStart > upper) {
+            // Anchors are best-effort hints; an out-of-range value must not make recovery fail.
+            checkpoint = 0;
+            runStart = 0;
+        }
+        long start = 0;
+        if (checkpoint > 0) {
+            // A run/start newer than the checkpoint is only accepted when the previous run left
+            // no uncertain tool calls (SessionRecorder rejects such a start), so the checkpoint
+            // still covers all pending dispatches.
+            long anchor = runStart > 0 && runStart < checkpoint ? runStart : checkpoint;
+            start = Math.max(0, anchor - 1);
+        } else if (runStart > 0) {
+            // Without a checkpoint there is no state snapshot to anchor to, and an earlier
+            // unresolved tool dispatch may live before this run.
+            start = 0;
+        }
+        for (var event : log.scan(start, upper)) {
             SessionEventTypes.validate(event);
             var data = event.data();
             switch (event.type()) {

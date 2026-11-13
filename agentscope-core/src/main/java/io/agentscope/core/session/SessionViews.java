@@ -32,21 +32,27 @@ public final class SessionViews {
         long target = log.head().seq();
         var messages = new LinkedHashMap<String, Msg>();
         for (var event : log.scan(0, target)) {
-            if (event.type().equals("migration/baseline")) {
+            if (event.type().equals("state/checkpoint")
+                    || event.type().equals("migration/baseline")
+                    || event.type().equals("state/restored")) {
                 String state = (String) event.data().get("stateJson");
                 if (state != null)
                     for (var msg : AgentState.fromJsonString(state).getContext())
                         messages.putIfAbsent(msg.getId(), msg);
-            } else if (Set.of("message/user", "message/assistant", "tool/result", "turn/output")
-                    .contains(event.type())) {
-                Object value = event.data().get("message");
-                if (value != null) {
-                    Msg msg = JsonUtils.getJsonCodec().convertValue(value, Msg.class);
-                    if (event.type().equals("turn/output")) messages.put(msg.getId(), msg);
-                    else messages.putIfAbsent(msg.getId(), msg);
-                }
+            } else {
+                appendMessage(messages, event);
             }
         }
         return new Transcript(target, List.copyOf(messages.values()));
+    }
+
+    private static void appendMessage(LinkedHashMap<String, Msg> messages, SessionEvent event) {
+        if (!Set.of("message/user", "message/assistant", "tool/result", "turn/output")
+                .contains(event.type())) return;
+        Object value = event.data().get("message");
+        if (value == null) return;
+        Msg msg = JsonUtils.getJsonCodec().convertValue(value, Msg.class);
+        if (event.type().equals("turn/output")) messages.put(msg.getId(), msg);
+        else messages.putIfAbsent(msg.getId(), msg);
     }
 }
