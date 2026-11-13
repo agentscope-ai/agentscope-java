@@ -715,7 +715,7 @@ class ToolExecutor {
 
         // Apply infrastructure layers
         execution = applyScheduling(execution);
-        execution = applyTimeout(execution, executionConfig, toolCall);
+        execution = applyTimeout(execution, executionConfig, toolCall, requestConfig);
         execution = applyRetry(execution, executionConfig, toolCall);
         execution = applyShutdownGuard(execution);
 
@@ -742,8 +742,15 @@ class ToolExecutor {
     }
 
     private Mono<ToolResultBlock> applyTimeout(
-            Mono<ToolResultBlock> execution, ExecutionConfig config, ToolUseBlock toolCall) {
+            Mono<ToolResultBlock> execution,
+            ExecutionConfig config,
+            ToolUseBlock toolCall,
+            ToolRequestConfig requestConfig) {
         if (config == null || config.getTimeout() == null) {
+            return execution;
+        }
+        AgentTool tool = resolveTool(toolCall.getName(), requestConfig);
+        if (tool != null && tool.isTimeoutManaged()) {
             return execution;
         }
 
