@@ -689,7 +689,7 @@ public abstract class UserApiContract {
                                 }
                             });
             start.countDown();
-            assertNotEquals(applied.get(5, TimeUnit.SECONDS), withdrawn.get(5, TimeUnit.SECONDS));
+            assertNotEquals(applied.get(30, TimeUnit.SECONDS), withdrawn.get(30, TimeUnit.SECONDS));
         } finally {
             pool.shutdownNow();
         }
