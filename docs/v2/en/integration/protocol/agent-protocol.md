@@ -281,6 +281,8 @@ Both are additive: a client that ignores them keeps reading the flat fields (`te
 
 `tool_call_id` is also accepted as an alias for `toolCallId`. Requires `agentscope.agent-protocol.hitl-enabled=true` (default). On success returns `{ "task_id", "status": "running" }`.
 
+Once the snapshot reports `awaiting_confirm`, a resume is accepted even while the paused executor is still unwinding. Concurrent resumes admit only one replacement run. Superseded executions do not publish stale pause events or finish the replacement run's event stream.
+
 How remote HITL interacts with a calling parent harness is documented under [Remote authorization](/v2/en/docs/harness/subagent#remote-authorization).
 
 ## Configuration

@@ -278,6 +278,8 @@ HTTP 409。这一进程内协调机制不对不同服务副本之间的提交进
 
 `tool_call_id` 也可作为 `toolCallId` 的别名。需要 `agentscope.agent-protocol.hitl-enabled=true`（默认开启）。成功响应：`{ "task_id", "status": "running" }`。
 
+快照报告 `awaiting_confirm` 后，即使暂停的执行线程尚未退出，也可以恢复任务。并发恢复请求只会启动一次替代执行。被替代的执行不会发布过期的暂停事件，也不会结束替代执行的事件流。
+
 与调用方父 harness 的 HITL 交互见 [远程授权](/v2/zh/docs/harness/subagent#远程授权)。
 
 ## 配置项

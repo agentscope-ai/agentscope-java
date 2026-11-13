@@ -170,11 +170,7 @@ public final class AgentProtocolTaskStore {
             pending.setStatus(TaskStatus.PENDING);
             persist(pending);
 
-            CompletableFuture<String> f =
-                    CompletableFuture.supplyAsync(
-                            () -> runAgent(taskId, agentId, input, ctx, null), executor);
-            futures.put(taskId, f);
-            f.whenComplete((r, ex) -> futures.remove(taskId, f));
+            startRun(taskId, agentId, input, ctx, null);
         }
     }
 
@@ -214,12 +210,7 @@ public final class AgentProtocolTaskStore {
             SubmitContext ctx = submitContexts.getOrDefault(taskId, SubmitContext.empty());
             String agentId = rec.getSubAgentId();
             String dummyInput = ""; // resume uses confirm metadata, not a new user prompt
-            CompletableFuture<String> f =
-                    CompletableFuture.supplyAsync(
-                            () -> runAgent(taskId, agentId, dummyInput, ctx, confirmResults),
-                            executor);
-            futures.put(taskId, f);
-            f.whenComplete((r, ex) -> futures.remove(taskId, f));
+            startRun(taskId, agentId, dummyInput, ctx, confirmResults);
         }
     }
 
@@ -233,14 +224,47 @@ public final class AgentProtocolTaskStore {
         return locks;
     }
 
-    private String runAgent(
+    /** Register the execution identity before the executor can publish any events. */
+    private void startRun(
             String taskId,
             String agentId,
             String input,
             SubmitContext submitCtx,
             List<ConfirmResult> confirmResults) {
+        CompletableFuture<String> execution = new CompletableFuture<>();
+        futures.put(taskId, execution);
+        execution.whenComplete((r, ex) -> futures.remove(taskId, execution));
+        executor.execute(
+                () -> {
+                    try {
+                        execution.complete(
+                                runAgent(
+                                        taskId,
+                                        agentId,
+                                        input,
+                                        submitCtx,
+                                        confirmResults,
+                                        execution));
+                    } catch (Throwable error) {
+                        execution.completeExceptionally(error);
+                    }
+                });
+    }
+
+    private String runAgent(
+            String taskId,
+            String agentId,
+            String input,
+            SubmitContext submitCtx,
+            List<ConfirmResult> confirmResults,
+            CompletableFuture<String> execution) {
         try {
-            updateRunning(taskId, agentId);
+            synchronized (taskLockFor(taskId)) {
+                if (futures.get(taskId) != execution) {
+                    return "";
+                }
+                updateRunning(taskId, agentId);
+            }
             AgentRequest request =
                     new AgentRequest(
                             taskId,
@@ -283,7 +307,7 @@ public final class AgentProtocolTaskStore {
                                         .ifPresent(
                                                 dto -> {
                                                     dto.setAgentId(agentId);
-                                                    eventBus.publish(taskId, dto);
+                                                    publishCurrent(taskId, execution, dto);
                                                 });
                             })
                     .blockLast(Duration.ofHours(2));
@@ -299,28 +323,37 @@ public final class AgentProtocolTaskStore {
                 require.setAgentId(agentId);
                 require.setPendingConfirms(pending);
                 require.setStatus("awaiting_confirm");
-                eventBus.publish(taskId, require);
+                // Resume may already have replaced this execution after the pause was persisted.
+                publishCurrent(taskId, execution, require);
                 return AWAITING_CONFIRM_SENTINEL;
             }
 
             String text = reply != null ? reply.getTextContent() : "";
-            clearSubmitContext(taskId);
-            update(taskId, TaskStatus.COMPLETED, text, null, agentId, false, null);
-            publishStatus(taskId, agentId, "success", null);
-            eventBus.complete(taskId);
+            synchronized (taskLockFor(taskId)) {
+                if (futures.get(taskId) == execution) {
+                    clearSubmitContext(taskId);
+                    update(taskId, TaskStatus.COMPLETED, text, null, agentId, false, null);
+                    publishStatus(taskId, agentId, "success", null);
+                    eventBus.complete(taskId);
+                }
+            }
             return text;
         } catch (Exception e) {
             String err = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
             log.warn("Protocol task {} failed", taskId, e);
-            clearSubmitContext(taskId);
-            update(taskId, TaskStatus.FAILED, null, err, agentId, false, null);
-            RemoteAgentEvent error = new RemoteAgentEvent();
-            error.setType(RemoteEventType.RUN_ERROR);
-            error.setAgentId(agentId);
-            error.setError(err);
-            error.setStatus("error");
-            eventBus.publish(taskId, error);
-            eventBus.complete(taskId);
+            synchronized (taskLockFor(taskId)) {
+                if (futures.get(taskId) == execution) {
+                    clearSubmitContext(taskId);
+                    update(taskId, TaskStatus.FAILED, null, err, agentId, false, null);
+                    RemoteAgentEvent error = new RemoteAgentEvent();
+                    error.setType(RemoteEventType.RUN_ERROR);
+                    error.setAgentId(agentId);
+                    error.setError(err);
+                    error.setStatus("error");
+                    eventBus.publish(taskId, error);
+                    eventBus.complete(taskId);
+                }
+            }
             throw new RuntimeException(e);
         }
     }
@@ -347,6 +380,16 @@ public final class AgentProtocolTaskStore {
             customizer.customize(request, builder);
         }
         return builder.build();
+    }
+
+    /** Guard publication and admission with the same short lock, never the model stream. */
+    private void publishCurrent(
+            String taskId, CompletableFuture<String> execution, RemoteAgentEvent event) {
+        synchronized (taskLockFor(taskId)) {
+            if (futures.get(taskId) == execution) {
+                eventBus.publish(taskId, event);
+            }
+        }
     }
 
     private void publishStatus(String taskId, String agentId, String status, String error) {
