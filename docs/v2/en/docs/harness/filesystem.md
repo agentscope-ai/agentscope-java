@@ -336,6 +336,8 @@ HarnessAgent agent = HarnessAgent.builder()
 
 > **Upgrading — absolute paths under the workspace root:** the namespace boundary is on by default for `ROOTED` workspaces, so an absolute key such as `<workspace>/skills/tool.md` no longer reaches shared content at the workspace root (previously any session could address another session's directory that way). Shared content stays reachable through workspace-relative paths, which the overlay resolves against the read-only project layer; on a vetted single-tenant workspace that needs the old behaviour, pass `.namespaceBoundary(false)`.
 
+With an active namespace and the `ROOTED` boundary enabled, null or blank local listing/search paths resolve to the caller's namespaced `.` and still undergo physical containment checks. The Java grep fallback skips individual file symlinks under the workspace that escape that namespace; links within it remain searchable. Explicitly allowed roots outside the workspace keep their existing access policy. With the boundary off, another mode, or no active namespace, blank paths retain the legacy workspace-root behavior.
+
 #### Path resolution policy (`LocalFsMode`)
 
 | Mode | Behavior |

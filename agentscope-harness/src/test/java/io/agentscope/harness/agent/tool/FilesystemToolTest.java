@@ -29,6 +29,7 @@ import io.agentscope.core.tool.AgentTool;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.harness.agent.IsolationScope;
 import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
+import io.agentscope.harness.agent.filesystem.local.LocalFilesystem;
 import io.agentscope.harness.agent.filesystem.model.EditResult;
 import io.agentscope.harness.agent.filesystem.model.FileData;
 import io.agentscope.harness.agent.filesystem.model.FileInfo;
@@ -39,9 +40,11 @@ import io.agentscope.harness.agent.filesystem.model.LsResult;
 import io.agentscope.harness.agent.filesystem.model.ReadResult;
 import io.agentscope.harness.agent.filesystem.remote.store.NamespaceFactory;
 import io.agentscope.harness.agent.filesystem.spec.LocalFilesystemSpec;
+import io.agentscope.harness.agent.workspace.LocalFsMode;
 import io.agentscope.harness.agent.workspace.WorkspacePathNormalizer;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.IntStream;
@@ -127,6 +130,31 @@ class FilesystemToolTest {
         assertEquals("artifact", tool.readFile(runtimeContext, "artifact.txt", null, null));
         assertEquals(
                 "artifact", tool.readFile(runtimeContext, absolutePath.toString(), null, null));
+    }
+
+    @Test
+    void emptySearchPathsKeepStringResultsWithinCallerNamespace(@TempDir Path workspace)
+            throws Exception {
+        NamespaceFactory perUser = rc -> List.of(rc.getUserId());
+        tool =
+                new FilesystemTool(
+                        new LocalFilesystem(workspace, LocalFsMode.ROOTED, null, 10, perUser)
+                                .namespaceBoundary(true));
+        for (String user : List.of("user-1", "user-2")) {
+            Files.createDirectories(workspace.resolve(user));
+            Files.writeString(workspace.resolve(user + "/" + user + ".txt"), "needle " + user);
+        }
+        for (String user : List.of("user-1", "user-2")) {
+            RuntimeContext rc = RuntimeContext.builder().userId(user).build();
+            String sibling = user.equals("user-1") ? "user-2" : "user-1";
+            for (String path : Arrays.asList(null, "", " \t")) {
+                String listing = tool.listFiles(rc, path);
+                assertTrue(listing.startsWith("[FILE] " + user + ".txt"));
+                assertFalse(listing.contains(sibling));
+                assertEquals(
+                        user + ".txt:1:needle " + user, tool.grepFiles(rc, "needle", path, null));
+            }
+        }
     }
 
     // ==================== Bug reproduction: listFiles ambiguous error message ====================

@@ -24,16 +24,21 @@ import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.harness.agent.filesystem.local.LocalFilesystem;
+import io.agentscope.harness.agent.filesystem.model.FileInfo;
 import io.agentscope.harness.agent.filesystem.model.GlobResult;
+import io.agentscope.harness.agent.filesystem.model.GrepMatch;
+import io.agentscope.harness.agent.filesystem.model.GrepResult;
 import io.agentscope.harness.agent.filesystem.model.LsResult;
 import io.agentscope.harness.agent.filesystem.model.ReadResult;
 import io.agentscope.harness.agent.filesystem.remote.store.NamespaceFactory;
 import io.agentscope.harness.agent.workspace.LocalFsMode;
 import io.agentscope.harness.agent.workspace.PathPolicy;
 import java.io.IOException;
+import java.lang.reflect.Method;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
@@ -318,6 +323,146 @@ class LocalFilesystemModeTest {
     }
 
     @Test
+    void rooted_emptySearchPathsStayInCallerNamespace(@TempDir Path workspace) throws IOException {
+        NamespaceFactory perUser = rc -> List.of(rc.getUserId());
+        LocalFilesystem fs =
+                new LocalFilesystem(workspace, LocalFsMode.ROOTED, PathPolicy.empty(), 10, perUser)
+                        .namespaceBoundary(true);
+        for (String user : List.of("user-1", "user-2")) {
+            Path dir = workspace.resolve(user);
+            Files.createDirectories(dir.resolve("nested"));
+            Files.writeString(dir.resolve("note-" + user + ".txt"), "needle " + user);
+            Files.writeString(dir.resolve("nested/deep-" + user + ".txt"), "needle " + user);
+        }
+
+        for (String user : List.of("user-1", "user-2")) {
+            RuntimeContext rc = RuntimeContext.builder().userId(user).build();
+            for (String path : Arrays.asList(null, "", " \t")) {
+                LsResult listing = fs.ls(rc, path);
+                assertTrue(listing.isSuccess());
+                assertEquals(
+                        List.of("nested/", "note-" + user + ".txt"),
+                        listing.entries().stream().map(FileInfo::path).toList());
+                GrepResult search = fs.grep(rc, "needle", path, null);
+                assertTrue(search.isSuccess());
+                assertEquals(
+                        List.of("nested/deep-" + user + ".txt", "note-" + user + ".txt"),
+                        search.matches().stream().map(GrepMatch::path).sorted().toList());
+                assertTrue(
+                        search.matches().stream().allMatch(m -> m.text().equals("needle " + user)));
+            }
+        }
+    }
+
+    @Test
+    void emptySearchPathsKeepLegacyCwdOutsideActiveRootedBoundary(@TempDir Path workspace)
+            throws IOException {
+        for (String user : List.of("user-1", "user-2")) {
+            Files.createDirectories(workspace.resolve(user));
+            Files.writeString(workspace.resolve(user + "/note.txt"), "needle " + user);
+        }
+        List<LocalFilesystem> filesystems =
+                List.of(
+                        new LocalFilesystem(workspace, LocalFsMode.ROOTED, null, 10, USER_NS),
+                        new LocalFilesystem(workspace, LocalFsMode.SANDBOXED, null, 10, USER_NS)
+                                .namespaceBoundary(true),
+                        new LocalFilesystem(workspace, LocalFsMode.UNRESTRICTED, null, 10, USER_NS)
+                                .namespaceBoundary(true),
+                        new LocalFilesystem(workspace, LocalFsMode.ROOTED, null, 10, rc -> null)
+                                .namespaceBoundary(true),
+                        new LocalFilesystem(
+                                        workspace, LocalFsMode.ROOTED, null, 10, rc -> List.of())
+                                .namespaceBoundary(true),
+                        new LocalFilesystem(workspace, LocalFsMode.ROOTED, null, 10, null)
+                                .namespaceBoundary(true));
+        for (LocalFilesystem fs : filesystems) {
+            for (String path : Arrays.asList(null, "", " \t")) {
+                assertEquals(2, fs.ls(RuntimeContext.empty(), path).entries().size());
+                // grep(null) already defaults to "."; only blank grep paths historically use cwd.
+                if (path != null) {
+                    assertEquals(
+                            2,
+                            fs.grep(RuntimeContext.empty(), "needle", path, null).matches().size());
+                }
+            }
+        }
+    }
+
+    @Test
+    void rooted_javaSearchFiltersEscapingFileSymlinks(
+            @TempDir Path workspace, @TempDir Path outside) throws Exception {
+        assumeTrue(symlinksSupported(workspace), "symlink creation not supported on this platform");
+        Path own = workspace.resolve("user-1");
+        Path sibling = workspace.resolve("user-2");
+        Files.createDirectories(own);
+        Files.createDirectories(sibling);
+        Files.writeString(own.resolve("own.txt"), "needle own");
+        Files.writeString(sibling.resolve("secret.txt"), "needle sibling");
+        Files.writeString(outside.resolve("secret.txt"), "needle external");
+        Files.createSymbolicLink(own.resolve("own-link.txt"), Path.of("own.txt"));
+        Files.createSymbolicLink(own.resolve("sibling-link.txt"), Path.of("../user-2/secret.txt"));
+        Files.createSymbolicLink(own.resolve("external-link.txt"), outside.resolve("secret.txt"));
+        RuntimeContext rc = RuntimeContext.builder().userId("user-1").build();
+        LocalFilesystem bounded =
+                new LocalFilesystem(
+                                workspace, LocalFsMode.ROOTED, PathPolicy.of(outside), 10, USER_NS)
+                        .namespaceBoundary(true);
+
+        List<GrepMatch> matches = javaSearch(bounded, rc, own);
+        assertEquals(
+                List.of("own-link.txt", "own.txt"),
+                matches.stream().map(GrepMatch::path).sorted().toList());
+        assertTrue(matches.stream().allMatch(m -> m.text().equals("needle own")));
+
+        // Boundary-off and other modes must not acquire a global symlink restriction.
+        for (LocalFsMode mode : LocalFsMode.values()) {
+            LocalFilesystem legacy = new LocalFilesystem(workspace, mode, null, 10, USER_NS);
+            legacy.namespaceBoundary(mode != LocalFsMode.ROOTED);
+            List<GrepMatch> legacyMatches = javaSearch(legacy, rc, own);
+            assertEquals(4, legacyMatches.size());
+            assertTrue(legacyMatches.stream().anyMatch(m -> m.text().equals("needle sibling")));
+            assertTrue(legacyMatches.stream().anyMatch(m -> m.text().equals("needle external")));
+        }
+        LocalFilesystem noNamespace =
+                new LocalFilesystem(workspace, LocalFsMode.ROOTED, null, 10, null)
+                        .namespaceBoundary(true);
+        assertEquals(4, javaSearch(noNamespace, RuntimeContext.empty(), own).size());
+    }
+
+    @Test
+    void rooted_javaSearchPreservesTrustedAdditionalRootSymlinks(
+            @TempDir Path workspace, @TempDir Path project, @TempDir Path outside)
+            throws Exception {
+        assumeTrue(symlinksSupported(project), "symlink creation not supported on this platform");
+        Files.writeString(project.resolve("project.txt"), "needle project");
+        Files.writeString(outside.resolve("secret.txt"), "needle external");
+        Files.createSymbolicLink(
+                project.resolve("trusted-link.txt"), outside.resolve("secret.txt"));
+        LocalFilesystem fs =
+                new LocalFilesystem(
+                                workspace, LocalFsMode.ROOTED, PathPolicy.of(project), 10, USER_NS)
+                        .namespaceBoundary(true);
+        RuntimeContext rc = RuntimeContext.builder().userId("user-1").build();
+        assertTrue(fs.read(rc, project.resolve("trusted-link.txt").toString(), 0, 0).isSuccess());
+
+        List<GrepMatch> matches = javaSearch(fs, rc, project);
+        assertEquals(2, matches.size());
+        assertTrue(matches.stream().anyMatch(m -> m.text().equals("needle project")));
+        assertTrue(matches.stream().anyMatch(m -> m.text().equals("needle external")));
+    }
+
+    @SuppressWarnings("unchecked")
+    private static List<GrepMatch> javaSearch(LocalFilesystem fs, RuntimeContext rc, Path root)
+            throws ReflectiveOperationException {
+        // Invoke the fallback directly so coverage never depends on the host's rg installation.
+        Method method =
+                LocalFilesystem.class.getDeclaredMethod(
+                        "javaSearch", RuntimeContext.class, String.class, Path.class, String.class);
+        method.setAccessible(true);
+        return (List<GrepMatch>) method.invoke(fs, rc, "needle", root, "*.txt");
+    }
+
+    @Test
     void rooted_namespaceBoundaryOffByDefault(@TempDir Path workspace) throws IOException {
         // Direct LocalFilesystem users keep the legacy behaviour; the boundary is opt-in via
         // namespaceBoundary(true) (LocalFilesystemSpec enables it for the workspace layer).
@@ -529,6 +674,10 @@ class LocalFilesystemModeTest {
         String throughNsRoot = workspace.resolve("user-1/MEMORY.md").toAbsolutePath().toString();
         assertThrows(SecurityException.class, () -> fs.read(rc, throughNsRoot, 0, 0));
         assertThrows(SecurityException.class, () -> fs.read(rc, "MEMORY.md", 0, 0));
+        for (String path : Arrays.asList(null, "", " \t")) {
+            assertThrows(SecurityException.class, () -> fs.ls(rc, path));
+            assertTrue(fs.grep(rc, "private memory", path, null).matches().isEmpty());
+        }
     }
 
     @Test

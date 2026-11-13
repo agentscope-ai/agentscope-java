@@ -335,6 +335,8 @@ HarnessAgent agent = HarnessAgent.builder()
 
 > **升级提示 — workspace 根目录下的绝对路径：** `ROOTED` workspace 默认启用命名空间边界后，形如 `<workspace>/skills/tool.md` 的绝对路径无法再触及 workspace 根目录下的共享内容（此前任一会话都可以借绝对路径访问其他会话的目录）。共享内容仍然可以通过 workspace 相对路径访问（overlay 会将其解析到只读的项目层）；经过安全评估的单租户 workspace 如需保留旧行为，传 `.namespaceBoundary(false)` 即可。
 
+存在活动命名空间且启用 `ROOTED` 边界时，本地列举或搜索的 `null`、空字符串及纯空白路径会解析到调用者命名空间内的 `.`，并继续执行物理路径包含检查。Java grep 回退实现会跳过 workspace 下指向该命名空间外的单个文件符号链接，命名空间内的链接仍可搜索。显式允许的 workspace 外部根目录保留原有访问策略。关闭边界、使用其他模式或没有活动命名空间时，空白路径仍保留原有的 workspace 根目录行为。
+
 #### 路径解析策略（`LocalFsMode`）
 
 | 模式 | 行为 |

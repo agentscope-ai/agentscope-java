@@ -664,6 +664,13 @@ public class LocalFilesystem implements AbstractFilesystem {
     }
 
     protected Path resolvePath(RuntimeContext rc, String key) {
+        if ((key == null || key.isBlank())
+                && mode == LocalFsMode.ROOTED
+                && namespaceBoundary
+                && hasNamespace(rc)) {
+            // Optional search paths must use the same namespace and physical guard as ".".
+            key = ".";
+        }
         String effectiveKey = applyNamespacePrefix(rc, key);
         if (effectiveKey == null || effectiveKey.isBlank()) {
             return cwd;
@@ -1097,7 +1104,19 @@ public class LocalFilesystem implements AbstractFilesystem {
 
         try (Stream<Path> walk = Files.walk(root)) {
             PathMatcher finalGlobMatcher = globMatcher;
-            walk.filter(Files::isRegularFile)
+            walk.filter(
+                            p -> {
+                                if (mode == LocalFsMode.ROOTED
+                                        && p.toAbsolutePath().normalize().startsWith(cwd)) {
+                                    try {
+                                        requireOwnNamespace(rc, p);
+                                    } catch (SecurityException e) {
+                                        return false;
+                                    }
+                                }
+                                return true;
+                            })
+                    .filter(Files::isRegularFile)
                     .filter(
                             p -> {
                                 if (finalGlobMatcher != null) {
