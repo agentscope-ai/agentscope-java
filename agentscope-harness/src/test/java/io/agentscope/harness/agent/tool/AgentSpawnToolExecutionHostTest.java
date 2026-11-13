@@ -15,6 +15,7 @@
  */
 package io.agentscope.harness.agent.tool;
 
+import static io.agentscope.harness.agent.tool.ToolResultAssertions.assertText;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -29,6 +30,7 @@ import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.journal.JournalException;
 import io.agentscope.core.message.AssistantMessage;
 import io.agentscope.core.message.Msg;
+import io.agentscope.core.message.ToolResultState;
 import io.agentscope.core.state.AgentState;
 import io.agentscope.harness.agent.HarnessAgent;
 import io.agentscope.harness.agent.middleware.SubagentEntry;
@@ -74,9 +76,15 @@ class AgentSpawnToolExecutionHostTest {
                         .put(SubagentExecution.class, host)
                         .put(AgentSpawnTool.CTX_FORCE_SYNC, true)
                         .build();
-        String first = tool.agentSpawn(context, null, "worker", "first", "label", 5, null).block();
+        String first =
+                assertText(
+                        tool.agentSpawn(context, null, "worker", "first", "label", 5, null).block(),
+                        ToolResultState.SUCCESS);
         String second =
-                tool.agentSpawn(context, null, "worker", "second", "label", 5, null).block();
+                assertText(
+                        tool.agentSpawn(context, null, "worker", "second", "label", 5, null)
+                                .block(),
+                        ToolResultState.SUCCESS);
         assertTrue(first.contains("session_id: host-owned-child"), first);
         assertTrue(second.contains("session_id: host-owned-child"), second);
         assertEquals(2, calls.get());
@@ -161,8 +169,10 @@ class AgentSpawnToolExecutionHostTest {
                         .put(SubagentExecution.class, host)
                         .build();
         assertTrue(
-                tool.agentSpawn(context, state, "worker", "task", null, 5, null)
-                        .block()
+                assertText(
+                                tool.agentSpawn(context, state, "worker", "task", null, 5, null)
+                                        .block(),
+                                ToolResultState.SUCCESS)
                         .contains("durable child result"));
         verify(prototype, never()).enterPlanMode(anyString(), anyString());
         verify(prototype, never()).getDelegate();

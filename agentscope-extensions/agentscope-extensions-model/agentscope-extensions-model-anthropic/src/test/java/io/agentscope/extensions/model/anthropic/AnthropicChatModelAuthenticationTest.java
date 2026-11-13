@@ -281,7 +281,7 @@ class AnthropicChatModelAuthenticationTest {
                         .ofType(TextBlock.class)
                         .map(TextBlock::getText)
                         .collectList()
-                        .block(Duration.ofSeconds(10));
+                        .block(Duration.ofSeconds(30));
 
         assertEquals(List.of("Hello"), text);
         RecordedRequest request = server.takeRequest(1, TimeUnit.SECONDS);

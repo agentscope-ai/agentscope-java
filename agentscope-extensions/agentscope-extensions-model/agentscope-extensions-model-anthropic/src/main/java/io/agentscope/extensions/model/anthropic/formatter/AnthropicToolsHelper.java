@@ -110,8 +110,14 @@ public class AnthropicToolsHelper {
             builder.addTool(serverTool.toToolUnion());
         }
 
-        // Convert and add client tools. When prompt caching is enabled, mark the last client
-        // tool definition with cache_control so the complete tool prefix is cached.
+        int lastEagerToolIndex = -1;
+        if (cacheControlEnabled) {
+            for (int i = 0; i < clientTools.size(); i++) {
+                if (!Boolean.TRUE.equals(clientTools.get(i).getDeferLoading()))
+                    lastEagerToolIndex = i;
+            }
+        }
+        // Deferred tool definitions cannot carry cache_control.
         if (!clientTools.isEmpty()) {
             for (int i = 0; i < clientTools.size(); i++) {
                 ToolSchema schema = clientTools.get(i);
@@ -121,7 +127,10 @@ public class AnthropicToolsHelper {
                                 .description(schema.getDescription())
                                 .inputSchema(convertToJsonValue(schema.getParameters()));
 
-                if (cacheControlEnabled && i == clientTools.size() - 1) {
+                if (schema.getDeferLoading() != null) {
+                    toolBuilder.deferLoading(schema.getDeferLoading());
+                }
+                if (cacheControlEnabled && i == lastEagerToolIndex) {
                     toolBuilder.cacheControl(AnthropicBaseFormatter.buildCacheControl(cacheTtl));
                 }
 

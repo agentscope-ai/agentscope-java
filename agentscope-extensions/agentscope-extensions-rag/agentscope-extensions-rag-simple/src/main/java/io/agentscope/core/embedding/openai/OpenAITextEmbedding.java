@@ -23,11 +23,16 @@ import com.openai.models.embeddings.EmbeddingCreateParams;
 import io.agentscope.core.Version;
 import io.agentscope.core.embedding.EmbeddingException;
 import io.agentscope.core.embedding.EmbeddingModel;
+import io.agentscope.core.embedding.EmbeddingResponse;
+import io.agentscope.core.embedding.EmbeddingUsage;
 import io.agentscope.core.embedding.EmbeddingUtils;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.model.ExecutionConfig;
+import java.time.Duration;
+import java.time.Instant;
 import java.util.List;
+import java.util.Optional;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Mono;
@@ -42,8 +47,11 @@ import reactor.core.publisher.Mono;
  * an {@link EmbeddingException}.
  *
  * <p>Supports timeout and retry configuration through ExecutionConfig.
+ *
+ * <p>Reuses one lazily initialized SDK client per model, including concurrent calls and retries.
+ * Close the model when it is no longer needed, after all embedding operations have completed.
  */
-public class OpenAITextEmbedding implements EmbeddingModel {
+public class OpenAITextEmbedding implements EmbeddingModel, AutoCloseable {
 
     private static final Logger log = LoggerFactory.getLogger(OpenAITextEmbedding.class);
 
@@ -53,6 +61,10 @@ public class OpenAITextEmbedding implements EmbeddingModel {
     private final ExecutionConfig defaultExecutionConfig;
 
     private final String baseUrl;
+
+    // Guarded by this; SDK initialization and close must not race.
+    private OpenAIClient client;
+    private boolean closed;
 
     /**
      * Creates a new OpenAI text embedding model instance.
@@ -87,7 +99,7 @@ public class OpenAITextEmbedding implements EmbeddingModel {
     }
 
     @Override
-    public Mono<double[]> embed(ContentBlock block) {
+    public Mono<EmbeddingResponse> embed(ContentBlock block) {
         if (block == null) {
             return Mono.error(
                     new EmbeddingException("ContentBlock cannot be null", modelName, "openai"));
@@ -109,28 +121,12 @@ public class OpenAITextEmbedding implements EmbeddingModel {
                             "TextBlock text cannot be null or empty", modelName, "openai"));
         }
 
-        Mono<double[]> embeddingMono =
+        Mono<EmbeddingResponse> embeddingMono =
                 Mono.fromCallable(
                                 () -> {
                                     try {
-                                        // Initialize OpenAI client
-                                        OpenAIOkHttpClient.Builder clientBuilder =
-                                                OpenAIOkHttpClient.builder();
-
-                                        if (apiKey != null) {
-                                            clientBuilder.apiKey(apiKey);
-                                        }
-
-                                        if (baseUrl != null) {
-                                            clientBuilder.baseUrl(baseUrl);
-                                        }
-
-                                        // Set unified AgentScope User-Agent (overrides OpenAI SDK
-                                        // default)
-                                        clientBuilder.putHeader(
-                                                "User-Agent", Version.getUserAgent());
-
-                                        OpenAIClient client = clientBuilder.build();
+                                        Instant startTime = Instant.now();
+                                        OpenAIClient client = getClient();
 
                                         EmbeddingCreateParams createParams =
                                                 EmbeddingCreateParams.builder()
@@ -190,7 +186,8 @@ public class OpenAITextEmbedding implements EmbeddingModel {
                                                     embeddingArray.length);
                                         }
 
-                                        return embeddingArray;
+                                        EmbeddingUsage usage = extractUsage(result, startTime);
+                                        return new EmbeddingResponse(embeddingArray, usage);
                                     } catch (EmbeddingException e) {
                                         throw e;
                                     } catch (Exception e) {
@@ -213,9 +210,80 @@ public class OpenAITextEmbedding implements EmbeddingModel {
                                             "openai");
                                 });
 
-        // Apply timeout and retry
-        return EmbeddingUtils.applyTimeoutAndRetry(
-                embeddingMono, defaultExecutionConfig, modelName, "openai", log);
+        // Check at subscription time, outside retry, including Monos created before close().
+        return Mono.defer(
+                () -> {
+                    synchronized (this) {
+                        if (closed) {
+                            return Mono.error(
+                                    new EmbeddingException(
+                                            "OpenAITextEmbedding is closed", modelName, "openai"));
+                        }
+                    }
+                    return EmbeddingUtils.applyTimeoutAndRetry(
+                            embeddingMono, defaultExecutionConfig, modelName, "openai", log);
+                });
+    }
+
+    private synchronized OpenAIClient getClient() {
+        if (closed) {
+            throw new EmbeddingException("OpenAITextEmbedding is closed", modelName, "openai");
+        }
+        if (client == null) {
+            OpenAIOkHttpClient.Builder clientBuilder = OpenAIOkHttpClient.builder();
+            if (apiKey != null) {
+                clientBuilder.apiKey(apiKey);
+            }
+            if (baseUrl != null) {
+                clientBuilder.baseUrl(baseUrl);
+            }
+            clientBuilder.putHeader("User-Agent", Version.getUserAgent());
+            client = clientBuilder.build();
+        }
+        return client;
+    }
+
+    /**
+     * Closes this model and its SDK client. Repeated calls have no effect.
+     *
+     * <p>Wait for in-flight embedding operations to finish before closing. Closing an unused model
+     * does not initialize a client. Subsequent embedding subscriptions fail with an
+     * {@link EmbeddingException} without entering the configured retry pipeline, including Monos
+     * created before close and subscribed afterward.
+     */
+    @Override
+    public synchronized void close() {
+        if (!closed) {
+            closed = true;
+            if (client != null) {
+                client.close();
+            }
+        }
+    }
+
+    /**
+     * Extracts token usage from the OpenAI embedding response.
+     *
+     * @param result the response returned by the SDK
+     * @param startTime the request start time for elapsed time calculation
+     * @return usage information, or null when the provider does not report usage
+     */
+    private static EmbeddingUsage extractUsage(CreateEmbeddingResponse result, Instant startTime) {
+        if (result == null || result.usage() == null) {
+            return null;
+        }
+        CreateEmbeddingResponse.Usage usage = result.usage();
+        Optional<Long> promptTokens = usage._promptTokens().asKnown();
+        Optional<Long> totalTokens = usage._totalTokens().asKnown();
+        if (promptTokens.isEmpty() || totalTokens.isEmpty()) {
+            return null;
+        }
+        double elapsedSeconds = Duration.between(startTime, Instant.now()).toMillis() / 1000.0;
+        return EmbeddingUsage.builder()
+                .inputTokens(promptTokens.get().intValue())
+                .totalTokens(totalTokens.get().intValue())
+                .time(elapsedSeconds)
+                .build();
     }
 
     @Override

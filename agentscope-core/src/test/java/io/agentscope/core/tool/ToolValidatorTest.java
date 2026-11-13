@@ -22,6 +22,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
@@ -761,6 +762,64 @@ class ToolValidatorTest {
             assertTrue(
                     result.toLowerCase().contains("additional") || result.contains("unknownField"),
                     "Error should indicate unknown/additional property, but got: " + result);
+        }
+    }
+
+    @Nested
+    @DisplayName("validateJsonOutput Tests")
+    class ValidateJsonOutputTests {
+
+        @Test
+        @DisplayName("Should accept a conforming payload")
+        void testValidateJsonOutputAcceptsConformingPayload() {
+            Map<String, Object> schema =
+                    Map.of(
+                            "type",
+                            "object",
+                            "properties",
+                            Map.of("name", Map.of("type", "string")),
+                            "required",
+                            List.of("name"));
+            JsonNode output =
+                    JsonUtils.getJsonCodec().fromJson("{\"name\":\"Alice\"}", JsonNode.class);
+
+            assertNull(ToolValidator.validateJsonOutput(output, schema));
+        }
+
+        @Test
+        @DisplayName("Should reject an explicit null optional field")
+        void testValidateJsonOutputRejectsExplicitNullOptionalField() {
+            Map<String, Object> schema =
+                    Map.of(
+                            "type",
+                            "object",
+                            "properties",
+                            Map.of("name", Map.of("type", "string")));
+            JsonNode output = JsonUtils.getJsonCodec().fromJson("{\"name\":null}", JsonNode.class);
+
+            String error = ToolValidator.validateJsonOutput(output, schema);
+
+            assertNotNull(error);
+            assertTrue(error.contains("name"));
+        }
+
+        @Test
+        @DisplayName("Should reject a type mismatch")
+        void testValidateJsonOutputRejectsTypeMismatch() {
+            Map<String, Object> schema =
+                    Map.of(
+                            "type",
+                            "object",
+                            "properties",
+                            Map.of("age", Map.of("type", "integer")),
+                            "required",
+                            List.of("age"));
+            JsonNode output = JsonUtils.getJsonCodec().fromJson("{\"age\":\"30\"}", JsonNode.class);
+
+            String error = ToolValidator.validateJsonOutput(output, schema);
+
+            assertNotNull(error);
+            assertTrue(error.contains("age"));
         }
     }
 

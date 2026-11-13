@@ -32,7 +32,7 @@ import java.util.Map;
  * {@code metadata}, {@code timestamp}, {@code usage} or {@code generateReason}.
  *
  * <p>Allowed content blocks follow the rules enforced by {@link Msg}'s constructor:
- * text, image, audio, video, and data blocks.
+ * text, data, document, image, audio, and video blocks.
  */
 public final class UserMessage extends Msg {
 

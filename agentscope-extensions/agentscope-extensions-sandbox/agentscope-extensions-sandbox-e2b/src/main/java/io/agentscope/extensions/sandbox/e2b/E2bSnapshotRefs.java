@@ -16,6 +16,8 @@
 package io.agentscope.extensions.sandbox.e2b;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import java.io.IOException;
+import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.Map;
 
@@ -27,6 +29,8 @@ public final class E2bSnapshotRefs {
 
     public static final byte[] MAGIC_PREFIX =
             "E2B_SANDBOX_SNAPSHOT_V1\n".getBytes(StandardCharsets.UTF_8);
+
+    private static final int MAX_NATIVE_SNAPSHOT_BYTES = 4096;
 
     private E2bSnapshotRefs() {}
 
@@ -66,4 +70,18 @@ public final class E2bSnapshotRefs {
             return null;
         }
     }
+
+    /**
+     * Reads and validates a native snapshot reference.
+     */
+    static SnapshotIdRef peekSnapshotId(InputStream input) throws IOException {
+        byte[] raw = input.readNBytes(MAX_NATIVE_SNAPSHOT_BYTES);
+        String snapshotId = decodeSnapshotIdIfPresent(raw);
+        if (snapshotId == null || snapshotId.isBlank()) {
+            throw new IOException("E2B native snapshot reference is missing a snapshot id");
+        }
+        return new SnapshotIdRef(snapshotId, raw);
+    }
+
+    record SnapshotIdRef(String snapshotId, byte[] archive) {}
 }

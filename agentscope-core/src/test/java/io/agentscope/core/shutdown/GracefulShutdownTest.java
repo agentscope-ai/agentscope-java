@@ -475,7 +475,15 @@ class GracefulShutdownTest {
 
             manager.performGracefulShutdown();
 
-            Thread.sleep(1500);
+            // The 200ms shutdown timeout fires on the manager's scheduler; poll until both
+            // interrupts land instead of a fixed 1.5s sleep — returns in ~200ms, and a slow
+            // CI host can no longer overshoot into a false failure.
+            long deadline = System.currentTimeMillis() + 5_000;
+            while (agent1.control.status() != AgentRun.Status.CANCELLED
+                    || agent2.control.status() != AgentRun.Status.CANCELLED) {
+                assertTrue(System.currentTimeMillis() < deadline, "requests not cancelled in 5s");
+                Thread.sleep(25);
+            }
 
             assertEquals(AgentRun.Status.CANCELLED, agent1.control.status());
             assertEquals(AgentRun.Status.CANCELLED, agent2.control.status());

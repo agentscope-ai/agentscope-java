@@ -52,17 +52,17 @@ class AgentSkillPromptProviderTest {
     @DisplayName("Should render metadata as XML for single skill")
     void testSingleSkill() {
         AgentSkill skill =
-                new AgentSkill("test_skill", "Test Skill Description", "# Content", null);
-        skillRegistry.registerSkill("test_skill_custom", skill);
+                new AgentSkill("test-skill", "Test Skill Description", "# Content", null);
+        skillRegistry.registerSkill("test-skill_custom", skill);
 
         String prompt = provider.getSkillSystemPrompt();
 
         assertTrue(prompt.contains("## Available Skills"));
         assertTrue(prompt.contains("<available_skills>"));
         assertTrue(prompt.contains("<skill>"));
-        assertTrue(prompt.contains("<name>test_skill</name>"));
+        assertTrue(prompt.contains("<name>test-skill</name>"));
         assertTrue(prompt.contains("<description>Test Skill Description</description>"));
-        assertTrue(prompt.contains("<skill-id>test_skill_custom</skill-id>"));
+        assertTrue(prompt.contains("<skill-id>test-skill_custom</skill-id>"));
         assertTrue(prompt.contains("</skill>"));
         assertTrue(prompt.contains("</available_skills>"));
     }
@@ -168,10 +168,10 @@ class AgentSkillPromptProviderTest {
     @DisplayName("Should escape special characters in XML")
     void testXmlEscaping() {
         Map<String, Object> metadata = new LinkedHashMap<>();
-        metadata.put("name", "test_skill");
+        metadata.put("name", "test-skill");
         metadata.put("description", "Description with <xml> & \"quotes\" and 'apostrophes'");
         AgentSkill skill = new AgentSkill(metadata, "# Content", null, null);
-        skillRegistry.registerSkill("test_skill_custom", skill);
+        skillRegistry.registerSkill("test-skill_custom", skill);
 
         String prompt = provider.getSkillSystemPrompt();
 
@@ -185,11 +185,11 @@ class AgentSkillPromptProviderTest {
     @DisplayName("Should fallback to entry tag for invalid metadata keys")
     void testInvalidMetadataKeyFallback() {
         Map<String, Object> metadata = new LinkedHashMap<>();
-        metadata.put("name", "test_skill");
+        metadata.put("name", "test-skill");
         metadata.put("description", "desc");
         metadata.put("tool:config", "enabled");
         AgentSkill skill = new AgentSkill(metadata, "# Content", null, null);
-        skillRegistry.registerSkill("test_skill_custom", skill);
+        skillRegistry.registerSkill("test-skill_custom", skill);
 
         String prompt = provider.getSkillSystemPrompt();
 
@@ -199,8 +199,8 @@ class AgentSkillPromptProviderTest {
     @Test
     @DisplayName("Should not include code execution section when not enabled")
     void testNoCodeExecutionSectionByDefault() {
-        AgentSkill skill = new AgentSkill("test_skill", "Test Skill", "# Content", null);
-        skillRegistry.registerSkill("test_skill_custom", skill);
+        AgentSkill skill = new AgentSkill("test-skill", "Test Skill", "# Content", null);
+        skillRegistry.registerSkill("test-skill_custom", skill);
 
         String prompt = provider.getSkillSystemPrompt();
 
@@ -211,8 +211,8 @@ class AgentSkillPromptProviderTest {
     @Test
     @DisplayName("Should not include code execution section when enabled but uploadDir not set")
     void testNoCodeExecutionSectionWhenEnabledButNoUploadDir() {
-        AgentSkill skill = new AgentSkill("test_skill", "Test Skill", "# Content", null);
-        skillRegistry.registerSkill("test_skill_custom", skill);
+        AgentSkill skill = new AgentSkill("test-skill", "Test Skill", "# Content", null);
+        skillRegistry.registerSkill("test-skill_custom", skill);
 
         provider.setCodeExecutionEnable(true);
 
@@ -225,8 +225,8 @@ class AgentSkillPromptProviderTest {
     @Test
     @DisplayName("Should include code execution section with uploadDir when enabled")
     void testCodeExecutionSectionIncludedWhenEnabled(@TempDir Path tempDir) {
-        AgentSkill skill = new AgentSkill("test_skill", "Test Skill", "# Content", null);
-        skillRegistry.registerSkill("test_skill_custom", skill);
+        AgentSkill skill = new AgentSkill("test-skill", "Test Skill", "# Content", null);
+        skillRegistry.registerSkill("test-skill_custom", skill);
 
         provider.setCodeExecutionEnable(true);
         provider.setUploadDir(tempDir);
@@ -242,8 +242,8 @@ class AgentSkillPromptProviderTest {
     @Test
     @DisplayName("Code execution section should appear after </available_skills>")
     void testCodeExecutionSectionAppearsAfterAvailableSkills(@TempDir Path tempDir) {
-        AgentSkill skill = new AgentSkill("test_skill", "Test Skill", "# Content", null);
-        skillRegistry.registerSkill("test_skill_custom", skill);
+        AgentSkill skill = new AgentSkill("test-skill", "Test Skill", "# Content", null);
+        skillRegistry.registerSkill("test-skill_custom", skill);
 
         provider.setCodeExecutionEnable(true);
         provider.setUploadDir(tempDir);
@@ -258,8 +258,8 @@ class AgentSkillPromptProviderTest {
     @Test
     @DisplayName("Should use custom code execution instruction when set")
     void testCustomCodeExecutionInstruction(@TempDir Path tempDir) {
-        AgentSkill skill = new AgentSkill("test_skill", "Test Skill", "# Content", null);
-        skillRegistry.registerSkill("test_skill_custom", skill);
+        AgentSkill skill = new AgentSkill("test-skill", "Test Skill", "# Content", null);
+        skillRegistry.registerSkill("test-skill_custom", skill);
 
         provider.setCodeExecutionEnable(true);
         provider.setUploadDir(tempDir);
@@ -342,5 +342,58 @@ class AgentSkillPromptProviderTest {
         assertTrue(prompt.contains("Skills root directory: " + tempDir.toAbsolutePath()));
         // Only the skill with originDir still gets a per-skill <files-root>
         assertTrue(prompt.contains("<files-root>" + origin + "</files-root>"));
+    }
+
+    @Test
+    @DisplayName("Should match SkillFilter against skill name instead of composite skill id")
+    void testBareNameFilterMatchesSkillWithCompositeId() {
+        AgentSkill visible =
+                new AgentSkill(
+                        "host-forensics-client",
+                        "visible",
+                        "# Content",
+                        null,
+                        "filesystem-agentscope_skills");
+        AgentSkill hidden =
+                new AgentSkill(
+                        "other-skill", "hidden", "# Content", null, "filesystem-agentscope_skills");
+        skillRegistry.registerSkill(visible.getSkillId(), visible);
+        skillRegistry.registerSkill(hidden.getSkillId(), hidden);
+
+        // User passes bare skill name (the natural API usage)
+        String prompt = provider.getSkillSystemPrompt(SkillFilter.only("host-forensics-client"));
+
+        assertTrue(
+                prompt.contains(
+                        "<skill-id>host-forensics-client_filesystem-agentscope_skills</skill-id>"));
+        assertFalse(
+                prompt.contains("<skill-id>other-skill_filesystem-agentscope_skills</skill-id>"));
+    }
+
+    @Test
+    @DisplayName("Should hide skill disabled by name")
+    void testFilterDisableByNameHidesSkill() {
+        AgentSkill visible = new AgentSkill("visible", "visible", "# Content", null);
+        AgentSkill hidden = new AgentSkill("hidden", "hidden", "# Content", null);
+        skillRegistry.registerSkill(visible.getSkillId(), visible);
+        skillRegistry.registerSkill(hidden.getSkillId(), hidden);
+
+        String prompt =
+                provider.getSkillSystemPrompt(
+                        SkillFilter.all().overlay(SkillFilter.disable("hidden")));
+
+        assertTrue(prompt.contains("<skill-id>visible_custom</skill-id>"));
+        assertFalse(prompt.contains("<skill-id>hidden_custom</skill-id>"));
+    }
+
+    @Test
+    @DisplayName("Should not match SkillFilter against composite skill id")
+    void testFilterDoesNotMatchCompositeId() {
+        AgentSkill visible = new AgentSkill("visible", "visible", "# Content", null);
+        skillRegistry.registerSkill(visible.getSkillId(), visible);
+
+        String prompt = provider.getSkillSystemPrompt(SkillFilter.only("visible_custom"));
+
+        assertFalse(prompt.contains("<skill-id>visible_custom</skill-id>"));
     }
 }

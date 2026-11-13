@@ -15,8 +15,10 @@
  */
 package io.agentscope.extensions.model.ollama.formatter;
 
+import io.agentscope.core.formatter.DocumentReferenceRenderer;
 import io.agentscope.core.message.Base64Source;
 import io.agentscope.core.message.ContentBlock;
+import io.agentscope.core.message.DocumentBlock;
 import io.agentscope.core.message.HintBlock;
 import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.Msg;
@@ -82,6 +84,12 @@ public class OllamaConversationMerger {
                                         + " block in merger");
                         textAccumulator.append(name).append(": [Image - processing failed]\n");
                     }
+                } else if (block instanceof DocumentBlock doc) {
+                    textAccumulator
+                            .append(name)
+                            .append(": ")
+                            .append(DocumentReferenceRenderer.render(doc))
+                            .append("\n");
                 } else if (block instanceof ToolResultBlock) {
                     // Tool results in history are usually just appended as text
                     ToolResultBlock toolResult = (ToolResultBlock) block;

@@ -59,7 +59,7 @@ class McpToolMetaExtractionTest {
         parameters.put("type", "object");
         parameters.put("properties", new HashMap<>());
 
-        McpSchema.TextContent resultContent = new McpSchema.TextContent("Success");
+        McpSchema.TextContent resultContent = McpSchema.TextContent.builder("Success").build();
         successResult =
                 McpSchema.CallToolResult.builder()
                         .content(List.of(resultContent))

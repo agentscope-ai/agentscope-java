@@ -199,7 +199,7 @@ public final class AtomicThreadJournal implements ThreadJournal {
             // Resolve a lost commit ACK even when a later batch has committed.
             if (h.seq() >= seq) {
                 for (String cursor = h.commitId(); cursor != null; ) {
-                    var c = readCommit(cursor);
+                    var c = readCommit(cursor, null);
                     if (c.batchId().equals(batchId)) {
                         if (!c.hash().equals(hash) || c.firstSeq() != expectedSeq + 1)
                             throw new JournalException("Batch ID reused with different content");
@@ -264,8 +264,8 @@ public final class AtomicThreadJournal implements ThreadJournal {
         throw new JournalException("Commit contention");
     }
 
-    private Commit readCommit(String id) {
-        var value = storage.read(path("commits/" + id + ".json"));
+    private Commit readCommit(String id, Map<String, AtomicJournalStorage.Value> batch) {
+        var value = committedSegment(id, batch);
         if (value == null) throw new JournalException("Missing committed segment: " + id);
         var c = parse(value.bytes(), Commit.class);
         if (c.payloadBlobs() != null && !c.payloadBlobs().isEmpty()) {
@@ -310,17 +310,45 @@ public final class AtomicThreadJournal implements ThreadJournal {
                 json);
     }
 
+    /** Bulk-load every committed segment under this journal, or {@code null} when the backend
+     * cannot list paths — callers then fall back to per-segment reads. */
+    private Map<String, AtomicJournalStorage.Value> loadCommitSegments() {
+        try {
+            var paths = storage.listPaths(path("commits") + "/");
+            // An empty listing cannot be distinguished from a snapshot taken while a writer was
+            // renaming segments into place, so fall back to per-segment reads rather than
+            // treating the journal as having no committed data.
+            if (paths.isEmpty()) return null;
+            return storage.readAll(paths);
+        } catch (UnsupportedOperationException | JournalException ignored) {
+            // The listing also surfaces rows a concurrent writer has not yet referenced
+            // from head (possibly half-written on file backends); a bulk read that trips
+            // over one must degrade rather than fail the scan.
+            return null;
+        }
+    }
+
+    private AtomicJournalStorage.Value committedSegment(
+            String id, Map<String, AtomicJournalStorage.Value> batch) {
+        if (batch != null) return batch.get(path("commits/" + id + ".json"));
+        return storage.read(path("commits/" + id + ".json"));
+    }
+
     @Override
     public Iterable<JournalEvent> scan(long after, long through) {
         var head = head();
         if (after < 0 || through < after || through > head.seq())
             throw new IllegalArgumentException("Invalid committed prefix");
+        // One round-trip per journal instead of one per segment: bulk-load the committed
+        // segments up front when the backend can list and batch-read, and walk the commit
+        // chain in memory. Backends without discovery fall back to per-segment reads.
+        Map<String, AtomicJournalStorage.Value> loadedSegments = loadCommitSegments();
         var ids = new ArrayDeque<String>();
         var seen = new HashSet<String>();
         long expected = head.seq();
         for (String id = head.commitId(); id != null && expected > after; ) {
             if (!seen.add(id)) throw new JournalException("Commit chain cycle");
-            var stored = storage.read(path("commits/" + id + ".json"));
+            var stored = committedSegment(id, loadedSegments);
             if (stored == null) throw new JournalException("Missing committed segment");
             var commit = parse(stored.bytes(), Commit.class);
             if (commit.lastSeq() != expected
@@ -353,7 +381,7 @@ public final class AtomicThreadJournal implements ThreadJournal {
                             }
                             if (!segments.hasNext())
                                 throw new JournalException("Missing committed events");
-                            batch = readCommit(segments.next()).events().iterator();
+                            batch = readCommit(segments.next(), loadedSegments).events().iterator();
                         }
                     }
 

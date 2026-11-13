@@ -15,6 +15,7 @@
  */
 package io.agentscope.core.memory.mem0;
 
+import io.agentscope.core.formatter.DocumentReferenceRenderer;
 import io.agentscope.core.memory.LongTermMemory;
 import io.agentscope.core.message.Msg;
 import java.time.Duration;
@@ -176,12 +177,7 @@ public class Mem0LongTermMemory implements LongTermMemory {
         List<Mem0Message> mem0Messages =
                 msgs.stream()
                         .filter(Objects::nonNull)
-                        .filter(
-                                msg ->
-                                        msg.getTextContent() != null
-                                                && !msg.getTextContent().isEmpty()
-                                                && !msg.getTextContent()
-                                                        .contains("<compressed_history>"))
+                        .filter(Mem0LongTermMemory::isRecordable)
                         .map(this::convertToMem0Message)
                         .collect(Collectors.toList());
 
@@ -204,6 +200,15 @@ public class Mem0LongTermMemory implements LongTermMemory {
     }
 
     /**
+     * A turn is recordable when it has text or a document; an attachment-only turn used to be
+     * filtered out here and never reached the memory backend.
+     */
+    private static boolean isRecordable(Msg msg) {
+        String text = DocumentReferenceRenderer.renderMessageText(msg);
+        return !text.isEmpty() && !text.contains("<compressed_history>");
+    }
+
+    /**
      * Converts a Msg to a Mem0Message.
      *
      * <p>Role mapping:
@@ -221,7 +226,10 @@ public class Mem0LongTermMemory implements LongTermMemory {
                     case ASSISTANT, TOOL -> "assistant";
                 };
 
-        return Mem0Message.builder().role(role).content(msg.getTextContent()).build();
+        return Mem0Message.builder()
+                .role(role)
+                .content(DocumentReferenceRenderer.renderMessageText(msg))
+                .build();
     }
 
     /**

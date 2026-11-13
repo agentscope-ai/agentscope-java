@@ -16,6 +16,7 @@
 package io.agentscope.harness.agent.sandbox;
 
 import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
@@ -54,7 +55,12 @@ public class WorkspaceArchiveExtractor {
     public static void extractTarArchive(Path destRoot, InputStream tarStream) throws Exception {
         Path canonicalRoot = destRoot.normalize().toAbsolutePath();
 
-        try (TarArchiveInputStream tar = new TarArchiveInputStream(tarStream)) {
+        // Entry names are UTF-8: that is what WorkspaceProjectionApplier writes and what
+        // container-side tar -xf decodes. The platform default charset would mangle
+        // non-ASCII names on JVMs whose default is not UTF-8 (JDK 17 on Windows follows
+        // the OS locale), extracting files under names nobody looks for.
+        try (TarArchiveInputStream tar =
+                new TarArchiveInputStream(tarStream, StandardCharsets.UTF_8.name())) {
             TarArchiveEntry entry;
             while ((entry = tar.getNextEntry()) != null) {
                 validateEntryName(entry.getName(), canonicalRoot);

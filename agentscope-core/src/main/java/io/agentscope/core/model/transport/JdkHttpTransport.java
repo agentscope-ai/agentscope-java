@@ -230,16 +230,16 @@ public class JdkHttpTransport implements HttpTransport {
                                                     request,
                                                     responseBody,
                                                     requestStartNanos))
-                            .doFinally(signal -> closeQuietly(responseBody.getAndSet(null)))
-                            .onErrorMap(this::mapStreamError)
+                            .doFinally(signal -> closeResponseBody(responseBody))
+                            .onErrorResume(error -> Flux.error(mapStreamError(error)))
                             .publishOn(responseScheduler, config.getResponsePrefetch());
                 });
     }
 
     /**
-     * Use synchronous send on a dedicated worker: JDK sendAsync completion can depend on the
-     * common ForkJoinPool even when HttpClient has a custom executor. Cancellation interrupts the
-     * send and closes any body returned after cancellation.
+     * Use synchronous send on the dedicated stream scheduler: JDK {@code sendAsync} completion
+     * can depend on the common ForkJoinPool even when the client has a custom executor.
+     * Cancellation interrupts the send and closes any body returned after cancellation.
      */
     private Mono<java.net.http.HttpResponse<InputStream>> sendInputStream(
             java.net.http.HttpRequest request, AtomicReference<InputStream> responseBody) {
@@ -266,11 +266,11 @@ public class JdkHttpTransport implements HttpTransport {
                                             } else {
                                                 sink.success(response);
                                             }
-                                        } catch (InterruptedException e) {
+                                        } catch (InterruptedException error) {
                                             Thread.currentThread().interrupt();
-                                            if (!cancelled.get()) sink.error(e);
-                                        } catch (Exception e) {
-                                            if (!cancelled.get()) sink.error(e);
+                                            if (!cancelled.get()) sink.error(error);
+                                        } catch (Exception error) {
+                                            if (!cancelled.get()) sink.error(error);
                                         }
                                     }));
                 });
@@ -322,7 +322,7 @@ public class JdkHttpTransport implements HttpTransport {
     }
 
     /**
-     * Parse SSE or NDJSON lines on a dedicated worker because BufferedReader blocks.
+     * Parse SSE or NDJSON lines on a bounded elastic worker because BufferedReader blocks.
      */
     private Flux<String> processStreamResponse(InputStream inputStream, HttpRequest request) {
         if (inputStream == null) {
@@ -334,16 +334,20 @@ public class JdkHttpTransport implements HttpTransport {
                 TransportConstants.STREAM_FORMAT_NDJSON.equals(
                         request.getHeaders().get(TransportConstants.STREAM_FORMAT_HEADER));
 
-        // Use Flux.using to manage resource lifecycle
-        return Flux.using(
-                        () ->
-                                new BufferedReader(
-                                        new InputStreamReader(inputStream, StandardCharsets.UTF_8)),
-                        reader -> isNdjson ? readNdJsonLines(reader) : readSseLines(reader),
-                        this::closeQuietly)
+        // The body is closed by the terminal signal's doFinally, never the reader: BufferedReader
+        // close() contends for the monitor held by a parked readLine(), which is the hang
+        // cancellation must avoid. Closing the raw stream does not take that monitor and wakes the
+        // parked read up instead.
+        return Flux.defer(
+                        () -> {
+                            BufferedReader reader =
+                                    new BufferedReader(
+                                            new InputStreamReader(
+                                                    inputStream, StandardCharsets.UTF_8));
+                            return isNdjson ? readNdJsonLines(reader) : readSseLines(reader);
+                        })
                 // reader.lines() uses blocking I/O internally
-                .subscribeOn(streamScheduler)
-                .doOnCancel(() -> closeQuietly(inputStream));
+                .subscribeOn(streamScheduler);
     }
 
     /**
@@ -354,6 +358,7 @@ public class JdkHttpTransport implements HttpTransport {
                 .filter(line -> line.startsWith(SSE_DATA_PREFIX))
                 .map(line -> line.substring(SSE_DATA_PREFIX.length()).trim())
                 .takeWhile(data -> !SSE_DONE_MARKER.equals(data))
+                .doOnNext(data -> log.debug("Received SSE data chunk"))
                 .filter(data -> !data.isEmpty());
     }
 
@@ -361,7 +366,9 @@ public class JdkHttpTransport implements HttpTransport {
      * Extract non-empty NDJSON records as already-delimited stream chunks.
      */
     private Flux<String> readNdJsonLines(BufferedReader reader) {
-        return Flux.fromStream(reader.lines()).filter(line -> !line.isEmpty());
+        return Flux.fromStream(reader.lines())
+                .doOnNext(line -> log.debug("Received NDJSON line"))
+                .filter(line -> !line.isEmpty());
     }
 
     @Override
@@ -550,6 +557,23 @@ public class JdkHttpTransport implements HttpTransport {
         return new HttpTransportException("SSE/NDJSON stream failed: " + e.getMessage(), e);
     }
 
+    /**
+     * Closes the streaming response body when the stream terminates.
+     *
+     * <p>The body is closed on whichever thread delivers the terminal signal, including a
+     * cancelling thread. That is safe for the raw {@link InputStream}: closing it does not take
+     * the reader's monitor, so it cannot block behind a parked {@code readLine()} - it wakes that
+     * read up instead. The {@link java.io.BufferedReader} is deliberately never closed from
+     * cleanup for the same reason: its {@code close()} contends for the monitor held by the parked
+     * read, which is the hang this transport must avoid. The reader only wraps the body and owns no
+     * resource of its own, so leaving it to the collector is harmless.
+     *
+     * @param responseBody holder of the current body, cleared as it is closed
+     */
+    private void closeResponseBody(AtomicReference<InputStream> responseBody) {
+        closeQuietly(responseBody.getAndSet(null));
+    }
+
     private void closeQuietly(AutoCloseable closeable) {
         if (closeable != null) {
             try {
@@ -579,11 +603,8 @@ public class JdkHttpTransport implements HttpTransport {
         private Scheduler responseScheduler;
 
         /**
-         * Use a caller-owned scheduler for blocking connection and stream reads. The transport
-         * never disposes it. Defaults to {@link ModelSchedulers#streams()}.
-         *
-         * @param scheduler the stream scheduler
-         * @return this builder
+         * Use a caller-owned scheduler for starting requests and blocking stream reads. The
+         * transport never disposes it. Defaults to {@link ModelSchedulers#streams()}.
          */
         public Builder streamScheduler(Scheduler scheduler) {
             this.streamScheduler = Objects.requireNonNull(scheduler, "scheduler");
@@ -593,9 +614,6 @@ public class JdkHttpTransport implements HttpTransport {
         /**
          * Use a caller-owned scheduler for ordered response delivery. The transport never disposes
          * it. Defaults to {@link ModelSchedulers#responses()}.
-         *
-         * @param scheduler the response scheduler
-         * @return this builder
          */
         public Builder responseScheduler(Scheduler scheduler) {
             this.responseScheduler = Objects.requireNonNull(scheduler, "scheduler");

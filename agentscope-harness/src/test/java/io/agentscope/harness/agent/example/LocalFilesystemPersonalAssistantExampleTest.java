@@ -89,28 +89,30 @@ class LocalFilesystemPersonalAssistantExampleTest {
                         .abstractFilesystem(new LocalFilesystemWithShell(workspace))
                         .build()) {
 
-            // Call 1: write a note to MEMORY.md through the workspace manager
+            // Call 1: write a note through the workspace manager. A plain user file is
+            // used on purpose: MEMORY.md is agent-managed (memory consolidation rewrites
+            // it asynchronously after calls), so its bytes are not stable across calls.
             agent.call(userMsg("first call"), ctx("session-1", "alice")).block();
             agent.getWorkspaceManager()
                     .writeUtf8WorkspaceRelative(
-                            RuntimeContext.empty(), "MEMORY.md", "# Notes\n- item 1");
+                            RuntimeContext.empty(), "notes.md", "# Notes\n- item 1");
 
             // The file exists on disk after call 1
-            Path memoryFile = workspace.resolve("MEMORY.md");
+            Path notesFile = workspace.resolve("notes.md");
             assertTrue(
-                    Files.isRegularFile(memoryFile), "MEMORY.md should exist on disk after call 1");
-            String content = Files.readString(memoryFile, StandardCharsets.UTF_8);
-            assertTrue(content.contains("item 1"), "MEMORY.md content should be persisted on disk");
+                    Files.isRegularFile(notesFile), "notes.md should exist on disk after call 1");
+            String content = Files.readString(notesFile, StandardCharsets.UTF_8);
+            assertTrue(content.contains("item 1"), "notes.md content should be persisted on disk");
 
             // Call 2: same workspace, different session — file is still there
             agent.call(userMsg("second call"), ctx("session-2", "alice")).block();
             assertTrue(
-                    Files.isRegularFile(memoryFile),
-                    "MEMORY.md should still exist on disk in call 2");
+                    Files.isRegularFile(notesFile),
+                    "notes.md should still exist on disk in call 2");
             assertEquals(
                     content,
-                    Files.readString(memoryFile, StandardCharsets.UTF_8),
-                    "MEMORY.md content should be unchanged after call 2");
+                    Files.readString(notesFile, StandardCharsets.UTF_8),
+                    "notes.md content should be unchanged after call 2");
         }
     }
 

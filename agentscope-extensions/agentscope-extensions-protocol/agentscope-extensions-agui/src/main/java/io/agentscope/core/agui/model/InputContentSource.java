@@ -25,11 +25,12 @@ import com.fasterxml.jackson.annotation.JsonTypeInfo;
  * <ul>
  *   <li>{@code "data"} &rarr; {@link InputContentDataSource} (inline Base64 data)</li>
  *   <li>{@code "url"} &rarr; {@link InputContentUrlSource} (remote URL reference)</li>
+ *   <li>{@code "file"} &rarr; {@link InputContentFileSource} (provider-issued handle)</li>
  * </ul>
  *
  * <p>This is distinct from AgentScope's internal {@link io.agentscope.core.message.Source}
- * hierarchy ({@code URLSource} / {@code Base64Source}). The {@code AguiMessageConverter}
- * translates between the two layers.
+ * hierarchy ({@code URLSource} / {@code Base64Source} / {@code FileIdSource}). The
+ * {@code AguiMessageConverter} translates between the two layers.
  *
  * @author shanhongyu
  * @since 2026-08-01
@@ -37,6 +38,8 @@ import com.fasterxml.jackson.annotation.JsonTypeInfo;
 @JsonTypeInfo(use = JsonTypeInfo.Id.NAME, include = JsonTypeInfo.As.PROPERTY, property = "type")
 @JsonSubTypes({
     @JsonSubTypes.Type(value = InputContentDataSource.class, name = "data"),
-    @JsonSubTypes.Type(value = InputContentUrlSource.class, name = "url")
+    @JsonSubTypes.Type(value = InputContentUrlSource.class, name = "url"),
+    @JsonSubTypes.Type(value = InputContentFileSource.class, name = "file")
 })
-public sealed interface InputContentSource permits InputContentDataSource, InputContentUrlSource {}
+public sealed interface InputContentSource
+        permits InputContentDataSource, InputContentUrlSource, InputContentFileSource {}

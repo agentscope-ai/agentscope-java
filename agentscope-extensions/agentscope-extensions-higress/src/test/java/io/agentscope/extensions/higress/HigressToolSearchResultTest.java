@@ -19,6 +19,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.modelcontextprotocol.spec.McpSchema;
@@ -43,7 +44,7 @@ class HigressToolSearchResultTest {
     @Test
     void testParse_ErrorResult() {
         McpSchema.CallToolResult callToolResult =
-                new McpSchema.CallToolResult(Collections.emptyList(), true, null);
+                new McpSchema.CallToolResult(Collections.emptyList(), true, null, null);
 
         HigressToolSearchResult result = HigressToolSearchResult.parse(callToolResult);
 
@@ -55,7 +56,7 @@ class HigressToolSearchResultTest {
     @Test
     void testParse_EmptyContent() {
         McpSchema.CallToolResult callToolResult =
-                new McpSchema.CallToolResult(Collections.emptyList(), false, null);
+                new McpSchema.CallToolResult(Collections.emptyList(), false, null, null);
 
         HigressToolSearchResult result = HigressToolSearchResult.parse(callToolResult);
 
@@ -81,7 +82,8 @@ class HigressToolSearchResultTest {
         structuredContent.put("tools", List.of(tool1));
 
         McpSchema.CallToolResult callToolResult =
-                new McpSchema.CallToolResult(Collections.emptyList(), false, structuredContent);
+                new McpSchema.CallToolResult(
+                        Collections.emptyList(), false, structuredContent, null);
 
         HigressToolSearchResult result = HigressToolSearchResult.parse(callToolResult);
 
@@ -112,7 +114,8 @@ class HigressToolSearchResultTest {
         structuredContent.put("tools", List.of(tool1, tool2));
 
         McpSchema.CallToolResult callToolResult =
-                new McpSchema.CallToolResult(Collections.emptyList(), false, structuredContent);
+                new McpSchema.CallToolResult(
+                        Collections.emptyList(), false, structuredContent, null);
 
         HigressToolSearchResult result = HigressToolSearchResult.parse(callToolResult);
 
@@ -128,9 +131,9 @@ class HigressToolSearchResultTest {
                         + "\"title\":\"Weather\",\"inputSchema\":{\"type\":\"object\"},"
                         + "\"outputSchema\":{}}]}";
 
-        McpSchema.TextContent textContent = new McpSchema.TextContent(jsonText);
+        McpSchema.TextContent textContent = McpSchema.TextContent.builder(jsonText).build();
         McpSchema.CallToolResult callToolResult =
-                new McpSchema.CallToolResult(List.of(textContent), false, null);
+                new McpSchema.CallToolResult(List.of(textContent), false, null, null);
 
         HigressToolSearchResult result = HigressToolSearchResult.parse(callToolResult);
 
@@ -141,9 +144,9 @@ class HigressToolSearchResultTest {
 
     @Test
     void testParse_FromTextContent_InvalidJson() {
-        McpSchema.TextContent textContent = new McpSchema.TextContent("invalid json");
+        McpSchema.TextContent textContent = McpSchema.TextContent.builder("invalid json").build();
         McpSchema.CallToolResult callToolResult =
-                new McpSchema.CallToolResult(List.of(textContent), false, null);
+                new McpSchema.CallToolResult(List.of(textContent), false, null, null);
 
         HigressToolSearchResult result = HigressToolSearchResult.parse(callToolResult);
 
@@ -153,9 +156,9 @@ class HigressToolSearchResultTest {
 
     @Test
     void testParse_FromTextContent_EmptyText() {
-        McpSchema.TextContent textContent = new McpSchema.TextContent("");
+        McpSchema.TextContent textContent = McpSchema.TextContent.builder("").build();
         McpSchema.CallToolResult callToolResult =
-                new McpSchema.CallToolResult(List.of(textContent), false, null);
+                new McpSchema.CallToolResult(List.of(textContent), false, null, null);
 
         HigressToolSearchResult result = HigressToolSearchResult.parse(callToolResult);
 
@@ -164,13 +167,10 @@ class HigressToolSearchResultTest {
 
     @Test
     void testParse_FromTextContent_NullText() {
-        McpSchema.TextContent textContent = new McpSchema.TextContent((String) null);
-        McpSchema.CallToolResult callToolResult =
-                new McpSchema.CallToolResult(List.of(textContent), false, null);
-
-        HigressToolSearchResult result = HigressToolSearchResult.parse(callToolResult);
-
-        assertFalse(result.isSuccess());
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> McpSchema.TextContent.builder(null).build(),
+                "MCP SDK 2.0 rejects null text at construction time");
     }
 
     @Test
@@ -188,10 +188,10 @@ class HigressToolSearchResultTest {
         String jsonText =
                 "{\"tools\":[{\"name\":\"content_tool\",\"description\":\"From content\","
                         + "\"title\":\"Content\"}]}";
-        McpSchema.TextContent textContent = new McpSchema.TextContent(jsonText);
+        McpSchema.TextContent textContent = McpSchema.TextContent.builder(jsonText).build();
 
         McpSchema.CallToolResult callToolResult =
-                new McpSchema.CallToolResult(List.of(textContent), false, structuredContent);
+                new McpSchema.CallToolResult(List.of(textContent), false, structuredContent, null);
 
         HigressToolSearchResult result = HigressToolSearchResult.parse(callToolResult);
 
@@ -209,10 +209,10 @@ class HigressToolSearchResultTest {
         String jsonText =
                 "{\"tools\":[{\"name\":\"content_tool\",\"description\":\"From content\","
                         + "\"title\":\"Content\"}]}";
-        McpSchema.TextContent textContent = new McpSchema.TextContent(jsonText);
+        McpSchema.TextContent textContent = McpSchema.TextContent.builder(jsonText).build();
 
         McpSchema.CallToolResult callToolResult =
-                new McpSchema.CallToolResult(List.of(textContent), false, structuredContent);
+                new McpSchema.CallToolResult(List.of(textContent), false, structuredContent, null);
 
         HigressToolSearchResult result = HigressToolSearchResult.parse(callToolResult);
 
@@ -239,7 +239,8 @@ class HigressToolSearchResultTest {
         structuredContent.put("tools", toolsList);
 
         McpSchema.CallToolResult callToolResult =
-                new McpSchema.CallToolResult(Collections.emptyList(), false, structuredContent);
+                new McpSchema.CallToolResult(
+                        Collections.emptyList(), false, structuredContent, null);
 
         HigressToolSearchResult result = HigressToolSearchResult.parse(callToolResult);
 
@@ -258,7 +259,8 @@ class HigressToolSearchResultTest {
         structuredContent.put("tools", List.of(tool1, tool2, tool3));
 
         McpSchema.CallToolResult callToolResult =
-                new McpSchema.CallToolResult(Collections.emptyList(), false, structuredContent);
+                new McpSchema.CallToolResult(
+                        Collections.emptyList(), false, structuredContent, null);
 
         HigressToolSearchResult result = HigressToolSearchResult.parse(callToolResult);
 
@@ -273,7 +275,8 @@ class HigressToolSearchResultTest {
         structuredContent.put("tools", List.of(tool));
 
         McpSchema.CallToolResult callToolResult =
-                new McpSchema.CallToolResult(Collections.emptyList(), false, structuredContent);
+                new McpSchema.CallToolResult(
+                        Collections.emptyList(), false, structuredContent, null);
 
         HigressToolSearchResult result = HigressToolSearchResult.parse(callToolResult);
 
@@ -312,7 +315,8 @@ class HigressToolSearchResultTest {
         Map<String, Object> structuredContent = Map.of("tools", List.of(tool));
 
         McpSchema.CallToolResult callToolResult =
-                new McpSchema.CallToolResult(Collections.emptyList(), false, structuredContent);
+                new McpSchema.CallToolResult(
+                        Collections.emptyList(), false, structuredContent, null);
 
         HigressToolSearchResult result = HigressToolSearchResult.parse(callToolResult);
         HigressToolSearchResult.ToolInfo toolInfo = result.getTools().get(0);
@@ -337,7 +341,8 @@ class HigressToolSearchResultTest {
         Map<String, Object> structuredContent = Map.of("tools", List.of(tool));
 
         McpSchema.CallToolResult callToolResult =
-                new McpSchema.CallToolResult(Collections.emptyList(), false, structuredContent);
+                new McpSchema.CallToolResult(
+                        Collections.emptyList(), false, structuredContent, null);
 
         HigressToolSearchResult result = HigressToolSearchResult.parse(callToolResult);
         HigressToolSearchResult.ToolInfo toolInfo = result.getTools().get(0);
@@ -352,7 +357,8 @@ class HigressToolSearchResultTest {
         Map<String, Object> structuredContent = Map.of("tools", Collections.emptyList());
 
         McpSchema.CallToolResult callToolResult =
-                new McpSchema.CallToolResult(Collections.emptyList(), false, structuredContent);
+                new McpSchema.CallToolResult(
+                        Collections.emptyList(), false, structuredContent, null);
 
         HigressToolSearchResult result = HigressToolSearchResult.parse(callToolResult);
 

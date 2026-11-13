@@ -30,6 +30,7 @@ import io.agentscope.core.journal.ModelInvocation;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.ToolUseBlock;
+import io.agentscope.core.model.Model;
 import io.agentscope.harness.agent.HarnessAgent;
 import io.agentscope.harness.agent.middleware.SubagentEntry;
 import io.agentscope.harness.agent.tool.AgentSpawnTool;
@@ -263,6 +264,8 @@ public final class DefaultAgentManager {
                                 .runId(null)
                                 .build();
         var recorder = InvocationRecorder.from(parent);
+        // The typed bag carries the caller's pinned model; subagents keep their build-time model.
+        child.put(Model.class, null);
         child.put(InvocationRecorder.CONTEXT_KEY, null);
         child.put(InvocationRecorder.PARENT_KEY, null);
         child.put(JournalExportSink.CONTEXT_KEY, null);

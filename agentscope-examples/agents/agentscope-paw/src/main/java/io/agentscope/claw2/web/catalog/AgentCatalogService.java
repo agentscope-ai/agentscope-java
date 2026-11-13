@@ -22,8 +22,8 @@ import io.agentscope.claw2.web.scaffold.WorkspaceScaffolder;
 import io.agentscope.claw2.web.template.TemplateRegistry;
 import io.agentscope.claw2.web.toolbus.ToolEventBus;
 import io.agentscope.claw2.web.toolbus.ToolNotificationMiddleware;
-import io.agentscope.core.model.Model;
 import io.agentscope.core.journal.ThreadJournalStore;
+import io.agentscope.core.model.Model;
 import io.agentscope.harness.agent.HarnessAgent;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -85,7 +85,8 @@ public class AgentCatalogService {
         this.model = modelOpt.orElse(null);
         this.toolEventBus = toolEventBus;
         this.templateRegistry = templateRegistry;
-        this.threadJournalStore = threadJournalStore != null ? threadJournalStore : Optional.empty();
+        this.threadJournalStore =
+                threadJournalStore != null ? threadJournalStore : Optional.empty();
     }
 
     // -----------------------------------------------------------------

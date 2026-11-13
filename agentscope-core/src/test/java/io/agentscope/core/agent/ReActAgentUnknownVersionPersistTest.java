@@ -78,6 +78,8 @@ class ReActAgentUnknownVersionPersistTest {
                 ReActAgent.class.getDeclaredMethod(
                         "persistAgentStateCas",
                         ThreadKey.class,
+                        String.class,
+                        String.class,
                         AgentState.class,
                         long.class,
                         int.class);
@@ -86,6 +88,8 @@ class ReActAgentUnknownVersionPersistTest {
                 method.invoke(
                         agent,
                         new ThreadKey("u", "unconditional-persist", "s", "main"),
+                        "u",
+                        "s",
                         state,
                         AgentStateStore.UNVERSIONED,
                         0);

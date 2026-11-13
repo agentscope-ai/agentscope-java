@@ -691,11 +691,11 @@ public final class HarnessGateway implements Gateway, WakeupDispatcher.WakeupTar
     // ------------------------------------------------------------------
 
     private Mono<Msg> withGatedTurn(String gateKey, Supplier<Mono<Msg>> turn) {
-        AtomicReference<TurnLease> leaseRef = new AtomicReference<>();
         return Mono.defer(
                         () -> {
+                            TurnLease lease;
                             try {
-                                leaseRef.set(sessionTurnGate.acquire(gateKey));
+                                lease = sessionTurnGate.acquire(gateKey);
                             } catch (TurnBusyException e) {
                                 log.debug(
                                         "Skipping turn for {}: gate busy ({})",
@@ -706,24 +706,18 @@ public final class HarnessGateway implements Gateway, WakeupDispatcher.WakeupTar
                                 Thread.currentThread().interrupt();
                                 return Mono.error(new IllegalStateException(e));
                             }
-                            return turn.get();
-                        })
-                .doFinally(
-                        sig -> {
-                            TurnLease lease = leaseRef.get();
-                            if (lease != null) {
-                                lease.close();
-                            }
+                            // Lease ownership belongs to this subscription, including cancellation.
+                            return Mono.defer(turn).doFinally(sig -> lease.close());
                         })
                 .subscribeOn(Schedulers.boundedElastic());
     }
 
     private Flux<AgentEvent> withGatedStream(String gateKey, Supplier<Flux<AgentEvent>> stream) {
-        AtomicReference<TurnLease> leaseRef = new AtomicReference<>();
         return Flux.defer(
                         () -> {
+                            TurnLease lease;
                             try {
-                                leaseRef.set(sessionTurnGate.acquire(gateKey));
+                                lease = sessionTurnGate.acquire(gateKey);
                             } catch (TurnBusyException e) {
                                 log.debug(
                                         "Skipping stream for {}: gate busy ({})",
@@ -734,14 +728,7 @@ public final class HarnessGateway implements Gateway, WakeupDispatcher.WakeupTar
                                 Thread.currentThread().interrupt();
                                 return Flux.error(new IllegalStateException(e));
                             }
-                            return stream.get();
-                        })
-                .doFinally(
-                        sig -> {
-                            TurnLease lease = leaseRef.get();
-                            if (lease != null) {
-                                lease.close();
-                            }
+                            return Flux.defer(stream).doFinally(sig -> lease.close());
                         })
                 .subscribeOn(Schedulers.boundedElastic());
     }

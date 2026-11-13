@@ -20,6 +20,7 @@ import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolResultMessage;
 import io.agentscope.core.state.AgentState;
 import io.agentscope.core.util.JsonUtils;
+import io.agentscope.core.util.MessageUtils;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -62,7 +63,6 @@ public record JournalProjection(
                         "migration/baseline",
                         "state/restored" -> {
                     checkpoint = event;
-                    results.clear();
                     verifications.clear();
                     extensions.clear();
                 }
@@ -117,8 +117,11 @@ public record JournalProjection(
             for (var message : restored.getContext())
                 for (var result : message.getContentBlocks(ToolResultBlock.class))
                     existing.add(result.getId());
+            var pending = MessageUtils.pendingToolUseIds(restored.getContext());
             for (var entry : results.entrySet())
-                if (!existing.contains(entry.getKey()) && !entry.getValue().isSuspended())
+                if (pending.contains(entry.getKey())
+                        && !existing.contains(entry.getKey())
+                        && !entry.getValue().isSuspended())
                     restored.contextMutable()
                             .add(
                                     ToolResultMessage.builder()

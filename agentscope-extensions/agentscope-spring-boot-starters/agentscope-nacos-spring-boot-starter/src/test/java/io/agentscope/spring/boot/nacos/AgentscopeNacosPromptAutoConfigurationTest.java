@@ -212,4 +212,37 @@ class AgentscopeNacosPromptAutoConfigurationTest {
                             });
         }
     }
+
+    @Test
+    void propagatesModuleCredentialsAndClosesOwnedClient() throws Exception {
+        AtomicReference<Properties> properties = new AtomicReference<>();
+        try (MockedStatic<AiFactory> factory = Mockito.mockStatic(AiFactory.class)) {
+            factory.when(() -> AiFactory.createAiService(any(Properties.class)))
+                    .thenAnswer(
+                            call -> {
+                                properties.set(call.getArgument(0));
+                                return mockAiService;
+                            });
+            new ApplicationContextRunner()
+                    .withConfiguration(
+                            AutoConfigurations.of(AgentscopeNacosPromptAutoConfiguration.class))
+                    .withPropertyValues(
+                            "agentscope.nacos.prompt.enabled=true",
+                            "agentscope.nacos.username=global",
+                            "agentscope.nacos.password=global-secret",
+                            "agentscope.nacos.prompt.username=prompt",
+                            "agentscope.nacos.prompt.password=test-secret",
+                            "agentscope.nacos.prompt.namespace=prompt-namespace")
+                    .run(
+                            context -> {
+                                assertThat(properties.get().getProperty(PropertyKeyConst.USERNAME))
+                                        .isEqualTo("prompt");
+                                assertThat(properties.get().getProperty(PropertyKeyConst.PASSWORD))
+                                        .isEqualTo("test-secret");
+                                assertThat(properties.get().getProperty(PropertyKeyConst.NAMESPACE))
+                                        .isEqualTo("prompt-namespace");
+                            });
+            Mockito.verify(mockAiService).shutdown();
+        }
+    }
 }

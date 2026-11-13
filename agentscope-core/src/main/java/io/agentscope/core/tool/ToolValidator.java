@@ -120,7 +120,7 @@ public final class ToolValidator {
             // Validate
             List<Error> errors = jsonSchema.validate(normalizedInput, InputFormat.JSON);
 
-            if (errors.isEmpty()) {
+            if (errors == null || errors.isEmpty()) {
                 return null; // Validation passed
             }
 
@@ -129,6 +129,40 @@ public final class ToolValidator {
                     .map(e -> e.getInstanceLocation() + ": " + e.getMessage())
                     .collect(Collectors.joining("\n"));
 
+        } catch (Exception e) {
+            return "Schema validation error: " + e.getMessage();
+        }
+    }
+
+    /**
+     * Validates an already-parsed structured-output payload against a JSON Schema.
+     *
+     * <p>Unlike {@link #validateInput(String, Map)}, this method does not normalize optional
+     * null fields: structured output follows JSON Schema semantics directly, so an explicit
+     * {@code null} is valid only when the schema allows it.
+     *
+     * @param output the parsed model output
+     * @param schema the JSON Schema to validate against
+     * @return {@code null} when the output conforms, otherwise a newline-separated error list
+     */
+    public static String validateJsonOutput(JsonNode output, Map<String, Object> schema) {
+        if (schema == null || schema.isEmpty()) {
+            return null;
+        }
+        if (output == null) {
+            return "$: output is null";
+        }
+
+        try {
+            JsonNode schemaNode = JsonUtils.getJsonCodec().convertValue(schema, JsonNode.class);
+            Schema compiledSchema = SCHEMA_REGISTRY.getSchema(schemaNode);
+            List<Error> errors = compiledSchema.validate(output);
+            if (errors == null || errors.isEmpty()) {
+                return null;
+            }
+            return errors.stream()
+                    .map(e -> e.getInstanceLocation() + ": " + e.getMessage())
+                    .collect(Collectors.joining("\n"));
         } catch (Exception e) {
             return "Schema validation error: " + e.getMessage();
         }

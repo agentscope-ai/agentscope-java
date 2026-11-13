@@ -37,6 +37,7 @@ import io.agentscope.core.model.Model;
 import io.agentscope.core.model.ToolSchema;
 import io.agentscope.core.permission.PermissionContextState;
 import io.agentscope.core.permission.PermissionDecision;
+import io.agentscope.core.state.InMemoryAgentStateStore;
 import io.agentscope.core.tool.ToolBase;
 import io.agentscope.core.tool.ToolCallParam;
 import io.agentscope.core.tool.Toolkit;
@@ -186,6 +187,7 @@ class HarnessInvocationRecoveryTest {
                 .workspace(workspace)
                 .model(model)
                 .toolkit(toolkit)
+                .stateStore(new InMemoryAgentStateStore())
                 .threadJournalStore(store)
                 .disableShellTool()
                 .disableFilesystemTools()

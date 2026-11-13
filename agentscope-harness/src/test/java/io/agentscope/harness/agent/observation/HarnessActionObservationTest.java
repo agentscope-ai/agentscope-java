@@ -31,6 +31,7 @@ import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.Model;
 import io.agentscope.core.observation.ActionObserver;
+import io.agentscope.core.state.InMemoryAgentStateStore;
 import io.agentscope.core.tool.Tool;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.harness.agent.HarnessAgent;
@@ -81,6 +82,7 @@ class HarnessActionObservationTest {
                         .name("observed")
                         .model(model)
                         .workspace(workspace)
+                        .stateStore(new InMemoryAgentStateStore())
                         .threadJournalStore(store)
                         .toolkit(toolkit)
                         .build()) {

@@ -134,6 +134,19 @@ class JsonUtilsTest {
         }
 
         @Test
+        void rejectsTrailingValuesAndAcceptsTrailingWhitespace() {
+            assertFalse(JsonUtils.isValidJsonObject("{\"a\":1}{\"b\":"));
+            assertFalse(JsonUtils.isValidJsonObject("{}{}"));
+            assertFalse(JsonUtils.isValidJsonObject("{\"a\":1}]"));
+            assertFalse(JsonUtils.isValidJsonObject("{} garbage"));
+            assertTrue(JsonUtils.isValidJsonObject(" {\"a\": [1, {\"text\": \"} {\"}]} \n\t"));
+            // The default codec also enforces the single-root decoding contract.
+            assertThrows(
+                    JsonException.class,
+                    () -> JsonUtils.getJsonCodec().fromJson("{\"a\":1}{}", Map.class));
+        }
+
+        @Test
         @DisplayName("Should reject incomplete JSON")
         void testIncompleteJson() {
             assertFalse(JsonUtils.isValidJsonObject("{\"query\":\"hel"));
@@ -250,6 +263,104 @@ class JsonUtilsTest {
                             .build();
 
             assertEquals("{}", JsonUtils.resolveToolCallArgsJson(block));
+        }
+
+        @Test
+        @DisplayName("Should fall back to input when content is a fabricated empty object")
+        void testEmptyObjectContentWithArgsFallsBackToInput() {
+            // Legacy blocks persisted by the accumulator's old "{}" fabrication, or directly
+            // constructed blocks: the empty object must not mask intact parsed arguments.
+            ToolUseBlock block =
+                    ToolUseBlock.builder()
+                            .id("call_1")
+                            .name("tool")
+                            .input(Map.of("key", "value"))
+                            .content("{}")
+                            .build();
+
+            String result = JsonUtils.resolveToolCallArgsJson(block);
+            assertTrue(result.contains("key"), "result: " + result);
+        }
+
+        @Test
+        @DisplayName("Should fall back to input for whitespace-padded empty objects")
+        void testWhitespaceEmptyObjectContentWithArgsFallsBackToInput() {
+            ToolUseBlock block =
+                    ToolUseBlock.builder()
+                            .id("call_1")
+                            .name("tool")
+                            .input(Map.of("key", "value"))
+                            .content("{ \n }")
+                            .build();
+
+            String result = JsonUtils.resolveToolCallArgsJson(block);
+            assertTrue(result.contains("key"), "result: " + result);
+        }
+
+        @Test
+        @DisplayName("Should keep empty-object content when input carries no arguments")
+        void testEmptyObjectContentWithoutArgsStaysEmpty() {
+            ToolUseBlock block =
+                    ToolUseBlock.builder()
+                            .id("call_1")
+                            .name("tool")
+                            .input(Map.of())
+                            .content("{}")
+                            .build();
+
+            assertEquals("{}", JsonUtils.resolveToolCallArgsJson(block));
+        }
+
+        @Test
+        @DisplayName("Should not fall back to input for malformed-argument blocks")
+        void testMalformedBlockKeepsContentDespiteInput() {
+            // The accumulator marks truncated/corrupt raw content and keeps merged input
+            // beside it; the input must not let a malformed call pass validation on direct
+            // Toolkit/executor paths (the agent loop already refuses these blocks).
+            ToolUseBlock block =
+                    ToolUseBlock.builder()
+                            .id("call_1")
+                            .name("tool")
+                            .input(Map.of("key", "value"))
+                            .content("{}")
+                            .metadata(Map.of(ToolUseBlock.METADATA_MALFORMED_ARGUMENTS, true))
+                            .build();
+
+            assertEquals("{}", JsonUtils.resolveToolCallArgsJson(block));
+        }
+
+        @Test
+        @DisplayName("Should preserve valid content on malformed-argument blocks")
+        void testMalformedBlockWithValidContentKeepsContent() {
+            // Replay/compaction consumers still see the raw content the provider sent; the
+            // marker blocks execution (executor guard), it does not rewrite history.
+            ToolUseBlock block =
+                    ToolUseBlock.builder()
+                            .id("call_1")
+                            .name("tool")
+                            .input(Map.of("key", "value"))
+                            .content("{\"a\":10,\"b\":20}")
+                            .metadata(Map.of(ToolUseBlock.METADATA_MALFORMED_ARGUMENTS, true))
+                            .build();
+
+            assertEquals("{\"a\":10,\"b\":20}", JsonUtils.resolveToolCallArgsJson(block));
+        }
+
+        @Test
+        @DisplayName("Should sanitize malformed blocks with null or invalid content")
+        void testMalformedBlockWithoutUsableContentResolvesEmpty() {
+            for (String content : new String[] {null, "", "{bad"}) {
+                ToolUseBlock block =
+                        ToolUseBlock.builder()
+                                .id("call_1")
+                                .name("tool")
+                                .input(Map.of("key", "value"))
+                                .content(content)
+                                .metadata(Map.of(ToolUseBlock.METADATA_MALFORMED_ARGUMENTS, true))
+                                .build();
+
+                assertEquals("{}", JsonUtils.resolveToolCallArgsJson(block), "content: " + content);
+            }
         }
     }
 

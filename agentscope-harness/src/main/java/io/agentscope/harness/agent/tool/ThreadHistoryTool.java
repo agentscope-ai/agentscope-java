@@ -19,6 +19,7 @@ import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.agent.ThreadKey;
 import io.agentscope.core.journal.ThreadHistory;
 import io.agentscope.core.journal.ThreadJournalStore;
+import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.tool.Tool;
 import io.agentscope.core.tool.ToolParam;
 import io.agentscope.core.util.JsonUtils;
@@ -33,6 +34,13 @@ import java.util.function.Predicate;
 
 /** Read-only Thread discovery and full conversation views from the authoritative native log. */
 public class ThreadHistoryTool {
+    /**
+     * Hard ceiling for model-supplied result limits. The tool is excluded from
+     * {@code ToolResultEvictionConfig} on the "bounded results" rationale, so nothing
+     * downstream trims an oversized result — the clamp has to happen here (#3270).
+     */
+    private static final int MAX_RESULTS_CEILING = 100;
+
     private final ThreadJournalStore store;
 
     public ThreadHistoryTool(WorkspaceManager workspace) {
@@ -43,7 +51,7 @@ public class ThreadHistoryTool {
         this.store = Objects.requireNonNull(store);
     }
 
-    public String threadSearch(
+    public ToolResultBlock threadSearch(
             RuntimeContext runtimeContext, String query, String agentId, Integer maxResults) {
         return threadSearch(runtimeContext, query, agentId, maxResults, null);
     }
@@ -54,7 +62,7 @@ public class ThreadHistoryTool {
             description =
                     "Search native Thread conversation messages, tool calls and results for a"
                             + " keyword or phrase.")
-    public String threadSearch(
+    public ToolResultBlock threadSearch(
             RuntimeContext runtimeContext,
             @ToolParam(
                             name = "query",
@@ -70,7 +78,7 @@ public class ThreadHistoryTool {
                     String agentId,
             @ToolParam(
                             name = "maxResults",
-                            description = "Maximum number of results (default: 10)",
+                            description = "Maximum number of results (default: 10, capped at 100)",
                             required = false)
                     Integer maxResults,
             @ToolParam(
@@ -81,7 +89,7 @@ public class ThreadHistoryTool {
                                             + " message. Case-insensitive literal matching.",
                             required = false)
                     String matchMode) {
-        if (query == null || query.isBlank()) return "Error: query is required";
+        if (query == null || query.isBlank()) return ToolResultBlock.error("query is required");
         RuntimeContext rc = context(runtimeContext);
         int limit = positiveLimit(maxResults, 10);
         Predicate<String> matcher;
@@ -95,7 +103,7 @@ public class ThreadHistoryTool {
                                 return text -> text.contains(lowerTerm);
                             });
         } catch (IllegalArgumentException error) {
-            return "Error: " + error.getMessage();
+            return ToolResultBlock.error(error.getMessage());
         }
         var matches = new ArrayList<Map<String, Object>>();
         for (ThreadKey key : threads(rc, agentId)) {
@@ -120,11 +128,12 @@ public class ThreadHistoryTool {
                                     view.asOfSeq(),
                                     "message",
                                     message));
-                    if (matches.size() >= limit) return JsonUtils.getJsonCodec().toJson(matches);
+                    if (matches.size() >= limit)
+                        return ToolResultBlock.success(JsonUtils.getJsonCodec().toJson(matches));
                 }
             }
         }
-        return JsonUtils.getJsonCodec().toJson(matches);
+        return ToolResultBlock.success(JsonUtils.getJsonCodec().toJson(matches));
     }
 
     @Tool(
@@ -133,13 +142,14 @@ public class ThreadHistoryTool {
             description =
                     "List native Threads for an agent in the caller's workspace storage"
                             + " namespace.")
-    public String threadList(
+    public ToolResultBlock threadList(
             RuntimeContext runtimeContext,
             @ToolParam(name = "agentId", description = "Agent ID to list Threads for")
                     String agentId) {
-        if (agentId == null || agentId.isBlank()) return "Error: agentId is required";
+        if (agentId == null || agentId.isBlank())
+            return ToolResultBlock.error("agentId is required");
         RuntimeContext rc = context(runtimeContext);
-        return JsonUtils.getJsonCodec().toJson(threads(rc, agentId));
+        return ToolResultBlock.success(JsonUtils.getJsonCodec().toJson(threads(rc, agentId)));
     }
 
     @Tool(
@@ -148,7 +158,7 @@ public class ThreadHistoryTool {
             description =
                     "Read committed conversation history including messages before context"
                             + " compaction.")
-    public String threadHistory(
+    public ToolResultBlock threadHistory(
             RuntimeContext runtimeContext,
             @ToolParam(name = "agentId", description = "Agent ID") String agentId,
             @ToolParam(name = "sessionId", description = "Session ID") String sessionId,
@@ -159,11 +169,11 @@ public class ThreadHistoryTool {
                     String threadId,
             @ToolParam(
                             name = "lastN",
-                            description = "Number of recent messages (default: 20)",
+                            description = "Number of recent messages (default: 20, capped at 100)",
                             required = false)
                     Integer lastN) {
         if (agentId == null || agentId.isBlank() || sessionId == null || sessionId.isBlank()) {
-            return "Error: agentId and sessionId are required";
+            return ToolResultBlock.error("agentId and sessionId are required");
         }
         RuntimeContext rc = context(runtimeContext);
         RuntimeContext sessionContext =
@@ -174,20 +184,23 @@ public class ThreadHistoryTool {
                                 rc.getUserId(), agentId, sessionId, sessionContext.getThreadId()),
                         sessionContext);
         if (log.head().seq() == 0)
-            return "Thread not found: " + sessionId + "/" + sessionContext.getThreadId();
+            return ToolResultBlock.error(
+                    "Thread not found: " + sessionId + "/" + sessionContext.getThreadId());
         var view = ThreadHistory.transcript(log);
         var messages = view.messages();
         int limit = positiveLimit(lastN, 20);
-        return JsonUtils.getJsonCodec()
-                .toJson(
-                        Map.of(
-                                "asOfSeq",
-                                view.asOfSeq(),
-                                "totalMessages",
-                                messages.size(),
-                                "messages",
-                                messages.subList(
-                                        Math.max(0, messages.size() - limit), messages.size())));
+        return ToolResultBlock.success(
+                JsonUtils.getJsonCodec()
+                        .toJson(
+                                Map.of(
+                                        "asOfSeq",
+                                        view.asOfSeq(),
+                                        "totalMessages",
+                                        messages.size(),
+                                        "messages",
+                                        messages.subList(
+                                                Math.max(0, messages.size() - limit),
+                                                messages.size()))));
     }
 
     private List<ThreadKey> threads(RuntimeContext rc, String agentId) {
@@ -213,6 +226,6 @@ public class ThreadHistoryTool {
     }
 
     private static int positiveLimit(Integer value, int fallback) {
-        return value == null || value <= 0 ? fallback : value;
+        return value == null || value <= 0 ? fallback : Math.min(value, MAX_RESULTS_CEILING);
     }
 }

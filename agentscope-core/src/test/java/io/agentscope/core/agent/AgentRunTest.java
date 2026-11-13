@@ -28,7 +28,9 @@ import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.UserMessage;
 import io.agentscope.core.middleware.MiddlewareBase;
 import java.time.Duration;
+import java.util.EnumSet;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
@@ -193,6 +195,11 @@ class AgentRunTest {
         MiddlewareBase retry =
                 new MiddlewareBase() {
                     @Override
+                    public Set<ExtensionPoint> activePoints() {
+                        return EnumSet.of(ExtensionPoint.ON_AGENT, ExtensionPoint.ON_SYSTEM_PROMPT);
+                    }
+
+                    @Override
                     public Flux<io.agentscope.core.event.AgentEvent> onAgent(
                             Agent agent,
                             RuntimeContext ctx,
@@ -239,6 +246,11 @@ class AgentRunTest {
         AtomicReference<Msg> childReply = new AtomicReference<>();
         MiddlewareBase nested =
                 new MiddlewareBase() {
+                    @Override
+                    public Set<ExtensionPoint> activePoints() {
+                        return EnumSet.of(ExtensionPoint.ON_SYSTEM_PROMPT);
+                    }
+
                     @Override
                     public Mono<String> onSystemPrompt(
                             Agent agent, RuntimeContext ctx, String prompt) {
@@ -294,6 +306,11 @@ class AgentRunTest {
         MiddlewareBase recorder =
                 new MiddlewareBase() {
                     @Override
+                    public Set<ExtensionPoint> activePoints() {
+                        return EnumSet.of(ExtensionPoint.ON_SYSTEM_PROMPT);
+                    }
+
+                    @Override
                     public Mono<String> onSystemPrompt(
                             Agent agent, RuntimeContext ctx, String prompt) {
                         observed.add(ctx.getRunId());
@@ -339,6 +356,11 @@ class AgentRunTest {
                 new ConcurrentHashMap<>();
         private final ConcurrentHashMap<String, Sinks.One<String>> admissions =
                 new ConcurrentHashMap<>();
+
+        @Override
+        public Set<ExtensionPoint> activePoints() {
+            return EnumSet.of(ExtensionPoint.ON_SYSTEM_PROMPT);
+        }
 
         @Override
         public Mono<String> onSystemPrompt(Agent agent, RuntimeContext ctx, String prompt) {

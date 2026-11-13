@@ -18,6 +18,7 @@ package io.agentscope.core.memory;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.tool.Tool;
 import io.agentscope.core.tool.ToolParam;
 import java.util.ArrayList;
@@ -105,7 +106,7 @@ public class LongTermMemoryTools {
                     "Record important information to long-term memory for future reference. Use"
                             + " this when the user shares preferences, personal information, or"
                             + " important facts that should be remembered across conversations.")
-    public Mono<String> recordToMemory(
+    public Mono<ToolResultBlock> recordToMemory(
             @ToolParam(
                             name = "thinking",
                             description = "Your reasoning about what to record and why")
@@ -117,7 +118,7 @@ public class LongTermMemoryTools {
                                             + " and concise.")
                     List<String> content) {
         if (content == null || content.isEmpty()) {
-            return Mono.just("No content provided to record");
+            return Mono.just(ToolResultBlock.error("No content provided to record"));
         }
 
         // Combine thinking and content into messages
@@ -142,13 +143,16 @@ public class LongTermMemoryTools {
         }
 
         if (messages.isEmpty()) {
-            return Mono.just("No valid content to record");
+            return Mono.just(ToolResultBlock.error("No valid content to record"));
         }
 
         // Call underlying memory record method
         return memory.record(messages)
-                .then(Mono.just("Successfully recorded to long-term memory"))
-                .onErrorResume(e -> Mono.just("Error recording memory: " + e.getMessage()));
+                .then(
+                        Mono.just(
+                                ToolResultBlock.success(
+                                        "Successfully recorded to long-term memory")))
+                .onErrorResume(e -> Mono.just(ToolResultBlock.error(e.getMessage())));
     }
 
     /**
@@ -182,7 +186,7 @@ public class LongTermMemoryTools {
             description =
                     "Retrieve information from long-term memory based on keywords. Use this to"
                             + " recall user preferences, past conversations, or important facts.")
-    public Mono<String> retrieveFromMemory(
+    public Mono<ToolResultBlock> retrieveFromMemory(
             @ToolParam(
                             name = "keywords",
                             description =
@@ -190,7 +194,7 @@ public class LongTermMemoryTools {
                                             + " names, dates, locations).")
                     List<String> keywords) {
         if (keywords == null || keywords.isEmpty()) {
-            return Mono.just("No keywords provided for search");
+            return Mono.just(ToolResultBlock.error("No keywords provided for search"));
         }
 
         // Combine keywords into a query message
@@ -206,10 +210,10 @@ public class LongTermMemoryTools {
                 .map(
                         result -> {
                             if (result == null || result.isEmpty()) {
-                                return "No relevant memories found";
+                                return ToolResultBlock.success("No relevant memories found");
                             }
-                            return wrap(result);
+                            return ToolResultBlock.success(wrap(result));
                         })
-                .onErrorResume(e -> Mono.just("Error retrieving memory: " + e.getMessage()));
+                .onErrorResume(e -> Mono.just(ToolResultBlock.error(e.getMessage())));
     }
 }

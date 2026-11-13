@@ -40,6 +40,10 @@ OpenAIChatModel model = OpenAIChatModel.builder()
     .build();
 ```
 
+## 推理历史
+
+Formatter 会在会话历史中保留推理详情块，包括加密数据。生成下一轮请求时，每条详情会复制到请求对象，并省略可选的 `index` 字段，避免严格的 OpenAI 兼容端点将其判为不允许回传的流式字段。原始响应与持久化历史仍保留 index；请求中的 `id`、`type`、`data`、`text`、`format` 及块顺序保持不变。
+
 ## Spring Boot
 
 Spring Boot 应用可以使用 OpenAI starter：

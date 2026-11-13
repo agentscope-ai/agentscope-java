@@ -17,6 +17,8 @@ package io.agentscope.harness.agent.tool;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.agentscope.core.message.ToolResultBlock;
+import io.agentscope.core.message.ToolResultState;
 import io.agentscope.core.tool.Tool;
 import io.agentscope.core.tool.ToolParam;
 import io.agentscope.harness.agent.team.TeamClient;
@@ -57,7 +59,7 @@ public final class TeamTool {
                             + " rejectPlan, completeTeam. Lead-only actions require isLead."
                             + " expected_version is optional for claimTask (omit to claim at the"
                             + " current board version).")
-    public String team(
+    public ToolResultBlock team(
             @ToolParam(name = "action", description = "Team action name") String action,
             @ToolParam(name = "task_id", description = "Task id", required = false) String taskId,
             @ToolParam(name = "subject", description = "Task subject", required = false)
@@ -180,11 +182,11 @@ public final class TeamTool {
                                     require(agentRef, "agent_ref"),
                                     prompt == null ? "" : prompt)
                             .block();
-                    yield "{\"ok\":true}";
+                    yield ToolResultBlock.success("{\"ok\":true}");
                 }
                 case "shutdownmember" -> {
                     client.shutdownMember(ns, team, require(memberName, "member_name")).block();
-                    yield "{\"ok\":true}";
+                    yield ToolResultBlock.success("{\"ok\":true}");
                 }
                 case "submitplan" -> {
                     String text =
@@ -197,19 +199,19 @@ public final class TeamTool {
                                     memberName == null || memberName.isBlank() ? me : memberName,
                                     text)
                             .block();
-                    yield "{\"ok\":true}";
+                    yield ToolResultBlock.success("{\"ok\":true}");
                 }
                 case "approveplan" -> {
                     client.approvePlan(ns, team, require(memberName, "member_name")).block();
-                    yield "{\"ok\":true}";
+                    yield ToolResultBlock.success("{\"ok\":true}");
                 }
                 case "rejectplan" -> {
                     client.rejectPlan(ns, team, require(memberName, "member_name")).block();
-                    yield "{\"ok\":true}";
+                    yield ToolResultBlock.success("{\"ok\":true}");
                 }
                 case "completeteam" -> {
                     client.completeTeam(ns, team).block();
-                    yield "{\"ok\":true}";
+                    yield ToolResultBlock.success("{\"ok\":true}");
                 }
                 default -> error("unknown action: " + act);
             };
@@ -223,7 +225,7 @@ public final class TeamTool {
     // ── Per-action aliases (models often call createTask/sendMessage as tool names) ──
 
     @Tool(name = "listTasks", description = "List team tasks on the shared board.")
-    public String listTasks() {
+    public ToolResultBlock listTasks() {
         return team(
                 "listTasks",
                 null,
@@ -247,7 +249,7 @@ public final class TeamTool {
                     "List unblocked pending tasks you can start: unassigned board tasks and tasks"
                             + " already assigned to you. Prefer this (or listTasks) before product"
                             + " work; then claimTask.")
-    public String listClaimableTasks() {
+    public ToolResultBlock listClaimableTasks() {
         return team(
                 "listClaimableTasks",
                 null,
@@ -269,7 +271,7 @@ public final class TeamTool {
             name = "createTask",
             description =
                     "Create a task on the shared team board. Lead typically sets owner to assign.")
-    public String createTask(
+    public ToolResultBlock createTask(
             @ToolParam(name = "subject", description = "Short task title") String subject,
             @ToolParam(name = "description", description = "Task details", required = false)
                     String description,
@@ -298,7 +300,7 @@ public final class TeamTool {
     }
 
     @Tool(name = "assignTask", description = "Assign a pending task to a member (lead).")
-    public String assignTask(
+    public ToolResultBlock assignTask(
             @ToolParam(name = "task_id", description = "Task id") String taskId,
             @ToolParam(
                             name = "owner",
@@ -334,7 +336,7 @@ public final class TeamTool {
                     "Claim a pending task for yourself (or start work already assigned to you)."
                             + " expected_version is optional — omit it to claim at the current"
                             + " version.")
-    public String claimTask(
+    public ToolResultBlock claimTask(
             @ToolParam(name = "task_id", description = "Task id") String taskId,
             @ToolParam(
                             name = "expected_version",
@@ -359,7 +361,7 @@ public final class TeamTool {
     }
 
     @Tool(name = "unclaimTask", description = "Return a claimed task to the board.")
-    public String unclaimTask(
+    public ToolResultBlock unclaimTask(
             @ToolParam(name = "task_id", description = "Task id") String taskId,
             @ToolParam(
                             name = "expected_version",
@@ -388,7 +390,7 @@ public final class TeamTool {
             description =
                     "Mark a task failed with a reason when you cannot finish it. The lead is"
                         + " notified automatically. Use this instead of silently abandoning work.")
-    public String failTask(
+    public ToolResultBlock failTask(
             @ToolParam(name = "task_id", description = "Task id") String taskId,
             @ToolParam(name = "reason", description = "Why the task failed") String reason) {
         return team(
@@ -413,7 +415,7 @@ public final class TeamTool {
             description =
                     "Mark a task completed with a result summary. The lead is notified"
                             + " automatically, so summarize the outcome in result.")
-    public String completeTask(
+    public ToolResultBlock completeTask(
             @ToolParam(name = "task_id", description = "Task id") String taskId,
             @ToolParam(name = "result", description = "Completion result text", required = false)
                     String result) {
@@ -435,7 +437,7 @@ public final class TeamTool {
     }
 
     @Tool(name = "sendMessage", description = "Send a mailbox message to one teammate.")
-    public String sendMessage(
+    public ToolResultBlock sendMessage(
             @ToolParam(name = "to_member", description = "Recipient member name") String toMember,
             @ToolParam(name = "content", description = "Message body") String content) {
         return team(
@@ -456,7 +458,7 @@ public final class TeamTool {
     }
 
     @Tool(name = "broadcastMessage", description = "Broadcast a mailbox message to all teammates.")
-    public String broadcastMessage(
+    public ToolResultBlock broadcastMessage(
             @ToolParam(name = "content", description = "Message body") String content) {
         return team(
                 "broadcastMessage",
@@ -476,7 +478,7 @@ public final class TeamTool {
     }
 
     @Tool(name = "listMessages", description = "List recent team mailbox messages.")
-    public String listMessages(
+    public ToolResultBlock listMessages(
             @ToolParam(name = "limit", description = "Max messages", required = false)
                     Integer limit) {
         return team(
@@ -497,7 +499,7 @@ public final class TeamTool {
     }
 
     @Tool(name = "listMembers", description = "List team members and phases.")
-    public String listMembers() {
+    public ToolResultBlock listMembers() {
         return team(
                 "listMembers",
                 null,
@@ -516,7 +518,7 @@ public final class TeamTool {
     }
 
     @Tool(name = "spawnMember", description = "Spawn a dynamic teammate (lead).")
-    public String spawnMember(
+    public ToolResultBlock spawnMember(
             @ToolParam(name = "member_name", description = "New member name") String memberName,
             @ToolParam(name = "agent_ref", description = "Registry agentRef") String agentRef,
             @ToolParam(name = "prompt", description = "Role prompt", required = false)
@@ -539,7 +541,7 @@ public final class TeamTool {
     }
 
     @Tool(name = "shutdownMember", description = "Shut down a teammate (lead).")
-    public String shutdownMember(
+    public ToolResultBlock shutdownMember(
             @ToolParam(name = "member_name", description = "Member to remove") String memberName) {
         return team(
                 "shutdownMember",
@@ -559,7 +561,7 @@ public final class TeamTool {
     }
 
     @Tool(name = "submitPlan", description = "Submit a plan for lead approval.")
-    public String submitPlan(
+    public ToolResultBlock submitPlan(
             @ToolParam(name = "plan_text", description = "Plan body") String planText,
             @ToolParam(name = "member_name", description = "Member name", required = false)
                     String memberName) {
@@ -581,7 +583,7 @@ public final class TeamTool {
     }
 
     @Tool(name = "approvePlan", description = "Approve a member plan (lead).")
-    public String approvePlan(
+    public ToolResultBlock approvePlan(
             @ToolParam(name = "member_name", description = "Member whose plan to approve")
                     String memberName) {
         return team(
@@ -602,7 +604,7 @@ public final class TeamTool {
     }
 
     @Tool(name = "rejectPlan", description = "Reject a member plan (lead).")
-    public String rejectPlan(
+    public ToolResultBlock rejectPlan(
             @ToolParam(name = "member_name", description = "Member whose plan to reject")
                     String memberName) {
         return team(
@@ -623,7 +625,7 @@ public final class TeamTool {
     }
 
     @Tool(name = "completeTeam", description = "Mark the team objective complete (lead).")
-    public String completeTeam() {
+    public ToolResultBlock completeTeam() {
         return team(
                 "completeTeam",
                 null,
@@ -679,28 +681,29 @@ public final class TeamTool {
         return v;
     }
 
-    private static String json(Object value) {
+    private static ToolResultBlock json(Object value) {
         try {
             if (value == null) {
-                return "null";
+                return ToolResultBlock.success("null");
             }
             if (value instanceof List<?> list) {
                 // Prefer compact task/member records
-                return MAPPER.writeValueAsString(list);
+                return ToolResultBlock.success(MAPPER.writeValueAsString(list));
             }
             if (value instanceof TeamTask
                     || value instanceof TeamMessage
                     || value instanceof TeamMemberInfo) {
-                return MAPPER.writeValueAsString(value);
+                return ToolResultBlock.success(MAPPER.writeValueAsString(value));
             }
-            return MAPPER.writeValueAsString(value);
+            return ToolResultBlock.success(MAPPER.writeValueAsString(value));
         } catch (JsonProcessingException e) {
             return error("json encode failed");
         }
     }
 
-    private static String error(String msg) {
-        return "{\"error\":" + quote(msg) + "}";
+    private static ToolResultBlock error(String msg) {
+        return ToolResultBlock.text("{\"error\":" + quote(msg) + "}")
+                .withState(ToolResultState.ERROR);
     }
 
     private static String quote(String s) {

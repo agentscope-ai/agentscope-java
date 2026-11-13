@@ -16,11 +16,11 @@
 
 package io.agentscope.core.a2a.server.utils;
 
+import static io.agentscope.core.a2a.agent.message.MetadataUtil.metadataValue;
+import static io.agentscope.core.a2a.agent.message.MetadataUtil.toJsonValues;
+import static io.agentscope.core.a2a.agent.message.MetadataUtil.withMetadata;
 import static io.agentscope.core.a2a.agent.utils.MessageConvertUtil.convertFromMsg;
 
-import io.a2a.spec.Artifact;
-import io.a2a.spec.Message;
-import io.a2a.spec.Part;
 import io.agentscope.core.a2a.agent.message.ContentBlockParserRouter;
 import io.agentscope.core.a2a.agent.message.MessageConstants;
 import io.agentscope.core.a2a.agent.message.PartParserRouter;
@@ -37,6 +37,9 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
+import org.a2aproject.sdk.spec.Artifact;
+import org.a2aproject.sdk.spec.Message;
+import org.a2aproject.sdk.spec.Part;
 
 /**
  * Message Converter between Agentscope {@link Msg} and A2A {@link Message} or {@link Artifact}.
@@ -57,7 +60,7 @@ public class MessageConvertUtil {
      * @return the converted Message object
      */
     public static Message convertFromMsgToMessage(List<Msg> msgs, String taskId, String contextId) {
-        Message.Builder builder = new Message.Builder(convertFromMsg(msgs));
+        Message.Builder builder = Message.builder(convertFromMsg(msgs));
         return builder.taskId(taskId).contextId(contextId).build();
     }
 
@@ -106,17 +109,27 @@ public class MessageConvertUtil {
      * @return the converted Message object
      */
     public static Message convertFromMsgToMessage(Msg msg, String taskId, String contextId) {
-        Message.Builder builder = new Message.Builder();
+        Message.Builder builder = Message.builder();
         Map<String, Object> metadata = new HashMap<>();
         if (null != msg.getMetadata() && !msg.getMetadata().isEmpty()) {
-            metadata.put(msg.getId(), msg.getMetadata());
+            metadata.put(msg.getId(), toJsonValues(msg.getMetadata()));
         }
         return builder.parts(convertFromContentBlocks(msg))
                 .metadata(metadata)
-                .role(Message.Role.AGENT)
+                .role(Message.Role.ROLE_AGENT)
                 .taskId(taskId)
                 .contextId(contextId)
                 .build();
+    }
+
+    /**
+     * Convert the metadata of a {@link Msg} to the metadata of an A2A artifact.
+     *
+     * @param msg the Msg whose metadata to convert
+     * @return the metadata as JSON values, or {@code null} if the Msg has none
+     */
+    public static Map<String, Object> convertMetadata(Msg msg) {
+        return toJsonValues(msg.getMetadata());
     }
 
     /**
@@ -141,22 +154,18 @@ public class MessageConvertUtil {
                 msg.getContent().stream()
                         .map(CONTENT_BLOCK_PARSER::parse)
                         .filter(Objects::nonNull)
-                        .peek(
-                                part -> {
-                                    part.getMetadata()
-                                            .put(MessageConstants.MSG_ID_METADATA_KEY, msg.getId());
-                                    part.getMetadata()
-                                            .put(
-                                                    MessageConstants.SOURCE_NAME_METADATA_KEY,
-                                                    msg.getName());
-                                    if (streamingChunk) {
-                                        part.getMetadata()
-                                                .put(
-                                                        MessageConstants.STREAM_CHUNK_METADATA_KEY,
-                                                        Boolean.TRUE);
-                                    }
-                                })
+                        .map(part -> withMetadata(part, partMetadata(msg, streamingChunk)))
                         .toList());
+    }
+
+    private static Map<String, Object> partMetadata(Msg msg, boolean streamingChunk) {
+        Map<String, Object> metadata = new HashMap<>();
+        metadata.put(MessageConstants.MSG_ID_METADATA_KEY, msg.getId());
+        metadata.put(MessageConstants.SOURCE_NAME_METADATA_KEY, msg.getName());
+        if (streamingChunk) {
+            metadata.put(MessageConstants.STREAM_CHUNK_METADATA_KEY, Boolean.TRUE);
+        }
+        return metadata;
     }
 
     private static boolean canMergeStreamingChunk(Msg current, Msg next) {
@@ -232,7 +241,7 @@ public class MessageConvertUtil {
         Map<String, List<ContentBlock>> partsByMsgId = new HashMap<>();
         Map<String, String> msgIdToName = new HashMap<>();
         Map<String, MsgRole> msgIdToRole = new HashMap<>();
-        message.getParts().stream()
+        message.parts().stream()
                 .filter(Objects::nonNull)
                 .forEach(
                         part -> {
@@ -262,7 +271,7 @@ public class MessageConvertUtil {
                                         .name(msgIdToName.get(msgId))
                                         .role(
                                                 msgIdToRole.getOrDefault(
-                                                        msgId, convertRole(message.getRole())))
+                                                        msgId, convertRole(message.role())))
                                         .content(partsByMsgId.get(msgId))
                                         .metadata(getMsgMetadata(message, msgId))
                                         .build()));
@@ -270,40 +279,28 @@ public class MessageConvertUtil {
     }
 
     private static String getMsgId(Part<?> part) {
-        if (null == part.getMetadata()
-                || null == part.getMetadata().get(MessageConstants.MSG_ID_METADATA_KEY)) {
-            return UUID.randomUUID().toString();
-        }
-        return part.getMetadata().get(MessageConstants.MSG_ID_METADATA_KEY).toString();
+        String msgId = metadataValue(part, MessageConstants.MSG_ID_METADATA_KEY);
+        return null == msgId ? UUID.randomUUID().toString() : msgId;
     }
 
     private static String getMsgName(Part<?> part) {
-        if (null == part.getMetadata()) {
-            return null;
-        }
-        if (null == part.getMetadata().get(MessageConstants.SOURCE_NAME_METADATA_KEY)) {
-            return null;
-        }
-        return part.getMetadata().get(MessageConstants.SOURCE_NAME_METADATA_KEY).toString();
+        return metadataValue(part, MessageConstants.SOURCE_NAME_METADATA_KEY);
     }
 
     private static MsgRole getMsgRole(Part<?> part) {
-        if (null == part.getMetadata()) {
-            return null;
-        }
-        Object role = part.getMetadata().get(MessageConstants.MSG_ROLE_METADATA_KEY);
+        String role = metadataValue(part, MessageConstants.MSG_ROLE_METADATA_KEY);
         if (role == null) {
             return null;
         }
         try {
-            return MsgRole.valueOf(role.toString());
+            return MsgRole.valueOf(role);
         } catch (IllegalArgumentException ignored) {
             return null;
         }
     }
 
     private static MsgRole convertRole(Message.Role role) {
-        if (role == Message.Role.AGENT) {
+        if (role == Message.Role.ROLE_AGENT) {
             return MsgRole.ASSISTANT;
         }
         return MsgRole.USER;
@@ -311,10 +308,10 @@ public class MessageConvertUtil {
 
     @SuppressWarnings("unchecked")
     private static Map<String, Object> getMsgMetadata(Message message, String msgId) {
-        if (null == message || null == message.getMetadata()) {
+        if (null == message || null == message.metadata()) {
             return Map.of();
         }
-        Object metadata = message.getMetadata().get(msgId);
+        Object metadata = message.metadata().get(msgId);
         if (null == metadata) {
             return Map.of();
         }

@@ -24,6 +24,7 @@ import java.time.Duration;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpHeaders;
@@ -47,13 +48,30 @@ public final class FeishuOutboundClient {
 
     private static final Logger log = LoggerFactory.getLogger(FeishuOutboundClient.class);
     private static final ObjectMapper MAPPER = new ObjectMapper();
+    private static final Duration DEFAULT_RESPONSE_TIMEOUT = Duration.ofSeconds(10);
 
     private final WebClient client;
     private final FeishuAccessTokenProvider tokenProvider;
+    private final Duration responseTimeout;
 
     public FeishuOutboundClient(String apiBase, FeishuAccessTokenProvider tokenProvider) {
+        this(apiBase, tokenProvider, DEFAULT_RESPONSE_TIMEOUT);
+    }
+
+    /**
+     * Constructor variant with an explicit bound for one send request. Production keeps the
+     * 10s default; tests against a loopback server on starved CI runners pass a longer bound.
+     *
+     * @param responseTimeout positive bound for one send request
+     */
+    public FeishuOutboundClient(
+            String apiBase, FeishuAccessTokenProvider tokenProvider, Duration responseTimeout) {
         this.client = WebClient.builder().baseUrl(apiBase).build();
-        this.tokenProvider = tokenProvider;
+        this.tokenProvider = Objects.requireNonNull(tokenProvider, "tokenProvider");
+        Objects.requireNonNull(responseTimeout, "responseTimeout");
+        if (responseTimeout.isZero() || responseTimeout.isNegative())
+            throw new IllegalArgumentException("responseTimeout must be positive");
+        this.responseTimeout = responseTimeout;
     }
 
     /** Sends each message to the resolved peer. */
@@ -126,7 +144,7 @@ public final class FeishuOutboundClient {
                 .bodyValue(body)
                 .retrieve()
                 .bodyToMono(String.class)
-                .timeout(Duration.ofSeconds(10))
+                .timeout(responseTimeout)
                 .map(this::checkSendResponse);
     }
 

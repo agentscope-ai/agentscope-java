@@ -16,33 +16,54 @@
 
 package io.agentscope.core.a2a.server;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNotSame;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import io.a2a.server.events.QueueManager;
-import io.a2a.server.requesthandlers.RequestHandler;
-import io.a2a.server.tasks.PushNotificationConfigStore;
-import io.a2a.server.tasks.PushNotificationSender;
-import io.a2a.server.tasks.TaskStore;
-import io.a2a.spec.AgentCard;
-import io.a2a.spec.TransportProtocol;
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.a2a.server.card.ConfigurableAgentCard;
 import io.agentscope.core.a2a.server.executor.AgentExecuteProperties;
 import io.agentscope.core.a2a.server.executor.runner.AgentRunner;
 import io.agentscope.core.a2a.server.registry.AgentRegistry;
+import io.agentscope.core.a2a.server.request.AgentScopeA2aRequestHandler;
 import io.agentscope.core.a2a.server.transport.DeploymentProperties;
 import io.agentscope.core.a2a.server.transport.TransportProperties;
 import io.agentscope.core.a2a.server.transport.TransportWrapper;
 import io.agentscope.core.a2a.server.transport.TransportWrapperBuilder;
 import io.agentscope.core.a2a.server.transport.jsonrpc.JsonRpcTransportWrapper;
+import java.lang.reflect.Field;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.Executor;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import org.a2aproject.sdk.jsonrpc.common.json.JsonUtil;
+import org.a2aproject.sdk.server.events.InMemoryQueueManager;
+import org.a2aproject.sdk.server.events.MainEventBus;
+import org.a2aproject.sdk.server.events.QueueManager;
+import org.a2aproject.sdk.server.requesthandlers.DefaultRequestHandler;
+import org.a2aproject.sdk.server.requesthandlers.RequestHandler;
+import org.a2aproject.sdk.server.tasks.InMemoryTaskStore;
+import org.a2aproject.sdk.server.tasks.PushNotificationConfigStore;
+import org.a2aproject.sdk.server.tasks.PushNotificationSender;
+import org.a2aproject.sdk.server.tasks.TaskStore;
+import org.a2aproject.sdk.spec.AgentCard;
+import org.a2aproject.sdk.spec.Task;
+import org.a2aproject.sdk.spec.TaskState;
+import org.a2aproject.sdk.spec.TaskStatus;
+import org.a2aproject.sdk.spec.TransportProtocol;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -69,6 +90,19 @@ class AgentScopeA2aServerTest {
     private AgentRunner agentRunner;
     private TransportProperties transportProperties;
     private DeploymentProperties deploymentProperties;
+
+    private final List<AgentScopeA2aServer> servers = new ArrayList<>();
+
+    /** Registers a server so that it is closed after the test, whatever the outcome. */
+    private AgentScopeA2aServer track(AgentScopeA2aServer server) {
+        servers.add(server);
+        return server;
+    }
+
+    @AfterEach
+    void closeServers() {
+        servers.forEach(AgentScopeA2aServer::close);
+    }
 
     @BeforeEach
     void setUp() {
@@ -99,7 +133,8 @@ class AgentScopeA2aServerTest {
             when(deploymentProperties.port()).thenReturn(8080);
             AgentScopeA2aServer.Builder builder = AgentScopeA2aServer.builder(agentBuilder);
             assertNotNull(builder);
-            AgentScopeA2aServer server = builder.deploymentProperties(deploymentProperties).build();
+            AgentScopeA2aServer server =
+                    track(builder.deploymentProperties(deploymentProperties).build());
             assertNotNull(server);
         }
 
@@ -110,7 +145,8 @@ class AgentScopeA2aServerTest {
             when(deploymentProperties.port()).thenReturn(8080);
             AgentScopeA2aServer.Builder builder = AgentScopeA2aServer.builder(agentRunner);
             assertNotNull(builder);
-            AgentScopeA2aServer server = builder.deploymentProperties(deploymentProperties).build();
+            AgentScopeA2aServer server =
+                    track(builder.deploymentProperties(deploymentProperties).build());
             assertNotNull(server);
         }
 
@@ -121,9 +157,10 @@ class AgentScopeA2aServerTest {
             when(deploymentProperties.port()).thenReturn(8080);
 
             AgentScopeA2aServer server =
-                    AgentScopeA2aServer.builder(agentRunner)
-                            .deploymentProperties(deploymentProperties)
-                            .build();
+                    track(
+                            AgentScopeA2aServer.builder(agentRunner)
+                                    .deploymentProperties(deploymentProperties)
+                                    .build());
 
             assertNotNull(server);
         }
@@ -154,7 +191,20 @@ class AgentScopeA2aServerTest {
             AgentScopeA2aServer.Builder result = builder.agentCard(configurableAgentCard);
 
             assertSame(builder, result);
-            assertNotNull(builder.build().getAgentCard());
+            assertNotNull(track(builder.build()).getAgentCard());
+        }
+
+        @Test
+        @DisplayName("Should serve the agent card as JSON written by the A2A SDK")
+        void testAgentCardJson() throws Exception {
+            AgentScopeA2aServer server =
+                    AgentScopeA2aServer.builder(agentRunner)
+                            .deploymentProperties(deploymentProperties)
+                            .build();
+
+            assertEquals(
+                    server.getAgentCard(),
+                    JsonUtil.fromJson(server.getAgentCardJson(), AgentCard.class));
         }
 
         @Test
@@ -164,7 +214,7 @@ class AgentScopeA2aServerTest {
             AgentScopeA2aServer.Builder result = builder.withTransport(transportProperties);
 
             assertSame(builder, result);
-            assertNotNull(builder.build());
+            assertNotNull(track(builder.build()));
         }
 
         @Test
@@ -179,7 +229,7 @@ class AgentScopeA2aServerTest {
             AgentScopeA2aServer.Builder result = builder.taskStore(taskStore);
 
             assertSame(builder, result);
-            assertNotNull(builder.build());
+            assertNotNull(track(builder.build()));
         }
 
         @Test
@@ -194,7 +244,8 @@ class AgentScopeA2aServerTest {
             AgentScopeA2aServer.Builder result = builder.queueManager(queueManager);
 
             assertSame(builder, result);
-            assertNotNull(builder.build());
+            builder.mainEventBus(new MainEventBus());
+            assertNotNull(track(builder.build()));
         }
 
         @Test
@@ -209,7 +260,7 @@ class AgentScopeA2aServerTest {
             AgentScopeA2aServer.Builder result = builder.pushConfigStore(pushConfigStore);
 
             assertSame(builder, result);
-            assertNotNull(builder.build());
+            assertNotNull(track(builder.build()));
         }
 
         @Test
@@ -224,7 +275,7 @@ class AgentScopeA2aServerTest {
             AgentScopeA2aServer.Builder result = builder.pushSender(pushSender);
 
             assertSame(builder, result);
-            assertNotNull(builder.build());
+            assertNotNull(track(builder.build()));
         }
 
         @Test
@@ -238,7 +289,7 @@ class AgentScopeA2aServerTest {
             AgentScopeA2aServer.Builder result = builder.executor(executor);
 
             assertSame(builder, result);
-            assertNotNull(builder.build());
+            assertNotNull(track(builder.build()));
         }
 
         @Test
@@ -248,7 +299,7 @@ class AgentScopeA2aServerTest {
             AgentScopeA2aServer.Builder result = builder.deploymentProperties(deploymentProperties);
 
             assertSame(builder, result);
-            assertNotNull(builder.build());
+            assertNotNull(track(builder.build()));
         }
 
         @Test
@@ -258,7 +309,7 @@ class AgentScopeA2aServerTest {
             AgentScopeA2aServer.Builder result = builder.deploymentProperties(8080);
 
             assertSame(builder, result);
-            assertNotNull(builder.build());
+            assertNotNull(track(builder.build()));
         }
 
         @Test
@@ -272,7 +323,7 @@ class AgentScopeA2aServerTest {
             AgentScopeA2aServer.Builder result = builder.withAgentRegistry(agentRegistry);
 
             assertSame(builder, result);
-            builder.build().postEndpointReady();
+            track(builder.build()).postEndpointReady();
             verify(agentRegistry).register(any(), any());
         }
     }
@@ -312,6 +363,83 @@ class AgentScopeA2aServerTest {
     }
 
     @Nested
+    @DisplayName("Lifecycle Tests")
+    class LifecycleTests {
+
+        @BeforeEach
+        void setUpDeployment() {
+            when(deploymentProperties.host()).thenReturn("localhost");
+            when(deploymentProperties.port()).thenReturn(8080);
+        }
+
+        @Test
+        @DisplayName("Should stop the threads of its request handler on close")
+        void testCloseStopsRequestHandlerThreads() {
+            long before = processorThreads();
+            AgentScopeA2aServer server =
+                    AgentScopeA2aServer.builder(agentRunner)
+                            .deploymentProperties(deploymentProperties)
+                            .build();
+            assertEquals(before + 1, processorThreads());
+
+            server.close();
+
+            assertEquals(before, processorThreads());
+        }
+
+        @Test
+        @DisplayName("Should not leave threads behind when the build fails")
+        void testFailedBuildLeavesNoThreads() {
+            long before = processorThreads();
+
+            assertThrows(
+                    IllegalArgumentException.class,
+                    () -> AgentScopeA2aServer.builder(agentRunner).build());
+
+            assertEquals(before, processorThreads());
+        }
+
+        @Test
+        @DisplayName("Should process the events of a custom queue manager")
+        void testCustomQueueManagerEventsAreProcessed() throws Exception {
+            InMemoryTaskStore taskStore = new InMemoryTaskStore();
+            MainEventBus mainEventBus = new MainEventBus();
+            InMemoryQueueManager queueManager = new InMemoryQueueManager(taskStore, mainEventBus);
+            AgentScopeA2aServer server =
+                    AgentScopeA2aServer.builder(agentRunner)
+                            .taskStore(taskStore)
+                            .mainEventBus(mainEventBus)
+                            .queueManager(queueManager)
+                            .deploymentProperties(deploymentProperties)
+                            .build();
+            try {
+                queueManager
+                        .createOrTap("task-1")
+                        .enqueueEvent(
+                                Task.builder()
+                                        .id("task-1")
+                                        .contextId("context-1")
+                                        .status(new TaskStatus(TaskState.TASK_STATE_WORKING))
+                                        .build());
+
+                long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+                while (null == taskStore.get("task-1") && System.nanoTime() < deadline) {
+                    Thread.sleep(10);
+                }
+                assertNotNull(taskStore.get("task-1"), "the event was not processed");
+            } finally {
+                server.close();
+            }
+        }
+
+        private long processorThreads() {
+            return Thread.getAllStackTraces().keySet().stream()
+                    .filter(t -> t.isAlive() && "MainEventBusProcessor".equals(t.getName()))
+                    .count();
+        }
+    }
+
+    @Nested
     @DisplayName("Builder With Transports Tests")
     class BuilderWithTransportsTests {
 
@@ -322,7 +450,7 @@ class AgentScopeA2aServerTest {
             TransportProperties transportProperties =
                     TransportProperties.builder("MOCK_SUCCESS").build();
             builder.withTransport(transportProperties);
-            AgentScopeA2aServer agentScopeA2aServer = builder.build();
+            AgentScopeA2aServer agentScopeA2aServer = track(builder.build());
             assertNotNull(
                     agentScopeA2aServer.getTransportWrapper(
                             "MOCK_SUCCESS", TransportWrapper.class));
@@ -335,7 +463,7 @@ class AgentScopeA2aServerTest {
             TransportProperties transportProperties =
                     TransportProperties.builder("MOCK_SUCCESS").build();
             builder.withTransport(transportProperties);
-            AgentScopeA2aServer agentScopeA2aServer = builder.build();
+            AgentScopeA2aServer agentScopeA2aServer = track(builder.build());
             assertThrows(
                     ClassCastException.class,
                     () ->
@@ -350,7 +478,7 @@ class AgentScopeA2aServerTest {
             TransportProperties transportProperties =
                     TransportProperties.builder("MOCK_EXCEPTION").build();
             builder.withTransport(transportProperties);
-            AgentScopeA2aServer agentScopeA2aServer = builder.build();
+            AgentScopeA2aServer agentScopeA2aServer = track(builder.build());
             assertThrows(
                     IllegalArgumentException.class,
                     () -> agentScopeA2aServer.getTransportWrapper("MOCK_EXCEPTION"));
@@ -374,7 +502,7 @@ class AgentScopeA2aServerTest {
             AgentScopeA2aServer.Builder builder =
                     AgentScopeA2aServer.builder(agentRunner)
                             .deploymentProperties(deploymentProperties);
-            assertNotNull(builder.build());
+            assertNotNull(track(builder.build()));
         }
 
         @Test
@@ -386,6 +514,130 @@ class AgentScopeA2aServerTest {
     }
 
     @SuppressWarnings("rawtypes")
+    @Nested
+    @DisplayName("Close Tests")
+    class CloseTests {
+
+        private AgentScopeA2aServer.Builder serverBuilder() {
+            return AgentScopeA2aServer.builder(agentRunner)
+                    .withTransport(TransportProperties.builder("MOCK_SUCCESS").build());
+        }
+
+        @Test
+        @DisplayName("Should shut down the thread pools it created on close")
+        void testCloseShutsDownCreatedExecutors() throws Exception {
+            AgentScopeA2aServer server = track(serverBuilder().build());
+            ExecutorService transportExecutor = ownedExecutor(server);
+            ExecutorService executionExecutor = executionExecutor(server);
+
+            server.close();
+
+            assertTrue(transportExecutor.isShutdown());
+            assertTrue(executionExecutor.isShutdown());
+        }
+
+        @Test
+        @DisplayName("Should leave an executor set by the caller running on close")
+        void testCloseKeepsCallerExecutor() throws Exception {
+            ExecutorService callerExecutor = Executors.newSingleThreadExecutor();
+            try {
+                AgentScopeA2aServer server =
+                        track(serverBuilder().executor(callerExecutor).build());
+                assertNull(ownedExecutor(server));
+
+                server.close();
+
+                assertFalse(callerExecutor.isShutdown());
+            } finally {
+                callerExecutor.shutdownNow();
+            }
+        }
+
+        @Test
+        @DisplayName("Servers built from the same builder should each own their thread pools")
+        void testSameBuilderBuildsIndependentServers() throws Exception {
+            AgentScopeA2aServer.Builder builder = serverBuilder();
+            AgentScopeA2aServer first = track(builder.build());
+            AgentScopeA2aServer second = track(builder.build());
+            ExecutorService firstExecutor = ownedExecutor(first);
+            ExecutorService secondExecutor = ownedExecutor(second);
+            assertNotNull(firstExecutor);
+            assertNotNull(secondExecutor);
+            assertNotSame(firstExecutor, secondExecutor);
+
+            second.close();
+
+            assertTrue(secondExecutor.isShutdown());
+            assertFalse(firstExecutor.isShutdown());
+            assertFalse(executionExecutor(first).isShutdown());
+        }
+
+        @Test
+        @DisplayName("A retry after a failed build should own its default thread pool")
+        void testRetryAfterFailedBuildOwnsExecutor() throws Exception {
+            AgentScopeA2aServer.Builder builder = AgentScopeA2aServer.builder(agentRunner);
+            assertThrows(IllegalArgumentException.class, builder::build);
+
+            AgentScopeA2aServer server =
+                    track(
+                            builder.withTransport(
+                                            TransportProperties.builder("MOCK_SUCCESS").build())
+                                    .build());
+
+            assertNotNull(ownedExecutor(server));
+        }
+
+        @Test
+        @DisplayName("Should pass configured timeouts to the request handler")
+        void testTimeoutsReachRequestHandler() throws Exception {
+            AgentScopeA2aServer server =
+                    track(
+                            serverBuilder()
+                                    .agentExecuteProperties(
+                                            AgentExecuteProperties.builder()
+                                                    .agentCompletionTimeoutSeconds(120)
+                                                    .consumptionCompletionTimeoutSeconds(30)
+                                                    .build())
+                                    .build());
+            Object requestHandler =
+                    readField(
+                            AgentScopeA2aRequestHandler.class,
+                            readField(AgentScopeA2aServer.class, server, "requestHandler"),
+                            "delegate");
+
+            assertEquals(
+                    120,
+                    readField(
+                            DefaultRequestHandler.class,
+                            requestHandler,
+                            "agentCompletionTimeoutSeconds"));
+            assertEquals(
+                    30,
+                    readField(
+                            DefaultRequestHandler.class,
+                            requestHandler,
+                            "consumptionCompletionTimeoutSeconds"));
+        }
+
+        private ExecutorService ownedExecutor(AgentScopeA2aServer server) throws Exception {
+            return (ExecutorService) readField(AgentScopeA2aServer.class, server, "ownedExecutor");
+        }
+
+        private ExecutorService executionExecutor(AgentScopeA2aServer server) throws Exception {
+            return (ExecutorService)
+                    readField(
+                            AgentScopeA2aRequestHandler.class,
+                            readField(AgentScopeA2aServer.class, server, "requestHandler"),
+                            "executor");
+        }
+
+        private Object readField(Class<?> owner, Object target, String name) throws Exception {
+            Field field = owner.getDeclaredField(name);
+            field.setAccessible(true);
+            return field.get(target);
+        }
+    }
+
     public static class MockTransportWrapperBuilder
             implements TransportWrapperBuilder<TransportWrapper> {
 

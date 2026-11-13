@@ -17,7 +17,6 @@ package io.agentscope.core.tool;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.message.ToolResultBlock;
@@ -140,7 +139,9 @@ class ToolInvocationOutcomeTest {
     @Test
     void explicitToolErrorsAndSuspensionRemainResults() {
         var error = ToolResultBlock.error("rejected by tool");
-        assertSame(error, toolkit(param -> Mono.just(error)).callTool(call(true)).block());
+        ToolResultBlock returned = toolkit(param -> Mono.just(error)).callTool(call(true)).block();
+        assertEquals(error.getState(), returned.getState());
+        assertEquals(error.getOutput(), returned.getOutput());
         var suspended =
                 toolkit(param -> Mono.just(ToolResultBlock.suspended(param.getToolUseBlock())));
         assertTrue(suspended.callTool(call(true)).block().isSuspended());

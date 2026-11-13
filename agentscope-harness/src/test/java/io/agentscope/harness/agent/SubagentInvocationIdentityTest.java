@@ -42,6 +42,7 @@ import io.agentscope.harness.agent.filesystem.local.LocalFilesystem;
 import io.agentscope.harness.agent.testing.HarnessQuiescence;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.util.EnumSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -60,7 +61,12 @@ class SubagentInvocationIdentityTest {
     @TempDir Path workspace;
     @TempDir Path stateHome;
 
-    private static final Duration TIMEOUT = Duration.ofSeconds(10);
+    // The in-process parent→subagent round trip settles in well under a second on an
+    // unloaded runner (0.4s measured on ubuntu CI), but on windows runners under -T1C
+    // contention the blocking read has been starved just past the former 10s budget
+    // three times (#4091, #4025, #4142 — elapsed 10.04-10.84s). 30s widens only the
+    // failure deadline; the happy path returns as soon as the turn completes.
+    private static final Duration TIMEOUT = Duration.ofSeconds(30);
 
     private String previousStateHome;
     private HarnessAgent parent;
@@ -91,6 +97,11 @@ class SubagentInvocationIdentityTest {
         private final Set<String> observed = ConcurrentHashMap.newKeySet();
         private final Set<String> parents = ConcurrentHashMap.newKeySet();
         private final Set<String> parentSteps = ConcurrentHashMap.newKeySet();
+
+        @Override
+        public Set<ExtensionPoint> activePoints() {
+            return EnumSet.of(ExtensionPoint.ON_SYSTEM_PROMPT);
+        }
 
         @Override
         public Mono<String> onSystemPrompt(Agent agent, RuntimeContext ctx, String prompt) {

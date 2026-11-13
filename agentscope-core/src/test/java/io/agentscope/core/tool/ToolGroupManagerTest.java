@@ -15,6 +15,7 @@
  */
 package io.agentscope.core.tool;
 
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -578,5 +579,26 @@ class ToolGroupManagerTest {
 
         assertNull(manager.getToolGroup("analytics"));
         assertEquals(2, manager.getToolGroupNames().size());
+    }
+
+    @Test
+    void testRemoveToolFromAllGroupsDropsEveryMembership() {
+        // Arrange: one tool bound to two groups
+        manager.createToolGroup("ga", "Group A", true);
+        manager.createToolGroup("gb", "Group B", true);
+        manager.addToolToGroup("ga", "multi");
+        manager.addToolToGroup("gb", "multi");
+        assertTrue(manager.isGroupedTool("multi"));
+
+        // Act
+        manager.removeToolFromAllGroups("multi");
+
+        // Assert: both forward and reverse indexes are clean
+        assertFalse(manager.isGroupedTool("multi"));
+        assertFalse(manager.getToolGroup("ga").getTools().contains("multi"));
+        assertFalse(manager.getToolGroup("gb").getTools().contains("multi"));
+
+        // Unknown tool: no-op, no exception (the rolled-back path may hit it benignly)
+        assertDoesNotThrow(() -> manager.removeToolFromAllGroups("never-grouped"));
     }
 }

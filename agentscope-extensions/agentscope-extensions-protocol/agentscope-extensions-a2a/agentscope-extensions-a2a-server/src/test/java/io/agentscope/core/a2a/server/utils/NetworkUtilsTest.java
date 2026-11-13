@@ -16,6 +16,7 @@
 
 package io.agentscope.core.a2a.server.utils;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -35,6 +36,15 @@ import org.junit.jupiter.api.Test;
  */
 @DisplayName("NetworkUtils Tests")
 class NetworkUtilsTest {
+
+    @Test
+    @DisplayName("Should format hosts for URL authorities")
+    void testFormatHostForUrl() {
+        assertEquals("localhost", NetworkUtils.formatHostForUrl("localhost"));
+        assertEquals("127.0.0.1", NetworkUtils.formatHostForUrl("127.0.0.1"));
+        assertEquals("[::1]", NetworkUtils.formatHostForUrl("::1"));
+        assertEquals("[::1]", NetworkUtils.formatHostForUrl("[::1]"));
+    }
 
     @Test
     @DisplayName("Should return localhost when no network interfaces available")

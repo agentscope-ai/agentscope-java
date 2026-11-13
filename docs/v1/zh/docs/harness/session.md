@@ -5,52 +5,45 @@ en_link: /v1/en/docs/harness/session
 
 ## 作用
 
-让 agent 能在跨请求、跨进程、多用户场景下恢复状态。一次 `call()` 结束后自动落盘两路产出：
+让 agent 能在跨请求、跨进程、多用户场景下恢复状态。会话持久化由 agent 运行时自身负责：对话进展会追加进一份 **native session journal**——无损的、hash 链式的结构化事件序列。journal 永不压缩、永不重写；压缩只收缩上下文窗口。
 
-- **StateModule 快照**（`Memory`、`ToolExecutionContext` 等可序列化状态）——默认走 `WorkspaceSession`
-- **对话 JSONL**（LLM 上下文 + 完整历史）——走 `SessionTree`，由 `MemoryFlushManager.offloadMessages` 触发
-
-两者是**两个并行路径
+- **Native session journal** —— 完整历史：消息、带完整入参/结果的工具调用、推理事件，以原子 commit 存储
+- **读时投影** —— `agent.sessionTranscript(ctx)` 与 `session_search` / `session_list` 工具按需把 journal 投影成扁平视图；不会再写任何对话副本文件
 
 ## 触发
 
 | 时机 | 动作 |
 |------|------|
-| `agent.call(msg, ctx)` | `bindRuntimeContext` 以 `ctx.session/sessionKey` 交给 `delegate.loadIfExists` 恢复 StateModule |
-| `PostCallEvent` / `ErrorEvent` | `SessionPersistenceHook`（priority 900）调 `agent.saveTo(session, sessionKey)`，成功 / 失败都保一份 |
-| 压缩 / `PostCallEvent` flush | `MemoryFlushManager.offloadMessages` 追写到 `<sessionId>.jsonl` + `.log.jsonl` |
-| 会话结束 | `WorkspaceManager.updateSessionIndex` 更新 `sessions.json` 供 `session_list` 查 |
+| `agent.call(msg, ctx)` / `agent.session(ctx)` | `RuntimeContext` 中的 `(agentId, userId, sessionId)` 选定 journal 目录；先重放已提交事件恢复状态 |
+| 每轮结束后 | 运行时向 journal 追加一个 hash 链式的结构化事件 commit |
+| 上下文达到阈值 | `CompactionMiddleware` 压缩上下文窗口（`CompactionConfig`）；journal 本身不动 |
+| 压缩前 | `MemoryFlushMiddleware` 把事实提取进 `memory/YYYY-MM-DD.md`（`flushBeforeCompact`，默认开启） |
 
 ## 关键逻辑
 
-### 双轨存储布局
+### 存储布局
 
 ```mermaid
 graph LR
-    Call[agent.call] --> Hook[SessionPersistenceHook]
-    Hook -->|saveTo / loadIfExists| WS[(WorkspaceSession<br/>StateModule 快照)]
-    Call --> Compact[CompactionHook / MemoryFlushHook]
-    Compact -->|offloadMessages| ST[(SessionTree<br/>JSONL 双文件)]
-    WSWrite[WorkspaceManager<br/>updateSessionIndex] --> Idx[(sessions.json<br/>会话索引)]
-    Compact --> WSWrite
+    Call[agent.call] --> RT[ReActAgent runtime]
+    RT -->|追加已提交事件| JNL[(Native session journal<br/>.agentscope-runtime/)]
+    RT --> Tools[session_search / session_list]
+    Tools -->|读取| JNL
+    Dev[应用代码] -->|sessionTranscript| JNL
 ```
 
 ```
-workspace/agents/<agentId>/
-├── context/                          ← WorkspaceSession 负责
-│   └── <sessionId>/
-│       ├── memory.json               ← ReActAgent.memory 快照
-│       └── *.json                    ← 其他 StateModule 序列化产物
-└── sessions/                         ← SessionTree + WorkspaceManager 负责
-    ├── sessions.json                 ← 会话索引 (sessionId / summary / updatedAt)
-    ├── <sessionId>.jsonl             ← LLM 可见的压缩上下文
-    └── <sessionId>.log.jsonl         ← 完整对话日志（append-only，不被压缩）
+workspace/.agentscope-runtime/            ← 运行时私有存储（模型不可见）
+└── agents/<agentId>/sessions/<userId>/<sessionId>/
+    ├── session.json                      ← 会话头
+    └── …                                 ← hash 链式 commit 与 payload 对象
 ```
 
-- **`context/`**：`WorkspaceSession` 继承 `JsonSession`，base 在 `agents/<agentId>/context/`；sessionId 子目录里按 `SessionKey → {key}.json` 存每个 `StateModule`。
-- **`sessions/`**：`SessionTree` 在一个 JSONL 里按 `id/parentId` 组成一棵树；另一份同名的 `<sessionId>.log.jsonl` **从不被压缩**，供审计和 `session_search` 使用。
+- **Journal**：`JournalSessionLog` 把有序的、hash 链式的 `SessionEvent` commit 落盘，payload 完整保留——工具入参/结果与推理内容不会被截断或丢弃。压缩摘要是普通事件，更早的事件从不删除。
+- **后端**：默认 `LocalFilesystem` 把 journal 对象存在 workspace 的 `.agentscope-runtime/` 下；Windows 上使用 SQLite 后端，更大规模部署可以接入自定义 `SessionLogStore` / `AtomicSessionStorage`（如远端存储）。
+- **读取**：`agent.sessionTranscript(ctx)` 把已提交事件投影成扁平 `Msg` 视图；`session_search` / `session_list` 查询同一份 journal。
 
-### `RuntimeContext` 怎么让二者对齐
+### `RuntimeContext` 怎么路由 journal
 
 ```java
 RuntimeContext ctx = RuntimeContext.builder()
@@ -61,39 +54,38 @@ RuntimeContext ctx = RuntimeContext.builder()
 agent.call(msg, ctx).block();
 ```
 
-`HarnessAgent.bindRuntimeContext` 会做几件事：
+`RuntimeContext` 决定这次调用**读写哪份 journal**：
 
-1. **补默认**：`session` 为空时使用构建时的 `defaultSession`（默认是 `WorkspaceSession(workspace, agentId)`）；`sessionKey` 为空时依次试 `SimpleSessionKey.of(sessionId)` → `SimpleSessionKey.of(agentName)`。
-2. **传递到 hooks**：`workspaceContextHook`、`memoryFlushHook`、`sessionPersistenceHook`、`compactionHook` 都会同步该 ctx，他们在 offload / saveTo 时都能读到 `sessionId`。
-3. **联动 `userIdRef`**：`AtomicReference<String>` 被顶下 `userId`，默认 `NamespaceFactory → List.of(userId)` 会以该 userId 作为路径前缀，从而多租户透明隔离。
-4. **预加载状态**：若 `session && sessionKey` 都有，调用 `delegate.loadIfExists` 覆盖当前 Memory。不存在则什么都不动。
+1. **键推导**：`(agentId, userId, sessionId)` 映射到 journal 目录 `agents/<agentId>/sessions/<userId>/<sessionId>/`。
+2. **隔离**：不同的 `userId` / `sessionId` 落在不同的 journal 目录，彼此没有共享可变状态。
+3. **恢复**：每轮开始前按该身份重放已提交事件，状态跨重启可恢复。
+4. **应用侧读取**：`agent.sessionTranscript(ctx)`（扁平视图）或 `agent.sessionLog(ctx)`（原始 journal）都不会触发推理。
 
-### 默认与自定义 Session
+### 默认与自定义存储
 
 ```java
-// 1. 默认：什么都不传 → WorkspaceSession(workspace, agentId)
+// 1. 默认：journal 对象放在 <workspace>/.agentscope-runtime/ 下
 HarnessAgent.builder()
     .name("MyAgent").model(model).workspace(workspace).build();
 
-// 2. 使用任意指定路径的 JsonSession
+// 2. 接入自定义存储（任意 AtomicSessionStorage / SessionLogStore）
 HarnessAgent.builder()
     ...
-    .session(new JsonSession(Path.of("/custom/sessions")))
+    .sessionLogStore(myStore)
     .build();
 
-// 3. 调用时临时覆盖
+// 3. 按身份路由调用——无需为每个用户单独 build
 agent.call(msg, RuntimeContext.builder()
         .sessionId("sess-001")
-        .session(customSession)
-        .sessionKey(SimpleSessionKey.of("sess-001"))
+        .userId("alice")
         .build())
     .block();
 ```
 
-### 多用户隔离的两个层面
+### 多用户隔离
 
-- **会话层**：`sessionId` 决定 `context/<sessionId>/` 与 `sessions/<sessionId>.jsonl` 独立。
-- **文件层**：`userId` + `NamespaceFactory` 决定文件操作路径前缀（默认 `LocalFilesystemWithShell` 会读 `userIdRef`）。
+- **Journal 层**：`userId` + `sessionId` 决定 journal 目录，不同用户的会话处于互不相交的命名空间。
+- **文件层**：`userId` + `NamespaceFactory` 决定文件操作路径前缀（默认 `LocalFilesystemWithShell` 会读每次调用的身份）。
 
 ```java
 // 同一 agent 实例服务 alice / bob
@@ -102,13 +94,13 @@ agent.call(msg, RuntimeContext.builder().sessionId("bob-1").userId("bob").build(
 // 两个会话状态、文件路径都互不干扰
 ```
 
-### 会话索引
+### 列出会话
 
-`MemoryFlushManager.offloadMessages` 调完后，`WorkspaceManager.updateSessionIndex(agentId, sessionId, summary)` 会合并写 `sessions/sessions.json`，agent 在另一轮可以走 `session_list` 工具查看“该 agent 历史上都跟谁聊过”。
+`session_list` / `session_search` 直接读 journal store——没有需要额外同步的索引文件。store 通过扫描 `agents/<agentId>/sessions/` 下的会话头发现会话，所以凡是经运行时提交过的会话对两个工具自动可见。
 
 ## 相关文档
 
 - [工具](/v1/zh/docs/harness/tool) — `session_search` / `session_list` / `session_history` 的入参
-- [记忆](/v1/zh/docs/harness/memory) — `offloadMessages` 什么时候被调，怎么反过来被 `memory_search` 利用
+- [记忆](/v1/zh/docs/harness/memory) — 记忆提取如何与压缩配合，以及如何被 `memory_search` 利用
 - [文件系统](/v1/zh/docs/harness/filesystem) — `userIdRef` + `NamespaceFactory` 的多租户路径隔离
-- [架构](/v1/zh/docs/harness/architecture) — `SessionPersistenceHook` 在 PostCallEvent / ErrorEvent 中的位置
+- [Session log](/v2/zh/docs/harness/session-log) — journal 内部机制：后端、物理布局、自定义存储与导出

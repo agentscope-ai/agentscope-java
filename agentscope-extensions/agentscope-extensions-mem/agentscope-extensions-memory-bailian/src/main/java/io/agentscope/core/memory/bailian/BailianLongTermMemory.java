@@ -15,6 +15,7 @@
  */
 package io.agentscope.core.memory.bailian;
 
+import io.agentscope.core.formatter.DocumentReferenceRenderer;
 import io.agentscope.core.memory.LongTermMemory;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
@@ -168,9 +169,11 @@ public class BailianLongTermMemory implements LongTermMemory, AutoCloseable {
                                         return false;
                                     }
 
-                                    // Check for non-blank text content
-                                    String textContent = msg.getTextContent();
-                                    if (textContent == null || textContent.isBlank()) {
+                                    // An attachment-only turn still carries a document; render
+                                    // it so the turn is not dropped before the backend sees it.
+                                    String textContent =
+                                            DocumentReferenceRenderer.renderMessageText(msg);
+                                    if (textContent.isBlank()) {
                                         return false;
                                     }
 
@@ -296,7 +299,10 @@ public class BailianLongTermMemory implements LongTermMemory, AutoCloseable {
             return null;
         }
 
-        return BailianMessage.builder().role(role).content(msg.getTextContent()).build();
+        return BailianMessage.builder()
+                .role(role)
+                .content(DocumentReferenceRenderer.renderMessageText(msg))
+                .build();
     }
 
     /**

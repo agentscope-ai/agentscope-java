@@ -67,8 +67,13 @@ public final class MetricsHook implements Hook {
             String agentName = agent == null ? null : agent.getName();
             String modelName = null;
             ReActAgent react = AgentResolver.unwrapReActAgent(agent);
-            if (react != null && react.getModel() != null) {
-                modelName = react.getModel().getModelName();
+            if (react != null) {
+                try {
+                    modelName = react.getModel(null).getModelName();
+                } catch (RuntimeException e) {
+                    // identity-mode agent whose identity cannot be resolved right now
+                    modelName = react.getModelIdentity();
+                }
             }
             Msg msg = post.getFinalMessage();
             ChatUsage usage = msg == null ? null : msg.getUsage();

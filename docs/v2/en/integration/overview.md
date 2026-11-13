@@ -32,6 +32,10 @@ All model providers have moved to independent model extension modules, while `ag
 </Note>
 
 
+## Structured decisions
+
+[OpenAI Decisions](/v2/en/integration/judge/openai-decisions) evaluates text and images through a dedicated judge client, with typed predicate, choice, and score results.
+
 ## Distributed Storage (Distributed Store)
 
 Full-stack distributed storage components for multi-replica production deployments. Configure agent state, workspace filesystem, sandbox snapshots, and concurrency locks with a single `DistributedStore`.

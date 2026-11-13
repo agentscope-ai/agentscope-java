@@ -62,10 +62,15 @@ class BotLoopGuardTest {
 
     @Test
     void idlePeersAreEvictedAfterWindowPlusCooldown() throws InterruptedException {
+        // A loaded runner can overshoot a 60ms sleep past a 160ms threshold (observed in CI),
+        // so the not-idle phase uses a threshold no realistic stall can cross, and the idle
+        // phase only relies on Thread.sleep never returning early. Total sleep stays 240ms.
+        BotLoopGuard notIdle = new BotLoopGuard(5, 60_000L, 60_000L);
+        assertTrue(notIdle.allow("peer-1"));
+        Thread.sleep(60);
+        assertEquals(0, notIdle.evictIdlePeers()); // not idle yet
         BotLoopGuard guard = new BotLoopGuard(5, 80L, 80L); // idle threshold: 160ms
         assertTrue(guard.allow("peer-1"));
-        Thread.sleep(60);
-        assertEquals(0, guard.evictIdlePeers()); // not idle yet
         Thread.sleep(180);
         assertEquals(1, guard.evictIdlePeers());
         assertEquals(0, guard.trackedPeers());
@@ -75,12 +80,17 @@ class BotLoopGuardTest {
 
     @Test
     void activePeersSurviveEvictionOfIdleOnes() throws InterruptedException {
+        // The idle peer crosses the threshold before the active peer's first event, so that
+        // call's piggybacked sweep (which always fires: more than one interval has passed)
+        // deterministically evicts it — an explicit evictIdlePeers() racing the sweep is what
+        // flaked before, when a sleep overshoot let the sweep fire between the two calls.
+        // Sleep overshoots only push the idle peer further past the threshold here.
         BotLoopGuard guard = new BotLoopGuard(5, 500L, 500L); // idle threshold: 1000ms
         assertTrue(guard.allow("idle-peer"));
-        Thread.sleep(300);
-        assertTrue(guard.allow("active-peer"));
-        Thread.sleep(800); // idle-peer idle ~1100ms; active-peer idle ~800ms
-        assertEquals(1, guard.evictIdlePeers());
+        Thread.sleep(1100); // idle-peer far past the threshold before the sweep can fire
+        assertTrue(guard.allow("active-peer")); // first call past the interval sweeps idle-peer
+        assertEquals(1, guard.trackedPeers()); // the active peer survived the eviction
+        assertEquals(0, guard.evictIdlePeers()); // nothing left to evict
         assertTrue(guard.allow("active-peer"));
         assertEquals(1, guard.trackedPeers());
     }

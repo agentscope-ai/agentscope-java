@@ -15,6 +15,7 @@
  */
 package io.agentscope.harness.agent.journal;
 
+import static io.agentscope.harness.agent.tool.ToolResultAssertions.assertText;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -28,6 +29,7 @@ import io.agentscope.core.journal.JournalException;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.ToolResultState;
 import io.agentscope.core.util.JsonUtils;
 import io.agentscope.harness.agent.filesystem.BakedContextFilesystem;
 import io.agentscope.harness.agent.filesystem.RoutedSandboxFilesystem;
@@ -150,7 +152,7 @@ class WorkspaceThreadJournalStoreTest {
                 Msg.builder()
                         .id("message-id")
                         .role(MsgRole.USER)
-                        .content(TextBlock.builder().text("Native history marker").build())
+                        .content(TextBlock.builder().text("Error: Native history marker").build())
                         .build();
         var messageEvent =
                 new JournalEvent(
@@ -168,11 +170,36 @@ class WorkspaceThreadJournalStoreTest {
         var reader = new WorkspaceThreadJournalStore(new LocalFilesystem(directory));
         assertEquals(List.of(key), reader.list(rc));
         var tool = new ThreadHistoryTool(reader);
-        assertTrue(tool.threadSearch(rc, "history marker", "agent", 10).contains("message-id"));
         assertTrue(
-                tool.threadHistory(rc, "agent", "session", "main", 20)
+                assertText(
+                                tool.threadSearch(rc, "history marker", "agent", 10),
+                                ToolResultState.SUCCESS)
+                        .contains("message-id"));
+        assertTrue(
+                assertText(
+                                tool.threadHistory(rc, "agent", "session", "main", 20),
+                                ToolResultState.SUCCESS)
                         .contains("Native history marker"));
-        assertTrue(tool.threadList(rc, "agent").contains("session"));
+        assertTrue(
+                assertText(tool.threadList(rc, "agent"), ToolResultState.SUCCESS)
+                        .contains("session"));
+    }
+
+    @Test
+    void invalidSessionArgumentsAndMissingHistoryReportErrors() {
+        var tool =
+                new ThreadHistoryTool(
+                        new WorkspaceThreadJournalStore(new LocalFilesystem(directory)));
+        var rc = RuntimeContext.builder().userId("u").build();
+        assertText(tool.threadSearch(rc, " ", "agent", 10), ToolResultState.ERROR);
+        assertText(tool.threadList(rc, " "), ToolResultState.ERROR);
+        assertText(tool.threadHistory(rc, "agent", " ", "main", 20), ToolResultState.ERROR);
+        assertText(tool.threadHistory(rc, "agent", "missing", "main", 20), ToolResultState.ERROR);
+        assertEquals(
+                "[]",
+                assertText(
+                        tool.threadSearch(rc, "no match", "agent", 10), ToolResultState.SUCCESS));
+        assertEquals("[]", assertText(tool.threadList(rc, "agent"), ToolResultState.SUCCESS));
     }
 
     @Test

@@ -36,17 +36,18 @@ import reactor.core.publisher.Mono;
 public interface EmbeddingModel {
 
     /**
-     * Generate embedding vector for a single content block.
+     * Generate embedding response for a single content block.
      *
      * <p>Implementations should check the content block type and throw {@link EmbeddingException}
      * if the type is not supported.
      *
      * @param block the content block to embed (e.g., TextBlock, ImageBlock)
-     * @return Mono that emits a double array representing the embedding vector
+     * @return Mono that emits an {@link EmbeddingResponse} containing the embedding vector and
+     *     usage information
      * @throws EmbeddingException if embedding generation fails or content block type is not
      *     supported
      */
-    Mono<double[]> embed(ContentBlock block);
+    Mono<EmbeddingResponse> embed(ContentBlock block);
 
     /**
      * Get the model name for logging and identification.

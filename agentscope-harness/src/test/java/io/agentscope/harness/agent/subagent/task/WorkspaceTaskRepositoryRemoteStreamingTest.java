@@ -68,6 +68,7 @@ class WorkspaceTaskRepositoryRemoteStreamingTest {
         List<Boolean> awaitingSnapshots = new CopyOnWriteArrayList<>();
         FakeTransport transport = new FakeTransport(statusCalls, 2);
         repo.setTransport(transport);
+        repo.setAwaitingConfirmPollMs(50);
 
         AtomicReference<String> completedResult = new AtomicReference<>();
         repo.setCompletionCallback(
@@ -109,6 +110,10 @@ class WorkspaceTaskRepositoryRemoteStreamingTest {
         assertTrue(
                 !awaitingSnapshots.isEmpty() || statusCalls.get() >= 2,
                 "expected at least one awaiting_confirm poll before success");
+        // The poller persists the terminal record before firing the completion callback; the
+        // terminal record can be observed in the gap between those two steps, so wait for the
+        // callback to land instead of asserting it has already run.
+        awaitCondition(() -> completedResult.get() != null);
         assertEquals("remote-ok", completedResult.get());
         assertTrue(transport.submitCalled);
     }
@@ -125,6 +130,7 @@ class WorkspaceTaskRepositoryRemoteStreamingTest {
         // often.
         FakeTransport transport = new FakeTransport(statusCalls, 5);
         repo.setTransport(transport);
+        repo.setAwaitingConfirmPollMs(50);
 
         String session = "sess-no-rewrite";
         String taskId = "task-no-rewrite";

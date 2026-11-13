@@ -149,6 +149,36 @@ class AtomicThreadJournalTest {
     }
 
     @Test
+    void emptyDiscoveryFallsBackToPerSegmentReads() {
+        class Storage implements AtomicJournalStorage {
+            final Map<String, Value> values = new HashMap<>();
+
+            public Value read(String path) {
+                return values.get(path);
+            }
+
+            public boolean compareAndSet(String path, long version, byte[] bytes) {
+                var old = values.get(path);
+                if ((old == null ? 0 : old.version()) != version) return false;
+                values.put(path, new Value(version + 1, bytes));
+                return true;
+            }
+
+            @Override
+            public List<String> listPaths(String prefix) {
+                // A snapshot taken while the writer was still renaming segments into place.
+                return List.of();
+            }
+        }
+        var storage = new Storage();
+        var log = new AtomicThreadJournal(storage, "test");
+        var writer = log.acquire("w", Duration.ofMinutes(2));
+        var batch = List.of(event(1, "run/start"), event(2, "run/end"));
+        log.commit(writer, "b", 0, batch);
+        assertEquals(batch, log.readAfter(0, 10));
+    }
+
+    @Test
     void permanentSealFencesPausedAcquisitionAndCommitButAllowsANewRun() {
         class Storage implements AtomicJournalStorage {
             final Map<String, Value> values = new HashMap<>();

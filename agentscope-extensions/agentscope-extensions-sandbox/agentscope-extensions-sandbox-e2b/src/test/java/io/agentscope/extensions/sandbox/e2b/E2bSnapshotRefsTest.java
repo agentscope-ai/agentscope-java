@@ -18,7 +18,11 @@ package io.agentscope.extensions.sandbox.e2b;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
+import java.io.ByteArrayInputStream;
+import java.io.IOException;
+import java.util.Arrays;
 import org.junit.jupiter.api.Test;
 
 class E2bSnapshotRefsTest {
@@ -36,5 +40,24 @@ class E2bSnapshotRefsTest {
     @Test
     void decodeNonMagicReturnsNull() {
         assertNull(E2bSnapshotRefs.decodeSnapshotIdIfPresent("not-magic".getBytes()));
+    }
+
+    @Test
+    void peekSnapshotIdDecodesFromStream() throws Exception {
+        byte[] archive = E2bSnapshotRefs.encodeSnapshotId("team/foo:v1");
+        E2bSnapshotRefs.SnapshotIdRef ref =
+                E2bSnapshotRefs.peekSnapshotId(new ByteArrayInputStream(archive));
+        assertEquals("team/foo:v1", ref.snapshotId());
+        assertArrayEquals(archive, ref.archive());
+    }
+
+    @Test
+    void peekSnapshotIdRejectsMalformedNativeArchive() {
+        byte[] archive =
+                Arrays.copyOf(
+                        E2bSnapshotRefs.MAGIC_PREFIX, E2bSnapshotRefs.MAGIC_PREFIX.length + 2);
+        assertThrows(
+                IOException.class,
+                () -> E2bSnapshotRefs.peekSnapshotId(new ByteArrayInputStream(archive)));
     }
 }

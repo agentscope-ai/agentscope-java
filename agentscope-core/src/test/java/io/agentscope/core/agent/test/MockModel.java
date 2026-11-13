@@ -30,12 +30,14 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Function;
 import reactor.core.publisher.Flux;
 
 /**
  * Mock Model implementation for testing.
- *
+ * <p>
  * This mock provides configurable responses and allows tests to verify
  * model interactions without making actual API calls.
  */
@@ -43,12 +45,32 @@ public class MockModel implements Model {
 
     private final List<ChatResponse> responsesToReturn;
     private Function<List<Msg>, List<ChatResponse>> responseGenerator;
-    private int callCount = 0;
-    private List<Msg> lastMessages;
-    private List<ToolSchema> lastTools;
-    private GenerateOptions lastOptions;
+    // Counters and "last" fields share the same recording races as recordedMessages
+    // (turn thread vs background memory maintenance): a lost callCount increment or an
+    // unsynchronized last-write can flake any test asserting them after a call.
+    private final AtomicInteger callCount = new AtomicInteger();
+    private volatile List<Msg> lastMessages;
+
+    // stream() runs on whichever thread drives the agent — the caller's thread for turns,
+    // background memory maintenance on its scheduler — so concurrent recordings race a
+    // plain ArrayList's elementData/size update and can silently drop an entry. On ubuntu
+    // CI under -T1C the reasoning request vanished while the post-call consolidation
+    // request survived, so the test matched the consolidation prompt instead (#4093,
+    // #3991). CopyOnWriteArrayList preserves call order, makes each add atomic, and lets
+    // tests iterate a stable snapshot while a call is still in flight.
+    private final List<List<Msg>> recordedMessages = new CopyOnWriteArrayList<>();
+    private volatile List<ToolSchema> lastTools;
+    private volatile GenerateOptions lastOptions;
     private boolean shouldThrowError = false;
     private String errorMessage = "Mock error";
+
+    /**
+     * Whether this mock reports {@code ToolChoice.Specific} support. Defaults to {@code true},
+     * unlike the {@link Model} interface default of {@code false}; tests exercising the
+     * prompt-reminder fallback call {@link #setSupportsToolChoiceSpecific(boolean)} with
+     * {@code false}.
+     */
+    private boolean supportsToolChoiceSpecific = true;
 
     /**
      * Create a mock model with a simple text response.
@@ -116,8 +138,9 @@ public class MockModel implements Model {
             List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
 
         // Record the call
-        this.callCount++;
+        this.callCount.incrementAndGet();
         this.lastMessages = messages;
+        this.recordedMessages.add(List.copyOf(messages));
         this.lastTools = tools;
         this.lastOptions = options;
 
@@ -153,7 +176,7 @@ public class MockModel implements Model {
      * Get the number of times the model was called.
      */
     public int getCallCount() {
-        return callCount;
+        return callCount.get();
     }
 
     /**
@@ -161,6 +184,13 @@ public class MockModel implements Model {
      */
     public List<Msg> getLastMessages() {
         return lastMessages;
+    }
+
+    /**
+     * Get the messages of every call, in call order, unlike {@link #getLastMessages()}.
+     */
+    public List<List<Msg>> getRecordedMessages() {
+        return recordedMessages;
     }
 
     /**
@@ -181,16 +211,29 @@ public class MockModel implements Model {
      * Reset the mock state.
      */
     public void reset() {
-        this.callCount = 0;
+        this.callCount.set(0);
         this.lastMessages = null;
+        this.recordedMessages.clear();
         this.lastTools = null;
         this.lastOptions = null;
         this.shouldThrowError = false;
+        this.supportsToolChoiceSpecific = true;
     }
 
     @Override
     public String getModelName() {
         return "mock-model";
+    }
+
+    /** Getter (interface override — cannot take a {@code get} prefix, see {@link Model}). */
+    @Override
+    public boolean supportsToolChoiceSpecific() {
+        return supportsToolChoiceSpecific;
+    }
+
+    /** Sets whether this mock reports {@code ToolChoice.Specific} support. */
+    public void setSupportsToolChoiceSpecific(boolean supportsToolChoiceSpecific) {
+        this.supportsToolChoiceSpecific = supportsToolChoiceSpecific;
     }
 
     // Helper methods to create responses

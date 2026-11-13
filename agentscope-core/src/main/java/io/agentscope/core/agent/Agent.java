@@ -16,7 +16,9 @@
 package io.agentscope.core.agent;
 
 import io.agentscope.core.message.Msg;
+import io.agentscope.core.skill.SkillFilter;
 import io.agentscope.core.tool.Toolkit;
+import java.nio.file.Path;
 
 /**
  * Complete agent interface combining all capabilities.
@@ -109,6 +111,24 @@ public interface Agent extends CallableAgent, StreamableAgent, ObservableAgent {
      * construction.
      */
     default Toolkit getToolkit() {
+        return null;
+    }
+
+    /**
+     * Returns the agent's baseline {@link SkillFilter}, or {@code null} when this agent type
+     * does not expose one. Consumers overlay per-call {@code RuntimeContext} filters on it
+     * and fall back to their own default when {@code null}.
+     */
+    default SkillFilter getSkillFilter() {
+        return null;
+    }
+
+    /**
+     * Returns the agent's stable working directory for skill materialisation, or {@code null}
+     * when this agent type does not provide one. Callers fall back to their own temporary
+     * allocation when {@code null}.
+     */
+    default Path getSkillWorkDir() {
         return null;
     }
 }

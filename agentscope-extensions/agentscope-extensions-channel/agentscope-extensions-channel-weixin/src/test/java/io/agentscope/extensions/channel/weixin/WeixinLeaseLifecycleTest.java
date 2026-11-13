@@ -145,7 +145,12 @@ class WeixinLeaseLifecycleTest {
                 "the standby instance never attempted to acquire the lease");
         assertEquals(1, entered.getCount());
         store.releaseLease("account", owner);
-        assertTrue(sent.await(3, TimeUnit.SECONDS));
+        // Takeover cannot get stuck: the consumer loop retries while it runs, and every step is
+        // bounded — one standby retry sleep (leaseMs/3 = 500ms), three localhost HTTP round trips
+        // and one boundedElastic hop. Under -T1C contention those steps stall for whole seconds
+        // at a time (CI missed a 3s window here with the loop healthy), so the observation needs
+        // load headroom; @Timeout(20) remains the hard fuse and the happy path exits on the latch.
+        assertTrue(sent.await(10, TimeUnit.SECONDS));
         assertEquals(1, sends.get());
     }
 

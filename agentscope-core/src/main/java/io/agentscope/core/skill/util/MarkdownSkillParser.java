@@ -45,7 +45,7 @@ import org.yaml.snakeyaml.representer.Representer;
  * <p>Frontmatter format:
  * <pre>{@code
  * ---
- * name: example_skill
+ * name: example-skill
  * description: Example skill description
  * version: 1.0.0
  * ---
@@ -73,7 +73,8 @@ public class MarkdownSkillParser {
 
     private static final Pattern FRONTMATTER_PATTERN =
             Pattern.compile(
-                    "^\\uFEFF?---\\s*[\\r\\n]+(.*?)[\\r\\n]*---(?:\\s*[\\r\\n]+)?(.*)",
+                    "^\\uFEFF?---\\s*[\\r\\n]+(.*?)(?<=[\\r\\n])---"
+                            + "(?=[ \\t]*(?:[\\r\\n]|\\z))(?:\\s*[\\r\\n]+)?(.*)",
                     Pattern.DOTALL);
 
     private static final Pattern SIMPLE_KV_PATTERN =

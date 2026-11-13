@@ -30,11 +30,15 @@ import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.Model;
 import io.agentscope.core.model.ModelCreationContext;
 import io.agentscope.core.model.ModelRegistry;
+import io.agentscope.core.model.ToolChoice;
 import io.agentscope.core.model.transport.HttpRequest;
 import io.agentscope.core.model.transport.HttpResponse;
 import io.agentscope.core.model.transport.HttpTransport;
 import io.agentscope.core.model.transport.ProxyConfig;
 import io.agentscope.extensions.model.openai.OpenAIChatModel;
+import io.agentscope.extensions.model.openai.dto.OpenAIRequest;
+import io.agentscope.extensions.model.openai.dto.OpenAITool;
+import io.agentscope.extensions.model.openai.dto.OpenAIToolFunction;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.AfterEach;
@@ -137,30 +141,29 @@ class KimiModelProviderTest {
     }
 
     @Test
-    void nativeStructuredOutputDisabledByDefault() {
+    void nativeStructuredOutputEnabledByDefault() {
         KimiModelProvider provider = new KimiModelProvider();
         ModelCreationContext context =
                 ModelCreationContext.builder().apiKey("test-kimi-key").build();
 
         Model model = provider.create("kimi:kimi-k3", context);
 
-        // Kimi response_format only supports json_object, so native structured
-        // output falls back to the generate_response tool by default
-        assertFalse(model.supportsNativeStructuredOutput());
+        // Kimi response_format supports json_schema with strict constrained decoding
+        assertTrue(model.supportsNativeStructuredOutput());
     }
 
     @Test
-    void nativeStructuredOutputCanBeEnabledByOption() {
+    void nativeStructuredOutputCanBeDisabledByOption() {
         KimiModelProvider provider = new KimiModelProvider();
         ModelCreationContext context =
                 ModelCreationContext.builder()
                         .apiKey("test-kimi-key")
-                        .option("nativeStructuredOutput", true)
+                        .option("nativeStructuredOutput", false)
                         .build();
 
         Model model = provider.create("kimi:kimi-k3", context);
 
-        assertTrue(model.supportsNativeStructuredOutput());
+        assertFalse(model.supportsNativeStructuredOutput());
     }
 
     @Test
@@ -171,7 +174,8 @@ class KimiModelProviderTest {
 
         Model model = provider.create("kimi:kimi-k3", context);
 
-        // Kimi prioritises response_format over tool invocations when both are present
+        // Real-API testing confirmed Kimi prioritises response_format over tool
+        // invocations when both are present, so tools fall back to generate_response
         assertFalse(model.supportsNativeStructuredOutputWithTools());
     }
 
@@ -181,13 +185,89 @@ class KimiModelProviderTest {
         ModelCreationContext context =
                 ModelCreationContext.builder()
                         .apiKey("test-kimi-key")
-                        .option("nativeStructuredOutput", true)
                         .option("nativeStructuredOutputWithTools", true)
                         .build();
 
         Model model = provider.create("kimi:kimi-k3", context);
 
+        // Opt-in for users who observe their endpoint handles the combination correctly
         assertTrue(model.supportsNativeStructuredOutputWithTools());
+        assertTrue(model.supportsNativeStructuredOutput());
+    }
+
+    @Test
+    void supportsToolChoiceSpecificDisabledForThinkingModels() {
+        KimiModelProvider provider = new KimiModelProvider();
+        ModelCreationContext context =
+                ModelCreationContext.builder().apiKey("test-kimi-key").build();
+
+        // Always-thinking models: KimiFormatter would degrade ToolChoice.Specific to "auto",
+        // so the agent must force generate_response via the prompt reminder instead
+        assertFalse(provider.create("kimi:kimi-k3", context).supportsToolChoiceSpecific());
+        assertFalse(
+                provider.create("kimi:kimi-k2.7-code-highspeed", context)
+                        .supportsToolChoiceSpecific());
+
+        // Configurable-thinking models: Specific only works with thinking.type=disabled, which
+        // the static per-model flag cannot express; report it unsupported (conservative)
+        assertFalse(provider.create("kimi:kimi-k2.6", context).supportsToolChoiceSpecific());
+        assertFalse(provider.create("kimi:kimi-k2.5", context).supportsToolChoiceSpecific());
+
+        // Other Kimi models pass ToolChoice.Specific through as a named function choice
+        assertTrue(
+                provider.create("kimi:kimi-k2-0905-preview", context).supportsToolChoiceSpecific());
+        assertTrue(provider.create("kimi:moonshot-v1-8k", context).supportsToolChoiceSpecific());
+    }
+
+    @Test
+    void supportsToolChoiceSpecificMirrorsFormatterDegradation() {
+        KimiModelProvider provider = new KimiModelProvider();
+        ModelCreationContext context =
+                ModelCreationContext.builder().apiKey("test-kimi-key").build();
+
+        // Drift net for the coupling documented in KimiModelProvider.create(): the flag
+        // must equal what KimiFormatter.applyKimiToolChoice does to ToolChoice.Specific
+        // in the default configuration (no thinking param). If the formatter's
+        // degradation predicate ever stops matching the provider's computation, this
+        // fails — update both together. Extend the model list for new Kimi models.
+        List<String> models =
+                List.of(
+                        "kimi-k3",
+                        "kimi-k2.7-code-highspeed",
+                        "kimi-k2.6",
+                        "kimi-k2.5",
+                        "kimi-k2-0905-preview",
+                        "moonshot-v1-8k");
+
+        for (String model : models) {
+            assertEquals(
+                    formatterKeepsSpecificToolChoice(model),
+                    provider.create("kimi:" + model, context).supportsToolChoiceSpecific(),
+                    model);
+        }
+    }
+
+    // Oracle: run the real formatter degradation on a default request (no thinking
+    // param) and report whether the named-function tool_choice survived.
+    private static boolean formatterKeepsSpecificToolChoice(String model) {
+        OpenAIRequest request = requestWithSingleTool(model);
+
+        KimiFormatter.applyKimiToolChoice(request, new ToolChoice.Specific("get_weather"));
+
+        return request.getToolChoice() instanceof Map;
+    }
+
+    private static OpenAIRequest requestWithSingleTool(String model) {
+        OpenAIToolFunction function = new OpenAIToolFunction();
+        function.setName("get_weather");
+        OpenAITool tool = new OpenAITool();
+        tool.setFunction(function);
+        tool.setType("function");
+        return OpenAIRequest.builder()
+                .model(model)
+                .messages(List.of())
+                .tools(List.of(tool))
+                .build();
     }
 
     @Test

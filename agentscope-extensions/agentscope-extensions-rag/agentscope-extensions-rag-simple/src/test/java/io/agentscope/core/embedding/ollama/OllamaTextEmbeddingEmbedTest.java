@@ -23,6 +23,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 import io.agentscope.core.embedding.EmbeddingException;
+import io.agentscope.core.embedding.EmbeddingUsage;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.model.ExecutionConfig;
 import io.agentscope.extensions.model.ollama.OllamaHttpClient;
@@ -88,17 +89,54 @@ class OllamaTextEmbeddingEmbedTest {
 
             StepVerifier.create(model.embed(textBlock))
                     .assertNext(
-                            embedding -> {
-                                assertNotNull(embedding);
-                                assertEquals(3, embedding.length);
-                                assertEquals(0.1, embedding[0], 0.001);
-                                assertEquals(0.2, embedding[1], 0.001);
-                                assertEquals(0.3, embedding[2], 0.001);
+                            response -> {
+                                assertNotNull(response);
+                                assertNotNull(response.getEmbedding());
+                                assertEquals(3, response.getEmbedding().length);
+                                assertEquals(0.1, response.getEmbedding()[0], 0.001);
+                                assertEquals(0.2, response.getEmbedding()[1], 0.001);
+                                assertEquals(0.3, response.getEmbedding()[2], 0.001);
                             })
                     .verifyComplete();
 
             // Verify that the constructor was called with the expected baseUrl
             assertTrue(!mockedConstruction.constructed().isEmpty());
+        }
+    }
+
+    @Test
+    @DisplayName("Should expose token usage when provider reports prompt_eval_count")
+    void testUsageIsPopulated() {
+        float[] mockEmbeddingValues = {0.1f, 0.2f, 0.3f};
+        List<float[]> mockEmbeddings = Arrays.asList(mockEmbeddingValues);
+
+        OllamaEmbeddingResponse mockResponse = mock(OllamaEmbeddingResponse.class);
+        when(mockResponse.getEmbeddings()).thenReturn(mockEmbeddings);
+        when(mockResponse.getModel()).thenReturn(TEST_MODEL_NAME);
+        when(mockResponse.getPromptEvalCount()).thenReturn(11);
+
+        try (MockedConstruction<OllamaHttpClient> mockedConstruction =
+                Mockito.mockConstruction(
+                        OllamaHttpClient.class,
+                        (mock, context) -> {
+                            if (context.arguments().size() == 2
+                                    && context.arguments().get(1).equals(TEST_BASE_URL)) {
+                                when(mock.embed(any())).thenReturn(mockResponse);
+                            }
+                        })) {
+
+            TextBlock textBlock = TextBlock.builder().text("Hello, world!").build();
+
+            StepVerifier.create(model.embed(textBlock))
+                    .assertNext(
+                            response -> {
+                                EmbeddingUsage usage = response.getUsage();
+                                assertNotNull(usage);
+                                assertEquals(11, usage.getInputTokens());
+                                assertEquals(11, usage.getTotalTokens());
+                                assertTrue(usage.getTime() >= 0.0);
+                            })
+                    .verifyComplete();
         }
     }
 

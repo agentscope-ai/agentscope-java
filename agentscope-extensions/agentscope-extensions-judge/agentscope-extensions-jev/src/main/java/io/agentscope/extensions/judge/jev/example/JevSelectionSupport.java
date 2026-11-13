@@ -24,7 +24,9 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 
 /** Shared helpers for Jev-backed tool selection. */
 final class JevSelectionSupport {
@@ -51,9 +53,64 @@ final class JevSelectionSupport {
 
     static Map<String, Object> messagesState(List<Msg> messages) {
         if (messages == null || messages.isEmpty()) {
-            return Map.of();
+            return Map.of("messages", List.of());
         }
-        return Map.of("messages", List.copyOf(messages));
+        return Map.of("messages", messages.stream().filter(Objects::nonNull).toList());
+    }
+
+    static Map<String, Object> userRequestState(String userText) {
+        return Map.of("userRequest", userText == null ? "" : userText);
+    }
+
+    /**
+     * Builds a bounded conversation state from the most recent messages. Each message is
+     * projected to a {@code {role, text}} entry; blank-text messages (null or whitespace-only
+     * text) are skipped and do not consume window slots. The window keeps at most {@code
+     * maxMessages} messages and at most {@code maxChars} characters of text in total, counted
+     * from the newest message backwards. Older messages are dropped first, and the oldest kept
+     * message is truncated when the budget runs out.
+     */
+    static Map<String, Object> recentWindowState(
+            List<Msg> messages, int maxMessages, int maxChars) {
+        if (messages == null || messages.isEmpty() || maxMessages <= 0 || maxChars <= 0) {
+            return Map.of("messages", List.of());
+        }
+        List<Map<String, String>> entries = new ArrayList<>();
+        int remaining = maxChars;
+        for (int i = messages.size() - 1;
+                i >= 0 && remaining > 0 && entries.size() < maxMessages;
+                i--) {
+            Msg message = messages.get(i);
+            if (message == null) {
+                continue;
+            }
+            String text = message.getTextContent();
+            if (text == null || text.isBlank()) {
+                continue;
+            }
+            if (text.length() > remaining) {
+                int end = remaining;
+                // Never split a surrogate pair at the cut point.
+                if (end > 0 && Character.isHighSurrogate(text.charAt(end - 1))) {
+                    end--;
+                }
+                text = text.substring(0, end);
+                // The surrogate-aware cut may have emptied the text; skip it like any other
+                // blank message so it does not consume a window slot.
+                if (text.isBlank()) {
+                    continue;
+                }
+            }
+            remaining -= text.length();
+            entries.add(
+                    0,
+                    Map.of(
+                            "role",
+                            message.getRole().name().toLowerCase(Locale.ROOT),
+                            "text",
+                            text));
+        }
+        return Map.of("messages", List.copyOf(entries));
     }
 
     static Map<String, Object> toolCriteria(List<ToolSchema> tools) {

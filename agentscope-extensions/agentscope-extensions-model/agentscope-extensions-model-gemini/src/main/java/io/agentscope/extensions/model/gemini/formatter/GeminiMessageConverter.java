@@ -23,10 +23,13 @@ import com.google.genai.types.FunctionResponse;
 import com.google.genai.types.Part;
 import com.google.genai.types.ToolCall;
 import com.google.genai.types.ToolResponse;
+import io.agentscope.core.formatter.DocumentReferenceRenderer;
 import io.agentscope.core.message.AudioBlock;
 import io.agentscope.core.message.Base64Source;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.DataBlock;
+import io.agentscope.core.message.DocumentBlock;
+import io.agentscope.core.message.FileIdSource;
 import io.agentscope.core.message.HintBlock;
 import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.Msg;
@@ -210,6 +213,20 @@ public class GeminiMessageConverter {
 
                 } else if (block instanceof DataBlock db) {
                     parts.add(mediaConverter.convertToInlineDataPart(db));
+
+                } else if (block instanceof DocumentBlock doc) {
+                    if (msg.getRole() == MsgRole.USER) {
+                        parts.add(mediaConverter.convertToInlineDataPart(doc));
+                    } else {
+                        // returnDirect tool deliveries put documents on assistant turns; the
+                        // history keeps a reference there instead of losing the attachment.
+                        log.debug(
+                                "Rendering a text reference for a DocumentBlock outside a user"
+                                        + " message for Gemini: {}",
+                                doc.getId());
+                        parts.add(
+                                Part.builder().text(DocumentReferenceRenderer.render(doc)).build());
+                    }
 
                 } else if (block instanceof HintBlock hb) {
                     parts.add(Part.builder().text(hb.getHint()).build());
@@ -396,6 +413,11 @@ public class GeminiMessageConverter {
             } else if (block instanceof DataBlock db) {
                 String reference = convertMediaBlockToTextReference(db, "data");
                 textualOutput.add(reference);
+
+            } else if (block instanceof DocumentBlock doc) {
+                // A document is described by name and location. Rendering base64 through the
+                // temp-file path would hand a remote model a path on the local disk.
+                textualOutput.add(DocumentReferenceRenderer.render(doc));
             }
             // Other block types are ignored
         }
@@ -419,8 +441,11 @@ public class GeminiMessageConverter {
      * <p>For URL sources, returns the URL directly.
      * For Base64 sources, saves the data to a temporary file and returns the file path.
      *
-     * @param block     The media block (ImageBlock, AudioBlock, or VideoBlock)
-     * @param mediaType Media type string ("image", "audio", or "video")
+     * <p>Documents are not routed here: they are rendered by
+     * {@link DocumentReferenceRenderer} so a remote model never receives a local disk path.
+     *
+     * @param block     The media block (ImageBlock, AudioBlock, VideoBlock, or DataBlock)
+     * @param mediaType Media type string ("image", "audio", "video", or "data")
      * @return Textual reference to the media
      */
     private String convertMediaBlockToTextReference(ContentBlock block, String mediaType) {
@@ -442,6 +467,10 @@ public class GeminiMessageConverter {
                 log.error("Failed to save base64 data to temp file for {}", mediaType, e);
                 return String.format("[%s - failed to save file: %s]", mediaType, e.getMessage());
             }
+        } else if (source instanceof FileIdSource fileIdSource) {
+            return String.format(
+                    "The %s is available as a provider file id: %s",
+                    mediaType, fileIdSource.getFileId());
         }
 
         log.warn("Unsupported source type for {}: {}", mediaType, source.getClass().getName());

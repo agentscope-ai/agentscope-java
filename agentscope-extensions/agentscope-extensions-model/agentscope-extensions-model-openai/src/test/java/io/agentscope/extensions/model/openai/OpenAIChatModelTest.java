@@ -107,6 +107,14 @@ class OpenAIChatModelTest {
     }
 
     @Test
+    @DisplayName("Generic OpenAI builder does not assume specific tool_choice support")
+    void testSupportsToolChoiceSpecificDefaultFalse() {
+        OpenAIChatModel m = OpenAIChatModel.builder().apiKey("k").modelName("gpt-4").build();
+
+        assertFalse(m.supportsToolChoiceSpecific());
+    }
+
+    @Test
     @DisplayName("Builder can disable native structured output for compatible gateways")
     void testNativeStructuredOutputDisabled() {
         OpenAIChatModel m =

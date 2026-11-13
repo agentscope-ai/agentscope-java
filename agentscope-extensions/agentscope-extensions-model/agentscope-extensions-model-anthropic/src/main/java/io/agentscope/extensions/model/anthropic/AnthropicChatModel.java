@@ -28,10 +28,10 @@ import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.ModelContextWindows;
 import io.agentscope.core.model.ModelException;
-import io.agentscope.core.model.ModelSchedulers;
 import io.agentscope.core.model.ModelUtils;
 import io.agentscope.core.model.ToolSchema;
 import io.agentscope.core.model.transport.ProxyConfig;
+import io.agentscope.core.tool.search.ToolSearchMode;
 import io.agentscope.extensions.model.anthropic.formatter.AnthropicBaseFormatter;
 import io.agentscope.extensions.model.anthropic.formatter.AnthropicChatFormatter;
 import io.agentscope.extensions.model.anthropic.formatter.AnthropicResponseParser;
@@ -44,6 +44,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Schedulers;
 
 /**
  * Anthropic Chat Model implementation using the official Anthropic Java SDK.
@@ -58,7 +59,7 @@ import reactor.core.publisher.Mono;
  *
  * <ul>
  * <li>System messages are handled via the system parameter, not as messages
- * <li>Tool results must be in separate user messages
+ * <li>All results for a tool batch must be in one following user message
  * <li>Supports Claude models (claude-3-*, claude-sonnet-*, etc.)
  * </ul>
  */
@@ -74,6 +75,11 @@ public class AnthropicChatModel extends ChatModelBase {
     private final GenerateOptions defaultOptions;
     private final AnthropicBaseFormatter formatter;
     private final List<AnthropicServerTool> serverTools;
+
+    @Override
+    public boolean supportsToolChoiceSpecific() {
+        return true;
+    }
 
     public AnthropicChatModel(
             String baseUrl,
@@ -332,7 +338,9 @@ public class AnthropicChatModel extends ChatModelBase {
 
                                     // Convert the SDK's Stream to Flux
                                     return AnthropicResponseParser.parseStreamEvents(
-                                                    Flux.fromStream(streamResponse.stream()),
+                                                    Flux.fromStream(streamResponse.stream())
+                                                            .subscribeOn(
+                                                                    Schedulers.boundedElastic()),
                                                     startTime)
                                             .doFinally(
                                                     signalType -> {
@@ -367,12 +375,7 @@ public class AnthropicChatModel extends ChatModelBase {
 
         // Apply timeout and retry if configured
         return ModelUtils.applyTimeoutAndRetry(
-                responseFlux
-                        .subscribeOn(
-                                streamEnabled
-                                        ? ModelSchedulers.streams()
-                                        : ModelSchedulers.requests())
-                        .publishOn(ModelSchedulers.responses(), 32),
+                responseFlux.subscribeOn(Schedulers.boundedElastic()),
                 options,
                 defaultOptions,
                 modelName,
@@ -389,6 +392,11 @@ public class AnthropicChatModel extends ChatModelBase {
         return modelName;
     }
 
+    @Override
+    public ToolSearchMode getToolSearchMode() {
+        return ToolSearchMode.DEFERRED;
+    }
+
     /**
      * Creates a builder for constructing AnthropicChatModel instances.
      *
@@ -403,7 +411,7 @@ public class AnthropicChatModel extends ChatModelBase {
         private String baseUrl;
         private String apiKey;
         private String authToken;
-        private String modelName = "claude-sonnet-4-5-20250929";
+        private String modelName = "claude-sonnet-5-5";
         private boolean streamEnabled = true;
         private GenerateOptions defaultOptions;
         private AnthropicBaseFormatter formatter;

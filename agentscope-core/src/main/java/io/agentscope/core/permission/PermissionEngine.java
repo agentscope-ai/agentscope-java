@@ -89,16 +89,19 @@ public final class PermissionEngine {
      * <p>The rule is routed by its {@link PermissionRule#behavior()}: ALLOW/DENY/ASK rules are
      * appended to the engine's allow/deny/ask tables; PASSTHROUGH rules are ignored.
      *
+     * <p>An equivalent rule already in the target table is not re-added — equivalence treats a
+     * {@code null} and an empty {@link PermissionRule#ruleContent()} as identical, matching how
+     * {@code ruleMatches} evaluates both as unconditional. Re-accepting the same confirmation
+     * therefore never grows the tables.
+     *
      * @param rule the rule to add; must be non-null
      */
     public void addRule(PermissionRule rule) {
         Objects.requireNonNull(rule, "rule must not be null");
         switch (rule.behavior()) {
-            case ALLOW ->
-                    allowRules.computeIfAbsent(rule.toolName(), k -> new ArrayList<>()).add(rule);
-            case DENY ->
-                    denyRules.computeIfAbsent(rule.toolName(), k -> new ArrayList<>()).add(rule);
-            case ASK -> askRules.computeIfAbsent(rule.toolName(), k -> new ArrayList<>()).add(rule);
+            case ALLOW -> PermissionContextState.addIfAbsent(allowRules, rule);
+            case DENY -> PermissionContextState.addIfAbsent(denyRules, rule);
+            case ASK -> PermissionContextState.addIfAbsent(askRules, rule);
             case PASSTHROUGH -> {
                 // PASSTHROUGH rules are not stored; they signal "defer to engine".
             }

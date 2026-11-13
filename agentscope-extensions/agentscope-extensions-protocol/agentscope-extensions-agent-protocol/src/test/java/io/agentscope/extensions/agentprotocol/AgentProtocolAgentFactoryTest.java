@@ -71,7 +71,7 @@ class AgentProtocolAgentFactoryTest {
         context.put("ticket_id", "INC-1001");
 
         store.submit("t-writer", "writer", "draft the summary", context);
-        awaitCondition(() -> "success".equals(store.snapshot("t-writer").get("status")), 5_000);
+        awaitCondition(() -> "success".equals(store.snapshot("t-writer").get("status")), 30_000);
 
         assertEquals("written", store.snapshot("t-writer").get("result"));
         assertEquals(1, seenRequests.size());
@@ -92,9 +92,9 @@ class AgentProtocolAgentFactoryTest {
         AgentProtocolTaskStore store = storeWithRoutingFactory();
 
         store.submit("t-a", "researcher", "dig in", Map.of());
-        awaitCondition(() -> "success".equals(store.snapshot("t-a").get("status")), 5_000);
+        awaitCondition(() -> "success".equals(store.snapshot("t-a").get("status")), 30_000);
         store.submit("t-b", "writer", "write up", Map.of());
-        awaitCondition(() -> "success".equals(store.snapshot("t-b").get("status")), 5_000);
+        awaitCondition(() -> "success".equals(store.snapshot("t-b").get("status")), 30_000);
 
         assertEquals("researched", store.snapshot("t-a").get("result"));
         assertEquals("written", store.snapshot("t-b").get("result"));

@@ -17,54 +17,18 @@ package io.agentscope.extensions.scheduler.quartz;
 
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import io.agentscope.core.message.ContentBlock;
-import io.agentscope.core.message.Msg;
-import io.agentscope.core.message.TextBlock;
-import io.agentscope.core.model.ChatResponse;
-import io.agentscope.core.model.GenerateOptions;
-import io.agentscope.core.model.Model;
-import io.agentscope.core.model.ToolSchema;
 import io.agentscope.extensions.scheduler.ScheduleAgentTask;
-import io.agentscope.extensions.scheduler.config.ModelConfig;
 import io.agentscope.extensions.scheduler.config.RuntimeAgentConfig;
 import io.agentscope.extensions.scheduler.config.ScheduleConfig;
-import java.util.List;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
-import reactor.core.publisher.Flux;
 
 @Timeout(10)
 class QuartzFixedDelayIntegrationTest {
 
     private QuartzAgentScheduler scheduler;
-
-    static class TestModelConfig implements ModelConfig {
-        @Override
-        public String getModelName() {
-            return "test-model";
-        }
-
-        @Override
-        public Model createModel() {
-            return new Model() {
-                @Override
-                public Flux<ChatResponse> stream(
-                        List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
-                    ContentBlock block = TextBlock.builder().text("ok").build();
-                    ChatResponse resp =
-                            ChatResponse.builder().id("r1").content(List.of(block)).build();
-                    return Flux.just(resp);
-                }
-
-                @Override
-                public String getModelName() {
-                    return "test-model";
-                }
-            };
-        }
-    }
 
     @BeforeEach
     void setUp() {
@@ -83,7 +47,7 @@ class QuartzFixedDelayIntegrationTest {
         RuntimeAgentConfig agentConfig =
                 RuntimeAgentConfig.builder()
                         .name("FDIntegrationAgent")
-                        .modelConfig(new TestModelConfig())
+                        .modelConfig(new StubModelConfig())
                         .sysPrompt("test")
                         .build();
 

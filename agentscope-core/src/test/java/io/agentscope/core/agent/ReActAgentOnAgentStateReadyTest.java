@@ -40,6 +40,7 @@ import io.agentscope.core.state.AgentState;
 import io.agentscope.core.state.InMemoryAgentStateStore;
 import io.agentscope.core.tool.Toolkit;
 import java.time.Duration;
+import java.util.EnumSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -115,6 +116,11 @@ class ReActAgentOnAgentStateReadyTest {
         @Override
         public int order() {
             return order;
+        }
+
+        @Override
+        public Set<ExtensionPoint> activePoints() {
+            return EnumSet.of(ExtensionPoint.ON_AGENT_STATE_READY);
         }
 
         @Override
@@ -247,12 +253,17 @@ class ReActAgentOnAgentStateReadyTest {
     }
 
     @Test
-    @DisplayName("middleware without the override behaves exactly as before")
+    @DisplayName("middleware not declaring the state-ready point behaves exactly as before")
     void noOverrideKeepsExistingBehavior() {
         CapturingModel model = new CapturingModel();
         List<String> trace = new CopyOnWriteArrayList<>();
         MiddlewareBase plainOnAgent =
                 new MiddlewareBase() {
+                    @Override
+                    public Set<ExtensionPoint> activePoints() {
+                        return EnumSet.of(ExtensionPoint.ON_AGENT);
+                    }
+
                     @Override
                     public Flux<AgentEvent> onAgent(
                             Agent agent,
@@ -285,6 +296,11 @@ class ReActAgentOnAgentStateReadyTest {
         @Override
         public int order() {
             return 5;
+        }
+
+        @Override
+        public Set<ExtensionPoint> activePoints() {
+            return EnumSet.of(ExtensionPoint.ON_AGENT_STATE_READY);
         }
 
         @Override
@@ -341,6 +357,11 @@ class ReActAgentOnAgentStateReadyTest {
         MiddlewareBase counter =
                 new MiddlewareBase() {
                     @Override
+                    public Set<ExtensionPoint> activePoints() {
+                        return EnumSet.of(ExtensionPoint.ON_AGENT_STATE_READY);
+                    }
+
+                    @Override
                     public void onAgentStateReady(
                             Agent agent, RuntimeContext ctx, AgentState state, List<Msg> input) {
                         calls.incrementAndGet();
@@ -362,6 +383,11 @@ class ReActAgentOnAgentStateReadyTest {
         List<List<String>> inputsAtReady = new CopyOnWriteArrayList<>();
         MiddlewareBase probing =
                 new MiddlewareBase() {
+                    @Override
+                    public Set<ExtensionPoint> activePoints() {
+                        return EnumSet.of(ExtensionPoint.ON_AGENT_STATE_READY);
+                    }
+
                     @Override
                     public void onAgentStateReady(
                             Agent agent, RuntimeContext ctx, AgentState state, List<Msg> input) {
@@ -388,6 +414,11 @@ class ReActAgentOnAgentStateReadyTest {
         MiddlewareBase recorder =
                 new MiddlewareBase() {
                     @Override
+                    public Set<ExtensionPoint> activePoints() {
+                        return EnumSet.of(ExtensionPoint.ON_AGENT_STATE_READY);
+                    }
+
+                    @Override
                     public void onAgentStateReady(
                             Agent agent, RuntimeContext ctx, AgentState state, List<Msg> input) {
                         stateBySession.put(ctx.getSessionId(), state);
@@ -411,6 +442,11 @@ class ReActAgentOnAgentStateReadyTest {
         CountDownLatch releaseHook = new CountDownLatch(1);
         MiddlewareBase blocker =
                 new MiddlewareBase() {
+                    @Override
+                    public Set<ExtensionPoint> activePoints() {
+                        return EnumSet.of(ExtensionPoint.ON_AGENT_STATE_READY);
+                    }
+
                     @Override
                     public void onAgentStateReady(
                             Agent agent, RuntimeContext ctx, AgentState state, List<Msg> input) {

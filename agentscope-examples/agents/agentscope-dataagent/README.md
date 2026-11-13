@@ -230,7 +230,10 @@ Replies are POSTed to `callbackUrl` (same HMAC), or parked for long-poll at
 
 ### 4. Run
 
+Generate a JWT secret once, store it securely, and reuse it across restarts and replicas:
+
 ```bash
+export DATAAGENT_JWT_SECRET="$(openssl rand -hex 32)"
 java -jar target/agentscope-dataagent-*-exec.jar
 ```
 
@@ -244,7 +247,7 @@ accounts: `bob` / `bob` and `alice` / `alice`. The first user with
 
 | Property | Default | Description |
 |---|---|---|
-| `dataagent.jwt.secret` | dev placeholder | JWT signing secret (>= 32 chars). **Refuses to boot in non-`dev` profiles when left at the default.** |
+| `dataagent.jwt.secret` | _(empty)_ | Required random JWT signing secret (>= 32 bytes). **Refuses to boot in any profile if missing, blank, too short, or equal to the former public default.** |
 | `dataagent.workspace` | `$CWD` *(dev only)* | Working directory for agent runtime state (not config — config lives at `~/.agentscope/dataagent/agentscope.json`). **Required** in non-`dev` profiles — startup fails if blank. |
 | `dataagent.workspace-store.local.max-file-size-mb` | `10` | Per-file cap for the `RemoteFilesystem` local store. |
 | `dataagent.dashscope.api-key` | _(empty)_ | DashScope API key (fallback when no `Model` bean is registered). |

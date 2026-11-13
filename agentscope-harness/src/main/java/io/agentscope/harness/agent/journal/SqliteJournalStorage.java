@@ -25,7 +25,10 @@ import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.SQLException;
 import java.util.ArrayList;
+import java.util.Collection;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import org.sqlite.SQLiteConfig;
 
 /** Windows local journal storage, using atomic SQL writes and synchronous rollback journals. */
@@ -86,6 +89,30 @@ final class SqliteJournalStorage implements AtomicJournalStorage {
             }
         } catch (SQLException | IOException error) {
             throw new JournalException("Journal read failed: " + database, error);
+        }
+    }
+
+    @Override
+    public Map<String, Value> readAll(Collection<String> paths) {
+        if (paths.isEmpty() || !Files.exists(database)) return Map.of();
+        // One connection for the whole batch: replay walks hundreds of segments, and per-read
+        // connection setup dominates that traversal on Windows.
+        try (var connection = connect();
+                var statement =
+                        connection.prepareStatement(
+                                "SELECT path, version, payload FROM session_objects WHERE path"
+                                        + " = ?")) {
+            var batch = new HashMap<String, Value>();
+            for (String path : paths) {
+                statement.setString(1, path);
+                try (var result = statement.executeQuery()) {
+                    if (result.next())
+                        batch.put(path, new Value(result.getLong(2), result.getBytes(3)));
+                }
+            }
+            return Map.copyOf(batch);
+        } catch (SQLException | IOException error) {
+            throw new JournalException("Journal batch read failed: " + database, error);
         }
     }
 

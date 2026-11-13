@@ -16,6 +16,7 @@
 package io.agentscope.core.journal;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -40,6 +41,9 @@ import java.util.ArrayList;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.ValueSource;
 import reactor.core.publisher.Flux;
 
 class ReActThreadJournalTest {
@@ -63,6 +67,59 @@ class ReActThreadJournalTest {
                     ChatResponse.builder()
                             .content(List.of(TextBlock.builder().text("answer").build()))
                             .build());
+        }
+    }
+
+    @ParameterizedTest
+    @CsvSource({
+        "log-id, display-name, log-id",
+        "log-id, , log-id",
+        ", display-name, display-name",
+        ", , framework-id",
+        ", '', framework-id",
+        ", '   ', framework-id"
+    })
+    void journalIdentityUsesExplicitIdThenNonBlankNameThenAgentId(
+            String journalAgentId, String name, String expected) {
+        var builder =
+                ReActAgent.builder().agentId("framework-id").name(name).model(new CaptureModel());
+        if (journalAgentId != null) builder.journalAgentId(journalAgentId);
+        var agent = builder.build();
+
+        assertEquals(new ThreadKey("u", expected, "s", "main"), agent.threadKey(context()));
+    }
+
+    @Test
+    void unnamedAgentWithoutExplicitIdUsesGeneratedIdForSessionIdentity() {
+        var agent = ReActAgent.builder().model(new CaptureModel()).build();
+
+        assertEquals(
+                new ThreadKey("u", agent.getAgentId(), "s", "main"), agent.threadKey(context()));
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void unnamedAgentSupportsCallAndStreamWithOrWithoutJournal(boolean journalEnabled) {
+        var model = new CaptureModel();
+        var builder = ReActAgent.builder().agentId("framework-id").model(model);
+        if (journalEnabled) builder.threadJournalStore(new InMemoryThreadJournalStore());
+        var agent = builder.build();
+
+        var reply =
+                agent.call(List.of(new UserMessage("hello")), context())
+                        .block(Duration.ofSeconds(10));
+        assertEquals("answer", reply.getTextContent());
+        var events =
+                agent.streamEvents(List.of(new UserMessage("continue")), context())
+                        .collectList()
+                        .block(Duration.ofSeconds(10));
+        assertFalse(events.isEmpty());
+        assertTrue(
+                events.stream().allMatch(e -> "framework-id".equals(e.getExecution().agentId())));
+        assertEquals(2, model.calls.size());
+        if (journalEnabled) {
+            var facts = agent.threadJournal(context()).readAfter(0, 1000);
+            assertEquals(2, facts.stream().filter(e -> e.type().equals("run/end")).count());
         }
     }
 

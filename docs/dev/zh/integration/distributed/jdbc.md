@@ -98,6 +98,11 @@ BaseStore store = JdbcStore.builder(dataSource)
 ```
 
 **并发安全**：`putIfVersion` 通过单语句 CAS `UPDATE ... WHERE version = ?` 实现，所有已支持数据库均可用。
+**键长度**：`item_key` 存的是工作区文件路径和会话日志路径（`agents/<name>/users/<user>/sessions/<id>.log.jsonl`），因此在 PostgreSQL 与 H2 上为 `VARCHAR(2048)`（SQLite 为 `TEXT`）。MySQL 保持 `VARCHAR(255)`：配合 `namespace_path VARCHAR(512)`，utf8mb4 复合主键已顶到 InnoDB 的 3072 字节上限。本次调整之前建的 PostgreSQL 表仍是 255 字符——启动校验只比对列名，需手动放宽一次：
+
+```sql
+ALTER TABLE agentscope_store ALTER COLUMN item_key TYPE VARCHAR(2048);
+```
 
 ### 3. JdbcSnapshotSpec
 

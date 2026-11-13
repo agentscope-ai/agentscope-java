@@ -16,7 +16,11 @@
 package io.agentscope.core.tool;
 
 import io.agentscope.core.model.ExecutionConfig;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
 import java.util.concurrent.ExecutorService;
+import java.util.function.Consumer;
 
 /**
  * Configuration for Toolkit execution behavior.
@@ -37,6 +41,8 @@ public class ToolkitConfig {
     private final ExecutionConfig executionConfig;
     private final boolean allowToolDeletion;
     private final ToolExecutionContext defaultContext;
+    private final List<ToolCallInterceptor> interceptors;
+    private final Consumer<ToolCallParam> beforeToolCall;
 
     private ToolkitConfig(Builder builder) {
         this.parallel = builder.parallel;
@@ -44,6 +50,8 @@ public class ToolkitConfig {
         this.executionConfig = builder.executionConfig;
         this.allowToolDeletion = builder.allowToolDeletion;
         this.defaultContext = builder.defaultContext;
+        this.interceptors = List.copyOf(builder.interceptors);
+        this.beforeToolCall = builder.beforeToolCall;
     }
 
     /**
@@ -103,6 +111,24 @@ public class ToolkitConfig {
     }
 
     /**
+     * Get the tool call interceptors registered at build time.
+     *
+     * @return Immutable list of interceptors (empty when none registered)
+     */
+    public List<ToolCallInterceptor> getInterceptors() {
+        return interceptors;
+    }
+
+    /**
+     * Get the optional final dispatch check.
+     *
+     * @return the check, or null when not configured
+     */
+    public Consumer<ToolCallParam> getBeforeToolCall() {
+        return beforeToolCall;
+    }
+
+    /**
      * Create a new builder for ToolkitConfig.
      *
      * @return Builder instance
@@ -129,8 +155,27 @@ public class ToolkitConfig {
         private ExecutionConfig executionConfig;
         private boolean allowToolDeletion = true;
         private ToolExecutionContext defaultContext;
+        private List<ToolCallInterceptor> interceptors = List.of();
+        private Consumer<ToolCallParam> beforeToolCall;
 
         private Builder() {}
+
+        /**
+         * Set a synchronous, non-blocking check immediately before each local invocation or
+         * external-tool suspension, including retries and repeated subscriptions. Local checks
+         * run after interceptors and dispatch persistence and receive the final parameters.
+         * Throw a regular RuntimeException to reject dispatch through the existing tool-error
+         * result path. Do not throw ToolSuspendException from this check: it signals suspension
+         * rather than rejection. Already-started calls are not cancelled. Toolkit copies retain
+         * this check, so use run-scoped state or resolve it from the call's RuntimeContext.
+         *
+         * @param beforeToolCall optional dispatch check, or null to disable
+         * @return this builder
+         */
+        public Builder beforeToolCall(Consumer<ToolCallParam> beforeToolCall) {
+            this.beforeToolCall = beforeToolCall;
+            return this;
+        }
 
         /**
          * Set whether to execute tools in parallel.
@@ -190,6 +235,30 @@ public class ToolkitConfig {
         @Deprecated
         public Builder defaultContext(ToolExecutionContext defaultContext) {
             this.defaultContext = defaultContext;
+            return this;
+        }
+
+        /**
+         * Append one or more tool call interceptors. May be called repeatedly.
+         *
+         * @param interceptors Interceptors to append (none may be null)
+         * @return this builder
+         */
+        public Builder interceptor(ToolCallInterceptor... interceptors) {
+            List<ToolCallInterceptor> appended = new ArrayList<>(this.interceptors);
+            appended.addAll(Arrays.asList(interceptors));
+            this.interceptors = appended;
+            return this;
+        }
+
+        /**
+         * Set the tool call interceptor list, replacing previously appended ones.
+         *
+         * @param interceptors Interceptors to set, or {@code null} to clear
+         * @return this builder
+         */
+        public Builder interceptors(List<ToolCallInterceptor> interceptors) {
+            this.interceptors = interceptors != null ? interceptors : List.of();
             return this;
         }
 

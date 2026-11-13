@@ -16,7 +16,9 @@
 
 package io.agentscope.core.util;
 
+import com.fasterxml.jackson.core.JsonFactory;
 import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.core.StreamReadConstraints;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.JavaType;
@@ -33,6 +35,9 @@ import org.slf4j.LoggerFactory;
  * Jackson's ObjectMapper with the following configuration:
  * <ul>
  *   <li>{@code FAIL_ON_UNKNOWN_PROPERTIES = false} - allows unknown fields in JSON</li>
+ *   <li>{@code StreamReadConstraints.maxStringLength = Integer.MAX_VALUE} - reads back any
+ *       string value {@link #toJson} can emit; the other read constraints keep their
+ *       Jackson defaults</li>
  * </ul>
  *
  * <p>Users can access the underlying ObjectMapper via {@link #getObjectMapper()}
@@ -69,7 +74,20 @@ public class JacksonJsonCodec implements JsonCodec {
      * @return configured ObjectMapper
      */
     private static ObjectMapper createDefaultObjectMapper() {
-        ObjectMapper mapper = new ObjectMapper();
+        // toJson puts no cap on string values, yet Jackson's default read constraints reject
+        // any single string above 20,000,000 characters. Every AgentStateStore persists
+        // through this codec and inline Base64 media routinely exceeds that, so the default
+        // turned a successful save into a state that could never be loaded again (#3465).
+        // The reader must accept whatever the writer emitted; nesting depth, number and name
+        // length keep their defaults.
+        JsonFactory factory =
+                JsonFactory.builder()
+                        .streamReadConstraints(
+                                StreamReadConstraints.builder()
+                                        .maxStringLength(Integer.MAX_VALUE)
+                                        .build())
+                        .build();
+        ObjectMapper mapper = new ObjectMapper(factory);
         mapper.registerModule(new JavaTimeModule());
         mapper.configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
         return mapper;
@@ -107,7 +125,10 @@ public class JacksonJsonCodec implements JsonCodec {
     @Override
     public <T> T fromJson(String json, Class<T> type) {
         try {
-            return objectMapper.readValue(json, type);
+            return objectMapper
+                    .readerFor(type)
+                    .with(DeserializationFeature.FAIL_ON_TRAILING_TOKENS)
+                    .readValue(json);
         } catch (JsonProcessingException e) {
             throw new JsonException("Failed to deserialize JSON to " + type.getName(), e);
         }
@@ -116,7 +137,10 @@ public class JacksonJsonCodec implements JsonCodec {
     @Override
     public <T> T fromJson(String json, TypeReference<T> typeRef) {
         try {
-            return objectMapper.readValue(json, typeRef);
+            return objectMapper
+                    .readerFor(typeRef)
+                    .with(DeserializationFeature.FAIL_ON_TRAILING_TOKENS)
+                    .readValue(json);
         } catch (JsonProcessingException e) {
             throw new JsonException("Failed to deserialize JSON", e);
         }

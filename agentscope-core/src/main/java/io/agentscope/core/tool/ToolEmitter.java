@@ -22,8 +22,11 @@ import io.agentscope.core.message.ToolResultBlock;
  *
  * <p>Tool methods can declare a ToolEmitter parameter to send intermediate progress updates and
  * messages during execution. These streaming chunks are delivered to registered hooks via
- * {@code onActingChunk()} events but are NOT sent to the LLM. Only the final return value of the
- * tool method is sent to the LLM as the tool result.
+ * {@code onActingChunk()} events and to event-stream subscribers as {@link
+ * io.agentscope.core.event.ToolProgressEvent}, but are NOT sent to the LLM. Only the final return
+ * value of the tool method is sent to the LLM as the tool result, which is what {@link
+ * io.agentscope.core.event.ToolResultTextDeltaEvent} and {@link
+ * io.agentscope.core.event.ToolResultDataDeltaEvent} carry.
  *
  * <p><b>Key Characteristics:</b>
  * <ul>

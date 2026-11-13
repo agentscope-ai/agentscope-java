@@ -31,6 +31,9 @@ import io.agentscope.core.memory.LongTermMemory;
 import io.agentscope.core.memory.LongTermMemoryTools;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
+import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.ToolResultBlock;
+import io.agentscope.core.message.ToolResultState;
 import java.util.Arrays;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
@@ -44,6 +47,19 @@ class LongTermMemoryToolsTest {
 
     private LongTermMemory mockMemory;
     private LongTermMemoryTools tools;
+
+    private static void assertToolResult(
+            ToolResultBlock result, ToolResultState state, String text) {
+        assertEquals(state, result.getState());
+        assertEquals(
+                text,
+                result.getOutput().stream()
+                        .filter(TextBlock.class::isInstance)
+                        .map(TextBlock.class::cast)
+                        .map(TextBlock::getText)
+                        .findFirst()
+                        .orElse(""));
+    }
 
     @BeforeEach
     void setUp() {
@@ -73,7 +89,12 @@ class LongTermMemoryToolsTest {
         List<String> content = List.of("Prefers dark mode", "Likes coffee");
 
         StepVerifier.create(tools.recordToMemory(thinking, content))
-                .expectNext("Successfully recorded to long-term memory")
+                .assertNext(
+                        result ->
+                                assertToolResult(
+                                        result,
+                                        ToolResultState.SUCCESS,
+                                        "Successfully recorded to long-term memory"))
                 .verifyComplete();
 
         ArgumentCaptor<List<Msg>> captor = ArgumentCaptor.forClass(List.class);
@@ -90,7 +111,12 @@ class LongTermMemoryToolsTest {
         List<String> content = List.of("User likes tea");
 
         StepVerifier.create(tools.recordToMemory(null, content))
-                .expectNext("Successfully recorded to long-term memory")
+                .assertNext(
+                        result ->
+                                assertToolResult(
+                                        result,
+                                        ToolResultState.SUCCESS,
+                                        "Successfully recorded to long-term memory"))
                 .verifyComplete();
 
         ArgumentCaptor<List<Msg>> captor = ArgumentCaptor.forClass(List.class);
@@ -108,7 +134,12 @@ class LongTermMemoryToolsTest {
         List<String> content = List.of("Important fact");
 
         StepVerifier.create(tools.recordToMemory(emptyThinking, content))
-                .expectNext("Successfully recorded to long-term memory")
+                .assertNext(
+                        result ->
+                                assertToolResult(
+                                        result,
+                                        ToolResultState.SUCCESS,
+                                        "Successfully recorded to long-term memory"))
                 .verifyComplete();
 
         ArgumentCaptor<List<Msg>> captor = ArgumentCaptor.forClass(List.class);
@@ -121,7 +152,12 @@ class LongTermMemoryToolsTest {
     @Test
     void testRecordToMemoryWithNullContent() {
         StepVerifier.create(tools.recordToMemory("thinking", null))
-                .expectNext("No content provided to record")
+                .assertNext(
+                        result ->
+                                assertToolResult(
+                                        result,
+                                        ToolResultState.ERROR,
+                                        "Error: No content provided to record"))
                 .verifyComplete();
 
         verify(mockMemory, never()).record(anyList());
@@ -130,7 +166,12 @@ class LongTermMemoryToolsTest {
     @Test
     void testRecordToMemoryWithEmptyContent() {
         StepVerifier.create(tools.recordToMemory("thinking", List.of()))
-                .expectNext("No content provided to record")
+                .assertNext(
+                        result ->
+                                assertToolResult(
+                                        result,
+                                        ToolResultState.ERROR,
+                                        "Error: No content provided to record"))
                 .verifyComplete();
 
         verify(mockMemory, never()).record(anyList());
@@ -143,7 +184,12 @@ class LongTermMemoryToolsTest {
         List<String> content = Arrays.asList("Valid content", "", null, "Another valid");
 
         StepVerifier.create(tools.recordToMemory("thinking", content))
-                .expectNext("Successfully recorded to long-term memory")
+                .assertNext(
+                        result ->
+                                assertToolResult(
+                                        result,
+                                        ToolResultState.SUCCESS,
+                                        "Successfully recorded to long-term memory"))
                 .verifyComplete();
 
         ArgumentCaptor<List<Msg>> captor = ArgumentCaptor.forClass(List.class);
@@ -160,7 +206,12 @@ class LongTermMemoryToolsTest {
         List<String> content = Arrays.asList("", null, "");
 
         StepVerifier.create(tools.recordToMemory(null, content))
-                .expectNext("No valid content to record")
+                .assertNext(
+                        result ->
+                                assertToolResult(
+                                        result,
+                                        ToolResultState.ERROR,
+                                        "Error: No valid content to record"))
                 .verifyComplete();
 
         verify(mockMemory, never()).record(anyList());
@@ -174,7 +225,10 @@ class LongTermMemoryToolsTest {
         List<String> content = List.of("Test content");
 
         StepVerifier.create(tools.recordToMemory("thinking", content))
-                .expectNext("Error recording memory: Storage error")
+                .assertNext(
+                        result ->
+                                assertToolResult(
+                                        result, ToolResultState.ERROR, "Error: Storage error"))
                 .verifyComplete();
     }
 
@@ -185,7 +239,12 @@ class LongTermMemoryToolsTest {
         List<String> keywords = List.of("travel", "preferences");
 
         StepVerifier.create(tools.retrieveFromMemory(keywords))
-                .expectNext(LongTermMemoryTools.wrap("Relevant memory found"))
+                .assertNext(
+                        result ->
+                                assertToolResult(
+                                        result,
+                                        ToolResultState.SUCCESS,
+                                        LongTermMemoryTools.wrap("Relevant memory found")))
                 .verifyComplete();
 
         ArgumentCaptor<Msg> captor = ArgumentCaptor.forClass(Msg.class);
@@ -204,7 +263,12 @@ class LongTermMemoryToolsTest {
         List<String> keywords = List.of("coffee");
 
         StepVerifier.create(tools.retrieveFromMemory(keywords))
-                .expectNext(LongTermMemoryTools.wrap("Single result"))
+                .assertNext(
+                        result ->
+                                assertToolResult(
+                                        result,
+                                        ToolResultState.SUCCESS,
+                                        LongTermMemoryTools.wrap("Single result")))
                 .verifyComplete();
 
         verify(mockMemory, times(1)).retrieve(any(Msg.class));
@@ -213,7 +277,12 @@ class LongTermMemoryToolsTest {
     @Test
     void testRetrieveFromMemoryWithNullKeywords() {
         StepVerifier.create(tools.retrieveFromMemory(null))
-                .expectNext("No keywords provided for search")
+                .assertNext(
+                        result ->
+                                assertToolResult(
+                                        result,
+                                        ToolResultState.ERROR,
+                                        "Error: No keywords provided for search"))
                 .verifyComplete();
 
         verify(mockMemory, never()).retrieve(any(Msg.class));
@@ -222,7 +291,12 @@ class LongTermMemoryToolsTest {
     @Test
     void testRetrieveFromMemoryWithEmptyKeywords() {
         StepVerifier.create(tools.retrieveFromMemory(List.of()))
-                .expectNext("No keywords provided for search")
+                .assertNext(
+                        result ->
+                                assertToolResult(
+                                        result,
+                                        ToolResultState.ERROR,
+                                        "Error: No keywords provided for search"))
                 .verifyComplete();
 
         verify(mockMemory, never()).retrieve(any(Msg.class));
@@ -235,7 +309,12 @@ class LongTermMemoryToolsTest {
         List<String> keywords = List.of("nonexistent");
 
         StepVerifier.create(tools.retrieveFromMemory(keywords))
-                .expectNext("No relevant memories found")
+                .assertNext(
+                        result ->
+                                assertToolResult(
+                                        result,
+                                        ToolResultState.SUCCESS,
+                                        "No relevant memories found"))
                 .verifyComplete();
     }
 
@@ -258,7 +337,10 @@ class LongTermMemoryToolsTest {
         List<String> keywords = List.of("test");
 
         StepVerifier.create(tools.retrieveFromMemory(keywords))
-                .expectNext("Error retrieving memory: Retrieval error")
+                .assertNext(
+                        result ->
+                                assertToolResult(
+                                        result, ToolResultState.ERROR, "Error: Retrieval error"))
                 .verifyComplete();
     }
 
@@ -270,7 +352,12 @@ class LongTermMemoryToolsTest {
         List<String> content = List.of("Fact 1", "Fact 2");
 
         StepVerifier.create(tools.recordToMemory(thinking, content))
-                .expectNext("Successfully recorded to long-term memory")
+                .assertNext(
+                        result ->
+                                assertToolResult(
+                                        result,
+                                        ToolResultState.SUCCESS,
+                                        "Successfully recorded to long-term memory"))
                 .verifyComplete();
 
         ArgumentCaptor<List<Msg>> captor = ArgumentCaptor.forClass(List.class);
@@ -291,7 +378,12 @@ class LongTermMemoryToolsTest {
         List<String> keywords = List.of("word1", "word2", "word3");
 
         StepVerifier.create(tools.retrieveFromMemory(keywords))
-                .expectNext(LongTermMemoryTools.wrap("result"))
+                .assertNext(
+                        result ->
+                                assertToolResult(
+                                        result,
+                                        ToolResultState.SUCCESS,
+                                        LongTermMemoryTools.wrap("result")))
                 .verifyComplete();
 
         ArgumentCaptor<Msg> captor = ArgumentCaptor.forClass(Msg.class);
@@ -311,11 +403,21 @@ class LongTermMemoryToolsTest {
         List<String> content2 = List.of("Second fact");
 
         StepVerifier.create(tools.recordToMemory("thinking1", content1))
-                .expectNext("Successfully recorded to long-term memory")
+                .assertNext(
+                        result ->
+                                assertToolResult(
+                                        result,
+                                        ToolResultState.SUCCESS,
+                                        "Successfully recorded to long-term memory"))
                 .verifyComplete();
 
         StepVerifier.create(tools.recordToMemory("thinking2", content2))
-                .expectNext("Successfully recorded to long-term memory")
+                .assertNext(
+                        result ->
+                                assertToolResult(
+                                        result,
+                                        ToolResultState.SUCCESS,
+                                        "Successfully recorded to long-term memory"))
                 .verifyComplete();
 
         verify(mockMemory, times(2)).record(anyList());
@@ -328,11 +430,21 @@ class LongTermMemoryToolsTest {
                 .thenReturn(Mono.just("result2"));
 
         StepVerifier.create(tools.retrieveFromMemory(List.of("query1")))
-                .expectNext(LongTermMemoryTools.wrap("result1"))
+                .assertNext(
+                        result ->
+                                assertToolResult(
+                                        result,
+                                        ToolResultState.SUCCESS,
+                                        LongTermMemoryTools.wrap("result1")))
                 .verifyComplete();
 
         StepVerifier.create(tools.retrieveFromMemory(List.of("query2")))
-                .expectNext(LongTermMemoryTools.wrap("result2"))
+                .assertNext(
+                        result ->
+                                assertToolResult(
+                                        result,
+                                        ToolResultState.SUCCESS,
+                                        LongTermMemoryTools.wrap("result2")))
                 .verifyComplete();
 
         verify(mockMemory, times(2)).retrieve(any(Msg.class));

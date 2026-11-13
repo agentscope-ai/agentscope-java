@@ -135,9 +135,17 @@ class AsyncToolMiddlewareTest {
 
         assertFalse(agentState.getContext().isEmpty(), "Placeholder should be written to context");
 
-        Thread.sleep(3000);
-
-        List<BusEntry> inbox = bus.inboxDrain("session-1", 100).block();
+        // The background continuation lands in the inbox ~2s after the offload (Mono.delay
+        // above); poll for it instead of a fixed sleep so the test returns as soon as the
+        // push arrives and slow machines still get the full window.
+        List<BusEntry> inbox = List.of();
+        long deadline = System.currentTimeMillis() + 5_000;
+        while (inbox.isEmpty() && System.currentTimeMillis() < deadline) {
+            inbox = bus.inboxDrain("session-1", 100).block();
+            if (inbox.isEmpty()) {
+                Thread.sleep(50);
+            }
+        }
         assertFalse(inbox.isEmpty(), "Background result should be pushed to inbox");
 
         String hint = inbox.get(0).payload().get("hint").toString();

@@ -305,7 +305,9 @@ class AguiAgentAdapterTest {
                         invocation -> {
                             RuntimeContext rc = invocation.getArgument(2);
                             assertTrue(
-                                    toolkit.getToolSchemas(List.of(), rc.getToolRequestConfig())
+                                    // no surface: un-trimmed compose (2-arg is package-private)
+                                    toolkit.getToolSchemas(
+                                                    List.of(), rc.getToolRequestConfig(), null)
                                             .isEmpty());
                             assertNull(toolkit.getTool("backend", rc.getToolRequestConfig()));
                             assertNotNull(toolkit.getTool("backend"));
@@ -393,7 +395,9 @@ class AguiAgentAdapterTest {
         when(mockAgent.stream(anyList(), any(StreamOptions.class), any(RuntimeContext.class)))
                 .thenAnswer(
                         invocation -> {
-                            toolkit.registerAgentTool(replacementTool);
+                            // Intentional same-name replacement (duplicate registration now fails
+                            // fast since #3328); the point is that the adapter never reverts it.
+                            toolkit.replaceAgentTool(replacementTool);
                             return Flux.empty();
                         });
 

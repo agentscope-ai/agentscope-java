@@ -37,10 +37,13 @@ import java.util.regex.Pattern;
  *   <li>Base URL defaults to {@code https://api.moonshot.cn/v1}</li>
  *   <li>Formatter defaults to {@link KimiFormatter} (a custom {@link Formatter} component in the
  *       {@link ModelCreationContext} takes precedence, e.g. {@link KimiMultiAgentFormatter})</li>
- *   <li>Native structured output defaults to disabled; the agent falls back to the
- *       {@code generate_response} tool instead</li>
+ *   <li>Native structured output defaults to enabled via {@code response_format} with
+ *       {@code json_schema}</li>
  *   <li>Native structured output alongside tools defaults to disabled, because Kimi prioritises
  *       {@code response_format} over tool invocations when both are present</li>
+ *   <li>{@code ToolChoice.Specific} is reported unsupported on thinking-enabled models
+ *       ({@code kimi-k3}, {@code kimi-k2.7-code}, {@code kimi-k2.6} / {@code kimi-k2.5}), where
+ *       {@link KimiFormatter} would degrade it to {@code auto}; other models keep it</li>
  * </ul>
  *
  * <p>The API key is taken from {@link ModelCreationContext#getApiKey()}, then from the
@@ -97,12 +100,26 @@ public final class KimiModelProvider implements ModelProvider {
         String endpointPath = trimToNull(context.getEndpointPath());
         boolean stream = context.getStream() != null ? context.getStream() : true;
 
+        // ReActAgent picks its generate_response forcing strategy from this flag:
+        // true appends ToolChoice.Specific to the request, false injects a prompt
+        // reminder. Mirror of the Specific branch in KimiFormatter.applyKimiToolChoice,
+        // which silently rewrites Specific to "auto" on thinking models (always for
+        // kimi-k3 / kimi-k2.7-code; for kimi-k2.6 / kimi-k2.5 unless the request
+        // disables thinking) — update both together when the model lists change.
+        // Reporting false is always safe (the prompt reminder works on every model),
+        // so the per-model flag conservatively marks kimi-k2.6 / kimi-k2.5 false too.
+        boolean specificUsable =
+                !KimiFormatter.isAlwaysThinkingModel(modelName)
+                        && !KimiFormatter.hasConfigurableThinking(modelName);
+
         OpenAIChatModel.Builder builder =
                 OpenAIChatModel.builder().apiKey(apiKey).modelName(modelName).stream(stream)
                         .baseUrl(baseUrl)
                         .endpointPath(endpointPath)
                         .formatter(new KimiFormatter())
-                        .nativeStructuredOutput(false)
+                        .nativeStructuredOutput(true)
+                        .nativeStructuredOutputWithTools(false)
+                        .supportsToolChoiceSpecific(specificUsable)
                         .contextWindowSize(
                                 ModelContextWindows.lookup(modelName, ModelContextWindows.KIMI));
 

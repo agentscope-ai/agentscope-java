@@ -101,8 +101,11 @@ class WeixinChannelRuntimeTest {
                         }
                         body = updates.get();
                     } else if (path.endsWith("sendmessage")) {
-                        sends.incrementAndGet();
+                        // Publish the payload before counting the send: waitFor() polls
+                        // `sends`, and a reader that observes the increment must also
+                        // observe the payload, or lastSend.get() dereferences null.
                         lastSend.set(JSON.readTree(exchange.getRequestBody()));
+                        sends.incrementAndGet();
                         body = sendResponse;
                     } else {
                         exchange.getRequestBody().readAllBytes();
