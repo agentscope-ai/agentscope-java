@@ -112,9 +112,16 @@ public class TaskUpdateEventHandler implements ClientEventHandler<TaskUpdateEven
                     }
                     return;
                 }
+                boolean hasArtifacts =
+                        context.getTask().getArtifacts() != null
+                                && !context.getTask().getArtifacts().isEmpty();
                 Msg msg =
-                        MessageConvertUtil.convertFromArtifact(
-                                context.getTask().getArtifacts(), context.getAgent().getName());
+                        !hasArtifacts && event.getStatus().message() != null
+                                ? MessageConvertUtil.convertFromMessage(
+                                        event.getStatus().message(), context.getAgent().getName())
+                                : MessageConvertUtil.convertFromArtifact(
+                                        context.getTask().getArtifacts(),
+                                        context.getAgent().getName());
 
                 msg = context.publishPostReasoning(msg);
 

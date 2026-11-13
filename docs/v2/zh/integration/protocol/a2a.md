@@ -61,6 +61,8 @@ A2aAgent remote = A2aAgent.builder()
 
 `A2aAgent` 是 `AgentBase` 的子类，可以像普通 Agent 一样组合到 Pipeline、MsgHub、Subagent 中。
 
+对于已完成任务，`call()` 优先返回输出 artifacts；没有 artifacts 时则返回最终状态消息。
+
 ## 服务端：把 ReActAgent 暴露成 A2A Server
 
 ### 添加依赖

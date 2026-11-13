@@ -789,6 +789,63 @@ public class A2aAgentTest {
         verify(a2aClient).close();
     }
 
+    @Test
+    void testCompletedStatusUpdateFallbackAndStreamResult() {
+        assertCompletedUpdate(false, true, "status answer");
+        org.mockito.Mockito.clearInvocations(a2aClient);
+        assertCompletedUpdate(true, true, "artifact answer");
+        org.mockito.Mockito.clearInvocations(a2aClient);
+        assertCompletedUpdate(false, false, "");
+    }
+
+    private void assertCompletedUpdate(boolean artifacts, boolean message, String expected) {
+        TaskStatus status =
+                new TaskStatus(
+                        TaskState.COMPLETED,
+                        message ? A2A.toAgentMessage("status answer") : null,
+                        null);
+        Task task =
+                new Task.Builder()
+                        .id("taskId")
+                        .contextId("contextId")
+                        .status(status)
+                        .artifacts(
+                                artifacts
+                                        ? List.of(
+                                                new Artifact.Builder()
+                                                        .artifactId("a1")
+                                                        .parts(new TextPart("artifact answer"))
+                                                        .build())
+                                        : List.of())
+                        .build();
+        TaskStatusUpdateEvent update =
+                new TaskStatusUpdateEvent("taskId", status, "contextId", true, Map.of());
+        doAnswer(
+                        invocation -> {
+                            List<BiConsumer<ClientEvent, AgentCard>> consumers =
+                                    invocation.getArgument(1);
+                            consumers.forEach(
+                                    c -> c.accept(new TaskUpdateEvent(task, update), agentCard));
+                            return null;
+                        })
+                .when(a2aClient)
+                .sendMessage(any(Message.class), anyList(), any());
+        A2aAgent agent =
+                A2aAgent.builder()
+                        .name("test-agent")
+                        .agentCard(agentCard)
+                        .clientReplacer(this::useMockClient)
+                        .build();
+        assertEquals(
+                expected,
+                agent.call(Msg.builder().textContent("test").build()).block().getTextContent());
+        List<Event> events =
+                agent.stream(Msg.builder().textContent("stream").build()).collectList().block();
+        assertNotNull(events);
+        assertEquals(expected, events.get(events.size() - 1).getMessage().getTextContent());
+        verify(a2aClient, org.mockito.Mockito.times(2)).close();
+    }
+
     private Client useMockClient(Client built) {
         built.close();
         return a2aClient;

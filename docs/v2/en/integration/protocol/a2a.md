@@ -61,6 +61,8 @@ A2aAgent remote = A2aAgent.builder()
 
 `A2aAgent` is a subclass of `AgentBase`, so it composes naturally with Pipeline, MsgHub, Subagent, etc.
 
+For completed tasks, `call()` prefers output artifacts; when no artifacts are present, it returns the final status message instead.
+
 ## Server: expose a ReActAgent as an A2A Server
 
 ### Add the dependency
