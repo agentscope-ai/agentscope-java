@@ -46,6 +46,7 @@
         <argLine>-Xms512m -Xmx1024m</argLine>
 
         <central.publishing.maven.version>0.7.0</central.publishing.maven.version>
+        <jackson3-test.version>3.1.0</jackson3-test.version>
     </properties>
 
     <dependencies>
@@ -64,6 +65,14 @@
         <dependency>
             <groupId>com.fasterxml.jackson.core</groupId>
             <artifactId>jackson-annotations</artifactId>
+        </dependency>
+
+        <!-- Jackson 3.1 compatibility tests share the managed Jackson 2.21 annotations. -->
+        <dependency>
+            <groupId>tools.jackson.core</groupId>
+            <artifactId>jackson-databind</artifactId>
+            <version>${jackson3-test.version}</version>
+            <scope>test</scope>
         </dependency>
 
         <!-- Victools JSON Schema Generator for structured output -->
