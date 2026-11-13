@@ -26,9 +26,11 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.core.event.AgentEndEvent;
 import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.event.AgentEventType;
 import io.agentscope.core.event.AgentStartEvent;
+import io.agentscope.core.event.TextBlockDeltaEvent;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
@@ -308,6 +310,109 @@ class HarnessAgentSubagentStreamEventsTest {
                     start.getSource().startsWith("sess-multi-instance/" + childId + "/"),
                     "source should use the parent session and child type: " + start.getSource());
         }
+    }
+
+    @Test
+    void streamEvents_nestedSubagentsRetainTheirOwnInstanceSources() throws Exception {
+        Model model = mock(Model.class);
+        when(model.getModelName()).thenReturn("stub");
+        when(model.stream(anyList(), any(), any()))
+                .thenReturn(
+                        Flux.just(
+                                toolCallChunk(
+                                        "parent",
+                                        "agent_spawn",
+                                        Map.of(
+                                                "agent_id", "planner",
+                                                "task", "delegate research",
+                                                "timeout_seconds", 60))))
+                .thenReturn(
+                        Flux.just(
+                                toolCallChunk(
+                                        "planner",
+                                        "agent_spawn",
+                                        Map.of(
+                                                "agent_id", "researcher",
+                                                "task", "research",
+                                                "timeout_seconds", 60))))
+                .thenReturn(Flux.just(stopChunk("researcher", "research complete")))
+                .thenReturn(Flux.just(stopChunk("planner", "planning complete")))
+                .thenReturn(Flux.just(stopChunk("parent", "all complete")));
+
+        Path plannerWorkspace = workspace.resolve("planner");
+        Path researcherWorkspace = workspace.resolve("researcher");
+        parent =
+                HarnessAgent.builder()
+                        .name("parent")
+                        .model(model)
+                        .workspace(workspace)
+                        .abstractFilesystem(new LocalFilesystem(workspace))
+                        .subagentFactory(
+                                "planner",
+                                ignored ->
+                                        HarnessAgent.builder()
+                                                .name("planner")
+                                                .model(model)
+                                                .workspace(plannerWorkspace)
+                                                .abstractFilesystem(
+                                                        new LocalFilesystem(plannerWorkspace))
+                                                .subagentFactory(
+                                                        "researcher",
+                                                        child ->
+                                                                HarnessAgent.builder()
+                                                                        .name("researcher")
+                                                                        .model(model)
+                                                                        .workspace(
+                                                                                researcherWorkspace)
+                                                                        .abstractFilesystem(
+                                                                                new LocalFilesystem(
+                                                                                        researcherWorkspace))
+                                                                        .build())
+                                                .build())
+                        .build();
+
+        List<AgentEvent> events =
+                parent.streamEvents(
+                                Msg.builder().role(MsgRole.USER).textContent("start").build(),
+                                RuntimeContext.builder().sessionId("nested-parent").build())
+                        .collectList()
+                        .block(Duration.ofSeconds(20));
+        assertNotNull(events);
+        List<AgentStartEvent> starts =
+                events.stream()
+                        .filter(e -> e instanceof AgentStartEvent && e.getSource() != null)
+                        .map(e -> (AgentStartEvent) e)
+                        .toList();
+        assertEquals(2, starts.size(), "both nested child starts should reach the parent");
+        for (AgentStartEvent start : starts) {
+            assertTrue(
+                    start.getSource().endsWith("/" + start.getSessionId()),
+                    "source must retain the emitting instance: " + start.getSource());
+            assertEquals(
+                    1,
+                    events.stream()
+                            .filter(e -> e instanceof AgentEndEvent)
+                            .map(e -> (AgentEndEvent) e)
+                            .filter(e -> start.getReplyId().equals(e.getReplyId()))
+                            .filter(e -> start.getSource().equals(e.getSource()))
+                            .count(),
+                    "each nested start should have one matching end");
+        }
+        assertEquals(2, starts.stream().map(AgentStartEvent::getSource).distinct().count());
+        AgentStartEvent researcher =
+                starts.stream()
+                        .filter(e -> "researcher".equals(e.getName()))
+                        .findFirst()
+                        .orElseThrow();
+        assertTrue(
+                events.stream()
+                        .filter(e -> e instanceof TextBlockDeltaEvent)
+                        .map(e -> (TextBlockDeltaEvent) e)
+                        .anyMatch(
+                                e ->
+                                        "research complete".equals(e.getDelta())
+                                                && researcher.getSource().equals(e.getSource())),
+                "grandchild text should retain its own source at the outer consumer");
     }
 
     // -----------------------------------------------------------------
