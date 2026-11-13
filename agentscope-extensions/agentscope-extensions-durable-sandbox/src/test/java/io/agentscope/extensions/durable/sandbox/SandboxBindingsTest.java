@@ -508,7 +508,7 @@ class SandboxBindingsTest {
                                     .redirectError(ProcessBuilder.Redirect.DISCARD)
                                     .redirectOutput(output.toFile())
                                     .start();
-                    if (!process.waitFor(10, TimeUnit.SECONDS)) {
+                    if (!process.waitFor(timeout, TimeUnit.SECONDS)) {
                         process.destroyForcibly();
                         throw new IllegalStateException("fixture control timeout");
                     }
