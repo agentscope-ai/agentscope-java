@@ -56,6 +56,7 @@ public class ToolCallsAccumulator implements ContentAccumulator<ToolUseBlock> {
     /** Builder for a single tool call. */
     private static class ToolCallBuilder {
         String toolId;
+        String fallbackId;
         String name;
         Map<String, Object> args = new HashMap<>();
         StringBuilder rawContent = new StringBuilder();
@@ -176,8 +177,12 @@ public class ToolCallsAccumulator implements ContentAccumulator<ToolUseBlock> {
                 finalMetadata.put(ToolUseBlock.METADATA_MALFORMED_ARGUMENTS, true);
             }
 
+            // Reuse the same fallback identity for streaming snapshots and final history.
+            if (toolId == null && fallbackId == null) {
+                fallbackId = generateId();
+            }
             return ToolUseBlock.builder()
-                    .id(toolId != null ? toolId : generateId())
+                    .id(toolId != null ? toolId : fallbackId)
                     .name(name)
                     .input(finalArgs)
                     .content(contentStr)
