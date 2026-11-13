@@ -39,6 +39,12 @@ OllamaChatModel model = OllamaChatModel.builder()
     .build();
 ```
 
+## Structured output
+
+Without business tools, `agent.call(messages, Output.class)` uses Ollama's native `format` field with the JSON schema itself, not an OpenAI response-format wrapper. Native failures fall back to the synthetic `generate_response` tool. Set `nativeStructuredOutput(false)` on the builder to retain the synthetic tool path for endpoints without schema support.
+
+With business tools, the synthetic tool path remains the default. Enable `nativeStructuredOutputWithTools(true)` only after verifying that the model and endpoint support combining `format` and `tools`.
+
 ## Spring Boot
 
 Spring Boot applications can use the Ollama starter:

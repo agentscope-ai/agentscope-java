@@ -22,6 +22,8 @@ import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.agentscope.core.formatter.JsonSchema;
+import io.agentscope.core.formatter.ResponseFormat;
 import io.agentscope.core.model.ExecutionConfig;
 import io.agentscope.core.model.GenerateOptions;
 import java.time.Duration;
@@ -106,6 +108,38 @@ class OllamaOptionsTest {
         assertEquals(0.5, options.getFrequencyPenalty());
         assertEquals(0.3, options.getPresencePenalty());
         assertEquals(Integer.valueOf(123), options.getSeed());
+    }
+
+    @Test
+    void testJsonSchemaResponseFormat() {
+        Map<String, Object> schema =
+                Map.of("type", "object", "properties", Map.of("name", Map.of("type", "string")));
+        GenerateOptions options =
+                GenerateOptions.builder()
+                        .responseFormat(
+                                ResponseFormat.jsonSchema(
+                                        JsonSchema.builder()
+                                                .name("result")
+                                                .schema(schema)
+                                                .strict(true)
+                                                .build()))
+                        .build();
+
+        assertEquals(schema, OllamaOptions.fromGenerateOptions(options).getFormat());
+    }
+
+    @Test
+    void testJsonObjectResponseFormat() {
+        GenerateOptions options =
+                GenerateOptions.builder().responseFormat(ResponseFormat.jsonObject()).build();
+        assertEquals("json", OllamaOptions.fromGenerateOptions(options).getFormat());
+    }
+
+    @Test
+    void testTextResponseFormat() {
+        GenerateOptions options =
+                GenerateOptions.builder().responseFormat(ResponseFormat.text()).build();
+        assertNull(OllamaOptions.fromGenerateOptions(options).getFormat());
     }
 
     @Test

@@ -398,6 +398,7 @@ always takes precedence.
 | OpenAI (DeepSeek/GLM formatter) | `false` | Not supported; auto-fallback |
 | DashScope | `false` | Native endpoint only supports `json_object`, not `json_schema`; fallback by default |
 | Anthropic | `false` (default) | — |
+| Ollama | `true` | Native schema via `format` without tools; synthetic tool path with tools by default |
 
 > **DashScope users**: Thinking mode (`enableThinking(true)`) does not support structured output at all — the framework forces the fallback path.
 

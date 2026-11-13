@@ -395,6 +395,7 @@ Native structured output 默认不会强制 schema 进入 strict 模式。OpenAI
 | OpenAI (DeepSeek/GLM formatter) | `false` | 不支持，自动走 fallback |
 | DashScope | `false` | DashScope 原生端点仅支持 `json_object`，不支持 `json_schema`；框架默认走 fallback |
 | Anthropic | `false`（默认） | — |
+| Ollama | `true` | 无工具时通过 `format` 传递原生 schema；有工具时默认走合成工具路径 |
 
 > **DashScope 用户注意**：DashScope 的思考模式（`enableThinking(true)`）不支持结构化输出，框架会强制走 fallback 路径。
 

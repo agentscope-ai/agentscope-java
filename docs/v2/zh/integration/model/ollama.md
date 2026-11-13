@@ -39,6 +39,12 @@ OllamaChatModel model = OllamaChatModel.builder()
     .build();
 ```
 
+## 结构化输出
+
+无业务工具时，`agent.call(messages, Output.class)` 通过 Ollama 原生 `format` 字段传递 JSON schema 本身，而不是 OpenAI 的 response-format 包装。原生调用失败时会降级到合成的 `generate_response` 工具。对于不支持 schema 的端点，可在 builder 中设置 `nativeStructuredOutput(false)` 保留合成工具路径。
+
+有业务工具时，默认仍走合成工具路径。只有确认模型和端点支持同时使用 `format` 与 `tools` 后，才启用 `nativeStructuredOutputWithTools(true)`。
+
 ## Spring Boot
 
 Spring Boot 应用可以使用 Ollama starter：
