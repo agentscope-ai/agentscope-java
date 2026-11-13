@@ -22,7 +22,10 @@ import io.agentscope.harness.agent.sandbox.SandboxException;
 import io.agentscope.harness.agent.sandbox.SandboxState;
 import io.agentscope.harness.agent.sandbox.WorkspaceSpec;
 import io.agentscope.harness.agent.sandbox.json.HarnessSandboxJacksonModule;
+import io.agentscope.harness.agent.sandbox.snapshot.RemoteSandboxSnapshot;
+import io.agentscope.harness.agent.sandbox.snapshot.RemoteSnapshotSpec;
 import io.agentscope.harness.agent.sandbox.snapshot.SandboxSnapshotSpec;
+import java.util.Objects;
 import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -58,12 +61,14 @@ public class E2bSandboxClient implements SandboxClient<E2bSandboxClientOptions> 
             E2bSandboxClientOptions options) {
         String sessionId = UUID.randomUUID().toString();
         E2bSandboxClientOptions merged = merge(options);
+        String workspaceRoot = resolveWorkspaceRoot(workspaceSpec, merged.getWorkspaceRoot());
+        requireAbsoluteWorkspaceRoot(workspaceRoot);
 
         E2bSandboxState state = new E2bSandboxState();
         state.setSessionId(sessionId);
         state.setWorkspaceSpec(workspaceSpec);
         state.setTemplateId(merged.getTemplateId());
-        state.setWorkspaceRoot(merged.getWorkspaceRoot());
+        state.setWorkspaceRoot(workspaceRoot);
         state.setSandboxOwned(true);
         state.setWorkspaceRootReady(false);
         state.setPersistenceMode(merged.getPersistenceMode());
@@ -84,6 +89,14 @@ public class E2bSandboxClient implements SandboxClient<E2bSandboxClientOptions> 
             throw new IllegalArgumentException(
                     "Expected E2bSandboxState but got: " + state.getClass().getName());
         }
+        String previousRoot = e2b.getWorkspaceRoot();
+        String workspaceRoot = resolveWorkspaceRoot(e2b.getWorkspaceSpec(), previousRoot);
+        requireAbsoluteWorkspaceRoot(workspaceRoot);
+        if (!Objects.equals(previousRoot, workspaceRoot)) {
+            e2b.setWorkspaceRootReady(false);
+            e2b.setWorkspaceProjectionHash(null);
+        }
+        e2b.setWorkspaceRoot(workspaceRoot);
         E2bSandboxClientOptions resumed = merge(null);
         resumed.setCodec(e2b.getCodec());
         return new E2bSandbox(e2b, resumed);
@@ -110,6 +123,20 @@ public class E2bSandboxClient implements SandboxClient<E2bSandboxClientOptions> 
             throw new SandboxException.SandboxConfigurationException(
                     "Failed to deserialize E2B sandbox state", e);
         }
+    }
+
+    /**
+     * Restores the runtime storage client omitted from remote snapshot JSON while keeping the
+     * persisted archive id, matching {@code DockerSandboxClient}.
+     */
+    @Override
+    public SandboxState deserializeState(String json, SandboxSnapshotSpec snapshotSpec) {
+        SandboxState state = deserializeState(json);
+        if (snapshotSpec instanceof RemoteSnapshotSpec remoteSpec
+                && state.getSnapshot() instanceof RemoteSandboxSnapshot snapshot) {
+            state.setSnapshot(new RemoteSandboxSnapshot(remoteSpec.getClient(), snapshot.getId()));
+        }
+        return state;
     }
 
     private E2bSandboxClientOptions merge(E2bSandboxClientOptions call) {
@@ -156,6 +183,37 @@ public class E2bSandboxClient implements SandboxClient<E2bSandboxClientOptions> 
             o.setSnapshotRetention(call.getSnapshotRetention());
         }
         return o;
+    }
+
+    /**
+     * Rejects blank or relative workspace roots fail-fast; every E2B operation assumes an
+     * absolute in-sandbox path.
+     *
+     * @param workspaceRoot workspace root to check
+     */
+    private static void requireAbsoluteWorkspaceRoot(String workspaceRoot) {
+        if (workspaceRoot == null
+                || workspaceRoot.isBlank()
+                || !workspaceRoot.strip().startsWith("/")) {
+            throw new SandboxException.SandboxConfigurationException(
+                    "E2B workspaceRoot must be an absolute in-sandbox path but was: "
+                            + workspaceRoot);
+        }
+    }
+
+    /**
+     * Resolves the effective in-sandbox workspace root, preferring an explicit {@link
+     * WorkspaceSpec} root over the options value.
+     *
+     * @param spec workspace spec supplied by the caller, may be {@code null}
+     * @param fallback root from the merged client options or persisted state
+     * @return the root to use for this sandbox
+     */
+    private static String resolveWorkspaceRoot(WorkspaceSpec spec, String fallback) {
+        if (spec != null && spec.getRoot() != null && !spec.getRoot().isBlank()) {
+            return spec.getRoot();
+        }
+        return fallback;
     }
 
     private static E2bSandboxClientOptions copy(E2bSandboxClientOptions src) {
