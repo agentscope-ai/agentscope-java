@@ -199,7 +199,7 @@ PermissionContextState permCtx =
                 .build();
 ```
 
-**At runtime via suggested rules** — when the permission system returns ASK, it auto-generates suggested rules based on the current invocation. Pass the accepted rules in `ConfirmResult` and the agent will write them into the engine:
+**At runtime via suggested rules** — when the permission system returns ASK, it auto-generates suggested rules based on the current invocation. Pass the accepted rules in a confirmed `ConfirmResult`; the agent adds them to the engine and the session's `AgentState.permissionContext`. With a state store configured, remembered rules survive later calls and rebuilds unless a new non-null builder context replaces them. Repeated acceptance does not add duplicate rules; existing stored duplicates are not migrated:
 
 ```java
 import io.agentscope.core.event.ConfirmResult;

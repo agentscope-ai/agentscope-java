@@ -199,7 +199,7 @@ PermissionContextState permCtx =
                 .build();
 ```
 
-**运行时通过建议规则** —— 当权限系统返回 ASK 时，会基于本次调用自动生成建议规则。把已接受的规则附在 `ConfirmResult.acceptedRules` 中回传，agent 会自动写入引擎：
+**运行时通过建议规则** —— 当权限系统返回 ASK 时，会基于本次调用自动生成建议规则。通过确认通过的 `ConfirmResult` 回传接受的规则，agent 会把它们加入引擎和会话的 `AgentState.permissionContext`。配置状态存储后，记住的规则可用于后续调用和实例重建，除非新的非空 builder 上下文将其替换。重复接受不会新增重复规则；已有存储中的重复规则不做迁移：
 
 ```java
 import io.agentscope.core.event.ConfirmResult;
