@@ -94,6 +94,10 @@ type sessionSinkAdapter struct {
 	sink *controller.SessionEventSink
 }
 
+func (a *sessionSinkAdapter) HandleHeartbeat(ctx context.Context, identity asdp.ReportIdentity) error {
+	return a.sink.ApplyInstanceHeartbeat(ctx, reportIdentity(identity))
+}
+
 func (a *sessionSinkAdapter) HandleConnect(tenant, namespace, agentID, bindingID, agentKey, instanceKey string, generation int64, runtimeName, sdkVersion string, capabilities []string) {
 	a.sink.ApplyInstanceConnect(context.Background(), tenant, namespace, agentID, bindingID, agentKey, instanceKey,
 		generation, runtimeName, sdkVersion, capabilities)

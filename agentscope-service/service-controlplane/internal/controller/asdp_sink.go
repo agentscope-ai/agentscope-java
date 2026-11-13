@@ -468,6 +468,20 @@ func (s *SessionEventSink) resolveRuntimeReportIdentity(ctx context.Context, ide
 	return nil, fmt.Errorf("%w: runtime report instance or generation does not match the Catalog", store.ErrForbidden)
 }
 
+// ApplyInstanceHeartbeat renews the authenticated instance's liveness
+// without changing its reported load or capabilities.
+func (s *SessionEventSink) ApplyInstanceHeartbeat(ctx context.Context, identity RuntimeReportIdentity) error {
+	if identity.InstanceGeneration <= 0 {
+		return fmt.Errorf("%w: invalid instance generation", store.ErrForbidden)
+	}
+	resolved, err := s.resolveRuntimeReportIdentity(ctx, identity)
+	if err != nil {
+		return err
+	}
+	_, err = s.Store.RuntimeRegistry().HeartbeatAgentInstance(ctx, resolved.AgentInstanceUUID, identity.InstanceGeneration, nil, nil)
+	return err
+}
+
 // ApplyInstanceConnect observes an already registered ASDP application. ASDP
 // never creates or claims a logical Agent; registration credentials do that.
 func (s *SessionEventSink) ApplyInstanceConnect(ctx context.Context, tenant, namespace, agentIDRaw, bindingIDRaw, agentKey, instanceKey string, generation int64, runtimeName, sdkVersion string, capabilities []string) {
@@ -508,7 +522,7 @@ func (s *SessionEventSink) ApplyInstanceConnect(ctx context.Context, tenant, nam
 	if instance == nil {
 		return
 	}
-	_, err = s.Store.RuntimeRegistry().HeartbeatAgentInstance(ctx, instance.ID, generation, instance.ActiveSessions, encoded)
+	_, err = s.Store.RuntimeRegistry().HeartbeatAgentInstance(ctx, instance.ID, generation, nil, encoded)
 	if err != nil {
 		log.FromContext(ctx).Error(err, "failed to update registered ASDP application", "instance", instanceKey,
 			"runtime", runtimeName, "sdkVersion", sdkVersion)

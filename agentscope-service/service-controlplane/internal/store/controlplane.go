@@ -94,7 +94,8 @@ type RuntimeRegistryRepository interface {
 	UpsertAgentInstance(ctx context.Context, instance *controlmodel.AgentInstance) (*controlmodel.AgentInstance, error)
 	GetAgentInstance(ctx context.Context, id uuid.UUID) (*controlmodel.AgentInstance, error)
 	ListAgentInstances(ctx context.Context, tenant, namespace string, agentID uuid.UUID) ([]*controlmodel.AgentInstance, error)
-	HeartbeatAgentInstance(ctx context.Context, id uuid.UUID, generation int64, activeSessions int32, capabilities json.RawMessage) (*controlmodel.AgentInstance, error)
+	// HeartbeatAgentInstance preserves the current load when activeSessions is nil.
+	HeartbeatAgentInstance(ctx context.Context, id uuid.UUID, generation int64, activeSessions *int32, capabilities json.RawMessage) (*controlmodel.AgentInstance, error)
 	SetAgentInstanceHealth(ctx context.Context, id uuid.UUID, generation int64, health string) (*controlmodel.AgentInstance, error)
 	MarkAgentInstancesOffline(ctx context.Context, before time.Time) (int64, error)
 

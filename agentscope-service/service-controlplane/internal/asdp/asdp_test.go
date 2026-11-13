@@ -43,12 +43,20 @@ func freePort(t *testing.T) int {
 // testEventSink captures upstream events for assertions.
 type testEventSink struct {
 	mu                  sync.Mutex
+	heartbeatIdentity   asdp.ReportIdentity
 	sessionReports      []capturedSessionReport
 	attemptReports      []capturedExecutionAttemptReport
 	conversationReports []*asdp.ConversationTurnReport
 	eventReports        []*asdp.EventReport
 	contextReports      []*asdp.ContextReport
 	inventoryReports    []*asdp.InventoryReport
+}
+
+func (s *testEventSink) HandleHeartbeat(_ context.Context, identity asdp.ReportIdentity) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.heartbeatIdentity = identity
+	return nil
 }
 
 func (s *testEventSink) HandleConnect(tenant, namespace, agentID, bindingID, agentKey, instanceKey string, generation int64, runtimeName, sdkVersion string, capabilities []string) {
@@ -603,7 +611,8 @@ func TestSessionReport(t *testing.T) {
 }
 
 func TestHeartbeat(t *testing.T) {
-	_, client, cleanup := startTestServer(t, nil)
+	sink := &testEventSink{}
+	_, client, cleanup := startTestServer(t, sink)
 	defer cleanup()
 
 	meta := validMeta()
@@ -614,7 +623,7 @@ func TestHeartbeat(t *testing.T) {
 
 	ts := time.Now().Unix()
 	if err := stream.Send(&asdp.Upstream{
-		Meta:    meta,
+		Meta:    &asdp.UpstreamMeta{InstanceKey: "other-instance", Generation: 99},
 		Payload: &asdp.Upstream_Heartbeat{Heartbeat: &asdp.Heartbeat{Timestamp: ts}},
 	}); err != nil {
 		t.Fatalf("failed to send Heartbeat: %v", err)
@@ -631,6 +640,16 @@ func TestHeartbeat(t *testing.T) {
 	}
 	if hb.Timestamp != ts {
 		t.Errorf("heartbeat timestamp: want %d, got %d", ts, hb.Timestamp)
+	}
+	sink.mu.Lock()
+	defer sink.mu.Unlock()
+	want := asdp.ReportIdentity{
+		Tenant: meta.Tenant, Namespace: meta.Namespace, AgentID: meta.AgentId,
+		BindingID: meta.BindingId, AgentKey: meta.AgentKey, InstanceKey: meta.InstanceKey,
+		InstanceGeneration: meta.Generation,
+	}
+	if sink.heartbeatIdentity != want {
+		t.Fatalf("heartbeat identity = %+v, want handshake identity %+v", sink.heartbeatIdentity, want)
 	}
 }
 

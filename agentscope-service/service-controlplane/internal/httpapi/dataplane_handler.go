@@ -63,7 +63,7 @@ func (s *Server) heartbeatDataPlane(c *gin.Context) {
 	if req.Capabilities == nil {
 		capabilities = nil
 	}
-	instance, err := s.store.RuntimeRegistry().HeartbeatAgentInstance(c.Request.Context(), id, req.Generation, req.ActiveSessions, capabilities)
+	instance, err := s.store.RuntimeRegistry().HeartbeatAgentInstance(c.Request.Context(), id, req.Generation, &req.ActiveSessions, capabilities)
 	if err != nil {
 		s.writeControlPlaneError(c, err)
 		return

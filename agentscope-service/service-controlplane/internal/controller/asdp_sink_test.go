@@ -210,6 +210,58 @@ func newRuntimeReportIdentity(t *testing.T, st store.Store, tenant, namespace, a
 		InstanceGeneration: instance.Generation}
 }
 
+func TestApplyInstanceHeartbeatRenewsCurrentGeneration(t *testing.T) {
+	ctx := t.Context()
+	st := newSinkTestStore(t)
+	sink := &SessionEventSink{Store: st}
+	identity := newRuntimeReportIdentity(t, st, "tenant-a", "ns-a", "agent-a", "instance-a")
+	resolved, err := sink.resolveRuntimeReportIdentity(ctx, identity)
+	if err != nil {
+		t.Fatal(err)
+	}
+	registry := st.RuntimeRegistry()
+	load := int32(2)
+	capabilities := controlmodel.CapabilityFlags([]string{"agent-task"})
+	before, err := registry.HeartbeatAgentInstance(ctx, resolved.AgentInstanceUUID, identity.InstanceGeneration, &load, capabilities)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stale := identity
+	before, err = registry.UpsertAgentInstance(ctx, before)
+	if err != nil {
+		t.Fatal(err)
+	}
+	identity.InstanceGeneration = before.Generation
+	if _, err := registry.MarkAgentInstancesOffline(ctx, before.LastSeenAt.Add(time.Second)); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := sink.ApplyInstanceHeartbeat(ctx, stale); !errors.Is(err, store.ErrForbidden) {
+		t.Fatalf("stale heartbeat: got %v, want forbidden", err)
+	}
+	offline, err := registry.GetAgentInstance(ctx, before.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if offline.Health != controlmodel.RuntimeHealthUnhealthy || !offline.LastSeenAt.Equal(before.LastSeenAt) {
+		t.Fatalf("stale heartbeat changed instance: %+v", offline)
+	}
+
+	if err := sink.ApplyInstanceHeartbeat(ctx, identity); err != nil {
+		t.Fatal(err)
+	}
+	renewed, err := registry.GetAgentInstance(ctx, before.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if renewed.Health != controlmodel.RuntimeHealthHealthy || !renewed.LastSeenAt.After(before.LastSeenAt) {
+		t.Fatalf("heartbeat did not renew instance: %+v", renewed)
+	}
+	if renewed.ActiveSessions != load || string(renewed.Capabilities) != string(before.Capabilities) {
+		t.Fatalf("heartbeat overwrote load or capabilities: %+v", renewed)
+	}
+}
+
 func TestApplySessionReportNewFields(t *testing.T) {
 	st := newSinkTestStore(t)
 	agent := newSinkTestAgent()
