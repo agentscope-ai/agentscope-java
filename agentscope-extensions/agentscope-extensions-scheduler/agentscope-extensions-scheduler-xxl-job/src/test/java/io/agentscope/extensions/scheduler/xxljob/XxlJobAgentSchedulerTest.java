@@ -23,9 +23,19 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 
 import com.xxl.job.core.executor.XxlJobExecutor;
+import com.xxl.job.core.handler.IJobHandler;
+import io.agentscope.core.message.ContentBlock;
+import io.agentscope.core.message.Msg;
+import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.model.ChatResponse;
+import io.agentscope.core.model.GenerateOptions;
+import io.agentscope.core.model.Model;
+import io.agentscope.core.model.ToolSchema;
+import io.agentscope.extensions.scheduler.BaseScheduleAgentTask;
 import io.agentscope.extensions.scheduler.ScheduleAgentTask;
 import io.agentscope.extensions.scheduler.config.AgentConfig;
 import io.agentscope.extensions.scheduler.config.DashScopeModelConfig;
+import io.agentscope.extensions.scheduler.config.ModelConfig;
 import io.agentscope.extensions.scheduler.config.RuntimeAgentConfig;
 import io.agentscope.extensions.scheduler.config.ScheduleConfig;
 import java.util.List;
@@ -38,6 +48,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.MockedStatic;
 import org.mockito.Mockito;
+import reactor.core.publisher.Flux;
 
 /** Unit tests for {@link XxlJobAgentScheduler}. */
 class XxlJobAgentSchedulerTest {
@@ -632,6 +643,57 @@ class XxlJobAgentSchedulerTest {
 
             // Verify the task was not added to the scheduled tasks
             assertEquals(0, scheduler.getAllScheduleAgentTasks().size());
+        }
+    }
+
+    @Test
+    void testJobTriggerCountsExactlyOneExecution() throws Exception {
+        RuntimeAgentConfig agentConfig =
+                RuntimeAgentConfig.builder()
+                        .name("CountingAgent")
+                        .modelConfig(new FixedResponseModelConfig())
+                        .sysPrompt("Test prompt")
+                        .build();
+
+        BaseScheduleAgentTask task = (BaseScheduleAgentTask) scheduler.schedule(agentConfig);
+
+        IJobHandler handler = XxlJobExecutor.loadJobHandler("CountingAgent");
+        assertNotNull(handler, "schedule() should register the job handler with XXL-Job");
+
+        handler.execute();
+
+        // BaseScheduleAgentTask.run(...) already counts the execution, so a single trigger
+        // must leave the counter at 1 -- the same invariant the Quartz job relies on.
+        assertEquals(1L, task.getExecutionCount());
+    }
+
+    /**
+     * A {@link ModelConfig} whose model answers with a canned text block, so that a scheduled
+     * task can complete without reaching a real provider.
+     */
+    private static final class FixedResponseModelConfig implements ModelConfig {
+
+        @Override
+        public String getModelName() {
+            return "test-model";
+        }
+
+        @Override
+        public Model createModel() {
+            return new Model() {
+                @Override
+                public Flux<ChatResponse> stream(
+                        List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
+                    ContentBlock block = TextBlock.builder().text("ok").build();
+                    return Flux.just(
+                            ChatResponse.builder().id("r1").content(List.of(block)).build());
+                }
+
+                @Override
+                public String getModelName() {
+                    return "test-model";
+                }
+            };
         }
     }
 }
