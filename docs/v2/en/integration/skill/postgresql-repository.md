@@ -35,7 +35,8 @@ DataSource ds = ...;  // HikariCP, PgBouncer, etc.
 PostgresSkillRepository repo = new PostgresSkillRepository(ds, true, true);
 
 Toolkit toolkit = new Toolkit();
-repo.getAllSkills().forEach(toolkit::registerSkill);
+toolkit.registerSkill(repo.getSkill("calculator"));  // serve by name; bulk reads are
+// deprecated for serving since 2.1.0 (management/bulk tooling only)
 ```
 
 ## Using the Builder
@@ -96,8 +97,9 @@ repo.save(List.of(skill), /* overwrite */ true);
 
 // Read
 AgentSkill loaded = repo.getSkill("calculator");
-List<String> names = repo.getAllSkillNames();
 boolean exists = repo.skillExists("calculator");
+// (getAllSkillNames() still works for management tooling; it is deprecated for
+//  serving since 2.1.0)
 
 // Delete
 repo.delete("calculator");

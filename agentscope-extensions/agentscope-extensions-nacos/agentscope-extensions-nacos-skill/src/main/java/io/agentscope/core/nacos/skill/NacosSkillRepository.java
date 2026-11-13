@@ -19,6 +19,7 @@ import com.alibaba.nacos.api.ai.AiService;
 import com.alibaba.nacos.api.exception.NacosException;
 import com.alibaba.nacos.common.utils.StringUtils;
 import io.agentscope.core.skill.AgentSkill;
+import io.agentscope.core.skill.mirror.SkillMirrorStore;
 import io.agentscope.core.skill.repository.AgentSkillRepository;
 import io.agentscope.core.skill.repository.AgentSkillRepositoryInfo;
 import io.agentscope.core.skill.util.SkillUtil;
@@ -26,11 +27,13 @@ import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Properties;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -51,11 +54,19 @@ import org.slf4j.LoggerFactory;
  * AiService#downloadSkillZip(String)}. When both version and label resolve, version wins and the
  * label is not used for download.
  *
- * <p><strong>Capabilities:</strong> Read operations work: {@link #getSkill(String)}, {@link
+ * <p><strong>Capabilities:</strong> Read operations work: {@link #getSkill(String,
+ * String)} (the single-name form is the interface's latest-pull default), {@link
  * #skillExists(String)}, {@link #getRepositoryInfo()}, {@link #getSource()}, {@link
  * #isWriteable()} (always {@code false}). Writes are unsupported: {@link #save(List, boolean)} and
  * {@link #delete(String)} do nothing; {@link #setWriteable(boolean)} is ignored. These paths log a
  * warning.
+ *
+ * <p><strong>Versioning:</strong> when a fixed skill version is configured ({@value
+ * #SKILL_VERSION_PATH}), it is the effective latest: downloads serve exactly it via {@code
+ * AiService#downloadSkillZipByVersion} and served skills are stamped with it; a non-null
+ * {@code version} argument downloads exactly that version. Without a configured version
+ * there is no cheap latest signal (the {@code AiService} surface exposes downloads only),
+ * so a latest pull is a full unstamped download per call.
  *
  * <p><strong>Listing:</strong> Nacos AI Service has no "list all skills" API. When constructed
  * without {@code knownSkillNames}, {@link #getAllSkillNames()} and {@link #getAllSkills()} return
@@ -108,6 +119,17 @@ public class NacosSkillRepository implements AgentSkillRepository {
     private final List<String> knownSkillNames;
 
     /**
+     * Version-materialization cache root, resolved at construction (explicit {@code cacheDir}
+     * &gt; {@value SkillMirrorStore#CACHE_DIR_PROPERTY} property &gt; default home root). The
+     * store itself is only created on first serve ({@link SkillMirrorStore#of(Path)}), so
+     * construction never touches the disk.
+     */
+    private final Path cacheRoot;
+
+    /** Cache identity shared by all skills of this repository: {@code nacos_namespace:<id>}. */
+    private final String repoIdentity;
+
+    /**
      * Same as {@link #NacosSkillRepository(AiService, String, Properties)} with {@code properties
      * == null}.
      */
@@ -138,6 +160,34 @@ public class NacosSkillRepository implements AgentSkillRepository {
             String namespaceId,
             Properties properties,
             List<String> knownSkillNames) {
+        this(aiService, namespaceId, properties, knownSkillNames, null);
+    }
+
+    /**
+     * Creates a repository with an explicit version-materialization cache root. Configured with
+     * a fixed skill version, versioned reads materialize into immutable version directories
+     * under the cache root (one remote download per cold cache, local hits afterwards) and are
+     * served in summary form with {@code originDir} pointing at the materialized directory.
+     *
+     * @param aiService        the Nacos AI service (must not be null)
+     * @param namespaceId      the Nacos namespace id (blank treated as {@code public})
+     * @param properties       optional application properties; may be {@code null}
+     * @param knownSkillNames  skill names to expose via {@link #getAllSkillNames()} and
+     *                         {@link #getAllSkills()}; pass empty list to keep the no-op behaviour
+     * @param cacheDir         explicit cache root for version materialization (null resolves
+     *                         the {@value SkillMirrorStore#CACHE_DIR_PROPERTY} property /
+     *                         default home root; the directory is created on first use, not
+     *                         at construction)
+     * @throws IllegalArgumentException when {@code aiService} is null or no cache root can be
+     *     resolved ({@code user.home} unset without an explicit {@code cacheDir} or property
+     *     override)
+     */
+    public NacosSkillRepository(
+            AiService aiService,
+            String namespaceId,
+            Properties properties,
+            List<String> knownSkillNames,
+            Path cacheDir) {
         if (aiService == null) {
             throw new IllegalArgumentException("AiService cannot be null");
         }
@@ -145,7 +195,17 @@ public class NacosSkillRepository implements AgentSkillRepository {
 
         this.namespaceId = StringUtils.isBlank(namespaceId) ? "public" : namespaceId.trim();
         this.source = REPO_TYPE + "@" + this.namespaceId;
-        this.location = LOCATION_PREFIX + this.namespaceId;
+        // The cache identity carries the server address as well as the namespace: two
+        // Nacos clusters sharing one cache root must never swap content just because their
+        // namespace ids match. When no address is discoverable from the properties, the
+        // namespace-only identity remains and an explicit cacheDir stays the disambiguator.
+        String serverAddr =
+                firstNonBlank(
+                        getProperties(properties, "serverAddr"), System.getProperty("serverAddr"));
+        this.location =
+                LOCATION_PREFIX + (serverAddr != null ? serverAddr + "@" : "") + this.namespaceId;
+        this.repoIdentity = SkillMirrorStore.repoIdentity(REPO_TYPE, this.location);
+        this.cacheRoot = SkillMirrorStore.resolveBuiltinRoot(cacheDir, this.repoIdentity);
         this.skillVersion =
                 firstNonBlank(
                         getProperties(properties, SKILL_VERSION_PATH),
@@ -167,23 +227,77 @@ public class NacosSkillRepository implements AgentSkillRepository {
                 this.knownSkillNames.isEmpty() ? "(none)" : this.knownSkillNames);
     }
 
+    /**
+     * Serves the named skill through the version cache when a version is in play. With a
+     * configured fixed skill version ({@value #SKILL_VERSION_PATH}), a {@code null}/blank
+     * version resolves to it and only the first pull downloads — afterwards the version
+     * directory is a pure local read, served as a summary stamped with the version ({@code
+     * originDir} = the materialized directory). Without a configured version, a {@code
+     * null}/blank version degrades to a full unstamped download per call. A non-blank
+     * version downloads exactly it ({@code AiService#downloadSkillZipByVersion}); an unknown
+     * version or skill answers {@code null}.
+     */
     @Override
-    public AgentSkill getSkill(String name) {
+    public AgentSkill getSkill(String name, String version) {
         if (name == null || name.isBlank()) {
-            throw new IllegalArgumentException("Skill name cannot be null or empty");
+            return null;
         }
+        if (StringUtils.isBlank(version)) {
+            if (StringUtils.isBlank(skillVersion)) {
+                // No version signal: fall back to a full unstamped pull.
+                return pullLive(name);
+            }
+            version = skillVersion;
+        }
+        final String target = version;
+        return SkillMirrorStore.of(cacheRoot)
+                .serve(
+                        repoIdentity,
+                        name,
+                        target,
+                        getSource(),
+                        () -> Optional.ofNullable(pullAtVersion(name, target)))
+                .orElse(null);
+    }
+
+    /** One versioned download, adapted and built as in-memory transport content. */
+    private AgentSkill pullAtVersion(String name, String version) {
+        try {
+            byte[] zipBytes = aiService.downloadSkillZipByVersion(name.trim(), version);
+            if (zipBytes == null || zipBytes.length == 0) {
+                return null;
+            }
+            byte[] adaptedZip = adaptNacosSkillZipForYamlFrontmatter(zipBytes);
+            return SkillUtil.createFromZip(adaptedZip, getSource()).toBuilder()
+                    .version(version)
+                    .build();
+        } catch (NacosException e) {
+            if (e.getErrCode() == NacosException.NOT_FOUND) {
+                return null;
+            }
+            log.warn("Versioned read of '{}' at {} failed: {}", name, version, e.getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * Unstamped live pull (version/label/unnamed dispatch per construction config) — the
+     * serving form for repositories without a configured version.
+     */
+    private AgentSkill pullLive(String name) {
         try {
             byte[] zipBytes = downloadSkillZipBytes(name.trim());
             if (zipBytes == null || zipBytes.length == 0) {
-                throw new IllegalArgumentException("Skill not found: " + name);
+                return null;
             }
             byte[] adaptedZip = adaptNacosSkillZipForYamlFrontmatter(zipBytes);
             return SkillUtil.createFromZip(adaptedZip, getSource());
         } catch (NacosException e) {
             if (e.getErrCode() == NacosException.NOT_FOUND) {
-                throw new IllegalArgumentException("Skill not found: " + name, e);
+                return null;
             }
-            throw new RuntimeException("Failed to load skill from Nacos: " + name, e);
+            log.warn("Live read of '{}' failed: {}", name, e.getMessage());
+            return null;
         }
     }
 
@@ -249,7 +363,10 @@ public class NacosSkillRepository implements AgentSkillRepository {
         List<AgentSkill> result = new ArrayList<>(knownSkillNames.size());
         for (String name : knownSkillNames) {
             try {
-                result.add(getSkill(name));
+                AgentSkill skill = getSkill(name);
+                if (skill != null) {
+                    result.add(skill);
+                }
             } catch (Exception e) {
                 log.warn("NacosSkillRepository: failed to load skill '{}', skipping", name, e);
             }

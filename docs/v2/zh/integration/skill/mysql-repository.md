@@ -101,8 +101,8 @@ repo.save(List.of(skill), /* overwrite */ true);
 
 // 读取
 AgentSkill loaded = repo.getSkill("calculator");
-List<String> names = repo.getAllSkillNames();
 boolean exists = repo.skillExists("calculator");
+// （getAllSkillNames() 仍可用于管理工具；自 2.1.0 起对服务路径弃用）
 
 // 删除
 repo.delete("calculator");

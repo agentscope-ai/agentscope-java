@@ -82,6 +82,7 @@ AI coding instructions for AgentScope Java.
 - Prefer JUnit 5, Mockito, Reactor `StepVerifier`, fakes, and local fixtures.
 - Use temporary directories and portable paths; do not use real credentials or provider services.
 - Do not weaken assertions for Windows-only flakes; mirror the production guard in the test.
+- Fix `-T1C` full-load test flakes in passing whenever one appears during development: diagnose the real trigger first, then fix it in the same session — never work around it, widen timeouts blindly, or weaken assertions. Do not leave a known flake for the next session or rely on CI re-runs to mask it.
 - Edit UI source in `agentscope-service/frontend/`; do not hand-edit generated `agentscope-service/service-controlplane/ui/`.
 - Keep English and Chinese docs aligned; follow `.editorconfig`.
 

@@ -27,6 +27,7 @@ import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.skill.AgentSkill;
 import io.agentscope.core.skill.repository.AgentSkillRepository;
 import io.agentscope.core.skill.repository.AgentSkillRepositoryInfo;
+import io.agentscope.core.skill.util.SkillFileSystemHelper;
 import io.agentscope.harness.agent.HarnessAgent;
 import io.agentscope.harness.agent.filesystem.local.LocalFilesystem;
 import io.agentscope.harness.agent.workspace.WorkspaceManager;
@@ -285,10 +286,8 @@ public class AgentSkillsController {
                             skill.getName(),
                             skill.getDescription(),
                             skill.getSource(),
-                            skill.getSkillContent(),
-                            skill.getResources() != null
-                                    ? new LinkedHashMap<>(skill.getResources())
-                                    : Map.of());
+                            SkillFileSystemHelper.readSkillManifest(skill),
+                            SkillFileSystemHelper.readAllResources(skill));
                 });
     }
 
@@ -340,7 +339,7 @@ public class AgentSkillsController {
                                                 "Failed to overwrite: " + e.getMessage());
                                     }
                                 }
-                                String markdown = skill.getSkillContent();
+                                String markdown = SkillFileSystemHelper.readSkillManifest(skill);
                                 if (markdown == null || markdown.isBlank()) {
                                     throw new ResponseStatusException(
                                             HttpStatus.BAD_GATEWAY,
@@ -352,7 +351,8 @@ public class AgentSkillsController {
                                                 RuntimeContext.empty(),
                                                 "skills/" + targetName + "/SKILL.md",
                                                 markdown);
-                                Map<String, String> resources = skill.getResources();
+                                Map<String, String> resources =
+                                        SkillFileSystemHelper.readAllResources(skill);
                                 if (resources != null) {
                                     for (Map.Entry<String, String> e : resources.entrySet()) {
                                         String rel = e.getKey();

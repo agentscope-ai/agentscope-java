@@ -17,9 +17,11 @@ package io.agentscope.core.skill.repository.mysql;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import io.agentscope.core.skill.AgentSkill;
+import io.agentscope.core.skill.mirror.SkillMirrorStore;
 import io.agentscope.core.skill.repository.AgentSkillRepository;
 import io.agentscope.core.skill.repository.AgentSkillRepositoryInfo;
 import io.agentscope.core.util.JsonUtils;
+import java.nio.file.Path;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
@@ -30,6 +32,7 @@ import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.regex.Pattern;
 import javax.sql.DataSource;
 import org.slf4j.Logger;
@@ -162,6 +165,26 @@ public class MysqlSkillRepository implements AgentSkillRepository {
     private boolean writeable;
 
     /**
+     * Location marker of this repository within its database ({@code <database>.<table>});
+     * the full cache identity additionally carries the instance's JDBC URL (see {@link
+     * #repoIdentity()}), so two DataSources over different databases never share one cache
+     * tree.
+     */
+    private final String identityLocation;
+
+    /** Explicit cache root from construction; {@code null} resolves the property/default. */
+    private final Path explicitCacheDir;
+
+    /**
+     * Cache identity, resolved lazily on first serve (reading the JDBC URL opens a
+     * connection); guarded by {@code this}.
+     */
+    private String repoIdentity;
+
+    /** Cache root derived from the identity; set together with {@link #repoIdentity}. */
+    private Path cacheRoot;
+
+    /**
      * Create a MysqlSkillRepository with default database and table names.
      *
      * <p>
@@ -185,7 +208,8 @@ public class MysqlSkillRepository implements AgentSkillRepository {
                 DEFAULT_SKILLS_TABLE_NAME,
                 DEFAULT_RESOURCES_TABLE_NAME,
                 createIfNotExist,
-                writeable);
+                writeable,
+                null);
     }
 
     /**
@@ -213,6 +237,10 @@ public class MysqlSkillRepository implements AgentSkillRepository {
      *                           if false, require existing schema. Existing tables are not
      *                           auto-migrated to add {@code metadata_json}
      * @param writeable          Whether the repository supports write operations
+     * @param cacheDir           Explicit cache root for version materialization (null resolves
+     *                           the {@value SkillMirrorStore#CACHE_DIR_PROPERTY} property /
+     *                           default home root; the directory is created on first use, not
+     *                           at construction)
      * @throws IllegalArgumentException if dataSource is null or identifiers are
      *                                  invalid
      * @throws IllegalStateException    if createIfNotExist is false and
@@ -224,7 +252,8 @@ public class MysqlSkillRepository implements AgentSkillRepository {
             String skillsTableName,
             String resourcesTableName,
             boolean createIfNotExist,
-            boolean writeable) {
+            boolean writeable,
+            Path cacheDir) {
         if (dataSource == null) {
             throw new IllegalArgumentException("DataSource cannot be null");
         }
@@ -250,6 +279,9 @@ public class MysqlSkillRepository implements AgentSkillRepository {
         validateIdentifier(this.databaseName, "Database name");
         validateIdentifier(this.skillsTableName, "Skills table name");
         validateIdentifier(this.resourcesTableName, "Resources table name");
+
+        this.identityLocation = this.databaseName + "." + this.skillsTableName;
+        this.explicitCacheDir = cacheDir;
 
         if (createIfNotExist) {
             // Create database and tables if they don't exist
@@ -444,8 +476,125 @@ public class MysqlSkillRepository implements AgentSkillRepository {
         }
     }
 
+    /**
+     * The cache identity of this repository, resolved on first use: the JDBC URL of the
+     * instance behind the {@code DataSource} plus this repository's location marker — two
+     * repositories over different databases (same table name) must never share one cache
+     * tree. Deferred off the constructor because reading the URL opens a connection; when
+     * the URL cannot be read the plain location remains, and an explicit {@code cacheDir}
+     * stays the disambiguator.
+     */
+    private String repoIdentity() {
+        synchronized (this) {
+            if (repoIdentity == null) {
+                repoIdentity =
+                        SkillMirrorStore.repoIdentity(
+                                "mysql",
+                                SkillMirrorStore.dataSourceIdentity(dataSource, identityLocation));
+                cacheRoot = SkillMirrorStore.resolveBuiltinRoot(explicitCacheDir, repoIdentity);
+            }
+            return repoIdentity;
+        }
+    }
+
+    /** The cache root for the lazily resolved identity (see {@link #repoIdentity()}). */
+    private Path cacheRoot() {
+        synchronized (this) {
+            if (cacheRoot == null) {
+                repoIdentity();
+            }
+            return cacheRoot;
+        }
+    }
+
+    /**
+     * Serves the named skill through the version cache. A {@code null}/blank version resolves
+     * to the live row's current version (its id); a non-blank version is served from a
+     * cached version directory when one exists — the table keeps no history, so the database
+     * can only answer a version that is still the live row's current one, and any other
+     * version resolves to {@code null}. A latest pull whose row advanced between the probe
+     * and the cache-miss load (the loader refuses a moved row) re-probes once, so a
+     * concurrent save never surfaces as a transient miss. The returned skill is a summary:
+     * stamped with the version, {@code originDir} = the materialized directory, resources on
+     * disk only.
+     */
     @Override
-    public AgentSkill getSkill(String name) {
+    public AgentSkill getSkill(String name, String version) {
+        if (name == null || name.isBlank()) {
+            return null;
+        }
+        boolean latest = version == null || version.isBlank();
+        String target = latest ? latestVersion(name) : version;
+        if (target == null || target.isBlank()) {
+            return null;
+        }
+        AgentSkill served = serveAt(name, target);
+        if (served == null && latest) {
+            String fresh = latestVersion(name);
+            if (fresh != null && !fresh.equals(target)) {
+                served = serveAt(name, fresh);
+            }
+        }
+        return served;
+    }
+
+    /** One store serve of {@code name} at an already-resolved version reference. */
+    private AgentSkill serveAt(String name, String resolved) {
+        return SkillMirrorStore.of(cacheRoot())
+                .serve(
+                        repoIdentity(),
+                        name,
+                        resolved,
+                        getSource(),
+                        () -> {
+                            AgentSkill skill = readLiveSkill(name);
+                            if (skill == null || !resolved.equals(skill.getVersion())) {
+                                return Optional.empty();
+                            }
+                            return Optional.of(skill);
+                        })
+                .orElse(null);
+    }
+
+    /**
+     * The skill's current version (its row id — every save is a delete plus insert, so each
+     * publish mints a fresh, collision-free id), read from one row without touching content;
+     * {@code null} when the skill does not exist.
+     */
+    private String latestVersion(String name) {
+        String selectVersionSql =
+                "SELECT id FROM " + getFullTableName(skillsTableName) + " WHERE name = ? LIMIT 1";
+        try (Connection conn = dataSource.getConnection();
+                PreparedStatement stmt = conn.prepareStatement(selectVersionSql)) {
+            stmt.setString(1, name);
+            try (ResultSet rs = stmt.executeQuery()) {
+                return rs.next() ? effectiveVersion(rs.getLong("id")) : null;
+            }
+        } catch (SQLException e) {
+            throw new RuntimeException("Failed to load skill version: " + name, e);
+        }
+    }
+
+    /** Returns the skill stamped with the version; a {@code null} skill returns {@code null}. */
+    private static AgentSkill stampVersion(AgentSkill skill, String version) {
+        return skill == null ? null : skill.toBuilder().version(version).build();
+    }
+
+    /**
+     * The version a row currently carries: its id. Every save is a delete plus insert, so
+     * each publish mints a fresh, monotonic, timezone-free token — unlike a same-second
+     * {@code updated_at} stamp, distinct publishes can never collide on one token.
+     */
+    private static String effectiveVersion(long rowId) {
+        return String.valueOf(rowId);
+    }
+
+    /**
+     * One row plus its resources, stamped with the row's current version — the single-read
+     * path {@link #getSkill(String, String)} loads on a cache miss; {@code null} when the
+     * row does not exist.
+     */
+    private AgentSkill readLiveSkill(String name) {
         validateSkillName(name);
 
         String selectSkillSql =
@@ -472,7 +621,7 @@ public class MysqlSkillRepository implements AgentSkillRepository {
                 stmt.setString(1, name);
                 try (ResultSet rs = stmt.executeQuery()) {
                     if (!rs.next()) {
-                        throw new IllegalArgumentException("Skill not found: " + name);
+                        return null;
                     }
                     skillId = rs.getLong("id");
                     description = rs.getString("description");
@@ -497,7 +646,9 @@ public class MysqlSkillRepository implements AgentSkillRepository {
                 }
             }
 
-            return buildSkill(name, description, skillContent, source, metadataJson, resources);
+            return stampVersion(
+                    buildSkill(name, description, skillContent, source, metadataJson, resources),
+                    effectiveVersion(skillId));
 
         } catch (SQLException e) {
             throw new RuntimeException("Failed to load skill: " + name, e);
@@ -557,7 +708,12 @@ public class MysqlSkillRepository implements AgentSkillRepository {
                     skillRecords.put(
                             skillId,
                             new LoadedSkillRecord(
-                                    name, description, skillContent, source, metadataJson));
+                                    skillId,
+                                    name,
+                                    description,
+                                    skillContent,
+                                    source,
+                                    metadataJson));
                 }
             }
 
@@ -583,13 +739,15 @@ public class MysqlSkillRepository implements AgentSkillRepository {
             for (LoadedSkillRecord record : skillRecords.values()) {
                 try {
                     skills.add(
-                            buildSkill(
-                                    record.name,
-                                    record.description,
-                                    record.skillContent,
-                                    record.source,
-                                    record.metadataJson,
-                                    record.resources));
+                            stampVersion(
+                                    buildSkill(
+                                            record.name,
+                                            record.description,
+                                            record.skillContent,
+                                            record.source,
+                                            record.metadataJson,
+                                            record.resources),
+                                    effectiveVersion(record.id)));
                 } catch (Exception e) {
                     logger.warn("Failed to build skill: {}", e.getMessage(), e);
                 }
@@ -1031,6 +1189,7 @@ public class MysqlSkillRepository implements AgentSkillRepository {
 
     /** Temporary holder used while stitching skills and resources from separate result sets. */
     private static final class LoadedSkillRecord {
+        private final long id;
         private final String name;
         private final String description;
         private final String skillContent;
@@ -1039,11 +1198,13 @@ public class MysqlSkillRepository implements AgentSkillRepository {
         private final Map<String, String> resources = new HashMap<>();
 
         private LoadedSkillRecord(
+                long id,
                 String name,
                 String description,
                 String skillContent,
                 String source,
                 String metadataJson) {
+            this.id = id;
             this.name = name;
             this.description = description;
             this.skillContent = skillContent;
@@ -1225,6 +1386,7 @@ public class MysqlSkillRepository implements AgentSkillRepository {
         private String resourcesTableName = DEFAULT_RESOURCES_TABLE_NAME;
         private boolean createIfNotExist = true;
         private boolean writeable = true;
+        private Path cacheDir;
 
         /**
          * Create a new Builder with the required DataSource.
@@ -1298,6 +1460,18 @@ public class MysqlSkillRepository implements AgentSkillRepository {
         }
 
         /**
+         * Set an explicit cache root for version materialization.
+         *
+         * @param cacheDir explicit cache root (null resolves the {@value
+         *     SkillMirrorStore#CACHE_DIR_PROPERTY} property / default home root)
+         * @return this builder for method chaining
+         */
+        public Builder cacheDir(Path cacheDir) {
+            this.cacheDir = cacheDir;
+            return this;
+        }
+
+        /**
          * Build the MysqlSkillRepository instance.
          *
          * @return a new MysqlSkillRepository instance
@@ -1312,7 +1486,8 @@ public class MysqlSkillRepository implements AgentSkillRepository {
                     skillsTableName,
                     resourcesTableName,
                     createIfNotExist,
-                    writeable);
+                    writeable,
+                    cacheDir);
         }
     }
 }

@@ -21,6 +21,7 @@ import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.skill.AgentSkill;
 import io.agentscope.core.skill.repository.AgentSkillRepository;
 import io.agentscope.core.skill.repository.AgentSkillRepositoryInfo;
+import io.agentscope.core.skill.util.SkillFileSystemHelper;
 import io.agentscope.dataagent.runtime.marketplace.DataAgentMarketplace;
 import io.agentscope.dataagent.runtime.marketplace.MarketSkillContent;
 import io.agentscope.dataagent.runtime.marketplace.UserMarketplaceRegistry;
@@ -327,10 +328,8 @@ public class AgentSkillsController {
                             skill.getName(),
                             skill.getDescription(),
                             skill.getSource(),
-                            skill.getSkillContent(),
-                            skill.getResources() != null
-                                    ? new LinkedHashMap<>(skill.getResources())
-                                    : Map.of());
+                            SkillFileSystemHelper.readSkillManifest(skill),
+                            SkillFileSystemHelper.readAllResources(skill));
                 });
     }
 
@@ -377,7 +376,7 @@ public class AgentSkillsController {
                     if (fs.exists(null, "/skills/" + targetName)) {
                         fs.delete(null, "/skills/" + targetName);
                     }
-                    String markdown = skill.getSkillContent();
+                    String markdown = SkillFileSystemHelper.readSkillManifest(skill);
                     if (markdown == null || markdown.isBlank()) {
                         throw new ResponseStatusException(
                                 HttpStatus.BAD_GATEWAY,
@@ -386,7 +385,7 @@ public class AgentSkillsController {
                     WorkspaceManager wsm = ctx.workspaceManager();
                     wsm.writeUtf8WorkspaceRelative(
                             RuntimeContext.empty(), "skills/" + targetName + "/SKILL.md", markdown);
-                    writeResources(wsm, targetName, skill.getResources());
+                    writeResources(wsm, targetName, SkillFileSystemHelper.readAllResources(skill));
                     AgentSkillRepositoryInfo repoInfo = repo.getRepositoryInfo();
                     SkillMarketplaceMeta meta =
                             new SkillMarketplaceMeta(

@@ -260,31 +260,37 @@ class OpenAIDecisionsClientTest {
     @Test
     void mapsAllTypesByNameAndPreservesProviderValues() throws Exception {
         HttpClient transport = transport(SUCCESS);
-        var result = client(transport).decideBlocking(request());
-        assertEquals("fixture-model", result.model());
-        assertEquals(0, ((DecisionAnswer.Predicate) result.answers().get("damaged")).probability());
-        var choice = (DecisionAnswer.Choice) result.answers().get("route");
-        assertEquals(true, choice.choice());
-        assertEquals(0.7, choice.confidence());
-        assertEquals("true", choice.probabilities().get(1).value());
-        assertEquals(0.8, ((DecisionAnswer.Score) result.answers().get("severity")).score());
-        assertEquals(new DecisionUsage(12L, 0L, 12L, 3L, 2L, 1L), result.usage());
-        assertThrows(UnsupportedOperationException.class, () -> result.answers().clear());
-        var captured = ArgumentCaptor.forClass(HttpRequest.class);
-        verify(transport).execute(captured.capture(), any());
-        HttpRequest sent = captured.getValue();
-        assertEquals(HttpMethod.POST, sent.method());
-        assertEquals("https://api.openai.com/v1/decisions", sent.url());
-        assertEquals("Bearer fixture-secret", sent.headers().values("Authorization").get(0));
-        assertEquals("application/json", sent.body().contentType());
-        JsonNode body = MAPPER.readTree(body(sent));
-        assertEquals("The screen is broken", body.get("input").textValue());
-        assertEquals(OpenAIDecisionsClient.DEFAULT_MODEL, body.get("model").textValue());
-        assertEquals("predicate", body.at("/questions/0/type").textValue());
-        assertTrue(body.at("/questions/1/choices/1/value").isBoolean());
-        assertFalse(body.at("/questions/1/choices/0").has("description"));
-        assertEquals("minor", body.at("/questions/2/levels/0/label").textValue());
-        verify(transport, never()).close();
+        // The SDK closes a user-supplied transport once its client is only phantom reachable,
+        // so the wrapper must stay strongly reachable through the verification below; the
+        // try-with-resources close also exercises closing a wrapper over a borrowed client.
+        try (var wrapper = client(transport)) {
+            var result = wrapper.decideBlocking(request());
+            assertEquals("fixture-model", result.model());
+            assertEquals(
+                    0, ((DecisionAnswer.Predicate) result.answers().get("damaged")).probability());
+            var choice = (DecisionAnswer.Choice) result.answers().get("route");
+            assertEquals(true, choice.choice());
+            assertEquals(0.7, choice.confidence());
+            assertEquals("true", choice.probabilities().get(1).value());
+            assertEquals(0.8, ((DecisionAnswer.Score) result.answers().get("severity")).score());
+            assertEquals(new DecisionUsage(12L, 0L, 12L, 3L, 2L, 1L), result.usage());
+            assertThrows(UnsupportedOperationException.class, () -> result.answers().clear());
+            var captured = ArgumentCaptor.forClass(HttpRequest.class);
+            verify(transport).execute(captured.capture(), any());
+            HttpRequest sent = captured.getValue();
+            assertEquals(HttpMethod.POST, sent.method());
+            assertEquals("https://api.openai.com/v1/decisions", sent.url());
+            assertEquals("Bearer fixture-secret", sent.headers().values("Authorization").get(0));
+            assertEquals("application/json", sent.body().contentType());
+            JsonNode body = MAPPER.readTree(body(sent));
+            assertEquals("The screen is broken", body.get("input").textValue());
+            assertEquals(OpenAIDecisionsClient.DEFAULT_MODEL, body.get("model").textValue());
+            assertEquals("predicate", body.at("/questions/0/type").textValue());
+            assertTrue(body.at("/questions/1/choices/1/value").isBoolean());
+            assertFalse(body.at("/questions/1/choices/0").has("description"));
+            assertEquals("minor", body.at("/questions/2/levels/0/label").textValue());
+            verify(transport, never()).close();
+        }
     }
 
     @Test
@@ -537,19 +543,23 @@ class OpenAIDecisionsClientTest {
                             }
                             throw new OpenAIIoException("interrupted");
                         });
-        StepVerifier.create(client(transport).decide(request()))
-                .then(
-                        () -> {
-                            try {
-                                assertTrue(started.await(5, TimeUnit.SECONDS));
-                            } catch (InterruptedException e) {
-                                throw new AssertionError(e);
-                            }
-                        })
-                .thenCancel()
-                .verify(Duration.ofSeconds(6));
-        assertTrue(interrupted.await(5, TimeUnit.SECONDS));
-        verify(transport, never()).close();
+        // The SDK closes a user-supplied transport once its client is only phantom reachable;
+        // keep the wrapper strongly reachable through the verification below.
+        try (var wrapper = client(transport)) {
+            StepVerifier.create(wrapper.decide(request()))
+                    .then(
+                            () -> {
+                                try {
+                                    assertTrue(started.await(5, TimeUnit.SECONDS));
+                                } catch (InterruptedException e) {
+                                    throw new AssertionError(e);
+                                }
+                            })
+                    .thenCancel()
+                    .verify(Duration.ofSeconds(6));
+            assertTrue(interrupted.await(5, TimeUnit.SECONDS));
+            verify(transport, never()).close();
+        }
     }
 
     @Test

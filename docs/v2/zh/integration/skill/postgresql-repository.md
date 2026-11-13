@@ -35,7 +35,8 @@ DataSource ds = ...;  // HikariCP、PgBouncer 等连接池
 PostgresSkillRepository repo = new PostgresSkillRepository(ds, true, true);
 
 Toolkit toolkit = new Toolkit();
-repo.getAllSkills().forEach(toolkit::registerSkill);
+toolkit.registerSkill(repo.getSkill("calculator"));  // 按名字服务；批量读取自
+// 2.1.0 起对服务路径弃用（仅管理/批量工具使用）
 ```
 
 ## 使用 Builder
@@ -96,8 +97,8 @@ repo.save(List.of(skill), /* overwrite */ true);
 
 // 读取
 AgentSkill loaded = repo.getSkill("calculator");
-List<String> names = repo.getAllSkillNames();
 boolean exists = repo.skillExists("calculator");
+// （getAllSkillNames() 仍可用于管理工具；自 2.1.0 起对服务路径弃用）
 
 // 删除
 repo.delete("calculator");

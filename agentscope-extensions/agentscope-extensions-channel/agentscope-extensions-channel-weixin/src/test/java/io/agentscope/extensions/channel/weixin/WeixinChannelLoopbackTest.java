@@ -104,7 +104,11 @@ class WeixinChannelLoopbackTest {
                                 "baseUrl",
                                 baseUrl,
                                 "ilinkUserId",
-                                "user-1"));
+                                "user-1",
+                                // Cap the poll backoff so load-induced transient poll errors
+                                // cannot stretch recovery beyond the test's time budget.
+                                "maxBackoffMs",
+                                "1000"));
         channel.init(gateway);
         channel.start();
 
@@ -183,7 +187,11 @@ class WeixinChannelLoopbackTest {
                                         "baseUrl",
                                         baseUrl,
                                         "ilinkUserId",
-                                        "user-1")),
+                                        "user-1",
+                                        // The injected failure already costs one backoff cycle;
+                                        // cap it so load-induced errors stay within budget.
+                                        "maxBackoffMs",
+                                        "1000")),
                         WeixinCredentialProvider.fixed("test-token"),
                         interruptedStore,
                         WeixinRuntimeListener.noOp());

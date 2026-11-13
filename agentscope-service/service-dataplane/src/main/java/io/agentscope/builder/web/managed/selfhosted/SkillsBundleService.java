@@ -46,7 +46,12 @@ public class SkillsBundleService {
         this.agentBuildService = agentBuildService;
     }
 
-    /** Builds a JSON-friendly skills bundle for the session's agent. */
+    /**
+     * Builds a JSON-friendly skills bundle for the session's agent. Deliberate
+     * management-side bulk: packaging exports the enabled set, so the serving-side
+     * deprecation of enumeration does not apply to this consumer.
+     */
+    @SuppressWarnings({"deprecation", "removal"})
     public Map<String, Object> bundleForSession(String sessionId) {
         var resolved = sessionService.resolve(sessionId);
         ManagedSessionDto session = resolved.session();

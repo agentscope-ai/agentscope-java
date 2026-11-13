@@ -93,6 +93,11 @@ class SystemCapabilityMarkerTest {
     /** Skill repository stub that serves no skills. */
     private static final class EmptyRepo implements AgentSkillRepository {
         @Override
+        public AgentSkill getSkill(String name, String version) {
+            return null;
+        }
+
+        @Override
         public AgentSkill getSkill(String name) {
             return null;
         }

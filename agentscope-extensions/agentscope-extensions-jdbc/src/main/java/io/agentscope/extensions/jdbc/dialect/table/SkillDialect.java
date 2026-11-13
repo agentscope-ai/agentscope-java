@@ -67,6 +67,22 @@ public interface SkillDialect {
                 namespace);
     }
 
+    /**
+     * SELECT of one skill's {@code id} by name within a namespace — a one-row probe of the
+     * row's current version, reading no content. Every save is a delete plus insert, so the
+     * auto-generated id moves on any change (resource-only saves included) and never
+     * repeats: a collision-free, timezone-free version token, unlike a same-second
+     * {@code updated_at} stamp.
+     *
+     * <p>Projection: (id).
+     */
+    default BoundSql skillLatestVersion(String namespace, String skillName) {
+        return new BoundSql(
+                "SELECT id FROM " + skillTableName() + " WHERE namespace = ? AND name = ?",
+                namespace,
+                skillName);
+    }
+
     /** SELECT of all skill names of one namespace ordered by name. Projection: (name). */
     default BoundSql skillSelectAllNames(String namespace) {
         return new BoundSql(

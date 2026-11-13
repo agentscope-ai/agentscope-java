@@ -111,31 +111,48 @@ public class WorkspaceSkillRepository
         this.writable = writable;
     }
 
-    // =========================================================================
-    //  Read path (AgentSkillRepository)
-    // =========================================================================
-
+    /**
+     * Delegates to {@link #getSkill(String, String, RuntimeContext)} with a {@code
+     * null} context, resolving to the default namespace.
+     */
     @Override
-    public AgentSkill getSkill(String name) {
+    public AgentSkill getSkill(String name, String version) {
+        return getSkill(name, version, null);
+    }
+
+    /**
+     * Serves the skill visible to exactly {@code context}. Workspace skills carry no
+     * versions: a null/blank {@code version} returns the current content with a {@code
+     * null} {@link AgentSkill#getVersion()} (this backend has no version capability); any
+     * other {@code version} returns {@code null} — current content is never served in
+     * place of a requested version.
+     */
+    @Override
+    public AgentSkill getSkill(String name, String version, RuntimeContext context) {
         if (name == null || name.isEmpty()) {
             return null;
         }
-        for (AgentSkill skill : getAllSkills()) {
-            if (name.equals(skill.getName())) {
-                return skill;
-            }
+        if (version != null && !version.isBlank()) {
+            return null;
         }
-        return null;
+        return findSkill(name, context != null ? context : RuntimeContext.empty());
+    }
+
+    /**
+     * Latest pull visible to exactly {@code context}, using the direct-read fast path of
+     * {@code findSkill} instead of the interface default's full scan.
+     */
+    @Override
+    public AgentSkill getSkill(String name, RuntimeContext context) {
+        if (name == null || name.isBlank()) {
+            return null;
+        }
+        return findSkill(name, context != null ? context : RuntimeContext.empty());
     }
 
     @Override
     public List<String> getAllSkillNames() {
-        List<AgentSkill> skills = getAllSkills();
-        List<String> names = new ArrayList<>(skills.size());
-        for (AgentSkill skill : skills) {
-            names.add(skill.getName());
-        }
-        return names;
+        return getAllSkillNames(RuntimeContext.empty());
     }
 
     @Override
@@ -420,6 +437,45 @@ public class WorkspaceSkillRepository
     // =========================================================================
     //  Internals
     // =========================================================================
+
+    /**
+     * Finds the skill whose frontmatter name equals {@code name} in the scope {@code ctx}
+     * resolves to. Fast path reads {@code <skillsRelativeDir>/<name>/SKILL.md} directly —
+     * the layout {@code writeSkill} produces — and falls back to a full discovery scan for
+     * a hand-authored layout whose frontmatter name differs from its directory.
+     */
+    private AgentSkill findSkill(String name, RuntimeContext ctx) {
+        if (isPlainSkillName(name)) {
+            AgentSkill direct = readSkillMdAt(skillDirRelative(name), ctx);
+            if (direct != null && name.equals(direct.getName())) {
+                return direct;
+            }
+        }
+        for (AgentSkill skill : getAllSkills(ctx)) {
+            if (name.equals(skill.getName())) {
+                return skill;
+            }
+        }
+        return null;
+    }
+
+    /** Reads and parses one {@code SKILL.md} under {@code skillDir}; {@code null} on any miss. */
+    private AgentSkill readSkillMdAt(String skillDir, RuntimeContext ctx) {
+        try {
+            ReadResult rr = filesystem.read(ctx, skillDir + "/" + SKILL_FILE, 0, 0);
+            if (rr.isSuccess() && rr.fileData() != null && rr.fileData().content() != null) {
+                return SkillUtil.createFrom(rr.fileData().content(), null, source);
+            }
+        } catch (Exception e) {
+            log.debug("Direct SKILL.md read under '{}' failed: {}", skillDir, e.getMessage());
+        }
+        return null;
+    }
+
+    /** Whether {@code name} is usable as a single path segment (no separators, no traversal). */
+    private static boolean isPlainSkillName(String name) {
+        return !name.contains("/") && !name.contains("\\") && !name.contains("..");
+    }
 
     private void writeSkill(AgentSkill skill, RuntimeContext ctx) {
         String skillMd = toMarkdown(skill);

@@ -168,6 +168,106 @@ class WorkspaceSkillRepositoryTest {
     }
 
     // =========================================================================
+    //  Version route
+    // =========================================================================
+
+    @Nested
+    class VersionRoute {
+
+        @Test
+        void nullVersionServesCurrentContentUnstamped() throws IOException {
+            writeSkill("csv-sum", "Sum CSV columns.", "# CSV Sum\nBody.");
+            WorkspaceSkillRepository repo = new WorkspaceSkillRepository(fs, "skills");
+
+            AgentSkill served = repo.getSkill("csv-sum", (String) null);
+            assertNotNull(served);
+            assertEquals("csv-sum", served.getName());
+            // Unstamped: this backend has no version capability.
+            assertNull(served.getVersion());
+            // Consistent with the latest-pull getSkill(name).
+            AgentSkill viaShim = repo.getSkill("csv-sum");
+            assertNotNull(viaShim);
+            assertEquals(viaShim.getSkillContent(), served.getSkillContent());
+        }
+
+        @Test
+        void blankVersionMeansLatest() throws IOException {
+            writeSkill("alpha", "Alpha description here.", "# Alpha");
+            WorkspaceSkillRepository repo = new WorkspaceSkillRepository(fs, "skills");
+
+            assertNotNull(repo.getSkill("alpha", ""));
+            assertNotNull(repo.getSkill("alpha", "  "));
+        }
+
+        @Test
+        void nonNullVersionResolvesNothing() throws IOException {
+            writeSkill("csv-sum", "Sum CSV columns.", "# CSV Sum\nBody.");
+            WorkspaceSkillRepository repo = new WorkspaceSkillRepository(fs, "skills");
+
+            // No addressable versions: "1.0.0" can never resolve.
+            assertNull(repo.getSkill("csv-sum", "1.0.0"));
+        }
+
+        @Test
+        void unknownOrNullNameResolvesNothing() throws IOException {
+            writeSkill("alpha", "Alpha description here.", "# Alpha");
+            WorkspaceSkillRepository repo = new WorkspaceSkillRepository(fs, "skills");
+
+            assertNull(repo.getSkill("no-such-skill", (String) null));
+            assertNull(repo.getSkill(null, (String) null));
+            assertNull(repo.getSkill("", (String) null));
+        }
+
+        @Test
+        void frontmatterNameWinsOverDirectoryName() throws IOException {
+            // Hand-authored layout: directory name differs from the frontmatter name —
+            // discovery identity is the frontmatter name.
+            writeResource("skills/odd-dir/SKILL.md", skillMd("real-name", "Real skill.", "# Real"));
+            WorkspaceSkillRepository repo = new WorkspaceSkillRepository(fs, "skills");
+
+            assertNotNull(repo.getSkill("real-name", (String) null));
+            assertNull(repo.getSkill("odd-dir", (String) null));
+        }
+
+        @Test
+        void traversalNamesResolveNothing() throws IOException {
+            writeSkill("alpha", "Alpha description here.", "# Alpha");
+            // A skill outside the skills root that a traversal path might otherwise reach.
+            writeResource("outside/SKILL.md", skillMd("evil", "Evil skill.", "# Evil"));
+            WorkspaceSkillRepository repo = new WorkspaceSkillRepository(fs, "skills");
+
+            assertNull(repo.getSkill("../outside", (String) null));
+        }
+
+        @Test
+        void versionPullsAndNameListingStayInTenantScope() throws IOException {
+            NamespaceFactory nsf =
+                    rc -> {
+                        String tenant = rc != null ? (String) rc.get("tenant") : null;
+                        return tenant != null ? List.of("tenants", tenant) : List.of();
+                    };
+            LocalFilesystem nsFs = new LocalFilesystem(workspace, false, 64, nsf);
+
+            Files.createDirectories(workspace.resolve("tenants/alice/skills/alice-skill"));
+            Files.writeString(
+                    workspace.resolve("tenants/alice/skills/alice-skill/SKILL.md"),
+                    skillMd("alice-skill", "Alice's skill.", "# Alice"));
+            Files.createDirectories(workspace.resolve("tenants/bob/skills/bob-skill"));
+            Files.writeString(
+                    workspace.resolve("tenants/bob/skills/bob-skill/SKILL.md"),
+                    skillMd("bob-skill", "Bob's skill.", "# Bob"));
+
+            WorkspaceSkillRepository repo = new WorkspaceSkillRepository(nsFs, "skills");
+            RuntimeContext aliceCtx = RuntimeContext.builder().put("tenant", "alice").build();
+
+            assertEquals(List.of("alice-skill"), repo.getAllSkillNames(aliceCtx));
+            assertNotNull(repo.getSkill("alice-skill", null, aliceCtx));
+            assertNull(repo.getSkill("bob-skill", null, aliceCtx));
+            assertNull(repo.getSkill("alice-skill", "1.0.0", aliceCtx));
+        }
+    }
+
+    // =========================================================================
     //  Write path
     // =========================================================================
 

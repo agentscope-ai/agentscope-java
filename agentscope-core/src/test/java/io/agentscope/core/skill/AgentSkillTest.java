@@ -18,6 +18,7 @@ package io.agentscope.core.skill;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -184,8 +185,11 @@ class AgentSkillTest {
     @Test
     @DisplayName("Should constructor validates content")
     void testConstructorValidatesContent() {
-        assertThrows(
-                IllegalArgumentException.class, () -> new AgentSkill("name", "desc", null, null));
+        // null content is legal: the descriptor-only summary form (body read from originDir
+        // on demand). Only a present-but-empty body is invalid.
+        AgentSkill summary = new AgentSkill("name", "desc", null, null);
+        assertNull(summary.getSkillContent(), "null content = descriptor-only summary");
+        assertEquals("name", summary.getName());
         assertThrows(
                 IllegalArgumentException.class, () -> new AgentSkill("name", "desc", "", null));
     }
@@ -221,6 +225,70 @@ class AgentSkillTest {
 
         // Original skill resources should still not be affected
         assertEquals(1, skill.getResources().size());
+    }
+
+    @Test
+    @DisplayName("getResource reads memory first, then falls back to originDir on disk")
+    void testGetResourceMemoryFirstThenOriginDir() throws Exception {
+        // Arrange: an on-disk skill directory with a resource file, and a skill whose
+        // in-memory map holds a different value for the same path plus no entry for another.
+        java.nio.file.Path origin = java.nio.file.Files.createTempDirectory("agent-skill-origin");
+        try {
+            java.nio.file.Files.writeString(origin.resolve("from-disk.txt"), "disk content");
+            java.nio.file.Files.writeString(origin.resolve("only-on-disk.txt"), "disk only");
+            AgentSkill skill =
+                    new AgentSkill(
+                                    "name",
+                                    "desc",
+                                    "content",
+                                    Map.of("from-disk.txt", "memory content"),
+                                    "src")
+                            .toBuilder().originDir(origin).build();
+
+            // Act / Assert: memory wins over disk for the same path.
+            assertEquals("memory content", skill.getResource("from-disk.txt"));
+            // Disk serves the path the memory map does not carry.
+            assertEquals("disk only", skill.getResource("only-on-disk.txt"));
+            // Neither source has it.
+            assertNull(skill.getResource("missing.txt"));
+        } finally {
+            deleteRecursively(origin);
+        }
+    }
+
+    @Test
+    @DisplayName("getResource refuses paths escaping the originDir")
+    void testGetResourceRejectsEscapingPaths() throws Exception {
+        java.nio.file.Path origin = java.nio.file.Files.createTempDirectory("agent-skill-origin");
+        try {
+            java.nio.file.Files.writeString(origin.resolve("inside.txt"), "inside");
+            java.nio.file.Path sibling =
+                    java.nio.file.Files.createTempDirectory("agent-skill-sibling");
+            java.nio.file.Files.writeString(sibling.resolve("secret.txt"), "secret");
+            AgentSkill skill =
+                    new AgentSkill("name", "desc", "content", null, "src")
+                            .toBuilder().originDir(origin).build();
+
+            // Absolute paths and traversal forms (slash or backslash) all escape the
+            // origin and must be refused rather than read outside the skill directory.
+            assertNull(skill.getResource("../" + sibling.getFileName() + "/secret.txt"));
+            assertNull(skill.getResource(sibling.resolve("secret.txt").toString()));
+            assertNull(skill.getResource("..\\escape.txt"));
+        } finally {
+            deleteRecursively(origin);
+        }
+    }
+
+    private static void deleteRecursively(java.nio.file.Path root) throws Exception {
+        if (!java.nio.file.Files.exists(root)) {
+            return;
+        }
+        try (var stream = java.nio.file.Files.walk(root)) {
+            for (java.nio.file.Path p :
+                    stream.sorted(java.util.Comparator.reverseOrder()).toList()) {
+                java.nio.file.Files.deleteIfExists(p);
+            }
+        }
     }
 
     @Test
@@ -415,5 +483,29 @@ class AgentSkillTest {
 
         assertNotNull(paths);
         assertTrue(paths.isEmpty());
+    }
+
+    @Test
+    @DisplayName("Should carry the resolved version: null by default, builder-set, copy-preserved")
+    void testVersionFieldLifecycle() {
+        assertEquals(
+                null,
+                new AgentSkill("test", "desc", "content", null).getVersion(),
+                "Version is null when no version was resolved at load time");
+
+        AgentSkill versioned =
+                AgentSkill.builder()
+                        .name("test")
+                        .description("desc")
+                        .skillContent("content")
+                        .version("v1")
+                        .build();
+        assertEquals("v1", versioned.getVersion(), "The builder must set the resolved version");
+
+        assertEquals(
+                "v1",
+                versioned.toBuilder().description("changed").build().getVersion(),
+                "toBuilder must preserve the version across derived copies");
+        assertEquals(null, versioned.toBuilder().version(null).build().getVersion());
     }
 }

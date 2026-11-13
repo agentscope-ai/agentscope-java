@@ -149,6 +149,11 @@ class AgentProtocolAgentFactoryTest {
         return agent;
     }
 
+    /**
+     * Polls until the condition holds. Generous budget: under a fully parallel build the
+     * async task pipeline (scheduler + event bus + workspace I/O) can take far longer than
+     * its unloaded wall clock; the happy path still returns on the first satisfied poll.
+     */
     private static void awaitCondition(Condition condition, long timeoutMs) throws Exception {
         long deadline = System.currentTimeMillis() + timeoutMs;
         while (!condition.get()) {

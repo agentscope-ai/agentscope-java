@@ -42,6 +42,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.stream.Stream;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -80,6 +81,14 @@ public final class MarketplaceStager {
     private static final Logger log = LoggerFactory.getLogger(MarketplaceStager.class);
 
     public static final String CACHE_DIR = ".skills-cache";
+
+    /**
+     * Records the version token a staged descriptor tree was built from, so the reuse
+     * predicate can detect a same-name version swap (LATEST refresh) and rebuild instead of
+     * pinning the superseded version's bytes.
+     */
+    private static final String STAGED_VERSION_FILE = ".staged-version";
+
     public static final String GLOBAL_NAMESPACE = "_global";
 
     /**
@@ -270,7 +279,27 @@ public final class MarketplaceStager {
                 String namespaceSegment = sourceNamespaceSegment(ns);
                 Path namespaceDir = resolveStagingDirectory(scopeRoot, namespaceSegment);
                 Path stagedDir = resolveStagingDirectory(namespaceDir, name);
-                if (!materializeIfChanged(stagedDir, skill.getResources())) {
+                Map<String, String> resources = skill.getResources();
+                if (skill.getOriginDir().isPresent()
+                        && (resources == null || resources.isEmpty())
+                        && materializeDirectoryIfChanged(
+                                stagedDir, skill.getOriginDir().get(), skill.getVersion())) {
+                    // Descriptor-form skill whose whole tree already lives on disk — the
+                    // repository's materialized version directory. Stage that tree instead
+                    // of a resource map so shell and sandbox modes keep a <files-root>: the
+                    // source is immutable under one version token, so a complete staged
+                    // copy pinned to that token is the freshness check — reused while the
+                    // version holds, rebuilt when the token changes (an unstamped source
+                    // is sha-compared per pass instead).
+                    touch(stagedDir);
+                    retained.add(stagedDir);
+                    roots.put(
+                            name,
+                            new StageResult.Cached(
+                                    scopeRoot.getFileName().toString(), namespaceSegment, name));
+                    continue;
+                }
+                if (!materializeIfChanged(stagedDir, resources)) {
                     // Nothing was materialised, which is what a lazy repository produces:
                     // it publishes no in-memory resources. Reporting Cached here would
                     // render a <files-root> for a directory that stays permanently empty,
@@ -391,6 +420,62 @@ public final class MarketplaceStager {
         // POSIX mode, so we re-derive +x from a shebang / known script extension. Not a true
         // mode preservation — pure-static skill assets (.json/.md/.txt) stay 644.
         maybeMarkExecutable(target, bytes);
+    }
+
+    /**
+     * Stages an immutable on-disk skill tree (a repository's materialized version directory)
+     * into {@code stagedDir}. A staged tree pinned to the same version token is reused — the
+     * source never changes under one token; a readable {@code SKILL.md} plus a matching
+     * marker is the completeness proxy (a tree damaged beyond its manifest does not
+     * self-heal here). A missing tree, a tree without a readable {@code SKILL.md}, or a
+     * tree staged under a different token is (re)built by a recursive copy through {@link
+     * #writeIfChanged}, inheriting its sha-compare and executable-bit heuristics. The
+     * rebuild is additive: files only present in the superseded version are never removed —
+     * concurrent sessions may legitimately serve different versions of the same name (a PIN
+     * session anchored to the superseded version still needs them), so a live staged tree
+     * is never pruned mid-flight; the manifest ({@code SKILL.md}) and the loader always
+     * serve the call's bound version, and orphan GC only ever removes whole skill
+     * directories that no call retained. An unstamped ({@code null} version) source takes
+     * no fast path: it is sha-compared on every pass, so in-place edits of a live tier
+     * propagate. Returns {@code true} when {@code stagedDir} holds a complete skill (a
+     * readable {@code SKILL.md}) on return.
+     */
+    private boolean materializeDirectoryIfChanged(
+            Path stagedDir, Path originDir, String versionToken) throws IOException {
+        Path versionMarker = stagedDir.resolve(STAGED_VERSION_FILE);
+        if (versionToken != null
+                && Files.isRegularFile(stagedDir.resolve("SKILL.md"))
+                && tokenMatches(versionMarker, versionToken)) {
+            return true;
+        }
+        Files.createDirectories(stagedDir);
+        List<Path> sources = new ArrayList<>();
+        try (Stream<Path> walk = Files.walk(originDir)) {
+            walk.filter(Files::isRegularFile).forEach(sources::add);
+        }
+        for (Path source : sources) {
+            Path target = stagedDir.resolve(originDir.relativize(source).toString());
+            writeIfChanged(target, Files.readAllBytes(source));
+        }
+        if (versionToken != null) {
+            // Recorded last: a crash mid-copy leaves the previous marker, so the next pass
+            // rebuilds instead of pinning a half-written tree to the new token.
+            writeIfChanged(versionMarker, versionToken.getBytes(StandardCharsets.UTF_8));
+        }
+        return Files.isRegularFile(stagedDir.resolve("SKILL.md"));
+    }
+
+    /** Fast-path predicate: the staged tree was built for exactly this version token. */
+    private static boolean tokenMatches(Path versionMarker, String versionToken) {
+        if (!Files.isRegularFile(versionMarker)) {
+            return false;
+        }
+        try {
+            return versionToken.equals(Files.readString(versionMarker, StandardCharsets.UTF_8));
+        } catch (IOException e) {
+            // Unreadable marker (concurrent replace, FS hiccup): rebuild rather than pin.
+            return false;
+        }
     }
 
     /**

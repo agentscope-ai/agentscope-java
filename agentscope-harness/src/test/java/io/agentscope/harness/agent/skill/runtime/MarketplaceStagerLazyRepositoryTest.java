@@ -18,6 +18,7 @@ package io.agentscope.harness.agent.skill.runtime;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.skill.AgentSkill;
@@ -50,8 +51,8 @@ class MarketplaceStagerLazyRepositoryTest {
     private static final String SKILL_NAME = "my-skill";
 
     @Test
-    @DisplayName("lazy repository reports NONE and stages no files")
-    void lazyRepositoryReportsNone(@TempDir Path tmp) throws IOException {
+    @DisplayName("lazy repository stages its on-disk tree and keeps a files-root")
+    void lazyRepositoryStagesFromOriginDir(@TempDir Path tmp) throws IOException {
         Path library = writeSkillLibrary(tmp);
         Path workspace = Files.createDirectories(tmp.resolve("workspace"));
         MarketplaceStager stager = new MarketplaceStager(workspace);
@@ -59,16 +60,28 @@ class MarketplaceStagerLazyRepositoryTest {
         AgentSkillRepository repo = new FileSystemSkillRepository(library, false, SOURCE_NS, true);
         AgentSkill skill = repo.getAllSkills().get(0);
         assertTrue(skill.getResources().isEmpty(), "a lazy repository must not preload resources");
+        assertTrue(skill.getOriginDir().isPresent(), "lazy summaries carry their originDir");
 
         StageResult result =
                 stager.stage(List.of(new RepoBound(skill, repo)), Map.of(repo, SOURCE_NS), SCOPE)
                         .get(SKILL_NAME);
 
-        assertInstanceOf(StageResult.None.class, result);
-        assertEquals(0, countRegularFiles(stagedDir(workspace)));
-        assertFalse(
-                Files.exists(stagedDir(workspace)),
-                "nothing was staged, so no staged directory may be left behind");
+        // The descriptor's tree is staged from originDir so shell and sandbox modes keep a
+        // <files-root> — the immutable source makes a complete copy the freshness check.
+        assertInstanceOf(StageResult.Cached.class, result);
+        assertTrue(
+                Files.isRegularFile(stagedDir(workspace).resolve("SKILL.md")),
+                "the on-disk manifest is staged verbatim");
+        assertNotNull(
+                ShellPathPolicy.localWithShell(workspace).resolve(SKILL_NAME, result),
+                "both shell modes resolve a files-root for the staged tree");
+
+        // A second pass over the unchanged tree is a pure reuse — still cached, files intact.
+        StageResult again =
+                stager.stage(List.of(new RepoBound(skill, repo)), Map.of(repo, SOURCE_NS), SCOPE)
+                        .get(SKILL_NAME);
+        assertInstanceOf(StageResult.Cached.class, again);
+        assertTrue(Files.isRegularFile(stagedDir(workspace).resolve("SKILL.md")));
     }
 
     @Test
@@ -118,6 +131,106 @@ class MarketplaceStagerLazyRepositoryTest {
                 "a staged skill directory must contain the skill's resources");
     }
 
+    @Test
+    @DisplayName("a same-name version swap rebuilds the staged tree instead of reusing it")
+    void stagedTreeFollowsVersionRefresh(@TempDir Path tmp) throws IOException {
+        Path workspace = Files.createDirectories(tmp.resolve("workspace"));
+        MarketplaceStager stager = new MarketplaceStager(workspace);
+        AgentSkillRepository repo = new StubRepo(SOURCE_NS);
+
+        // Arrange: two immutable origin trees for the same name — v1 and v2, as a mirror
+        // store serves them across a LATEST refresh (one materialized dir per token). v1
+        // carries a file v2 no longer ships, pinning the rebuild's additive shape.
+        Path v1Dir = writeOriginTree(tmp.resolve("origin-v1"), "body-v1");
+        Files.writeString(v1Dir.resolve("old-only.txt"), "v1 exclusive\n");
+        Path v2Dir = writeOriginTree(tmp.resolve("origin-v2"), "body-v2");
+        AgentSkill v1 = descriptorSkill(v1Dir, "tok-1");
+        AgentSkill v2 = descriptorSkill(v2Dir, "tok-2");
+
+        // Act + assert (first stage, same-token reuse, token-swap rebuild, swap back).
+        stager.stage(List.of(new RepoBound(v1, repo)), Map.of(repo, SOURCE_NS), SCOPE);
+        assertEquals("body-v1", stagedBody(workspace), "the first stage copies the v1 tree");
+        assertTrue(
+                Files.isRegularFile(stagedDir(workspace).resolve("old-only.txt")),
+                "v1's exclusive file is staged with the tree");
+
+        Path stagedManifest = stagedDir(workspace).resolve("SKILL.md");
+        java.nio.file.attribute.FileTime reusedAt = Files.getLastModifiedTime(stagedManifest);
+        stager.stage(List.of(new RepoBound(v1, repo)), Map.of(repo, SOURCE_NS), SCOPE);
+        assertEquals("body-v1", stagedBody(workspace), "a same-token pass is a pure reuse");
+        assertEquals(
+                reusedAt,
+                Files.getLastModifiedTime(stagedManifest),
+                "a pure reuse must not rewrite the staged manifest");
+
+        stager.stage(List.of(new RepoBound(v2, repo)), Map.of(repo, SOURCE_NS), SCOPE);
+        assertEquals(
+                "body-v2",
+                stagedBody(workspace),
+                "a version swap must rebuild — the staged bytes follow the served version,"
+                        + " not the first one ever staged under the name");
+        assertTrue(
+                Files.isRegularFile(stagedDir(workspace).resolve("old-only.txt")),
+                "the rebuild is additive: the superseded version's exclusive file stays —"
+                        + " concurrent sessions may still be pinned to v1, and the shared"
+                        + " staged tree is never deleted mid-flight");
+
+        stager.stage(List.of(new RepoBound(v1, repo)), Map.of(repo, SOURCE_NS), SCOPE);
+        assertEquals("body-v1", stagedBody(workspace), "the rebuild is symmetric (v2 → v1)");
+    }
+
+    @Test
+    @DisplayName("an unstamped origin tree refreshes in place on every pass")
+    void unstampedTreeTracksLiveEdits(@TempDir Path tmp) throws IOException {
+        Path workspace = Files.createDirectories(tmp.resolve("workspace"));
+        MarketplaceStager stager = new MarketplaceStager(workspace);
+        AgentSkillRepository repo = new StubRepo(SOURCE_NS);
+
+        // Arrange: an unstamped (version = null) origin dir — the flat live tier — whose
+        // content is edited in place between passes.
+        Path origin = writeOriginTree(tmp.resolve("origin-live"), "body-a");
+        AgentSkill live = descriptorSkill(origin, null);
+
+        stager.stage(List.of(new RepoBound(live, repo)), Map.of(repo, SOURCE_NS), SCOPE);
+        assertEquals("body-a", stagedBody(workspace));
+
+        Files.writeString(origin.resolve("SKILL.md"), "---\nname: x\ndescription: d\n---\nbody-b");
+        stager.stage(List.of(new RepoBound(live, repo)), Map.of(repo, SOURCE_NS), SCOPE);
+
+        assertEquals(
+                "body-b",
+                stagedBody(workspace),
+                "an unstamped source has no token to pin, so edits must propagate per pass");
+    }
+
+    /** Writes {@code SKILL.md} with the given body under {@code root/my-skill/}. */
+    private static Path writeOriginTree(Path root, String body) throws IOException {
+        Path skillDir = Files.createDirectories(root.resolve(SKILL_NAME));
+        Files.writeString(
+                skillDir.resolve("SKILL.md"),
+                "---\nname: " + SKILL_NAME + "\ndescription: demo\n---\n" + body + "\n");
+        return skillDir;
+    }
+
+    /** A descriptor-form skill: empty resources, the given origin dir and version token. */
+    private static AgentSkill descriptorSkill(Path originDir, String version) {
+        return AgentSkill.builder()
+                .name(SKILL_NAME)
+                .description("demo")
+                .originDir(originDir)
+                .version(version)
+                .build();
+    }
+
+    /** The body text of the staged {@code SKILL.md}, stripped of the frontmatter. */
+    private static String stagedBody(Path workspace) throws IOException {
+        Path staged = stagedDir(workspace).resolve("SKILL.md");
+        assertTrue(Files.isRegularFile(staged), "the staged tree must hold a SKILL.md");
+        String text = Files.readString(staged);
+        int end = text.indexOf("---", 4);
+        return text.substring(end + 3).trim();
+    }
+
     /**
      * Creates {@code <tmp>/library/my-skill/SKILL.md} plus {@code scripts/gen.py} and returns the
      * library root that a {@link FileSystemSkillRepository} is built from.
@@ -151,6 +264,12 @@ class MarketplaceStagerLazyRepositoryTest {
 
     /** Minimal repository stub: the stager only reads {@link #getSource()}. */
     private static final class StubRepo implements AgentSkillRepository {
+
+        /** Always {@code null}: no versioned reads on this stub. */
+        @Override
+        public AgentSkill getSkill(String name, String version) {
+            return null;
+        }
 
         private final String source;
 

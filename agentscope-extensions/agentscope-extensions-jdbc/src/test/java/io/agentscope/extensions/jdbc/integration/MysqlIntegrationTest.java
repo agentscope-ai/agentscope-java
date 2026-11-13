@@ -33,6 +33,7 @@ import io.agentscope.harness.agent.sandbox.SandboxIsolationKey;
 import io.agentscope.harness.agent.sandbox.SandboxLease;
 import io.agentscope.harness.agent.sandbox.snapshot.RemoteSnapshotClient;
 import java.io.ByteArrayInputStream;
+import java.nio.file.Path;
 import java.sql.Connection;
 import java.sql.Statement;
 import java.util.List;
@@ -43,6 +44,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.MethodOrderer;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestMethodOrder;
+import org.junit.jupiter.api.io.TempDir;
 import org.testcontainers.containers.MySQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
@@ -63,6 +65,9 @@ class MysqlIntegrationTest {
     @Container
     static final MySQLContainer<?> mysql =
             new MySQLContainer<>("mysql:8.0").withDatabaseName("agentscope");
+
+    /** Explicit cache root — versioned reads never touch the real home. */
+    @TempDir Path cacheDir;
 
     record TestState(String value) implements State {}
 
@@ -163,7 +168,7 @@ class MysqlIntegrationTest {
                         "integration");
         assertTrue(repo.save(List.of(skill), false));
 
-        AgentSkill loaded = repo.getSkill("mysql-skill");
+        AgentSkill loaded = repo.getSkill("mysql-skill", null);
         assertEquals("https://example.com", loaded.getMetadataValue("homepage"));
         assertEquals("hello", loaded.getResource("readme.md"));
         assertTrue(repo.delete("mysql-skill"));
@@ -175,7 +180,8 @@ class MysqlIntegrationTest {
     void namespacedSkillIsolation() {
         DataSource ds = createDataSource();
         AbstractJdbcDialect dialect = AbstractJdbcDialect.from(ds).enableSkillTables(true).build();
-        var repo = new JdbcAgentSkillRepository(ds, dialect);
+        var teamARepo = new JdbcAgentSkillRepository(ds, dialect, "team-a", true, cacheDir);
+        var teamBRepo = new JdbcAgentSkillRepository(ds, dialect, "team-b", true, cacheDir);
 
         var teamA =
                 new AgentSkill(
@@ -189,39 +195,40 @@ class MysqlIntegrationTest {
                         "content-b",
                         Map.of("docs/b.md", "b"),
                         "integration");
-        assertTrue(repo.save("team-a", List.of(teamA), false));
+        assertTrue(teamARepo.save(List.of(teamA), false));
         assertTrue(
-                repo.save("team-b", List.of(teamB), false),
+                teamBRepo.save(List.of(teamB), false),
                 "UNIQUE(namespace, name) must admit the same name in another namespace");
-        assertEquals("content-a", repo.getSkill("team-a", "mysql-ns-skill").getSkillContent());
-        assertEquals("content-b", repo.getSkill("team-b", "mysql-ns-skill").getSkillContent());
+        assertEquals("content-a", teamARepo.getSkill("mysql-ns-skill", null).getSkillContent());
+        assertEquals("content-b", teamBRepo.getSkill("mysql-ns-skill", null).getSkillContent());
 
         // Delete and clear stay inside their namespace; name comparisons still run under
         // MySQL's case-insensitive collation, which the local H2/SQLite tests cannot cover.
-        assertTrue(repo.delete("team-b", "mysql-ns-skill"));
-        assertEquals("a", repo.getSkill("team-a", "mysql-ns-skill").getResource("docs/a.md"));
-        repo.clearAllSkills("team-a");
-        assertTrue(repo.getAllSkillNames("team-a").isEmpty());
-        assertTrue(repo.getAllSkillNames("team-b").isEmpty());
+        assertTrue(teamBRepo.delete("mysql-ns-skill"));
+        assertEquals("a", teamARepo.getSkill("mysql-ns-skill", null).getResource("docs/a.md"));
+        teamARepo.clearAllSkills();
+        assertTrue(teamARepo.getAllSkillNames().isEmpty());
+        assertTrue(teamBRepo.getAllSkillNames().isEmpty());
 
         // Case-differing namespaces are distinct scopes on MySQL: the namespace columns
         // are pinned to utf8mb4_bin (like the store/session key columns), so 'Team-a'
         // and 'team-a' coexist instead of collapsing into one under the case-insensitive
         // table default.
+        var teamUpperRepo = new JdbcAgentSkillRepository(ds, dialect, "Team-a", true);
         var caseSkill =
                 new AgentSkill(
                         Map.of("name", "case-skill", "description", "d"),
                         "content",
                         Map.of(),
                         "integration");
-        assertTrue(repo.save("Team-a", List.of(caseSkill), false));
+        assertTrue(teamUpperRepo.save(List.of(caseSkill), false));
         assertTrue(
-                repo.save("team-a", List.of(caseSkill), false),
+                teamARepo.save(List.of(caseSkill), false),
                 "utf8mb4_bin namespace must treat 'Team-a' and 'team-a' as distinct scopes");
-        assertEquals(1, repo.getAllSkillNames("Team-a").size());
-        assertEquals(1, repo.getAllSkillNames("team-a").size());
-        repo.clearAllSkills("Team-a");
-        repo.clearAllSkills("team-a");
+        assertEquals(1, teamUpperRepo.getAllSkillNames().size());
+        assertEquals(1, teamARepo.getAllSkillNames().size());
+        teamUpperRepo.clearAllSkills();
+        teamARepo.clearAllSkills();
     }
 
     /**

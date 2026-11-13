@@ -18,6 +18,7 @@ package io.agentscope.core.skill.repository;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -234,7 +235,7 @@ class FileSystemSkillRepositoryTest {
     @Test
     @DisplayName("Should discover and load a UTF-8 SKILL.md with a BOM")
     void testLoadSkillWithUtf8Bom() throws IOException {
-        Path skillDir = Files.createDirectories(skillsBaseDir.resolve("bom-directory"));
+        Path skillDir = Files.createDirectories(skillsBaseDir.resolve("bom-skill"));
         String content = "# Instructions\r\nPreserve this \uFEFF character.";
         String markdown =
                 "\uFEFF---\r\nname: bom-skill\r\ndescription: A BOM skill\r\n---\r\n" + content;
@@ -246,14 +247,17 @@ class FileSystemSkillRepositoryTest {
         assertNotNull(skill);
         assertEquals("bom-skill", skill.getName());
         assertEquals("A BOM skill", skill.getDescription());
-        assertEquals(content, skill.getSkillContent());
+        assertNull(skill.getSkillContent(), "summaries carry no body in memory");
+        assertNotNull(
+                repository.getSkill("bom-skill", null),
+                "the discovered name must resolve through the serving method");
     }
 
     // ==================== Save Tests ====================
 
     @Test
     @DisplayName("Should save a new skill successfully")
-    void testSave_NewSkill() {
+    void testSave_NewSkill() throws IOException {
         AgentSkill skill = new AgentSkill("new-skill", "New Skill", "New skill content", null);
 
         assertTrue(repository.save(List.of(skill), false));
@@ -263,7 +267,7 @@ class FileSystemSkillRepositoryTest {
         assertNotNull(loaded);
         assertEquals("new-skill", loaded.getName());
         assertEquals("New Skill", loaded.getDescription());
-        assertTrue(loaded.getSkillContent().contains("New skill content"));
+        assertTrue(skillBody(loaded).contains("New skill content"));
     }
 
     @Test
@@ -281,9 +285,9 @@ class FileSystemSkillRepositoryTest {
 
         AgentSkill loaded = repository.getSkill("resource-skill");
         assertNotNull(loaded);
-        assertTrue(loaded.getResources().containsKey("references/guide.md"));
-        assertTrue(loaded.getResources().containsKey("config.json"));
-        assertEquals("{\"key\": \"value\"}", loaded.getResources().get("config.json"));
+        // Summary form: resources resolve on demand through originDir, not in memory.
+        assertEquals("# Guide\nSome guide content", loaded.getResource("references/guide.md"));
+        assertEquals("{\"key\": \"value\"}", loaded.getResource("config.json"));
     }
 
     @Test
@@ -326,7 +330,7 @@ class FileSystemSkillRepositoryTest {
 
     @Test
     @DisplayName("Should overwrite existing skill with force")
-    void testSave_ExistingWithForce() {
+    void testSave_ExistingWithForce() throws IOException {
         AgentSkill skill = new AgentSkill("test-skill", "Updated Skill", "Updated content", null);
 
         assertTrue(repository.save(List.of(skill), true));
@@ -334,7 +338,7 @@ class FileSystemSkillRepositoryTest {
         AgentSkill loaded = repository.getSkill("test-skill");
         assertNotNull(loaded);
         assertEquals("Updated Skill", loaded.getDescription());
-        assertTrue(loaded.getSkillContent().contains("Updated content"));
+        assertTrue(skillBody(loaded).contains("Updated content"));
     }
 
     @Test
@@ -372,6 +376,13 @@ class FileSystemSkillRepositoryTest {
         assertTrue(source.startsWith("filesystem-"));
     }
 
+    /** The SKILL.md body read from the summary's {@code originDir} — summaries carry no
+     * body in memory, so body assertions go to disk. */
+    private static String skillBody(AgentSkill skill) throws IOException {
+        return Files.readString(
+                skill.getOriginDir().orElseThrow().resolve("SKILL.md"), StandardCharsets.UTF_8);
+    }
+
     private void createSampleSkill(String name, String description, String content)
             throws IOException {
         Path skillDir = skillsBaseDir.resolve(name);
@@ -389,5 +400,190 @@ class FileSystemSkillRepositoryTest {
                         + content;
 
         Files.writeString(skillDir.resolve("SKILL.md"), skillMd, StandardCharsets.UTF_8);
+    }
+
+    // ==================== Version Semantics Tests ====================
+
+    @Test
+    @DisplayName("Flat layout: null/blank version serves current content, unstamped")
+    void testVersionContract_FlatServesCurrentUnstamped() throws IOException {
+        // Arrange: a resource file so the disk-fallback surface is exercised too.
+        Path note = skillsBaseDir.resolve("test-skill").resolve("notes").resolve("a.txt");
+        Files.createDirectories(note.getParent());
+        Files.writeString(note, "on disk", StandardCharsets.UTF_8);
+
+        // Act: null and blank versions both serve the current content.
+        AgentSkill byNull = repository.getSkill("test-skill", null);
+        AgentSkill byBlank = repository.getSkill("test-skill", "  ");
+
+        // Assert: current content, unstamped.
+        assertNotNull(byNull);
+        assertNotNull(byBlank);
+        assertEquals("test-skill", byNull.getName());
+        assertNull(byNull.getVersion(), "the flat layout carries no version — unstamped");
+        assertNull(byBlank.getVersion());
+        assertTrue(
+                byNull.getOriginDir().isPresent(),
+                "a directory-backed skill carries its own directory as originDir");
+        assertTrue(
+                byNull.getResources().isEmpty(),
+                "the serving form carries no physical file content");
+        assertEquals(
+                "on disk",
+                byNull.getResource("notes/a.txt"),
+                "resources resolve from originDir on demand");
+
+        // Every pull is the current bytes: a rewrite is visible on the next pull.
+        createSampleSkill("test-skill", "Rewritten", "new body");
+        AgentSkill again = repository.getSkill("test-skill", null);
+        assertNotNull(again);
+        assertTrue(skillBody(again).contains("new body"));
+        assertNull(again.getVersion());
+    }
+
+    @Test
+    @DisplayName("Flat layout: a non-null version has nothing to address — honest null")
+    void testVersionContract_FlatNonNullVersionAnswersNull() {
+        assertNull(repository.getSkill("test-skill", "1.0.0"));
+        assertNull(repository.getSkill("test-skill", "deadbeef"));
+    }
+
+    @Test
+    @DisplayName("A directory that is neither a flat skill nor a version container answers null")
+    void testVersionContract_NeitherLayoutAnswersNull() throws IOException {
+        Files.createDirectories(skillsBaseDir.resolve("stray-dir"));
+        assertNull(repository.getSkill("stray-dir", null));
+        assertNull(repository.getSkill("stray-dir", "1"));
+        assertNull(repository.getSkill("no-such-skill", null));
+        assertNull(repository.getSkill("../escape", null), "traversal is rejected");
+    }
+
+    @Test
+    @DisplayName("Versioned container: latest is the lexicographically greatest name")
+    void testVersionContract_VersionedContainerLatestIsStringMax() throws IOException {
+        createSampleVersion("deploy-skill", "2025", "ancient body");
+        createSampleVersion("deploy-skill", "20260101120000", "Deploy v1 body");
+        createSampleVersion("deploy-skill", "20260201130000", "Deploy v2 body");
+
+        assertTrue(
+                repository.getAllSkillNames().contains("deploy-skill"),
+                "a versioned container is discovered by its directory name");
+
+        AgentSkill latest = repository.getSkill("deploy-skill", null);
+        assertNotNull(latest);
+        assertEquals("20260201130000", latest.getVersion(), "the stamp is the version dir name");
+        assertTrue(skillBody(latest).contains("Deploy v2 body"));
+        assertEquals(
+                skillsBaseDir.resolve("deploy-skill").resolve("20260201130000"),
+                latest.getOriginDir().get(),
+                "originDir is the materialised version directory");
+    }
+
+    @Test
+    @DisplayName("Versioned container: a specific version serves exactly that directory")
+    void testVersionContract_VersionedContainerExactVersion() throws IOException {
+        createSampleVersion("deploy-skill", "20260101120000", "Deploy v1 body");
+        createSampleVersion("deploy-skill", "20260201130000", "Deploy v2 body");
+
+        AgentSkill pinned = repository.getSkill("deploy-skill", "20260101120000");
+        assertNotNull(pinned);
+        assertEquals("20260101120000", pinned.getVersion());
+        assertTrue(skillBody(pinned).contains("Deploy v1 body"));
+
+        assertNull(repository.getSkill("deploy-skill", "9999"), "unknown version");
+        assertNull(
+                repository.getSkill("deploy-skill", "../20260101120000"),
+                "the version is matched against names, never used as a path");
+    }
+
+    @Test
+    @DisplayName("A direct SKILL.md wins over version directories in the same skill folder")
+    void testVersionContract_FlatTakesPrecedenceOverVersionDirs() throws IOException {
+        createSampleSkill("mixed-skill", "Mixed", "flat body");
+        createSampleVersion("mixed-skill", "20260201130000", "versioned body");
+
+        AgentSkill skill = repository.getSkill("mixed-skill", null);
+        assertNotNull(skill);
+        assertNull(skill.getVersion(), "the direct SKILL.md makes it a flat, unversioned skill");
+        assertTrue(skillBody(skill).contains("flat body"));
+    }
+
+    @Test
+    @DisplayName("Discovery and serving share the directory-name key, not the metadata name")
+    void testVersionContract_DiscoveryKeysOnDirectoryName() throws IOException {
+        Path dir = skillsBaseDir.resolve("dir-name");
+        Files.createDirectories(dir);
+        Files.writeString(
+                dir.resolve("SKILL.md"),
+                "---\nname: meta-name\ndescription: mismatched\n---\nbody\n",
+                StandardCharsets.UTF_8);
+
+        List<String> names = repository.getAllSkillNames();
+        assertTrue(names.contains("dir-name"), "discovery lists the directory name");
+        assertFalse(names.contains("meta-name"), "the metadata name is not a discovery key");
+
+        AgentSkill served = repository.getSkill("dir-name", null);
+        assertNotNull(served, "the discovered name must resolve through the serving method");
+        assertEquals("meta-name", served.getName(), "the content keeps its declared name");
+    }
+
+    @Test
+    @DisplayName("An unreadable (non-UTF-8) SKILL.md answers null, never an exception")
+    void testVersionContract_UnreadableSkillMdAnswersNull() throws IOException {
+        Path dir = skillsBaseDir.resolve("gbk-skill");
+        Files.createDirectories(dir);
+        Files.write(
+                dir.resolve("SKILL.md"),
+                "---\nname: gbk-skill\ndescription: d\n---\n正文\n".getBytes("GBK"));
+
+        assertNull(repository.getSkill("gbk-skill", null));
+    }
+
+    @Test
+    @DisplayName("force-save refuses to flatten a versioned container")
+    void testSave_ForceRefusesVersionedContainer() throws IOException {
+        createSampleVersion("deploy-skill", "20260101120000", "v1 body");
+        createSampleVersion("deploy-skill", "20260201130000", "v2 body");
+        AgentSkill flat = new AgentSkill("deploy-skill", "Deploy", "flat body", null);
+
+        assertFalse(repository.save(List.of(flat), true));
+
+        assertTrue(
+                Files.isRegularFile(
+                        skillsBaseDir
+                                .resolve("deploy-skill")
+                                .resolve("20260101120000")
+                                .resolve("SKILL.md")),
+                "every version directory must survive the refused save");
+        AgentSkill latest = repository.getSkill("deploy-skill", null);
+        assertNotNull(latest);
+        assertEquals("20260201130000", latest.getVersion());
+    }
+
+    @Test
+    @DisplayName("skillExists answers true for a versioned container")
+    void testSkillExists_VersionedContainer() throws IOException {
+        createSampleVersion("deploy-skill", "20260101120000", "v1 body");
+        assertTrue(repository.skillExists("deploy-skill"));
+    }
+
+    /** Writes one version directory of {@code skillName} holding a complete SKILL.md. */
+    private void createSampleVersion(String skillName, String version, String content)
+            throws IOException {
+        Path dir = skillsBaseDir.resolve(skillName).resolve(version);
+        Files.createDirectories(dir);
+        Files.writeString(
+                dir.resolve("SKILL.md"),
+                "---\n"
+                        + "name: "
+                        + skillName
+                        + "\n"
+                        + "description: "
+                        + skillName
+                        + " "
+                        + version
+                        + "\n---\n"
+                        + content,
+                StandardCharsets.UTF_8);
     }
 }
