@@ -23,6 +23,10 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.core.model.Model;
+import io.agentscope.core.state.AgentStateStore;
+import io.agentscope.core.state.InMemoryAgentStateStore;
+import io.agentscope.harness.agent.HarnessAgent;
 import io.agentscope.harness.agent.IsolationScope;
 import io.agentscope.harness.agent.filesystem.remote.store.InMemoryStore;
 import io.agentscope.harness.agent.filesystem.spec.RemoteFilesystemSpec;
@@ -314,6 +318,69 @@ class WorkspaceTaskRepositoryScopedMaintenanceTest {
                 owner.readTaskRecord(context, "parent", "session-a", "task-a")
                         .orElseThrow()
                         .isCancelRequested());
+    }
+
+    private HarnessAgent harness(IsolationScope scope) {
+        return HarnessAgent.builder()
+                .name("parent")
+                .model(org.mockito.Mockito.mock(Model.class))
+                .workspace(workspace)
+                .filesystem(new RemoteFilesystemSpec(store).isolationScope(scope))
+                .stateStore(
+                        org.mockito.Mockito.mock(
+                                AgentStateStore.class,
+                                org.mockito.AdditionalAnswers.delegatesTo(
+                                        new InMemoryAgentStateStore())))
+                .disableMemoryHooks()
+                .disableSubagents()
+                .build();
+    }
+
+    @ParameterizedTest
+    @EnumSource(
+            value = IsolationScope.class,
+            names = {"USER", "SESSION"})
+    void workspaceForRegistersOriginalScopeAndKeepsMaintenanceViewBounded(IsolationScope scope) {
+        var first = context("用户 one", "session one");
+        var second = context("other", "other-session");
+        try (var agent = harness(scope)) {
+            var view = agent.workspaceFor(first.getUserId(), first.getSessionId());
+            var other = agent.workspaceFor(second.getUserId(), second.getSessionId());
+            var record = new TaskRecord("task-a", "child", "parent", first.getSessionId(), null);
+            record.setStatus(TaskStatus.RUNNING);
+            view.writeTaskRecord(second, "parent", first.getSessionId(), record);
+            var otherRecord =
+                    new TaskRecord("task-b", "child", "parent", second.getSessionId(), null);
+            otherRecord.setStatus(TaskStatus.RUNNING);
+            other.writeTaskRecord(first, "parent", second.getSessionId(), otherRecord);
+            assertTrue(
+                    other.readTaskRecord(first, "parent", first.getSessionId(), "task-a")
+                            .isEmpty());
+            var scoped = view.listTaskRecordsForMaintenance("parent");
+            assertEquals(
+                    1, scoped.size(), "a bound view must not duplicate or expose other scopes");
+            assertEquals(first.getUserId(), scoped.iterator().next().context().getUserId());
+            assertEquals(first.getSessionId(), scoped.iterator().next().context().getSessionId());
+        }
+        try (var restored = harness(scope)) {
+            var manager = restored.getWorkspaceManager();
+            assertEquals(2, manager.listTaskRecordsForMaintenance("parent").size());
+            repository(manager)
+                    .sweepOrphanedTasks(
+                            Duration.ofMinutes(10),
+                            Duration.ofHours(1),
+                            Instant.now().plus(Duration.ofMinutes(11)));
+            assertEquals(
+                    TaskStatus.FAILED,
+                    manager.readTaskRecord(first, "parent", first.getSessionId(), "task-a")
+                            .orElseThrow()
+                            .getStatus());
+            assertEquals(
+                    TaskStatus.FAILED,
+                    manager.readTaskRecord(second, "parent", second.getSessionId(), "task-b")
+                            .orElseThrow()
+                            .getStatus());
+        }
     }
 
     @Test

@@ -33,6 +33,7 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
+import io.agentscope.harness.agent.filesystem.BakedContextFilesystem;
 import io.agentscope.harness.agent.filesystem.CompositeFilesystem;
 import io.agentscope.harness.agent.filesystem.OverlayFilesystem;
 import io.agentscope.harness.agent.filesystem.RoutedSandboxFilesystem;
@@ -712,25 +713,30 @@ public class WorkspaceManager implements AutoCloseable {
                 });
     }
 
-    private AbstractFilesystem taskFilesystem(String rel) {
+    private record TaskFilesystem(
+            AbstractFilesystem filesystem, RuntimeContext context, boolean contextBound) {}
+
+    private TaskFilesystem taskFilesystem(RuntimeContext rc, String rel) {
         AbstractFilesystem fs = filesystem;
+        RuntimeContext context = rc != null ? rc : RuntimeContext.empty();
+        boolean contextBound = false;
         while (fs != null) {
-            if (fs instanceof CompositeFilesystem composite) {
+            if (fs instanceof BakedContextFilesystem baked) {
+                context = baked.context();
+                contextBound = true;
+                fs = baked.delegate();
+            } else if (fs instanceof CompositeFilesystem composite) {
                 fs = composite.filesystemFor(rel);
             } else if (fs instanceof RoutedSandboxFilesystem routed) {
                 fs = routed.backendFor(rel);
             } else if (fs instanceof OverlayFilesystem overlay) {
                 fs = overlay.upper();
             } else {
-                return fs;
+                break;
             }
         }
-        return null;
-    }
-
-    private RemoteFilesystem taskRemoteFilesystem(String rel) {
-        AbstractFilesystem fs = taskFilesystem(rel);
-        return fs instanceof RemoteFilesystem remote ? remote : null;
+        // Inspection only: task IO continues through the original context-bound filesystem.
+        return new TaskFilesystem(fs, context, contextBound);
     }
 
     /**
@@ -744,11 +750,12 @@ public class WorkspaceManager implements AutoCloseable {
      * @return an immutable namespace snapshot; empty for shared host task storage
      */
     public List<String> taskStorageNamespace(RuntimeContext rc, String agentId, String sessionId) {
-        AbstractFilesystem fs = taskFilesystem(taskRecordPath(agentId, sessionId));
+        TaskFilesystem task = taskFilesystem(rc, taskRecordPath(agentId, sessionId));
+        AbstractFilesystem fs = task.filesystem();
         if (fs == null || fs instanceof SandboxBackedFilesystem) {
             return List.of();
         }
-        RuntimeContext context = rc != null ? rc : RuntimeContext.empty();
+        RuntimeContext context = task.context();
         if (fs instanceof RemoteFilesystem remote) {
             return remote.storageNamespace(context);
         }
@@ -761,10 +768,10 @@ public class WorkspaceManager implements AutoCloseable {
     }
 
     private void registerTaskScope(RuntimeContext rc, String agentId) {
-        RemoteFilesystem remote = taskRemoteFilesystem(taskRecordPath(agentId, "_"));
-        if (remote != null) {
+        TaskFilesystem task = taskFilesystem(rc, taskRecordPath(agentId, "_"));
+        if (task.filesystem() instanceof RemoteFilesystem remote) {
             try {
-                remote.registerTaskScope(rc, agentId);
+                remote.registerTaskScope(task.context(), agentId);
             } catch (Exception e) {
                 // Preserve best-effort persistence; subsequent reads/writes retry registration.
                 log.warn(
@@ -784,11 +791,11 @@ public class WorkspaceManager implements AutoCloseable {
      * normal recent-file window while a non-terminal record still needs orphan recovery.
      */
     public Collection<ScopedTaskRecord> listTaskRecordsForMaintenance(String agentId) {
-        RemoteFilesystem remote = taskRemoteFilesystem(taskRecordPath(agentId, "_"));
+        TaskFilesystem task = taskFilesystem(RuntimeContext.empty(), taskRecordPath(agentId, "_"));
         List<RuntimeContext> contexts =
-                remote == null
-                        ? List.of(RuntimeContext.empty())
-                        : remote.taskMaintenanceContexts(agentId);
+                !task.contextBound() && task.filesystem() instanceof RemoteFilesystem remote
+                        ? remote.taskMaintenanceContexts(agentId)
+                        : List.of(task.context());
         List<ScopedTaskRecord> records = new ArrayList<>();
         for (RuntimeContext context : contexts) {
             for (TaskRecord record : listAllTaskRecords(context, agentId, null)) {

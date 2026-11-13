@@ -53,6 +53,11 @@ public final class BakedContextFilesystem implements AbstractFilesystem {
         return delegate;
     }
 
+    /** Fixed identity for routing metadata; IO must still go through this wrapper. */
+    public RuntimeContext context() {
+        return bakedRc;
+    }
+
     @Override
     public LsResult ls(RuntimeContext runtimeContext, String path) {
         return delegate.ls(bakedRc, path);

@@ -418,7 +418,9 @@ a separate `BaseStore` namespace (`harness/task-scopes/...`). The host-side swee
 persistent registry to discover `SESSION` and `USER` scopes after restart and writes failures back
 to the original scope. Agent tools still read only their caller's scope; the registry contains no
 task bodies and is not exposed as workspace files. Registrations use independent keys and paginated
-reads. Retained scopes are scanned even after prolonged downtime, so store retention should account
+reads. A `workspaceFor(userId, sessionId)` view registers its fixed identity, not the caller's context;
+maintenance through that view stays within its bound scope. The unbound manager scans registered
+scopes. Retained scopes are scanned even after prolonged downtime, so store retention should account
 for this metadata alongside task records.
 
 Registration failures are logged and retried on later task access; task persistence remains best

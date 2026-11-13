@@ -28,7 +28,12 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.core.model.Model;
+import io.agentscope.core.state.AgentStateStore;
+import io.agentscope.core.state.InMemoryAgentStateStore;
+import io.agentscope.harness.agent.HarnessAgent;
 import io.agentscope.harness.agent.IsolationScope;
+import io.agentscope.harness.agent.example.support.InMemorySandboxFilesystemSpec;
 import io.agentscope.harness.agent.filesystem.remote.RemoteFilesystem;
 import io.agentscope.harness.agent.filesystem.remote.store.InMemoryStore;
 import io.agentscope.harness.agent.filesystem.remote.store.NamespaceFactory;
@@ -376,6 +381,115 @@ class WorkspaceTaskRepositoryNamespaceTest {
         } finally {
             future.complete("done");
             repository.shutdown();
+        }
+    }
+
+    @ParameterizedTest
+    @EnumSource(
+            value = IsolationScope.class,
+            names = {"USER", "SESSION"})
+    void realHarnessWorkspaceForUsesActualRemoteTaskNamespace(IsolationScope scope) {
+        try (var agent =
+                HarnessAgent.builder()
+                        .name("parent")
+                        .model(mock(Model.class))
+                        .workspace(workspace)
+                        .filesystem(
+                                new RemoteFilesystemSpec(new InMemoryStore()).isolationScope(scope))
+                        .stateStore(
+                                mock(
+                                        AgentStateStore.class,
+                                        org.mockito.AdditionalAnswers.delegatesTo(
+                                                new InMemoryAgentStateStore())))
+                        .disableMemoryHooks()
+                        .disableSubagents()
+                        .build()) {
+            var owner = RuntimeContext.builder().userId("用户 one").sessionId("session one").build();
+            var view = agent.workspaceFor(owner.getUserId(), owner.getSessionId());
+            var expected =
+                    agent.getWorkspaceManager()
+                            .taskStorageNamespace(owner, "parent", owner.getSessionId());
+            assertEquals(
+                    expected,
+                    view.taskStorageNamespace(context("stranger"), "parent", owner.getSessionId()));
+            var repository = WorkspaceTaskRepository.forTests(view, "parent");
+            try {
+                var handle =
+                        repository.putTask(
+                                context("stranger"),
+                                "task",
+                                "child",
+                                owner.getSessionId(),
+                                new TaskRunSpec.AdoptedTaskRunSpec(
+                                        CompletableFuture.completedFuture("private-result")));
+                assertSame(handle, repository.getTask(null, owner.getSessionId(), "task"));
+                assertTrue(
+                        agent.workspaceFor("other", "other-session")
+                                .readTaskRecord(owner, "parent", owner.getSessionId(), "task")
+                                .isEmpty());
+            } finally {
+                repository.shutdown();
+            }
+        }
+    }
+
+    @Test
+    void realHarnessSharedLocalWorkspaceForHasNoTaskNamespace() {
+        try (var agent =
+                HarnessAgent.builder()
+                        .name("parent")
+                        .model(mock(Model.class))
+                        .workspace(workspace)
+                        .filesystem(
+                                new LocalFilesystemSpec()
+                                        .project(workspace)
+                                        .sharedLocalWorkspace(true))
+                        .disableMemoryHooks()
+                        .disableSubagents()
+                        .build()) {
+            assertEquals(
+                    List.of(),
+                    agent.workspaceFor("user-a", "same-session")
+                            .taskStorageNamespace(context("b"), "parent", "same-session"));
+        }
+    }
+
+    @Test
+    void realHarnessSandboxWorkspaceForRetainsActualHostTaskStorage() {
+        try (var agent =
+                HarnessAgent.builder()
+                        .name("parent")
+                        .model(mock(Model.class))
+                        .workspace(workspace)
+                        .filesystem(new InMemorySandboxFilesystemSpec())
+                        .stateStore(new InMemoryAgentStateStore())
+                        .disableMemoryHooks()
+                        .disableSubagents()
+                        .build()) {
+            var view = agent.workspaceFor("user-a", "same-session");
+            assertEquals(
+                    List.of(), view.taskStorageNamespace(context("b"), "parent", "same-session"));
+            var repository = WorkspaceTaskRepository.forTests(view, "parent");
+            try {
+                repository.putTask(
+                        context("b"),
+                        "task",
+                        "child",
+                        "same-session",
+                        new TaskRunSpec.AdoptedTaskRunSpec(
+                                CompletableFuture.completedFuture("host-result")));
+                assertTrue(
+                        java.nio.file.Files.isRegularFile(
+                                workspace.resolve("agents/parent/tasks/same-session.json")));
+                assertEquals(
+                        "host-result",
+                        agent.workspaceFor("user-b", "other-session")
+                                .readTaskRecord(null, "parent", "same-session", "task")
+                                .orElseThrow()
+                                .getResult());
+            } finally {
+                repository.shutdown();
+            }
         }
     }
 
