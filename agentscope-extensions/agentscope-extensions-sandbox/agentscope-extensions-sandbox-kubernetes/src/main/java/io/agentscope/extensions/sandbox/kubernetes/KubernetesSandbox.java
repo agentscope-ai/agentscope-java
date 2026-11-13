@@ -178,7 +178,7 @@ public class KubernetesSandbox extends AbstractBaseSandbox implements SandboxFil
     @Override
     protected void doHydrateWorkspace(InputStream archive) throws Exception {
         String root = k8sState.getWorkspaceRoot();
-        sdkSandbox.commands().run("mkdir -p " + shellQuote(root));
+        createWorkspaceDirectory(root);
 
         byte[] tarBytes = archive.readAllBytes();
         if (fileApiEnabled()) {
@@ -240,7 +240,17 @@ public class KubernetesSandbox extends AbstractBaseSandbox implements SandboxFil
 
     @Override
     protected void doSetupWorkspace() throws Exception {
-        sdkSandbox.commands().run("mkdir -p " + shellQuote(k8sState.getWorkspaceRoot()));
+        createWorkspaceDirectory(k8sState.getWorkspaceRoot());
+    }
+
+    private void createWorkspaceDirectory(String directory) {
+        ExecutionResult result = sdkSandbox.commands().run("mkdir -p " + shellQuote(directory));
+        if (result.getExitCode() != 0) {
+            throw new SandboxException.SandboxRuntimeException(
+                    SandboxErrorCode.WORKSPACE_START_ERROR,
+                    "mkdir failed (exit=" + result.getExitCode() + ") for " + directory + ": "
+                            + result.getStderr());
+        }
     }
 
     @Override

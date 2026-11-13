@@ -132,6 +132,35 @@ class KubernetesSandboxTest {
     }
 
     @Test
+    void startRejectsFailedWorkspaceMkdir() {
+        when(commands.run(anyString())).thenReturn(new ExecutionResult("", "permission denied", 1));
+
+        SandboxException.WorkspaceStartException failure =
+                assertThrows(SandboxException.WorkspaceStartException.class, sandbox::start);
+
+        assertTrue(failure.getCause().getMessage().contains("mkdir failed (exit=1)"));
+        assertTrue(failure.getCause().getMessage().contains("permission denied"));
+        assertFalse(state.isWorkspaceRootReady());
+        assertFalse(sandbox.isRunning());
+        verify(files, never()).write(anyString(), any(byte[].class));
+    }
+
+    @Test
+    void hydrateRejectsFailedWorkspaceMkdirBeforeUploadingArchive() {
+        when(commands.run(anyString())).thenReturn(new ExecutionResult("", "permission denied", 2));
+
+        SandboxException.SandboxRuntimeException failure =
+                assertThrows(
+                        SandboxException.SandboxRuntimeException.class,
+                        () -> sandbox.doHydrateWorkspace(new ByteArrayInputStream(new byte[0])));
+
+        assertEquals(io.agentscope.harness.agent.sandbox.SandboxErrorCode.WORKSPACE_START_ERROR,
+                failure.getErrorCode());
+        assertTrue(failure.getMessage().contains("mkdir failed (exit=2)"));
+        verify(files, never()).write(anyString(), any(byte[].class));
+    }
+
+    @Test
     void hydrateUsesFileApiWhenConfigured() throws Exception {
         when(commands.run(anyString())).thenReturn(new ExecutionResult("", "", 0));
         byte[] tar = "fake-tar".getBytes();
