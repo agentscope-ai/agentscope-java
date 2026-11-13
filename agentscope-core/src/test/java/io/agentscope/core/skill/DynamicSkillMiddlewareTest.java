@@ -391,4 +391,131 @@ class DynamicSkillMiddlewareTest {
         // only the box build/upload is skipped on the cache hit.
         org.mockito.Mockito.verify(repo, org.mockito.Mockito.times(2)).getAllSkills();
     }
+
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(booleans = {false, true})
+    void reloadKeepsRegisteredToolsAndPresetSchemaContextsIsolated(boolean resourceRoot) {
+        Toolkit toolkit = new Toolkit();
+        Object presetContext = new Object();
+        var inspector = org.mockito.Mockito.mock(io.agentscope.core.tool.AgentTool.class);
+        org.mockito.Mockito.when(inspector.getName()).thenReturn("inspect");
+        org.mockito.Mockito.when(inspector.getDescription())
+                .thenReturn("Inspect the call's skills");
+        var arguments = new java.util.HashMap<String, Object>();
+        arguments.put("$anchor", "arguments");
+        arguments.put("type", "object");
+        arguments.put("properties", java.util.Map.of("x", java.util.Map.of("type", "integer")));
+        arguments.put("required", List.of("x"));
+        arguments.put("additionalProperties", false);
+        java.util.Map<String, Object> schema =
+                java.util.Map.of(
+                        "$ref", "#arguments", "$defs", java.util.Map.of("input", arguments));
+        if (resourceRoot) {
+            var scoped = new java.util.HashMap<String, Object>(schema);
+            scoped.put("$id", "scoped");
+            schema =
+                    java.util.Map.of(
+                            "$id",
+                            "https://example.invalid/root",
+                            "$ref",
+                            "#/$defs/scoped",
+                            "$defs",
+                            java.util.Map.of(
+                                    "scoped",
+                                    scoped,
+                                    "outer",
+                                    java.util.Map.of(
+                                            "$anchor",
+                                            "arguments",
+                                            "properties",
+                                            java.util.Map.of("context", java.util.Map.of()))));
+        }
+        assertNull(io.agentscope.core.tool.ToolValidator.validateInput("{\"x\":7}", schema));
+        org.mockito.Mockito.when(inspector.getParameters()).thenReturn(schema);
+        toolkit.registration()
+                .agentTool(inspector)
+                .presetParameters(
+                        java.util.Map.of(
+                                "inspect", java.util.Map.of("x", 7, "context", presetContext)))
+                .apply();
+        var registeredInspector = toolkit.getTool("inspect");
+        org.mockito.Mockito.when(inspector.callAsync(org.mockito.ArgumentMatchers.any()))
+                .thenAnswer(
+                        invocation -> {
+                            io.agentscope.core.tool.ToolCallParam param = invocation.getArgument(0);
+                            assertEquals(7, param.getInput().get("x"));
+                            assertSame(presetContext, param.getInput().get("context"));
+                            RuntimeContext rc = param.getRuntimeContext();
+                            SkillBox box = rc.get(SkillBox.class);
+                            assertNotNull(box);
+                            return Mono.just(
+                                    io.agentscope.core.message.ToolResultBlock.text(
+                                            box.getSkill("shared_custom").getResource("data.txt")));
+                        });
+        var repo =
+                org.mockito.Mockito.mock(
+                        io.agentscope.core.skill.repository.RuntimeContextSkillRepository.class);
+        org.mockito.Mockito.when(repo.getAllSkills(org.mockito.ArgumentMatchers.any()))
+                .thenAnswer(
+                        invocation -> {
+                            assertTrue(Thread.currentThread().getName().contains("boundedElastic"));
+                            RuntimeContext rc = invocation.getArgument(0);
+                            return List.of(
+                                    new AgentSkill(
+                                            "shared",
+                                            "Shared",
+                                            "instructions",
+                                            java.util.Map.of("data.txt", rc.getUserId())));
+                        });
+        DynamicSkillMiddleware mw =
+                new DynamicSkillMiddleware(List.of(repo), toolkit, null, true, workDir);
+        var registeredLoader = toolkit.getTool("load_skill_through_path");
+        RuntimeContext a = RuntimeContext.builder().userId("A").sessionId("same").build();
+        RuntimeContext b = RuntimeContext.builder().userId("B").sessionId("same").build();
+        StepVerifier.create(
+                        Mono.when(
+                                        mw.onSystemPrompt(null, a, "base"),
+                                        mw.onSystemPrompt(null, b, "base"))
+                                .subscribeOn(Schedulers.parallel()))
+                .verifyComplete();
+        org.junit.jupiter.api.Assertions.assertNotEquals(
+                a.get(SkillBox.class).getUploadDir(), b.get(SkillBox.class).getUploadDir());
+        for (RuntimeContext rc : List.of(a, b)) {
+            for (String toolName : List.of("load_skill_through_path", "inspect")) {
+                var input =
+                        toolName.equals("inspect")
+                                ? java.util.Map.<String, Object>of("x", 1)
+                                : java.util.Map.<String, Object>of(
+                                        "skillId", "shared_custom", "path", "data.txt");
+                var use =
+                        io.agentscope.core.message.ToolUseBlock.builder()
+                                .id(rc.getUserId() + toolName)
+                                .name(toolName)
+                                .input(input)
+                                .build();
+                var result =
+                        toolkit.callTool(
+                                        io.agentscope.core.tool.ToolCallParam.builder()
+                                                .toolUseBlock(use)
+                                                .runtimeContext(rc)
+                                                .build())
+                                .block();
+                assertNotNull(result);
+                assertEquals(use.getId(), result.getId());
+                assertEquals(toolName, result.getName());
+                String text =
+                        ((io.agentscope.core.message.TextBlock) result.getOutput().get(0))
+                                .getText();
+                if (toolName.equals("inspect")) {
+                    assertEquals(rc.getUserId(), text);
+                } else {
+                    assertTrue(text.contains(rc.getUserId()), text);
+                }
+            }
+        }
+        assertSame(registeredInspector, toolkit.getTool("inspect"));
+        assertSame(registeredLoader, toolkit.getTool("load_skill_through_path"));
+        org.mockito.Mockito.verify(inspector, org.mockito.Mockito.times(2))
+                .callAsync(org.mockito.ArgumentMatchers.any());
+    }
 }
