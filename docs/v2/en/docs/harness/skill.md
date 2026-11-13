@@ -278,6 +278,8 @@ agent.promoteSkill("notes-taker", "alice")                   // manually promote
 
 `SkillFilter.only("code-reviewer")`, `except(...)`, and `disable(...)` match the skill's `name`, not the composite `<skill-id>`. A name filter applies to every source variant of that skill; keep using the full `<skill-id>` when loading it.
 
+`SkillBox.uploadSkillFiles()` skips skill directories whose normalized paths escape the upload root and resources whose normalized paths escape their skill directory. This lexical containment check does not add name-pattern or length restrictions; 2.0.x keeps legacy names and the `name_source` identifier format.
+
 When the agent reasons, it sees an `<available_skills>` block in the system prompt listing every skill currently in scope:
 
 ```xml

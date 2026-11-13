@@ -278,6 +278,8 @@ agent.promoteSkill("notes-taker", "alice")                   // 手动晋升一�
 
 `SkillFilter.only("code-reviewer")`、`except(...)` 和 `disable(...)` 匹配 skill 的 `name`，不是复合的 `<skill-id>`。按名称过滤会作用于该 skill 的所有来源版本；加载时仍应使用完整的 `<skill-id>`。
 
+`SkillBox.uploadSkillFiles()` 会跳过规范化路径越出上传根目录的 skill 目录，以及规范化路径越出对应 skill 目录的资源。这是词法路径包含检查，不增加名称格式或长度限制；2.0.x 保留旧有名称及 `name_source` 标识符格式。
+
 每轮推理时，agent 会在 system prompt 里看到一个 `<available_skills>` 块，列出当前可见的所有 skill：
 
 ```xml

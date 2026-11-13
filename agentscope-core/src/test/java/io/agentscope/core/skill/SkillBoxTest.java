@@ -33,6 +33,9 @@ import io.agentscope.core.tool.ToolParam;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.core.tool.mcp.McpClientWrapper;
 import io.modelcontextprotocol.spec.McpSchema;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.Base64;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
@@ -40,6 +43,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 import reactor.core.publisher.Mono;
 
 /**
@@ -242,6 +246,111 @@ class SkillBoxTest {
             assertTrue(skillIds.contains(skill1.getSkillId()), "Should contain first skill ID");
             assertTrue(skillIds.contains(skill2.getSkillId()), "Should contain second skill ID");
             assertTrue(skillIds.contains(skill3.getSkillId()), "Should contain third skill ID");
+        }
+    }
+
+    @Nested
+    class UploadContainment {
+        @TempDir Path tempDir;
+
+        @Test
+        void rejectsAbsoluteAndParentTraversalSkillNames() {
+            skillBox.setWorkDir(tempDir.resolve("work"));
+            AgentSkill absolute =
+                    new AgentSkill(
+                            tempDir.resolve("absolute").toString(),
+                            "Description",
+                            "Content",
+                            Map.of("file.txt", "unsafe"));
+            AgentSkill parent =
+                    new AgentSkill(
+                            "../parent", "Description", "Content", Map.of("file.txt", "unsafe"));
+            skillBox.registerSkill(absolute);
+            skillBox.registerSkill(parent);
+
+            skillBox.uploadSkillFiles();
+
+            assertFalse(Files.exists(tempDir.resolve("absolute_custom/file.txt")));
+            assertFalse(Files.exists(tempDir.resolve("work/parent_custom/file.txt")));
+        }
+
+        @Test
+        void rejectsTraversalInSourceWithoutChangingIdentifierFormat() {
+            skillBox.setWorkDir(tempDir.resolve("work"));
+            AgentSkill skill =
+                    new AgentSkill(
+                            "safe",
+                            "Description",
+                            "Content",
+                            Map.of("file.txt", "unsafe"),
+                            "../../../outside");
+            assertEquals("safe_../../../outside", skill.getSkillId());
+            skillBox.registerSkill(skill);
+
+            skillBox.uploadSkillFiles();
+
+            assertFalse(Files.exists(tempDir.resolve("outside/file.txt")));
+        }
+
+        @Test
+        void rejectsResourceEscapesAndStillWritesNestedTextAndBinary() throws Exception {
+            skillBox.setWorkDir(tempDir.resolve("work"));
+            AgentSkill skill =
+                    new AgentSkill(
+                            "safe",
+                            "Description",
+                            "Content",
+                            Map.of(
+                                    "../sibling.txt",
+                                    "unsafe",
+                                    "../../escaped.txt",
+                                    "unsafe",
+                                    tempDir.resolve("absolute.txt").toString(),
+                                    "unsafe",
+                                    "nested/../nested/text.txt",
+                                    "safe text",
+                                    "nested/binary.bin",
+                                    "base64:"
+                                            + Base64.getEncoder()
+                                                    .encodeToString(new byte[] {0, 1, 2})));
+            skillBox.registerSkill(skill);
+
+            skillBox.uploadSkillFiles();
+
+            assertFalse(Files.exists(tempDir.resolve("work/skills/sibling.txt")));
+            assertFalse(Files.exists(tempDir.resolve("work/escaped.txt")));
+            assertFalse(Files.exists(tempDir.resolve("absolute.txt")));
+            Path skillDir = tempDir.resolve("work/skills/safe_custom");
+            assertEquals("safe text", Files.readString(skillDir.resolve("nested/text.txt")));
+            org.junit.jupiter.api.Assertions.assertArrayEquals(
+                    new byte[] {0, 1, 2},
+                    Files.readAllBytes(skillDir.resolve("nested/binary.bin")));
+        }
+
+        @Test
+        void preservesLegacyNamesWithRelativeNonNormalizedWorkDirectory() throws Exception {
+            Path relative = Path.of("").toAbsolutePath().relativize(tempDir);
+            skillBox.setWorkDir(relative.resolve("unused/.."));
+            for (String name : List.of("Upper_Case.技能", "Long_" + "x".repeat(70))) {
+                AgentSkill skill =
+                        new AgentSkill(
+                                name,
+                                "Description",
+                                "Content",
+                                Map.of("nested/file.txt", "safe"),
+                                "Legacy_Source");
+                skillBox.registerSkill(skill);
+            }
+
+            skillBox.uploadSkillFiles();
+
+            for (String name : List.of("Upper_Case.技能", "Long_" + "x".repeat(70))) {
+                assertEquals(
+                        "safe",
+                        Files.readString(
+                                tempDir.resolve("skills")
+                                        .resolve(name + "_Legacy_Source/nested/file.txt")));
+            }
         }
     }
 

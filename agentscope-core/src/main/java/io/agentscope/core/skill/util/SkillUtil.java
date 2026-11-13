@@ -29,6 +29,7 @@ import java.nio.file.Path;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Optional;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 
@@ -59,6 +60,21 @@ public class SkillUtil {
      * Private constructor to prevent instantiation.
      */
     private SkillUtil() {}
+
+    /**
+     * Resolves a skill id or resource path under a directory, refusing normalized paths that
+     * escape it. Both paths are made absolute and normalized so relative or non-normalized
+     * working directories are handled consistently. This is a lexical containment check.
+     *
+     * @param baseDir the directory the resolved path must stay inside
+     * @param relativeSegment the skill id or resource path
+     * @return the normalized contained path, or an empty result when it escapes the directory
+     */
+    public static Optional<Path> resolveContainedPath(Path baseDir, String relativeSegment) {
+        Path base = baseDir.toAbsolutePath().normalize();
+        Path resolved = base.resolve(relativeSegment).normalize();
+        return resolved.startsWith(base) ? Optional.of(resolved) : Optional.empty();
+    }
 
     /**
      * Creates an AgentSkill from markdown with YAML frontmatter.

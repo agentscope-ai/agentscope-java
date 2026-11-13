@@ -16,6 +16,7 @@
 package io.agentscope.core.skill;
 
 import io.agentscope.core.skill.util.SkillFileSystemHelper;
+import io.agentscope.core.skill.util.SkillUtil;
 import io.agentscope.core.tool.AgentTool;
 import io.agentscope.core.tool.ExtendedModel;
 import io.agentscope.core.tool.ToolCallParam;
@@ -30,6 +31,7 @@ import java.nio.file.Path;
 import java.util.Base64;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import org.slf4j.Logger;
@@ -688,6 +690,10 @@ public class SkillBox {
      *   <li>Otherwise, use workDir/skills (workDir may be a temporary directory).</li>
      * </ul>
      *
+     * <p>The normalized skill directory must stay within the upload directory, and each
+     * resource path must stay within that skill directory. Escaping paths are skipped with a
+     * warning; legacy skill names and the name_source identifier format are unchanged.
+     *
      * <p>If a file already exists, it will be overwritten.
      *
      */
@@ -712,7 +718,15 @@ public class SkillBox {
                 continue;
             }
 
-            Path skillDir = targetDir.resolve(skillId);
+            Optional<Path> skillDir = SkillUtil.resolveContainedPath(targetDir, skillId);
+            if (skillDir.isEmpty()) {
+                logger.warn(
+                        "Refusing to materialize skill '{}': resolved directory escapes the"
+                                + " target directory '{}'",
+                        skillId,
+                        targetDir);
+                continue;
+            }
 
             for (String resourcePath : resourcePaths) {
                 if (!filter.accept(resourcePath)) {
@@ -725,13 +739,13 @@ public class SkillBox {
                     continue;
                 }
 
-                Path targetPath = skillDir.resolve(resourcePath).normalize();
-
-                // Security check: Prevent path traversal attacks
-                if (!targetPath.startsWith(skillDir)) {
+                Optional<Path> containedPath =
+                        SkillUtil.resolveContainedPath(skillDir.get(), resourcePath);
+                if (containedPath.isEmpty()) {
                     logger.warn("Skipping file with invalid path: {}", resourcePath);
                     continue;
                 }
+                Path targetPath = containedPath.get();
 
                 try {
                     if (targetPath.getParent() != null) {
