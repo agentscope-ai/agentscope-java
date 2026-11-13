@@ -186,6 +186,8 @@ sequenceDiagram
 
 All events in one reply share the same `replyId`. Within a reply, `blockId` ties text/thinking/data block events together; `toolCallId` ties tool calls and tool results. A `blockId` is scoped to its `replyId` and does not have to be a globally unique generated ID. When a block type can have at most one lifecycle within a reply, an implementation may use a stable type key, such as a fixed key for the text block.
 
+When a model does not provide an ID for an accumulated tool call, ReAct generates one and reuses it for that call's argument fragments and execution result. Use the ID as an opaque correlation key.
+
 ### Event types
 
 All events extend `AgentEvent` (`io.agentscope.core.event`), which exposes the common methods:

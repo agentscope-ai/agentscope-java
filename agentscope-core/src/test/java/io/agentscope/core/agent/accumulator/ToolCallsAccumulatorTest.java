@@ -18,6 +18,7 @@ package io.agentscope.core.agent.accumulator;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -41,6 +42,22 @@ class ToolCallsAccumulatorTest {
     @BeforeEach
     void setUp() {
         accumulator = new ToolCallsAccumulator();
+    }
+
+    @Test
+    void generatedIdsBelongToIndividualCalls() {
+        ToolUseBlock first = ToolUseBlock.builder().name("first").build();
+        accumulator.add(first);
+        String streamedId = accumulator.getAccumulatedToolCall(null).getId();
+        accumulator.add(ToolUseBlock.builder().name("second").build());
+
+        List<ToolUseBlock> calls = accumulator.buildAllToolCalls();
+        assertEquals(streamedId, calls.get(0).getId());
+        assertNotEquals(streamedId, calls.get(1).getId());
+
+        accumulator.reset();
+        accumulator.add(first);
+        assertNotEquals(streamedId, accumulator.buildAllToolCalls().get(0).getId());
     }
 
     @Test
