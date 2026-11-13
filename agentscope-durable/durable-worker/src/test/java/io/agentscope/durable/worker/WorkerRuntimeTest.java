@@ -200,7 +200,7 @@ class WorkerRuntimeTest {
                             .executor("remote", provider)
                             .parallelism(1)
                             .recoveryParallelism(1)
-                            .leaseDuration(Duration.ofMillis(300))
+                            .leaseDuration(Duration.ofSeconds(2))
                             .pollInterval(Duration.ofMillis(10))
                             .build()) {
                 worker.localExecutor().startExecution(request);
@@ -209,7 +209,7 @@ class WorkerRuntimeTest {
                     assertTrue(running.await(5, TimeUnit.SECONDS));
                     worker.localExecutor().cancel(recovered, null);
                     assertTrue(cancelled.await(5, TimeUnit.SECONDS));
-                    assertFalse(worker.drain(Duration.ofMillis(400)));
+                    assertFalse(worker.drain(Duration.ofMillis(2500)));
                     assertFalse(worker.status().accepting());
                     assertEquals(
                             DurableException.Code.UNAVAILABLE,

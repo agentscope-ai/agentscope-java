@@ -720,7 +720,7 @@ client-executed 搜索，通过 `tool_search_output` 重放命中的工具定义
 则在 `tools` 中累积已发现的定义。
 
 无需凭证即可运行的示例：
-[`ToolSearchExample`](https://github.com/agentscope-ai/agentscope-java/blob/main/agentscope-examples/documentation/src/main/java/io/agentscope/examples/documentation2/tool/ToolSearchExample.java)。
+[`ToolSearchExample`](https://github.com/agentscope-ai/agentscope-java/blob/6ff7590af75f35cadb263947a9b33b03c856ae6d/agentscope-examples/documentation/src/main/java/io/agentscope/examples/documentation2/tool/ToolSearchExample.java)。
 ## 工具调用拦截器
 
 `ToolCallInterceptor` 是 Toolkit 层、单次调用级的参数拦截扩展点。它运行在 JSON Schema 校验与预置参数合并**之后**、会话分发记录与真实执行**之前** —— 因此它能看到工具将收到的确切参数与调用者身份,并决定实际执行的内容。

@@ -730,7 +730,7 @@ changes, persisted discoveries are exposed eagerly so they remain usable.
 Ordinary function calling accumulates discovered schemas in `tools`.
 
 A credential-free, runnable example is
-[`ToolSearchExample`](https://github.com/agentscope-ai/agentscope-java/blob/main/agentscope-examples/documentation/src/main/java/io/agentscope/examples/documentation2/tool/ToolSearchExample.java).
+[`ToolSearchExample`](https://github.com/agentscope-ai/agentscope-java/blob/6ff7590af75f35cadb263947a9b33b03c856ae6d/agentscope-examples/documentation/src/main/java/io/agentscope/examples/documentation2/tool/ToolSearchExample.java).
 ## Tool call interceptors
 
 `ToolCallInterceptor` is a Toolkit-layer, per-invocation hook over tool arguments. It runs after JSON-schema validation and preset-argument merging, and before the session dispatch record and real execution — so it sees the exact arguments the tool would receive, plus the caller identity, and decides what actually executes.

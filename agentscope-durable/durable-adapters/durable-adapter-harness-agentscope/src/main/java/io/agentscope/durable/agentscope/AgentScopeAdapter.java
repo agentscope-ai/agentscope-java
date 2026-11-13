@@ -217,7 +217,7 @@ public final class AgentScopeAdapter implements HarnessAdapter {
                         DurableException.Code.INCOMPATIBLE,
                         "Missing schema for routed tool: " + name);
             if (toolkit.isExternalTool(name)) continue;
-            toolkit.registerAgentTool(
+            toolkit.replaceAgentTool(
                     new ToolBase(
                             ToolBase.builder()
                                     .name(tool.getName())
