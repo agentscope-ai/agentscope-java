@@ -94,6 +94,8 @@ Switching stores is a one-line change: pass a different `VDBStoreBase` to `Simpl
 
 `QdrantStore.location(...)` accepts scheme-less gRPC addresses such as `127.0.0.1:16334`, `localhost:6334`, and `[::1]:6334`, preserving the explicit port. Without a port it defaults to 6334; HTTP URLs using port 6333 continue to connect via gRPC on 6334.
 
+`PgVectorStore` creates the `vector` extension and table before registering the JDBC vector type, so the first connection can bind vectors on a fresh database. Install pgvector on the PostgreSQL server and grant the database user permission to create the extension, or pre-create it as an administrator.
+
 ## Retrieval parameters
 
 `RetrieveConfig` controls retrieval:

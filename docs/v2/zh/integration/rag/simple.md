@@ -94,6 +94,8 @@ List<Document> hits = knowledge.retrieve(
 
 `QdrantStore.location(...)` 支持不带协议的 gRPC 地址，例如 `127.0.0.1:16334`、`localhost:6334` 和 `[::1]:6334`，并保留显式指定的端口。未指定端口时默认使用 6334；端口为 6333 的 HTTP URL 仍通过 6334 端口连接 gRPC。
 
+`PgVectorStore` 先创建 `vector` 扩展和数据表，再注册 JDBC 向量类型，因此新数据库的第一个连接也能绑定向量。请在 PostgreSQL 服务端安装 pgvector，并授予数据库用户创建扩展的权限，或由管理员预先创建扩展。
+
 ## 检索参数
 
 `RetrieveConfig` 控制检索行为：
