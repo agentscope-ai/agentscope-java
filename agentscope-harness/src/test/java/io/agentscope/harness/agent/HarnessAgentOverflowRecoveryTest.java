@@ -1004,6 +1004,118 @@ class HarnessAgentOverflowRecoveryTest {
         }
     }
 
+    @Test
+    void cancelledRecoveredCallKeepsGateUntilItsAdmittedBlockingWriteFinishes() throws Exception {
+        BlockingRecoveredStore store = new BlockingRecoveredStore();
+        ScriptedModel model = new ScriptedModel();
+        try (HarnessAgent agent = newAgent(model, store, new Toolkit())) {
+            RuntimeContext ctx = runPriorTurns(agent);
+            PendingResponse summary = new PendingResponse();
+            model.summaries.add(summary.stream());
+            model.script(overflow());
+            store.hold.set(true);
+            int loadsBefore = store.sameSlotLoads.get();
+            Msg a = userMsg("A recovery then blocking save");
+            Msg b = userMsg("B queued behind recovered A");
+            var callA = agent.call(a, ctx).toFuture();
+            var callB =
+                    agent.call(b, RuntimeContext.builder().sessionId(SESSION_ID).build())
+                            .toFuture();
+            try {
+                await(summary.subscribed);
+                assertEquals(loadsBefore + 1, store.sameSlotLoads.get());
+                assertFalse(callB.isDone(), "B must wait while emergency summary is pending");
+                assertEquals(1, store.entered.getCount(), "no pre-retry terminal write");
+                assertFalse(hasSummary(agent.getDelegate().getAgentState(ctx).getContext()));
+                RuntimeContext otherUser =
+                        RuntimeContext.builder().userId("other-user").sessionId(SESSION_ID).build();
+                assertEquals(
+                        "ok",
+                        agent.call("other user during summary", otherUser)
+                                .block(Duration.ofSeconds(5))
+                                .getTextContent());
+                summary.complete(textResponse("recovered history"));
+                await(store.entered);
+                assertTrue(callA.cancel(true));
+                assertFalse(callB.isDone(), "cancel must not release B before the real write ends");
+                assertEquals(
+                        loadsBefore + 1,
+                        store.sameSlotLoads.get(),
+                        "B cannot load state during canceled-A write cleanup");
+                assertEquals(1, store.finished.getCount(), "nonabortable write is still running");
+                RuntimeContext otherSession =
+                        RuntimeContext.builder().sessionId("other-write-session").build();
+                assertEquals(
+                        "ok",
+                        agent.call("other session during write", otherSession)
+                                .block(Duration.ofSeconds(5))
+                                .getTextContent());
+                assertFalse(callB.isDone());
+                store.release.countDown();
+                assertEquals("ok", callB.get(5, TimeUnit.SECONDS).getTextContent());
+                await(store.finished);
+                assertEquals(loadsBefore + 2, store.sameSlotLoads.get());
+                assertEquals(1, model.summaryInputs.size(), "no extra recovery or admission");
+                assertEquals(1, count(persistedContext(store), a));
+                assertEquals(1, count(persistedContext(store), b));
+                assertTrue(hasSummary(persistedContext(store)));
+                assertEquals(0, agent.getDelegate().getStateConflictCount());
+            } finally {
+                store.release.countDown();
+                callA.cancel(true);
+                callB.cancel(true);
+            }
+        }
+    }
+
+    private static final class BlockingRecoveredStore extends InMemoryAgentStateStore {
+        private final AtomicBoolean hold = new AtomicBoolean();
+        private final AtomicInteger sameSlotLoads = new AtomicInteger();
+        private final CountDownLatch entered = new CountDownLatch(1);
+        private final CountDownLatch release = new CountDownLatch(1);
+        private final CountDownLatch finished = new CountDownLatch(1);
+
+        @Override
+        public <T extends State> io.agentscope.core.state.VersionedState<T> getVersioned(
+                String userId, String sessionId, String key, Class<T> type) {
+            if (userId == null && SESSION_ID.equals(sessionId)) {
+                sameSlotLoads.incrementAndGet();
+            }
+            return super.getVersioned(userId, sessionId, key, type);
+        }
+
+        @Override
+        public long saveIfVersion(
+                String userId, String sessionId, String key, State value, long version) {
+            if (userId == null
+                    && SESSION_ID.equals(sessionId)
+                    && "agent_state".equals(key)
+                    && hold.compareAndSet(true, false)) {
+                entered.countDown();
+                boolean interrupted = false;
+                long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
+                try {
+                    while (release.getCount() != 0) {
+                        try {
+                            assertTrue(
+                                    release.await(
+                                            Math.max(1, deadline - System.nanoTime()),
+                                            TimeUnit.NANOSECONDS),
+                                    "blocking write must be released");
+                        } catch (InterruptedException e) {
+                            interrupted = true;
+                        }
+                    }
+                    return super.saveIfVersion(userId, sessionId, key, value, version);
+                } finally {
+                    finished.countDown();
+                    if (interrupted) Thread.currentThread().interrupt();
+                }
+            }
+            return super.saveIfVersion(userId, sessionId, key, value, version);
+        }
+    }
+
     private static PermissionContextState policy(PermissionBehavior behavior) {
         return PermissionContextState.builder()
                 .build()
