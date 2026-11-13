@@ -81,6 +81,8 @@ The extension module is discovered through Java SPI. The model provider reads it
 
 When you need a custom API key, base URL, formatter, transport, timeout, generation options, or other provider-specific configuration, build the model explicitly and pass the `Model` instance to the agent:
 
+In 2.0.5, `AnthropicChatModel.builder()` defaults to `claude-sonnet-5-5`. Set `modelName(...)` explicitly to keep model selection independent of library upgrades; a changed default may change model behavior and pricing. This default applies to the model builder, not to a model name explicitly set in Spring Boot properties.
+
 ```java
 import io.agentscope.extensions.model.dashscope.DashScopeChatModel;
 import io.agentscope.extensions.model.dashscope.formatter.DashScopeChatFormatter;

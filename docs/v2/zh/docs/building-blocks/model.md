@@ -81,6 +81,8 @@ ReActAgent agent =
 
 需要自定义 API key、base URL、formatter、transport、timeout、生成参数或其他提供商专属配置时，推荐显式构造模型，再把 `Model` 实例传给 agent：
 
+从 2.0.5 起，`AnthropicChatModel.builder()` 默认使用 `claude-sonnet-5-5`。建议显式设置 `modelName(...)`，让模型选择不随库升级而变化；默认模型变化可能影响输出行为和计费。此默认值仅针对模型 builder，不会覆盖 Spring Boot 属性中显式设置的模型名。
+
 ```java
 import io.agentscope.extensions.model.dashscope.DashScopeChatModel;
 import io.agentscope.extensions.model.dashscope.formatter.DashScopeChatFormatter;
