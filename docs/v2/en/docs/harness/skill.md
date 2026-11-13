@@ -276,6 +276,8 @@ agent.promoteSkill("notes-taker", "alice")                   // manually promote
 
 ## How the agent reads and runs skills
 
+`SkillFilter.only("code-reviewer")`, `except(...)`, and `disable(...)` match the skill's `name`, not the composite `<skill-id>`. A name filter applies to every source variant of that skill; keep using the full `<skill-id>` when loading it.
+
 When the agent reasons, it sees an `<available_skills>` block in the system prompt listing every skill currently in scope:
 
 ```xml

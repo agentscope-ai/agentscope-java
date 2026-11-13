@@ -276,6 +276,8 @@ agent.promoteSkill("notes-taker", "alice")                   // 手动晋升一�
 
 ## Agent 是怎么读取和执行 skill 的
 
+`SkillFilter.only("code-reviewer")`、`except(...)` 和 `disable(...)` 匹配 skill 的 `name`，不是复合的 `<skill-id>`。按名称过滤会作用于该 skill 的所有来源版本；加载时仍应使用完整的 `<skill-id>`。
+
 每轮推理时，agent 会在 system prompt 里看到一个 `<available_skills>` 块，列出当前可见的所有 skill：
 
 ```xml

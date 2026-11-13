@@ -177,6 +177,10 @@ public class AgentSkillPromptProvider {
     /**
      * Gets the skill system prompt filtered by the given {@link SkillFilter}.
      *
+     * <p>The filter matches skills by {@link AgentSkill#getName() skill name}, not by the composite
+     * registry id, so {@code only("x")} / {@code disable("x")} apply to every source variant of
+     * {@code x}, and a composite id such as {@code "x_custom"} does not match.
+     *
      * @param filter the filter deciding which skills to include (null treated as all)
      * @return The skill system prompt, or empty string if no skills pass the filter
      */
@@ -194,11 +198,8 @@ public class AgentSkillPromptProvider {
         int withOriginDir = 0;
 
         for (String skillId : skillIds) {
-            if (!effectiveFilter.isAllowed(skillId)) {
-                continue;
-            }
             AgentSkill skill = skillRegistry.getSkill(skillId);
-            if (skill == null) {
+            if (skill == null || !effectiveFilter.isAllowed(skill.getName())) {
                 continue;
             }
             if (!hasSkills) {
