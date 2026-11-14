@@ -379,7 +379,7 @@ HarnessAgent agent = HarnessAgent.builder()
 - **上层**（读写）：`LocalFilesystemWithShell`，根在 `workspace`，提供 shell；
 - **下层**（只读）：`LocalFilesystem`，根在 `project`。
 
-读取时先看 workspace，没有再退到 project（copy-on-write 语义）。多用户且 workspace 是 project 的子目录时，project 层看不到 workspace 子树：`ls`/`grep`/`glob` 不列出它，直接拼物理路径也读不到。shell 的 `pwd` 是 project 目录，所以 agent 执行 `ls` 看到的是项目文件；shell 不受这层边界约束。
+读取时先看 workspace，没有再退到 project（copy-on-write 语义）。shell 的 `pwd` 是 project 目录，所以 agent 执行 `ls` 看到的是项目文件。
 
 #### 项目可写模式（`projectWritable`）
 

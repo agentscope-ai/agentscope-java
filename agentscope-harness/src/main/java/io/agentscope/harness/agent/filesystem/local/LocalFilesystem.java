@@ -771,7 +771,7 @@ public class LocalFilesystem implements AbstractFilesystem {
     }
 
     /** Hidden: lexically inside a hidden root, or resolving into one through a link. */
-    private boolean isHiddenFromCaller(Path path) {
+    protected boolean isHiddenFromCaller(Path path) {
         if (path == null) {
             return false;
         }
