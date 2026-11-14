@@ -333,6 +333,8 @@ Msg result = agent.call(List.of(new UserMessage("Hi")), ctx).block();
 | `getExtra()` | 直接拿到字符串属性 map(可变视图) |
 | `RuntimeContext.empty()` | 空上下文 |
 
+通过 `ctx.put(Model.class, selectedModel)` 为本次调用钉定模型时，结构化输出重试也跟随所选模型的能力：仅当该模型支持指定工具选择时才强制调用 `generate_response`，不使用构建期默认模型的能力来判断。
+
 ### runId 关联
 
 请求上下文只确定用户、Session 和 Thread，不会创建执行。除非宿主显式指定调用 ID，否则 `getRunId()` 为 null。`prepareRun` / `prepareCall` 为单次执行句柄分配 ID；直接调用在开始执行时分配。中间件和工具接收到的执行上下文中，runId 与句柄、原生事件和日志保持一致。

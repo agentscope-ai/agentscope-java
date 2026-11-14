@@ -337,6 +337,8 @@ Available accessors:
 | `getExtra()` | Direct access to the string-attribute map (mutable view) |
 | `RuntimeContext.empty()` | Empty context |
 
+A per-call model pin (`ctx.put(Model.class, selectedModel)`) also controls structured-output retry capabilities: `generate_response` is forced only when that selected model supports named tool choice, regardless of the build-time default's capability.
+
 ### runId correlation
 
 A request context identifies a user, Session and Thread without creating an execution. Its `getRunId()` is null unless a host explicitly supplies an invocation ID. `prepareRun` / `prepareCall` allocate an ID for their single-use handle; direct calls allocate one when execution starts. Middleware and tools receive an invocation context whose runId matches the handle, native events and journal.
