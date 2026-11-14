@@ -20,14 +20,17 @@ import io.agentscope.harness.agent.sandbox.layout.WorkspaceEntry;
 import io.agentscope.harness.agent.sandbox.layout.WorkspaceProjectionEntry;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.security.MessageDigest;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import org.apache.commons.compress.archivers.tar.TarArchiveEntry;
 import org.apache.commons.compress.archivers.tar.TarArchiveOutputStream;
 
@@ -43,6 +46,48 @@ import org.apache.commons.compress.archivers.tar.TarArchiveOutputStream;
 public final class WorkspaceProjectionApplier {
 
     private WorkspaceProjectionApplier() {}
+
+    /**
+     * Whether any projection entry in the spec is marked as managed by the capability
+     * grant layer. Only marked specs run the authoritative (revoking) application;
+     * unmarked specs keep the generic overlay semantics, so the authorization fix does
+     * not change projection behaviour for everyone else.
+     *
+     * @param spec the workspace spec to inspect ({@code null} counts as unmanaged)
+     * @return {@code true} when at least one projection entry is grant-managed
+     */
+    public static boolean isAuthorizationManaged(WorkspaceSpec spec) {
+        if (spec == null || spec.getEntries() == null) {
+            return false;
+        }
+        List<WorkspaceProjectionEntry> projections = new ArrayList<>();
+        collectProjectionEntries(spec.getEntries(), projections);
+        return projections.stream().anyMatch(WorkspaceProjectionEntry::isAuthorizationManaged);
+    }
+
+    /**
+     * Merged {@code revokeRoots} of the managed projection entries: the whole projection
+     * namespaces a rebuild must clear (e.g. the {@code .skills-cache} tree) so that no
+     * stale file of any earlier era survives. Empty when the spec is unmanaged or no
+     * managed entry declared its roots.
+     *
+     * @param spec the workspace spec to inspect
+     * @return the deduplicated, order-preserving namespace roots to clear on rebuild
+     */
+    public static List<String> managedRevokeRoots(WorkspaceSpec spec) {
+        if (spec == null || spec.getEntries() == null) {
+            return List.of();
+        }
+        List<WorkspaceProjectionEntry> projections = new ArrayList<>();
+        collectProjectionEntries(spec.getEntries(), projections);
+        Set<String> roots = new LinkedHashSet<>();
+        for (WorkspaceProjectionEntry entry : projections) {
+            if (entry.isAuthorizationManaged() && entry.getRevokeRoots() != null) {
+                roots.addAll(entry.getRevokeRoots());
+            }
+        }
+        return List.copyOf(roots);
+    }
 
     /**
      * Builds projection payload from all {@link WorkspaceProjectionEntry} items in the spec.
@@ -63,7 +108,13 @@ public final class WorkspaceProjectionApplier {
 
         MessageDigest digest = MessageDigest.getInstance("SHA-256");
         ByteArrayOutputStream baos = new ByteArrayOutputStream();
-        try (TarArchiveOutputStream tar = new TarArchiveOutputStream(baos)) {
+        // Pin entry names to UTF-8: the platform default mangles non-ASCII names wherever
+        // it is not UTF-8 (JDK 17 on Windows follows the OS locale — cp1252 runners
+        // %U-escape CJK names), so the hydrated file would land under a different name
+        // than the revocation manifest records. UTF-8 also matches the reader side
+        // (WorkspaceArchiveExtractor) and container-side tar of every backend.
+        try (TarArchiveOutputStream tar =
+                new TarArchiveOutputStream(baos, StandardCharsets.UTF_8.name())) {
             tar.setLongFileMode(TarArchiveOutputStream.LONGFILE_POSIX);
             for (Map.Entry<String, Path> file : ordered) {
                 String rel = file.getKey();
@@ -84,7 +135,8 @@ public final class WorkspaceProjectionApplier {
         }
 
         String hash = bytesToHex(digest.digest());
-        return new ProjectionPayload(hash, baos.toByteArray(), ordered.size());
+        List<String> paths = ordered.stream().map(Map.Entry::getKey).toList();
+        return new ProjectionPayload(hash, baos.toByteArray(), ordered.size(), paths);
     }
 
     private static void collectProjectionEntries(
@@ -151,6 +203,24 @@ public final class WorkspaceProjectionApplier {
      * @param hash deterministic hash over projected file paths and bytes
      * @param tarBytes tar archive containing projected files
      * @param fileCount number of projected files
+     * @param paths workspace-relative POSIX paths of the projected files; the sandbox keeps
+     *     the last applied list so a later, narrower projection can revoke exactly these
+     *     files (authoritative replace, never overlay)
      */
-    public record ProjectionPayload(String hash, byte[] tarBytes, int fileCount) {}
+    public record ProjectionPayload(
+            String hash, byte[] tarBytes, int fileCount, List<String> paths) {
+
+        /**
+         * Compatibility constructor for the pre-manifest three-component shape; the
+         * recorded path list defaults to empty (nothing revocable). Prefer the canonical
+         * constructor.
+         *
+         * @param hash deterministic hash over projected file paths and bytes
+         * @param tarBytes tar archive containing projected files
+         * @param fileCount number of projected files
+         */
+        public ProjectionPayload(String hash, byte[] tarBytes, int fileCount) {
+            this(hash, tarBytes, fileCount, List.of());
+        }
+    }
 }

@@ -19,15 +19,15 @@ import static io.agentscope.harness.agent.tool.ToolResultAssertions.assertText;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.core.agent.ThreadKey;
+import io.agentscope.core.journal.JournalEvent;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultState;
-import io.agentscope.core.session.SessionEvent;
-import io.agentscope.core.session.SessionKey;
 import io.agentscope.core.util.JsonUtils;
 import io.agentscope.harness.agent.filesystem.local.LocalFilesystem;
-import io.agentscope.harness.agent.session.WorkspaceSessionLogStore;
+import io.agentscope.harness.agent.journal.WorkspaceThreadJournalStore;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.ArrayList;
@@ -36,22 +36,20 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 /**
- * Regression tests for the model-supplied result-limit clamp (#3270): {@code session_search}
- * and {@code session_history} are excluded from {@code ToolResultEvictionConfig} on the
- * "bounded results" rationale, so an unbounded model-supplied limit bypasses every downstream
- * trim.
+ * Regression tests for the model-supplied result-limit clamp (#3270) on {@code thread_search}
+ * and {@code thread_history}.
  */
 class SessionSearchToolCeilingTest {
 
     @TempDir Path directory;
-    private final SessionKey key = new SessionKey("u", "agent-a", "session-1");
+    private final ThreadKey key = new ThreadKey("u", "agent-a", "session-1", "main");
     private final RuntimeContext rc = RuntimeContext.builder().userId("u").build();
 
-    private SessionSearchTool seedMessages(int count) {
-        var store = new WorkspaceSessionLogStore(new LocalFilesystem(directory));
+    private ThreadHistoryTool seedMessages(int count) {
+        var store = new WorkspaceThreadJournalStore(new LocalFilesystem(directory));
         var log = store.open(key, rc);
         var writer = log.acquire("owner", Duration.ofMinutes(2));
-        var events = new ArrayList<SessionEvent>();
+        var events = new ArrayList<JournalEvent>();
         for (int i = 1; i <= count; i++) {
             var message =
                     Msg.builder()
@@ -60,8 +58,8 @@ class SessionSearchToolCeilingTest {
                             .content(TextBlock.builder().text("needle item " + i).build())
                             .build();
             events.add(
-                    new SessionEvent(
-                            1,
+                    new JournalEvent(
+                            JournalEvent.SCHEMA_VERSION,
                             "m" + i,
                             i,
                             i,
@@ -73,7 +71,8 @@ class SessionSearchToolCeilingTest {
         }
         log.commit(writer, "messages", 0, events);
         log.release(writer);
-        return new SessionSearchTool(new WorkspaceSessionLogStore(new LocalFilesystem(directory)));
+        return new ThreadHistoryTool(
+                new WorkspaceThreadJournalStore(new LocalFilesystem(directory)));
     }
 
     private static int countMatches(String json) {
@@ -81,39 +80,39 @@ class SessionSearchToolCeilingTest {
     }
 
     @Test
-    void sessionSearchClampsModelSuppliedMaxResults() {
+    void threadSearchClampsModelSuppliedMaxResults() {
         var tool = seedMessages(150);
         var out =
                 assertText(
-                        tool.sessionSearch(rc, "needle", "agent-a", 100000),
+                        tool.threadSearch(rc, "needle", "agent-a", 100000),
                         ToolResultState.SUCCESS);
         assertEquals(100, countMatches(out));
     }
 
     @Test
-    void sessionHistoryClampsModelSuppliedLastN() {
+    void threadHistoryClampsModelSuppliedLastN() {
         var tool = seedMessages(150);
         var out =
                 assertText(
-                        tool.sessionHistory(rc, "agent-a", "session-1", 100000),
+                        tool.threadHistory(rc, "agent-a", "session-1", null, 100000),
                         ToolResultState.SUCCESS);
         assertEquals(100, countMatches(out));
     }
 
     @Test
-    void sessionHistoryBoundaryLastN99And101() {
+    void threadHistoryBoundaryLastN99And101() {
         var tool = seedMessages(150);
         assertEquals(
                 99,
                 countMatches(
                         assertText(
-                                tool.sessionHistory(rc, "agent-a", "session-1", 99),
+                                tool.threadHistory(rc, "agent-a", "session-1", null, 99),
                                 ToolResultState.SUCCESS)));
         assertEquals(
                 100,
                 countMatches(
                         assertText(
-                                tool.sessionHistory(rc, "agent-a", "session-1", 101),
+                                tool.threadHistory(rc, "agent-a", "session-1", null, 101),
                                 ToolResultState.SUCCESS)));
     }
 
@@ -122,7 +121,7 @@ class SessionSearchToolCeilingTest {
         var tool = seedMessages(15);
         var out =
                 assertText(
-                        tool.sessionSearch(rc, "needle", "agent-a", null), ToolResultState.SUCCESS);
+                        tool.threadSearch(rc, "needle", "agent-a", null), ToolResultState.SUCCESS);
         assertEquals(10, countMatches(out));
     }
 }

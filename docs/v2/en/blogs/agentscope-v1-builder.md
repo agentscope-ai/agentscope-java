@@ -283,8 +283,8 @@ java -jar agentscope-examples/agents/agentscope-builder/target/agentscope-builde
 
 The service starts on port 8080. Log in with `admin/admin`, `bob/bob`, or `alice/alice` to access the full UI. For production deployment (database switch, sandbox image, distributed backend), see the [Builder README].
 
-[Claw README]: https://github.com/agentscope-ai/agentscope-java/tree/main/agentscope-examples/agents/agentscope-paw
-[Builder README]: https://github.com/agentscope-ai/agentscope-java/tree/main/agentscope-service
+[Claw README]: https://github.com/agentscope-ai/agentscope-java/tree/v2.0.0-RC1/agentscope-examples/agents/agentscope-claw
+[Builder README]: https://github.com/agentscope-ai/agentscope-java/tree/v2.0.0-RC1/agentscope-examples/agents/agentscope-builder
 
 ---
 

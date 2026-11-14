@@ -28,7 +28,7 @@ files += [MODULE / "README.md", MODULE / "pom.xml",
           MODULE / "src/main/java/io/agentscope/examples/jev/JevToolGuardBenchmark.java",
           MODULE / "src/main/java/io/agentscope/examples/jev/JevTraceBenchmark.java",
           MODULE / "src/test/java/io/agentscope/examples/jev/JevToolGuardBenchmarkTest.java",
-          ROOT / "docs/v2/zh/jev/guides/tool-guard-api.md"]
+          ROOT / "docs/dev/zh/docs/harness/jev/guides/tool-guard-api.md"]
 (PUBLIC / "tool-guard").mkdir(parents=True, exist_ok=True)
 (PUBLIC / "tool-guard/README.md.txt").write_bytes((BENCH / "README.md").read_bytes())
 with zipfile.ZipFile(PUBLIC / "tool-guard-benchmark.zip", "w", zipfile.ZIP_DEFLATED) as archive:

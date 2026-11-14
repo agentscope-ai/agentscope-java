@@ -8,6 +8,8 @@ en_link: /v2/en/docs/building-blocks/tool
 
 Tool 是 agent 与外部世界交互的方式 —— 执行业务操作、调用 API、读写数据等。每个 tool 通过 JSON Schema 暴露给 LLM，agent 通过统一接口完成调用。
 
+默认 `JacksonJsonCodec` 只读取一个完整的 JSON 值。允许尾随空白；额外的 JSON 值或其他尾随内容会抛出 `JsonException`。当原始工具参数含有尾随垃圾内容时，工具参数校验会回退到结构化 input。
+
 AgentScope 把 tool 相关的构件组织成三个概念：
 
 - **Tool** —— 任意实现 `AgentTool` 接口（通常通过继承 `ToolBase`）或在普通类的方法上标注 `@Tool` 注解的对象。Java 端把后者称为 *reflective function tool*，由 `Toolkit#registerTool(Object)` 自动反射注册。
@@ -117,7 +119,7 @@ toolkit.registerTool(new SimpleTools());
 | `name` | `String` | tool 名（默认取方法名） |
 | `description` | `String` | 面向 agent 的描述 |
 | `readOnly` | `boolean` | 是否只读（默认 `false`） |
-| `concurrencySafe` | `boolean` | 是否可并发调用（默认 `true`） |
+| `concurrencySafe` | `boolean` | 是否可并发调用（默认 `false`） |
 | `stateInjected` | `boolean` | 是否在调用时注入 `AgentState` 作为额外参数（默认 `false`） |
 | `dangerousFiles` / `dangerousDirectories` | `String[]` | 追加自定义危险路径列表 |
 | `converter` | `Class<? extends ToolResultConverter>` | 自定义返回值到 `ToolResultBlock` 的转换器 |
@@ -268,27 +270,12 @@ toolkit.replaceAgentTool(newFallbackTool); // 替换掉已有的 "dup" 绑定
 
 | 参数类型 | 注入来源 |
 |---------|---------|
-| `ToolEmitter` | 流式中间产物 emitter 和工具调用上下文（无配置时为 no-op） |
+| `ToolEmitter` | 流式中间产物 emitter（无配置时为 no-op） |
 | `Agent` | 当前 agent 实例 |
 | `AgentState` | 当前 call 的 per-session 状态（通过 `RuntimeContext.getAgentState()` 获取） |
 | `RuntimeContext` | 当前 per-call 上下文 |
 | `ToolExecutionContext` | `runtimeContext.asToolExecutionContext()`（兼容层，已 deprecated） |
 | 其它用户自定义 POJO 类型 | `runtimeContext.get(ParamType.class)` —— 即调用方在 `RuntimeContext.builder().put(ParamType.class, value)` 注册的对象 |
-
-注入的 `ToolEmitter` 会提供当前工具调用 ID，可用于把进度与前端状态或其它共享存储关联起来：
-
-```java
-@Tool(name = "run_task", description = "Run a long-running task")
-public String runTask(ToolEmitter emitter) {
-    String toolCallId = emitter.getToolCallId();
-    if (toolCallId != null) {
-        progressByToolCall.put(toolCallId, "running");
-    }
-    return "done";
-}
-```
-
-当 emitter 没有工具调用上下文时（例如 no-op 或自定义 emitter），`getToolCallId()` 返回 `null`。
 
 「用户自定义 POJO」的判定：参数没有 `@ToolParam`、不是基本类型、不是 `ContentBlock` / `Msg`、不在 `java.*` / `javax.*` 包下。其余参数（带 `@ToolParam` 或属于上述兜底类型）从 LLM 提供的 JSON 输入按名称取值。
 
@@ -402,10 +389,11 @@ import io.agentscope.core.tool.mcp.McpClientBuilder;
 import io.agentscope.core.tool.mcp.McpClientWrapper;
 
 McpClientWrapper filesystem =
-        McpClientBuilder.create("filesystem")
-                .stdioTransport("mcp-server-filesystem", "--root", "/my/project")
-                .buildAsync()
-                .block();
+        McpClientBuilder.stdio()
+                .name("filesystem")
+                .command("mcp-server-filesystem")
+                .args("--root", "/my/project")
+                .build();
 
 Toolkit toolkit = new Toolkit();
 toolkit.registerMcpClient(filesystem).block();
@@ -422,11 +410,11 @@ import io.agentscope.core.tool.mcp.McpClientBuilder;
 import io.agentscope.core.tool.mcp.McpClientWrapper;
 
 McpClientWrapper weather =
-        McpClientBuilder.create("weather")
-                .streamableHttpTransport("https://api.weather.com/mcp")
+        McpClientBuilder.streamableHttp()
+                .name("weather")
+                .url("https://api.weather.com/mcp")
                 .header("Authorization", "Bearer xxx")
-                .buildAsync()
-                .block();
+                .build();
 
 Toolkit toolkit = new Toolkit();
 toolkit.registerMcpClient(weather).block();
@@ -442,10 +430,10 @@ import io.agentscope.core.tool.mcp.McpClientBuilder;
 import io.agentscope.core.tool.mcp.McpClientWrapper;
 
 McpClientWrapper search =
-        McpClientBuilder.create("search")
-                .sseTransport("https://api.search.com/mcp/sse")
-                .buildAsync()
-                .block();
+        McpClientBuilder.sse()
+                .name("search")
+                .url("https://api.search.com/mcp/sse")
+                .build();
 
 Toolkit toolkit = new Toolkit();
 toolkit.registerMcpClient(search).block();
@@ -628,24 +616,22 @@ Toolkit toolkit = new Toolkit();
 toolkit.registerTool(new BasicTools());
 
 ToolGroup database =
-        ToolGroup.builder()
-                .name("database")
-                .description("Tools for database operations.")
-                .scope(ToolGroupScope.SESSION)
-                .active(false)
-                .build();
+        new ToolGroup(
+                "database",
+                "Tools for database operations.",
+                ToolGroupScope.SESSION,
+                /* active = */ false);
 database.addTool("db_query");
 database.addTool("db_migrate");
 toolkit.registerTool(new DatabaseTools());
 toolkit.registerToolGroup(database);
 
 ToolGroup deployment =
-        ToolGroup.builder()
-                .name("deployment")
-                .description("Tools for deploying services.")
-                .scope(ToolGroupScope.SESSION)
-                .active(false)
-                .build();
+        new ToolGroup(
+                "deployment",
+                "Tools for deploying services.",
+                ToolGroupScope.SESSION,
+                /* active = */ false);
 deployment.addTool("deploy");
 deployment.addTool("rollback");
 toolkit.registerTool(new DeploymentTools());
@@ -734,7 +720,7 @@ client-executed 搜索，通过 `tool_search_output` 重放命中的工具定义
 则在 `tools` 中累积已发现的定义。
 
 无需凭证即可运行的示例：
-[`ToolSearchExample`](https://github.com/agentscope-ai/agentscope-java/blob/main/agentscope-examples/documentation/src/main/java/io/agentscope/examples/documentation2/tool/ToolSearchExample.java)。
+[`ToolSearchExample`](https://github.com/agentscope-ai/agentscope-java/blob/6ff7590af75f35cadb263947a9b33b03c856ae6d/agentscope-examples/documentation/src/main/java/io/agentscope/examples/documentation2/tool/ToolSearchExample.java)。
 ## 工具调用拦截器
 
 `ToolCallInterceptor` 是 Toolkit 层、单次调用级的参数拦截扩展点。它运行在 JSON Schema 校验与预置参数合并**之后**、会话分发记录与真实执行**之前** —— 因此它能看到工具将收到的确切参数与调用者身份,并决定实际执行的内容。

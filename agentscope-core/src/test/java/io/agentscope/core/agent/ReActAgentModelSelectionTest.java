@@ -293,7 +293,7 @@ class ReActAgentModelSelectionTest {
             assertTrue(inFactory.await(5, TimeUnit.SECONDS), "factory must have started");
             assertNotEquals(subscriberThread, factoryThread.get());
             assertTrue(
-                    factoryThread.get().contains("boundedElastic"),
+                    factoryThread.get().contains("agentscope-model-request"),
                     "resolution ran on: " + factoryThread.get());
         } finally {
             releaseFactory.countDown();

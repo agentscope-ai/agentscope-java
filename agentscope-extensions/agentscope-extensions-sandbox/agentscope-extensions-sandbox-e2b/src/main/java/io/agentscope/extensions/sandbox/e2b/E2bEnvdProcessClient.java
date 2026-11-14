@@ -36,8 +36,12 @@ import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
+import java.util.Map;
 import java.util.Objects;
+import java.util.UUID;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import okhttp3.MediaType;
 import okhttp3.MultipartBody;
 import okhttp3.OkHttpClient;
@@ -116,10 +120,15 @@ final class E2bEnvdProcessClient {
     private ShellCapture runShellCapture(
             E2bSandboxState state, String cwd, String shellCommand, int timeoutSeconds)
             throws Exception {
-        // 0 means "no deadline", matching the official E2B SDKs (Python maps 0/None to
-        // no deadline) and the merged integration test that runs `sleep 120` with 0 to
-        // block until killed. Clamping to 1s like daytona/agentrun would turn that
-        // contract into an unexplained 1s timeout. Negative values stay a caller bug.
+        if (opt.getEnvdBaseUrl() != null && !opt.getEnvdBaseUrl().isBlank()) {
+            return runShellCaptureWithTermination(state, cwd, shellCommand, timeoutSeconds);
+        }
+        return runShellCaptureWithManagedDeadline(state, cwd, shellCommand, timeoutSeconds);
+    }
+
+    private ShellCapture runShellCaptureWithManagedDeadline(
+            E2bSandboxState state, String cwd, String shellCommand, int timeoutSeconds)
+            throws Exception {
         if (timeoutSeconds < 0) {
             throw new IllegalArgumentException(
                     "[e2b] timeoutSeconds must be zero or positive, got "
@@ -128,50 +137,34 @@ final class E2bEnvdProcessClient {
                             + " check the timeout argument.");
         }
         boolean bounded = timeoutSeconds > 0;
-        // Snapshot the interrupt bit: a stale bit set before this call must neither
-        // turn a genuine exec timeout into a fake cancellation below, nor block an
-        // already-cancelled caller for the full timeout.
         boolean preInterrupted = Thread.interrupted();
         if (preInterrupted) {
             Thread.currentThread().interrupt();
             throw new InterruptedIOException("exec cancelled before start");
         }
-        // Disable the idle read timeout: it fires on gaps between bytes and would
-        // preempt callTimeout (both surface as InterruptedIOException), misreporting a
-        // short idle stall as a full exec timeout (#2974). Total-duration semantics is
-        // owned solely by callTimeout, or by nothing when no deadline was requested.
         OkHttpClient.Builder callClientBuilder = http.newBuilder().readTimeout(0, TimeUnit.SECONDS);
         if (bounded) {
-            // Server deadline stays exact so the kill lands on time; the client backup
-            // runs CLIENT_TIMEOUT_SLACK_MILLIS later as a pure failsafe (mishaving
-            // server / hung stream) that never wins the race itself in the normal path.
             callClientBuilder.callTimeout(
                     timeoutSeconds * 1000L + CLIENT_TIMEOUT_SLACK_MILLIS, TimeUnit.MILLISECONDS);
         } else {
-            // Explicitly unbounded: a callTimeout inherited from an injected client would
-            // otherwise still cap a call that asked for no deadline. This also overrides
-            // a global callTimeout the caller configured on that client.
             callClientBuilder.callTimeout(0, TimeUnit.MILLISECONDS);
         }
         OkHttpClient callClient = callClientBuilder.build();
-        String host = envdHost(state);
-        String url = host + "/process.Process/Start";
         byte[] envelope = encodeStartRequestEnvelope(shellCommand, cwd);
-        Request.Builder requestBuilder = buildEnvdRequest(url, envelope, connectMediaType(), state);
+        Request.Builder requestBuilder =
+                buildEnvdRequest(
+                        envdHost(state) + "/process.Process/Start",
+                        envelope,
+                        connectMediaType(),
+                        state);
         if (bounded) {
-            // Ask envd to kill the remote process when this lapses; otherwise a
-            // client-side timeout only drops our HTTP stream and leaks the process.
-            // Omitted for 0: Connect-Timeout-Ms: 0 means "deadline already exceeded",
-            // not "no deadline".
             requestBuilder.addHeader("Connect-Timeout-Ms", String.valueOf(timeoutSeconds * 1000L));
         }
-        Request req = requestBuilder.build();
 
         ByteArrayOutputStream stdout = new ByteArrayOutputStream();
         ByteArrayOutputStream stderr = new ByteArrayOutputStream();
-        int exit;
         long startNanos = System.nanoTime();
-        try (Response res = callClient.newCall(req).execute()) {
+        try (Response res = callClient.newCall(requestBuilder.build()).execute()) {
             if (!res.isSuccessful()) {
                 String err = Objects.requireNonNull(res.body(), "envd response body").string();
                 throw new SandboxException.SandboxRuntimeException(
@@ -180,18 +173,13 @@ final class E2bEnvdProcessClient {
             }
             try (InputStream in =
                     Objects.requireNonNull(res.body(), "envd response body").byteStream()) {
-                exit = drainStartStream(in, stdout, stderr);
+                return new ShellCapture(drainStartStream(in, stdout, stderr), stdout, stderr);
             }
         } catch (InterruptedIOException e) {
-            // External cancellation surfaces here too; don't misreport it as a timeout
-            // and don't swallow the interrupt bit. Only a bit set during this call
-            // counts (pre-existing stale bits were cleared above).
             if (Thread.currentThread().isInterrupted()) {
                 throw e;
             }
             if (!bounded) {
-                // No deadline was requested, so this is a transport fault (for
-                // example the connect timeout), never an exec timeout.
                 throw e;
             }
             throw new SandboxException.ExecTimeoutException(shellCommand, timeoutSeconds);
@@ -212,7 +200,177 @@ final class E2bEnvdProcessClient {
                     "ended without exit code", timeoutSeconds, startNanos, stdout, stderr);
             throw mapPrematureEnd(e, shellCommand, timeoutSeconds, startNanos);
         }
-        return new ShellCapture(exit, stdout, stderr);
+    }
+
+    private ShellCapture runShellCaptureWithTermination(
+            E2bSandboxState state, String cwd, String shellCommand, int timeoutSeconds)
+            throws Exception {
+        if (timeoutSeconds < 0) {
+            throw new IllegalArgumentException(
+                    "[e2b] timeoutSeconds must be zero or positive, got "
+                            + timeoutSeconds
+                            + ". This is a caller bug, not a sandbox failure;"
+                            + " check the timeout argument.");
+        }
+        OkHttpClient callClient =
+                http.newBuilder()
+                        .readTimeout(0, TimeUnit.SECONDS)
+                        .callTimeout(0, TimeUnit.SECONDS)
+                        .build();
+        String tag = "agentscope-" + UUID.randomUUID();
+        DynamicMessage.Builder start = buildStartRequest(shellCommand, cwd).toBuilder();
+        start.setField(startRequestDesc.findFieldByName("tag"), tag);
+        byte[] payload =
+                codec() == E2bCodec.JSON
+                        ? encodeJsonStartRequest(start.build())
+                        : start.build().toByteArray();
+        Request.Builder requestBuilder =
+                buildEnvdRequest(
+                        envdHost(state) + "/process.Process/Start",
+                        encodeUnaryEnvelope(payload),
+                        connectMediaType(),
+                        state);
+        if (timeoutSeconds > 0) {
+            requestBuilder.addHeader("Connect-Timeout-Ms", String.valueOf(timeoutSeconds * 1000L));
+        }
+        var call = callClient.newCall(requestBuilder.build());
+        var done = new AtomicBoolean();
+        var cancelled = new AtomicBoolean();
+        var pid = new AtomicInteger();
+        Thread owner = Thread.currentThread();
+        long deadline =
+                timeoutSeconds > 0
+                        ? System.nanoTime() + TimeUnit.SECONDS.toNanos(timeoutSeconds)
+                        : Long.MAX_VALUE;
+        var watchdog =
+                new Thread(
+                        () -> {
+                            try {
+                                while (!done.get()) {
+                                    if (owner.isInterrupted() || System.nanoTime() >= deadline) {
+                                        cancelled.set(true);
+                                        try {
+                                            terminate(state, tag, pid.get());
+                                        } catch (Exception ignored) {
+                                            // The caller verifies termination again below.
+                                        }
+                                        call.cancel();
+                                        return;
+                                    }
+                                    Thread.sleep(50);
+                                }
+                            } catch (InterruptedException finished) {
+                                Thread.currentThread().interrupt();
+                            }
+                        },
+                        "e2b-process-deadline");
+        watchdog.setDaemon(true);
+        watchdog.start();
+        ByteArrayOutputStream stdout = new ByteArrayOutputStream();
+        ByteArrayOutputStream stderr = new ByteArrayOutputStream();
+        try (Response res = call.execute()) {
+            if (!res.isSuccessful()) {
+                String err = Objects.requireNonNull(res.body(), "envd response body").string();
+                throw new IOException("envd Start failed HTTP " + res.code() + ": " + err);
+            }
+            try (InputStream in =
+                    Objects.requireNonNull(res.body(), "envd response body").byteStream()) {
+                int exit = drainStartStream(in, stdout, stderr, pid);
+                if (cancelled.get()) {
+                    throw new InterruptedIOException("Remote process cancelled");
+                }
+                return new ShellCapture(exit, stdout, stderr);
+            }
+        } catch (Exception failure) {
+            boolean interrupted = Thread.interrupted();
+            try {
+                terminate(state, tag, pid.get());
+            } catch (Exception termination) {
+                var unknown =
+                        new IOException("Remote process termination outcome unknown", termination);
+                unknown.addSuppressed(failure);
+                throw unknown;
+            } finally {
+                if (interrupted) {
+                    Thread.currentThread().interrupt();
+                }
+            }
+            if (owner.isInterrupted()) {
+                var stopped = new InterruptedException("Remote command interrupted");
+                stopped.addSuppressed(failure);
+                throw stopped;
+            }
+            if (cancelled.get()) {
+                var timedOut =
+                        new SandboxException.ExecTimeoutException(shellCommand, timeoutSeconds);
+                timedOut.addSuppressed(failure);
+                throw timedOut;
+            }
+            throw failure;
+        } finally {
+            done.set(true);
+            watchdog.interrupt();
+            call.cancel();
+        }
+    }
+
+    /** Connect unary RPCs use JSON without streaming envelopes, independently of Start's codec. */
+    private JsonNode unary(E2bSandboxState state, String method, Object body) throws IOException {
+        Request request =
+                baseRequest(envdHost(state) + "/process.Process/" + method, state)
+                        .post(
+                                RequestBody.create(
+                                        JSON.writeValueAsBytes(body),
+                                        MediaType.get("application/json")))
+                        .build();
+        OkHttpClient client =
+                http.newBuilder()
+                        .readTimeout(3, TimeUnit.SECONDS)
+                        .callTimeout(3, TimeUnit.SECONDS)
+                        .build();
+        try (Response response = client.newCall(request).execute()) {
+            if (response.code() == 404 && "SendSignal".equals(method)) {
+                return JSON.createObjectNode().put("missing", true);
+            }
+            if (!response.isSuccessful()) {
+                throw new IOException("envd " + method + " failed HTTP " + response.code());
+            }
+            String bodyText = response.body() == null ? "" : response.body().string();
+            return bodyText.isBlank() ? JSON.createObjectNode() : JSON.readTree(bodyText);
+        }
+    }
+
+    private void terminate(E2bSandboxState state, String tag, int pid) throws Exception {
+        Map<String, String> selector = Map.of("tag", tag);
+        JsonNode signal =
+                unary(state, "SendSignal", Map.of("process", selector, "signal", "SIGNAL_SIGTERM"));
+        long requestedAt = System.nanoTime();
+        long until = requestedAt + TimeUnit.SECONDS.toNanos(5);
+        boolean escalated = false;
+        do {
+            JsonNode processes = unary(state, "List", Map.of());
+            boolean present = false;
+            for (JsonNode process : processes.path("processes")) {
+                if (tag.equals(process.path("tag").asText())
+                        || pid > 0 && pid == process.path("pid").asInt()) {
+                    present = true;
+                }
+            }
+            if (!present && (pid > 0 || !signal.path("missing").asBoolean())) {
+                return;
+            }
+            if (!present && pid == 0) {
+                throw new IOException(
+                        "Process start was not acknowledged; termination outcome unknown");
+            }
+            if (!escalated
+                    && System.nanoTime() - requestedAt >= TimeUnit.MILLISECONDS.toNanos(500)) {
+                unary(state, "SendSignal", Map.of("process", selector, "signal", "SIGNAL_SIGKILL"));
+                escalated = true;
+            }
+            Thread.sleep(50);
+        } while (System.nanoTime() < until);
+        throw new IOException("Remote process termination was not confirmed");
     }
 
     private record ShellCapture(
@@ -294,7 +452,10 @@ final class E2bEnvdProcessClient {
     }
 
     private int drainStartStream(
-            InputStream in, ByteArrayOutputStream stdout, ByteArrayOutputStream stderr)
+            InputStream in,
+            ByteArrayOutputStream stdout,
+            ByteArrayOutputStream stderr,
+            AtomicInteger pid)
             throws IOException {
         Integer exit = null;
         Descriptors.FieldDescriptor srEventF = startResponseDesc.findFieldByName("event");
@@ -312,7 +473,11 @@ final class E2bEnvdProcessClient {
             // Connect protocol: Message-Length is 4-byte unsigned integer, big-endian
             // https://connectrpc.com/docs/protocol/#streaming-rpcs
             int len = ByteBuffer.wrap(lenB).order(ByteOrder.BIG_ENDIAN).getInt();
-            if (len < 0 || len > 64 * 1024 * 1024) {
+            int frameLimit =
+                    opt.getMaxCapturedBytes() > 0
+                            ? Math.min(64 * 1024 * 1024, opt.getMaxCapturedBytes())
+                            : 64 * 1024 * 1024;
+            if (len < 0 || len > frameLimit) {
                 throw new IOException("Invalid connect frame length: " + len);
             }
             byte[] data = in.readNBytes(len);
@@ -363,6 +528,16 @@ final class E2bEnvdProcessClient {
                 continue;
             }
             DynamicMessage pe = (DynamicMessage) sr.getField(srEventF);
+            Descriptors.FieldDescriptor startField = processEventDesc.findFieldByName("start");
+            if (pe.hasField(startField)) {
+                DynamicMessage started = (DynamicMessage) pe.getField(startField);
+                pid.set(
+                        ((Number)
+                                        started.getField(
+                                                started.getDescriptorForType()
+                                                        .findFieldByName("pid")))
+                                .intValue());
+            }
             if (pe.hasField(peDataF)) {
                 DynamicMessage de = (DynamicMessage) pe.getField(peDataF);
                 appendDataStream(de, "stdout", stdout);
@@ -403,6 +578,12 @@ final class E2bEnvdProcessClient {
         return exit;
     }
 
+    private int drainStartStream(
+            InputStream in, ByteArrayOutputStream stdout, ByteArrayOutputStream stderr)
+            throws IOException {
+        return drainStartStream(in, stdout, stderr, new AtomicInteger());
+    }
+
     private static void writeStderrLine(ByteArrayOutputStream stderr, byte[] text) {
         // Keep EndEvent.error visually separate from preceding stderr output that
         // may not end with a newline ("partial" + "exit status 1" is unreadable).
@@ -413,15 +594,25 @@ final class E2bEnvdProcessClient {
         stderr.writeBytes(text);
     }
 
-    private static void appendDataStream(
-            DynamicMessage dataEv, String field, ByteArrayOutputStream out) throws IOException {
+    private void appendDataStream(DynamicMessage dataEv, String field, ByteArrayOutputStream out)
+            throws IOException {
         Descriptors.FieldDescriptor fieldDescriptor =
                 dataEv.getDescriptorForType().findFieldByName(field);
         if (fieldDescriptor != null) {
             Object value = dataEv.getField(fieldDescriptor);
             if (value instanceof ByteString) {
+                if (opt.getMaxCapturedBytes() > 0
+                        && ((ByteString) value).size() > opt.getMaxCapturedBytes() - out.size()) {
+                    throw new CaptureLimitException();
+                }
                 ((ByteString) value).writeTo(out);
             }
+        }
+    }
+
+    private static final class CaptureLimitException extends IOException {
+        CaptureLimitException() {
+            super("envd process output exceeds capture limits");
         }
     }
 
@@ -657,6 +848,10 @@ final class E2bEnvdProcessClient {
         if (process.hasField(cwdField)) {
             processNode.put("cwd", String.valueOf(process.getField(cwdField)));
         }
+        Descriptors.FieldDescriptor tagField = startRequestDesc.findFieldByName("tag");
+        if (msg.hasField(tagField)) {
+            root.put("tag", String.valueOf(msg.getField(tagField)));
+        }
         root.put(
                 "stdin", msg.hasField(stdinField) && Boolean.TRUE.equals(msg.getField(stdinField)));
         return JSON.writeValueAsBytes(root);
@@ -673,6 +868,18 @@ final class E2bEnvdProcessClient {
             return response.build();
         }
         DynamicMessage.Builder event = DynamicMessage.newBuilder(processEventDesc);
+
+        JsonNode startNode = eventNode.path("start");
+        if (startNode.path("pid").canConvertToInt()) {
+            Descriptors.Descriptor descriptor = processEventDesc.findNestedTypeByName("StartEvent");
+            event.setField(
+                    processEventDesc.findFieldByName("start"),
+                    DynamicMessage.newBuilder(descriptor)
+                            .setField(
+                                    descriptor.findFieldByName("pid"),
+                                    startNode.path("pid").intValue())
+                            .build());
+        }
 
         JsonNode dataNode = eventNode.path("data");
         if (!dataNode.isMissingNode() && !dataNode.isNull()) {
@@ -769,6 +976,10 @@ final class E2bEnvdProcessClient {
         String override = opt.getEnvdSandboxUrl();
         if (override != null && !override.isBlank()) {
             return E2bPlatformHttp.trimSlash(override.trim());
+        }
+        String proxy = opt.getEnvdBaseUrl();
+        if (proxy != null && !proxy.isBlank()) {
+            return E2bPlatformHttp.trimSlash(proxy.trim());
         }
         String id = state.getSandboxId();
         String dom =

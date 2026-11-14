@@ -390,6 +390,48 @@ class WorkspaceTaskRepositoryTest {
         }
     }
 
+    @Test
+    void suppressedSettledFailuresRetainDurableErrors() throws Exception {
+        AtomicInteger callbacks = new AtomicInteger();
+        repo.setCompletionCallback(
+                (TaskRepository.TaskSettledCallback)
+                        (rc, taskId, agentId, sessionId, status, result, error) ->
+                                callbacks.incrementAndGet());
+        for (boolean adopted : List.of(false, true)) {
+            String sessionId = "suppressed-failure-" + adopted;
+            RuntimeContext context =
+                    RuntimeContext.builder()
+                            .sessionId(sessionId)
+                            .put(TaskRepository.SUPPRESS_COMPLETION_CALLBACK, true)
+                            .build();
+            CompletableFuture<String> future = new CompletableFuture<>();
+            TaskRunSpec spec =
+                    adopted
+                            ? new TaskRunSpec.AdoptedTaskRunSpec(future)
+                            : new TaskRunSpec.LocalTaskRunSpec(
+                                    () -> {
+                                        throw new IllegalStateException(
+                                                "suppressed execution error");
+                                    });
+            BackgroundTask task =
+                    repo.putTask(context, "suppressed-task", "worker", sessionId, spec);
+            if (adopted) {
+                future.completeExceptionally(
+                        new IllegalStateException("suppressed execution error"));
+            }
+            assertTrue(task.waitForCompletion(5000));
+            assertEquals(0, callbacks.get());
+            List<TaskDelivery> deliveries = repo.findPendingDeliveries(context, sessionId);
+            assertEquals(1, deliveries.size());
+            TaskDelivery delivery = deliveries.get(0);
+            assertEquals("suppressed-task", delivery.taskId());
+            assertEquals("worker", delivery.agentId());
+            assertEquals(TaskStatus.FAILED, delivery.status());
+            assertNull(delivery.result());
+            assertEquals("suppressed execution error", delivery.errorMessage());
+        }
+    }
+
     // ------------------------------------------------------------------
     //  Cross-node fallback: no local future
     // ------------------------------------------------------------------

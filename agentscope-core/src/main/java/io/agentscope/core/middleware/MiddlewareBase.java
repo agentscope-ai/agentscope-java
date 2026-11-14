@@ -96,7 +96,8 @@ public interface MiddlewareBase {
         ON_ACTING("onActing"),
         ON_MODEL_CALL("onModelCall"),
         ON_SYSTEM_PROMPT("onSystemPrompt"),
-        ON_AGENT_STATE_READY("onAgentStateReady");
+        ON_AGENT_STATE_READY("onAgentStateReady"),
+        ON_AGENT_FINISH("onAgentFinish");
 
         private final String hookMethod;
 
@@ -281,4 +282,13 @@ public interface MiddlewareBase {
      */
     default void onAgentStateReady(
             Agent agent, RuntimeContext ctx, AgentState state, List<Msg> inputMessages) {}
+
+    /**
+     * Runs after a successful call result, before native checkpoints and writer release.
+     * Unlike onAgent completion, this boundary still carries the active call's RuntimeContext.
+     * Implementations return their completion signal and must preserve cancellation.
+     */
+    default Mono<Void> onAgentFinish(Agent agent, RuntimeContext ctx, Msg result) {
+        return Mono.empty();
+    }
 }

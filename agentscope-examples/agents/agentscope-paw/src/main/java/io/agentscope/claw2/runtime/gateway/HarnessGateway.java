@@ -110,10 +110,6 @@ public final class HarnessGateway implements Gateway {
     private final ConcurrentHashMap<String, OutboundAddress> lastRouteBySessionKey =
             new ConcurrentHashMap<>();
 
-    /** Control-plane session ids adopted for externally dispatched AgentTasks. */
-    private final ConcurrentHashMap<String, String> externalSessionToGateKey =
-            new ConcurrentHashMap<>();
-
     private final SessionTurnGate sessionTurnGate = new LocalSessionTurnGate();
 
     private HarnessGateway(SessionAgentManager sessionAgentManager, ChannelManager channelManager) {
@@ -196,7 +192,7 @@ public final class HarnessGateway implements Gateway {
 
     /**
      * Binds the primary harness agent. Also registers it under its {@link
-     * HarnessAgent#sessionKey(RuntimeContext)} stable agent identity for routing.
+     * HarnessAgent#threadKey(RuntimeContext)} stable agent identity for routing.
      */
     @Override
     public void bindMainAgent(HarnessAgent agent) {
@@ -205,20 +201,6 @@ public final class HarnessGateway implements Gateway {
         String id = resolveAgentId(agent);
         agentRegistry.put(id, agent);
         defaultAgentId = id;
-    }
-
-    /**
-     * Adopts a control-plane-allocated session id so later injects and wakeups can resolve it.
-     * Used by external AgentTask dispatch.
-     */
-    public void registerExternalSession(String sessionId, String gateKey) {
-        if (sessionId == null || sessionId.isBlank()) {
-            throw new IllegalArgumentException("sessionId required");
-        }
-        if (gateKey == null || gateKey.isBlank()) {
-            throw new IllegalArgumentException("gateKey required");
-        }
-        externalSessionToGateKey.put(sessionId, gateKey);
     }
 
     @Override
@@ -481,7 +463,7 @@ public final class HarnessGateway implements Gateway {
     }
 
     private static String resolveAgentId(HarnessAgent ha) {
-        String id = ha != null ? ha.sessionKey(RuntimeContext.empty()).agentId() : null;
+        String id = ha != null ? ha.threadKey(RuntimeContext.empty()).agentId() : null;
         return (id != null && !id.isBlank()) ? id : "main";
     }
 

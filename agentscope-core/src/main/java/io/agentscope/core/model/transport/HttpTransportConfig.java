@@ -53,6 +53,7 @@ public class HttpTransportConfig {
     private final boolean ignoreSsl;
     private final ProxyConfig proxyConfig;
     private final HttpVersion httpVersion;
+    private final int responsePrefetch;
 
     private HttpTransportConfig(Builder builder) {
         this.connectTimeout = builder.connectTimeout;
@@ -65,6 +66,7 @@ public class HttpTransportConfig {
         this.ignoreSsl = builder.ignoreSsl;
         this.proxyConfig = builder.proxyConfig;
         this.httpVersion = builder.httpVersion;
+        this.responsePrefetch = builder.responsePrefetch;
     }
 
     /**
@@ -176,6 +178,15 @@ public class HttpTransportConfig {
     }
 
     /**
+     * Maximum prefetched response chunks per subscription between blocking reads and delivery.
+     *
+     * @return the chunk prefetch (default 32)
+     */
+    public int getResponsePrefetch() {
+        return responsePrefetch;
+    }
+
+    /**
      * Create a new builder for HttpTransportConfig.
      *
      * @return a new Builder instance
@@ -207,6 +218,22 @@ public class HttpTransportConfig {
         private boolean ignoreSsl = false;
         private ProxyConfig proxyConfig = null;
         private HttpVersion httpVersion = null;
+        private int responsePrefetch = 32;
+
+        /**
+         * Bound read-ahead between stream I/O and response processing for JDK and OkHttp transports.
+         * This preserves chunk order and backpressure; it is not a byte or connection limit.
+         *
+         * @param responsePrefetch positive number of chunks (default 32)
+         * @return this builder
+         */
+        public Builder responsePrefetch(int responsePrefetch) {
+            if (responsePrefetch < 1) {
+                throw new IllegalArgumentException("responsePrefetch must be positive");
+            }
+            this.responsePrefetch = responsePrefetch;
+            return this;
+        }
 
         /**
          * Set the connect timeout.

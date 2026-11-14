@@ -38,7 +38,7 @@ import reactor.core.publisher.Mono;
 public final class AgentRun<T> {
     /**
      * Execution-handle state. COMPLETED means the publisher returned normally, including a
-     * suspended or unsuccessful semantic result. Inspect AgentResult / durable turn status for
+     * suspended or unsuccessful semantic result. Inspect {@link #outcome()} / durable turn status for
      * the logical outcome. QUEUED includes setup before admission to the core lifecycle.
      */
     public enum Status {
@@ -137,6 +137,14 @@ public final class AgentRun<T> {
     /** A replayable terminal-status notification; observing it does not start execution. */
     public Mono<Status> termination() {
         return control.termination();
+    }
+
+    /**
+     * Replayable invocation outcome, published after completion/cleanup or cancellation. Observing
+     * it neither starts nor cancels this run. Task completion remains the execution host's decision.
+     */
+    public Mono<RunOutcome> outcome() {
+        return control.outcome();
     }
 
     /** Immediately cancel this run's reactive subscription, including a queued run. */
