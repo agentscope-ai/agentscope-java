@@ -32,6 +32,36 @@ import org.junit.jupiter.api.Test;
 class GenerateOptionsTest {
 
     @Test
+    void requestLegacyLimitReplacesFallbackCompletionLimit() {
+        GenerateOptions merged =
+                GenerateOptions.mergeOptions(
+                        GenerateOptions.builder().maxTokens(64).build(),
+                        GenerateOptions.builder().maxCompletionTokens(16000).build());
+        assertEquals(64, merged.getMaxTokens());
+        assertNull(merged.getMaxCompletionTokens());
+    }
+
+    @Test
+    void requestCompletionLimitReplacesFallbackLegacyLimit() {
+        GenerateOptions merged =
+                GenerateOptions.mergeOptions(
+                        GenerateOptions.builder().maxCompletionTokens(64).build(),
+                        GenerateOptions.builder().maxTokens(16000).build());
+        assertEquals(64, merged.getMaxCompletionTokens());
+        assertNull(merged.getMaxTokens());
+    }
+
+    @Test
+    void unrelatedRequestOptionsKeepFallbackOutputLimit() {
+        GenerateOptions merged =
+                GenerateOptions.mergeOptions(
+                        GenerateOptions.builder().temperature(0.1).build(),
+                        GenerateOptions.builder().maxCompletionTokens(16000).build());
+        assertEquals(16000, merged.getMaxCompletionTokens());
+        assertNull(merged.getMaxTokens());
+    }
+
+    @Test
     @DisplayName("Should build GenerateOptions with all parameters using builder")
     void testBuilderAllParameters() {
         GenerateOptions options =

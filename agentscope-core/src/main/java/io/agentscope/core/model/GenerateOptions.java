@@ -454,11 +454,11 @@ public class GenerateOptions {
         builder.temperature(
                 primary.temperature != null ? primary.temperature : fallback.temperature);
         builder.topP(primary.topP != null ? primary.topP : fallback.topP);
-        builder.maxTokens(primary.maxTokens != null ? primary.maxTokens : fallback.maxTokens);
+        // These are alternative output limits; a request override replaces either default.
+        boolean outputOverride = primary.maxTokens != null || primary.maxCompletionTokens != null;
+        builder.maxTokens(outputOverride ? primary.maxTokens : fallback.maxTokens);
         builder.maxCompletionTokens(
-                primary.maxCompletionTokens != null
-                        ? primary.maxCompletionTokens
-                        : fallback.maxCompletionTokens);
+                outputOverride ? primary.maxCompletionTokens : fallback.maxCompletionTokens);
         builder.frequencyPenalty(
                 primary.frequencyPenalty != null
                         ? primary.frequencyPenalty
