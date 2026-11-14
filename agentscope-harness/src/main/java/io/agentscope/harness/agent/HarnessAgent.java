@@ -1234,7 +1234,12 @@ public class HarnessAgent implements Agent, AutoCloseable {
         // Overflow recovery summarizes through the agent's build-time default model, never the
         // per-call model that just overflowed (same rule as CompactionMiddleware#overflowRecovery).
         MemoryFlushManager fm =
-                new MemoryFlushManager(workspaceManager, getModel(), effectiveFlushPrompt);
+                new MemoryFlushManager(
+                        workspaceManager,
+                        getModel(),
+                        effectiveFlushPrompt,
+                        memoryConfig.admission(),
+                        memoryConfig.flushTimeout());
         ConversationCompactor compactor = new ConversationCompactor(getModel(), fm);
 
         return compactor
@@ -3000,7 +3005,9 @@ public class HarnessAgent implements Agent, AutoCloseable {
                                 effectiveFlushPrompt,
                                 memoryConfig.flushTrigger(),
                                 effectiveIsolationScope,
-                                periodicGate));
+                                periodicGate,
+                                memoryConfig.admission(),
+                                memoryConfig.flushTimeout()));
 
                 String effectiveConsolidationPrompt =
                         memoryConfig.consolidationPrompt() != null
@@ -3032,7 +3039,10 @@ public class HarnessAgent implements Agent, AutoCloseable {
                     // time. The gate above still requires a dedicated or default model to exist.
                     compactionHook =
                             new CompactionMiddleware(
-                                    wsManager, compactionConfig.getModel(), compactionConfig);
+                                    wsManager,
+                                    compactionConfig.getModel(),
+                                    compactionConfig,
+                                    memoryConfig);
                     inner.middleware(compactionHook.overflowRecovery());
                 }
             }

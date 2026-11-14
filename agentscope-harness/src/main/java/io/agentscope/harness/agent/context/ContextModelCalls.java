@@ -22,6 +22,7 @@ import io.agentscope.core.message.Msg;
 import io.agentscope.core.middleware.ModelCallInput;
 import io.agentscope.core.middleware.ModelRequestPreparer;
 import io.agentscope.core.model.ChatResponse;
+import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.Model;
 import java.util.List;
 import java.util.UUID;
@@ -32,13 +33,18 @@ public final class ContextModelCalls {
     private ContextModelCalls() {}
 
     public static Flux<ChatResponse> auxiliary(Model model, List<Msg> messages) {
+        return auxiliary(model, messages, null);
+    }
+
+    public static Flux<ChatResponse> auxiliary(
+            Model model, List<Msg> messages, GenerateOptions options) {
         return Flux.deferContextual(
                 subscriber ->
                         new HarnessContextBuilder(ContextPolicy.defaults(), null, null)
                                 .prepare(
                                         null,
                                         RuntimeContext.empty(),
-                                        new ModelCallInput(messages, List.of(), null, model),
+                                        new ModelCallInput(messages, List.of(), options, model),
                                         UUID.randomUUID().toString(),
                                         ModelRequestPreparer.Purpose.SUMMARY)
                                 .flatMapMany(

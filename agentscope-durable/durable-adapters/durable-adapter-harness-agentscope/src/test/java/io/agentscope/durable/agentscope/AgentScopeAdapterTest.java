@@ -106,6 +106,8 @@ import io.agentscope.extensions.durable.jdbc.JdbcRecordStore;
 import io.agentscope.extensions.durable.jdbc.LocalBackend;
 import io.agentscope.harness.agent.HarnessAgent;
 import io.agentscope.harness.agent.filesystem.remote.RemoteFilesystem;
+import io.agentscope.harness.agent.memory.MemoryAdmission;
+import io.agentscope.harness.agent.memory.MemoryConfig;
 import java.math.BigInteger;
 import java.nio.file.Path;
 import java.time.Duration;
@@ -125,6 +127,7 @@ import java.util.stream.StreamSupport;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.ValueSource;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
@@ -595,11 +598,22 @@ class AgentScopeAdapterTest {
         }
     }
 
-    @Test
-    void realHarnessMemoryFinalizationReplaysRecordedSummaryAfterRestart() throws Exception {
+    @ParameterizedTest
+    @CsvSource({
+        "NO_REPLY, false, false",
+        "- Remembered user fact, false, false",
+        "- Remembered user fact, true, false",
+        "- Remembered user fact, true, true"
+    })
+    void realHarnessMemoryFinalizationReplaysRecordedSummaryAfterRestart(
+            String memoryOutput, boolean multipleBatches, boolean admission) throws Exception {
+        var key = new SessionKey("user", "memory-" + java.util.UUID.randomUUID());
+        io.agentscope.harness.agent.coordination.LocalPeriodicGate.clearForTests();
         var calls = new AtomicInteger();
         var armed = new AtomicBoolean();
         var crashed = new AtomicBoolean();
+        var summaries = new AtomicInteger();
+        var judgments = new AtomicInteger();
         Model model =
                 new Model() {
                     public String getModelName() {
@@ -618,7 +632,7 @@ class AgentScopeAdapterTest {
                                                                         tools == null
                                                                                         || tools
                                                                                                 .isEmpty()
-                                                                                ? "NO_REPLY"
+                                                                                ? memoryOutput
                                                                                 : "done")
                                                                 .build()))
                                         .build());
@@ -632,14 +646,35 @@ class AgentScopeAdapterTest {
                                     binding.context().get("agentscope.memory.inlineFlush"));
                             return HarnessAgent.builder()
                                     .name("memory")
+                                    .memory(
+                                            MemoryConfig.builder()
+                                                    .flushTrigger(
+                                                            MemoryConfig.FlushTrigger.throttled(
+                                                                    Duration.ofMinutes(5)))
+                                                    .admission(
+                                                            admission
+                                                                    ? input -> {
+                                                                        judgments.incrementAndGet();
+                                                                        return Mono.just(
+                                                                                new MemoryAdmission
+                                                                                        .Decision(
+                                                                                        true,
+                                                                                        "test-admission",
+                                                                                        Map.of()));
+                                                                    }
+                                                                    : null)
+                                                    .build())
                                     .model(model)
-                                    .workspace("/work")
+                                    .workspace(directory.resolve("work"))
                                     .abstractFilesystem(
                                             new RemoteFilesystem(
                                                     binding.workspace(), List.of("workspace")));
                         },
                         Map.of());
-        try (var storage = LocalBackend.open(directory.resolve("native-memory"))) {
+        try (var storage =
+                new io.agentscope.durable.TransactionalSessionBackend(
+                        io.agentscope.extensions.durable.jdbc.JdbcRecordStore.sqlite(
+                                directory.resolve("native-memory/durable.db")))) {
             var backend = spy(storage);
             doAnswer(
                             invocation -> {
@@ -655,22 +690,26 @@ class AgentScopeAdapterTest {
                                         && commit.journal().entries().stream()
                                                 .anyMatch(
                                                         entry ->
-                                                                "model/end"
+                                                                (admission
+                                                                                        ? "memory/admission"
+                                                                                        : "model/end")
                                                                                 .equals(
                                                                                         entry.path(
                                                                                                         "type")
                                                                                                 .asText())
-                                                                        && "SUMMARY"
-                                                                                .equals(
-                                                                                        DurableJson
-                                                                                                .parse(
-                                                                                                        entry.path(
-                                                                                                                        "payloadJson")
-                                                                                                                .asText())
-                                                                                                .path(
-                                                                                                        "purpose")
-                                                                                                .asText())))
-                                    armed.set(true);
+                                                                        && (admission
+                                                                                || "SUMMARY"
+                                                                                        .equals(
+                                                                                                DurableJson
+                                                                                                        .parse(
+                                                                                                                entry.path(
+                                                                                                                                "payloadJson")
+                                                                                                                        .asText())
+                                                                                                        .path(
+                                                                                                                "purpose")
+                                                                                                        .asText()))))
+                                    if (summaries.incrementAndGet() == (multipleBatches ? 2 : 1))
+                                        armed.set(true);
                                 return result;
                             })
                     .when(backend)
@@ -678,12 +717,22 @@ class AgentScopeAdapterTest {
             String turn;
             try (var first = runtime(backend, adapter, null)) {
                 first.createSession(key, "agent").mainThread().view().definition();
-                turn = first.getSession(key).submit("input", "hello").turnId();
+                String input =
+                        multipleBatches ? "Remember the release policy. ".repeat(1000) : "hello";
+                turn = first.getSession(key).submit("input", input).turnId();
                 first.tick(new ThreadKey(key, "main"));
                 assertTrue(
                         crashed.get(),
-                        "Real memory summary must pass through the durable model journal");
+                        () ->
+                                "Real memory summary must pass through the durable model journal: "
+                                        + first.lastFailure(new ThreadKey(key, "main"))
+                                        + " calls="
+                                        + calls.get()
+                                        + " turn="
+                                        + storage.turn(new ThreadKey(key, "main"), turn));
                 assertFalse(storage.turn(new ThreadKey(key, "main"), turn).status().terminal());
+                assertEquals(multipleBatches ? 3 : 2, calls.get());
+                assertEquals(admission ? 2 : 0, judgments.get());
             }
             armed.set(false);
             Thread.sleep(5);
@@ -694,9 +743,29 @@ class AgentScopeAdapterTest {
                         TurnStatus.SUCCEEDED,
                         storage.turn(new ThreadKey(key, "main"), turn).status());
                 assertEquals(
-                        2,
+                        multipleBatches ? 3 : 2,
                         calls.get(),
                         "The recorded primary and memory model outcomes must not repeat");
+                assertEquals(
+                        admission ? 2 : 0,
+                        judgments.get(),
+                        "Completed admission decisions must replay without judging again");
+                if (!memoryOutput.equals("NO_REPLY")) {
+                    var checkpoints = storage.checkpoints(new ThreadKey(key, "main"), 0, 1000);
+                    long position =
+                            Long.parseLong(checkpoints.get(checkpoints.size() - 1).position());
+                    assertTrue(
+                            storage
+                                    .checkpointResources(new ThreadKey(key, "main"), position)
+                                    .stream()
+                                    .anyMatch(
+                                            value ->
+                                                    value.value()
+                                                            .path("content")
+                                                            .asText()
+                                                            .contains(memoryOutput)),
+                            "The replayed nonempty extraction must reach the persistent workspace");
+                }
             }
         }
     }
@@ -875,11 +944,14 @@ class AgentScopeAdapterTest {
                             return HarnessAgent.builder()
                                     .name("files")
                                     .model(new ScriptedModel(false))
-                                    .workspace("/work")
+                                    .workspace(directory.resolve("work"))
                                     .abstractFilesystem(files);
                         },
                         Map.of());
-        try (var backend = LocalBackend.open(directory.resolve("workspace-fork"));
+        try (var backend =
+                        new io.agentscope.durable.TransactionalSessionBackend(
+                                io.agentscope.extensions.durable.jdbc.JdbcRecordStore.sqlite(
+                                        directory.resolve("workspace-fork/durable.db")));
                 var runtime = runtime(backend, adapter, null)) {
             runtime.createSession(key, "agent").mainThread().view().definition();
             var first = runtime.getSession(key).submit("first", "hello");

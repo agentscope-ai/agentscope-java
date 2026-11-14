@@ -241,7 +241,7 @@ public class CompactionConfig {
         return summaryPrompt;
     }
 
-    /** Whether to flush long-term memories from the prefix before compaction. */
+    /** Whether legacy execution extracts memories before compaction; native journals retain originals. */
     public boolean isFlushBeforeCompact() {
         return flushBeforeCompact;
     }
@@ -382,7 +382,7 @@ public class CompactionConfig {
             return this;
         }
 
-        /** Whether to flush long-term memories before compaction (default true). */
+        /** Whether legacy execution extracts memories before compaction (default true). */
         public Builder flushBeforeCompact(boolean flushBeforeCompact) {
             this.flushBeforeCompact = flushBeforeCompact;
             return this;

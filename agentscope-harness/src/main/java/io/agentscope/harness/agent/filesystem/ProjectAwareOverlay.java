@@ -118,6 +118,15 @@ public class ProjectAwareOverlay extends OverlayFilesystem implements AbstractSa
     }
 
     @Override
+    public AtomicTextFile atomicTextFile(
+            RuntimeContext runtimeContext, String path, boolean inheritLower) {
+        String target = toWorkspaceRelativePath(runtimeContext, path);
+        return isWorkspacePath(runtimeContext, path)
+                ? super.atomicTextFile(runtimeContext, target, inheritLower)
+                : projectFs.atomicTextFile(runtimeContext, target, inheritLower);
+    }
+
+    @Override
     public String id() {
         return shellBackend.id();
     }
