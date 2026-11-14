@@ -26,12 +26,10 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.Charset;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.HashMap;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
@@ -437,7 +435,8 @@ public class LocalFilesystemWithShell extends LocalFilesystem implements Abstrac
             joinQuietly(stdoutDrainer);
             joinQuietly(stderrDrainer);
 
-            Charset outputCharset = outputCharset(osName);
+            Charset outputCharset =
+                    resolvedShell.outputCharset(osName, System.getProperty("native.encoding"));
             String stdout = stdoutBuf.toString(outputCharset);
             String stderr = stderrBuf.toString(outputCharset);
 
@@ -588,20 +587,5 @@ public class LocalFilesystemWithShell extends LocalFilesystem implements Abstrac
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
         }
-    }
-
-    static Charset outputCharset(String osName) {
-        return outputCharset(osName, System.getProperty("native.encoding"));
-    }
-
-    static Charset outputCharset(String osName, String nativeEncoding) {
-        if (!osName.toLowerCase(Locale.ROOT).contains("win")) {
-            return StandardCharsets.UTF_8;
-        }
-
-        if (nativeEncoding != null && Charset.isSupported(nativeEncoding)) {
-            return Charset.forName(nativeEncoding);
-        }
-        return Charset.defaultCharset();
     }
 }

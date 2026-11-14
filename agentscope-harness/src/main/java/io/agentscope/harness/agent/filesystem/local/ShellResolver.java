@@ -16,6 +16,8 @@
 package io.agentscope.harness.agent.filesystem.local;
 
 import io.agentscope.harness.agent.filesystem.ShellSyntax;
+import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
@@ -54,6 +56,19 @@ final class ShellResolver {
 
         String description() {
             return executable + " " + commandFlag;
+        }
+
+        Charset outputCharset(String osName, String nativeEncoding) {
+            String name = fileName(executable).toLowerCase(Locale.ROOT);
+            if (!isWindows(osName)
+                    || syntax == ShellSyntax.POSIX
+                    || name.equals("pwsh")
+                    || name.equals("pwsh.exe")) {
+                return StandardCharsets.UTF_8;
+            }
+            return nativeEncoding != null && Charset.isSupported(nativeEncoding)
+                    ? Charset.forName(nativeEncoding)
+                    : Charset.defaultCharset();
         }
     }
 
