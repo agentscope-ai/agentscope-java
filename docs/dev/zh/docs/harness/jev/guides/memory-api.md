@@ -55,8 +55,27 @@ java -cp "$JEV_CP" io.agentscope.examples.jev.JevApplicationScenarios memory
 
 用例演示无冲突时 PASS、预设高冲突时 FAIL，两个分支实际写入数都为 0。概率由离线夹具提供，不是模型效果测量。[JevApplicationScenarios 完整源码](/examples/jev/source/JevApplicationScenarios.java.txt)
 
+## 接入 Harness 抽取
+
+可选 adapter 在抽取的事实追加账本前执行准入：
+
+```java
+import io.agentscope.harness.agent.memory.MemoryConfig;
+
+MemoryConfig memory = MemoryConfig.builder()
+    .admission(new JevMemoryGate(judge).admission())
+    .build();
+// 传入 HarnessAgent.builder().memory(memory)。
+```
+
+默认不启用准入。`assess()` 保留原政策；`admission()` 允许来源支持的更正，拒绝无依据的矛盾。两者均使用 0.2/0.8 阈值。候选收到来源批次、记忆片段和本批此前接受的候选；片段不是完整冲突索引。
+
+有 bullet 时忽略前言和未缩进的结束语，否则将非空正文作为一个 bullet 候选。拒绝消费来源；ERROR 或 INCONCLUSIVE 保留批次，因此持续错误会阻塞抽取，直到 judge 恢复或关闭准入。内联抽取记录已完成判断，仅供同一 Durable 收尾 frame 重放，后续轮次重新判断。每批只索引一次已记录判断；准入保持串行，后候选可见此前接受的候选。
+
+接受的更正仍是追加，不删除旧事实。此钩子覆盖抽取，也包括旧模式压缩前抽取；不拦截 `memory_save` 或 consolidation。
+
 ## 边界与错误
 
 候选与现有事实必须全部属于显式 owner，否则调用模型前抛出参数错误。内置条件 `durable` 期望 true，`conflict` 期望 false，使用 0.2/0.8 演示阈值；需要自定义准入政策时，用 [JevJudge](/dev/zh/docs/harness/jev/guides/judge-api) 定义规则。
 
-组件不会自动拦截 MemoryFlush 或其他写工具，宿主必须在真实写入入口调用。准入失败不删除旧记忆，上下文压缩的结论也不构成长期记忆写入许可。超时和取消沿用 Judge 契约。
+独立调用 `assess()` 时，应用仍须在真实写入入口执行判断结果。准入失败不删除旧记忆，上下文压缩的结论也不构成长期记忆写入许可。超时和取消沿用 Judge 契约。
