@@ -22,7 +22,7 @@ en_link: /v2/en/docs/harness/filesystem
 |------|------|-------------|---------|
 | **1 · 共享存储** | `filesystem(new RemoteFilesystemSpec(store))` | ❌ | 多副本要共享 `MEMORY.md` / 对话日志 / 子任务到 KV；**不希望在宿主上跑 shell** |
 | **2 · 沙箱** | `filesystem(new DockerFilesystemSpec()...)` 或 K8s / Daytona / E2B / AgentRun | ✅（在沙箱内） | 隔离执行、跨调用恢复同一份工作区、可选快照 + 分布式 |
-| **3 · 本机 + shell**（默认） | `filesystem(new LocalFilesystemSpec()...)` 或**不写** | ✅（宿主 `sh -c` / `cmd.exe /c`） | 单进程 / 本机 / 信任环境 / 简单脚本与测试 |
+| **3 · 本机 + shell**（默认） | `filesystem(new LocalFilesystemSpec()...)` 或**不写** | ✅（宿主 `sh -c`） | 单进程 / 本机 / 信任环境 / 简单脚本与测试 |
 
 > `filesystem(...)` 与 `abstractFilesystem(...)` 互斥；后者是给完全自管文件系统的逃生口，正常用法不需要。
 
@@ -344,7 +344,6 @@ HarnessAgent agent = HarnessAgent.builder()
     .maxOutputBytes(100_000)          // 单条命令最大输出字节
     .env("MY_VAR", "value")          // 额外环境变量
     .inheritEnv(true)                // 是否继承父进程环境
-    .shellPath("bash")               // execute 使用的 shell，默认 sh / cmd.exe
     .mode(LocalFsMode.ROOTED)        // 路径策略
     .project(Paths.get("/my/project")) // 项目根（shell 的 cwd + overlay 下层）
     .addRoot(Paths.get("/extra/dir"))) // 额外可访问目录
@@ -356,7 +355,6 @@ HarnessAgent agent = HarnessAgent.builder()
 | `maxOutputBytes(int)` | 单条命令最大捕获输出字节数 | 100,000 |
 | `env(String, String)` | 添加 shell 环境变量 | 无 |
 | `inheritEnv(boolean)` | 是否继承父进程环境 | `false` |
-| `shellPath(String)` | `execute` 使用的 shell，可传完整路径或 `PATH` 上的可执行文件名 | POSIX 上为 `sh`，Windows 上为 `cmd.exe` |
 | `mode(LocalFsMode)` | 路径解析策略 | `ROOTED` |
 | `project(Path)` | 项目根目录（overlay 下层 + shell cwd） | `System.getProperty("user.dir")` |
 | `addRoot(Path)` | 额外允许访问的宿主目录 | 无 |
@@ -535,7 +533,7 @@ workspace/
 
 | 模式 | Shell 可用？ | 执行位置 |
 |------|------------|---------|
-| 本机 | ✅ | 宿主 `sh -c` / `cmd.exe /c`，cwd 为 `project` 目录 |
+| 本机 | ✅ | 宿主 `sh -c`，cwd 为 `project` 目录 |
 | 共享存储 | ❌ | 不提供 shell |
 | 沙箱 | ✅ | 沙箱容器内 |
 

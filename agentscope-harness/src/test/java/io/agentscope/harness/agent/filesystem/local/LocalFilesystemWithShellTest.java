@@ -21,6 +21,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
+import io.agentscope.harness.agent.filesystem.ShellSyntax;
 import io.agentscope.harness.agent.filesystem.model.ExecuteResponse;
 import io.agentscope.harness.agent.workspace.LocalFsMode;
 import java.nio.charset.Charset;
@@ -29,6 +30,8 @@ import java.nio.file.Path;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 class LocalFilesystemWithShellTest {
 
@@ -36,19 +39,68 @@ class LocalFilesystemWithShellTest {
     void outputCharset_usesNativeEncodingOnWindows() {
         assertEquals(
                 Charset.forName("windows-1252"),
-                LocalFilesystemWithShell.outputCharset("Windows 10", "windows-1252"));
+                new ShellResolver.ResolvedShell("cmd.exe", "/c", ShellSyntax.CMD)
+                        .outputCharset("Windows 10", "windows-1252"));
     }
 
     @Test
     void outputCharset_usesUtf8OnNonWindowsSystems() {
-        assertEquals(StandardCharsets.UTF_8, LocalFilesystemWithShell.outputCharset("Linux"));
+        assertEquals(
+                StandardCharsets.UTF_8,
+                new ShellResolver.ResolvedShell("sh", "-c", ShellSyntax.POSIX)
+                        .outputCharset("Linux", "GBK"));
     }
 
     @Test
     void outputCharset_fallsBackToDefaultWhenWindowsNativeEncodingIsUnavailable() {
         assertEquals(
                 Charset.defaultCharset(),
-                LocalFilesystemWithShell.outputCharset("Windows 10", null));
+                new ShellResolver.ResolvedShell("cmd.exe", "/c", ShellSyntax.CMD)
+                        .outputCharset("Windows 10", null));
+    }
+
+    @Test
+    void outputCharset_usesUtf8ForPwshAndPosixShellsOnWindows() {
+        assertEquals(
+                StandardCharsets.UTF_8,
+                new ShellResolver.ResolvedShell("pwsh.exe", "-Command", ShellSyntax.POWERSHELL)
+                        .outputCharset("Windows 11", "GBK"));
+        assertEquals(
+                StandardCharsets.UTF_8,
+                new ShellResolver.ResolvedShell("bash.exe", "-c", ShellSyntax.POSIX)
+                        .outputCharset("Windows 11", "GBK"));
+        assertEquals(
+                Charset.forName("GBK"),
+                new ShellResolver.ResolvedShell(
+                                "powershell.exe", "-Command", ShellSyntax.POWERSHELL)
+                        .outputCharset("Windows 11", "GBK"));
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"pwsh", "bash"})
+    void execute_preservesConfiguredShellUnicodeOutput(String shell, @TempDir Path dir) {
+        assumeTrue(canResolve(shell), shell + " is not installed on this host");
+        LocalFilesystemWithShell fs =
+                new LocalFilesystemWithShell(
+                        dir,
+                        LocalFsMode.UNRESTRICTED,
+                        null,
+                        60,
+                        100_000,
+                        null,
+                        false,
+                        null,
+                        null,
+                        shell);
+        String command =
+                shell.equals("pwsh")
+                        ? "Write-Output ([string][char]0x4e2d + [char]0x6587)"
+                        : "printf '\\344\\270\\255\\346\\226\\207'";
+
+        ExecuteResponse response = fs.execute(null, command, 60);
+
+        assertEquals(0, response.exitCode(), response.output());
+        assertEquals("\u4e2d\u6587", response.output().strip());
     }
 
     @Test
