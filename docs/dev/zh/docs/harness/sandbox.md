@@ -275,7 +275,7 @@ spec:
           storage: 1Gi
 ```
 
-2. **注意 claim 的生命周期边界**。`shutdownTime` / `shutdownPolicy: Delete` 到期删除 Sandbox 后，PVC 模式的热恢复就失效了——下次 resume 找不到 claim，框架会新建沙箱（新 PVC 是空的）。能不能找回工作区，取决于第 3 条。
+2. **注意 claim 的生命周期边界**。`shutdownTime` / `shutdownPolicy: Delete` 到期删除 Sandbox 后，PVC 模式的热恢复就失效了——下次 resume 找不到 claim，框架会新建沙箱（新 PVC 是空的）。能不能找回工作区，取决于第 3 条。设置 `shutdownAfterSeconds(...)` 可写入此生命周期，让集群在进程异常退出后回收 claim；默认不设。设置后从创建时计时，resume 不续期，因此须覆盖整个沙箱会话的时长。
 
 3. **按需选 snapshotSpec**。PVC + `NoopSnapshotSpec`（默认）：省掉每次 call 结束的 tar 打包传输，代价是 claim 没了就冷启动；PVC + OSS / Redis 快照：双保险，claim 过期、PVC 丢失、跨集群迁移都能从快照冷恢复，代价是每次 call 结束多一次全量打包。
 
