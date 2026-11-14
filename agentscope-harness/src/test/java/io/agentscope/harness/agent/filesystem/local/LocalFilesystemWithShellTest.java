@@ -60,7 +60,7 @@ class LocalFilesystemWithShellTest {
     }
 
     @Test
-    void outputCharset_usesUtf8ForPwshAndPosixShellsOnWindows() {
+    void outputCharset_usesUtf8ForPowerShellAndPosixShellsOnWindows() {
         assertEquals(
                 StandardCharsets.UTF_8,
                 new ShellResolver.ResolvedShell("pwsh.exe", "-Command", ShellSyntax.POWERSHELL)
@@ -70,14 +70,14 @@ class LocalFilesystemWithShellTest {
                 new ShellResolver.ResolvedShell("bash.exe", "-c", ShellSyntax.POSIX)
                         .outputCharset("Windows 11", "GBK"));
         assertEquals(
-                Charset.forName("GBK"),
+                StandardCharsets.UTF_8,
                 new ShellResolver.ResolvedShell(
                                 "powershell.exe", "-Command", ShellSyntax.POWERSHELL)
                         .outputCharset("Windows 11", "GBK"));
     }
 
     @ParameterizedTest
-    @ValueSource(strings = {"pwsh", "bash"})
+    @ValueSource(strings = {"pwsh", "powershell", "bash"})
     void execute_preservesConfiguredShellUnicodeOutput(String shell, @TempDir Path dir) {
         assumeTrue(canResolve(shell), shell + " is not installed on this host");
         LocalFilesystemWithShell fs =
@@ -93,14 +93,17 @@ class LocalFilesystemWithShellTest {
                         null,
                         shell);
         String command =
-                shell.equals("pwsh")
+                !shell.equals("bash")
                         ? "Write-Output ([string][char]0x4e2d + [char]0x6587)"
                         : "printf '\\344\\270\\255\\346\\226\\207'";
 
         ExecuteResponse response = fs.execute(null, command, 60);
 
         assertEquals(0, response.exitCode(), response.output());
-        assertEquals("\u4e2d\u6587", response.output().strip());
+        assertEquals(
+                "\u4e2d\u6587",
+                response.output().strip(),
+                () -> "Output code points: " + response.output().codePoints().boxed().toList());
     }
 
     @Test
