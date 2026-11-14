@@ -23,8 +23,10 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.core.agent.ThreadKey;
 import io.agentscope.core.agent.test.MockModel;
 import io.agentscope.core.event.AgentEvent;
+import io.agentscope.core.journal.JournalProjection;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
@@ -35,23 +37,23 @@ import io.agentscope.core.middleware.ActingInput;
 import io.agentscope.core.middleware.MiddlewareBase;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.Model;
-import io.agentscope.core.session.SessionKey;
-import io.agentscope.core.session.SessionProjection;
 import io.agentscope.core.state.AgentState;
 import io.agentscope.core.state.AgentStateStore;
 import io.agentscope.core.state.InMemoryAgentStateStore;
 import io.agentscope.core.state.JsonFileAgentStateStore;
 import io.agentscope.harness.agent.filesystem.local.LocalFilesystem;
+import io.agentscope.harness.agent.journal.WorkspaceThreadJournalStore;
 import io.agentscope.harness.agent.middleware.SubagentEntry;
-import io.agentscope.harness.agent.session.WorkspaceSessionLogStore;
 import io.agentscope.harness.agent.subagent.SubagentDeclaration;
 import io.agentscope.harness.agent.subagent.WorkspaceMode;
 import io.agentscope.harness.agent.testing.HarnessQuiescence;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.util.EnumSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -183,6 +185,11 @@ class SubagentPendingToolRecoveryTest {
                         .middleware(
                                 new MiddlewareBase() {
                                     @Override
+                                    public Set<ExtensionPoint> activePoints() {
+                                        return EnumSet.of(ExtensionPoint.ON_ACTING);
+                                    }
+
+                                    @Override
                                     public Flux<AgentEvent> onActing(
                                             Agent agent,
                                             RuntimeContext context,
@@ -192,9 +199,9 @@ class SubagentPendingToolRecoveryTest {
                                     }
                                 });
 
-        SessionKey childKey;
+        ThreadKey childKey;
         try (HarnessAgent child = child(failingParent, declared)) {
-            childKey = child.sessionKey(context());
+            childKey = child.threadKey(context());
             assertSame(
                     failure,
                     assertThrows(
@@ -206,9 +213,9 @@ class SubagentPendingToolRecoveryTest {
         // bug.
         JsonFileAgentStateStore reopenedStore = new JsonFileAgentStateStore(stateDirectory);
         var reopenedLog =
-                new WorkspaceSessionLogStore(new LocalFilesystem(workspace.resolve("journal")))
+                new WorkspaceThreadJournalStore(new LocalFilesystem(workspace.resolve("journal")))
                         .open(childKey, context());
-        AgentState persisted = SessionProjection.read(reopenedLog).restore();
+        AgentState persisted = JournalProjection.read(reopenedLog).restore();
         assertTrue(
                 persisted.getContext().stream()
                         .flatMap(msg -> msg.getContentBlocks(ToolUseBlock.class).stream())
@@ -256,7 +263,7 @@ class SubagentPendingToolRecoveryTest {
                     recoveryModel.getLastMessages().stream()
                             .anyMatch(msg -> "continue".equals(msg.getTextContent())));
         }
-        assertEquals(1, results(SessionProjection.read(reopenedLog).restore().getContext()).size());
+        assertEquals(1, results(JournalProjection.read(reopenedLog).restore().getContext()).size());
     }
 
     @ParameterizedTest
@@ -290,6 +297,11 @@ class SubagentPendingToolRecoveryTest {
                         .middleware(
                                 new MiddlewareBase() {
                                     @Override
+                                    public Set<ExtensionPoint> activePoints() {
+                                        return EnumSet.of(ExtensionPoint.ON_ACTING);
+                                    }
+
+                                    @Override
                                     public Flux<AgentEvent> onActing(
                                             Agent agent,
                                             RuntimeContext context,
@@ -315,8 +327,9 @@ class SubagentPendingToolRecoveryTest {
             Flux.interval(Duration.ZERO, Duration.ofMillis(10))
                     .filter(
                             ignored ->
-                                    child.sessionLog(context()).head().owner() == null
-                                            && SessionProjection.read(child.sessionLog(context()))
+                                    child.threadJournal(context()).head().owner() == null
+                                            && JournalProjection.read(
+                                                            child.threadJournal(context()))
                                                     .activeRuns()
                                                     .isEmpty())
                     .next()
@@ -346,8 +359,8 @@ class SubagentPendingToolRecoveryTest {
                 .model(model)
                 .workspace(workspace)
                 .stateStore(store)
-                .sessionLogStore(
-                        new WorkspaceSessionLogStore(
+                .threadJournalStore(
+                        new WorkspaceThreadJournalStore(
                                 new LocalFilesystem(workspace.resolve("journal"))))
                 .disableFilesystemTools()
                 .disableShellTool()

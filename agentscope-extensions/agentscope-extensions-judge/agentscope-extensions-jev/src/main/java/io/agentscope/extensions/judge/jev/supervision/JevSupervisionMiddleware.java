@@ -17,6 +17,7 @@
 package io.agentscope.extensions.judge.jev.supervision;
 
 import io.agentscope.core.agent.Agent;
+import io.agentscope.core.agent.RunOutcome;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.event.AgentResultEvent;
@@ -25,12 +26,13 @@ import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.middleware.AgentInput;
 import io.agentscope.core.middleware.MiddlewareBase;
-import io.agentscope.core.session.SessionRecorder;
 import io.agentscope.extensions.judge.jev.JevExecution;
 import java.time.Duration;
 import java.util.ArrayDeque;
+import java.util.EnumSet;
 import java.util.List;
 import java.util.Objects;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 import java.util.function.BiConsumer;
@@ -99,6 +101,12 @@ public final class JevSupervisionMiddleware implements MiddlewareBase {
         this.supervisor = Objects.requireNonNull(supervisor);
         this.schedule = Objects.requireNonNull(schedule);
         this.observer = Objects.requireNonNull(observer);
+    }
+
+    /** Narrow declaration: subclasses overriding more hooks must extend this set. */
+    @Override
+    public Set<ExtensionPoint> activePoints() {
+        return EnumSet.of(ExtensionPoint.ON_AGENT);
     }
 
     @Override
@@ -208,11 +216,13 @@ public final class JevSupervisionMiddleware implements MiddlewareBase {
             if (type.startsWith("DATA_BLOCK_")) truncated = true;
             if (event instanceof AgentResultEvent result) {
                 if (ownEvent) {
-                    // Phase boundaries are not terminal outcomes; use the Session lifecycle.
-                    String outcome =
-                            SessionRecorder.outcome(result.getResult().getGenerateReason());
-                    workerFailed = outcome.equals("failed") || outcome.equals("interrupted");
-                    workerSuspended = outcome.equals("suspended");
+                    // Phase boundaries are not terminal outcomes; use invocation semantics.
+                    RunOutcome outcome =
+                            RunOutcome.fromReason(result.getResult().getGenerateReason());
+                    workerFailed =
+                            outcome.status() == RunOutcome.Status.FAILED
+                                    || outcome.status() == RunOutcome.Status.INTERRUPTED;
+                    workerSuspended = outcome.status() == RunOutcome.Status.SUSPENDED;
                 }
                 truncated |=
                         result.getResult().getContent().stream()

@@ -358,5 +358,11 @@ public final class GracefulShutdownManager {
         shutdownStartedAt.set(null);
         monitorStarted.set(false);
         shutdownTimeoutSignal.set(Sinks.empty());
+        // Config was previously left at whatever the last test set, so a later test
+        // asserting the default config (null timeout, SAVE policy) failed whenever the
+        // filesystem-ordered class run placed it after shutdownTimeoutSignal — a
+        // cross-test leak through this JVM-wide singleton observed locally under a
+        // clean rebuild. Reset it like every other field.
+        config.set(GracefulShutdownConfig.DEFAULT);
     }
 }

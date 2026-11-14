@@ -37,6 +37,7 @@ import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.AgentRun;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.event.AgentEvent;
+import io.agentscope.core.journal.InvocationRecorder;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
@@ -49,8 +50,9 @@ import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.Model;
 import io.agentscope.core.model.ModelRegistry;
 import io.agentscope.core.model.ToolSchema;
-import io.agentscope.core.session.SessionHistoryMode;
-import io.agentscope.core.session.SessionRecorder;
+import io.agentscope.core.permission.PermissionBehavior;
+import io.agentscope.core.permission.PermissionContextState;
+import io.agentscope.core.permission.PermissionRule;
 import io.agentscope.core.shutdown.GracefulShutdownMiddleware;
 import io.agentscope.core.skill.SkillFilter;
 import io.agentscope.core.state.AgentState;
@@ -72,6 +74,7 @@ import io.agentscope.harness.agent.filesystem.local.LocalFilesystem;
 import io.agentscope.harness.agent.filesystem.remote.store.InMemoryStore;
 import io.agentscope.harness.agent.filesystem.sandbox.SandboxBackedFilesystem;
 import io.agentscope.harness.agent.filesystem.spec.RemoteFilesystemSpec;
+import io.agentscope.harness.agent.journal.WorkspaceThreadJournalStore;
 import io.agentscope.harness.agent.memory.MemoryConfig;
 import io.agentscope.harness.agent.memory.compaction.CompactionConfig;
 import io.agentscope.harness.agent.middleware.AgentTraceMiddleware;
@@ -80,7 +83,6 @@ import io.agentscope.harness.agent.middleware.WorkspaceContextMiddleware;
 import io.agentscope.harness.agent.sandbox.SandboxAcquireResult;
 import io.agentscope.harness.agent.sandbox.SandboxContext;
 import io.agentscope.harness.agent.sandbox.SandboxException;
-import io.agentscope.harness.agent.session.WorkspaceSessionLogStore;
 import io.agentscope.harness.agent.subagent.AgentSpecLoader;
 import io.agentscope.harness.agent.subagent.SubagentDeclaration;
 import io.agentscope.harness.agent.subagent.WorkspaceMode;
@@ -92,8 +94,10 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.Comparator;
+import java.util.EnumSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -179,7 +183,7 @@ class HarnessAgentTest {
                         .toList();
         assertFalse(toolNames.contains("memory_search"));
         assertFalse(toolNames.contains("memory_get"));
-        assertFalse(toolNames.contains("session_search"));
+        assertFalse(toolNames.contains("thread_search"));
     }
 
     @Test
@@ -219,7 +223,7 @@ class HarnessAgentTest {
         try (HarnessAgent agent =
                 HarnessAgent.builder()
                         .name("t")
-                        .sessionHistoryMode(SessionHistoryMode.LEGACY)
+                        .journalEnabled(false)
                         .model(stubModel("ok"))
                         .workspace(workspace)
                         .abstractFilesystem(new LocalFilesystem(workspace))
@@ -232,6 +236,37 @@ class HarnessAgentTest {
 
             assertNotSame(target, delegate.getAgentState("u1", "sessA"));
             assertSame(other, delegate.getAgentState("u1", "sessB"));
+        }
+    }
+
+    @Test
+    void replacePermissionContext_delegatesTargetedSessionToReActAgent() throws Exception {
+        Files.createDirectories(workspace);
+        try (HarnessAgent agent =
+                HarnessAgent.builder()
+                        .name("t")
+                        .model(stubModel("ok"))
+                        .workspace(workspace)
+                        .abstractFilesystem(new LocalFilesystem(workspace))
+                        .build()) {
+            PermissionContextState replacement =
+                    PermissionContextState.builder()
+                            .addDenyRule(
+                                    "blocked_tool",
+                                    new PermissionRule(
+                                            "blocked_tool",
+                                            null,
+                                            PermissionBehavior.DENY,
+                                            "role-policy"))
+                            .build();
+
+            agent.replacePermissionContext("u1", "sessA", replacement);
+
+            ReActAgent delegate = agent.getDelegate();
+            assertEquals(replacement, delegate.getAgentState("u1", "sessA").getPermissionContext());
+            assertTrue(
+                    delegate.getAgentState("u2", "sessA").getPermissionContext().isTrivial(),
+                    "replacing one user's session must not alter another user's session");
         }
     }
 
@@ -392,8 +427,8 @@ class HarnessAgentTest {
                         .model(model)
                         .workspace(workspace)
                         .filesystem(spec)
-                        .sessionLogStore(
-                                new WorkspaceSessionLogStore(
+                        .threadJournalStore(
+                                new WorkspaceThreadJournalStore(
                                         new LocalFilesystem(workspace.resolve("journal"))))
                         .artifactDeliveryTarget((rc, request) -> ArtifactDeliveryResult.success())
                         .build();
@@ -418,8 +453,8 @@ class HarnessAgentTest {
                         .model(model)
                         .workspace(workspace)
                         .filesystem(spec)
-                        .sessionLogStore(
-                                new WorkspaceSessionLogStore(
+                        .threadJournalStore(
+                                new WorkspaceThreadJournalStore(
                                         new LocalFilesystem(workspace.resolve("journal"))))
                         .disableFilesystemTools()
                         .artifactDeliveryTarget((rc, request) -> ArtifactDeliveryResult.success())
@@ -630,6 +665,11 @@ class HarnessAgentTest {
                         .middleware(
                                 new MiddlewareBase() {
                                     @Override
+                                    public Set<ExtensionPoint> activePoints() {
+                                        return EnumSet.of(ExtensionPoint.ON_SYSTEM_PROMPT);
+                                    }
+
+                                    @Override
                                     public Mono<String> onSystemPrompt(
                                             Agent agent, RuntimeContext ctx, String currentPrompt) {
                                         seen.set(ctx);
@@ -668,6 +708,11 @@ class HarnessAgentTest {
                         .abstractFilesystem(agentFilesystem)
                         .middleware(
                                 new MiddlewareBase() {
+                                    @Override
+                                    public Set<ExtensionPoint> activePoints() {
+                                        return EnumSet.of(ExtensionPoint.ON_SYSTEM_PROMPT);
+                                    }
+
                                     @Override
                                     public Mono<String> onSystemPrompt(
                                             Agent agent, RuntimeContext ctx, String currentPrompt) {
@@ -713,6 +758,11 @@ class HarnessAgentTest {
                         .middleware(
                                 new MiddlewareBase() {
                                     @Override
+                                    public Set<ExtensionPoint> activePoints() {
+                                        return EnumSet.of(ExtensionPoint.ON_SYSTEM_PROMPT);
+                                    }
+
+                                    @Override
                                     public Mono<String> onSystemPrompt(
                                             Agent agent, RuntimeContext ctx, String currentPrompt) {
                                         seen.set(ctx);
@@ -726,7 +776,7 @@ class HarnessAgentTest {
         assertEquals(source.getSessionId(), seen.get().getSessionId());
         assertSame(sandboxContext, seen.get().get(SandboxContext.class));
         assertSame(agentFilesystem, seen.get().get(AbstractFilesystem.class));
-        assertNotNull(SessionRecorder.from(seen.get()));
+        assertNotNull(InvocationRecorder.from(seen.get()));
     }
 
     @Test
@@ -743,11 +793,16 @@ class HarnessAgentTest {
                         .model(stubModel("done"))
                         .workspace(workspace)
                         .filesystem(spec)
-                        .sessionLogStore(
-                                new WorkspaceSessionLogStore(
+                        .threadJournalStore(
+                                new WorkspaceThreadJournalStore(
                                         new LocalFilesystem(workspace.resolve("journal"))))
                         .middleware(
                                 new MiddlewareBase() {
+                                    @Override
+                                    public Set<ExtensionPoint> activePoints() {
+                                        return EnumSet.of(ExtensionPoint.ON_SYSTEM_PROMPT);
+                                    }
+
                                     @Override
                                     public Mono<String> onSystemPrompt(
                                             Agent agent, RuntimeContext ctx, String prompt) {
@@ -781,7 +836,7 @@ class HarnessAgentTest {
                 assertEquals(AgentRun.Status.RUNNING, run.status());
                 assertNotNull(active.get().get(SandboxAcquireResult.class));
                 SandboxAcquireResult acquired = active.get().get(SandboxAcquireResult.class);
-                var log = agent.sessionLog(active.get());
+                var log = agent.threadJournal(active.get());
                 assertTrue(run.cancel());
                 Flux.interval(Duration.ofMillis(10))
                         .filter(ignored -> acquired.isReleased() && log.head().owner() == null)
@@ -821,11 +876,16 @@ class HarnessAgentTest {
                         .model(model)
                         .workspace(workspace.toAbsolutePath().normalize().toString())
                         .filesystem(spec)
-                        .sessionLogStore(
-                                new WorkspaceSessionLogStore(
+                        .threadJournalStore(
+                                new WorkspaceThreadJournalStore(
                                         new LocalFilesystem(workspace.resolve("journal"))))
                         .middleware(
                                 new MiddlewareBase() {
+                                    @Override
+                                    public Set<ExtensionPoint> activePoints() {
+                                        return EnumSet.of(ExtensionPoint.ON_SYSTEM_PROMPT);
+                                    }
+
                                     @Override
                                     public Mono<String> onSystemPrompt(
                                             Agent agent, RuntimeContext ctx, String currentPrompt) {
@@ -1090,6 +1150,11 @@ class HarnessAgentTest {
                         .middleware(
                                 new MiddlewareBase() {
                                     @Override
+                                    public Set<ExtensionPoint> activePoints() {
+                                        return EnumSet.of(ExtensionPoint.ON_AGENT);
+                                    }
+
+                                    @Override
                                     public Flux<AgentEvent> onAgent(
                                             Agent agent,
                                             RuntimeContext ctx,
@@ -1157,6 +1222,11 @@ class HarnessAgentTest {
         AtomicInteger userMiddlewareHits = new AtomicInteger();
         MiddlewareBase userMiddleware =
                 new MiddlewareBase() {
+                    @Override
+                    public Set<ExtensionPoint> activePoints() {
+                        return EnumSet.of(ExtensionPoint.ON_AGENT);
+                    }
+
                     @Override
                     public Flux<AgentEvent> onAgent(
                             Agent agent,
@@ -1350,7 +1420,7 @@ class HarnessAgentTest {
                             "memory_search",
                             "memory_get",
                             "memory_save",
-                            "session_search",
+                            "thread_search",
                             "read_file",
                             "write_file",
                             "edit_file",

@@ -26,7 +26,7 @@ import java.util.Map;
  */
 public interface BaseStore {
     /** Explicit opt-in: versioned reads and durable cross-writer compare-and-set are supported. */
-    default boolean supportsAtomicSessionStorage() {
+    default boolean supportsAtomicJournalStorage() {
         return false;
     }
 

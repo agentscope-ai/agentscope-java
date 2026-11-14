@@ -31,7 +31,7 @@ This guide introduces the LLM models supported by AgentScope Java and how to con
 
 ## ModelRegistry
 
-[`ModelRegistry`](https://github.com/agentscope-ai/agentscope-java/blob/main/agentscope-core/src/main/java/io/agentscope/core/model/ModelRegistry.java) (`io.agentscope.core.model.ModelRegistry`) resolves a `Model` from a **string id**, so you do not have to call each vendor’s `*ChatModel.builder()` for simple setups. With Harness, use `HarnessAgent.builder().model(String)`; anywhere else that needs a `Model`, call `ModelRegistry.resolve(...)` and pass the result into `ReActAgent` or other builders.
+[`ModelRegistry`](https://github.com/agentscope-ai/agentscope-java/blob/v1.1.0-RC2/agentscope-core/src/main/java/io/agentscope/core/model/ModelRegistry.java) (`io.agentscope.core.model.ModelRegistry`) resolves a `Model` from a **string id**, so you do not have to call each vendor’s `*ChatModel.builder()` for simple setups. With Harness, use `HarnessAgent.builder().model(String)`; anywhere else that needs a `Model`, call `ModelRegistry.resolve(...)` and pass the result into `ReActAgent` or other builders.
 
 ### API summary
 

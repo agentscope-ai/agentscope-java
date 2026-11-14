@@ -17,7 +17,7 @@ package io.agentscope.dataagent.web.api;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
 import io.agentscope.core.agent.RuntimeContext;
-import io.agentscope.core.session.SessionTranscriptExport;
+import io.agentscope.core.journal.ThreadTranscriptExport;
 import io.agentscope.dataagent.runtime.DataAgentBootstrap;
 import io.agentscope.dataagent.runtime.session.HistoryResult;
 import io.agentscope.dataagent.runtime.session.SessionAgentManager;
@@ -300,7 +300,7 @@ public class SessionController {
                             .userId(entry.userId())
                             .sessionId(entry.sessionId())
                             .build();
-            return SessionTranscriptExport.jsonl(ha.sessionTranscript(rc));
+            return ThreadTranscriptExport.jsonl(ha.threadTranscript(rc));
         }
         HistoryResult raw = sessionAgentManager.history(entry.sessionKey(), 0);
         return raw != null && raw.error() == null && raw.content() != null ? raw.content() : "";

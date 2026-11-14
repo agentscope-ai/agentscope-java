@@ -15,6 +15,7 @@
  */
 package io.agentscope.harness.agent.sandbox;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import io.agentscope.harness.agent.sandbox.layout.WorkspaceEntry;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -43,6 +44,7 @@ import java.util.Map;
 public class WorkspaceSpec {
 
     private String root = "/workspace";
+    @JsonIgnore private boolean rootExplicitlySet;
     private Map<String, WorkspaceEntry> entries = new LinkedHashMap<>();
     private Map<String, String> environment = new LinkedHashMap<>();
 
@@ -54,6 +56,18 @@ public class WorkspaceSpec {
 
     public void setRoot(String root) {
         this.root = root;
+        this.rootExplicitlySet = true;
+    }
+
+    /**
+     * Whether the root was explicitly supplied rather than left at its default.
+     * This configuration metadata is not persisted; a root read from JSON is explicit.
+     *
+     * @return whether {@link #setRoot(String)} was called
+     */
+    @JsonIgnore
+    public boolean isRootExplicitlySet() {
+        return rootExplicitlySet;
     }
 
     public Map<String, WorkspaceEntry> getEntries() {
@@ -79,6 +93,7 @@ public class WorkspaceSpec {
     public WorkspaceSpec copy() {
         WorkspaceSpec copy = new WorkspaceSpec();
         copy.root = this.root;
+        copy.rootExplicitlySet = this.rootExplicitlySet;
         copy.entries = new LinkedHashMap<>(this.entries);
         copy.environment = new LinkedHashMap<>(this.environment);
         return copy;

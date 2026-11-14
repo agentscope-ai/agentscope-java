@@ -23,9 +23,9 @@ HarnessAgent agent = HarnessAgent.builder()
 
 ## Capability Matrix
 
-| Component | Interface | Redis | OSS | JDBC | MongoDB |
+| Component | Interface | Redis | OSS | MySQL | MongoDB |
 |-----------|----------|:-----:|:---:|:-----:|:-------:|
-| Agent state persistence | `AgentStateStore` | `RedisAgentStateStore` | `OssAgentStateStore` | `JdbcAgentStateStore` | `MongoAgentStateStore` |
+| Agent state persistence | `AgentStateStore` | `RedisAgentStateStore` | `OssAgentStateStore` | `MysqlAgentStateStore` | `MongoAgentStateStore` |
 | Workspace filesystem KV | `BaseStore` | `RedisStore` | `OssBaseStore` | `JdbcStore` | `MongoBaseStore` |
 | Sandbox snapshots | `SandboxSnapshotSpec` | `RedisSnapshotSpec` | `OssSnapshotSpec` | `JdbcSnapshotSpec` | `MongoSnapshotSpec` |
 | Sandbox concurrency lock | `SandboxExecutionGuard` | `RedisSandboxExecutionGuard` | — | `JdbcSandboxExecutionGuard` | `MongoSandboxExecutionGuard` |
@@ -37,13 +37,13 @@ HarnessAgent agent = HarnessAgent.builder()
 Different components can come from different storage stores:
 
 ```java
-DistributedStore jdbc = JdbcDistributedStore.create(dataSource);
+DistributedStore mysql = MysqlDistributedStore.create(dataSource);
 DistributedStore redis = RedisDistributedStore.fromJedis(jedis);
 
-// JDBC for state and files, Redis for sandbox lock and snapshots
+// MySQL for state and files, Redis for sandbox lock and snapshots
 DistributedStore mixed = DistributedStore.builder()
-    .agentStateStore(jdbc.agentStateStore())
-    .baseStore(jdbc.baseStore())
+    .agentStateStore(mysql.agentStateStore())
+    .baseStore(mysql.baseStore())
     .sandboxSnapshotSpec(redis.sandboxSnapshotSpec())
     .sandboxExecutionGuard(redis.sandboxExecutionGuard())
     .build();
@@ -84,13 +84,13 @@ Explicit builder methods (.stateStore(), .snapshotSpec() on FilesystemSpec, etc.
 ## Store Documentation
 
 - [Redis](/v2/en/integration/distributed/redis) — full capability coverage, recommended for multi-replica production
-- [JDBC](/v2/en/integration/distributed/jdbc) — for existing relational database infrastructure
+- [MySQL / JDBC](/v2/en/integration/distributed/mysql) — for existing relational database infrastructure
 - [MongoDB](/v2/en/integration/distributed/mongodb) — document-oriented storage, ideal for large conversation histories
 - [Alibaba Cloud OSS](/v2/en/integration/distributed/oss) — object storage, best for large-capacity snapshots
 
-## Control Plane Hosted Store
+## aistio Hosted Store
 
-When you already run an AgentScope Service Control Plane, it can host the coordination side of `DistributedStore` (BaseStore, sandbox lock/snapshot, MessageBus, AsyncToolRegistry, **TaskRepository**, optional **SessionTurnGate**). You still provide **one** `AgentStateStore` backend yourself (Redis / JDBC / OSS); core exposes `getVersioned` / `saveIfVersion` optimistic concurrency, but state storage stays off the control plane.
+When you already run an aistio control plane, it can host the coordination side of `DistributedStore` (BaseStore, sandbox lock/snapshot, MessageBus, AsyncToolRegistry, **TaskRepository**, optional **SessionTurnGate**). You still provide **one** `AgentStateStore` backend yourself (Redis / MySQL / Postgres / OSS); core exposes `getVersioned` / `saveIfVersion` optimistic concurrency, but state storage stays off the control plane.
 
 ```java
 ControlPlaneStores cp = ControlPlaneStores.fromEnv();

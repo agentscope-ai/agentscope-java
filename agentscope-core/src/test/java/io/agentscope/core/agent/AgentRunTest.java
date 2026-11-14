@@ -18,6 +18,7 @@ package io.agentscope.core.agent;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.ReActAgent;
@@ -27,7 +28,9 @@ import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.UserMessage;
 import io.agentscope.core.middleware.MiddlewareBase;
 import java.time.Duration;
+import java.util.EnumSet;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
@@ -192,6 +195,11 @@ class AgentRunTest {
         MiddlewareBase retry =
                 new MiddlewareBase() {
                     @Override
+                    public Set<ExtensionPoint> activePoints() {
+                        return EnumSet.of(ExtensionPoint.ON_AGENT, ExtensionPoint.ON_SYSTEM_PROMPT);
+                    }
+
+                    @Override
                     public Flux<io.agentscope.core.event.AgentEvent> onAgent(
                             Agent agent,
                             RuntimeContext ctx,
@@ -239,6 +247,11 @@ class AgentRunTest {
         MiddlewareBase nested =
                 new MiddlewareBase() {
                     @Override
+                    public Set<ExtensionPoint> activePoints() {
+                        return EnumSet.of(ExtensionPoint.ON_SYSTEM_PROMPT);
+                    }
+
+                    @Override
                     public Mono<String> onSystemPrompt(
                             Agent agent, RuntimeContext ctx, String prompt) {
                         if (ctx.get(Label.class).value().equals("parent")) {
@@ -273,12 +286,12 @@ class AgentRunTest {
     private record Label(String value) {}
 
     @Test
-    void preparedCallRunIdMatchesContextRunId() {
+    void preparedCallAllocatesRunOrAdoptsExplicitIdentity() {
         try (ReActAgent agent =
                 ReActAgent.builder().name("runid-match").model(new MockModel("done")).build()) {
             RuntimeContext ctx = context("a", "runid-session");
             AgentRun<Msg> run = agent.prepareCall(input(), ctx);
-            assertEquals(ctx.getRunId(), run.runId());
+            assertNull(ctx.getRunId());
             assertNotNull(run.runId());
 
             RuntimeContext explicit = RuntimeContext.builder().runId("explicit-run-id").build();
@@ -292,6 +305,11 @@ class AgentRunTest {
         ConcurrentLinkedQueue<String> observed = new ConcurrentLinkedQueue<>();
         MiddlewareBase recorder =
                 new MiddlewareBase() {
+                    @Override
+                    public Set<ExtensionPoint> activePoints() {
+                        return EnumSet.of(ExtensionPoint.ON_SYSTEM_PROMPT);
+                    }
+
                     @Override
                     public Mono<String> onSystemPrompt(
                             Agent agent, RuntimeContext ctx, String prompt) {
@@ -338,6 +356,11 @@ class AgentRunTest {
                 new ConcurrentHashMap<>();
         private final ConcurrentHashMap<String, Sinks.One<String>> admissions =
                 new ConcurrentHashMap<>();
+
+        @Override
+        public Set<ExtensionPoint> activePoints() {
+            return EnumSet.of(ExtensionPoint.ON_SYSTEM_PROMPT);
+        }
 
         @Override
         public Mono<String> onSystemPrompt(Agent agent, RuntimeContext ctx, String prompt) {

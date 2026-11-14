@@ -17,6 +17,7 @@ package io.agentscope.harness.agent.memory;
 
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.formatter.DocumentReferenceRenderer;
+import io.agentscope.core.journal.JournalException;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.DocumentBlock;
 import io.agentscope.core.message.Msg;
@@ -30,6 +31,8 @@ import io.agentscope.harness.agent.context.ContextModelCalls;
 import io.agentscope.harness.agent.memory.compaction.ConversationCompactor;
 import io.agentscope.harness.agent.workspace.WorkspaceConstants;
 import io.agentscope.harness.agent.workspace.WorkspaceManager;
+import java.time.Clock;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
@@ -121,7 +124,7 @@ public class MemoryFlushManager {
         }
 
         String existingMemory = readExistingContent(rc, WorkspaceConstants.MEMORY_MD);
-        String today = LocalDate.now().format(DateTimeFormatter.ISO_LOCAL_DATE);
+        String today = LocalDate.now(clock(rc)).format(DateTimeFormatter.ISO_LOCAL_DATE);
         String dailyRelPath = WorkspaceConstants.MEMORY_DIR + "/" + today + ".md";
         String existingDaily = readExistingContent(rc, dailyRelPath);
 
@@ -193,15 +196,19 @@ public class MemoryFlushManager {
      * curated, size-bounded MEMORY.md.
      */
     private void writeMemoryFiles(RuntimeContext rc, String content) {
-        String today = LocalDate.now().format(DateTimeFormatter.ISO_LOCAL_DATE);
+        String today = LocalDate.now(clock(rc)).format(DateTimeFormatter.ISO_LOCAL_DATE);
 
         String dailyEntry =
                 String.format(
-                        "\n## Memory Flush — %s\n%s\n",
-                        java.time.Instant.now().toString(), content);
+                        "\n## Memory Flush — %s\n%s\n", Instant.now(clock(rc)).toString(), content);
 
         String dailyRelPath = WorkspaceConstants.MEMORY_DIR + "/" + today + ".md";
         workspaceManager.appendMemoryFileUtf8(rc, dailyRelPath, dailyEntry);
+    }
+
+    private static Clock clock(RuntimeContext context) {
+        Clock supplied = context == null ? null : context.get(Clock.class);
+        return supplied == null ? Clock.systemDefaultZone() : supplied;
     }
 
     private String readExistingContent(RuntimeContext rc, String relativePath) {
@@ -209,6 +216,9 @@ public class MemoryFlushManager {
             String content = workspaceManager.readMemoryFileUtf8(rc, relativePath);
             return content != null ? content : "";
         } catch (Exception e) {
+            if (JournalException.causedBy(e))
+                throw new JournalException(
+                        "Memory read cannot advance without its recorded outcome", e);
             log.debug("Could not read {}: {}", relativePath, e.getMessage());
             return "";
         }

@@ -152,7 +152,15 @@ public class ToolCallsAccumulator implements ContentAccumulator<ToolUseBlock> {
             Map<String, Object> finalMetadata = metadata;
             boolean malformed;
             if (rawContentStr.isEmpty()) {
-                contentStr = "{}";
+                // No argument fragments arrived — the provider sent the parsed input only
+                // (single-chunk or non-streaming responses). Serialize that input instead of
+                // fabricating "{}": every content-first consumer (required-parameter
+                // validation, request builders, compaction) would otherwise see empty
+                // arguments while the intact input map sits beside them. A serialization
+                // failure falls back to "{}" (the same recovery resolveToolCallArgsJson
+                // uses) instead of failing the reply stream.
+                contentStr =
+                        finalArgs.isEmpty() ? "{}" : JsonUtils.toJsonFallbackEmptyObject(finalArgs);
                 // Without a completed block or any parsed arguments, an output-limit stop
                 // cannot establish that an empty tool-call start was a complete no-arg call.
                 malformed = truncated && finalArgs.isEmpty();

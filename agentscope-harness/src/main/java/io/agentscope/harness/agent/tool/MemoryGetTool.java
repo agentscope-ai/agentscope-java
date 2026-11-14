@@ -40,7 +40,8 @@ public class MemoryGetTool {
             readOnly = true,
             description =
                     "Read specific lines from a memory file. Use after memory_search to pull"
-                            + " full context around matched lines. Path is relative to workspace.")
+                            + " full context around matched lines. Path is relative to the"
+                            + " caller's memory namespace.")
     public ToolResultBlock memoryGet(
             RuntimeContext runtimeContext,
             @ToolParam(
@@ -56,13 +57,24 @@ public class MemoryGetTool {
         if (path == null || path.isBlank()) {
             return ToolResultBlock.error("path is required");
         }
-
-        Path resolved = workspaceManager.getWorkspace().resolve(path).normalize();
-        if (!resolved.startsWith(workspaceManager.getWorkspace())) {
+        // Use the manager's own rule so the two checks cannot drift; it also normalizes leading
+        // whitespace and slashes, so "  ../x" still names a traversal.
+        try {
+            WorkspaceManager.requireSafeRelativePath(path);
+        } catch (IllegalArgumentException e) {
             return ToolResultBlock.error("path traversal not allowed");
         }
 
         RuntimeContext rc = runtimeContext != null ? runtimeContext : RuntimeContext.empty();
+
+        // Containment on the spelled path, which differs from the relative spelling once a
+        // namespace applies; readMemoryFileUtf8 below does the real isolation.
+        Path workspace = workspaceManager.getWorkspace();
+        Path resolved = workspaceManager.resolveRuntimeDataPath(rc, path).normalize();
+        if (!resolved.startsWith(workspace)) {
+            return ToolResultBlock.error("path must be relative to the memory namespace: " + path);
+        }
+
         String text = workspaceManager.readMemoryFileUtf8(rc, path);
         if (text == null || text.isBlank()) {
             return ToolResultBlock.error("file not found: " + path);

@@ -42,6 +42,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Test Maven release version and module selection checks
+        run: python3 -m unittest discover -s .github/scripts/tests -p 'test_maven_release_version.py' -v
       - name: Check extension modules are synced to agentscope-all and agentscope-bom
         run: |
           chmod +x .github/scripts/check-shade-and-bom-sync.sh
@@ -102,12 +104,10 @@ jobs:
       - name: Build and Test with Coverage [Windows]
         if: runner.os == 'Windows'
         run: |
-          # -T1C: one thread per core (see Linux step). Standard Maven, no mvnd —
-          # mvnd's parallel builds hit spotless lock contention and its embedded
-          # distribution broke Surefire IPC.
-          # Skip release-only artifacts (javadoc/source jars) and JaCoCo: coverage is only
-          # uploaded from Linux, so instrumentation on Windows is pure overhead.
-          mvn -B -T1C "-Dmaven.javadoc.skip=true" "-Dmaven.source.skip=true" "-Djacoco.skip=true" clean verify
+          # Use standard Maven because mvnd's embedded distribution broke Surefire IPC.
+          # Linux provides full coverage for process-heavy durable modules and examples whose
+          # child JVM and detached-process timing is not stable on hosted Windows runners.
+          mvn -B -T1C "-Dmaven.javadoc.skip=true" "-Dmaven.source.skip=true" "-Djacoco.skip=true" "-DskipDurableWindowsTests=true" clean verify
 
       - name: Upload coverage reports to Codecov
         # Secrets are unavailable to fork PRs, and Codecov rejects tokenless uploads to a

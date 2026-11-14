@@ -133,7 +133,7 @@ class HarnessAgentOverflowRecoveryTest {
                 .workspace(workspace)
                 .toolkit(toolkit)
                 // Overflow recovery only runs on the legacy state-store path.
-                .legacySessionHistory(true)
+                .journalEnabled(false)
                 .stateStore(store)
                 .compaction(CompactionConfig.builder().triggerMessages(1_000).build())
                 .memory(

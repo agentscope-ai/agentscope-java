@@ -64,8 +64,8 @@ import java.util.Map;
 public class CompositeFilesystem implements AbstractFilesystem {
 
     @Override
-    public io.agentscope.core.session.AtomicSessionStorage sessionStorage(RuntimeContext rc) {
-        return routeForPath("agents/").backend().sessionStorage(rc);
+    public io.agentscope.core.journal.AtomicJournalStorage journalStorage(RuntimeContext rc) {
+        return routeForPath("agents/").backend().journalStorage(rc);
     }
 
     private final AbstractFilesystem defaultBackend;

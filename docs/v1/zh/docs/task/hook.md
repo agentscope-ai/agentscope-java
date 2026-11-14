@@ -205,7 +205,7 @@ public class ErrorHandlingHook implements Hook {
 ## 完整示例
 
 查看完整的 Hook 示例：
-- [HookExample.java](https://github.com/agentscope-ai/agentscope-java/blob/main/agentscope-examples/documentation/quickstart/src/main/java/io/agentscope/examples/quickstart/HookExample.java)
+- [HookExample.java](https://github.com/agentscope-ai/agentscope-java/blob/v1.0.11/agentscope-examples/quickstart/src/main/java/io/agentscope/examples/quickstart/HookExample.java)
 
 运行示例：
 ```bash

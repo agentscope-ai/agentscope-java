@@ -23,12 +23,12 @@ import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.event.AgentEvent;
+import io.agentscope.core.journal.JournalException;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.middleware.ModelCallInput;
 import io.agentscope.core.middleware.ReasoningInput;
 import io.agentscope.core.model.Model;
-import io.agentscope.core.session.SessionLogException;
 import io.agentscope.core.state.AgentState;
 import io.agentscope.core.util.ExceptionUtils;
 import io.agentscope.core.util.JsonException;
@@ -150,12 +150,17 @@ public class CompactionMiddleware implements HarnessRuntimeMiddleware {
     public HarnessRuntimeMiddleware overflowRecovery() {
         return new HarnessRuntimeMiddleware() {
             @Override
+            public Set<ExtensionPoint> activePoints() {
+                return EnumSet.of(ExtensionPoint.ON_REASONING);
+            }
+
+            @Override
             public Flux<AgentEvent> onReasoning(
                     Agent agent,
                     RuntimeContext ctx,
                     ReasoningInput input,
                     Function<ReasoningInput, Flux<AgentEvent>> next) {
-                if (!(agent instanceof ReActAgent react) || !react.sessionLogEnabled())
+                if (!(agent instanceof ReActAgent react) || !react.journalEnabled())
                     return next.apply(input);
                 AgentState initialState = RuntimeContext.resolveAgentState(ctx, agent);
                 List<Msg> initialHistory =
@@ -164,7 +169,7 @@ public class CompactionMiddleware implements HarnessRuntimeMiddleware {
                         .onErrorResume(
                                 error -> {
                                     if (ExceptionUtils.containsInterruptedException(error)
-                                            || SessionLogException.causedBy(error)
+                                            || JournalException.causedBy(error)
                                             || !isContextOverflowError(error))
                                         return Flux.error(error);
                                     AgentState state = RuntimeContext.resolveAgentState(ctx, agent);
@@ -364,7 +369,7 @@ public class CompactionMiddleware implements HarnessRuntimeMiddleware {
                             .onErrorResume(
                                     error -> {
                                         if (ExceptionUtils.containsInterruptedException(error)
-                                                || SessionLogException.causedBy(error))
+                                                || JournalException.causedBy(error))
                                             return Mono.error(error);
                                         log.warn(
                                                 "Compaction failed; final request budget validation"
