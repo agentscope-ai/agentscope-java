@@ -649,10 +649,13 @@ public final class HarnessGateway implements Gateway, WakeupDispatcher.WakeupTar
             return Mono.empty();
         }
         RuntimeContext.Builder rtcBuilder =
-                RuntimeContext.builder()
-                        .sessionId(sessionId)
-                        .put("gateKey", gateKey)
-                        .put("outboundAddress", resolveRoute(sessionId));
+                RuntimeContext.builder().sessionId(sessionId).put("gateKey", gateKey);
+        OutboundAddress outboundRoute = resolveRoute(sessionId);
+        if (outboundRoute == null) {
+            log.debug("runWakeup: no outbound route for sessionId={}", sessionId);
+        } else {
+            rtcBuilder.put("outboundAddress", outboundRoute);
+        }
         if (userId != null && !userId.isBlank()) {
             rtcBuilder.userId(userId);
         }
