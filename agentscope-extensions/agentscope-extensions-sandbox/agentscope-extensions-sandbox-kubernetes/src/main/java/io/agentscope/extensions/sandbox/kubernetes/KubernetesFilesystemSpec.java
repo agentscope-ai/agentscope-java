@@ -93,6 +93,19 @@ public class KubernetesFilesystemSpec extends SandboxFilesystemSpec {
         return this;
     }
 
+    /**
+     * Sets the lifetime of newly created SandboxClaims. Resuming a claim does not renew it.
+     *
+     * @param seconds positive lifetime in seconds, or null to inherit client defaults (normally
+     *     no lifecycle)
+     * @return this spec
+     * @throws IllegalArgumentException if seconds is zero or negative
+     */
+    public KubernetesFilesystemSpec shutdownAfterSeconds(Long seconds) {
+        options.setShutdownAfterSeconds(seconds);
+        return this;
+    }
+
     public KubernetesFilesystemSpec snapshotSpec(SandboxSnapshotSpec snapshotSpec) {
         this.snapshotSpec = snapshotSpec;
         return this;
