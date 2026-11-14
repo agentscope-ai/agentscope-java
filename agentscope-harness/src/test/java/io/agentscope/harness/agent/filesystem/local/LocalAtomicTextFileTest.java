@@ -51,6 +51,30 @@ import org.mockito.MockedStatic;
 class LocalAtomicTextFileTest {
     @TempDir Path directory;
 
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void conditionalFilesRespectTheContentBoundary(boolean exists) throws Exception {
+        Path hidden = directory.resolve("hidden.md");
+        if (exists) Files.writeString(hidden, "private");
+        LocalFilesystem filesystem =
+                new LocalFilesystem(directory) {
+                    @Override
+                    protected boolean isHiddenFromCaller(Path path) {
+                        return path.equals(hidden);
+                    }
+                };
+
+        assertThrows(
+                SecurityException.class,
+                () -> filesystem.atomicTextFile(RuntimeContext.empty(), "hidden.md", false));
+        assertEquals(exists, Files.exists(hidden));
+        if (exists) assertEquals("private", Files.readString(hidden));
+        AtomicTextFile visible =
+                filesystem.atomicTextFile(RuntimeContext.empty(), "visible.md", false);
+        assertTrue(visible.compareAndSet(null, "public"));
+        assertEquals("public", visible.read());
+    }
+
     @Test
     void missingEmptyAndIoFailureAreDifferentStates() throws Exception {
         AtomicTextFile file = new LocalAtomicTextFile(directory.resolve("nested/state.json"));

@@ -308,7 +308,11 @@ public class LocalFilesystem implements AbstractFilesystem {
     @Override
     public io.agentscope.harness.agent.filesystem.AtomicTextFile atomicTextFile(
             RuntimeContext rc, String path, boolean inheritLower) {
-        return new LocalAtomicTextFile(resolvePath(rc, path));
+        Path resolved = resolvePath(rc, path);
+        if (isHiddenFromCaller(resolved)) {
+            throw new SecurityException("Path not found: " + path);
+        }
+        return new LocalAtomicTextFile(resolved);
     }
 
     @Override
@@ -693,6 +697,11 @@ public class LocalFilesystem implements AbstractFilesystem {
     public io.agentscope.core.journal.AtomicJournalStorage journalStorage(RuntimeContext rc) {
         return new io.agentscope.harness.agent.journal.LocalJournalStorage(
                 resolvePath(rc, ".").resolve(".agentscope-runtime"));
+    }
+
+    /** Whether content access must hide a resolved path; subclasses can restrict it further. */
+    protected boolean isHiddenFromCaller(Path path) {
+        return false;
     }
 
     protected Path resolvePath(RuntimeContext rc, String key) {
