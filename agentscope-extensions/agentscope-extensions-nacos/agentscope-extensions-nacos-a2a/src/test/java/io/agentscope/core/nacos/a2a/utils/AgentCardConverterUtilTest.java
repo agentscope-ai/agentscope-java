@@ -430,16 +430,16 @@ class AgentCardConverterUtilTest {
         extension.setParams(
                 Map.of("formats", List.of("json", "text"), "nested", Map.of("enabled", true)));
         card.getCapabilities().setExtensions(List.of(extension));
-        io.a2a.spec.AgentCard converted = AgentCardConverterUtil.convertToA2aAgentCard(card);
-        io.a2a.spec.AgentExtension result = converted.capabilities().extensions().get(0);
+        org.a2aproject.sdk.spec.AgentCard converted =
+                AgentCardConverterUtil.convertToA2aAgentCard(card);
+        org.a2aproject.sdk.spec.AgentExtension result =
+                converted.capabilities().extensions().get(0);
         assertEquals(extension.getUri(), result.uri());
         assertEquals(extension.getDescription(), result.description());
         assertTrue(result.required());
         assertEquals(extension.getParams(), result.params());
-        assertTrue(converted.capabilities().stateTransitionHistory());
         AgentCard roundTrip = AgentCardConverterUtil.convertToNacosAgentCard(converted);
         assertEquals(List.of(extension), roundTrip.getCapabilities().getExtensions());
-        assertTrue(roundTrip.getCapabilities().getStateTransitionHistory());
         assertEquals(
                 converted.capabilities().extensions(),
                 AgentCardConverterUtil.convertToA2aAgentCard(roundTrip)
@@ -455,7 +455,8 @@ class AgentCardConverterUtilTest {
         extension.setUri("https://example.com/extensions/optional");
         extension.setRequired(null);
         card.getCapabilities().setExtensions(List.of(extension));
-        io.a2a.spec.AgentCard converted = AgentCardConverterUtil.convertToA2aAgentCard(card);
+        org.a2aproject.sdk.spec.AgentCard converted =
+                AgentCardConverterUtil.convertToA2aAgentCard(card);
         assertFalse(converted.capabilities().extensions().get(0).required());
         assertNull(converted.capabilities().extensions().get(0).description());
         assertNull(converted.capabilities().extensions().get(0).params());
@@ -465,7 +466,8 @@ class AgentCardConverterUtilTest {
     void testNullAndEmptyExtensionsRoundTrip() {
         AgentCard card = createSampleNacosAgentCard();
         card.getCapabilities().setExtensions(null);
-        io.a2a.spec.AgentCard converted = AgentCardConverterUtil.convertToA2aAgentCard(card);
+        org.a2aproject.sdk.spec.AgentCard converted =
+                AgentCardConverterUtil.convertToA2aAgentCard(card);
         assertNull(converted.capabilities().extensions());
         assertNull(
                 AgentCardConverterUtil.convertToNacosAgentCard(converted)
@@ -479,7 +481,6 @@ class AgentCardConverterUtilTest {
                 AgentCardConverterUtil.convertToNacosAgentCard(converted)
                         .getCapabilities()
                         .getExtensions());
-        assertTrue(converted.capabilities().stateTransitionHistory());
     }
 
     /**
