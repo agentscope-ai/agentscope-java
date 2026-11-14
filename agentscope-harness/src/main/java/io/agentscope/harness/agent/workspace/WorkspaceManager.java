@@ -381,9 +381,21 @@ public class WorkspaceManager implements AutoCloseable {
             delegate = new LocalAtomicTextFile(workspace.resolve(normalized));
         } else {
             // Consumption metadata belongs to the writable namespace, not shared memory.
-            delegate =
-                    filesystem.atomicTextFile(
-                            rc, normalized, !normalized.startsWith(MEMORY_DIR + "/.flush-state/"));
+            try {
+                delegate =
+                        filesystem.atomicTextFile(
+                                rc,
+                                normalized,
+                                !normalized.startsWith(MEMORY_DIR + "/.flush-state/"));
+            } catch (UnsupportedOperationException unsupported) {
+                throw new UnsupportedOperationException(
+                        "Memory backend "
+                                + filesystem.getClass().getName()
+                                + " requires atomicTextFile for "
+                                + normalized
+                                + "; enable conditional writes on this backend and retry",
+                        unsupported);
+            }
         }
         return new AtomicTextFile() {
             @Override

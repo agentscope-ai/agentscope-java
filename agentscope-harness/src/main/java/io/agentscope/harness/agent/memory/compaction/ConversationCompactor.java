@@ -57,8 +57,8 @@ import reactor.core.publisher.Mono;
  *   <li><b>Check trigger</b> — token count or message count exceeds threshold</li>
  *   <li><b>Determine cutoff</b> — find the earliest index that keeps the tail within the
  *       "keep" budget; never split an ASSISTANT tool-call from its TOOL result(s)</li>
- *   <li><b>Memory flush</b> (optional) — extract long-term memories from the prefix via
- *       {@link MemoryFlushManager#flushMemories}</li>
+ *   <li><b>Retain originals</b> — native execution journals them; legacy execution can
+ *       extract memories via {@link MemoryFlushManager#flushMemories}</li>
  *   <li><b>Summarize</b> — one LLM call to distill the prefix into a structured summary</li>
  *   <li><b>Rebuild</b> — return {@code [summaryUserMsg] + preservedTail}</li>
  * </ol>
@@ -132,6 +132,8 @@ public class ConversationCompactor {
             String agentId,
             String sessionId) {
         var recorder = InvocationRecorder.from(rc);
+        if (recorder != null && conversationMessages != null)
+            recorder.captureMessages(conversationMessages);
         int beforeMsgCount = conversationMessages == null ? 0 : conversationMessages.size();
         long beforeTokenCount = tokenCounter.applyAsLong(conversationMessages);
         boolean triggered =
@@ -296,9 +298,9 @@ public class ConversationCompactor {
                 cutoff,
                 tail.size());
 
-        // Step 2: Flush long-term memories only from newly compacted raw messages (best-effort).
+        // Legacy execution extracts before replacement; native execution consumes its journal.
         Mono<Void> flushStep =
-                config.isFlushBeforeCompact()
+                config.isFlushBeforeCompact() && InvocationRecorder.from(rc) == null
                         ? flushManager
                                 .flushMemories(rc, flushInput)
                                 .doOnSuccess(v -> log.debug("Memory flush before compaction done"))

@@ -23,7 +23,7 @@ en_link: /dev/en/docs/harness/memory
 
 | # | 操作 | 写入目标 | Prompt 默认值 | 定制入口 |
 |---|------|----------|---------------|----------|
-| 1 | **Flush** —— 从对话窗口抽取长期事实 | `memory/YYYY-MM-DD.md`（追加） | `MemoryFlushManager.DEFAULT_FLUSH_PROMPT` | `MemoryConfig.builder().flushPrompt(...)` |
+| 1 | **Flush** —— 从原始消息抽取长期事实 | `memory/YYYY-MM-DD.md`（追加） | `MemoryFlushManager.DEFAULT_FLUSH_PROMPT` | `MemoryConfig.builder().flushPrompt(...)` |
 | 2 | **Consolidation** —— 把每日流水账合并到 `MEMORY.md` | `MEMORY.md`（整体重写） | `MemoryConsolidator.DEFAULT_CONSOLIDATION_PROMPT` | `MemoryConfig.builder().consolidationPrompt(...)` |
 | 3 | **Compaction summary** —— 把对话前缀蒸馏成一条摘要消息 | 注入到当前上下文 | `CompactionConfig.DEFAULT_SUMMARY_PROMPT` | `CompactionConfig.builder().summaryPrompt(...)` |
 
@@ -38,7 +38,7 @@ graph LR
     Flush -->|提炼新事实| Daily["memory/YYYY-MM-DD.md"]
     Conv -->|超阈值| Compactor["对话压缩"]
     Conv -->|执行事实提交| Sess["原生 Thread 日志"]
-    Compactor -->|压缩前再 flush 一次| Flush
+    Sess -->|尚未消费的原始消息| Flush
     Daily -. 节流后台 Consolidation .-> MEM["MEMORY.md"]
     MEM -->|每次 call 加载| SYS["HARNESS_CONTEXT 参考消息"]
 ```
@@ -49,19 +49,31 @@ graph LR
 - 第二层永远是 LLM 注入提示的来源；第一层等待被合并。
 - 原生 Thread 日志 已记录完整消息与执行事实；压缩只改变模型工作上下文，历史由 `thread_history` / `thread_search` 读取，不再重复落盘。
 
-## Flush 的三个触发点
+## 增量抽取
 
-Flush（路径 1）会在以下三个时机被触发：
+原生抽取每次符合触发条件的调用至多消费 256 条已提交的 user、assistant 或 tool-result 消息事件；checkpoint 和遥测不占额度，摘要不参与。压缩和最终回答抽取之前，原文先进入 Journal。
 
-1. **每次 `call()` 结束** —— `MemoryFlushMiddleware` 的默认行为。可以用 `flushTrigger` 改成 `NEVER` 或 `THROTTLED(Duration)`。
-2. **压缩前的预提取** —— `CompactionConfig.flushBeforeCompact = true`（默认）时，压缩对话前缀前先 flush 一次。
-3. **上下文溢出兜底** —— 模型真的报 `context_length_exceeded` 时，框架做一次紧急压缩，连带 flush。
+`memory/.flush-state/<thread-hash>.json` 按 user/agent/session/thread 保存边界事件标识、已完成序号和长消息内偏移。校验只读取边界，不重扫日志开头。重建 agent 后从文件续读；多副本须共享日志与工作区。日志被替换或进度超过 head 时停止抽取。
 
-这三处用的是 **同一份** `flushPrompt`，定制后三处行为一致。
+删除该 Thread 的进度文件只重置扫描起点；匹配到当日账本标记时仍恢复已记录终点，不会重抽该批。强制重抽时，先暂停所有副本对该 Thread 的抽取，核对日志与账本并备份账本。保留事实正文，先移除对应标记，再删除进度文件，完成后恢复抽取。损坏标记也须在重置进度前修复或移除。若删除进度后已跑过一轮，须移除标记并再次删除进度，因为该轮可能已恢复记录的终点。重抽可能产生重复。
 
-每轮结束后的长期记忆 Flush 在后台执行；压缩前 Flush 属于压缩步骤。原生 Thread 日志 在执行边界提交，不能把它当作异步日志副本：关键事实提交失败会阻止继续执行。
+每次请求最多使用 8,192 个估算输入 token，小窗口进一步收紧。输出上限为 `min(1,024, window/8)` token（窗口未知时为 1,024）；沿用上下文编译器的 `min(4,096, window/8)` 输出预留和 2% 安全边距。两份去重参考各最多取 `min(4,000, 输入预算/4)` 字符：`MEMORY.md` 头尾和日账本尾部。超长消息分批续读，不拆开 Unicode 码点。这些限制不控制事实总量。现有渲染器仍将工具参数截至 500 字符、每个工具结果文本块截至 1,000 字符；抽取不读取省略部分。
 
-<span id="开启压缩" />
+日账本写入成功后才确认进度。条件写入保护遵守同一协议的写者。标记以批次起点为键并记录实际终点；重试在同一日文件中找到标记，就确认该终点，不再调用抽取或准入，预算变化也不影响。失败批次留待后续触发，没有重试 worker 或自动跳过。并发尝试仍可能重复调用模型，跨日重试仍可能重复事实；语义去重靠 prompt 和 consolidation。
+
+`flushTimeout` 默认两分钟，覆盖一次触发内所有批次的抽取和串行准入。超时释放后台队列，或结束内联抽取并告警；已完成批次保留进度。日志包含 Thread、选定范围和最后确认的序号/偏移。保守配置可按 `flushTimeout > 所有批次预计抽取耗时 + 总候选数 × judge budget + IO 余量` 设置。256 条消息不限制模型调用次数，长消息会增加批次；judge budget 是耗时上限。批次持续超时会反复重做而无法提交，须增大 `flushTimeout` 或降低准入预算。旧模式没有保存位置，重试会重抽当前全量上下文。
+
+独立调用在后台排队抽取；Durable 托管调用在 finalization 内抽取，记录触发决定与日志范围供重放。托管工作区须通过 `RemoteFilesystem` 使用 `binding.workspace()` 才能获得 Durable IO 回执，普通本地文件访问不具备该能力。
+
+`flushTrigger` 控制原生每轮抽取（`ALWAYS`、`NEVER`、`THROTTLED`），原生压缩只保留原文。`journalEnabled(false)` 保留当前上下文和压缩前抽取，但无持久进度或同等恢复保证；公开的 `flushMemories(rc, messages)` 保留显式输入语义。
+
+自定义文件系统须实现 `atomicTextFile`；`RemoteFilesystem` 也以 store 的 `supportsAtomicJournalStorage()` 声明判断条件文本写入能力。`CompositeFilesystem` 的 Journal 走 `agents/`，记忆走 `MEMORY.md` 和 `memory/`，各路由须分别具备对应能力。`CosBaseStore` 和 `OssBaseStore` 均未声明该能力：即使 Journal 使用其他原子后端，COS/OSS 记忆路由仍阻止原生抽取；纯 COS/OSS 工作区须显式设置 `journalEnabled(false)` 使用旧模式。外部编辑和归档不属于条件写入事务。
+
+能力不足时报告后端、Thread 和缺失能力，不推进进度或退回上下文。补齐条件写入能力后，再次调用即可消费保留原文。进程内 256 项缓存将同一 Thread 连续同类失败降为 DEBUG；成功、异常类型变化、淘汰或重启后可再次告警。
+
+## 可选抽取准入
+
+`MemoryConfig.builder().admission(gate)` 接受可插拔的 `MemoryAdmission`（默认 `null`），在追加账本前判断候选。拒绝消费来源，错误保留批次。JEV 提供 `new JevMemoryGate(judge).admission()`，政策与恢复限制见[记忆准入](/dev/zh/docs/harness/jev/guides/memory-api#接入-harness-抽取)。
 
 ## 调整上下文压缩
 
@@ -88,7 +100,7 @@ HarnessAgent agent = HarnessAgent.builder()
 | `triggerTokens` | `0` | 按 token 估算触发（`0` 表示动态计算，依据最终模型请求为对话历史留下的预算） |
 | `keepMessages` | `20` | 保留尾部条数 |
 | `keepTokens` | `-1` | `-1` 表示动态计算（基于最终模型请求的对话剩余预算）；`0` 表示使用 `keepMessages`；`>0` 表示固定 token 预算并覆盖 `keepMessages` |
-| `flushBeforeCompact` | `true` | 压缩前先把新事实写入日流水账（路径 2） |
+| `flushBeforeCompact` | `true` | 旧模式压缩前抽取；原生模式把原文保留在日志中 |
 | `summaryPrompt` | 见 `DEFAULT_SUMMARY_PROMPT` | 路径 3 的摘要 prompt（必须含 `{messages}` 占位符） |
 | `model` | `null`（使用 agent 主模型） | 压缩摘要使用的独立模型 |
 
@@ -110,13 +122,13 @@ CompactionConfig.builder()
 
 ## 定制 Memory pipeline：`MemoryConfig`
 
-`MemoryConfig` 集中管理 flush / consolidation 两条路径的 prompt、节流、保留时长，以及 per-call flush 的触发策略。所有字段都有默认值，不调 `.memory(...)` 时与历史行为完全一致。
+`MemoryConfig` 集中管理 flush / consolidation 两条路径的 prompt、节流、保留时长，以及 per-call flush 的触发策略。所有字段都有默认值。
 
 Per-call flush 与后台 consolidation 使用两套独立的节流窗口。两者第一次符合条件的 `call()` 都会立即放行；最小间隔只限制后续运行，不表示首次运行前需要等待。
 
 ### 例 1：节流 per-call flush，省 token
 
-每次 agent 调用结束都做一次 flush LLM 调用，对长会话来说成本不低。把它节流到「最多每 10 分钟一次」：
+每次符合条件的调用会消费尚未抽取的消息，必要时分多批调用模型。把触发间隔设为 10 分钟：
 
 ```java
 HarnessAgent.builder()
@@ -129,7 +141,7 @@ HarnessAgent.builder()
 
 注意：
 
-- `THROTTLED` 只影响**路径 1**（per-call flush）。压缩内嵌的 flush（路径 2）和兜底 flush（路径 3）按各自的触发条件照常跑——压缩很少发生，那两条本来就不频繁。
+- `THROTTLED` 控制每轮抽取；只有旧模式保留单独的压缩前和溢出抽取。
 - 第一次符合条件的 call 会立即 flush；`Duration.ofMinutes(10)` 只限制后续的 per-call flush。
 - **原生日志不受影响**：Flush 节流不会停用 Thread 日志、历史检索或 checkpoint 恢复。
 
@@ -141,7 +153,7 @@ HarnessAgent.builder()
     .build())
 ```
 
-这样只有压缩发生时才会 flush（成本和原始压缩成本一致）。
+原生模式停止自动抽取并保留原文；旧模式仍可能在压缩前抽取。
 
 > 想把 flush + 后台维护**全部**关掉用 `.disableMemoryHooks()`；`flushTrigger(NEVER)` 只关 per-call flush，后台 consolidation 仍跑。
 
@@ -211,6 +223,7 @@ HarnessAgent.builder()
 | `consolidationMinGap` | `30 min` | 后台维护运行间隔；第一次符合条件的 call 立即放行 |
 | `dailyFileRetentionDays` | `90` | 多少天后把日流水账归档到 `memory/archive/` |
 | `flushTrigger` | `FlushTrigger.always()` | `ALWAYS` / `NEVER` / `THROTTLED(Duration)` |
+| `flushTimeout` | `2 min` | 每次触发的抽取与串行准入总时限，须覆盖所有批次 |
 
 ## 大工具结果卸载
 
