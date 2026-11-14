@@ -30,15 +30,20 @@ import io.agentscope.core.state.AgentState;
 import io.agentscope.harness.agent.IsolationScope;
 import io.agentscope.harness.agent.coordination.LocalPeriodicGate;
 import io.agentscope.harness.agent.coordination.PeriodicGate;
+import io.agentscope.harness.agent.memory.MemoryAdmission;
 import io.agentscope.harness.agent.memory.MemoryBackgroundTasks;
 import io.agentscope.harness.agent.memory.MemoryConfig;
 import io.agentscope.harness.agent.memory.MemoryFlushManager;
 import io.agentscope.harness.agent.workspace.WorkspaceManager;
+import java.time.Duration;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.EnumSet;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Function;
@@ -50,46 +55,10 @@ import reactor.core.scheduler.Schedulers;
 import reactor.util.context.ContextView;
 
 /**
- * Middleware that triggers memory extraction at the end of each agent call.
- *
- * <p>Runs on the agent stream's completion signal ({@link #onAgent}) so long-term memories are
- * extracted and persisted after every call, even when conversation compaction was not triggered
- * during that call. The flush is <em>fire-and-forget</em>: the agent stream completes immediately
- * while the extraction runs on a background scheduler. The completing subscription's Reactor
- * context is replayed on that background subscription, so context-scoped instrumentation (token
- * metering, tracing) on the model call sees the same context as the turn. When
- * {@link CompactionMiddleware} is active, it handles memory extraction for the messages it
- * summarizes; this middleware covers the remaining tail of messages that were kept verbatim.
- *
- * <p>Flush is gated by a {@link MemoryConfig.FlushTrigger}:
- * <ul>
- *   <li>{@link MemoryConfig.FlushMode#ALWAYS} (default) — flush after every call.</li>
- *   <li>{@link MemoryConfig.FlushMode#NEVER} — never flush via this middleware. The CompactionMiddleware
- *       and overflow-recovery paths still run their own flush when they fire.</li>
- *   <li>{@link MemoryConfig.FlushMode#THROTTLED} — flush at most once per
- *       {@link MemoryConfig.FlushTrigger#minGap()}.</li>
- * </ul>
- *
- * <p>Native session logging runs independently of memory extraction, so disabling memory
- * flush does not affect durable execution history.
- *
- * <p>Concurrent flushes for the same isolation key are serialised: at most one flush runs per
- * key at a time, and pending flushes of the same conversation coalesce into a single queued
- * task, because a queued task reads the conversation state only when it executes and the
- * newest task therefore subsumes the ones it replaces. Flushes of distinct conversations
- * under the same key are queued separately.
- *
- * <p>The class is thread-safe: instances hold only configuration, and the per-key queues live
- * in a static map and are synchronised internally.
- *
- * <p>The throttle window is tracked per <em>isolation key</em>, which matches the memory data
- * isolation in use:
- * <ul>
- *   <li>{@link IsolationScope#USER} (default) — one window per {@code userId}.</li>
- *   <li>{@link IsolationScope#SESSION} — one window per {@code sessionId}.</li>
- *   <li>{@link IsolationScope#AGENT} / {@link IsolationScope#GLOBAL} — one shared window for
- *       the whole agent instance (prevents concurrent flush races on shared memory files).</li>
- * </ul>
+ * Extracts memories after each eligible call. Native journals supply only unconsumed original
+ * messages; legacy execution uses the current context. Standalone calls queue background work,
+ * while hosted executions finish extraction inside the recoverable finalization boundary.
+ * Per-isolation-key queues serialize local writes and coalesce pending calls of one conversation.
  */
 public class MemoryFlushMiddleware implements HarnessRuntimeMiddleware {
 
@@ -100,10 +69,22 @@ public class MemoryFlushMiddleware implements HarnessRuntimeMiddleware {
 
     private final WorkspaceManager workspaceManager;
     private final Model model;
+    private final MemoryAdmission admission;
     private final String flushPrompt;
     private final MemoryConfig.FlushTrigger flushTrigger;
     private final IsolationScope isolationScope;
     private final PeriodicGate periodicGate;
+    private final Duration flushTimeout;
+
+    // Diagnostic deduplication only; eviction or restart may report a Thread again.
+    private static final Map<String, Class<?>> FLUSH_WARNINGS =
+            Collections.synchronizedMap(
+                    new LinkedHashMap<>() {
+                        @Override
+                        protected boolean removeEldestEntry(Map.Entry<String, Class<?>> eldest) {
+                            return size() > 256;
+                        }
+                    });
 
     public MemoryFlushMiddleware(WorkspaceManager workspaceManager, Model model) {
         this(
@@ -151,14 +132,56 @@ public class MemoryFlushMiddleware implements HarnessRuntimeMiddleware {
             MemoryConfig.FlushTrigger flushTrigger,
             IsolationScope isolationScope,
             PeriodicGate periodicGate) {
+        this(
+                workspaceManager,
+                model,
+                flushPrompt,
+                flushTrigger,
+                isolationScope,
+                periodicGate,
+                null);
+    }
+
+    public MemoryFlushMiddleware(
+            WorkspaceManager workspaceManager,
+            Model model,
+            String flushPrompt,
+            MemoryConfig.FlushTrigger flushTrigger,
+            IsolationScope isolationScope,
+            PeriodicGate periodicGate,
+            MemoryAdmission admission) {
+        this(
+                workspaceManager,
+                model,
+                flushPrompt,
+                flushTrigger,
+                isolationScope,
+                periodicGate,
+                admission,
+                MemoryConfig.DEFAULT_FLUSH_TIMEOUT);
+    }
+
+    public MemoryFlushMiddleware(
+            WorkspaceManager workspaceManager,
+            Model model,
+            String flushPrompt,
+            MemoryConfig.FlushTrigger flushTrigger,
+            IsolationScope isolationScope,
+            PeriodicGate periodicGate,
+            MemoryAdmission admission,
+            Duration flushTimeout) {
+        if (flushTimeout == null || flushTimeout.isZero() || flushTimeout.isNegative())
+            throw new IllegalArgumentException("flushTimeout must be positive");
         this.workspaceManager = workspaceManager;
         this.model = model;
+        this.admission = admission;
         this.flushPrompt =
                 flushPrompt != null ? flushPrompt : MemoryFlushManager.DEFAULT_FLUSH_PROMPT;
         this.flushTrigger =
                 flushTrigger != null ? flushTrigger : MemoryConfig.FlushTrigger.always();
         this.isolationScope = isolationScope != null ? isolationScope : IsolationScope.USER;
         this.periodicGate = periodicGate != null ? periodicGate : new LocalPeriodicGate();
+        this.flushTimeout = flushTimeout;
     }
 
     /** Narrow declaration: subclasses overriding more hooks must extend this set. */
@@ -188,11 +211,23 @@ public class MemoryFlushMiddleware implements HarnessRuntimeMiddleware {
 
     @Override
     public Mono<Void> onAgentFinish(Agent agent, RuntimeContext rc, Msg result) {
-        if (!Boolean.TRUE.equals(rc.get(INLINE_CONTEXT_KEY))
-                || InvocationRecorder.from(rc) == null
-                || RunOutcome.fromResult(result).status() != RunOutcome.Status.COMPLETED)
-            return Mono.empty();
-        return Mono.defer(() -> doFlush(agent, rc))
+        InvocationRecorder recorder = InvocationRecorder.from(rc);
+        if (recorder == null) return Mono.empty();
+        return Mono.defer(
+                        () -> {
+                            AgentState state = RuntimeContext.resolveAgentState(rc, agent);
+                            if (state != null) recorder.captureMessages(state.getContext());
+                            if (result != null) recorder.captureMessages(List.of(result));
+                            return recorder.flush();
+                        })
+                .then(
+                        Mono.defer(
+                                () ->
+                                        Boolean.TRUE.equals(rc.get(INLINE_CONTEXT_KEY))
+                                                        && RunOutcome.fromResult(result).status()
+                                                                == RunOutcome.Status.COMPLETED
+                                                ? doFlush(agent, rc)
+                                                : Mono.empty()))
                 .subscribeOn(Schedulers.boundedElastic())
                 .contextWrite(context -> context.put(AgentBase.RUNTIME_CONTEXT_KEY, rc));
     }
@@ -291,18 +326,16 @@ public class MemoryFlushMiddleware implements HarnessRuntimeMiddleware {
             new ConcurrentHashMap<>();
 
     private Mono<Void> doFlush(Agent agent, RuntimeContext rc) {
-        AgentState state = RuntimeContext.resolveAgentState(rc, agent);
-        if (state == null) {
-            return Mono.empty();
+        boolean nativeJournal = agent instanceof ReActAgent react && react.journalEnabled();
+        List<Msg> messages = List.of();
+        if (!nativeJournal) {
+            // Legacy queued work reads the latest context; native work reads its journal.
+            AgentState state = RuntimeContext.resolveAgentState(rc, agent);
+            if (state == null || state.getContext().isEmpty()) return Mono.empty();
+            messages = new ArrayList<>(state.getContext());
         }
-        // Read at execution time rather than scheduling time: a task that waited in the queue
-        // sees everything appended in the meantime, so coalescing queued tasks never loses
-        // messages.
-        List<Msg> messages = new ArrayList<>(state.getContext());
-        if (messages.isEmpty()) {
-            return Mono.empty();
-        }
-        if (!shouldFlushNow(rc)) {
+        boolean enabled = shouldFlushNow(rc);
+        if (!enabled && !(nativeJournal && Boolean.TRUE.equals(rc.get(INLINE_CONTEXT_KEY)))) {
             log.debug("Memory flush skipped (trigger={})", flushTrigger);
             return Mono.empty();
         }
@@ -314,15 +347,42 @@ public class MemoryFlushMiddleware implements HarnessRuntimeMiddleware {
             return Mono.empty();
         }
         MemoryFlushManager flushManager =
-                new MemoryFlushManager(workspaceManager, effective, flushPrompt);
-        return flushManager
-                .flushMemories(rc, messages)
-                .doOnSuccess(v -> log.debug("Memory flush completed"))
+                new MemoryFlushManager(
+                        workspaceManager, effective, flushPrompt, admission, flushTimeout);
+        Mono<Void> flush =
+                nativeJournal
+                        ? flushManager.flushJournal(
+                                rc,
+                                ((ReActAgent) agent).threadKey(rc),
+                                ((ReActAgent) agent).threadJournal(rc),
+                                enabled)
+                        : flushManager.flushMemories(rc, messages);
+        String thread =
+                nativeJournal
+                        ? ((ReActAgent) agent).threadKey(rc).storagePath()
+                        : Objects.toString(rc.getSessionId(), "anonymous");
+        String warningKey =
+                List.of(blankToEmpty(rc.getUserId()), thread, blankToEmpty(rc.getThreadId()))
+                        .toString();
+        return flush.doOnSuccess(
+                        v -> {
+                            FLUSH_WARNINGS.remove(warningKey);
+                            log.debug("Memory flush completed");
+                        })
                 .onErrorResume(
                         e -> {
                             if (Boolean.TRUE.equals(rc.get(INLINE_CONTEXT_KEY))
                                     && JournalException.causedBy(e)) return Mono.error(e);
-                            log.warn("Memory flush failed: {}", e.getMessage());
+                            if (FLUSH_WARNINGS.put(warningKey, e.getClass()) != e.getClass())
+                                log.warn(
+                                        "Memory flush failed (thread={}): {}",
+                                        thread,
+                                        e.getMessage());
+                            else
+                                log.debug(
+                                        "Memory flush still failing (thread={}): {}",
+                                        thread,
+                                        e.getMessage());
                             return Mono.empty();
                         });
     }
@@ -340,17 +400,7 @@ public class MemoryFlushMiddleware implements HarnessRuntimeMiddleware {
         return agent instanceof ReActAgent react ? react.getModel(rc) : null;
     }
 
-    /**
-     * Returns whether this call should trigger a flush, applying the configured trigger policy.
-     * For {@link MemoryConfig.FlushMode#THROTTLED}, uses an {@link AtomicReference#compareAndSet}
-     * race to ensure at most one caller within {@code minGap} wins the slot.
-     *
-     * <p>The throttle window is keyed by the isolation dimension that matches the memory data
-     * namespace (see {@link #timerKeyFor(RuntimeContext)}).
-     *
-     * <p>Package-private for unit testing of the trigger gate without standing up a full
-     * {@code Agent}.
-     */
+    /** Applies the configured per-isolation-key trigger. */
     boolean shouldFlushNow(RuntimeContext rc) {
         switch (flushTrigger.mode()) {
             case ALWAYS:

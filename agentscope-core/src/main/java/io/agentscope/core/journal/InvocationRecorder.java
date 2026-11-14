@@ -595,8 +595,33 @@ public final class InvocationRecorder {
                             state.getContext(),
                             "previousAsOfSeq",
                             durableSeq));
-        for (int i = 0; i < messages.size(); i++) {
-            Msg message = state.getContext().get(i);
+        captureMessages(state.getContext());
+        var current = JsonUtils.getJsonCodec().fromJson(json, Map.class);
+        var old =
+                previousState == null
+                        ? Map.of()
+                        : JsonUtils.getJsonCodec().fromJson(previousState, Map.class);
+        for (String field : List.of("tasks_context", "plan_mode_context", "permission_context")) {
+            Object value = current.get(field);
+            if (value != null && !Objects.equals(value, old.get(field)))
+                append(
+                        field.equals("tasks_context")
+                                ? "task/changed"
+                                : field.equals("plan_mode_context")
+                                        ? "plan/changed"
+                                        : "permission/changed",
+                        Map.of("state", value));
+        }
+        append("state/checkpoint", checkpointData(json, reason));
+        previousState = json;
+        previousPosition = executionPosition;
+        previousMessages = messages;
+    }
+
+    /** Accepts original messages before a caller replaces or summarizes its context. */
+    public synchronized void captureMessages(List<Msg> messages) {
+        check();
+        for (Msg message : messages) {
             if (!recordedMessages.add(message.getId())) continue;
             if (inputMessages.contains(message.getId()))
                 append("input/applied", Map.of("inputId", message.getId()));
@@ -620,26 +645,6 @@ public final class InvocationRecorder {
                                 "call",
                                 use));
         }
-        var current = JsonUtils.getJsonCodec().fromJson(json, Map.class);
-        var old =
-                previousState == null
-                        ? Map.of()
-                        : JsonUtils.getJsonCodec().fromJson(previousState, Map.class);
-        for (String field : List.of("tasks_context", "plan_mode_context", "permission_context")) {
-            Object value = current.get(field);
-            if (value != null && !Objects.equals(value, old.get(field)))
-                append(
-                        field.equals("tasks_context")
-                                ? "task/changed"
-                                : field.equals("plan_mode_context")
-                                        ? "plan/changed"
-                                        : "permission/changed",
-                        Map.of("state", value));
-        }
-        append("state/checkpoint", checkpointData(json, reason));
-        previousState = json;
-        previousPosition = executionPosition;
-        previousMessages = messages;
     }
 
     private Map<String, Object> checkpointData(String json, String reason) {

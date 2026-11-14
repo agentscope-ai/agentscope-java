@@ -16,15 +16,20 @@
 package io.agentscope.harness.agent.memory;
 
 import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.core.agent.ThreadKey;
 import io.agentscope.core.formatter.DocumentReferenceRenderer;
 import io.agentscope.core.journal.JournalException;
+import io.agentscope.core.journal.ThreadJournal;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.DocumentBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.ThinkingBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
+import io.agentscope.core.model.FinishReasons;
+import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.Model;
 import io.agentscope.core.util.JsonUtils;
 import io.agentscope.harness.agent.context.ContextModelCalls;
@@ -32,28 +37,25 @@ import io.agentscope.harness.agent.memory.compaction.ConversationCompactor;
 import io.agentscope.harness.agent.workspace.WorkspaceConstants;
 import io.agentscope.harness.agent.workspace.WorkspaceManager;
 import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
+import java.util.function.Function;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Schedulers;
 
 /**
- * Manages memory flush operations: extracting long-term memories from a conversation
- * window and appending them to today's daily memory ledger.
- *
- * <p><b>Two-layer memory model</b> (this class owns only the first layer):
- * <ul>
- *   <li>{@code memory/YYYY-MM-DD.md} — append-only daily ledger. Each compaction's flush
- *       appends a timestamped section here. Written ONLY by this class.</li>
- *   <li>{@code MEMORY.md} — globally curated, deduplicated, size-bounded long-term memory.
- *       Written ONLY by {@link MemoryConsolidator} on a periodic schedule. Treated as
- *       read-only context here.</li>
- * </ul>
+ * Extracts facts into the daily memory ledger. {@code MEMORY.md} is read-only reference context;
+ * {@link MemoryConsolidator} maintains it separately.
  */
 public class MemoryFlushManager {
 
@@ -96,6 +98,9 @@ public class MemoryFlushManager {
     private final WorkspaceManager workspaceManager;
     private final Model model;
     private final String flushPrompt;
+    private final MemoryAdmission admission;
+    private final Duration flushTimeout;
+    private static final Pattern BULLET = Pattern.compile("^\\s*(?:[-*+] |\\d+[.)] )\\S");
 
     public MemoryFlushManager(WorkspaceManager workspaceManager, Model model) {
         this(workspaceManager, model, DEFAULT_FLUSH_PROMPT);
@@ -106,9 +111,30 @@ public class MemoryFlushManager {
      *     {@link #DEFAULT_FLUSH_PROMPT}.
      */
     public MemoryFlushManager(WorkspaceManager workspaceManager, Model model, String flushPrompt) {
+        this(workspaceManager, model, flushPrompt, null);
+    }
+
+    public MemoryFlushManager(
+            WorkspaceManager workspaceManager,
+            Model model,
+            String flushPrompt,
+            MemoryAdmission admission) {
+        this(workspaceManager, model, flushPrompt, admission, MemoryConfig.DEFAULT_FLUSH_TIMEOUT);
+    }
+
+    public MemoryFlushManager(
+            WorkspaceManager workspaceManager,
+            Model model,
+            String flushPrompt,
+            MemoryAdmission admission,
+            Duration flushTimeout) {
+        if (flushTimeout == null || flushTimeout.isZero() || flushTimeout.isNegative())
+            throw new IllegalArgumentException("flushTimeout must be positive");
         this.workspaceManager = workspaceManager;
         this.model = model;
         this.flushPrompt = flushPrompt != null ? flushPrompt : DEFAULT_FLUSH_PROMPT;
+        this.admission = admission;
+        this.flushTimeout = flushTimeout;
     }
 
     /**
@@ -128,73 +154,172 @@ public class MemoryFlushManager {
         String dailyRelPath = WorkspaceConstants.MEMORY_DIR + "/" + today + ".md";
         String existingDaily = readExistingContent(rc, dailyRelPath);
 
-        StringBuilder userPrompt = new StringBuilder();
-        if (!existingMemory.isBlank()) {
-            userPrompt
-                    .append("MEMORY.md (read-only curated long-term memory — do NOT restate):\n")
-                    .append(existingMemory)
-                    .append("\n\n");
-        }
-        if (!existingDaily.isBlank()) {
-            userPrompt
-                    .append("Today's daily ledger so far (your output will be appended after):\n")
-                    .append(existingDaily)
-                    .append("\n\n");
-        }
-        userPrompt
-                .append(
-                        "Extract NEW memories from this conversation window (skip anything"
-                                + " already covered above):\n\n")
-                .append(conversationText);
-
-        List<Msg> flushInput = new ArrayList<>();
-        flushInput.add(
-                Msg.builder()
-                        .role(MsgRole.SYSTEM)
-                        .content(TextBlock.builder().text(flushPrompt).build())
-                        .build());
-        flushInput.add(
-                Msg.builder()
-                        .role(MsgRole.USER)
-                        .content(TextBlock.builder().text(userPrompt.toString()).build())
-                        .build());
-
-        return ContextModelCalls.auxiliary(model, flushInput)
-                .reduce(
-                        new StringBuilder(),
-                        (sb, chatResponse) -> {
-                            List<ContentBlock> blocks = chatResponse.getContent();
-                            if (blocks != null) {
-                                for (ContentBlock block : blocks) {
-                                    if (block instanceof TextBlock tb) {
-                                        String t = tb.getText();
-                                        if (t != null) {
-                                            sb.append(t);
-                                        }
-                                    }
-                                }
-                            }
-                            return sb;
-                        })
+        return extract(conversationText, existingMemory, existingDaily, null)
                 .flatMap(
-                        sb -> {
-                            String extracted = sb.toString();
-                            if (extracted.isBlank() || extracted.strip().equals("NO_REPLY")) {
-                                log.debug("No memories to flush");
-                                return Mono.empty();
-                            }
-                            writeMemoryFiles(rc, extracted);
-                            return Mono.empty();
-                        });
+                        content ->
+                                admit(
+                                        rc,
+                                        content,
+                                        conversationText,
+                                        existingMemory,
+                                        existingDaily,
+                                        this::assess))
+                .publishOn(Schedulers.boundedElastic())
+                .doOnNext(
+                        extracted -> {
+                            if (!extracted.isBlank() && !extracted.strip().equals("NO_REPLY"))
+                                writeMemoryFiles(rc, extracted);
+                        })
+                .then()
+                .timeout(flushTimeout);
     }
 
-    /**
-     * Appends the extracted entries to today's daily memory ledger.
-     *
-     * <p>MEMORY.md is intentionally <b>NOT</b> touched here — it is owned by
-     * {@link MemoryConsolidator}, which periodically merges the daily ledgers into a
-     * curated, size-bounded MEMORY.md.
-     */
+    /** Consumes a bounded committed journal page; progress is independent of working context. */
+    public Mono<Void> flushJournal(RuntimeContext rc, ThreadKey key, ThreadJournal journal) {
+        return flushJournal(rc, key, journal, true);
+    }
+
+    /** Persists the inline trigger decision with the selected prefix for finalization replay. */
+    public Mono<Void> flushJournal(
+            RuntimeContext rc, ThreadKey key, ThreadJournal journal, boolean enabled) {
+        return new JournalMemoryFlush(workspaceManager, this, model, flushTimeout)
+                .flush(rc, key, journal, enabled);
+    }
+
+    Mono<String> extract(
+            String conversationText,
+            String existingMemory,
+            String existingDaily,
+            GenerateOptions options) {
+        return ContextModelCalls.auxiliary(
+                        model, input(conversationText, existingMemory, existingDaily), options)
+                .reduceWith(
+                        StringBuilder::new,
+                        (sb, response) -> {
+                            if (FinishReasons.indicatesOutputLimit(
+                                            response.getFinishReason(), response.getMetadata())
+                                    || "content_filter".equals(response.getFinishReason()))
+                                throw new IllegalStateException(
+                                        "Incomplete memory extraction response");
+                            if (response.getContent() != null)
+                                for (ContentBlock block : response.getContent())
+                                    if (block instanceof TextBlock text) {
+                                        if (text.getText() != null) sb.append(text.getText());
+                                    } else if (!(block instanceof ThinkingBlock)) {
+                                        throw new IllegalStateException(
+                                                "Non-text memory extraction response");
+                                    }
+                            return sb;
+                        })
+                .map(StringBuilder::toString);
+    }
+
+    Mono<String> admit(
+            RuntimeContext rc,
+            String content,
+            String source,
+            String known,
+            String recent,
+            Function<MemoryAdmission.Input, Mono<MemoryAdmission.Decision>> judge) {
+        if (content.isBlank() || content.strip().equals("NO_REPLY")) {
+            log.info("Memory extraction outcome=no_reply (session={})", rc.getSessionId());
+            return Mono.just("");
+        }
+        if (admission == null) return Mono.just(content);
+        return Mono.defer(
+                () -> {
+                    List<String> candidates = candidates(content);
+                    List<String> existing =
+                            new ArrayList<>(
+                                    List.of(known, recent).stream()
+                                            .filter(text -> !text.isBlank())
+                                            .toList());
+                    List<String> accepted = new ArrayList<>();
+                    String owner =
+                            rc.getUserId() == null || rc.getUserId().isBlank()
+                                    ? "anonymous:"
+                                            + Objects.toString(rc.getSessionId(), "workspace")
+                                    : rc.getUserId();
+                    return Flux.fromIterable(candidates)
+                            .concatMap(
+                                    candidate ->
+                                            Mono.defer(
+                                                            () ->
+                                                                    judge.apply(
+                                                                            new MemoryAdmission
+                                                                                    .Input(
+                                                                                    owner,
+                                                                                    candidate,
+                                                                                    source,
+                                                                                    existing)))
+                                                    .switchIfEmpty(
+                                                            Mono.error(
+                                                                    new IllegalStateException(
+                                                                            "Empty memory admission"
+                                                                                    + " decision")))
+                                                    .doOnNext(
+                                                            decision -> {
+                                                                if (decision.accepted()) {
+                                                                    accepted.add(candidate);
+                                                                    existing.add(candidate);
+                                                                }
+                                                            }))
+                            .then(
+                                    Mono.fromSupplier(
+                                            () -> {
+                                                log.info(
+                                                        "Memory admission: accepted={}, rejected={}"
+                                                                + " (session={})",
+                                                        accepted.size(),
+                                                        candidates.size() - accepted.size(),
+                                                        rc.getSessionId());
+                                                return String.join("\n", accepted);
+                                            }));
+                });
+    }
+
+    Mono<MemoryAdmission.Decision> assess(MemoryAdmission.Input input) {
+        return admission.assess(input);
+    }
+
+    private static List<String> candidates(String content) {
+        List<String> result = new ArrayList<>();
+        boolean continuation = false;
+        for (String line : content.lines().toList()) {
+            if (BULLET.matcher(line).find()) {
+                result.add(line.strip());
+                continuation = true;
+            } else if (continuation && !line.isBlank() && Character.isWhitespace(line.charAt(0))) {
+                int last = result.size() - 1;
+                result.set(last, result.get(last) + "\n" + line);
+            } else if (!line.isBlank()) continuation = false;
+        }
+        return result.isEmpty() ? List.of("- " + content.strip()) : result;
+    }
+
+    List<Msg> input(String conversationText, String existingMemory, String existingDaily) {
+        String userPrompt =
+                "MEMORY.md (read-only; do not repeat):\n"
+                        + existingMemory
+                        + "\nToday's ledger (do not repeat):\n"
+                        + existingDaily
+                        + "\nExtract NEW memories from these original messages:\n"
+                        + conversationText;
+        return List.of(
+                Msg.builder()
+                        .id("memory:system")
+                        .name("system")
+                        .role(MsgRole.SYSTEM)
+                        .textContent(flushPrompt)
+                        .build(),
+                Msg.builder()
+                        .id("memory:input")
+                        .role(MsgRole.USER)
+                        .textContent(userPrompt)
+                        .build());
+    }
+
+    /** Appends the extracted entries to today's daily memory ledger. */
     private void writeMemoryFiles(RuntimeContext rc, String content) {
         String today = LocalDate.now(clock(rc)).format(DateTimeFormatter.ISO_LOCAL_DATE);
 
@@ -233,7 +358,7 @@ public class MemoryFlushManager {
      * Internal context messages are skipped because they are generated from existing context,
      * not new user/assistant/tool facts.
      */
-    private String serializeMessages(List<Msg> messages) {
+    String serializeMessages(List<Msg> messages) {
         return messages.stream()
                 .filter(m -> m.getRole() != null && m.getRole() != MsgRole.SYSTEM)
                 .filter(m -> !isInternalContextMessage(m))

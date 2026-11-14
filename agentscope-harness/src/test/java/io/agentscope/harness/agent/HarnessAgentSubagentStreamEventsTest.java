@@ -260,6 +260,7 @@ class HarnessAgentSubagentStreamEventsTest {
                         .model(model)
                         .workspace(workspace)
                         .abstractFilesystem(new LocalFilesystem(workspace))
+                        .disableMemoryHooks()
                         .build();
 
         RuntimeContext ctx = RuntimeContext.builder().sessionId("sess-multi-instance").build();
