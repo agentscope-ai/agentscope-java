@@ -329,8 +329,13 @@ class SkillBoxTest {
 
         @Test
         void preservesLegacyNamesWithRelativeNonNormalizedWorkDirectory() throws Exception {
-            Path relative = Path.of("").toAbsolutePath().relativize(tempDir);
-            skillBox.setWorkDir(relative.resolve("unused/.."));
+            // Anchor the work directory under the current working directory: the JUnit
+            // temp dir may live on another drive than the CWD on Windows runners, where
+            // Path.relativize across roots throws IllegalArgument ('other' has
+            // different root). A relative path under target/ keeps the relative,
+            // non-normalized shape this test exercises on every platform.
+            Path base = Path.of("target", "skillbox-legacy-names").toAbsolutePath().normalize();
+            skillBox.setWorkDir(Path.of("target", "skillbox-legacy-names", "unused", ".."));
             for (String name : List.of("Upper_Case.技能", "Long_" + "x".repeat(70))) {
                 AgentSkill skill =
                         new AgentSkill(
@@ -348,7 +353,7 @@ class SkillBoxTest {
                 assertEquals(
                         "safe",
                         Files.readString(
-                                tempDir.resolve("skills")
+                                base.resolve("skills")
                                         .resolve(name + "_Legacy_Source/nested/file.txt")));
             }
         }

@@ -16,9 +16,10 @@
 
 package io.agentscope.core.a2a.agent.utils;
 
-import io.a2a.spec.Artifact;
-import io.a2a.spec.Message;
-import io.a2a.spec.Part;
+import static io.agentscope.core.a2a.agent.message.MetadataUtil.metadataValue;
+import static io.agentscope.core.a2a.agent.message.MetadataUtil.toJsonValues;
+import static io.agentscope.core.a2a.agent.message.MetadataUtil.withMetadata;
+
 import io.agentscope.core.a2a.agent.message.ContentBlockParserRouter;
 import io.agentscope.core.a2a.agent.message.MessageConstants;
 import io.agentscope.core.a2a.agent.message.PartParserRouter;
@@ -33,6 +34,9 @@ import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import org.a2aproject.sdk.spec.Artifact;
+import org.a2aproject.sdk.spec.Message;
+import org.a2aproject.sdk.spec.Part;
 
 /**
  * Message Converter between Agentscope {@link Msg} and A2A {@link Message} or {@link Artifact}.
@@ -89,11 +93,11 @@ public class MessageConvertUtil {
      */
     public static Msg convertFromMessage(Message message, String agentName) {
         Msg.Builder builder = Msg.builder();
-        builder.id(message.getMessageId());
+        builder.id(message.messageId());
         builder.name(agentName);
-        builder.metadata(null != message.getMetadata() ? message.getMetadata() : Map.of());
+        builder.metadata(null != message.metadata() ? message.metadata() : Map.of());
         builder.role(MsgRole.ASSISTANT);
-        builder.content(convertFromParts(message.getParts()));
+        builder.content(convertFromParts(message.parts()));
         return builder.build();
     }
 
@@ -104,7 +108,7 @@ public class MessageConvertUtil {
      * @return the converted Message object
      */
     public static Message convertFromMsg(List<Msg> msgs) {
-        Message.Builder builder = new Message.Builder();
+        Message.Builder builder = Message.builder();
         Map<String, Object> metadata = new HashMap<>();
         List<Part<?>> parts = new LinkedList<>();
         msgs.stream()
@@ -113,32 +117,22 @@ public class MessageConvertUtil {
                 .forEach(
                         msg -> {
                             if (null != msg.getMetadata() && !msg.getMetadata().isEmpty()) {
-                                metadata.put(msg.getId(), msg.getMetadata());
+                                metadata.put(msg.getId(), toJsonValues(msg.getMetadata()));
+                            }
+                            Map<String, Object> msgMetadata = new HashMap<>();
+                            msgMetadata.put(MessageConstants.MSG_ID_METADATA_KEY, msg.getId());
+                            msgMetadata.put(
+                                    MessageConstants.SOURCE_NAME_METADATA_KEY, msg.getName());
+                            if (msg.getRole() != null) {
+                                msgMetadata.put(
+                                        MessageConstants.MSG_ROLE_METADATA_KEY,
+                                        msg.getRole().name());
                             }
                             parts.addAll(
                                     msg.getContent().stream()
                                             .map(CONTENT_BLOCK_PARSER::parse)
                                             .filter(Objects::nonNull)
-                                            .peek(
-                                                    part -> {
-                                                        part.getMetadata()
-                                                                .put(
-                                                                        MessageConstants
-                                                                                .MSG_ID_METADATA_KEY,
-                                                                        msg.getId());
-                                                        part.getMetadata()
-                                                                .put(
-                                                                        MessageConstants
-                                                                                .SOURCE_NAME_METADATA_KEY,
-                                                                        msg.getName());
-                                                        if (msg.getRole() != null) {
-                                                            part.getMetadata()
-                                                                    .put(
-                                                                            MessageConstants
-                                                                                    .MSG_ROLE_METADATA_KEY,
-                                                                            msg.getRole().name());
-                                                        }
-                                                    })
+                                            .map(part -> withMetadata(part, msgMetadata))
                                             .toList());
                         });
         return builder.parts(parts).metadata(metadata).role(resolveMessageRole(msgs)).build();
@@ -156,14 +150,14 @@ public class MessageConvertUtil {
         if (roles.size() == 1) {
             return roles.get(0);
         }
-        return Message.Role.USER;
+        return Message.Role.ROLE_USER;
     }
 
     private static Message.Role convertRole(MsgRole role) {
         if (role == MsgRole.ASSISTANT || role == MsgRole.TOOL) {
-            return Message.Role.AGENT;
+            return Message.Role.ROLE_AGENT;
         }
-        return Message.Role.USER;
+        return Message.Role.ROLE_USER;
     }
 
     private static boolean isNotEmptyCollection(Collection<?> collection) {
@@ -190,7 +184,7 @@ public class MessageConvertUtil {
                 continue;
             }
 
-            String msgId = getMetadataValue(part, MessageConstants.MSG_ID_METADATA_KEY);
+            String msgId = metadataValue(part, MessageConstants.MSG_ID_METADATA_KEY);
             if (accumulator != null && accumulator.matches(msgId, kind)) {
                 accumulator.append(block);
             } else {
@@ -208,17 +202,8 @@ public class MessageConvertUtil {
     }
 
     private static boolean isStreamingChunk(Part<?> part) {
-        String value = getMetadataValue(part, MessageConstants.STREAM_CHUNK_METADATA_KEY);
+        String value = metadataValue(part, MessageConstants.STREAM_CHUNK_METADATA_KEY);
         return Boolean.TRUE.toString().equalsIgnoreCase(value);
-    }
-
-    private static String getMetadataValue(Part<?> part, String key) {
-        Map<String, Object> metadata = part.getMetadata();
-        if (metadata == null) {
-            return null;
-        }
-        Object value = metadata.get(key);
-        return value == null ? null : value.toString();
     }
 
     private static String getMergeableChunkKind(ContentBlock block) {
@@ -263,17 +248,5 @@ public class MessageConvertUtil {
             }
             return TextBlock.builder().text(text.toString()).build();
         }
-    }
-
-    /**
-     * Build metadata with content block type in {@link Part}.
-     *
-     * @param type the content block type, see {@link ContentBlock}.
-     * @return metadata with content block type.
-     */
-    public static Map<String, Object> buildTypeMetadata(String type) {
-        Map<String, Object> metadata = new HashMap<>();
-        metadata.put(MessageConstants.BLOCK_TYPE_METADATA_KEY, type);
-        return metadata;
     }
 }

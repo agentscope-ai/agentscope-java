@@ -16,7 +16,7 @@
 
 package io.agentscope.core.a2a.agent.event;
 
-import io.a2a.client.ClientEvent;
+import org.a2aproject.sdk.client.ClientEvent;
 
 /**
  * Handler Interface to handle Different {@link ClientEvent}.

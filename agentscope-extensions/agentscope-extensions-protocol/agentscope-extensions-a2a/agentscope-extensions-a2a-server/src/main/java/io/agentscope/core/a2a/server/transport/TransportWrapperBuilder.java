@@ -16,10 +16,10 @@
 
 package io.agentscope.core.a2a.server.transport;
 
-import io.a2a.server.requesthandlers.RequestHandler;
-import io.a2a.spec.AgentCard;
 import io.agentscope.core.a2a.server.AgentScopeA2aServer;
 import java.util.concurrent.Executor;
+import org.a2aproject.sdk.server.requesthandlers.RequestHandler;
+import org.a2aproject.sdk.spec.AgentCard;
 
 /**
  * Builder interface to build {@link TransportWrapper} for different transports.
