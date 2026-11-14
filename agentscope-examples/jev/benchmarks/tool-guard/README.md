@@ -1,6 +1,6 @@
 # 条件性退款：工具执行前防护对比
 
-与[执行前防护文档](../../../../docs/v2/zh/jev/guides/tool-guard-api.md)使用同一个场景：用户说“先查订单，如果还没发货就退款”，Agent 已经提出退款工具调用。这个用例测量 JEV 和 Qwen 是否判断当前证据足以支持执行，以及判断进入中间件后是否正确拦截或派发。
+与[执行前防护文档](../../../../docs/dev/zh/docs/harness/jev/guides/tool-guard-api.md)使用同一个场景：用户说“先查订单，如果还没发货就退款”，Agent 已经提出退款工具调用。这个用例测量 JEV 和 Qwen 是否判断当前证据足以支持执行，以及判断进入中间件后是否正确拦截或派发。
 
 - [运行程序](../../src/main/java/io/agentscope/examples/jev/JevToolGuardBenchmark.java)：直接调用现有 `JevAutoModeMiddleware`，接入真实 `PermissionEngine`，退款由本地计数器模拟。
 - [固定数据](data/refund-v1.jsonl)：160 个会话快照、168 个受保护调用。

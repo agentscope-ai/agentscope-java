@@ -461,7 +461,7 @@ public final class HarnessGateway implements Gateway {
     }
 
     private static String resolveAgentId(HarnessAgent ha) {
-        String id = ha != null ? ha.sessionKey(RuntimeContext.empty()).agentId() : null;
+        String id = ha != null ? ha.threadKey(RuntimeContext.empty()).agentId() : null;
         return (id != null && !id.isBlank()) ? id : "main";
     }
 

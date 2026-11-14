@@ -815,6 +815,18 @@ class QuartzAgentSchedulerTest {
     }
 
     @Test
+    void testNonBlockingShutdown() throws SchedulerException {
+        Scheduler mockScheduler = mock(Scheduler.class);
+
+        QuartzAgentScheduler mockAgentScheduler =
+                QuartzAgentScheduler.builder().scheduler(mockScheduler).build();
+
+        mockAgentScheduler.shutdown(false);
+
+        verify(mockScheduler).shutdown(false);
+    }
+
+    @Test
     void testShutdownThrowingSchedulerException() throws SchedulerException {
         Scheduler mockScheduler = mock(Scheduler.class);
 

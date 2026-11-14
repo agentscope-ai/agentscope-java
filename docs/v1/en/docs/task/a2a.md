@@ -298,7 +298,7 @@ agent.interrupt(Msg.builder()
 ## More Resources
 
 - **A2A Protocol Specification**: https://a2a-protocol.org/latest/specification/
-- **Agent Interface**: [Agent.java](https://github.com/agentscope-ai/agentscope-java/blob/main/agentscope-core/src/main/java/io/agentscope/core/agent/Agent.java)
+- **Agent Interface**: [Agent.java](https://github.com/agentscope-ai/agentscope-java/blob/v1.0.11/agentscope-core/src/main/java/io/agentscope/core/agent/Agent.java)
 - **Nacos Quick Start**: https://nacos.io/docs/latest/quickstart/quick-start
 - **Nacos Java SDK**: https://nacos.io/docs/latest/manual/user/java-sdk/usage
 - **Nacos Java SDK Additional Configuration Parameters**: https://nacos.io/docs/latest/manual/user/java-sdk/properties

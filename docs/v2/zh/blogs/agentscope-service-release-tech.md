@@ -238,7 +238,7 @@ Sidecar 不是「再实现一个 agent loop」，而是在无法改二进制时�
 2. HITL：触发 Ask Policy，确认后续跑，历史完整；
 3. `self_hosted`：Worker poll / ack / heartbeat / 回传 `tool_result`，Turn 正确恢复。
 
-详见 [`docs/guide/14-validation.md`](/v2/zh/service/service-api) 与架构说明 [`docs/guide/02-architecture.md`](/v2/zh/service/index)。
+历史 `docs/guide/14-validation.md` 未包含在 `v2.0.4` tag 中。可用的参考资料为 [API 参考](/v2/zh/service/api-reference)与[架构概览](/v2/zh/service/index)。
 
 ## 几个值得提前避开的实现误区
 
@@ -297,4 +297,4 @@ AgentScope Service 的技术内核可以概括成三句话：
 2. **持久化事件序列才是 Session 真相，进程内对象只是可丢弃的缓存**；
 3. **Managed 与 BYO 共用舰队契约，框架差异收敛在适配器，而不是散落在 Console**。
 
-如果你正在从「单个 Harness Agent」走向「可运营的 Agent 舰队」，这套分层会减少大量重复基础设施。欢迎直接阅读 [`agentscope-service/README_zh.md`](https://github.com/agentscope-ai/agentscope-java/blob/main/agentscope-service/README_zh.md)；产品能力与接入故事则可回到[发布版文章](/v2/zh/blogs/agentscope-service-release)。
+如果你正在从「单个 Harness Agent」走向「可运营的 Agent 舰队」，这套分层会减少大量重复基础设施。欢迎直接阅读 [`agentscope-service/README_zh.md`](https://github.com/agentscope-ai/agentscope-java/blob/v2.0.4/agentscope-service/README_zh.md)；产品能力与接入故事则可回到[发布版文章](/v2/zh/blogs/agentscope-service-release)。

@@ -16,8 +16,13 @@
 package io.agentscope.harness.agent.middleware;
 
 import io.agentscope.core.agent.Agent;
+import io.agentscope.core.agent.AgentBase;
+import io.agentscope.core.agent.RunOutcome;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.event.AgentEvent;
+import io.agentscope.core.journal.InvocationRecorder;
+import io.agentscope.core.journal.JournalException;
+import io.agentscope.core.message.Msg;
 import io.agentscope.core.middleware.AgentInput;
 import io.agentscope.harness.agent.IsolationScope;
 import io.agentscope.harness.agent.coordination.LocalPeriodicGate;
@@ -29,6 +34,7 @@ import io.agentscope.harness.agent.memory.MemoryBackgroundTasks;
 import io.agentscope.harness.agent.memory.MemoryConsolidator;
 import io.agentscope.harness.agent.workspace.WorkspaceConstants;
 import io.agentscope.harness.agent.workspace.WorkspaceManager;
+import java.time.Clock;
 import java.time.Duration;
 import java.time.LocalDate;
 import java.util.EnumSet;
@@ -134,7 +140,7 @@ public class MemoryMaintenanceMiddleware implements HarnessRuntimeMiddleware {
     /** Narrow declaration: subclasses overriding more hooks must extend this set. */
     @Override
     public Set<ExtensionPoint> activePoints() {
-        return EnumSet.of(ExtensionPoint.ON_AGENT);
+        return EnumSet.of(ExtensionPoint.ON_AGENT, ExtensionPoint.ON_AGENT_FINISH);
     }
 
     @Override
@@ -144,6 +150,8 @@ public class MemoryMaintenanceMiddleware implements HarnessRuntimeMiddleware {
             AgentInput input,
             Function<AgentInput, Flux<AgentEvent>> next) {
         final RuntimeContext rc = ctx != null ? ctx : RuntimeContext.empty();
+        if (Boolean.TRUE.equals(rc.get(MemoryFlushMiddleware.INLINE_CONTEXT_KEY)))
+            return next.apply(input);
         // The maintenance body — including the gate claim, which is remote I/O under a
         // store-backed gate — runs on the background scheduler. Only the in-flight counter is
         // updated synchronously, so a quiescence check can never observe an empty in-flight
@@ -155,6 +163,23 @@ public class MemoryMaintenanceMiddleware implements HarnessRuntimeMiddleware {
                                 ContextView contextView = signal.getContextView();
                                 scheduleMaintenance(rc, contextView);
                             }
+                        });
+    }
+
+    @Override
+    public Mono<Void> onAgentFinish(Agent agent, RuntimeContext rc, Msg result) {
+        if (!Boolean.TRUE.equals(rc.get(MemoryFlushMiddleware.INLINE_CONTEXT_KEY))
+                || InvocationRecorder.from(rc) == null
+                || RunOutcome.fromResult(result).status() != RunOutcome.Status.COMPLETED)
+            return Mono.empty();
+        return Mono.defer(() -> doMaintenance(rc))
+                .subscribeOn(Schedulers.boundedElastic())
+                .contextWrite(context -> context.put(AgentBase.RUNTIME_CONTEXT_KEY, rc))
+                .onErrorResume(
+                        error -> {
+                            if (JournalException.causedBy(error)) return Mono.error(error);
+                            log.warn("Memory maintenance failed: {}", error.getMessage());
+                            return Mono.empty();
                         });
     }
 
@@ -212,6 +237,7 @@ public class MemoryMaintenanceMiddleware implements HarnessRuntimeMiddleware {
                 .consolidate(rc)
                 .onErrorResume(
                         e -> {
+                            if (JournalException.causedBy(e)) return Mono.error(e);
                             log.warn("Memory consolidation failed: {}", e.getMessage());
                             return Mono.empty();
                         });
@@ -227,7 +253,10 @@ public class MemoryMaintenanceMiddleware implements HarnessRuntimeMiddleware {
             return;
         }
 
-        LocalDate cutoff = LocalDate.now().minusDays(dailyFileRetentionDays);
+        Clock clock = rc == null ? null : rc.get(Clock.class);
+        LocalDate cutoff =
+                LocalDate.now(clock == null ? Clock.systemDefaultZone() : clock)
+                        .minusDays(dailyFileRetentionDays);
         for (FileInfo fi : glob.matches()) {
             if (fi.isDirectory()) {
                 continue;

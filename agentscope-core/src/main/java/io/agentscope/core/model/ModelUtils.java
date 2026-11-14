@@ -100,7 +100,22 @@ public final class ModelUtils {
                                                 provider)));
                 LOG.debug("Applied timeout: {} for model: {}", timeout, modelName);
             }
+        }
 
+        // Observe each subscription inside retry, including its timeout outcome. A request
+        // observer is call-scoped; ordinary model calls retain the original source unchanged.
+        final Flux<ChatResponse> timed = responseFlux;
+        responseFlux =
+                Flux.deferContextual(
+                        context ->
+                                context.<ModelRequestObserver>getOrEmpty(ModelRequestObserver.class)
+                                        .map(
+                                                observer ->
+                                                        observer.observe(
+                                                                timed, modelName, provider))
+                                        .orElse(timed));
+
+        if (execConfig != null) {
             // Apply retry if configured (maxAttempts > 1 means retry is enabled)
             Integer maxAttempts = execConfig.getMaxAttempts();
             if (maxAttempts != null && maxAttempts > 1) {
@@ -132,8 +147,11 @@ public final class ModelUtils {
                 // call.
                 final Flux<ChatResponse> source = responseFlux;
                 responseFlux =
-                        Flux.defer(
-                                () -> {
+                        Flux.deferContextual(
+                                context -> {
+                                    var observer =
+                                            context.<ModelRequestObserver>getOrDefault(
+                                                    ModelRequestObserver.class, null);
                                     AtomicBoolean emittedVisibleContent = new AtomicBoolean(false);
                                     return source.doOnNext(
                                                     response -> {
@@ -149,6 +167,11 @@ public final class ModelUtils {
                                                             .jitter(0.5)
                                                             .filter(
                                                                     error -> {
+                                                                        if (observer != null
+                                                                                && !observer
+                                                                                        .retryAllowed(
+                                                                                                error))
+                                                                            return false;
                                                                         if (emittedVisibleContent
                                                                                 .get()) {
                                                                             if (effectiveRetryOn

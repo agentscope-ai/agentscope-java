@@ -279,6 +279,10 @@ class InboxMiddlewareTest {
                 HarnessAgent.builder()
                         .name("inbox-agent")
                         .model(model)
+                        // A post-call memory-consolidation model call races getLastMessages()
+                        // after call() completes; disable it so the only model request is the
+                        // reasoning call this test asserts on.
+                        .disableMemoryHooks()
                         .workspace(wsDir)
                         .abstractFilesystem(new LocalFilesystem(wsDir))
                         .stateStore(stateStore)

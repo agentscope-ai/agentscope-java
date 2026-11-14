@@ -26,7 +26,7 @@ A customer message has arrived and you have not yet replied to it.
    numbered list.
 4. **Respond.**
    - For `bug` or `question`: search workspace docs (`grep_files`,
-     `memory_search`) and prior sessions (`session_search`) for an existing
+     `memory_search`) and prior sessions (`thread_search`) for an existing
      answer; reply with the solution and a citation.
    - For `feature`: thank them, log the request in your reply (the runtime
      captures it), and set expectations.
