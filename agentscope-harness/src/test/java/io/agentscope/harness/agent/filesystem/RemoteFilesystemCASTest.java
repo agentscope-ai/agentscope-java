@@ -37,6 +37,8 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 /**
  * Verifies that {@link RemoteFilesystem} writes are protected by CAS:
@@ -57,6 +59,35 @@ class RemoteFilesystemCASTest {
 
     private RemoteFilesystem newFs(InMemoryStore store) {
         return new RemoteFilesystem(store, List.of("test"));
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"memory/entry.md", "/memory/entry.md", "MEMORY.md"})
+    void conditionalUpdatesUseTheSameKeyAsOrdinaryFileIo(String path) {
+        var store = new InMemoryStore();
+        var fs = newFs(store);
+        fs.uploadFiles(CTX, List.of(Map.entry(path, "old".getBytes(StandardCharsets.UTF_8))));
+        var file = fs.atomicTextFile(CTX, path, false);
+        assertEquals("old", file.read());
+        assertTrue(file.compareAndSet("old", "new"));
+        assertEquals("new", fs.read(CTX, path, 0, 0).fileData().content());
+        assertArrayEquals(
+                "new".getBytes(StandardCharsets.UTF_8),
+                fs.downloadFiles(CTX, List.of(path)).get(0).content());
+        assertEquals(1, store.search(List.of("test"), 10, 0).size());
+    }
+
+    @Test
+    void conditionalTextUpdatesDistinguishMissingEmptyAndStaleContent() {
+        var fs = newFs(new InMemoryStore());
+        var first = fs.atomicTextFile(CTX, "/memory/state.json", false);
+        var second = fs.atomicTextFile(CTX, "/memory/state.json", false);
+        assertEquals(null, first.read());
+        assertTrue(first.compareAndSet(null, ""));
+        assertFalse(second.compareAndSet(null, "stale"));
+        assertTrue(second.compareAndSet("", "updated"));
+        assertFalse(first.compareAndSet("", "lost"));
+        assertEquals("updated", first.read());
     }
 
     @Test
