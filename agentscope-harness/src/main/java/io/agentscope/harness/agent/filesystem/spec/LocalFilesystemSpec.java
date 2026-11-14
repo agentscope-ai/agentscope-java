@@ -37,7 +37,7 @@ import java.util.Map;
  * Specification for the local filesystem mode (with shell execution).
  *
  * <p>This spec produces a {@link LocalFilesystemWithShell} whose root is the agent workspace and
- * whose shell runs directly on the host as {@code sh -c <command>}. Long-term memory
+ * whose shell runs directly on the host ({@code sh -c} / {@code cmd.exe /c}). Long-term memory
  * ({@code MEMORY.md}, {@code memory/}) and session logs live on the same local disk.
  *
  * <p>Suitable for single-process deployments (personal assistants, CLI tools, local dev loops)
@@ -52,6 +52,7 @@ public class LocalFilesystemSpec {
     private int maxOutputBytes = 100_000;
     private final Map<String, String> env = new LinkedHashMap<>();
     private boolean inheritEnv = false;
+    private String shellPath;
 
     /**
      * Path-resolution policy for the upper {@link LocalFilesystemWithShell}. Defaults to
@@ -160,8 +161,7 @@ public class LocalFilesystemSpec {
     }
 
     /**
-     * Controls whether the parent process environment is inherited by shell commands. When
-     * {@code false} (default), only variables added via {@link #env(String, String)} are visible.
+     * Controls whether the parent process environment is inherited by shell commands.
      *
      * @param inherit whether to inherit parent env
      * @return this spec
@@ -169,6 +169,27 @@ public class LocalFilesystemSpec {
     public LocalFilesystemSpec inheritEnv(boolean inherit) {
         this.inheritEnv = inherit;
         return this;
+    }
+
+    /**
+     * Shell that runs {@code execute()} commands, as a full path or a name looked up on
+     * {@code PATH}. Unset, commands run through {@code sh} on POSIX or {@code cmd.exe} on Windows.
+     *
+     * @param path shell executable, or {@code null} / blank to use the host default
+     * @return this spec
+     */
+    public LocalFilesystemSpec shellPath(String path) {
+        this.shellPath = path == null || path.isBlank() ? null : path.trim();
+        return this;
+    }
+
+    /**
+     * Returns the configured shell path.
+     *
+     * @return configured shell executable, or {@code null} when resolved per host
+     */
+    public String getShellPath() {
+        return shellPath;
     }
 
     /**
@@ -370,7 +391,8 @@ public class LocalFilesystemSpec {
                         env.isEmpty() ? null : Map.copyOf(env),
                         inheritEnv,
                         effectiveNamespaceFactory,
-                        effectiveProject);
+                        effectiveProject,
+                        shellPath);
         boolean boundaryEnabled =
                 namespaceBoundaryOverride != null
                         ? namespaceBoundaryOverride

@@ -128,6 +128,11 @@ public class ProjectAwareOverlay extends OverlayFilesystem implements AbstractSa
         return shellBackend.execute(runtimeContext, command, timeoutSeconds);
     }
 
+    @Override
+    public ShellSyntax shellSyntax() {
+        return shellBackend.shellSyntax();
+    }
+
     // ==================== Write routing ====================
 
     @Override

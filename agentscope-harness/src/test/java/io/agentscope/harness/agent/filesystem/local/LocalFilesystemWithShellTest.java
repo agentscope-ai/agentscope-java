@@ -17,13 +17,21 @@ package io.agentscope.harness.agent.filesystem.local;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
+import io.agentscope.harness.agent.filesystem.ShellSyntax;
 import io.agentscope.harness.agent.filesystem.model.ExecuteResponse;
+import io.agentscope.harness.agent.workspace.LocalFsMode;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
+import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 class LocalFilesystemWithShellTest {
 
@@ -31,19 +39,71 @@ class LocalFilesystemWithShellTest {
     void outputCharset_usesNativeEncodingOnWindows() {
         assertEquals(
                 Charset.forName("windows-1252"),
-                LocalFilesystemWithShell.outputCharset("Windows 10", "windows-1252"));
+                new ShellResolver.ResolvedShell("cmd.exe", "/c", ShellSyntax.CMD)
+                        .outputCharset("Windows 10", "windows-1252"));
     }
 
     @Test
     void outputCharset_usesUtf8OnNonWindowsSystems() {
-        assertEquals(StandardCharsets.UTF_8, LocalFilesystemWithShell.outputCharset("Linux"));
+        assertEquals(
+                StandardCharsets.UTF_8,
+                new ShellResolver.ResolvedShell("sh", "-c", ShellSyntax.POSIX)
+                        .outputCharset("Linux", "GBK"));
     }
 
     @Test
     void outputCharset_fallsBackToDefaultWhenWindowsNativeEncodingIsUnavailable() {
         assertEquals(
                 Charset.defaultCharset(),
-                LocalFilesystemWithShell.outputCharset("Windows 10", null));
+                new ShellResolver.ResolvedShell("cmd.exe", "/c", ShellSyntax.CMD)
+                        .outputCharset("Windows 10", null));
+    }
+
+    @Test
+    void outputCharset_usesUtf8ForPowerShellAndPosixShellsOnWindows() {
+        assertEquals(
+                StandardCharsets.UTF_8,
+                new ShellResolver.ResolvedShell("pwsh.exe", "-Command", ShellSyntax.POWERSHELL)
+                        .outputCharset("Windows 11", "GBK"));
+        assertEquals(
+                StandardCharsets.UTF_8,
+                new ShellResolver.ResolvedShell("bash.exe", "-c", ShellSyntax.POSIX)
+                        .outputCharset("Windows 11", "GBK"));
+        assertEquals(
+                StandardCharsets.UTF_8,
+                new ShellResolver.ResolvedShell(
+                                "powershell.exe", "-Command", ShellSyntax.POWERSHELL)
+                        .outputCharset("Windows 11", "GBK"));
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"pwsh", "powershell", "bash"})
+    void execute_preservesConfiguredShellUnicodeOutput(String shell, @TempDir Path dir) {
+        assumeTrue(canResolve(shell), shell + " is not installed on this host");
+        LocalFilesystemWithShell fs =
+                new LocalFilesystemWithShell(
+                        dir,
+                        LocalFsMode.UNRESTRICTED,
+                        null,
+                        60,
+                        100_000,
+                        null,
+                        false,
+                        null,
+                        null,
+                        shell);
+        String command =
+                !shell.equals("bash")
+                        ? "Write-Output ([string][char]0x4e2d + [char]0x6587)"
+                        : "printf '\\344\\270\\255\\346\\226\\207'";
+
+        ExecuteResponse response = fs.execute(null, command, 60);
+
+        assertEquals(0, response.exitCode(), response.output());
+        assertEquals(
+                "\u4e2d\u6587",
+                response.output().strip(),
+                () -> "Output code points: " + response.output().codePoints().boxed().toList());
     }
 
     @Test
@@ -69,5 +129,150 @@ class LocalFilesystemWithShellTest {
         assertEquals(0, resp.exitCode(), "unexpected exit code, output: " + resp.output());
         assertFalse(resp.truncated());
         assertEquals(lines, resp.output().split(payload, -1).length - 1);
+    }
+
+    @Test
+    void execute_keepsPathVariableWhenCustomEnvReplacesInheritedEnvironment(@TempDir Path dir) {
+        // env replaces the inherited environment; dropping PATH with it left the shell unable to
+        // resolve anything, so a command that needs the environment failed where an empty one
+        // worked (#1396).
+        boolean windows = isWindows();
+        String command = windows ? "echo %PATH%" : "echo $PATH";
+
+        LocalFilesystemWithShell fs =
+                new LocalFilesystemWithShell(
+                        dir,
+                        LocalFsMode.UNRESTRICTED,
+                        null,
+                        60,
+                        100_000,
+                        Map.of("AGENTSCOPE_TEST_VAR", "1"),
+                        false,
+                        null,
+                        null,
+                        null);
+
+        ExecuteResponse resp = fs.execute(null, command, 60);
+
+        assertEquals(0, resp.exitCode(), resp.output());
+        String path = resp.output().trim();
+        assertFalse(path.isEmpty(), "PATH reached the child empty: " + resp.output());
+        if (windows) {
+            assertFalse(path.contains("%PATH%"), "PATH was not expanded: " + resp.output());
+        }
+    }
+
+    @Test
+    void execute_usesTheShellThatWasConfigured(@TempDir Path dir) {
+        // sh leaves BASH_VERSION empty and cmd.exe prints it literally; only a version number
+        // proves bash ran.
+        assumeTrue(canResolve("bash"), "bash is not installed on this host");
+
+        LocalFilesystemWithShell fs =
+                new LocalFilesystemWithShell(
+                        dir,
+                        LocalFsMode.UNRESTRICTED,
+                        null,
+                        60,
+                        100_000,
+                        null,
+                        false,
+                        null,
+                        null,
+                        "bash");
+
+        ExecuteResponse resp = fs.execute(null, "echo \"$BASH_VERSION\"", 60);
+
+        assertEquals(0, resp.exitCode(), resp.output());
+        assertTrue(
+                resp.output().trim().matches("\\d+\\.\\d+.*"),
+                "the command did not run under bash: " + resp.output());
+    }
+
+    @Test
+    void execute_letsTheCallerOverrideABootstrapVariable(@TempDir Path dir) {
+        // The bootstrap set restores PATH; a caller that names PATH still wins.
+        String marker = dir.resolve("custom-bin").toString();
+        String command = isWindows() ? "echo %PATH%" : "echo $PATH";
+
+        LocalFilesystemWithShell fs =
+                new LocalFilesystemWithShell(
+                        dir,
+                        LocalFsMode.UNRESTRICTED,
+                        null,
+                        60,
+                        100_000,
+                        Map.of("PATH", marker),
+                        false,
+                        null,
+                        null,
+                        null);
+
+        ExecuteResponse resp = fs.execute(null, command, 60);
+
+        assertEquals(0, resp.exitCode(), resp.output());
+        assertTrue(resp.output().contains("custom-bin"), resp.output());
+    }
+
+    @Test
+    void constructor_rejectsConfiguredShellThatCannotBeFound(@TempDir Path dir) {
+        Path missing = dir.resolve("no-such-shell");
+
+        IllegalArgumentException thrown =
+                assertThrows(
+                        IllegalArgumentException.class,
+                        () ->
+                                new LocalFilesystemWithShell(
+                                        dir,
+                                        LocalFsMode.UNRESTRICTED,
+                                        null,
+                                        60,
+                                        100_000,
+                                        null,
+                                        false,
+                                        null,
+                                        null,
+                                        missing.toString()));
+
+        assertTrue(
+                thrown.getMessage().contains(missing.toString()),
+                "message should name the path, was: " + thrown.getMessage());
+    }
+
+    @Test
+    void execute_usesTheSyntaxOfTheConfiguredShell(@TempDir Path dir) {
+        // Arithmetic expansion is POSIX-only: cmd.exe would echo the expression unchanged.
+        assumeTrue(canResolve("bash"), "bash is not installed on this host");
+
+        LocalFilesystemWithShell fs =
+                new LocalFilesystemWithShell(
+                        dir,
+                        LocalFsMode.UNRESTRICTED,
+                        null,
+                        60,
+                        100_000,
+                        null,
+                        false,
+                        null,
+                        null,
+                        "bash");
+
+        ExecuteResponse resp = fs.execute(null, "echo $((6*7))", 60);
+
+        assertEquals(0, resp.exitCode(), resp.output());
+        assertTrue(resp.output().contains("42"), resp.output());
+    }
+
+    private static boolean canResolve(String shell) {
+        try {
+            ShellResolver.resolve(shell, System.getenv());
+            return true;
+        } catch (IllegalArgumentException e) {
+            return false;
+        }
+    }
+
+    private static boolean isWindows() {
+        return System.getProperty("os.name").toLowerCase().contains("win");
     }
 }

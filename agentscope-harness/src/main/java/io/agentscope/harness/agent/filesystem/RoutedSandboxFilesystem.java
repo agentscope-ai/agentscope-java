@@ -75,6 +75,11 @@ public final class RoutedSandboxFilesystem implements AbstractSandboxFilesystem 
     }
 
     @Override
+    public ShellSyntax shellSyntax() {
+        return primary.shellSyntax();
+    }
+
+    @Override
     public AtomicJournalStorage journalStorage(RuntimeContext runtimeContext) {
         return composite.journalStorage(runtimeContext);
     }

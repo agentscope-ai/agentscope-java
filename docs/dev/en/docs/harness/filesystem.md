@@ -23,7 +23,7 @@ Pick one with `filesystem(...)` on `HarnessAgent.Builder` (no call = mode 3 by d
 |------|--------|--------|-------------|
 | **1 · Shared store** | `filesystem(new RemoteFilesystemSpec(store))` | No | Multiple replicas share `MEMORY.md` / conversation logs / subtask records via KV; **no shell on the host** |
 | **2 · Sandbox** | `filesystem(new DockerFilesystemSpec()...)`, or K8s / Daytona / E2B / AgentRun | Yes (inside sandbox) | Isolated execution, cross-call workspace recovery, optional snapshots + distributed |
-| **3 · Local + shell** (default) | `filesystem(new LocalFilesystemSpec()...)` or **omit it** | Yes (host `sh -c`) | Single process / local / trusted env / scripts and tests |
+| **3 · Local + shell** (default) | `filesystem(new LocalFilesystemSpec()...)` or **omit it** | Yes (host `sh -c` / `cmd.exe /c`) | Single process / local / trusted env / scripts and tests |
 
 > `filesystem(...)` is mutually exclusive with `abstractFilesystem(...)`; the latter is an escape hatch for fully self-managed filesystems and rarely needed.
 
@@ -314,6 +314,7 @@ HarnessAgent agent = HarnessAgent.builder()
     .maxOutputBytes(100_000)          // max output bytes per command
     .env("MY_VAR", "value")          // extra environment variables
     .inheritEnv(true)                // inherit parent process env
+    .shellPath("bash")               // shell for execute; default sh / cmd.exe
     .mode(LocalFsMode.ROOTED)        // path policy
     .project(Paths.get("/my/project")) // project root (shell cwd + overlay lower)
     .addRoot(Paths.get("/extra/dir"))) // extra allowed directory
@@ -325,11 +326,14 @@ HarnessAgent agent = HarnessAgent.builder()
 | `maxOutputBytes(int)` | Max captured output bytes per command | 100,000 |
 | `env(String, String)` | Add a shell environment variable | none |
 | `inheritEnv(boolean)` | Inherit parent process environment | `false` |
+| `shellPath(String)` | Shell that runs `execute` commands, as a full path or an executable name on `PATH` | `sh` on POSIX, `cmd.exe` on Windows |
 | `mode(LocalFsMode)` | Path resolution policy | `ROOTED` |
 | `project(Path)` | Project root directory (overlay lower layer + shell cwd) | `System.getProperty("user.dir")` |
 | `addRoot(Path)` | Extra host directory the agent may access | none |
 | `additionalRoots(Collection)` | Batch-set extra directories | none |
 | `projectWritable(boolean)` | Route non-workspace writes to the project directory instead of workspace | `false` |
+
+PowerShell commands set console output to UTF-8; POSIX shell output is decoded as UTF-8. Windows `cmd.exe` keeps native decoding.
 
 #### Path resolution policy (`LocalFsMode`)
 
@@ -492,7 +496,7 @@ All file tools call through the `AbstractFilesystem` interface, passing the curr
 
 | Mode | Shell available? | Where it runs |
 |------|-----------------|--------------|
-| Local | Yes | Host `sh -c`, cwd = `project` directory |
+| Local | Yes | Host `sh -c` / `cmd.exe /c`, cwd = `project` directory |
 | Shared store | No | Shell not provided |
 | Sandbox | Yes | Inside the sandbox container |
 
