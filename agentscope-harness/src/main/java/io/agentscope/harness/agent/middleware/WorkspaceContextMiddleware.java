@@ -27,8 +27,7 @@ import io.agentscope.harness.agent.filesystem.RoutedSandboxFilesystem;
 import io.agentscope.harness.agent.filesystem.local.LocalFilesystemWithShell;
 import io.agentscope.harness.agent.filesystem.sandbox.AbstractSandboxFilesystem;
 import io.agentscope.harness.agent.sandbox.SandboxAcquireResult;
-import io.agentscope.harness.agent.sandbox.SandboxState;
-import io.agentscope.harness.agent.sandbox.WorkspaceSpec;
+import io.agentscope.harness.agent.sandbox.SandboxWorkspaceRoot;
 import io.agentscope.harness.agent.workspace.LocalFsMode;
 import io.agentscope.harness.agent.workspace.PathPolicy;
 import io.agentscope.harness.agent.workspace.WorkspaceManager;
@@ -123,6 +122,8 @@ public class WorkspaceContextMiddleware implements HarnessRuntimeMiddleware {
             "\n\n... (memory truncated — use memory_search for older entries) ...\n";
 
     private static final String TRUNCATION_NOTICE_PLAIN = "\n\n... (memory truncated) ...\n";
+
+    private static final int MEMORY_HEAD_SHARE = 4;
 
     private static final int DEFAULT_MAX_CONTEXT_TOKENS = 8000;
 
@@ -262,7 +263,7 @@ public class WorkspaceContextMiddleware implements HarnessRuntimeMiddleware {
 
         String workspaceParagraph =
                 buildWorkspaceParagraph(
-                        rc, workspace, effectiveWorkspace, filesystem, artifactDeliveryEnabled);
+                        workspace, effectiveWorkspace, filesystem, artifactDeliveryEnabled, rc);
         WorkspaceContextMaterials.register(
                 rc,
                 List.of(
@@ -386,11 +387,11 @@ public class WorkspaceContextMiddleware implements HarnessRuntimeMiddleware {
      * </ul>
      */
     private static String buildWorkspaceParagraph(
-            RuntimeContext rc,
             Path workspace,
             Path effectiveWorkspace,
             AbstractFilesystem fs,
-            boolean artifactDeliveryEnabled) {
+            boolean artifactDeliveryEnabled,
+            RuntimeContext rc) {
         StringBuilder sb = new StringBuilder("## Workspace\n");
         LocalFilesystemWithShell localUpper = detectLocalUpper(fs);
         Path project = localUpper != null ? localUpper.getShellCwd() : null;
@@ -448,10 +449,9 @@ public class WorkspaceContextMiddleware implements HarnessRuntimeMiddleware {
                             + " shell syntax, installed runtimes, and temporary paths.\n");
             SandboxAcquireResult acquired = rc.get(SandboxAcquireResult.class);
             if (acquired != null && !acquired.isReleased()) {
-                SandboxState state = acquired.getSandbox().getState();
-                WorkspaceSpec spec = state != null ? state.getWorkspaceSpec() : null;
-                if (spec != null && spec.getRoot() != null && !spec.getRoot().isBlank()) {
-                    sb.append("Sandbox root: ").append(spec.getRoot()).append('\n');
+                String root = SandboxWorkspaceRoot.resolve(rc, null);
+                if (root != null && !root.isBlank()) {
+                    sb.append("Sandbox root: ").append(root).append('\n');
                 }
             }
             if (fs instanceof RoutedSandboxFilesystem) {
@@ -616,10 +616,12 @@ public class WorkspaceContextMiddleware implements HarnessRuntimeMiddleware {
         }
         String notice =
                 disableMemoryTools ? TRUNCATION_NOTICE_PLAIN : TRUNCATION_NOTICE_WITH_SEARCH;
-        if (notice.length() >= maxChars) {
-            return text.substring(0, maxChars);
+        if (maxChars <= notice.length()) {
+            return text.substring(text.length() - maxChars);
         }
-        return text.substring(0, maxChars - notice.length()) + notice;
+        int kept = maxChars - notice.length();
+        int head = kept / MEMORY_HEAD_SHARE;
+        return text.substring(0, head) + notice + text.substring(text.length() - (kept - head));
     }
 
     private String buildKnowledgeBlock(

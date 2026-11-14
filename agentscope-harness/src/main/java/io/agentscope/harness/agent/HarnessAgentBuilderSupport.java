@@ -94,17 +94,18 @@ final class HarnessAgentBuilderSupport {
 
             ## Rules
             1. **Stay focused** — Do your assigned task, nothing else
-            2. **Complete the task** — Your final message will be automatically reported to the main agent
+            2. **Complete the task** — Your final message is delivered to the main agent as the result of this invocation
             3. **Don't initiate** — No heartbeats, no proactive actions, no side quests
-            4. **Be ephemeral** — You may be terminated after task completion. That's fine.
+            4. **Finish in one run** — Follow-up messages may continue this session in supported setups, but don't count on them: finish completely in this run
             5. **Recover from truncated tool output** — If you see `[truncated: output exceeded context limit]`, re-read only what you need using smaller chunks (read with offset/limit, or targeted grep/head/tail) instead of full re-reads
-            6. **Land everything in your final message** — It is the ONLY thing the main agent receives. Every conclusion, finding, and answer must be in it, and there must be no tool calls after it: your run ends there
+            6. **Land everything in your final message** — As you work, progress events may stream to the parent's observers, but that pathway is observability only: the main agent acts on your final message. Every conclusion, finding, and answer must be in it, and there must be no tool calls after it — your run ends there
             7. **Cite evidence** — Back each claim with `path:line` references (e.g. `src/Main.java:42`) so the main agent can verify without re-reading
-            8. **No report files** — Do not write your results to a file as the deliverable; the main agent reads your final text message only. Write files only when the task itself asks for them
+            8. **No report files** — Your result travels as the final text message, not as a file; write files only when the task itself asks for them
 
             ## Output Format
-            When complete, your final response should include:
+            When complete, your final response should be self-sufficient and include:
             - What you accomplished or found
+            - What you actually verified (and how), plus limitations or anything left unverified
             - Any relevant details the main agent should know
             - Keep it concise but informative
 
@@ -335,12 +336,12 @@ final class HarnessAgentBuilderSupport {
         final List<AgentSkillRepository> capturedSkillRepos = List.copyOf(b.skillRepositories);
         final Path capturedProjectGlobalSkillsDir = b.projectGlobalSkillsDir;
         final boolean capturedDisableFilesystemTools = b.disableFilesystemTools;
+        final int capturedReadFileMaxChars = b.readFileMaxChars;
         final boolean capturedDisableShellTool = b.disableShellTool;
         final boolean capturedDisableMemoryTools = b.disableMemoryTools;
         final boolean capturedDisableMemoryHooks = b.disableMemoryHooks;
         final boolean capturedDisableKnowledgeContext = b.disableKnowledgeContext;
         final var capturedWebHttpClient = b.webHttpClient;
-        final boolean capturedDisableSessionPersistence = b.disableSessionPersistence;
         final boolean capturedDisableWorkspaceContext = b.disableWorkspaceContext;
         final boolean capturedPlanModeEnabled = b.planModeEnabled;
         final boolean capturedPlanModeAllowShell = b.planModeAllowShell;
@@ -358,7 +359,7 @@ final class HarnessAgentBuilderSupport {
         // history by sessionId. Null in purely local default deployments — children then keep
         // their own local store, preserving legacy behaviour.
         final io.agentscope.core.state.AgentStateStore capturedStateStore = b.stateStoreOverride;
-        final var capturedSessionHistory = b.sessionHistoryConfigurer();
+        final var capturedJournal = b.journalConfigurer();
 
         return (RuntimeContext parentRc) -> {
             // general-purpose subagent shares the parent's workspace and is short-lived per spawn;
@@ -379,6 +380,7 @@ final class HarnessAgentBuilderSupport {
                             .memory(capturedMemoryConfig)
                             .contextPolicy(capturedContextPolicy)
                             .enableAgentTracingLog(capturedAgentTracingLogEnabled)
+                            .readFileMaxChars(capturedReadFileMaxChars)
                             .maxContextTokens(capturedMaxContextTokens);
 
             if (capturedPermissions != null) sub.permissionContext(capturedPermissions);
@@ -398,7 +400,6 @@ final class HarnessAgentBuilderSupport {
             if (capturedDisableMemoryHooks) sub.disableMemoryHooks();
             if (capturedDisableKnowledgeContext) sub.disableKnowledgeContext();
             if (capturedWebHttpClient != null) sub.webHttpClient(capturedWebHttpClient);
-            if (capturedDisableSessionPersistence) sub.disableSessionPersistence();
             if (capturedDisableWorkspaceContext) sub.disableWorkspaceContext();
             configurePlanMode(
                     sub, capturedPlanModeEnabled, capturedPlanModeAllowShell, capturedPlanFileDir);
@@ -408,7 +409,7 @@ final class HarnessAgentBuilderSupport {
                 sub.projectGlobalSkillsDir(capturedProjectGlobalSkillsDir);
             }
             if (capturedBackend != null) sub.abstractFilesystem(capturedBackend);
-            capturedSessionHistory.accept(sub);
+            capturedJournal.accept(sub);
             if (capturedStateStore != null) sub.stateStore(capturedStateStore);
             if (capturedModelExec != null) sub.modelExecutionConfig(capturedModelExec);
             if (capturedToolExec != null) sub.toolExecutionConfig(capturedToolExec);
@@ -461,12 +462,12 @@ final class HarnessAgentBuilderSupport {
         final MemoryConfig capturedMemoryConfig = b.memoryConfig;
         final var capturedContextPolicy = b.contextPolicy;
         final boolean capturedDisableFilesystemTools = b.disableFilesystemTools;
+        final int capturedReadFileMaxChars = b.readFileMaxChars;
         final boolean capturedDisableShellTool = b.disableShellTool;
         final boolean capturedDisableMemoryTools = b.disableMemoryTools;
         final boolean capturedDisableMemoryHooks = b.disableMemoryHooks;
         final boolean capturedDisableKnowledgeContext = b.disableKnowledgeContext;
         final var capturedWebHttpClient = b.webHttpClient;
-        final boolean capturedDisableSessionPersistence = b.disableSessionPersistence;
         final boolean capturedPlanModeEnabled = b.planModeEnabled;
         final boolean capturedPlanModeAllowShell = b.planModeAllowShell;
         final String capturedPlanFileDir = b.planFileDir;
@@ -490,7 +491,7 @@ final class HarnessAgentBuilderSupport {
         // See buildGeneralPurposeFactory: propagate the parent's (distributed) state store so the
         // subagent's conversation survives cross-node re-materialization. Null in local defaults.
         final io.agentscope.core.state.AgentStateStore capturedStateStore = b.stateStoreOverride;
-        final var capturedSessionHistory = b.sessionHistoryConfigurer();
+        final var capturedJournal = b.journalConfigurer();
 
         return (RuntimeContext parentRc) -> {
             if (decl.isRemote()) {
@@ -561,7 +562,7 @@ final class HarnessAgentBuilderSupport {
                 sub.filesystem(cloneLocalSpecForSubagent(capturedLocalFilesystemSpec));
             }
 
-            capturedSessionHistory.accept(sub);
+            capturedJournal.accept(sub);
             if (capturedStateStore != null) {
                 sub.stateStore(capturedStateStore);
             }
@@ -580,13 +581,13 @@ final class HarnessAgentBuilderSupport {
                 sub.compaction(capturedCompactionConfig);
             }
 
+            sub.readFileMaxChars(capturedReadFileMaxChars);
             if (capturedDisableFilesystemTools) sub.disableFilesystemTools();
             if (capturedDisableShellTool) sub.disableShellTool();
             if (capturedDisableMemoryTools) sub.disableMemoryTools();
             if (capturedDisableMemoryHooks) sub.disableMemoryHooks();
             if (capturedDisableKnowledgeContext) sub.disableKnowledgeContext();
             if (capturedWebHttpClient != null) sub.webHttpClient(capturedWebHttpClient);
-            if (capturedDisableSessionPersistence) sub.disableSessionPersistence();
             configurePlanMode(
                     sub, capturedPlanModeEnabled, capturedPlanModeAllowShell, capturedPlanFileDir);
 

@@ -66,6 +66,27 @@ class SandboxBackedFilesystemTest {
     }
 
     @Test
+    void executePreservesConfirmedTimeoutAndPartialOutput() {
+        SandboxBackedFilesystem filesystem = new SandboxBackedFilesystem();
+        BaseFakeSandbox sandbox =
+                new BaseFakeSandbox(new ExecResult(0, "", "", false)) {
+                    @Override
+                    public ExecResult exec(
+                            RuntimeContext runtimeContext, String command, Integer timeoutSeconds) {
+                        throw new SandboxException.ExecException(
+                                124, "partial output", "Command timed out", true);
+                    }
+                };
+        filesystem.setSandbox(sandbox);
+
+        var result = filesystem.execute(RT, "sleep 60", 60);
+
+        assertEquals(124, result.exitCode());
+        assertTrue(result.timedOut());
+        assertTrue(result.output().contains("partial output"));
+    }
+
+    @Test
     void downloadFiles_decodesWrappedBase64Output() {
         byte[] expected = new byte[] {1, 2, 3, 4, 5, 6};
         SandboxBackedFilesystem filesystem = new SandboxBackedFilesystem();

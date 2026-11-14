@@ -143,6 +143,68 @@ class OllamaOptionsTest {
     }
 
     @Test
+    @DisplayName("Should preserve executionConfig when converting from GenerateOptions")
+    void testFromGenerateOptionsPreservesExecutionConfig() {
+        ExecutionConfig executionConfig =
+                ExecutionConfig.builder()
+                        .timeout(Duration.ofMillis(20))
+                        .maxAttempts(2)
+                        .initialBackoff(Duration.ofMillis(10))
+                        .build();
+
+        GenerateOptions genOptions =
+                GenerateOptions.builder().temperature(0.8).executionConfig(executionConfig).build();
+
+        OllamaOptions options = OllamaOptions.fromGenerateOptions(genOptions);
+
+        assertEquals(executionConfig, options.getExecutionConfig());
+    }
+
+    @Test
+    @DisplayName("Should keep executionConfig unset when GenerateOptions has none")
+    void testFromGenerateOptionsWithoutExecutionConfig() {
+        assertNull(
+                OllamaOptions.fromGenerateOptions(GenerateOptions.builder().build())
+                        .getExecutionConfig());
+        assertNull(OllamaOptions.fromGenerateOptions(null).getExecutionConfig());
+    }
+
+    @Test
+    @DisplayName("Should keep executionConfig through a GenerateOptions round-trip")
+    void testExecutionConfigSurvivesGenerateOptionsRoundTrip() {
+        ExecutionConfig executionConfig =
+                ExecutionConfig.builder().timeout(Duration.ofSeconds(30)).maxAttempts(3).build();
+        OllamaOptions original = OllamaOptions.builder().executionConfig(executionConfig).build();
+
+        GenerateOptions genOptions = original.toGenerateOptions();
+        OllamaOptions converted = OllamaOptions.fromGenerateOptions(genOptions);
+
+        assertEquals(executionConfig, genOptions.getExecutionConfig());
+        assertEquals(executionConfig, converted.getExecutionConfig());
+    }
+
+    @Test
+    @DisplayName("Should merge GenerateOptions executionConfig over the model default")
+    void testMergeGenerateOptionsExecutionConfig() {
+        ExecutionConfig defaultConfig =
+                ExecutionConfig.builder().timeout(Duration.ofMinutes(5)).maxAttempts(3).build();
+        ExecutionConfig perCallConfig =
+                ExecutionConfig.builder().timeout(Duration.ofMillis(20)).maxAttempts(1).build();
+        OllamaOptions defaults = OllamaOptions.builder().executionConfig(defaultConfig).build();
+
+        // Explicit per-call config overrides the default
+        assertEquals(
+                perCallConfig,
+                defaults.merge(GenerateOptions.builder().executionConfig(perCallConfig).build())
+                        .getExecutionConfig());
+
+        // No per-call config keeps the default
+        assertEquals(
+                defaultConfig,
+                defaults.merge(GenerateOptions.builder().build()).getExecutionConfig());
+    }
+
+    @Test
     @DisplayName("Should handle null GenerateOptions in fromGenerateOptions")
     void testFromNullGenerateOptions() {
         OllamaOptions options = OllamaOptions.fromGenerateOptions(null);

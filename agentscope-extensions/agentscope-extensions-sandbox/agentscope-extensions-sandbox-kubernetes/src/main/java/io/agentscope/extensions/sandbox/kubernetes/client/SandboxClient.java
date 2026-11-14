@@ -106,7 +106,8 @@ public class SandboxClient implements AutoCloseable {
                     options.labels().isEmpty() ? null : options.labels(),
                     options.shutdownAfterSeconds(),
                     options.podLabels().isEmpty() ? null : options.podLabels(),
-                    options.podAnnotations().isEmpty() ? null : options.podAnnotations());
+                    options.podAnnotations().isEmpty() ? null : options.podAnnotations(),
+                    options.env());
 
             long startNs = System.nanoTime();
             String sandboxId = k8sHelper.resolveSandboxName(claimName, namespace, readyTimeout);

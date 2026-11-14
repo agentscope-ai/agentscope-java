@@ -26,6 +26,9 @@ public enum SandboxErrorCode {
     /** Command execution timed out. */
     EXEC_TIMEOUT,
 
+    /** Command submission did not produce a trustworthy process result. */
+    EXEC_STATUS_UNKNOWN,
+
     /** Failed to start the workspace store. */
     WORKSPACE_START_ERROR,
 

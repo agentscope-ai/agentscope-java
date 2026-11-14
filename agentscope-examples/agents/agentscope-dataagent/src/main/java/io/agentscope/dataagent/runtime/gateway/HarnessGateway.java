@@ -236,7 +236,7 @@ public final class HarnessGateway implements Gateway {
 
     /**
      * Binds the primary harness agent. Also registers it under its {@link
-     * HarnessAgent#sessionKey(RuntimeContext)} stable agent identity for routing.
+     * HarnessAgent#threadKey(RuntimeContext)} stable agent identity for routing.
      */
     @Override
     public void bindMainAgent(HarnessAgent agent) {
@@ -529,7 +529,7 @@ public final class HarnessGateway implements Gateway {
     }
 
     private static String resolveAgentId(HarnessAgent ha) {
-        String id = ha != null ? ha.sessionKey(RuntimeContext.empty()).agentId() : null;
+        String id = ha != null ? ha.threadKey(RuntimeContext.empty()).agentId() : null;
         return (id != null && !id.isBlank()) ? id : "main";
     }
 

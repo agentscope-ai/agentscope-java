@@ -46,6 +46,7 @@ Message content is composed of typed blocks, each representing one type of infor
 |-------|-------------|-----------|
 | `TextBlock` | Plain text content | USER, ASSISTANT, SYSTEM |
 | `DataBlock` | Binary data (image / audio / video) via base64 or URL — unifies the legacy ImageBlock / AudioBlock / VideoBlock | USER, ASSISTANT |
+| `DocumentBlock` | Document input (PDF, Word, plain text) via a provider-scoped file ID (`FileIdSource` with `provider` and `file_id`), URL, or base64 | USER |
 | `ImageBlock` / `AudioBlock` / `VideoBlock` | Legacy concrete media blocks (still supported; new code should prefer `DataBlock`) | USER |
 | `ThinkingBlock` | Model reasoning / chain of thought | ASSISTANT |
 | `ToolUseBlock` | A tool call: `id` / `name` / `input` / `state` (`ToolCallState`) | ASSISTANT |
@@ -55,7 +56,7 @@ Message content is composed of typed blocks, each representing one type of infor
 
 <Note>
 
-Role constraints are enforced at construction: `USER` only allows text/data/image/audio/video blocks; `SYSTEM` only allows `TextBlock`; `ASSISTANT` allows all block types.
+Role constraints are enforced at construction: `USER` only allows text/data/document/image/audio/video blocks; `SYSTEM` only allows `TextBlock`; `ASSISTANT` allows all block types.
 
 </Note>
 
@@ -196,7 +197,7 @@ All events extend `AgentEvent` (`io.agentscope.core.event`), which exposes the c
 | `getId()` | `String` | Unique event identifier |
 | `getCreatedAt()` | `String` | ISO 8601 timestamp |
 | `getType()` | `AgentEventType` | Event type enum |
-| `getSource()` | `String` | Source path identifying the originating agent. `null` for top-level agent events; a slash-separated path (e.g. `"main/researcher"`) for events forwarded from a subagent |
+| `getSource()` | `String` | Source path identifying the originating agent. `null` for top-level agent events; local subagent events use `parentSessionId/agentId/subagentSessionId` (e.g. `"main/researcher/sub-1"`), and remote subagent events use `parentSessionId/agentId/taskId` |
 | `getMetadata()` | `Map<String, Object>` | Optional key/value bag. Remote subagent forwards also set `taskId` (`AgentEvent.METADATA_TASK_ID`) to the harness / Agent Protocol task id and `parentSessionId` (`AgentEvent.METADATA_PARENT_SESSION_ID`) to the parent session when events are task-backed |
 
 Events are grouped below; unless noted otherwise, every event also carries `getReplyId()` linking it to the message being assembled.
@@ -312,7 +313,7 @@ Events are grouped below; unless noted otherwise, every event also carries `getR
     |--------|------|-------------|
     | `getReplyId()` | `String` | Reply message ID |
     | `getToolCallId()` | `String` | The matching tool call ID |
-    | `getState()` | `ToolResultState` | Final state: `SUCCESS`, `ERROR`, `INTERRUPTED`, `DENIED`, `RUNNING`, `SUSPENDED` |
+    | `getState()` | `ToolResultState` | Final state: `SUCCESS`, `ERROR`, `INTERRUPTED`, `DENIED`, `RUNNING` |
 
 </Accordion>
 
@@ -337,7 +338,7 @@ Events are grouped below; unless noted otherwise, every event also carries `getR
     | `getReplyId()` | `String` | Reply message ID |
     | `getToolCalls()` | `List<ToolUseBlock>` | Tool calls awaiting confirmation |
 
-    **RequireExternalExecutionEvent** — agent pauses for external execution. A suspended call produces no `ToolResult*` events: the tool has not executed, and the real result is supplied by the caller and surfaced through `ExternalExecutionResultEvent`.
+    **RequireExternalExecutionEvent** — agent pauses for external execution.
 
     | Method | Type | Description |
     |--------|------|-------------|
@@ -420,7 +421,7 @@ agent.streamEvents(userMsg)
 
 <Tip>
 
-For live output within the current request, adapt AgentEvent to SSE. `streamEvents()` starts execution and has no durable cursor; do not execute the request again to catch up after a disconnect. Harness also saves logs for direct calls by default. See [Session operations, events and recovery](/v2/en/docs/harness/session-log) for reading history and introducing `AgentSession` when you need background tasks. Hosted frontends use [Agent API snapshot plus SSE](/v2/en/service/session-event-log).
+This decoupling makes deployments flexible: the backend pushes the event stream over SSE, and the frontend reconstructs the message client-side. Even if the connection drops, replaying events from any checkpoint restores the message state precisely.
 
 </Tip>
 
@@ -479,9 +480,3 @@ How messages are stored and persisted
 
 
 </CardGroup>
-
-## Relationship to durable SessionEvent
-
-AgentEvent is a typed live event; SessionEvent is an immutable durable fact, not a one-to-one copy. Standard execution exposes agentId/sessionId/turnId/runId through event.getExecution(). runId matches native executionRunId. Forwarded children keep their own identity. Live event IDs, native seq and public SSE cursors remain independent; receiving a live event is not a commit acknowledgment.
-
-A logical turn may span multiple executions. AgentEndEvent only ends the current invocation. See [Session operations, events and recovery](/v2/en/docs/harness/session-log).

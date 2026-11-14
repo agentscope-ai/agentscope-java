@@ -21,9 +21,9 @@ actually use:
 - `execute` — run a shell command in the workspace sandbox
 - `memory_search` — search the agent's long-term memory
 - `memory_get` — fetch a specific memory entry
-- `session_search` — search prior session transcripts
-- `session_list` — list prior sessions
-- `session_history` — fetch a session transcript by id
+- `thread_search` — search prior session transcripts
+- `thread_list` — list prior sessions
+- `thread_history` — fetch a session transcript by id
 
 Be conservative: do not include destructive tools (`write_file`, `edit_file`,
 `execute`) unless the description clearly requires them.

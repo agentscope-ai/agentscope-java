@@ -102,12 +102,30 @@ public class MessageConvertUtil {
     }
 
     /**
-     * Convert a list of {@link Msg} to {@link Message}.
+     * Convert a list of {@link Msg} to {@link Message}, without call identity.
      *
      * @param msgs the list of Msg to convert
      * @return the converted Message object
      */
     public static Message convertFromMsg(List<Msg> msgs) {
+        return convertFromMsg(msgs, null, null);
+    }
+
+    /**
+     * Convert a list of {@link Msg} to {@link Message}, carrying the call identity.
+     *
+     * <p>The user id, when not blank, is written to the envelope-level metadata key {@link
+     * MessageConstants#USER_ID_METADATA_KEY}. It never takes part in the {@code <msgId,
+     * metadata>} wrapping of per-message metadata, so a server can always read it flat — a message
+     * whose id collides with the reserved key cannot overwrite the identity. The session id, when
+     * not blank, becomes the A2A native {@code contextId} of the message.
+     *
+     * @param msgs the list of Msg to convert
+     * @param userId the user id of the call, or {@code null} when the caller is anonymous
+     * @param sessionId the session id of the call, or {@code null} when there is none
+     * @return the converted Message object
+     */
+    public static Message convertFromMsg(List<Msg> msgs, String userId, String sessionId) {
         Message.Builder builder = Message.builder();
         Map<String, Object> metadata = new HashMap<>();
         List<Part<?>> parts = new LinkedList<>();
@@ -135,7 +153,16 @@ public class MessageConvertUtil {
                                             .map(part -> withMetadata(part, msgMetadata))
                                             .toList());
                         });
-        return builder.parts(parts).metadata(metadata).role(resolveMessageRole(msgs)).build();
+        // Reserved entries are written last, so callers cannot spoof the identity with a message
+        // whose id equals the reserved key.
+        if (null != userId && !userId.isBlank()) {
+            metadata.put(MessageConstants.USER_ID_METADATA_KEY, userId);
+        }
+        builder.parts(parts).metadata(metadata).role(resolveMessageRole(msgs));
+        if (null != sessionId && !sessionId.isBlank()) {
+            builder.contextId(sessionId);
+        }
+        return builder.build();
     }
 
     private static Message.Role resolveMessageRole(List<Msg> msgs) {

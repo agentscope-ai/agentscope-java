@@ -22,8 +22,11 @@ import io.agentscope.core.hook.PostCallEvent;
 import io.agentscope.core.hook.PreCallEvent;
 import io.agentscope.core.interruption.InterruptContext;
 import io.agentscope.core.interruption.InterruptSource;
+import io.agentscope.core.message.AssistantMessage;
+import io.agentscope.core.message.GenerateReason;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
+import io.agentscope.core.model.ModelSchedulers;
 import io.agentscope.core.shutdown.GracefulShutdownManager;
 import io.agentscope.core.state.AgentState;
 import io.agentscope.core.tracing.TracerRegistry;
@@ -35,6 +38,7 @@ import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
 import java.util.function.Supplier;
 import java.util.regex.Pattern;
@@ -42,8 +46,8 @@ import reactor.core.Disposable;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.FluxSink;
 import reactor.core.publisher.Mono;
+import reactor.core.publisher.SignalType;
 import reactor.core.publisher.Sinks;
-import reactor.core.scheduler.Schedulers;
 
 /**
  * Abstract base class for all agents in the AgentScope framework.
@@ -114,7 +118,7 @@ public abstract class AgentBase implements Agent {
      * Per-key call serialization tails. Each entry holds the completion signal of the most recently
      * enqueued call for that key; the next call for the same key chains after it, so calls sharing a
      * key run one-at-a-time (FIFO) while different keys run concurrently. See {@link
-     * #callSerializationKey(RuntimeContext)} and {@link #serializeOnKey(Object, Mono)}.
+     * #callSerializationKey(RuntimeContext)} and {@link #serializeOnKey(Object, Mono, Supplier)}.
      */
     private final ConcurrentHashMap<Object, Mono<Void>> callGates = new ConcurrentHashMap<>();
 
@@ -345,13 +349,28 @@ public abstract class AgentBase implements Agent {
         // Per-subscription private mutable copy: input adjustments from per-call extension
         // points (e.g. onAgentStateReady middlewares) never touch the caller's list.
         List<Msg> msgs = new ArrayList<>(inputMsgs != null ? inputMsgs : List.of());
+        // Completes when this call's cancellation cleanup has finished; empty until a cancelled
+        // lifecycle body starts that cleanup.
+        AtomicReference<Mono<Void>> cancelCleanup = new AtomicReference<>(Mono.empty());
         // Resolve session state only after admission. Retire before releasing the queue gate so a
         // retry cannot have its new registration removed by the preceding attempt's cleanup.
         Mono<Msg> lifecycle =
-                Mono.defer(() -> runLifecycleBody(msgs, rc, doCallFn, requestId, control, gateKey))
+                Mono.defer(
+                                () ->
+                                        runLifecycleBody(
+                                                msgs,
+                                                rc,
+                                                doCallFn,
+                                                requestId,
+                                                control,
+                                                gateKey,
+                                                cancelCleanup))
                         .doOnTerminate(retire)
                         .doOnCancel(retire);
-        Mono<Msg> gated = gateKey == null ? lifecycle : serializeOnKey(gateKey, lifecycle);
+        Mono<Msg> gated =
+                gateKey == null
+                        ? lifecycle
+                        : serializeOnKey(gateKey, lifecycle, cancelCleanup::get);
         return control.guard(gated)
                 .singleOrEmpty()
                 .doOnSuccess(
@@ -381,7 +400,8 @@ public abstract class AgentBase implements Agent {
             Function<List<Msg>, Mono<Msg>> doCallFn,
             String requestId,
             RunControl control,
-            Object gateKey) {
+            Object gateKey,
+            AtomicReference<Mono<Void>> cancelCleanup) {
         GracefulShutdownManager.getInstance().ensureAcceptingRequests();
         if (!control.start()) {
             return Mono.error(
@@ -397,7 +417,14 @@ public abstract class AgentBase implements Agent {
                 scope -> executeCallBody(msgs, doCallFn, requestId, control, gateKey, scope),
                 scope -> releaseCallExecution(scope, "completed"),
                 (scope, error) -> releaseCallExecution(scope, "failed"),
-                scope -> releaseCallExecution(scope, "cancelled"));
+                scope -> {
+                    // Cancellation cannot stop work this call has already started (e.g. a
+                    // blocking state write). Publish the cleanup so the session gate stays held
+                    // until it finishes; cache() runs it once for both subscribers.
+                    Mono<Void> cleanup = releaseCallExecution(scope, "cancelled").cache();
+                    cancelCleanup.set(cleanup.onErrorResume(error -> Mono.empty()));
+                    return cleanup;
+                });
     }
 
     /** Asynchronous resource boundary for durable execution ownership. */
@@ -410,7 +437,12 @@ public abstract class AgentBase implements Agent {
                 });
     }
 
-    /** Runs before completion/error is delivered, including subscriber cancellation. */
+    /**
+     * Runs before completion/error is delivered, including subscriber cancellation. On
+     * cancellation ({@code status} {@code "cancelled"}) the same-key call gate stays held until the
+     * returned {@code Mono} terminates, so implementations can wait there for work the cancelled
+     * call already started and cannot abort (such as an in-flight state write).
+     */
     protected Mono<Void> releaseCallExecution(Object scope, String status) {
         return Mono.empty();
     }
@@ -427,20 +459,39 @@ public abstract class AgentBase implements Agent {
         // no-arg "most-recently-active" accessors.
         GracefulShutdownManager.getInstance().bindRequestState(requestId, stateForCall(scope));
         List<Msg> acceptedInputs = inputsForCall(scope, msgs);
+        RuntimeContext activeRuntime = runtimeForCall(scope);
+        AgentExecutionHost host =
+                activeRuntime == null ? null : activeRuntime.get(AgentExecutionHost.class);
+        Msg resumedResult = host == null ? null : host.resumeResult();
         Mono<Msg> body =
                 TracerRegistry.get()
                         .callAgent(
                                 this,
                                 msgs,
                                 () ->
-                                        notifyPreCall(acceptedInputs, scope)
-                                                .flatMap(doCallFn)
-                                                .flatMap(this::notifyPostCall)
+                                        (resumedResult == null
+                                                        ? notifyPreCall(acceptedInputs, scope)
+                                                                .flatMap(doCallFn)
+                                                                .flatMap(this::notifyPostCall)
+                                                        : Mono.just(resumedResult))
+                                                .flatMap(
+                                                        result ->
+                                                                finishInvocation(
+                                                                                scope,
+                                                                                activeRuntime,
+                                                                                host,
+                                                                                result)
+                                                                        .thenReturn(result))
                                                 .onErrorResume(
                                                         createErrorHandler(
                                                                 control,
                                                                 msgs.toArray(new Msg[0]))));
-        body = body.doOnNext(result -> onCallResult(scope, result));
+        body =
+                body.doOnNext(
+                        result -> {
+                            onCallResult(scope, result);
+                            control.result(RunOutcome.fromResult(result));
+                        });
         Mono<Msg> scoped =
                 scope == null ? body : body.contextWrite(c -> c.put(CALL_SCOPE_KEY, scope));
         // Nested calls own their own control; only the outer execution receives this handle.
@@ -453,8 +504,32 @@ public abstract class AgentBase implements Agent {
                                         .put(RUNTIME_CONTEXT_KEY, runtime));
     }
 
+    private Mono<Void> finishInvocation(
+            Object scope, RuntimeContext runtime, AgentExecutionHost host, Msg result) {
+        if (host == null) return beforeCallComplete(scope, result);
+        return Mono.defer(
+                () ->
+                        host.finish(
+                                runtime,
+                                result,
+                                () ->
+                                        host.beforeBoundary(
+                                                        AgentExecutionHost.Boundary.FINALIZATION,
+                                                        runtime,
+                                                        stateForCall(scope))
+                                                .then(
+                                                        Mono.defer(
+                                                                () ->
+                                                                        beforeCallComplete(
+                                                                                scope, result)))));
+    }
+
     protected List<Msg> inputsForCall(Object scope, List<Msg> inputs) {
         return inputs;
+    }
+
+    protected Mono<Void> beforeCallComplete(Object scope, Msg result) {
+        return Mono.empty();
     }
 
     protected void onCallResult(Object scope, Msg result) {}
@@ -481,9 +556,13 @@ public abstract class AgentBase implements Agent {
      * Serializes {@code action} against other actions sharing {@code key}: this call waits for the
      * previously-enqueued call with the same key to terminate before running, then becomes the tail
      * the next same-key call waits on. Releases its slot on any terminal signal (complete, error, or
-     * cancel) so a failed/cancelled call never blocks the queue.
+     * cancel) so a failed/cancelled call never blocks the queue. On cancel the slot is released
+     * only once {@code cancelCleanup} terminates: a cancelled call may still be finishing work it
+     * started (e.g. writing session state), and admitting the next call earlier would let that
+     * late write overwrite the next call's result.
      */
-    private <T> Mono<T> serializeOnKey(Object key, Mono<T> action) {
+    private <T> Mono<T> serializeOnKey(
+            Object key, Mono<T> action, Supplier<Mono<Void>> cancelCleanup) {
         return Mono.defer(
                 () -> {
                     Sinks.Empty<Void> release = Sinks.empty();
@@ -504,7 +583,19 @@ public abstract class AgentBase implements Agent {
                             ignored -> {},
                             ignored -> callGates.remove(key, tail),
                             () -> callGates.remove(key, tail));
-                    return previous[0].then(action).doFinally(signal -> release.tryEmitEmpty());
+                    return previous[0]
+                            .then(action)
+                            .doFinally(
+                                    signal -> {
+                                        if (signal == SignalType.CANCEL) {
+                                            cancelCleanup
+                                                    .get()
+                                                    .doFinally(ignored -> release.tryEmitEmpty())
+                                                    .subscribe();
+                                        } else {
+                                            release.tryEmitEmpty();
+                                        }
+                                    });
                 });
     }
 
@@ -634,6 +725,14 @@ public abstract class AgentBase implements Agent {
     private Function<Throwable, Mono<Msg>> createErrorHandler(
             RunControl control, Msg... originalArgs) {
         return error -> {
+            if (error instanceof AgentExecutionHost.Paused) {
+                return Mono.just(
+                        AssistantMessage.builder()
+                                .name(getName())
+                                .textContent("")
+                                .generateReason(GenerateReason.HOST_PAUSED)
+                                .build());
+            }
             if (error instanceof InterruptedException
                     || (error.getCause() instanceof InterruptedException)) {
                 return handleInterrupt(control.interruption().toContext(), originalArgs);
@@ -850,7 +949,7 @@ public abstract class AgentBase implements Agent {
             fullInput.addAll(callArgs);
         }
 
-        PreCallEvent event = new PreCallEvent(this, fullInput);
+        PreCallEvent event = new PreCallEvent(this, fullInput, runtimeForCall(callScope));
 
         Mono<PreCallEvent> result =
                 seedSystemMsg(callScope).doOnNext(event::setSystemMessage).thenReturn(event);
@@ -1129,7 +1228,7 @@ public abstract class AgentBase implements Agent {
                                             sink.onCancel(callDisposable);
                                         },
                                         FluxSink.OverflowStrategy.BUFFER)
-                                .publishOn(Schedulers.boundedElastic()));
+                                .publishOn(ModelSchedulers.responses()));
     }
 
     @Override

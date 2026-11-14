@@ -71,7 +71,6 @@ import org.a2aproject.sdk.spec.AgentInterface;
 import org.a2aproject.sdk.spec.TaskNotFoundError;
 import org.a2aproject.sdk.spec.TaskStatusUpdateEvent;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -81,6 +80,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Bean;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import reactor.core.Disposable;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.publisher.Sinks;
@@ -323,6 +323,34 @@ class A2aHttpEndToEndTest {
     }
 
     @Test
+    void streamingCallReturnsFinalResultWithoutDeltas() {
+        runner.script(messages -> reply("final-only answer"));
+
+        Msg result = newAgent(null).call(userMsg("hi")).block(TIMEOUT);
+
+        assertThat(result).isNotNull();
+        assertThat(result.getTextContent()).isEqualTo("final-only answer");
+    }
+
+    @Test
+    void streamingEventsReturnFinalResultWithoutDeltas() {
+        runner.script(messages -> reply("final-only answer"));
+
+        List<AgentEvent> events =
+                newAgent(null).streamEvents(userMsg("hi")).collectList().block(TIMEOUT);
+
+        assertThat(events).isNotNull();
+        assertThat(events)
+                .filteredOn(AgentResultEvent.class::isInstance)
+                .extracting(event -> ((AgentResultEvent) event).getResult().getTextContent())
+                .containsExactly("final-only answer");
+        assertThat(events)
+                .filteredOn(TextBlockDeltaEvent.class::isInstance)
+                .extracting(event -> ((TextBlockDeltaEvent) event).getDelta())
+                .containsExactly("final-only answer");
+    }
+
+    @Test
     void streamingCallDeliversToolResults() {
         runner.script(
                 messages ->
@@ -413,10 +441,6 @@ class A2aHttpEndToEndTest {
     }
 
     @Test
-    @Disabled(
-            "AgentScopeAgentExecutor.cancel() cancels the upstream subscription, so the blocking"
-                    + " execution never receives a terminal signal and stays blocked; re-enable"
-                    + " once cancellation releases the execution (#3546)")
     void interruptCancelsRemoteTask() throws Exception {
         Sinks.Empty<Void> release = Sinks.empty();
         runner.script(
@@ -459,6 +483,55 @@ class A2aHttpEndToEndTest {
                     .isTrue();
         } finally {
             reply.cancel(true);
+            release.tryEmitEmpty();
+            if (executionEnd != null) {
+                executionEnd.detach();
+            }
+        }
+    }
+
+    @Test
+    void cancellingCallCancelsRemoteTask() throws Exception {
+        Sinks.Empty<Void> release = Sinks.empty();
+        runner.script(
+                messages ->
+                        Flux.<AgentEvent>just(new TextBlockDeltaEvent("reply-1", "text-1", "..."))
+                                .concatWith(
+                                        Flux.<AgentEvent>never().takeUntilOther(release.asMono())));
+        // Cancel only after the client has seen the task, otherwise there is nothing to cancel.
+        CountDownLatch chunkReceived = new CountDownLatch(1);
+        A2aAgent agent =
+                A2aAgent.builder()
+                        .name("remote")
+                        .agentCardResolver(cardResolver())
+                        .hook(
+                                new Hook() {
+                                    @Override
+                                    public <T extends HookEvent> Mono<T> onEvent(T event) {
+                                        if (event instanceof ReasoningChunkEvent) {
+                                            chunkReceived.countDown();
+                                        }
+                                        return Mono.just(event);
+                                    }
+                                })
+                        .build();
+        Disposable call = agent.call(userMsg("long task")).subscribe();
+        ExecutionEndListener executionEnd = null;
+        try {
+            assertThat(chunkReceived.await(TIMEOUT.toSeconds(), TimeUnit.SECONDS)).isTrue();
+            String taskId = runner.taskIds().get(0);
+            executionEnd = ExecutionEndListener.attach(taskId);
+
+            // The caller gives up on the call, e.g. a timeout upstream.
+            call.dispose();
+
+            assertThat(runner.awaitStop(TIMEOUT)).isTrue();
+            assertThat(runner.stoppedTaskIds()).containsExactly(taskId);
+            assertThat(executionEnd.await(TIMEOUT))
+                    .as("server execution of task %s ended", taskId)
+                    .isTrue();
+        } finally {
+            call.dispose();
             release.tryEmitEmpty();
             if (executionEnd != null) {
                 executionEnd.detach();

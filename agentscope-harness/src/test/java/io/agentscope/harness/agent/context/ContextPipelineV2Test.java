@@ -457,7 +457,10 @@ class ContextPipelineV2Test {
                 0,
                 editedField.equals("content")
                         ? first.withContent(
-                                List.of(TextBlock.builder().text("Request-only edit").build()))
+                                List.of(
+                                        TextBlock.builder()
+                                                .text("Request-only edit ".repeat(120))
+                                                .build()))
                         : first.withMetadata(
                                 editedField.equals("metadata")
                                         ? Map.of("request-only", true)
@@ -508,12 +511,16 @@ class ContextPipelineV2Test {
     }
 
     @Test
-    void unserializableMetadataSkipsWritebackInsteadOfFailing() {
+    void editedViewWithUnserializableMetadataSkipsWritebackInsteadOfFailing() {
         var original = new ArrayList<>(history());
         original.set(0, original.get(0).withMetadata(Map.of("value", new Object())));
         var state = AgentState.builder().context(original).build();
+        // The view the compactor sees carries an edit and cannot be serialized to prove otherwise.
         var messages = new ArrayList<>(original);
-        messages.set(0, messages.get(0).withMetadata(original.get(0).getMetadata()));
+        messages.set(
+                2,
+                messages.get(2)
+                        .withContent(List.of(TextBlock.builder().text("continue now").build())));
         var calls = new AtomicInteger();
         var prepared =
                 new HarnessContextBuilder(
@@ -528,6 +535,32 @@ class ContextPipelineV2Test {
 
         assertEquals(1, calls.get());
         assertEquals(original, state.contextMutable());
+        assertNotEquals(messages, prepared.messages());
+    }
+
+    @Test
+    void unchangedViewWithUnserializableMetadataIsStillCommitted() {
+        var original = new ArrayList<>(history());
+        original.set(0, original.get(0).withMetadata(Map.of("value", new Object())));
+        var state = AgentState.builder().context(original).build();
+        var messages = new ArrayList<>(original);
+        messages.set(0, messages.get(0).withMetadata(original.get(0).getMetadata()));
+        var calls = new AtomicInteger();
+        var prepared =
+                new HarnessContextBuilder(
+                                ContextPolicy.defaults(), compactor(calls, () -> {}), null)
+                        .prepare(
+                                mock(Agent.class),
+                                RuntimeContext.builder().agentState(state).build(),
+                                new ModelCallInput(messages, List.of(), null, model(10000)),
+                                "unserializable-unchanged",
+                                Purpose.REASONING)
+                        .block();
+
+        // Content decides whether the view is unchanged, so metadata that cannot be serialized no
+        // longer blocks a writeback it does not affect.
+        assertEquals(1, calls.get());
+        assertNotEquals(original, state.contextMutable());
         assertNotEquals(messages, prepared.messages());
     }
 

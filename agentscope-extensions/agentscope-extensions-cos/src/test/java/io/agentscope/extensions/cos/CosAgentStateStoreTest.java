@@ -104,12 +104,17 @@ class CosAgentStateStoreTest {
     @Test
     void getSingleState_returnsValue_whenExists() {
         String key = "test/state/alice/s1/agent_state.json";
+        AgentState expected =
+                AgentState.builder().userId("alice").sessionId("s1").threadId("research").build();
         when(mockCos.getObjectMetadata("test-bucket", key)).thenReturn(new ObjectMetadata());
         when(mockCos.getObject(any(GetObjectRequest.class)))
-                .thenReturn(cosObjectWith("{\"sessionId\":\"s1\"}"));
+                .thenReturn(cosObjectWith(expected.toJson()));
 
         Optional<AgentState> result = store.get("alice", "s1", "agent_state", AgentState.class);
         assertTrue(result.isPresent());
+        assertEquals("alice", result.get().getUserId());
+        assertEquals("s1", result.get().getSessionId());
+        assertEquals("research", result.get().getThreadId());
     }
 
     @Test

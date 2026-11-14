@@ -20,6 +20,7 @@ import com.google.genai.types.Part;
 import io.agentscope.core.message.AudioBlock;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.DataBlock;
+import io.agentscope.core.message.DocumentBlock;
 import io.agentscope.core.message.HintBlock;
 import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.Msg;
@@ -145,6 +146,16 @@ public class GeminiConversationMerger {
                     }
                     // Add data block as separate Part
                     parts.add(mediaConverter.convertToInlineDataPart(db));
+
+                } else if (block instanceof DocumentBlock doc) {
+                    // Flush accumulated text as a Part
+                    if (!accumulatedText.isEmpty()) {
+                        parts.add(Part.builder().text(String.join("\n", accumulatedText)).build());
+                        accumulatedText.clear();
+                    }
+                    // Add document as separate Part. The merged history is always sent as a user
+                    // message, so the source role does not matter here.
+                    parts.add(mediaConverter.convertToInlineDataPart(doc));
                 }
             }
         }

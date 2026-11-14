@@ -29,14 +29,18 @@ import io.agentscope.harness.agent.filesystem.model.GlobResult;
 import io.agentscope.harness.agent.filesystem.model.GrepResult;
 import io.agentscope.harness.agent.filesystem.model.LsResult;
 import io.agentscope.harness.agent.filesystem.model.ReadResult;
+import io.agentscope.harness.agent.filesystem.model.WriteResult;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.attribute.PosixFilePermission;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.stream.Collectors;
+import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledOnOs;
@@ -67,6 +71,77 @@ class BaseSandboxFilesystemTest {
 
     @Nested
     class CannedResponseTests {
+
+        @Test
+        void writeClaimsPathExclusivelyBeforeUpload() {
+            SuccessfulWriteFilesystem filesystem = new SuccessfulWriteFilesystem();
+
+            WriteResult result = filesystem.write(RT, "/workspace/claim", "owner");
+
+            assertTrue(result.isSuccess());
+            assertEquals("owner", filesystem.uploadedContent);
+        }
+
+        @Test
+        void writeFailsWhenExclusiveClaimAlreadyExists() {
+            FixedResponseFilesystem filesystem =
+                    new FixedResponseFilesystem(new ExecuteResponse("EXISTS", 1, false));
+
+            WriteResult result = filesystem.write(RT, "/workspace/claim", "owner");
+
+            assertFalse(result.isSuccess());
+            assertTrue(result.error().contains("already exists"));
+        }
+
+        @Test
+        void writeDoesNotTreatCommandErrorPathContainingExistsAsCollision() {
+            FixedResponseFilesystem filesystem =
+                    new FixedResponseFilesystem(
+                            new ExecuteResponse(
+                                    "mkdir: cannot create directory '/tmp/EXISTS-parent':"
+                                            + " Permission denied",
+                                    1,
+                                    false));
+
+            WriteResult result = filesystem.write(RT, "/tmp/EXISTS-parent/claim", "owner");
+
+            assertFalse(result.isSuccess());
+            assertFalse(result.error().contains("already exists"));
+        }
+
+        @Test
+        void writePreservesCreateFailureDiagnostic() {
+            FixedResponseFilesystem filesystem =
+                    new FixedResponseFilesystem(
+                            new ExecuteResponse("CREATE_FAILED: permission denied", 1, false));
+
+            WriteResult result = filesystem.write(RT, "/workspace/claim", "owner");
+
+            assertFalse(result.isSuccess());
+            assertTrue(result.error().contains("permission denied"));
+        }
+
+        @Test
+        void emptyWriteDoesNotAssumeUnknownCreateOutcomeSucceeded() {
+            FixedResponseFilesystem filesystem =
+                    new FixedResponseFilesystem(new ExecuteResponse("unknown state", null, false));
+
+            WriteResult result = filesystem.write(RT, "/workspace/claim", "");
+
+            assertFalse(result.isSuccess());
+            assertFalse(result.isAlreadyExists());
+        }
+
+        @Test
+        void writeReportsPlaceholderCleanupFailureAlongsideUploadFailure() {
+            FailedUploadCleanupFilesystem filesystem = new FailedUploadCleanupFilesystem();
+
+            WriteResult result = filesystem.write(RT, "/workspace/claim", "owner");
+
+            assertFalse(result.isSuccess());
+            assertTrue(result.error().contains("upload denied"));
+            assertTrue(result.error().contains("cleanup denied"));
+        }
 
         @Test
         void glob_recursivePattern_stripsDoubleStarPrefixBeforeFindName() {
@@ -725,6 +800,89 @@ class BaseSandboxFilesystemTest {
             assertFalse(result.isSuccess());
             assertTrue(result.error().contains("not-json{{"));
         }
+
+        // ==================== Bug reproduction: double-quoted "$(dirname ...)" breaks docker
+        // exec on Windows hosts (#3850) ====================
+
+        @Test
+        void write_checkCommand_containsNoDoubleQuotesOrSubstitution() {
+            EditSpyFilesystem fs = new EditSpyFilesystem();
+
+            fs.write(RT, "/workspace/docs/new/notes.txt", "hello");
+
+            // The docker CLI on Windows hosts mangles arguments carrying double-quoted
+            // command substitution, so the check command must avoid the construct entirely.
+            assertFalse(
+                    fs.lastCommand.contains("\""),
+                    "double quotes break docker exec on Windows hosts: " + fs.lastCommand);
+            assertFalse(
+                    fs.lastCommand.contains("dirname"),
+                    "command substitution must not be used for the parent dir: " + fs.lastCommand);
+        }
+
+        @Test
+        void write_newNestedPath_mkdirsParentAsSingleQuotedLiteral() {
+            EditSpyFilesystem fs = new EditSpyFilesystem();
+
+            WriteResult result = fs.write(RT, "/workspace/my docs/new file.txt", "hello");
+
+            assertTrue(result.isSuccess(), "write should succeed: " + result.error());
+            assertTrue(
+                    fs.lastCommand.contains("mkdir -p '/workspace/my docs' 2>&1"),
+                    "parent with spaces must be created via a single-quoted literal: "
+                            + fs.lastCommand);
+        }
+
+        @Test
+        void write_rootLevelFile_needsNoParentMkdir() {
+            EditSpyFilesystem fs = new EditSpyFilesystem();
+
+            WriteResult result = fs.write(RT, "/notes.txt", "hello");
+
+            assertTrue(result.isSuccess(), "write should succeed: " + result.error());
+            assertFalse(
+                    fs.lastCommand.contains("mkdir"),
+                    "a root-level file needs no parent creation: " + fs.lastCommand);
+        }
+
+        @Test
+        void move_checkCommand_containsNoSubstitutionOrDoubleQuotes() {
+            EditSpyFilesystem fs = new EditSpyFilesystem();
+
+            fs.move(RT, "/workspace/docs/old.txt", "/workspace/docs/new/notes.txt");
+
+            assertFalse(
+                    fs.lastCommand.contains("dirname"),
+                    "command substitution must not be used for the parent dir: " + fs.lastCommand);
+            assertFalse(
+                    fs.lastCommand.contains("\""),
+                    "double quotes break docker exec on Windows hosts: " + fs.lastCommand);
+        }
+
+        @Test
+        void move_newNestedPath_mkdirsParentAsSingleQuotedLiteral() {
+            EditSpyFilesystem fs = new EditSpyFilesystem();
+
+            WriteResult result = fs.move(RT, "/tmp/src.txt", "/workspace/my docs/new file.txt");
+
+            assertTrue(result.isSuccess(), "move should succeed: " + result.error());
+            assertTrue(
+                    fs.lastCommand.startsWith("mkdir -p '/workspace/my docs' 2>&1 && mv "),
+                    "parent with spaces must be created via a single-quoted literal before mv: "
+                            + fs.lastCommand);
+        }
+
+        @Test
+        void move_rootLevelFile_needsNoParentMkdir() {
+            EditSpyFilesystem fs = new EditSpyFilesystem();
+
+            WriteResult result = fs.move(RT, "/tmp/src.txt", "/dst.txt");
+
+            assertTrue(result.isSuccess(), "move should succeed: " + result.error());
+            assertTrue(
+                    fs.lastCommand.startsWith("mv "),
+                    "a root-level target needs no parent creation: " + fs.lastCommand);
+        }
     }
 
     // ================================================================
@@ -1071,6 +1229,48 @@ class BaseSandboxFilesystemTest {
         }
 
         @Test
+        void write_pathWithSpaces_createsParentDirsAndWritesFile() throws IOException {
+            // Regression for #3850: the parent dir used to be created via double-quoted
+            // command substitution, which the docker CLI corrupts on Windows hosts. The
+            // single-quoted literal must survive real shell semantics, spaces included.
+            Path target = tmpDir.resolve("my docs/new file.txt");
+
+            WriteResult result =
+                    new LocalShellSandboxFilesystem().write(RT, target.toString(), "hello");
+
+            assertTrue(result.isSuccess(), "write with spaces should succeed: " + result.error());
+            assertEquals("hello", Files.readString(target));
+        }
+
+        @Test
+        void write_existingFile_failsWithExistsSignal() throws IOException {
+            Path target = tmpDir.resolve("exists.txt");
+            Files.writeString(target, "original");
+
+            WriteResult result =
+                    new LocalShellSandboxFilesystem().write(RT, target.toString(), "hello");
+
+            assertFalse(result.isSuccess());
+            assertTrue(result.error().contains("already exists"));
+            assertEquals("original", Files.readString(target), "existing file must be untouched");
+        }
+
+        @Test
+        void move_pathWithSpaces_createsParentDirsAndMovesFile() throws IOException {
+            Path source = tmpDir.resolve("source.txt");
+            Files.writeString(source, "hello");
+            Path target = tmpDir.resolve("my docs/new file.txt");
+
+            WriteResult result =
+                    new LocalShellSandboxFilesystem()
+                            .move(RT, source.toString(), target.toString());
+
+            assertTrue(result.isSuccess(), "move with spaces should succeed: " + result.error());
+            assertEquals("hello", Files.readString(target));
+            assertFalse(Files.exists(source), "source must be moved, not copied");
+        }
+
+        @Test
         void edit_replaceAll_occurrencesParityBetweenNativeAndFallback() throws IOException {
             // Same input through both paths must report the same count and final content,
             // so the two implementations cannot drift.
@@ -1092,6 +1292,66 @@ class BaseSandboxFilesystemTest {
             assertEquals(3, fallbackResult.occurrences());
             assertEquals(Files.readString(nativeFile), Files.readString(fallbackFile));
             assertEquals("x b x b x", Files.readString(fallbackFile));
+        }
+    }
+
+    @Nested
+    @EnabledOnOs({OS.LINUX, OS.MAC})
+    class LocalShellWriteIntegrationTests {
+
+        @TempDir Path tmpDir;
+
+        @Test
+        void writeUploadsOverExclusivePlaceholderAndRejectsSecondWrite() throws IOException {
+            LocalShellSandboxFilesystem fs = new LocalShellSandboxFilesystem();
+            Path path = tmpDir.resolve("nested/claim.txt");
+
+            WriteResult first = fs.write(RT, path.toString(), "first");
+            WriteResult second = fs.write(RT, path.toString(), "second");
+
+            assertTrue(first.isSuccess());
+            assertFalse(second.isSuccess());
+            assertEquals("first", Files.readString(path));
+        }
+
+        @Test
+        void emptyWriteKeepsExclusivePlaceholderWithoutUploading() throws IOException {
+            LocalShellSandboxFilesystem fs = new LocalShellSandboxFilesystem(true);
+            Path path = tmpDir.resolve("claim.marker");
+
+            WriteResult first = fs.write(RT, path.toString(), "");
+
+            assertTrue(first.isSuccess());
+            assertTrue(Files.exists(path));
+            assertEquals(0L, Files.size(path));
+            assertTrue(fs.write(RT, path.toString(), "").isAlreadyExists());
+        }
+
+        @Test
+        void writeFailureForNonWritableDirectoryIsNotReportedAsAlreadyExists() throws IOException {
+            LocalShellSandboxFilesystem fs = new LocalShellSandboxFilesystem();
+            Path directory = Files.createDirectory(tmpDir.resolve("read-only"));
+            Files.setPosixFilePermissions(
+                    directory,
+                    Set.of(PosixFilePermission.OWNER_READ, PosixFilePermission.OWNER_EXECUTE));
+            Assumptions.assumeFalse(
+                    Files.isWritable(directory),
+                    "POSIX permissions are not enforced for this user");
+
+            try {
+                WriteResult result =
+                        fs.write(RT, directory.resolve("new-file").toString(), "content");
+
+                assertFalse(result.isSuccess());
+                assertFalse(result.error().contains("already exists"));
+            } finally {
+                Files.setPosixFilePermissions(
+                        directory,
+                        Set.of(
+                                PosixFilePermission.OWNER_READ,
+                                PosixFilePermission.OWNER_WRITE,
+                                PosixFilePermission.OWNER_EXECUTE));
+            }
         }
     }
 
@@ -1208,6 +1468,64 @@ class BaseSandboxFilesystemTest {
         }
     }
 
+    private static final class SuccessfulWriteFilesystem extends BaseSandboxFilesystem {
+
+        private String uploadedContent;
+
+        @Override
+        public String id() {
+            return "successful-write";
+        }
+
+        @Override
+        public ExecuteResponse execute(
+                RuntimeContext runtimeContext, String command, Integer timeoutSeconds) {
+            return new ExecuteResponse("", 0, false);
+        }
+
+        @Override
+        public List<FileUploadResponse> uploadFiles(
+                RuntimeContext runtimeContext, List<Map.Entry<String, byte[]>> files) {
+            Map.Entry<String, byte[]> file = files.get(0);
+            uploadedContent = new String(file.getValue(), StandardCharsets.UTF_8);
+            return List.of(FileUploadResponse.success(file.getKey()));
+        }
+
+        @Override
+        public List<FileDownloadResponse> downloadFiles(
+                RuntimeContext runtimeContext, List<String> paths) {
+            return List.of();
+        }
+    }
+
+    private static final class FailedUploadCleanupFilesystem extends BaseSandboxFilesystem {
+
+        @Override
+        public String id() {
+            return "failed-upload-cleanup";
+        }
+
+        @Override
+        public ExecuteResponse execute(
+                RuntimeContext runtimeContext, String command, Integer timeoutSeconds) {
+            return command.startsWith("mkdir -p ")
+                    ? new ExecuteResponse("", 0, false)
+                    : new ExecuteResponse("cleanup denied", 1, false);
+        }
+
+        @Override
+        public List<FileUploadResponse> uploadFiles(
+                RuntimeContext runtimeContext, List<Map.Entry<String, byte[]>> files) {
+            return List.of(FileUploadResponse.fail(files.get(0).getKey(), "upload denied"));
+        }
+
+        @Override
+        public List<FileDownloadResponse> downloadFiles(
+                RuntimeContext runtimeContext, List<String> paths) {
+            return List.of();
+        }
+    }
+
     /**
      * execute() always returns the fixed response, standing in for any execution-layer outcome
      * (successful or failing) without a live sandbox.
@@ -1246,6 +1564,16 @@ class BaseSandboxFilesystemTest {
 
     private static final class LocalShellSandboxFilesystem extends BaseSandboxFilesystem {
 
+        private final boolean failUploads;
+
+        private LocalShellSandboxFilesystem() {
+            this(false);
+        }
+
+        private LocalShellSandboxFilesystem(boolean failUploads) {
+            this.failUploads = failUploads;
+        }
+
         @Override
         public String id() {
             return "local-shell";
@@ -1269,6 +1597,9 @@ class BaseSandboxFilesystemTest {
         @Override
         public List<FileUploadResponse> uploadFiles(
                 RuntimeContext runtimeContext, List<Map.Entry<String, byte[]>> files) {
+            if (failUploads) {
+                return List.of(FileUploadResponse.fail(files.get(0).getKey(), "unexpected upload"));
+            }
             List<FileUploadResponse> results = new ArrayList<>();
             for (Map.Entry<String, byte[]> entry : files) {
                 try {

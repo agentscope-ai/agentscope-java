@@ -417,7 +417,8 @@ public class CompactionConfig {
 
         /**
          * Sets a dedicated model for compaction by model id string
-         * (e.g. {@code "openai:gpt-4.1-mini"}).
+         * (e.g. {@code "openai:gpt-4.1-mini"}). Legacy eager semantics: resolved once at build
+         * time, not per call.
          *
          * @see ModelRegistry#resolve(String)
          */
@@ -611,7 +612,7 @@ public class CompactionConfig {
             private int minimumTokens = 20_000;
             private int maxOutputChars = 2_000;
             private Set<String> excludedTools =
-                    Set.of("read_file", "memory_search", "memory_get", "session_search");
+                    Set.of("read_file", "memory_search", "memory_get", "thread_search");
 
             public PruneBuilder protectTokens(int protectTokens) {
                 this.protectTokens = protectTokens;

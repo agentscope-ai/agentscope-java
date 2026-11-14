@@ -8,7 +8,7 @@
 
 <span align="center">
 
-[**中文主页**](https://github.com/agentscope-ai/agentscope-java/blob/main/README_zh.md) | [**Documentation**](https://java.agentscope.io/)
+[**中文主页**](https://github.com/agentscope-ai/agentscope-java/blob/main/README_zh.md) | [**日本語ホームページ**](https://github.com/agentscope-ai/agentscope-java/blob/main/README_ja.md) | [**Documentation**](https://java.agentscope.io/)
 
 </span>
 
@@ -55,19 +55,18 @@
 
 AgentScope Java 2.0 is a production-ready framework for building distributed, enterprise-grade agents, providing essential abstractions that work with rising model capability and built-in support for long-running, safely-controlled agent execution.
 
-- [**Event System** →](https://java.agentscope.io/v2/en/docs/building-blocks/message-and-event.html) A unified event stream with 32 typed events for real-time frontend rendering and human-in-the-loop.
-- [**Permission System** →](https://java.agentscope.io/v2/en/docs/building-blocks/permission-system.html) Tool-call gating: allow / require user approval / deny.
-- [**Middleware** →](https://java.agentscope.io/v2/en/docs/building-blocks/middleware.html) AOP-style hook interception for flexibly extending the reasoning-acting loop.
-- [**Workspace & Sandbox** →](https://java.agentscope.io/v2/en/docs/harness/workspace.html) Run tools in isolated environments — local, Docker, Kubernetes, or AgentRun cloud sandbox.
-- [**Multi-Agent Orchestration** →](https://java.agentscope.io/v2/en/docs/harness/subagent.html) Multiple subagent definition patterns with `agent_spawn` / `agent_send` and real-time event forwarding.
-- [**Distributed Deployment** →](https://java.agentscope.io/v2/en/docs/others/going-to-production.html) True distributed session and memory management (Redis / MySQL / PostgreSQL / OSS / COS) with cross-replica session recovery.
+- [**Event System** →](https://java.agentscope.io/dev/en/docs/building-blocks/message-and-event.html) A unified event stream with 32 typed events for real-time frontend rendering and human-in-the-loop.
+- [**Permission System** →](https://java.agentscope.io/dev/en/docs/building-blocks/permission-system.html) Tool-call gating: allow / require user approval / deny.
+- [**Middleware** →](https://java.agentscope.io/dev/en/docs/building-blocks/middleware.html) AOP-style hook interception for flexibly extending the reasoning-acting loop.
+- [**Workspace & Sandbox** →](https://java.agentscope.io/dev/en/docs/harness/workspace.html) Run tools in isolated environments — local, Docker, Kubernetes, or AgentRun cloud sandbox.
+- [**Multi-Agent Orchestration** →](https://java.agentscope.io/dev/en/docs/harness/subagent.html) Multiple subagent definition patterns with `agent_spawn` / `agent_send` and real-time event forwarding.
+- [**Distributed Deployment** →](https://java.agentscope.io/dev/en/docs/others/going-to-production.html) True distributed session and memory management (Redis / MySQL / PostgreSQL / OSS / COS) with cross-replica session recovery.
 - [**Agent Evolution** →](https://help.aliyun.com/zh/document_detail/3042583.html) Provides Agent observability and auditing, Agent evaluation and experimentation, and Agent asset management and continuous optimization.
 
 <img src="./docs/imgs/landscape.png" alt="agentscope" width="100%"/>
 
 ## News
 <!-- BEGIN NEWS -->
-- **[2026-08] [AgentScope Service](./agentscope-service):** An agent Control Plane and Dashboard for agent observation, registration and orchestration, designed to be compatible with AgentScope, LangChain, ADK, and Claude / Qoder, etc.
 - **[2026-07] `v2.0.0 GA`:** First production-ready release! Dual-layer agent architecture, event stream, permission system, middleware, workspace sandbox, multi-agent orchestration, and distributed deployment all ready. [Docs](https://java.agentscope.io/) | [Release Notes](https://github.com/agentscope-ai/agentscope-java/releases/tag/v2.0.0)
 - **[2026-07] `v2.0.0-RC5`:** Model provider modularization; unified DataBlock multimodal support; native structured output; Channel IM integration; Tencent Cloud COS state persistence. [Release Notes](https://github.com/agentscope-ai/agentscope-java/releases/tag/v2.0.0-RC5)
 - **[2026-06] `v2.0.0-RC4`:** Async tool execution and scheduled wakeup dispatching; subagent cross-replica routing and session recovery. [Release Notes](https://github.com/agentscope-ai/agentscope-java/releases/tag/v2.0.0-RC4)
@@ -111,7 +110,7 @@ Model providers are shipped as separate extension modules in 2.0. Add the one yo
 </dependency>
 ```
 
-Other options: `agentscope-extensions-model-openai`, `agentscope-extensions-model-anthropic`, `agentscope-extensions-model-gemini`, `agentscope-extensions-model-ollama`. See the [Model docs](https://java.agentscope.io/v2/en/docs/building-blocks/model.html) for details.
+Other options: `agentscope-extensions-model-openai`, `agentscope-extensions-model-anthropic`, `agentscope-extensions-model-gemini`, `agentscope-extensions-model-ollama`. See the [Model docs](https://java.agentscope.io/dev/en/docs/building-blocks/model.html) for details.
 
 For typed text and image classification, see [OpenAI Decisions](docs/v2/en/integration/judge/openai-decisions.md), available in `2.1.0-SNAPSHOT` builds containing the extension.
 
@@ -165,18 +164,7 @@ public class FirstAgent {
 }
 ```
 
-Start with `call` / `streamEvents` for ordinary replies, multi-turn chat and workflow steps; follow the [Quick Start](https://java.agentscope.io/v2/en/docs/quickstart). Both also record Harness conversation history by default. Introduce [AgentSession](https://java.agentscope.io/v2/en/docs/harness/session-log) when work must continue after a page closes, queue while busy or resume after interruption. The [recoverable chat example](./agentscope-examples/agents/agentscope-chat/README.md) shows the full integration.
-
-## AgentScope Service
-**[AgentScope Service](./agentscope-service)** — an Agent as a Service platform for business applications. Publish capabilities such as proposal writing, document verification, and exception investigation through APIs. Users start work, handle decisions, and review delivery inside their existing product.
-
-+ **Business integration.** Offer background tasks, interactive assistants, or specialist process steps through Endpoints. Applications retain their interface, data authorization, and acceptance rules.
-+ **Persistent work and delivery.** Follow status, snapshots, and events through Invocations, handle human interaction, and retrieve results and files for the business process.
-+ **Execution suited to the task.** Run AgentScope Harness, connect an existing Agent application, or reuse a Coding Agent. Add Teams and Workflows when needed.
-
-Choose an integration in [Use cases](https://java.agentscope.io/v2/en/service/usecases), then complete a call with the [API quickstart](https://java.agentscope.io/v2/en/service/first-session).
-
-![agentscope-service-architecture.png](docs/imgs/agentservice/agentscope-service-architecture.png)
+Start with `call` / `streamEvents` for ordinary replies, multi-turn chat and workflow steps; follow the [Quick Start](https://java.agentscope.io/dev/en/docs/quickstart). Both also record Harness conversation history by default. Introduce [AgentSession](https://java.agentscope.io/dev/en/docs/harness/session-log) when work must continue after a page closes, queue while busy or resume after interruption. The [recoverable chat example](./agentscope-examples/agents/agentscope-chat/README.md) shows the full integration.
 
 ## Key Design
 
@@ -210,7 +198,7 @@ Messages, events, and the extension model are smaller, more orthogonal — HITL 
 - **Middleware** — `onAgent` / `onReasoning` / `onActing` / `onModelCall` / `onSystemPrompt` / `onAgentStateReady` six stages replace v1's flat hooks
 - **HITL first class** — confirm tool arguments, approve sensitive actions, hand off to external systems, agent pauses and resumes exactly
 
-For the complete architecture overview, see the [documentation](https://java.agentscope.io/v2/en/docs/index.html).
+For the complete architecture overview, see the [documentation](https://java.agentscope.io/dev/en/docs/index.html).
 
 ## Contributing
 

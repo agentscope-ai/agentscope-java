@@ -81,6 +81,27 @@ public class K8sHelper {
             Long shutdownAfterSeconds,
             Map<String, String> podLabels,
             Map<String, String> podAnnotations) {
+        return createSandboxClaim(
+                name,
+                warmPool,
+                namespace,
+                labels,
+                shutdownAfterSeconds,
+                podLabels,
+                podAnnotations,
+                null);
+    }
+
+    /** Creates a SandboxClaim with creation-time container environment. */
+    public SandboxClaim createSandboxClaim(
+            String name,
+            String warmPool,
+            String namespace,
+            Map<String, String> labels,
+            Long shutdownAfterSeconds,
+            Map<String, String> podLabels,
+            Map<String, String> podAnnotations,
+            List<SandboxClaimSpec.EnvVar> env) {
         Map<String, String> claimLabels = new HashMap<>();
         if (labels != null) {
             claimLabels.putAll(labels);
@@ -96,6 +117,7 @@ public class K8sHelper {
                         .build());
 
         SandboxClaimSpec spec = new SandboxClaimSpec(warmPool);
+        spec.setEnv(env);
         if (shutdownAfterSeconds != null) {
             if (shutdownAfterSeconds <= 0) {
                 throw new IllegalArgumentException("shutdownAfterSeconds must be positive");

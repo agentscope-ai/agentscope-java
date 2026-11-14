@@ -15,6 +15,8 @@
  */
 package io.agentscope.core.skill;
 
+import io.agentscope.core.agent.CapabilitySurface;
+import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.hook.Hook;
 import io.agentscope.core.hook.HookEvent;
 import io.agentscope.core.hook.PreCallEvent;
@@ -52,7 +54,9 @@ public class SkillHook implements Hook {
     @Override
     public <T extends HookEvent> Mono<T> onEvent(T event) {
         if (event instanceof PreCallEvent preCallEvent) {
-            String skillPrompt = skillBox.getSkillPrompt();
+            RuntimeContext rc = preCallEvent.getRuntimeContext();
+            CapabilitySurface surface = rc != null ? rc.get(CapabilitySurface.class) : null;
+            String skillPrompt = skillBox.getSkillPrompt(surface);
             if (skillPrompt != null && !skillPrompt.isEmpty()) {
                 preCallEvent.appendSystemContent(skillPrompt);
             }

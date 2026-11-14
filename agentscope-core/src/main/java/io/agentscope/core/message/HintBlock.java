@@ -17,6 +17,7 @@ package io.agentscope.core.message;
 
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonProperty;
+import java.util.Objects;
 
 /**
  * A content block that provides hints to the LLM during reasoning.
@@ -70,5 +71,23 @@ public final class HintBlock extends ContentBlock {
      */
     public String getSource() {
         return source;
+    }
+
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) {
+            return true;
+        }
+        if (!(o instanceof HintBlock other)) {
+            return false;
+        }
+        return Objects.equals(id, other.id)
+                && Objects.equals(hint, other.hint)
+                && Objects.equals(source, other.source);
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(id, hint, source);
     }
 }

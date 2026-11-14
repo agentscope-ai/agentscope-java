@@ -17,6 +17,7 @@ package io.agentscope.spring.boot.admin.service;
 
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.Agent;
+import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.state.AgentState;
 import io.agentscope.core.state.AgentStateStore;
@@ -183,8 +184,10 @@ public final class SessionOperations {
                                     new ArrayList<>(context.subList(0, before - keepLast));
                             // Snapshot BEFORE we touch the live state, so undo can revert.
                             snapshots.push(state.getSessionId(), state.toJson());
+                            // getModel(null) resolves an identity-mode agent's current
+                            // instance (plain getModel() returns null there).
                             return summarizer
-                                    .summarize(react.getModel(), previousSummary, toFold)
+                                    .summarize(react.getModel(null), previousSummary, toFold)
                                     .defaultIfEmpty(previousSummary)
                                     .flatMap(
                                             newSummary -> {
@@ -437,12 +440,18 @@ public final class SessionOperations {
         if (stateStore == null) {
             return Mono.empty();
         }
+        RuntimeContext context =
+                RuntimeContext.builder()
+                        .userId(state.getUserId())
+                        .sessionId(state.getSessionId())
+                        .threadId(state.getThreadId())
+                        .build();
         return Mono.fromRunnable(
                         () ->
                                 stateStore.save(
                                         state.getUserId(),
-                                        react.getDefaultSessionId(),
-                                        "agent_state",
+                                        state.getSessionId(),
+                                        react.threadKey(context).stateEntry("agent_state"),
                                         state))
                 .subscribeOn(Schedulers.boundedElastic())
                 .then();

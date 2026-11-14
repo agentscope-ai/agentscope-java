@@ -13,7 +13,7 @@ codingagent 是一个可以**部署在你自己组织内**的自主编码机器�
 
 同一个 JAR 既可以单进程跑（给一个团队的 monorepo 配一个编码机器人），也能挂在负载均衡器后面横向扩展 —— 派发器、消息队列、去重存储都能共享，任何副本都能接管任何会话。
 
-和姊妹项目对比：它比 [claw] 锁得更死（claw 直接在你的本机 shell 上跑），又比 [builder] 更专注（Builder 是托管任意 agent 的平台）。codingagent 就是那个**专门替你写代码**的。
+和 [claw] 对比：它锁得更死（claw 直接在你的本机 shell 上跑）。codingagent 就是那个**专门替你写代码**的。
 
 ### 它能做什么
 
@@ -75,7 +75,6 @@ codingagent 跑在 **HarnessAgent + `SandboxFilesystem`** 之上，sandbox 生�
 ```
 
 [claw]: ../agentscope-paw/
-[builder]: ../../../agentscope-service/
 
 ---
 
@@ -111,7 +110,7 @@ You> clone https://github.com/owner/repo into the workspace and tell me what it 
 You> /exit
 ```
 
-workspace、聊天记录、配置都和你的项目目录、其他 harness 应用（builder / dataagent / claw）相互隔离：
+workspace、聊天记录、配置都和你的项目目录、其他 harness 应用（dataagent / claw）相互隔离：
 
 - **Workspace**（agent 读写的 skills/memory/sessions/files）：`~/.agentscope/codingagent/workspace/`
 - **聊天记录**（per-thread SQLite）：`./.agentscope/codingagent.db`（相对你 `mvn` 的目录）

@@ -36,6 +36,9 @@ public class Filesystem {
     private static final ObjectMapper MAPPER = new ObjectMapper();
     private static final Duration DEFAULT_TIMEOUT = Duration.ofSeconds(60);
 
+    /** Exchange budget for byte-carrying endpoints (upload/download); payloads can be large. */
+    private static final Duration TRANSFER_TIMEOUT = Duration.ofMinutes(10);
+
     private final SandboxConnector connector;
 
     public Filesystem(SandboxConnector connector) {
@@ -49,7 +52,7 @@ public class Filesystem {
      * @param content file bytes
      */
     public void write(String path, byte[] content) {
-        write(path, content, DEFAULT_TIMEOUT, false);
+        write(path, content, TRANSFER_TIMEOUT, false);
     }
 
     /**
@@ -57,11 +60,12 @@ public class Filesystem {
      *
      * @param path destination path
      * @param content file bytes
-     * @param timeout request timeout
+     * @param timeout exchange budget covering the full upload
      * @param allowUnsafePaths when false, rejects absolute paths and {@code ..}
      */
     public void write(String path, byte[] content, Duration timeout, boolean allowUnsafePaths) {
         String safePath = allowUnsafePaths ? path : safeUploadPath(path);
+        Duration budget = timeout != null ? timeout : TRANSFER_TIMEOUT;
         try {
             String boundary = "----AgentScopeSandbox" + System.nanoTime();
             byte[] body = buildMultipartBody(safePath, content, boundary);
@@ -71,7 +75,8 @@ public class Filesystem {
                             "upload",
                             HttpRequest.BodyPublishers.ofByteArray(body),
                             "multipart/form-data; boundary=" + boundary,
-                            3);
+                            3,
+                            budget);
             if (resp.statusCode() < 200 || resp.statusCode() >= 300) {
                 throw new SandboxRequestException(
                         "Upload failed (status="
@@ -104,23 +109,24 @@ public class Filesystem {
      * @return file bytes
      */
     public byte[] read(String path) {
-        return read(path, DEFAULT_TIMEOUT, false);
+        return read(path, TRANSFER_TIMEOUT, false);
     }
 
     /**
      * Reads a file from the sandbox.
      *
      * @param path file path
-     * @param timeout request timeout
+     * @param timeout exchange budget covering the full download
      * @param allowUnsafePaths when false, rejects absolute paths and {@code ..}
      * @return file bytes
      */
     public byte[] read(String path, Duration timeout, boolean allowUnsafePaths) {
         String safePath = allowUnsafePaths ? path : safeUploadPath(path);
+        Duration budget = timeout != null ? timeout : TRANSFER_TIMEOUT;
         try {
             String encoded = percentEncode(safePath);
             HttpResponse<byte[]> resp =
-                    connector.sendRequestForBytes("GET", "download/" + encoded, null, null);
+                    connector.sendRequestForBytes("GET", "download/" + encoded, null, null, budget);
             if (resp.statusCode() < 200 || resp.statusCode() >= 300) {
                 throw new SandboxRequestException(
                         "Download failed (status=" + resp.statusCode() + ") for path: " + path,
@@ -149,14 +155,15 @@ public class Filesystem {
      * Lists entries in a directory.
      *
      * @param path directory path
-     * @param timeout request timeout
+     * @param timeout exchange budget
      * @return file entries
      */
     public List<FileEntry> list(String path, Duration timeout) {
+        Duration budget = timeout != null ? timeout : DEFAULT_TIMEOUT;
         try {
             String encoded = percentEncode(path);
             HttpResponse<String> resp =
-                    connector.sendRequest("GET", "list/" + encoded, null, null, 3);
+                    connector.sendRequest("GET", "list/" + encoded, null, null, 3, budget);
             if (resp.statusCode() < 200 || resp.statusCode() >= 300) {
                 throw new SandboxRequestException(
                         "List failed (status=" + resp.statusCode() + ") for path: " + path,
@@ -189,14 +196,15 @@ public class Filesystem {
      * Checks whether a path exists in the sandbox.
      *
      * @param path path to check
-     * @param timeout request timeout
+     * @param timeout exchange budget
      * @return true if exists
      */
     public boolean exists(String path, Duration timeout) {
+        Duration budget = timeout != null ? timeout : DEFAULT_TIMEOUT;
         try {
             String encoded = percentEncode(path);
             HttpResponse<String> resp =
-                    connector.sendRequest("GET", "exists/" + encoded, null, null, 3);
+                    connector.sendRequest("GET", "exists/" + encoded, null, null, 3, budget);
             if (resp.statusCode() < 200 || resp.statusCode() >= 300) {
                 throw new SandboxRequestException(
                         "Exists check failed (status=" + resp.statusCode() + ") for path: " + path,

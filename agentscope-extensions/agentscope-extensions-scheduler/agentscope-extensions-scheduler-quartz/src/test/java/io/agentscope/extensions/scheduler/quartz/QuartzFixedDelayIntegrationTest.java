@@ -38,7 +38,9 @@ class QuartzFixedDelayIntegrationTest {
     @AfterEach
     void tearDown() {
         if (scheduler != null) {
-            scheduler.shutdown();
+            // This test verifies fixed-delay rescheduling, not graceful draining. Waiting for a
+            // job that raced cancellation can pin the Windows Surefire fork indefinitely.
+            scheduler.shutdown(false);
         }
     }
 
@@ -58,16 +60,23 @@ class QuartzFixedDelayIntegrationTest {
 
         QuartzScheduleAgentTask qt = (QuartzScheduleAgentTask) task;
 
-        long start = System.currentTimeMillis();
-        long timeoutMs = 5000;
-        long count = 0;
-        while (System.currentTimeMillis() - start < timeoutMs) {
-            count = qt.getExecutionCount();
-            if (count >= 2) {
-                break;
+        try {
+            long start = System.currentTimeMillis();
+            long timeoutMs = 5000;
+            long count = 0;
+            while (System.currentTimeMillis() - start < timeoutMs) {
+                count = qt.getExecutionCount();
+                if (count >= 2) {
+                    break;
+                }
+                Thread.sleep(100);
             }
-            Thread.sleep(100);
+            assertTrue(count >= 2);
+        } finally {
+            // Stop the recurring trigger before shutdown(true) waits for running jobs. On a
+            // loaded Windows runner, leaving the fixed-delay task active can race teardown and
+            // keep the Surefire fork alive until its process timeout.
+            task.cancel();
         }
-        assertTrue(count >= 2);
     }
 }

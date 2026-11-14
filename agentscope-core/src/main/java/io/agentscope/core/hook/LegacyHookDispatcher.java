@@ -59,6 +59,19 @@ public final class LegacyHookDispatcher {
         return result;
     }
 
+    /**
+     * Whether any legacy hook is registered.
+     *
+     * <p>The streaming chunk callbacks build a snapshot of the text received so far, which copies
+     * the whole answer on every chunk. Callers use this to skip that work entirely when nothing
+     * consumes it.
+     *
+     * @return {@code true} when at least one hook is registered
+     */
+    public boolean hasHooks() {
+        return !agent.getSortedHooks().isEmpty();
+    }
+
     // ==================== Reasoning hooks ====================
 
     public Mono<PreReasoningEvent> firePreReasoning(
@@ -73,6 +86,12 @@ public final class LegacyHookDispatcher {
     }
 
     public Mono<Void> fireReasoningChunk(Msg chunkMsg, ReasoningContext context, String modelName) {
+        List<Hook> hooks = agent.getSortedHooks();
+        if (hooks.isEmpty()) {
+            // Nothing consumes chunk events, so the accumulated snapshot below would be built and
+            // thrown away: one full copy of the answer so far, for every chunk of the stream.
+            return Mono.empty();
+        }
         ContentBlock content = chunkMsg.getFirstContentBlock();
 
         ContentBlock accumulatedContent = null;
@@ -101,9 +120,7 @@ public final class LegacyHookDispatcher {
             }
             ReasoningChunkEvent event =
                     new ReasoningChunkEvent(agent, modelName, null, chunkMsg, accumulated);
-            return Flux.fromIterable(agent.getSortedHooks())
-                    .flatMap(hook -> hook.onEvent(event))
-                    .then();
+            return Flux.fromIterable(hooks).flatMap(hook -> hook.onEvent(event)).then();
         }
 
         return Mono.empty();
@@ -127,6 +144,9 @@ public final class LegacyHookDispatcher {
 
     public Mono<Void> fireActingChunk(
             ToolUseBlock toolUse, ToolResultBlock chunk, Toolkit toolkit) {
+        if (!hasHooks()) {
+            return Mono.empty();
+        }
         ActingChunkEvent event =
                 new ActingChunkEvent(
                         agent,
@@ -162,6 +182,10 @@ public final class LegacyHookDispatcher {
             ReasoningContext context,
             GenerateOptions generateOptions,
             String modelName) {
+        List<Hook> hooks = agent.getSortedHooks();
+        if (hooks.isEmpty()) {
+            return Mono.empty();
+        }
         ContentBlock content = chunkMsg.getFirstContentBlock();
 
         ContentBlock accumulatedContent = null;
@@ -187,9 +211,7 @@ public final class LegacyHookDispatcher {
             }
             SummaryChunkEvent event =
                     new SummaryChunkEvent(agent, modelName, generateOptions, chunkMsg, accumulated);
-            return Flux.fromIterable(agent.getSortedHooks())
-                    .flatMap(hook -> hook.onEvent(event))
-                    .then();
+            return Flux.fromIterable(hooks).flatMap(hook -> hook.onEvent(event)).then();
         }
 
         return Mono.empty();

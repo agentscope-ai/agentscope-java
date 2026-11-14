@@ -87,7 +87,7 @@ class HarnessAgentToolsConfigTest {
         assertTrue(toolNames.contains("list_files"));
         assertFalse(toolNames.contains("memory_search"));
         assertFalse(toolNames.contains("memory_get"));
-        assertFalse(toolNames.contains("session_search"));
+        assertFalse(toolNames.contains("thread_search"));
     }
 
     @Test

@@ -20,14 +20,22 @@ import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.AgentBase;
 import io.agentscope.core.agent.AgentRun;
+import io.agentscope.core.agent.CapabilityResolver;
+import io.agentscope.core.agent.CapabilitySurface;
 import io.agentscope.core.agent.Event;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.agent.StreamOptions;
+import io.agentscope.core.agent.ThreadKey;
 import io.agentscope.core.agent.config.FailoverListener;
 import io.agentscope.core.agent.config.ModelConfig;
 import io.agentscope.core.agent.config.ReactConfig;
 import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.hook.Hook;
+import io.agentscope.core.journal.JournalProjection;
+import io.agentscope.core.journal.ThreadHistory;
+import io.agentscope.core.journal.ThreadJournal;
+import io.agentscope.core.journal.ThreadJournalStore;
+import io.agentscope.core.journal.ThreadRecovery;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.UserMessage;
@@ -36,14 +44,8 @@ import io.agentscope.core.middleware.TaskReminderMiddleware;
 import io.agentscope.core.model.ExecutionConfig;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.Model;
+import io.agentscope.core.model.ModelRegistry;
 import io.agentscope.core.permission.PermissionContextState;
-import io.agentscope.core.session.SessionHistoryMode;
-import io.agentscope.core.session.SessionKey;
-import io.agentscope.core.session.SessionLog;
-import io.agentscope.core.session.SessionLogStore;
-import io.agentscope.core.session.SessionProjection;
-import io.agentscope.core.session.SessionRecovery;
-import io.agentscope.core.session.SessionViews;
 import io.agentscope.core.shutdown.GracefulShutdownMiddleware;
 import io.agentscope.core.skill.repository.AgentSkillRepository;
 import io.agentscope.core.state.AgentState;
@@ -52,8 +54,10 @@ import io.agentscope.core.state.ConflictPolicy;
 import io.agentscope.core.state.InMemoryAgentStateStore;
 import io.agentscope.core.state.JsonFileAgentStateStore;
 import io.agentscope.core.tool.AgentTool;
+import io.agentscope.core.tool.ToolCallParam;
 import io.agentscope.core.tool.ToolExecutionContext;
 import io.agentscope.core.tool.Toolkit;
+import io.agentscope.core.tool.builtin.RequirementTools;
 import io.agentscope.harness.agent.artifact.ArtifactDeliveryTarget;
 import io.agentscope.harness.agent.context.ContextPolicy;
 import io.agentscope.harness.agent.context.ContextSelectionPolicy;
@@ -79,6 +83,7 @@ import io.agentscope.harness.agent.filesystem.spec.SandboxFilesystemSpec;
 import io.agentscope.harness.agent.gateway.HarnessGateway;
 import io.agentscope.harness.agent.gateway.SubagentGatewayBridge;
 import io.agentscope.harness.agent.gateway.channel.Channel;
+import io.agentscope.harness.agent.journal.WorkspaceThreadJournalStore;
 import io.agentscope.harness.agent.memory.MemoryConfig;
 import io.agentscope.harness.agent.memory.MemoryConsolidator;
 import io.agentscope.harness.agent.memory.MemoryFlushManager;
@@ -107,8 +112,6 @@ import io.agentscope.harness.agent.sandbox.SandboxContext;
 import io.agentscope.harness.agent.sandbox.SandboxExecutionGuard;
 import io.agentscope.harness.agent.sandbox.SandboxManager;
 import io.agentscope.harness.agent.sandbox.SessionSandboxStateStore;
-import io.agentscope.harness.agent.session.AgentSession;
-import io.agentscope.harness.agent.session.WorkspaceSessionLogStore;
 import io.agentscope.harness.agent.skill.WorkspaceSkillRepository;
 import io.agentscope.harness.agent.skill.curator.RejectAllGate;
 import io.agentscope.harness.agent.skill.curator.SkillAuditLog;
@@ -119,7 +122,9 @@ import io.agentscope.harness.agent.skill.curator.SkillPromotionGate;
 import io.agentscope.harness.agent.skill.curator.SkillUsageStore;
 import io.agentscope.harness.agent.skill.curator.SkillVisibilityFilter;
 import io.agentscope.harness.agent.skill.runtime.ShellPathPolicy;
+import io.agentscope.harness.agent.subagent.DefaultAgentManager;
 import io.agentscope.harness.agent.subagent.SubagentDeclaration;
+import io.agentscope.harness.agent.subagent.SubagentExecution;
 import io.agentscope.harness.agent.subagent.SubagentFactory;
 import io.agentscope.harness.agent.subagent.task.TaskRepository;
 import io.agentscope.harness.agent.tool.ArtifactDeliveryTool;
@@ -129,10 +134,10 @@ import io.agentscope.harness.agent.tool.MemorySaveTool;
 import io.agentscope.harness.agent.tool.MemorySearchTool;
 import io.agentscope.harness.agent.tool.PlanModeTools;
 import io.agentscope.harness.agent.tool.ProposeSkillTool;
-import io.agentscope.harness.agent.tool.SessionSearchTool;
 import io.agentscope.harness.agent.tool.ShellExecuteTool;
 import io.agentscope.harness.agent.tool.SkillManageConfig;
 import io.agentscope.harness.agent.tool.SkillManageTool;
+import io.agentscope.harness.agent.tool.ThreadHistoryTool;
 import io.agentscope.harness.agent.tool.WebTools;
 import io.agentscope.harness.agent.tools.McpServerRegistrar;
 import io.agentscope.harness.agent.tools.McpServerRegistrationListener;
@@ -147,6 +152,7 @@ import java.net.http.HttpClient;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -154,11 +160,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.BiFunction;
 import java.util.function.Consumer;
 import java.util.function.Function;
-import java.util.function.Supplier;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Flux;
@@ -194,6 +198,15 @@ public class HarnessAgent implements Agent, AutoCloseable {
 
     private static final Logger log = LoggerFactory.getLogger(HarnessAgent.class);
 
+    /** Records framework-owned bindings for construction-time copies; no runtime hooks. */
+    private record HarnessToolBindings(Map<String, AgentTool> tools)
+            implements HarnessRuntimeMiddleware {
+        @Override
+        public Set<ExtensionPoint> activePoints() {
+            return Set.of();
+        }
+    }
+
     private final ReActAgent delegate;
     private final WorkspaceManager workspaceManager;
     private final BiFunction<String, String, WorkspaceManager> workspaceFactory;
@@ -201,6 +214,10 @@ public class HarnessAgent implements Agent, AutoCloseable {
     private final SandboxContext defaultSandboxContext;
     private final CompactionMiddleware compactionHook;
     private final SandboxLifecycleMiddleware sandboxLifecycleMw;
+
+    /** Per-user grant resolver; {@code null} = no trimming at the harness layer. */
+    private final CapabilityResolver capabilityResolver;
+
     private final List<AgentSkillRepository> skillRepositories;
     private final PlanModeManager planModeManager;
     // Skill self-learning — null unless enableSkillManageTool / enableSkillCurator.
@@ -234,6 +251,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
             SandboxContext defaultSandboxContext,
             CompactionMiddleware compactionHook,
             SandboxLifecycleMiddleware sandboxLifecycleMw,
+            CapabilityResolver capabilityResolver,
             List<AgentSkillRepository> skillRepositories,
             PlanModeManager planModeManager,
             SkillPromoter skillPromoter,
@@ -253,6 +271,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
         this.defaultSandboxContext = defaultSandboxContext;
         this.compactionHook = compactionHook;
         this.sandboxLifecycleMw = sandboxLifecycleMw;
+        this.capabilityResolver = capabilityResolver;
         this.skillRepositories =
                 skillRepositories != null ? List.copyOf(skillRepositories) : List.of();
         this.planModeManager = planModeManager;
@@ -266,35 +285,25 @@ public class HarnessAgent implements Agent, AutoCloseable {
         this.pathNormalizer = pathNormalizer;
     }
 
-    private final Map<SessionKey, AgentSession> sessions = new ConcurrentHashMap<>();
-
-    /** Bind a conversation's commands and read views. Obtaining this handle never starts inference. */
-    public AgentSession session(RuntimeContext context) {
-        RuntimeContext effective =
-                ensureSessionDefaults(context == null ? RuntimeContext.empty() : context);
-        return sessions.computeIfAbsent(
-                sessionKey(effective), ignored -> new AgentSession(this, effective));
+    public ThreadKey threadKey(RuntimeContext context) {
+        return delegate.threadKey(ensureSessionDefaults(context));
     }
 
-    public SessionKey sessionKey(RuntimeContext context) {
-        return delegate.sessionKey(ensureSessionDefaults(context));
+    public ThreadJournal threadJournal(RuntimeContext context) {
+        return delegate.threadJournal(ensureSessionDefaults(context));
     }
 
-    public SessionLog sessionLog(RuntimeContext context) {
-        return delegate.sessionLog(ensureSessionDefaults(context));
+    public JournalProjection inspectThread(RuntimeContext context) {
+        return JournalProjection.read(threadJournal(context));
     }
 
-    public SessionProjection inspectSession(RuntimeContext context) {
-        return SessionProjection.read(sessionLog(context));
-    }
-
-    public SessionViews.Transcript sessionTranscript(RuntimeContext context) {
-        return SessionViews.transcript(sessionLog(context));
+    public ThreadHistory.Transcript threadTranscript(RuntimeContext context) {
+        return ThreadHistory.transcript(threadJournal(context));
     }
 
     public void reconcileToolOutcomes(
             RuntimeContext context, Map<String, ToolResultBlock> outcomes, String reason) {
-        SessionRecovery.reconcile(sessionLog(context), outcomes, reason);
+        ThreadRecovery.reconcile(threadJournal(context), outcomes, reason);
     }
 
     /** Returns the workspace manager bound to this agent, or {@code null} if not configured. */
@@ -380,17 +389,31 @@ public class HarnessAgent implements Agent, AutoCloseable {
      * The change is persisted so the next {@code call} on that session sees it.
      */
     public void enterPlanMode(RuntimeContext ctx) {
-        enterPlanMode(ctx.getUserId(), ctx.getSessionId());
+        delegate.updateAgentState(
+                ensureSessionDefaults(ctx),
+                "plan_mode_entered",
+                state -> {
+                    if (planModeManager != null) planModeManager.enter(state);
+                    else state.getPlanModeContext().setPlanActive(true);
+                });
     }
 
     /** Exits plan mode for the session identified by the given {@link RuntimeContext}. */
     public void exitPlanMode(RuntimeContext ctx) {
-        exitPlanMode(ctx.getUserId(), ctx.getSessionId());
+        delegate.updateAgentState(
+                ensureSessionDefaults(ctx),
+                "plan_mode_exited",
+                state -> {
+                    if (planModeManager != null) planModeManager.exit(state);
+                    else state.getPlanModeContext().setPlanActive(false);
+                });
     }
 
     /** @return whether plan mode is active for the session identified by the given {@link RuntimeContext}. */
     public boolean isPlanModeActive(RuntimeContext ctx) {
-        return isPlanModeActive(ctx.getUserId(), ctx.getSessionId());
+        return delegate.getAgentState(ensureSessionDefaults(ctx))
+                .getPlanModeContext()
+                .isPlanActive();
     }
 
     /**
@@ -453,24 +476,12 @@ public class HarnessAgent implements Agent, AutoCloseable {
      * it.
      */
     public void enterPlanMode(String userId, String sessionId) {
-        AgentState s = delegate.getAgentState(userId, sessionId);
-        if (planModeManager != null) {
-            planModeManager.enter(s);
-        } else {
-            s.getPlanModeContext().setPlanActive(true);
-        }
-        delegate.saveAgentState(userId, sessionId);
+        enterPlanMode(RuntimeContext.builder().userId(userId).sessionId(sessionId).build());
     }
 
     /** Exits plan mode for the given {@code (userId, sessionId)} session and persists the change. */
     public void exitPlanMode(String userId, String sessionId) {
-        AgentState s = delegate.getAgentState(userId, sessionId);
-        if (planModeManager != null) {
-            planModeManager.exit(s);
-        } else {
-            s.getPlanModeContext().setPlanActive(false);
-        }
-        delegate.saveAgentState(userId, sessionId);
+        exitPlanMode(RuntimeContext.builder().userId(userId).sessionId(sessionId).build());
     }
 
     /** @return whether plan mode is active for the given {@code (userId, sessionId)} session. */
@@ -505,10 +516,19 @@ public class HarnessAgent implements Agent, AutoCloseable {
         return delegate.getPermissionMode(userId, sessionId);
     }
 
+    /**
+     * Replaces the permission context (mode and rules) for the given {@code (userId, sessionId)}
+     * session at runtime. See
+     * {@link ReActAgent#replacePermissionContext(String, String, PermissionContextState)}.
+     */
+    public void replacePermissionContext(
+            String userId, String sessionId, PermissionContextState permissionContext) {
+        delegate.replacePermissionContext(userId, sessionId, permissionContext);
+    }
+
     @Override
     public void close() {
         try {
-            sessions.values().forEach(AgentSession::close);
             // Drain fire-and-forget memory flush/maintenance so async memory/*.md writes do not
             // race with resource cleanup (e.g., temp workspace deletion in tests).
             io.agentscope.harness.agent.memory.MemoryBackgroundTasks.awaitQuiescence(
@@ -584,6 +604,13 @@ public class HarnessAgent implements Agent, AutoCloseable {
             return dm.getAgentManager();
         }
         return null;
+    }
+
+    /** Reloads dynamic declarations in the target parent Session before host-owned recovery. */
+    public DefaultAgentManager getSubagentAgentManager(RuntimeContext context) {
+        if (subagentMiddleware instanceof DynamicSubagentsMiddleware dynamic)
+            return dynamic.refreshAgentManager(ensureSessionDefaults(context));
+        return getSubagentAgentManager();
     }
 
     /**
@@ -763,7 +790,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
     @Deprecated(since = "2.2.0")
     @Override
     public Mono<Msg> call(List<Msg> msgs) {
-        return wrappedCall(msgs, RuntimeContext.empty(), () -> delegate.call(msgs));
+        return wrappedCall(msgs, RuntimeContext.empty(), eff -> delegate.call(msgs, eff));
     }
 
     /**
@@ -773,7 +800,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
     @Override
     public Mono<Msg> call(List<Msg> msgs, Class<?> structuredModel) {
         return wrappedCall(
-                msgs, RuntimeContext.empty(), () -> delegate.call(msgs, structuredModel));
+                msgs, RuntimeContext.empty(), eff -> delegate.call(msgs, structuredModel, eff));
     }
 
     /**
@@ -782,7 +809,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
     @Deprecated(since = "2.2.0")
     @Override
     public Mono<Msg> call(List<Msg> msgs, JsonNode schema) {
-        return wrappedCall(msgs, RuntimeContext.empty(), () -> delegate.call(msgs, schema));
+        return wrappedCall(msgs, RuntimeContext.empty(), eff -> delegate.call(msgs, schema, eff));
     }
 
     public Mono<Msg> call(Msg msg, RuntimeContext ctx) {
@@ -803,19 +830,19 @@ public class HarnessAgent implements Agent, AutoCloseable {
     public Mono<Msg> call(List<Msg> msgs, RuntimeContext ctx) {
         RuntimeContext effective =
                 ensureSessionDefaults(ctx != null ? ctx : RuntimeContext.empty());
-        return wrappedCall(msgs, effective, () -> delegate.call(msgs, effective));
+        return wrappedCall(msgs, effective, eff -> delegate.call(msgs, eff));
     }
 
     public Mono<Msg> call(List<Msg> msgs, Class<?> structuredModel, RuntimeContext ctx) {
         RuntimeContext effective =
                 ensureSessionDefaults(ctx != null ? ctx : RuntimeContext.empty());
-        return wrappedCall(msgs, effective, () -> delegate.call(msgs, structuredModel, effective));
+        return wrappedCall(msgs, effective, eff -> delegate.call(msgs, structuredModel, eff));
     }
 
     public Mono<Msg> call(List<Msg> msgs, JsonNode schema, RuntimeContext ctx) {
         RuntimeContext effective =
                 ensureSessionDefaults(ctx != null ? ctx : RuntimeContext.empty());
-        return wrappedCall(msgs, effective, () -> delegate.call(msgs, schema, effective));
+        return wrappedCall(msgs, effective, eff -> delegate.call(msgs, schema, eff));
     }
 
     /**
@@ -825,7 +852,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
     @Deprecated(since = "2.0.0", forRemoval = true)
     @Override
     public Flux<Event> stream(List<Msg> msgs, StreamOptions options) {
-        return wrappedStream(RuntimeContext.empty(), () -> delegate.stream(msgs, options));
+        return wrappedStream(RuntimeContext.empty(), eff -> delegate.stream(msgs, options, eff));
     }
 
     /**
@@ -836,7 +863,8 @@ public class HarnessAgent implements Agent, AutoCloseable {
     @Override
     public Flux<Event> stream(List<Msg> msgs, StreamOptions options, Class<?> structuredModel) {
         return wrappedStream(
-                RuntimeContext.empty(), () -> delegate.stream(msgs, options, structuredModel));
+                RuntimeContext.empty(),
+                eff -> delegate.stream(msgs, options, structuredModel, eff));
     }
 
     /**
@@ -846,7 +874,8 @@ public class HarnessAgent implements Agent, AutoCloseable {
     @Deprecated(since = "2.0.0", forRemoval = true)
     @Override
     public Flux<Event> stream(List<Msg> msgs, StreamOptions options, JsonNode schema) {
-        return wrappedStream(RuntimeContext.empty(), () -> delegate.stream(msgs, options, schema));
+        return wrappedStream(
+                RuntimeContext.empty(), eff -> delegate.stream(msgs, options, schema, eff));
     }
 
     /**
@@ -872,7 +901,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
     public Flux<Event> stream(List<Msg> msgs, StreamOptions options, RuntimeContext ctx) {
         RuntimeContext effective =
                 ensureSessionDefaults(ctx != null ? ctx : RuntimeContext.empty());
-        return wrappedStream(effective, () -> delegate.stream(msgs, options, effective));
+        return wrappedStream(effective, eff -> delegate.stream(msgs, options, eff));
     }
 
     /**
@@ -884,7 +913,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
         RuntimeContext effective =
                 ensureSessionDefaults(ctx != null ? ctx : RuntimeContext.empty());
         return wrappedStream(
-                effective, () -> delegate.stream(msgs, options, structuredModel, effective));
+                effective, eff -> delegate.stream(msgs, options, structuredModel, eff));
     }
 
     /**
@@ -895,14 +924,14 @@ public class HarnessAgent implements Agent, AutoCloseable {
             List<Msg> msgs, StreamOptions options, JsonNode schema, RuntimeContext ctx) {
         RuntimeContext effective =
                 ensureSessionDefaults(ctx != null ? ctx : RuntimeContext.empty());
-        return wrappedStream(effective, () -> delegate.stream(msgs, options, schema, effective));
+        return wrappedStream(effective, eff -> delegate.stream(msgs, options, schema, eff));
     }
 
     /**
      * Prepare a cancellable execution covering the complete harness/sandbox lifecycle. Adopts the
-     * context's runId ({@code run.runId() == ctx.getRunId()}); {@code ensureSessionDefaults}
-     * still runs at subscribe time and never alters it. A null context uses a fresh {@link
-     * RuntimeContext#empty()} so derived defaults inherit this runId.
+     * context's runId when supplied; otherwise allocates an identity for the handle. The invocation
+     * context receives that identity when execution starts. A null context uses an empty request
+     * context with the default Thread.
      */
     public AgentRun<AgentEvent> prepareRun(List<Msg> msgs, RuntimeContext ctx) {
         RuntimeContext source = ctx != null ? ctx : RuntimeContext.empty();
@@ -911,10 +940,9 @@ public class HarnessAgent implements Agent, AutoCloseable {
 
     /**
      * Prepare a cancellable reply execution covering the complete harness/sandbox lifecycle.
-     * Adopts the context's runId ({@code run.runId() == ctx.getRunId()});
-     * {@code ensureSessionDefaults} still runs at subscribe time and never alters it. A null
-     * context uses a fresh {@link RuntimeContext#empty()} so derived defaults inherit this
-     * runId.
+     * Adopts the context's runId when supplied; otherwise allocates an identity for the handle.
+     * The invocation context receives it when execution starts. A null context uses an empty
+     * request context with the default Thread.
      */
     public AgentRun<Msg> prepareCall(List<Msg> msgs, RuntimeContext ctx) {
         RuntimeContext source = ctx != null ? ctx : RuntimeContext.empty();
@@ -989,7 +1017,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
     public Flux<AgentEvent> streamEvents(List<Msg> msgs, RuntimeContext ctx) {
         RuntimeContext effective =
                 ensureSessionDefaults(ctx != null ? ctx : RuntimeContext.empty());
-        return wrappedStreamEvents(effective, () -> delegate.streamEvents(msgs, effective));
+        return wrappedStreamEvents(effective, eff -> delegate.streamEvents(msgs, eff));
     }
 
     @Override
@@ -1009,22 +1037,23 @@ public class HarnessAgent implements Agent, AutoCloseable {
     // ==================== Call/stream wrappers ====================
 
     private Mono<Msg> wrappedCall(
-            List<Msg> msgs, RuntimeContext effective, Supplier<Mono<Msg>> inner) {
+            List<Msg> msgs, RuntimeContext effective, Function<RuntimeContext, Mono<Msg>> inner) {
         Mono<Msg> base =
                 Mono.using(
                         () -> {
+                            RuntimeContext eff = prepareCapabilitySurface(effective);
                             if (sandboxLifecycleMw != null) {
-                                sandboxLifecycleMw.acquireForCall(effective);
+                                sandboxLifecycleMw.acquireForCall(eff);
                             }
-                            return effective;
+                            return eff;
                         },
-                        eff -> inner.get(),
+                        eff -> inner.apply(eff),
                         eff -> {
                             if (sandboxLifecycleMw != null) {
                                 sandboxLifecycleMw.releaseForCall(eff);
                             }
                         });
-        if (compactionHook != null && !delegate.sessionLogEnabled()) {
+        if (compactionHook != null && !delegate.journalEnabled()) {
             return base.onErrorResume(
                     e -> {
                         if (CompactionMiddleware.isContextOverflowError(e)) {
@@ -1038,18 +1067,20 @@ public class HarnessAgent implements Agent, AutoCloseable {
 
     /**
      * @deprecated since 2.0.0, for removal alongside the {@link #stream(List, StreamOptions)}
-     *     family. Replaced by {@link #wrappedStreamEvents(RuntimeContext, Supplier)}.
+     *     family. Replaced by {@link #wrappedStreamEvents(RuntimeContext, Function)}.
      */
     @Deprecated(since = "2.0.0", forRemoval = true)
-    private Flux<Event> wrappedStream(RuntimeContext effective, Supplier<Flux<Event>> inner) {
+    private Flux<Event> wrappedStream(
+            RuntimeContext effective, Function<RuntimeContext, Flux<Event>> inner) {
         return Flux.using(
                 () -> {
+                    RuntimeContext eff = prepareCapabilitySurface(effective);
                     if (sandboxLifecycleMw != null) {
-                        sandboxLifecycleMw.acquireForCall(effective);
+                        sandboxLifecycleMw.acquireForCall(eff);
                     }
-                    return effective;
+                    return eff;
                 },
-                eff -> inner.get(),
+                eff -> inner.apply(eff),
                 eff -> {
                     if (sandboxLifecycleMw != null) {
                         sandboxLifecycleMw.releaseForCall(eff);
@@ -1058,20 +1089,62 @@ public class HarnessAgent implements Agent, AutoCloseable {
     }
 
     private Flux<AgentEvent> wrappedStreamEvents(
-            RuntimeContext effective, Supplier<Flux<AgentEvent>> inner) {
+            RuntimeContext effective, Function<RuntimeContext, Flux<AgentEvent>> inner) {
         return Flux.using(
                 () -> {
+                    RuntimeContext eff = prepareCapabilitySurface(effective);
                     if (sandboxLifecycleMw != null) {
-                        sandboxLifecycleMw.acquireForCall(effective);
+                        sandboxLifecycleMw.acquireForCall(eff);
                     }
-                    return effective;
+                    return eff;
                 },
-                eff -> inner.get(),
+                eff -> inner.apply(eff),
                 eff -> {
                     if (sandboxLifecycleMw != null) {
                         sandboxLifecycleMw.releaseForCall(eff);
                     }
                 });
+    }
+
+    /**
+     * Resolves the capability surface for this call, mirroring the core funnel rules: with no
+     * resolver any inherited surface is kept as-is (sub-agents reuse the parent's without
+     * re-resolving); a configured resolver resolves fresh per call, and when the rc already
+     * carries a surface (this harness running as a sub-agent) the result goes into a derived
+     * copy so the parent chain is never written in place.
+     *
+     * <p>Runs in the sandbox-acquire resource phase deliberately BEFORE {@code acquireForCall}:
+     * the pre-start callback stages marketplace skill files into {@code .skills-cache} for
+     * sandbox projection, so the grant set must already be on the rc — otherwise ungranted
+     * skill files would be materialised and readable from the sandbox shell. The inner delegate
+     * is built without a resolver and therefore keeps this surface by reference.
+     */
+    private RuntimeContext prepareCapabilitySurface(RuntimeContext effective) {
+        if (capabilityResolver == null) {
+            return effective;
+        }
+        CapabilitySurface resolved;
+        try {
+            resolved = capabilityResolver.resolve(effective, this);
+        } catch (RuntimeException e) {
+            // Same policy as the core funnel: broken authorization infrastructure is not
+            // "no grants" — abort the call instead of silently trimming nothing.
+            log.error(
+                    "CapabilityResolver failed; aborting the call (userId={}, agentId={})",
+                    effective.getUserId(),
+                    getName(),
+                    e);
+            throw e;
+        }
+        CapabilitySurface surface = resolved != null ? resolved : CapabilitySurface.ALLOW_ALL;
+        CapabilitySurface present = effective.get(CapabilitySurface.class);
+        if (present == surface) {
+            return effective;
+        }
+        RuntimeContext target =
+                present == null ? effective : RuntimeContext.builder().from(effective).build();
+        target.put(CapabilitySurface.class, surface);
+        return target;
     }
 
     /**
@@ -1082,6 +1155,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
      */
     private RuntimeContext ensureSessionDefaults(RuntimeContext ctx) {
         RuntimeContext source = ctx != null ? ctx : RuntimeContext.empty();
+        boolean hostedChild = source.get(SubagentExecution.class) != null;
         String ctxSessionId = source.getSessionId();
         if (ctxSessionId == null || ctxSessionId.isBlank()) {
             ctxSessionId = getName();
@@ -1095,10 +1169,13 @@ public class HarnessAgent implements Agent, AutoCloseable {
 
         if (ctxSessionId.equals(source.getSessionId())
                 && sandboxCtx == source.get(SandboxContext.class)
-                && (fs == null || sourceFs != null)) {
+                && (fs == null || sourceFs != null)
+                && (!hostedChild
+                        || Boolean.TRUE.equals(source.get(ToolCallParam.CALL_CONTEXT_KEY)))) {
             return source;
         }
         RuntimeContext.Builder b = RuntimeContext.builder(source).sessionId(ctxSessionId);
+        if (hostedChild) b.put(ToolCallParam.CALL_CONTEXT_KEY, true);
         b.put(SandboxContext.class, sandboxCtx);
         if (sourceFs == null && fs != null) {
             b.put(AbstractFilesystem.class, fs);
@@ -1154,6 +1231,8 @@ public class HarnessAgent implements Agent, AutoCloseable {
                 memoryConfig.flushPrompt() != null
                         ? memoryConfig.flushPrompt()
                         : MemoryFlushManager.DEFAULT_FLUSH_PROMPT;
+        // Overflow recovery summarizes through the agent's build-time default model, never the
+        // per-call model that just overflowed (same rule as CompactionMiddleware#overflowRecovery).
         MemoryFlushManager fm =
                 new MemoryFlushManager(workspaceManager, getModel(), effectiveFlushPrompt);
         ConversationCompactor compactor = new ConversationCompactor(getModel(), fm);
@@ -1169,6 +1248,8 @@ public class HarnessAgent implements Agent, AutoCloseable {
                                                         + " result"));
                             }
                             List<Msg> compacted = opt.get();
+                            // Re-prepare: the retry must carry the grant surface too (the
+                            // wrapped resource phase is not re-entered on this path).
                             return Mono.fromRunnable(
                                             () ->
                                                     delegate.updateAgentState(
@@ -1180,7 +1261,13 @@ public class HarnessAgent implements Agent, AutoCloseable {
                                                                         .addAll(compacted);
                                                             }))
                                     .subscribeOn(Schedulers.boundedElastic())
-                                    .then(Mono.defer(() -> delegate.call(retryInput, ctx)));
+                                    .then(
+                                            Mono.defer(
+                                                    () ->
+                                                            delegate.call(
+                                                                    retryInput,
+                                                                    prepareCapabilitySurface(
+                                                                            ctx))));
                         });
     }
 
@@ -1275,38 +1362,28 @@ public class HarnessAgent implements Agent, AutoCloseable {
      * sandbox + hooks/middlewares + tools + skills + subagents + tools.json + plan-mode.
      */
     public static class Builder {
-        private SessionLogStore sessionLogStore;
-        private boolean legacySessionHistory;
-        private SessionHistoryMode historyMode = SessionHistoryMode.EVENT_LOG;
+        private ThreadJournalStore threadJournalStore;
+        private boolean journalEnabled = true;
 
-        java.util.function.Consumer<Builder> sessionHistoryConfigurer() {
-            var mode = historyMode;
-            var store = sessionLogStore;
+        java.util.function.Consumer<Builder> journalConfigurer() {
+            boolean enabled = journalEnabled;
+            var store = threadJournalStore;
             return child -> {
-                child.sessionHistoryMode(mode);
-                if (store != null) child.sessionLogStore(store);
+                child.journalEnabled(enabled);
+                if (store != null) child.threadJournalStore(store);
             };
         }
 
-        public Builder sessionHistoryMode(SessionHistoryMode mode) {
-            this.legacySessionHistory = mode == SessionHistoryMode.LEGACY;
-            this.historyMode = mode;
-            inner.sessionHistoryMode(mode);
+        /** Use native Thread journals, or state-store snapshots when disabled. */
+        public Builder journalEnabled(boolean enabled) {
+            this.journalEnabled = enabled;
+            inner.journalEnabled(enabled);
             return this;
         }
 
         /** Override native history storage while preserving runtime commit semantics. */
-        public Builder sessionLogStore(SessionLogStore store) {
-            this.sessionLogStore = Objects.requireNonNull(store);
-            return this;
-        }
-
-        /** Explicit compatibility mode for existing applications/backends without atomic storage. */
-        public Builder legacySessionHistory(boolean legacy) {
-            this.legacySessionHistory = legacy;
-            this.historyMode = legacy ? SessionHistoryMode.LEGACY : SessionHistoryMode.EVENT_LOG;
-            inner.sessionHistoryMode(
-                    legacy ? SessionHistoryMode.LEGACY : SessionHistoryMode.EVENT_LOG);
+        public Builder threadJournalStore(ThreadJournalStore store) {
+            this.threadJournalStore = Objects.requireNonNull(store);
             return this;
         }
 
@@ -1323,6 +1400,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
         boolean enablePendingToolRecovery = false;
         Model model;
         Toolkit toolkit = newDefaultToolkit();
+        private boolean enableMetaTool;
         int maxIters = 10;
         ExecutionConfig modelExecutionConfig;
         ExecutionConfig toolExecutionConfig;
@@ -1395,11 +1473,13 @@ public class HarnessAgent implements Agent, AutoCloseable {
         TaskRepository taskRepository;
         Object externalSubagentTool;
         Function<String, Model> modelResolver;
+        CapabilityResolver capabilityResolver;
         final List<String> additionalContextFiles = new ArrayList<>();
         int maxContextTokens = 8000;
 
         ArtifactDeliveryTarget artifactDeliveryTarget;
         boolean disableFilesystemTools = false;
+        int readFileMaxChars = FilesystemTool.DEFAULT_MAX_READ_CHARS;
         boolean disableShellTool = false;
         boolean disableWebTools = false;
 
@@ -1409,7 +1489,6 @@ public class HarnessAgent implements Agent, AutoCloseable {
         boolean disableMemoryTools = false;
         boolean disableMemoryHooks = false;
         boolean disableKnowledgeContext = false;
-        boolean disableSessionPersistence = false;
         boolean disableWorkspaceContext = false;
         boolean disableAtPathExpansion = false;
         boolean disableSubagents = false;
@@ -1441,7 +1520,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
         final Map<String, AbstractFilesystem> filesystemRoutes = new LinkedHashMap<>();
 
         // Legacy state persistence and sandbox infrastructure slots. Native conversation
-        // recovery always uses SessionLogStore, independently of this optional backend.
+        // recovery always uses ThreadJournalStore, independently of this optional backend.
         AgentStateStore stateStoreOverride;
 
         DistributedStore distributedStore;
@@ -1459,8 +1538,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
         /**
          * Enables AgentTeams mode: attaches {@link
          * io.agentscope.harness.agent.middleware.TeamsMiddleware} and registers the role-clipped
-         * {@code team} tool. Used for both Managed resolve({@code teamContext}) and Entry-B lead
-         * sessions that declare a roster template.
+         * {@code team} tool for the supplied team context.
          */
         public Builder teamsMode(
                 io.agentscope.harness.agent.team.TeamClient teamClient,
@@ -1471,7 +1549,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
         /**
          * Same as {@link #teamsMode(io.agentscope.harness.agent.team.TeamClient,
          * io.agentscope.harness.agent.team.TeamContext)} but also binds the middleware to {@code
-         * sessionId} so control-plane TeamEvents addressed at that session reach this agent.
+         * sessionId} so team wakeups addressed at that session reach this agent.
          */
         public Builder teamsMode(
                 io.agentscope.harness.agent.team.TeamClient teamClient,
@@ -1501,7 +1579,9 @@ public class HarnessAgent implements Agent, AutoCloseable {
          *       <td>{@code name}</td><td>{@code agent.getName()}</td></tr>
          *   <tr><td>{@code description}</td><td>{@code agent.getDescription()}</td></tr>
          *   <tr><td>{@code sysPrompt}</td><td>{@code agent.getSysPrompt()}</td></tr>
-         *   <tr><td>{@code model}</td><td>{@code agent.getModel()}</td></tr>
+         *   <tr><td>{@code model}</td><td>{@code agent.getModel(null)} — an identity-mode source
+         *       is pinned to its identity's current instance (harness orchestration needs a
+         *       {@code Model} at build time, not a lazy per-run reference)</td></tr>
          *   <tr><td>{@code maxIters}</td><td>{@code agent.getMaxIters()}</td></tr>
          *   <tr><td>{@code generateOptions}</td><td>{@code agent.getGenerateOptions()}</td></tr>
          *   <tr><td>{@code toolkit}</td><td>defensive copy via {@code agent.getToolkit().copy()}</td></tr>
@@ -1535,10 +1615,8 @@ public class HarnessAgent implements Agent, AutoCloseable {
          *           code)</td></tr>
          * </table>
          *
-         * <p>Note: {@code enableMetaTool} and {@code enableTaskList} are builder-time flags that
-         * mutate the toolkit at build. They do not round-trip as flags, but the toolkit copy
-         * <i>already</i> carries the tools they registered, so the resulting agent has the same
-         * tool surface.
+         * <p>The toolkit copy rebinds its meta tool. Harness task tools are rebuilt with their
+         * task-list configuration; user tools and explicit replacements are retained.
          *
          * <h4>What this method does <b>not</b> copy</h4>
          *
@@ -1548,7 +1626,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
          *   <li>Workspace &amp; filesystem: {@link #workspace(Path)}, {@link #filesystem(SandboxFilesystemSpec)},
          *       {@link #filesystem(LocalFilesystemSpec)}, {@link #filesystem(RemoteFilesystemSpec)},
          *       {@link #abstractFilesystem(AbstractFilesystem)},
-         *       {@link #environmentMemory(String)}</li>
+         *       {@link #environmentMemory(String)}, {@link #readFileMaxChars(int)}</li>
          *   <li>Subagents: {@link #subagent(SubagentDeclaration)}, {@link #subagents(List)},
          *       {@link #subagentFactory(String, Function)},
          *       {@link #subagentFactory(SubagentDeclaration, SubagentFactory)},
@@ -1594,16 +1672,24 @@ public class HarnessAgent implements Agent, AutoCloseable {
             b.name(agent.getName());
             b.description(agent.getDescription());
             b.sysPrompt(agent.getSysPrompt());
-            b.model(agent.getModel());
+            // Identity-mode sources are pinned to the identity's current instance: harness
+            // orchestration needs a Model at build time, not a lazy per-run reference.
+            b.model(agent.getModel(null));
             b.maxIters(agent.getMaxIters());
             b.generateOptions(agent.getGenerateOptions());
-            b.toolkit(agent.getToolkit().copy());
+            List<AgentTool> frameworkTools =
+                    new ArrayList<>(
+                            agent.getMiddlewares().stream()
+                                    .filter(HarnessToolBindings.class::isInstance)
+                                    .map(HarnessToolBindings.class::cast)
+                                    .flatMap(bindings -> bindings.tools().values().stream())
+                                    .toList());
             if (b.contextSources.taskContext().requirementProposals()) {
-                // Re-register from the copied task options at build time. This also lets the
-                // caller disable proposals on the copy without retaining the original tool.
-                b.toolkit.removeTool("task_requirement_propose");
+                // Plain ReActAgent sources have no Harness ownership marker.
+                frameworkTools.addAll(
+                        agent.getToolkit().getToolsFromSource(RequirementTools.class));
             }
-
+            b.toolkit(agent.getToolkit().copyExcludingTools(frameworkTools));
             // Persistence.
             AgentStateStore srcSession = agent.getStateStore();
             if (srcSession != null) {
@@ -1661,15 +1747,13 @@ public class HarnessAgent implements Agent, AutoCloseable {
             List<MiddlewareBase> srcMiddlewares = agent.getMiddlewares();
             if (srcMiddlewares != null && !srcMiddlewares.isEmpty()) {
                 List<MiddlewareBase> copyable = filterCopyableMiddlewares(srcMiddlewares);
-                if (b.contextSources.taskContext().requirementProposals()) {
-                    // Task configuration rebuilds its reminder. Preserve a copied todo capability
-                    // without adding a second requirement grounding block.
-                    for (MiddlewareBase middleware : copyable) {
-                        if (middleware.getClass() == TaskReminderMiddleware.class
-                                && ((TaskReminderMiddleware) middleware).todoEnabled()) {
-                            b.enableTaskList();
-                        }
-                    }
+                boolean rebuildTaskList =
+                        srcMiddlewares.stream().anyMatch(HarnessToolBindings.class::isInstance)
+                                && hasTaskList(copyable);
+                if (rebuildTaskList) {
+                    b.enableTaskList();
+                }
+                if (rebuildTaskList || b.contextSources.taskContext().requirementProposals()) {
                     copyable =
                             copyable.stream()
                                     .filter(
@@ -1720,8 +1804,17 @@ public class HarnessAgent implements Agent, AutoCloseable {
             return this;
         }
 
-        public Builder model(String modelId) {
-            Model resolved = io.agentscope.core.model.ModelRegistry.resolve(modelId);
+        /**
+         * Legacy eager form: resolves the identity string through {@code ModelRegistry} once
+         * at build time and pins the instance — harness orchestration (subagents, memory,
+         * compaction) needs a {@code Model} at build time, so the inner agent holds the
+         * resolved instance rather than a lazy reference; see {@code
+         * ReActAgent.Builder#model(String)} for the lazy reference mode.
+         *
+         * @throws IllegalArgumentException if the identity cannot be resolved at build time
+         */
+        public Builder model(String modelIdentity) {
+            Model resolved = ModelRegistry.resolve(modelIdentity);
             this.model = resolved;
             inner.model(resolved);
             return this;
@@ -1815,8 +1908,16 @@ public class HarnessAgent implements Agent, AutoCloseable {
             return copyable;
         }
 
-        /** Legacy snapshot backend and sandbox metadata storage. Native conversation recovery
-         * uses {@link #sessionLogStore(SessionLogStore)} and never imports this backend implicitly.
+        private static boolean hasTaskList(List<MiddlewareBase> middlewares) {
+            return middlewares.stream()
+                    .filter(middleware -> middleware.getClass() == TaskReminderMiddleware.class)
+                    .map(TaskReminderMiddleware.class::cast)
+                    .anyMatch(TaskReminderMiddleware::todoEnabled);
+        }
+
+        /**
+         * Snapshot backend and sandbox metadata storage. An empty main Thread imports a compatible
+         * AgentScope 2.0 {@code agent_state} entry from this backend once.
          */
         public Builder stateStore(AgentStateStore stateStore) {
             this.stateStoreOverride = stateStore;
@@ -1864,7 +1965,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
         }
 
         public Builder enableMetaTool(boolean enableMetaTool) {
-            inner.enableMetaTool(enableMetaTool);
+            this.enableMetaTool = enableMetaTool;
             return this;
         }
 
@@ -2258,6 +2359,22 @@ public class HarnessAgent implements Agent, AutoCloseable {
         }
 
         /**
+         * Registers a capability resolver computing the per-user grant set at call entry. The
+         * harness resolves before the sandbox acquire/prestage phase, so marketplace skill
+         * staging materialises granted-only files; the inner delegate carries the resolved
+         * {@link CapabilitySurface} without re-resolving, and harness sub-agents reuse it
+         * (inherited surface).
+         *
+         * <p>Only an all-null surface skips trimming; any explicit dimension makes the surface
+         * a complete grant enumeration (unset dimensions contribute no grants). A throwing
+         * resolver aborts the call — authorization infrastructure failure is not "no grants".
+         */
+        public Builder capabilityResolver(CapabilityResolver resolver) {
+            this.capabilityResolver = resolver;
+            return this;
+        }
+
+        /**
          * Adds a custom context file (relative to workspace) loaded into the system prompt
          * alongside AGENTS.md, MEMORY.md, and KNOWLEDGE.md.
          */
@@ -2307,6 +2424,24 @@ public class HarnessAgent implements Agent, AutoCloseable {
          */
         public Builder artifactDeliveryTarget(ArtifactDeliveryTarget target) {
             this.artifactDeliveryTarget = target;
+            return this;
+        }
+
+        /**
+         * Sets the maximum Unicode code points returned by a {@code read_file} page.
+         *
+         * <p>Defaults to {@link FilesystemTool#DEFAULT_MAX_READ_CHARS}. Must be at least {@link
+         * FilesystemTool#DEFAULT_READ_CHARS}, which remains the page size when the tool call omits
+         * {@code max_chars}. Automatically constructed subagents inherit this limit.
+         *
+         * @throws IllegalArgumentException if the limit is smaller than the default page size
+         */
+        public Builder readFileMaxChars(int maxChars) {
+            if (maxChars < FilesystemTool.DEFAULT_READ_CHARS) {
+                throw new IllegalArgumentException(
+                        "readFileMaxChars must be at least " + FilesystemTool.DEFAULT_READ_CHARS);
+            }
+            this.readFileMaxChars = maxChars;
             return this;
         }
 
@@ -2478,7 +2613,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
 
         /**
          * Skips registration of {@code memory_search} / {@code memory_get} / {@code memory_save} /
-         * {@code session_search}, and omits matching Memory Recall / tool-based Persistence
+         * {@code thread_search}, and omits matching Memory Recall / tool-based Persistence
          * guidance from the workspace system prompt.
          */
         public Builder disableMemoryTools() {
@@ -2510,17 +2645,15 @@ public class HarnessAgent implements Agent, AutoCloseable {
             return this;
         }
 
-        /** The duplicate transcript writer has been removed; native session logging stays enabled.
-         * @deprecated No configuration is required to disable duplicate transcript files.
-         */
+        /** @deprecated Transcript persistence is part of the native journal. */
         @Deprecated
         public Builder disableTranscript() {
             return this;
         }
 
-        /** No-op since 2.0; session persistence is owned by ReActAgent itself. */
+        /** @deprecated Session persistence remains enabled; this method is retained as a no-op. */
+        @Deprecated
         public Builder disableSessionPersistence() {
-            this.disableSessionPersistence = true;
             return this;
         }
 
@@ -2608,17 +2741,53 @@ public class HarnessAgent implements Agent, AutoCloseable {
         /**
          * Builds a fresh runtime from this reusable configuration. Configure the builder before
          * sharing it; builds are serialized, while the resulting agents can execute concurrently.
+         * If a build fails, auto-wired state-store and filesystem configuration is restored so
+         * the same builder can be corrected and reused.
          */
         public synchronized HarnessAgent build() {
             var configuredMessageBus = messageBus;
             var configuredAsyncToolRegistry = asyncToolRegistry;
+            var configuredStateStoreOverride = stateStoreOverride;
+            var configuredRemoteStore =
+                    remoteFilesystemSpec != null ? remoteFilesystemSpec.store() : null;
+            var configuredSandboxSnapshotSpec =
+                    sandboxFilesystemSpec != null
+                            ? sandboxFilesystemSpec.getSnapshotSpecOverride()
+                            : null;
+            var configuredSandboxExecutionGuard =
+                    sandboxFilesystemSpec != null
+                            ? sandboxFilesystemSpec.getExecutionGuard()
+                            : null;
+            var successfulBuild = false;
             try {
-                return buildInstance(inner.copy());
+                var agent = buildInstance(inner.copy());
+                successfulBuild = true;
+                return agent;
             } finally {
                 // Workspace-derived collaborators belong to this build's filesystem, especially
                 // when sandbox bindings or workspace indexes have per-agent lifetimes.
                 messageBus = configuredMessageBus;
                 asyncToolRegistry = configuredAsyncToolRegistry;
+                if (!successfulBuild) {
+                    stateStoreOverride = configuredStateStoreOverride;
+                    if (remoteFilesystemSpec != null) {
+                        remoteFilesystemSpec.restoreAutoInjectedStore(configuredRemoteStore);
+                    }
+                    if (sandboxFilesystemSpec != null) {
+                        sandboxFilesystemSpec
+                                .snapshotSpec(configuredSandboxSnapshotSpec)
+                                .executionGuard(configuredSandboxExecutionGuard);
+                    }
+                }
+            }
+        }
+
+        private static void captureFrameworkTools(
+                Toolkit toolkit, Set<String> inheritedNames, Map<String, AgentTool> bindings) {
+            for (String name : toolkit.getToolNames()) {
+                if (!inheritedNames.contains(name)) {
+                    bindings.put(name, toolkit.getTool(name));
+                }
             }
         }
 
@@ -2626,6 +2795,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
             // Toolkit deep-copy: each agent gets its own toolkit so harness-registered tools and
             // user-registered tools never bleed across builds.
             Toolkit agentToolkit = this.toolkit.copy();
+            Set<String> inheritedToolNames = agentToolkit.getToolNames();
 
             // ---- Validation ----
             int specCount = 0;
@@ -2655,8 +2825,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
             // distributedStore provides storage components; filesystem mode is user's choice.
             // Priority: explicit builder methods > distributedStore > workspace defaults
             if (distributedStore != null) {
-                if (stateStoreOverride == null
-                        && (legacySessionHistory || sandboxFilesystemSpec != null)) {
+                if (stateStoreOverride == null) {
                     stateStoreOverride = distributedStore.agentStateStore();
                 }
                 if (remoteFilesystemSpec != null) {
@@ -2696,15 +2865,14 @@ public class HarnessAgent implements Agent, AutoCloseable {
                 fsIsolationScope = localFilesystemSpec.getIsolationScope();
             }
             NamespaceFactory nsFactory = fsIsolationScope.toNamespaceFactory();
-            // Native sessions restore only from their journal. A separate state store is needed
-            // only for explicit legacy mode or sandbox infrastructure metadata.
-            if (effectiveSession == null
-                    && (legacySessionHistory || sandboxFilesystemSpec != null)) {
+            // Keep the 2.0 state location available while a main Thread is empty. ReActAgent reads
+            // it once and commits the imported baseline into the Thread journal.
+            if (effectiveSession == null) {
                 effectiveSession = new JsonFileAgentStateStore(defaultStateDir(resolvedAgentId));
             }
-            if (legacySessionHistory) inner.stateStore(effectiveSession);
+            inner.stateStore(effectiveSession);
 
-            if (legacySessionHistory
+            if (!journalEnabled
                     && remoteFilesystemSpec != null
                     && isLocalSession(effectiveSession)) {
                 throw new IllegalStateException(
@@ -2717,7 +2885,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
             }
             WorkspaceIndex workspaceIndex =
                     remoteFilesystemSpec != null ? WorkspaceIndex.open(resolvedWorkspace) : null;
-            if (legacySessionHistory)
+            if (!journalEnabled)
                 inner.actionObserver(new StateStoreActionObserver(effectiveSession));
             AbstractFilesystem filesystem =
                     HarnessAgentBuilderSupport.resolveFilesystem(
@@ -2822,15 +2990,18 @@ public class HarnessAgent implements Agent, AutoCloseable {
             if (!disableAtPathExpansion) {
                 inner.middleware(new AtPathExpansionMiddleware(wsManager));
             }
-            if (!legacySessionHistory) {
-                inner.sessionLogAgentId(resolvedAgentId);
-                inner.sessionLogStore(
-                        sessionLogStore != null
-                                ? sessionLogStore
-                                : new WorkspaceSessionLogStore(wsManager));
+            if (journalEnabled) {
+                inner.journalAgentId(resolvedAgentId);
+                inner.threadJournalStore(
+                        threadJournalStore != null
+                                ? threadJournalStore
+                                : new WorkspaceThreadJournalStore(wsManager));
             }
             Model memoryModel = memoryConfig.model() != null ? memoryConfig.model() : model;
             if (memoryModel != null && !disableMemoryHooks) {
+                // Flush middleware gets the dedicated config model only (may be null): without
+                // one it resolves the executing agent's per-call model at flush time. The
+                // consolidator below still uses the resolved memoryModel.
                 IsolationScope effectiveIsolationScope = fsIsolationScope;
 
                 String effectiveFlushPrompt =
@@ -2840,7 +3011,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
                 inner.middleware(
                         new MemoryFlushMiddleware(
                                 wsManager,
-                                memoryModel,
+                                memoryConfig.model(),
                                 effectiveFlushPrompt,
                                 memoryConfig.flushTrigger(),
                                 effectiveIsolationScope,
@@ -2871,8 +3042,12 @@ public class HarnessAgent implements Agent, AutoCloseable {
                 Model compactionModel =
                         compactionConfig.getModel() != null ? compactionConfig.getModel() : model;
                 if (compactionModel != null) {
+                    // The middleware receives the dedicated config model only (may be null):
+                    // without one it resolves the executing agent's per-call model at compaction
+                    // time. The gate above still requires a dedicated or default model to exist.
                     compactionHook =
-                            new CompactionMiddleware(wsManager, compactionModel, compactionConfig);
+                            new CompactionMiddleware(
+                                    wsManager, compactionConfig.getModel(), compactionConfig);
                     inner.middleware(compactionHook.overflowRecovery());
                 }
             }
@@ -2966,12 +3141,12 @@ public class HarnessAgent implements Agent, AutoCloseable {
                 agentToolkit.registerTool(new MemorySearchTool(wsManager));
                 agentToolkit.registerTool(new MemoryGetTool(wsManager));
                 agentToolkit.registerTool(new MemorySaveTool(wsManager));
-                if (!legacySessionHistory) {
+                if (journalEnabled) {
                     agentToolkit.registerTool(
-                            new SessionSearchTool(
-                                    sessionLogStore != null
-                                            ? sessionLogStore
-                                            : new WorkspaceSessionLogStore(wsManager)));
+                            new ThreadHistoryTool(
+                                    threadJournalStore != null
+                                            ? threadJournalStore
+                                            : new WorkspaceThreadJournalStore(wsManager)));
                 }
             }
             WorkspacePathNormalizer pathNormalizer;
@@ -2989,13 +3164,17 @@ public class HarnessAgent implements Agent, AutoCloseable {
                                 resolvedWorkspace.toAbsolutePath().toString(), nsFactory);
             } else if (filesystem instanceof AbstractSandboxFilesystem) {
                 pathNormalizer =
-                        WorkspacePathNormalizer.of(ShellPathPolicy.SANDBOX_WORKSPACE_PREFIX);
+                        WorkspacePathNormalizer.forSandbox(
+                                defaultSandboxContext != null
+                                        ? defaultSandboxContext.getWorkspaceSpec().getRoot()
+                                        : ShellPathPolicy.SANDBOX_WORKSPACE_PREFIX);
             } else {
                 pathNormalizer =
                         WorkspacePathNormalizer.of(resolvedWorkspace.toAbsolutePath().toString());
             }
             if (!disableFilesystemTools) {
-                agentToolkit.registerTool(new FilesystemTool(filesystem, pathNormalizer));
+                agentToolkit.registerTool(
+                        new FilesystemTool(filesystem, pathNormalizer, readFileMaxChars));
             }
             if (artifactDeliveryEnabled) {
                 agentToolkit.registerTool(
@@ -3037,6 +3216,8 @@ public class HarnessAgent implements Agent, AutoCloseable {
                                 planExtraAllowed));
             }
 
+            Map<String, AgentTool> frameworkTools = new LinkedHashMap<>();
+            captureFrameworkTools(agentToolkit, inheritedToolNames, frameworkTools);
             // ---- workspace/tools.json: MCP servers + allow/deny filter ----
             ToolsConfig resolvedToolsConfig = null;
             if (!disableToolsConfig) {
@@ -3052,6 +3233,8 @@ public class HarnessAgent implements Agent, AutoCloseable {
                         resolvedToolsConfig.getMcpServers(),
                         mcpServerRegistrationListener);
             }
+
+            Set<String> externalToolNames = agentToolkit.getToolNames();
 
             // ---- Skills ----
             List<AgentSkillRepository> orderedSkillRepos =
@@ -3203,10 +3386,13 @@ public class HarnessAgent implements Agent, AutoCloseable {
                 inner.dynamicSkillsEnabled(false);
 
                 // Wire pre-start staging so sandbox projection picks up .skills-cache content
-                // that MarketplaceStager materialises from database-backed repositories.
+                // that MarketplaceStager materialises from database-backed repositories. The
+                // projection-aware variant also narrows the projected cache subtree to this
+                // call's granted skills — residue staged under earlier, wider grants stays on
+                // disk but no longer enters the sandbox.
                 if (sandboxLifecycleMw != null && stager != null) {
-                    sandboxLifecycleMw.setBeforeStartCallback(
-                            skillMiddleware::prestageMarketplaceSkills);
+                    sandboxLifecycleMw.setProjectionAwareBeforeStart(
+                            skillMiddleware::prestageForProjection);
                 }
             } else if (disableDynamicSkills) {
                 // No composed repositories exist, but preserve the explicit core opt-out.
@@ -3218,6 +3404,12 @@ public class HarnessAgent implements Agent, AutoCloseable {
             if (resolvedToolsConfig != null) {
                 ToolFilter.apply(agentToolkit, resolvedToolsConfig);
             }
+            captureFrameworkTools(agentToolkit, externalToolNames, frameworkTools);
+            // Toolkit copies rebind their own meta tool; Harness must not exclude it.
+            if (enableMetaTool) {
+                agentToolkit.registerMetaTool();
+            }
+            Set<String> coreInheritedNames = agentToolkit.getToolNames();
 
             log.info(
                     "HarnessAgent '{}' built [workspace={}, filesystem={}, subagents={}]",
@@ -3227,8 +3419,17 @@ public class HarnessAgent implements Agent, AutoCloseable {
                     !leafSubagent && !disableSubagents && model != null);
 
             // ---- Build inner ReActAgent ----
+            inner.middleware(new HarnessToolBindings(Collections.unmodifiableMap(frameworkTools)));
             inner.toolkit(agentToolkit);
             ReActAgent delegate = inner.build();
+            // Core adds tools during build; finish ownership before exposing the agent.
+            captureFrameworkTools(delegate.getToolkit(), coreInheritedNames, frameworkTools);
+            frameworkTools
+                    .entrySet()
+                    .removeIf(
+                            entry ->
+                                    delegate.getToolkit().getTool(entry.getKey())
+                                            != entry.getValue());
 
             return new HarnessAgent(
                     delegate,
@@ -3238,6 +3439,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
                     defaultSandboxContext,
                     compactionHook,
                     sandboxLifecycleMw,
+                    capabilityResolver,
                     orderedSkillRepos,
                     planModeManager,
                     pendingSkillPromoter,

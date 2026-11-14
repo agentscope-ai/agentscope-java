@@ -30,6 +30,7 @@ import com.openai.models.decisions.DecisionChoiceOption;
 import com.openai.models.decisions.DecisionChoiceValue;
 import com.openai.models.decisions.DecisionCreateParams;
 import com.openai.models.decisions.DecisionInputImage;
+import com.openai.models.decisions.DecisionInputItem;
 import com.openai.models.decisions.DecisionInputMessage;
 import com.openai.models.decisions.DecisionInputPart;
 import com.openai.models.decisions.DecisionInputText;
@@ -178,8 +179,13 @@ public final class OpenAIDecisionsClient implements AutoCloseable {
                         DecisionInputPart.ofInputImage(
                                 DecisionInputImage.builder().imageUrl(image).build()));
             }
-            params.inputOfDecisionInputMessages(
-                    List.of(DecisionInputMessage.builder().contentOfParts(parts).build()));
+            params.inputOfDecisionInputItems(
+                    List.of(
+                            DecisionInputItem.ofDecisionInputMessage(
+                                    DecisionInputMessage.ofUser(
+                                            DecisionInputMessage.User.builder()
+                                                    .contentOfParts(parts)
+                                                    .build()))));
         }
         request.questions()
                 .forEach(

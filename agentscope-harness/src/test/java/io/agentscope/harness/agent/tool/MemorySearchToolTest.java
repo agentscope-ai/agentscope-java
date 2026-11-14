@@ -49,8 +49,7 @@ class MemorySearchToolTest {
     @Test
     void noMatchesIsASuccessfulSearch() {
         when(workspace.listMemoryFilePaths(context)).thenReturn(List.of("MEMORY.md"));
-        when(workspace.readManagedWorkspaceFileUtf8(context, "MEMORY.md"))
-                .thenReturn("Nothing relevant");
+        when(workspace.readMemoryFileUtf8(context, "MEMORY.md")).thenReturn("Nothing relevant");
         assertEquals(
                 "No matching memories found for: timeout",
                 assertText(tool.memorySearch(context, "timeout"), ToolResultState.SUCCESS));
@@ -60,7 +59,7 @@ class MemorySearchToolTest {
     void errorLookingMemoryIsData() {
         when(workspace.listMemoryFilePaths(context))
                 .thenReturn(List.of("MEMORY.md", "memory/empty.md"));
-        when(workspace.readManagedWorkspaceFileUtf8(context, "MEMORY.md"))
+        when(workspace.readMemoryFileUtf8(context, "MEMORY.md"))
                 .thenReturn("[ERROR] timeout\nError: timeout");
         String text = assertText(tool.memorySearch(context, "TIMEOUT"), ToolResultState.SUCCESS);
         assertTrue(text.contains("Found 2 matches:"));

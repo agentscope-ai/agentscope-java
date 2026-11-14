@@ -170,7 +170,8 @@ public class Msg implements State {
      * Validates that the content blocks are compatible with the message role.
      *
      * <p>The legacy {@link ImageBlock}/{@link AudioBlock}/{@link VideoBlock} types
-     * remain valid on {@link MsgRole#USER} alongside the unified {@link DataBlock}.
+     * remain valid on {@link MsgRole#USER} alongside the unified {@link DataBlock}
+     * and {@link DocumentBlock}.
      * {@link MsgRole#TOOL} is legacy and treated as unrestricted (same as assistant)
      * to preserve back-compat.
      *
@@ -187,12 +188,13 @@ public class Msg implements State {
                 for (ContentBlock block : content) {
                     if (!(block instanceof TextBlock
                             || block instanceof DataBlock
+                            || block instanceof DocumentBlock
                             || block instanceof ImageBlock
                             || block instanceof AudioBlock
                             || block instanceof VideoBlock)) {
                         throw new IllegalArgumentException(
-                                "USER message may only contain text/data/image/audio/video blocks,"
-                                        + " got "
+                                "USER message may only contain"
+                                        + " text/data/document/image/audio/video blocks, got "
                                         + block.getClass().getSimpleName());
                     }
                 }
@@ -210,6 +212,29 @@ public class Msg implements State {
                 // No restriction; TOOL preserved for back-compat.
             }
         }
+    }
+
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) {
+            return true;
+        }
+        if (!(o instanceof Msg other)) {
+            return false;
+        }
+        return Objects.equals(id, other.id)
+                && Objects.equals(name, other.name)
+                && role == other.role
+                && Objects.equals(content, other.content)
+                && ValueEquality.equal(metadata, other.metadata)
+                && Objects.equals(timestamp, other.timestamp)
+                && Objects.equals(usage, other.usage);
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(
+                id, name, role, content, ValueEquality.hash(metadata), timestamp, usage);
     }
 
     /**

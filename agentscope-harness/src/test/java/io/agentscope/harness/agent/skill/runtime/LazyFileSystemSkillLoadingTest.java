@@ -23,6 +23,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.core.journal.InMemoryThreadJournalStore;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
@@ -32,9 +33,9 @@ import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.Model;
 import io.agentscope.core.model.ToolSchema;
-import io.agentscope.core.session.InMemorySessionLogStore;
 import io.agentscope.core.skill.SkillFilter;
 import io.agentscope.core.skill.repository.FileSystemSkillRepository;
+import io.agentscope.core.state.InMemoryAgentStateStore;
 import io.agentscope.core.tool.ToolCallParam;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.harness.agent.HarnessAgent;
@@ -115,7 +116,8 @@ class LazyFileSystemSkillLoadingTest {
                         .disableMemoryHooks()
                         .workspace(workspace)
                         .abstractFilesystem(new LocalFilesystem(workspace))
-                        .sessionLogStore(new InMemorySessionLogStore())
+                        .stateStore(new InMemoryAgentStateStore())
+                        .threadJournalStore(new InMemoryThreadJournalStore())
                         .skillRepository(repository)
                         .build()) {
             assertNotNull(

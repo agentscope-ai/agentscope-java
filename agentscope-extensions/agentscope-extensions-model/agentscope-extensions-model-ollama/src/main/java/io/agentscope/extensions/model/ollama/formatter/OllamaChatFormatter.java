@@ -16,7 +16,9 @@
 package io.agentscope.extensions.model.ollama.formatter;
 
 import io.agentscope.core.formatter.AbstractBaseFormatter;
+import io.agentscope.core.formatter.DocumentReferenceRenderer;
 import io.agentscope.core.message.ContentBlock;
+import io.agentscope.core.message.DocumentBlock;
 import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
@@ -141,6 +143,17 @@ public class OllamaChatFormatter
                 messageContent.toolResultBlocks.add(block);
             } else if (block instanceof ImageBlock) {
                 processImageBlock((ImageBlock) block, messageContent.images);
+            } else if (block instanceof DocumentBlock documentBlock) {
+                log.debug(
+                        "DocumentBlock is not supported by Ollama; rendering a text reference"
+                                + " for '{}'",
+                        documentBlock.getName() != null
+                                ? documentBlock.getName()
+                                : documentBlock.getId());
+                messageContent.textBlocks.add(
+                        TextBlock.builder()
+                                .text(DocumentReferenceRenderer.render(documentBlock))
+                                .build());
             } else {
                 log.warn(
                         "Unsupported block type {} in the message, skipped.",
@@ -191,6 +204,11 @@ public class OllamaChatFormatter
                 textualOutput.append(((TextBlock) outputBlock).getText());
             } else if (outputBlock instanceof ImageBlock) {
                 multimodalData.add(outputBlock);
+            } else if (outputBlock instanceof DocumentBlock documentBlock) {
+                if (textualOutput.length() > 0) {
+                    textualOutput.append("\n");
+                }
+                textualOutput.append(DocumentReferenceRenderer.render(documentBlock));
             }
         }
 

@@ -1,0 +1,12 @@
+File: customer/brief.md
+Version: customer-v1
+Fictional customer: Northstar Retail
+Goal: a customer-service assistant for 80 retail stores.
+Current scope: web customer-service portal and a read-only order lookup API.
+Volume: 3,000 enquiries per day; peak requests per second not provided.
+Requirements: answers grounded in product/service knowledge, order status lookup,
+source traceability, human handoff, and evaluation before rollout.
+Requested PoC: four weeks after access and sample data are ready.
+Unconfirmed: data residency region, SSO protocol, peak concurrency, model budget,
+accessibility of the test order API, and the customer's numerical quality targets.
+Desired output: proposal, requirement-to-capability mapping, PoC plan, open questions.
