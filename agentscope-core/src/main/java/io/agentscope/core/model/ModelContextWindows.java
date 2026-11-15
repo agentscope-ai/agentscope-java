@@ -15,6 +15,7 @@
  */
 package io.agentscope.core.model;
 
+import java.util.Locale;
 import java.util.Map;
 
 /**
@@ -155,7 +156,7 @@ public final class ModelContextWindows {
         if (modelName == null || modelName.isBlank()) {
             return 0;
         }
-        String lower = modelName.toLowerCase();
+        String lower = modelName.toLowerCase(Locale.ROOT);
         int bestLen = 0;
         int bestValue = 0;
         for (Map.Entry<String, Integer> entry : knownModels.entrySet()) {
