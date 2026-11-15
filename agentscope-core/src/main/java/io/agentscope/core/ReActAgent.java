@@ -3631,19 +3631,27 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
 
             ModelCallBlockLifecycle blockLifecycle = new ModelCallBlockLifecycle(replyId);
 
+            // Event generation per chunk is synchronous: the mapper below drains each chunk
+            // straight into an Iterable instead of subscribing an inner Flux per chunk
+            // (deferContextual + fromIterable), which costs one Reactor subscription
+            // handshake per streamed chunk and dominates latency at high stream counts
+            // (issue #3929, third measured change). The subscriber context is constant
+            // along this chain, so it is captured once here for hook delivery instead of
+            // once per chunk.
             Flux<AgentEvent> modelEvents =
-                    Flux.defer(
-                                    () ->
-                                            RecordedModels.wrap(mci.model(), rc, "REASONING")
-                                                    .stream(
-                                                            mci.messages(),
-                                                            mci.tools(),
-                                                            mci.options()))
-                            .transform(this::untilInterrupted)
-                            .concatMap(
-                                    chunk ->
-                                            Flux.deferContextual(
-                                                    parentCtx -> {
+                    Flux.deferContextual(
+                            parentCtx ->
+                                    Flux.defer(
+                                                    () ->
+                                                            RecordedModels.wrap(
+                                                                    mci.model(), rc, "REASONING")
+                                                                    .stream(
+                                                                            mci.messages(),
+                                                                            mci.tools(),
+                                                                            mci.options()))
+                                            .transform(this::untilInterrupted)
+                                            .concatMapIterable(
+                                                    chunk -> {
                                                         List<Msg> chunkMsgs =
                                                                 context.processChunk(chunk);
                                                         if (hookDispatcher.hasHooks()) {
@@ -3672,7 +3680,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                                                     withToolEvents,
                                                                     events);
                                                         }
-                                                        return Flux.fromIterable(events);
+                                                        return events;
                                                     }));
 
             Flux<AgentEvent> endEvents =
@@ -5301,13 +5309,22 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
 
             ModelCallBlockLifecycle blockLifecycle = new ModelCallBlockLifecycle(replyId);
 
+            // Same synchronous per-chunk flattening as the reasoning path above: drain each
+            // chunk into an Iterable via concatMapIterable instead of subscribing an inner
+            // Flux per chunk, capturing the constant subscriber context once for hook
+            // delivery (issue #3929, third measured change).
             Flux<AgentEvent> modelEvents =
-                    Flux.defer(() -> mci.model().stream(mci.messages(), mci.tools(), mci.options()))
-                            .transform(this::untilInterrupted)
-                            .concatMap(
-                                    chunk ->
-                                            Flux.deferContextual(
-                                                    parentCtx -> {
+                    Flux.deferContextual(
+                            parentCtx ->
+                                    Flux.defer(
+                                                    () ->
+                                                            mci.model().stream(
+                                                                    mci.messages(),
+                                                                    mci.tools(),
+                                                                    mci.options()))
+                                            .transform(this::untilInterrupted)
+                                            .concatMapIterable(
+                                                    chunk -> {
                                                         List<Msg> chunkMsgs =
                                                                 context.processChunk(chunk);
                                                         if (hookDispatcher.hasHooks()) {
@@ -5361,7 +5378,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                                                 }
                                                             }
                                                         }
-                                                        return Flux.fromIterable(events);
+                                                        return events;
                                                     }));
 
             Flux<AgentEvent> endEvents =
