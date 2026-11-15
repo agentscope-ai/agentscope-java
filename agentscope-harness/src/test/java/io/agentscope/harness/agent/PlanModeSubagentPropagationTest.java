@@ -52,6 +52,43 @@ class PlanModeSubagentPropagationTest {
     @TempDir Path workspace;
 
     @Test
+    void planModeIsPrivateToTheAddressedThread() throws Exception {
+        var left =
+                RuntimeContext.builder()
+                        .userId("user")
+                        .sessionId("session")
+                        .threadId("left")
+                        .build();
+        var right = RuntimeContext.builder(left).threadId("right").build();
+        try (var agent =
+                HarnessAgent.builder()
+                        .name("assistant")
+                        .model(new MockModel("unused"))
+                        .workspace(workspace)
+                        .enablePlanMode()
+                        .build()) {
+            agent.enterPlanMode(left);
+            assertTrue(agent.isPlanModeActive(left));
+            assertFalse(agent.isPlanModeActive(right));
+            agent.enterPlanMode(right);
+            agent.exitPlanMode(left);
+            assertFalse(agent.isPlanModeActive(left));
+            assertTrue(agent.isPlanModeActive(right));
+            assertEquals("left", agent.getDelegate().getAgentState(left).getThreadId());
+        }
+        try (var reopened =
+                HarnessAgent.builder()
+                        .name("assistant")
+                        .model(new MockModel("unused"))
+                        .workspace(workspace)
+                        .enablePlanMode()
+                        .build()) {
+            assertFalse(reopened.isPlanModeActive(left));
+            assertTrue(reopened.isPlanModeActive(right));
+        }
+    }
+
+    @Test
     void declaredSubagent_inheritsPlanModeManagerMiddlewareAndConfiguration() throws Exception {
         SubagentDeclaration declaration =
                 SubagentDeclaration.builder()

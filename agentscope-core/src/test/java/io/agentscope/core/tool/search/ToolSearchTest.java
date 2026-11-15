@@ -99,7 +99,7 @@ class ToolSearchTest {
                         ctx,
                         new ModelCallInput(
                                 ctx.getAgentState().getContext(),
-                                toolkit.getToolSchemas(List.of(), ctx.getToolRequestConfig()),
+                                toolkit.getToolSchemas(List.of(), ctx.getToolRequestConfig(), null),
                                 options,
                                 model),
                         input -> {
@@ -314,7 +314,7 @@ class ToolSearchTest {
                         ctx,
                         new ModelCallInput(
                                 inputMessages,
-                                toolkit.getToolSchemas(List.of(), ctx.getToolRequestConfig()),
+                                toolkit.getToolSchemas(List.of(), ctx.getToolRequestConfig(), null),
                                 null,
                                 model),
                         input -> {
@@ -406,7 +406,8 @@ class ToolSearchTest {
                             ctx,
                             new ModelCallInput(
                                     ctx.getAgentState().getContext(),
-                                    toolkit.getToolSchemas(List.of(), ctx.getToolRequestConfig()),
+                                    toolkit.getToolSchemas(
+                                            List.of(), ctx.getToolRequestConfig(), null),
                                     null,
                                     model),
                             input -> {

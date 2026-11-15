@@ -14,6 +14,17 @@ java -jar agentscope-examples/agents/agentscope-chat/target/agentscope-chat.jar
 
 Open http://127.0.0.1:8087 and follow the walkthrough in its README.
 
+## Durable execution examples
+
+[Durable examples](durable/README.en.md) ([中文](durable/README.md)) cover persistent
+task admission, restart recovery, HTTP/SSE access, and independent Brain/Hands
+execution. The quickstart uses an offline model and needs no API key:
+
+```bash
+# From the repository root
+bash agentscope-examples/durable/integrated/quickstart/run.sh
+```
+
 ## 🚀 Quick Start
 
 ### Prerequisites
