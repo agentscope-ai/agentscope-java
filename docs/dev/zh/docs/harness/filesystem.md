@@ -332,6 +332,8 @@ HarnessAgent agent = HarnessAgent.builder()
 | `additionalRoots(Collection)` | 批量设置额外目录 | 无 |
 | `projectWritable(boolean)` | 文件工具写项目文件时直接落到项目目录，而非 workspace | `false` |
 
+PowerShell 命令将控制台输出设为 UTF-8；POSIX shell 输出按 UTF-8 解码。Windows `cmd.exe` 保留本机编码解码。
+
 #### 路径解析策略（`LocalFsMode`）
 
 | 模式 | 行为 |

@@ -333,6 +333,8 @@ HarnessAgent agent = HarnessAgent.builder()
 | `additionalRoots(Collection)` | Batch-set extra directories | none |
 | `projectWritable(boolean)` | Route non-workspace writes to the project directory instead of workspace | `false` |
 
+PowerShell commands set console output to UTF-8; POSIX shell output is decoded as UTF-8. Windows `cmd.exe` keeps native decoding.
+
 #### Path resolution policy (`LocalFsMode`)
 
 | Mode | Behavior |

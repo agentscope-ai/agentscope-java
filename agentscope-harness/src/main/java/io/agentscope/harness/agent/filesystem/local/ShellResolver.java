@@ -51,6 +51,12 @@ final class ShellResolver {
     record ResolvedShell(String executable, String commandFlag, ShellSyntax syntax) {
 
         List<String> commandLine(String command) {
+            if (syntax == ShellSyntax.POWERSHELL) {
+                // Redirected PowerShell output otherwise inherits the host console code page.
+                command =
+                        "[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false); "
+                                + command;
+            }
             return List.of(executable, commandFlag, command);
         }
 
@@ -59,11 +65,7 @@ final class ShellResolver {
         }
 
         Charset outputCharset(String osName, String nativeEncoding) {
-            String name = fileName(executable).toLowerCase(Locale.ROOT);
-            if (!isWindows(osName)
-                    || syntax == ShellSyntax.POSIX
-                    || name.equals("pwsh")
-                    || name.equals("pwsh.exe")) {
+            if (!isWindows(osName) || syntax != ShellSyntax.CMD) {
                 return StandardCharsets.UTF_8;
             }
             return nativeEncoding != null && Charset.isSupported(nativeEncoding)
