@@ -21,6 +21,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 
 import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.core.agent.ThreadKey;
+import io.agentscope.core.journal.InMemoryThreadJournalStore;
+import io.agentscope.core.journal.InvocationRecorder;
 import io.agentscope.core.message.Base64Source;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.DocumentBlock;
@@ -36,9 +39,6 @@ import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.Model;
 import io.agentscope.core.model.ToolSchema;
-import io.agentscope.core.session.InMemorySessionLogStore;
-import io.agentscope.core.session.SessionKey;
-import io.agentscope.core.session.SessionRecorder;
 import io.agentscope.core.util.JsonUtils;
 import io.agentscope.harness.agent.memory.MemoryFlushManager;
 import java.util.LinkedHashMap;
@@ -326,16 +326,16 @@ class ConversationCompactorSummaryShapeTest {
 
     @Test
     void summaryMessageKeepsHistoryReferenceAndContinuationWithNativeSession() {
-        InMemorySessionLogStore store = new InMemorySessionLogStore();
+        InMemoryThreadJournalStore store = new InMemoryThreadJournalStore();
         RuntimeContext rc = RuntimeContext.builder().userId("user").sessionId("session").build();
-        var log = store.open(new SessionKey("user", "shape-agent", "session"), rc);
-        SessionRecorder recorder = new SessionRecorder(log, "turn");
-        rc.put(SessionRecorder.CONTEXT_KEY, recorder);
+        var log = store.open(new ThreadKey("user", "shape-agent", "session", "main"), rc);
+        InvocationRecorder recorder = new InvocationRecorder(log, "turn");
+        rc.put(InvocationRecorder.CONTEXT_KEY, recorder);
         try {
             List<Msg> compacted = compactWith(rc);
 
             String text = text(compacted.get(0));
-            assertTrue(text.contains("session_history(agentId="), "retrieval pointer present");
+            assertTrue(text.contains("thread_history(agentId="), "retrieval pointer present");
             assertTrue(text.contains("Treat it as established background"));
         } finally {
             recorder.close();

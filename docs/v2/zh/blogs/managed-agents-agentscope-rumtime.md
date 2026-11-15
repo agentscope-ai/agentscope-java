@@ -353,4 +353,4 @@ AgentScope 2.0 定位面向企业级分布式场景，它既可以做分布式 A
 
 + 文档：[https://java.agentscope.io](https://java.agentscope.io)
 + GitHub：[https://github.com/agentscope-ai/agentscope-java](https://github.com/agentscope-ai/agentscope-java)
-+ AgentScope Builder：[https://github.com/agentscope-ai/agentscope-java/tree/main/agentscope-service](https://github.com/agentscope-ai/agentscope-java/tree/main/agentscope-service)
++ AgentScope Builder：[https://github.com/agentscope-ai/agentscope-java/tree/v2.0.4/agentscope-service](https://github.com/agentscope-ai/agentscope-java/tree/v2.0.4/agentscope-service)

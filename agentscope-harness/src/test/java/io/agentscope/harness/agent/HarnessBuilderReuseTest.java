@@ -32,7 +32,6 @@ import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.UserMessage;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.Model;
-import io.agentscope.core.session.SessionHistoryMode;
 import io.agentscope.core.state.AgentStateStore;
 import io.agentscope.core.state.InMemoryAgentStateStore;
 import io.agentscope.harness.agent.example.support.InMemorySandboxFilesystemSpec;
@@ -89,9 +88,7 @@ class HarnessBuilderReuseTest {
         when(distributedStore.agentStateStore()).thenReturn(stateStore);
         when(distributedStore.baseStore()).thenReturn(mock(BaseStore.class));
         var builder =
-                builder(mock(Model.class))
-                        .sessionHistoryMode(SessionHistoryMode.LEGACY)
-                        .distributedStore(distributedStore);
+                builder(mock(Model.class)).journalEnabled(false).distributedStore(distributedStore);
         try (var first = builder.build();
                 var second = builder.build()) {
             assertSame(stateStore, first.getDelegate().getStateStore());
@@ -180,7 +177,7 @@ class HarnessBuilderReuseTest {
         when(distributedStore.baseStore()).thenReturn(mock(BaseStore.class));
         var builder =
                 builder(mock(Model.class))
-                        .sessionHistoryMode(SessionHistoryMode.LEGACY)
+                        .journalEnabled(false)
                         .distributedStore(distributedStore)
                         // LEGACY + remote filesystem + a local (non-distributed) effective
                         // session store is rejected by design; the auto-wired override has
@@ -201,7 +198,7 @@ class HarnessBuilderReuseTest {
         when(distributedStore.baseStore()).thenReturn(mock(BaseStore.class));
         var builder =
                 builder(mock(Model.class))
-                        .sessionHistoryMode(SessionHistoryMode.LEGACY)
+                        .journalEnabled(false)
                         .distributedStore(distributedStore)
                         .filesystem(new RemoteFilesystemSpec(mock(BaseStore.class)));
         assertThrows(IllegalStateException.class, builder::build);
@@ -224,7 +221,7 @@ class HarnessBuilderReuseTest {
         var spec = new RemoteFilesystemSpec();
         var builder =
                 builder(mock(Model.class))
-                        .sessionHistoryMode(SessionHistoryMode.LEGACY)
+                        .journalEnabled(false)
                         .distributedStore(oldDistributedStore)
                         .filesystem(spec);
 

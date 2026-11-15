@@ -103,4 +103,4 @@ agent.call(msg, RuntimeContext.builder().sessionId("bob-1").userId("bob").build(
 - [工具](/v1/zh/docs/harness/tool) — `session_search` / `session_list` / `session_history` 的入参
 - [记忆](/v1/zh/docs/harness/memory) — 记忆提取如何与压缩配合，以及如何被 `memory_search` 利用
 - [文件系统](/v1/zh/docs/harness/filesystem) — `userIdRef` + `NamespaceFactory` 的多租户路径隔离
-- [Session log](/v2/zh/docs/harness/session-log) — journal 内部机制：后端、物理布局、自定义存储与导出
+- [工作区会话日志](/v2/zh/docs/harness/workspace#会话日志这些才是工作区文件) — 持久化对话与子 Agent 日志布局

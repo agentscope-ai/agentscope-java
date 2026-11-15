@@ -375,7 +375,11 @@ public class AnthropicChatModel extends ChatModelBase {
 
         // Apply timeout and retry if configured
         return ModelUtils.applyTimeoutAndRetry(
-                responseFlux, options, defaultOptions, modelName, "anthropic");
+                responseFlux.subscribeOn(Schedulers.boundedElastic()),
+                options,
+                defaultOptions,
+                modelName,
+                "anthropic");
     }
 
     /**
