@@ -206,22 +206,10 @@ public class KubernetesSandboxClientOptions extends SandboxClientOptions {
         this.portForwardTimeoutSeconds = portForwardTimeoutSeconds;
     }
 
-    /**
-     * Returns the lifetime applied to newly created claims via {@code spec.lifecycle}.
-     *
-     * @return lifetime in seconds, or null (the default) to inherit client defaults
-     */
     public Long getShutdownAfterSeconds() {
         return shutdownAfterSeconds;
     }
 
-    /**
-     * Sets the claim lifetime from creation; resuming a claim does not renew it. Null inherits
-     * the client template's value, which defaults to no lifecycle.
-     *
-     * @param shutdownAfterSeconds positive lifetime in seconds, or null to leave it unset
-     * @throws IllegalArgumentException if shutdownAfterSeconds is zero or negative
-     */
     public void setShutdownAfterSeconds(Long shutdownAfterSeconds) {
         if (shutdownAfterSeconds != null && shutdownAfterSeconds <= 0) {
             throw new IllegalArgumentException("shutdownAfterSeconds must be positive or null");
