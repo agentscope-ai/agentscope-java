@@ -15,6 +15,7 @@
  */
 package io.agentscope.harness.agent.filesystem;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -158,5 +159,42 @@ class RemoteFilesystemSpecTest {
         assertNotNull(
                 store.get(List.of("agents", "agent-a", "users", "user-1", "root"), "/MEMORY.md"),
                 "shared routes must keep their per-user store namespaces");
+    }
+
+    @Test
+    void journalStorageDelegatesToTheSessionsRouteBackend() {
+        InMemoryStore store = new InMemoryStore();
+        NamespaceFactory localNs = rc -> List.of("local-user");
+
+        AbstractFilesystem fs =
+                new RemoteFilesystemSpec(store).toFilesystem(workspace, "agent-a", localNs);
+
+        io.agentscope.core.journal.AtomicJournalStorage storage = fs.journalStorage(RT);
+        byte[] payload = "turn-1".getBytes(StandardCharsets.UTF_8);
+        assertTrue(
+                storage.compareAndSet("agents/agent-a/sessions/s-1/turn.json", 0, payload),
+                "journal CAS write must succeed");
+
+        // The write must land in the store under the sessions route's namespace — not on the
+        // local default backend, which silently stranded Native Session Logs in the workspace
+        // with the store left empty (#4140). USER scope + sessions segment +
+        // StoreJournalStorage's runtime partition.
+        List<String> sessionsNs =
+                List.of(
+                        "agents",
+                        "agent-a",
+                        "users",
+                        "_default",
+                        "sessions",
+                        "__agentscope_session_log_v1__");
+        assertNotNull(
+                store.get(sessionsNs, "agents/agent-a/sessions/s-1/turn.json"),
+                "journal write must be persisted in the remote store's sessions namespace");
+        assertEquals(
+                "turn-1",
+                new String(
+                        storage.read("agents/agent-a/sessions/s-1/turn.json").bytes(),
+                        StandardCharsets.UTF_8),
+                "read back through the composite must round-trip");
     }
 }

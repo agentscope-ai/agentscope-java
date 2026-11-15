@@ -65,10 +65,21 @@ public class CompositeFilesystem implements AbstractFilesystem {
 
     @Override
     public io.agentscope.core.journal.AtomicJournalStorage journalStorage(RuntimeContext rc) {
-        return routeForPath("agents/").backend().journalStorage(rc);
+        AbstractFilesystem backend = journalStorageBackend;
+        if (backend == null) {
+            // Legacy fallback for composites assembled without an explicit journal backend:
+            // the synthetic single-segment query only matches a top-level "agents/" route.
+            // The spec's session route ("agents/{agentId}/sessions/", deeper with user
+            // isolation) can never satisfy prefix matching from "agents/", so without the
+            // explicit backend Native Session Logs silently landed on the default backend
+            // and were never persisted to the remote store (#4140).
+            backend = routeForPath("agents/").backend();
+        }
+        return backend.journalStorage(rc);
     }
 
     private final AbstractFilesystem defaultBackend;
+    private final AbstractFilesystem journalStorageBackend;
     private final List<RouteEntry> sortedRoutes;
 
     /**
@@ -80,10 +91,34 @@ public class CompositeFilesystem implements AbstractFilesystem {
      */
     public CompositeFilesystem(
             AbstractFilesystem defaultBackend, Map<String, AbstractFilesystem> routes) {
+        this(defaultBackend, routes, null);
+    }
+
+    /**
+     * Creates a composite filesystem with an explicit backend for durable session (journal)
+     * storage.
+     *
+     * <p>Native Session Logs do not live in the route table's path space, so they cannot be
+     * selected with a synthetic query path: session journals belong to the backend that owns
+     * the sessions route (e.g. the {@code agents/{agentId}/sessions/} overlay a spec wires
+     * up), which a caller that assembles the route table can name directly. Pass {@code null}
+     * to keep the legacy fallback (see {@link #journalStorage}).
+     *
+     * @param defaultBackend backend for paths that don't match any route
+     * @param routes map of path prefixes to stores; prefixes must start with {@code "/"}
+     *     and should end with {@code "/"} (e.g. {@code "/memories/"})
+     * @param journalStorageBackend backend {@link #journalStorage} delegates to; {@code null}
+     *     falls back to the legacy synthetic-path selection
+     */
+    public CompositeFilesystem(
+            AbstractFilesystem defaultBackend,
+            Map<String, AbstractFilesystem> routes,
+            AbstractFilesystem journalStorageBackend) {
         if (defaultBackend == null) {
             throw new IllegalArgumentException("defaultBackend must not be null");
         }
         this.defaultBackend = defaultBackend;
+        this.journalStorageBackend = journalStorageBackend;
 
         List<RouteEntry> entries = new ArrayList<>();
         if (routes != null) {

@@ -279,12 +279,17 @@ public class RemoteFilesystemSpec {
                 "knowledge/",
                 overlayRoute(workspace.resolve("knowledge"), "knowledge", effectiveAgentId));
         routes.put("plans/", overlayRoute(workspace.resolve("plans"), "plans", effectiveAgentId));
-        routes.put(
-                "agents/" + effectiveAgentId + "/sessions/",
+        // Session journals ride the sessions route's upper RemoteFilesystem: keep the overlay
+        // reference and hand it to the composite explicitly, because CompositeFilesystem cannot
+        // select this route with a synthetic query path — "agents/" never prefix-matches the
+        // deeper "agents/{agentId}/sessions/" route, which silently dropped Native Session Logs
+        // onto the local default backend (#4140).
+        OverlayFilesystem sessionsRoute =
                 overlayRoute(
                         workspace.resolve("agents").resolve(effectiveAgentId).resolve("sessions"),
                         "sessions",
-                        effectiveAgentId));
+                        effectiveAgentId);
+        routes.put("agents/" + effectiveAgentId + "/sessions/", sessionsRoute);
         routes.put(
                 "agents/" + effectiveAgentId + "/tasks/",
                 overlayRoute(
@@ -295,7 +300,7 @@ public class RemoteFilesystemSpec {
             String segment = routeSegmentFromPrefix(extra);
             routes.put(extra, overlayRoute(workspace.resolve(segment), segment, effectiveAgentId));
         }
-        return new CompositeFilesystem(local, routes);
+        return new CompositeFilesystem(local, routes, sessionsRoute);
     }
 
     /**
