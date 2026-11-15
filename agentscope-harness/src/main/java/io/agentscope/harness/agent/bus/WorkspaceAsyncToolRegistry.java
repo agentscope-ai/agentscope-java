@@ -177,12 +177,28 @@ public class WorkspaceAsyncToolRegistry implements AsyncToolRegistry {
             if (!sessionDir.isDirectory()) {
                 continue;
             }
-            String candidate = sessionDir.path() + "/" + id + ".json";
+            String candidate = joinRecordPath(sessionDir.path(), id);
             if (fs.exists(RC, candidate)) {
                 return candidate;
             }
         }
         return null;
+    }
+
+    /**
+     * Joins an ls-derived directory entry with the record file name. Directory entries may
+     * carry a trailing slash — {@code RemoteFilesystem} marks directories that way in both its
+     * index fast path and its store fallback — so appending {@code "<id>.json"} verbatim would
+     * produce an interior double slash that matches no backend key, silently no-oping every
+     * by-id terminal update ({@code complete}/{@code fail}/{@code markTimeout}) on remote
+     * backends (#3975).
+     */
+    private static String joinRecordPath(String sessionDirPath, String id) {
+        String dir = sessionDirPath;
+        while (dir.endsWith("/")) {
+            dir = dir.substring(0, dir.length() - 1);
+        }
+        return dir + "/" + id + ".json";
     }
 
     private String sessionDir(String sessionId) {
