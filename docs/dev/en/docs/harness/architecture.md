@@ -35,9 +35,10 @@ Configure capabilities and use session operations as your application needs them
 | Workspace-driven persona | Persona, knowledge, subagent specs, skills, MCP allowlist all live as files | `.workspace(path)` | [Workspace](/dev/en/docs/harness/workspace) |
 | State and execution history | Full facts, checkpoints, cross-request/node recovery | journal mode by default; override threadJournalStore | [Session logs](/dev/en/docs/harness/session-log) |
 | Persistent tasks | Background work, queueing, guidance and recovery | `DurableRuntime` | [Durable](/dev/en/docs/harness/durable) |
-| Two-layer long-term memory | Facts in long conversations sediment into `MEMORY.md` | on by default; `.memory(...)` customizes prompts / trigger policy | [Memory](/dev/en/docs/harness/memory) |
+| Two-layer long-term memory | Facts in long conversations sediment into `MEMORY.md` | opt-in via `.enableLongTermMemory()`; `.memory(...)` customizes prompts / trigger policy | [Memory](/dev/en/docs/harness/memory) |
 | Conversation compaction | History bounded; force-retry on real overflow | `.compaction(...)` | [Context management](/dev/en/docs/harness/context) |
 | Large tool-result offloading | >80K-char results moved to disk + placeholder | `.toolResultEviction(...)` | [Context management](/dev/en/docs/harness/context) |
+| Repeated tool failures | One short reminder after the model repeats the same failing call | on by default; `.disableRepeatedFailureGuard()` | below |
 | Subagent orchestration | Delegate to children, sync or background, with auto push-back | `.subagent(...)` or drop spec in `workspace/subagents/` | [Subagent](/dev/en/docs/harness/subagent) |
 | Pluggable filesystem | Local + shell / shared store / sandbox without code changes | `.filesystem(...)` | [Filesystem](/dev/en/docs/harness/filesystem) |
 | Sandbox isolation | Files and commands isolated; cross-call recovery; multi-replica | `.filesystem(new DockerFilesystemSpec()...)` | [Sandbox](/dev/en/docs/harness/sandbox) |
@@ -59,6 +60,18 @@ Three invariants worth remembering:
 - Final requests are rebuilt each reasoning step, but workspace files load per call. Edits to AGENTS.md or MEMORY.md take effect on the next call without restarting.
 - Compaction, memory distillation, and background maintenance are throttled; they don't run every turn.
 - Core manages persistence: journal mode commits checkpoints; snapshot mode save legacy state. Harness selects the default log backend.
+
+## Repeated tool failures
+
+Built-in tools classify failures in `ToolResultBlock.metadata`:
+
+- `agentscope_error_kind` — a `ToolErrorKind` value such as `not_found`, `invalid_argument`, `permission_denied` or `timeout`.
+- `agentscope_error_scope` — the failed object: a workspace-relative path, host, thread id, and so on.
+- `agentscope_retriable` — whether repeating the identical call may succeed; absence means unknown.
+
+Custom tools can opt in with `ToolErrorMetadata.of(kind, scope)` when building an error result.
+
+On top of that metadata, `HarnessAgent` installs a `RepeatedFailureGuard` that observes tool results while tools run. When the same tool fails three times with the same kind and scope (five when the failure is marked retriable), the next model request receives one short reminder that is not saved to the conversation. A successful call to the same tool, a new turn, or the end of the call clears the counters; at most two reminders are added per turn. The guard never retries, rewrites arguments or stops the run. Call `.disableRepeatedFailureGuard()` to turn it off, or register your own middleware for a different policy.
 
 ## Adding your own middleware
 

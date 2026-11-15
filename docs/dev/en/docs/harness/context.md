@@ -211,7 +211,7 @@ agentBuilder.toolResultEviction(ToolResultEvictionConfig.builder()
         .build());
 ```
 
-These are the defaults: results exceeding 80,000 characters are eligible, and the first and last 2,000 characters remain as previews. `read_file`, `write_file`, `edit_file`, `memory_search`, and `memory_get` are excluded by default. Shell `execute`, `thread_search`, and other search and list outputs remain eligible. Prefer paginated tools and targeted reads so the next step can use the relevant portion without loading the entire file again.
+These are the defaults: results exceeding 80,000 characters are eligible, and the first and last 2,000 characters remain as previews. `read_file`, `write_file`, `edit_file`, `memory_search`, and `memory_get` are excluded by default. Shell `execute`, `thread_search`, and other search and list outputs remain eligible; `thread_search` additionally bounds its own result size before this eviction applies. Prefer paginated tools and targeted reads so the next step can use the relevant portion without loading the entire file again.
 
 <span id="1-conversation-summarization-compactionmiddleware" />
 <span id="4-pre-summary-argument-truncation-optional" />
@@ -265,7 +265,7 @@ Once validation succeeds, Harness commits the candidate working-history changes 
 Working context and durable history serve different purposes. Native Thread journal records committed conversation and execution facts; checkpoints retain the working state used for continuation. Compaction does not rewrite that full conversation history. With the session capability enabled, the Agent can inspect earlier evidence through:
 
 - `thread_list agentId="..."` — find prior sessions.
-- `thread_history agentId="..." sessionId="..." lastN=20` — read recent messages.
+- `thread_history agentId="..." sessionId="..." lastN=20` — read recent messages; pass `messageId="..."` to read one full message summarized by `thread_search`.
 - `thread_search query="..." agentId="..."` — search conversation history.
 
 Use stable agent/user/session identity and the same storage backend on the next call to restore committed state. Persistence details differ between native logging and legacy state-store mode; see [Context & AgentState](/dev/en/docs/building-blocks/context) and [Session operations, events and recovery](/dev/en/docs/harness/session-log).
@@ -300,7 +300,7 @@ Source names start with a letter or digit and contain only letters, digits, `_`,
 
 <Accordion title="Budget and compaction defaults">
 
-Default estimation includes messages, tool schemas, and multimodal placeholders. With a known model window, the default output reservation is one eighth of the window, capped at 4,096; the safety margin is 2%, with each at least one token. A larger explicit output request reserves more space. Unknown windows use a 64,000-token input fallback. Workspace `maxContextTokens` (default 8,000) limits material preparation; it is not the final request budget.
+Default estimation includes messages, tool schemas, and multimodal placeholders. With a known model window, the default output reservation is one eighth of the window, capped at 4,096; the safety margin is 2%, with each at least one token. A larger explicit output request reserves more space. Unknown windows use a 64,000-token input fallback; if a request still overflows, the window stated in the provider error is remembered and replaces this fallback for subsequent requests. Workspace `maxContextTokens` (default 8,000) limits material preparation; it is not the final request budget.
 
 Harness enables compaction and tool-result offloading by default. Use `disableCompaction()` or `disableToolResultEviction()` to disable them independently. Default compaction triggers at 50 messages or the conversation token allowance calculated from the final request. `triggerTokens(0)` selects that dynamic allowance; a positive value can lower the trigger. The dynamic tail targets 25% of the allowance, bounded to 2,000–8,000 tokens and capped at half the available conversation budget. Set `keepTokens(0)` to use `keepMessages` instead.
 

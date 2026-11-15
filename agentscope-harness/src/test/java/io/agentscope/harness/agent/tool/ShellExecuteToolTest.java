@@ -15,6 +15,8 @@
  */
 package io.agentscope.harness.agent.tool;
 
+import static io.agentscope.harness.agent.tool.ToolResultAssertions.assertErrorKind;
+import static io.agentscope.harness.agent.tool.ToolResultAssertions.assertNoErrorMetadata;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -24,6 +26,7 @@ import static org.mockito.Mockito.when;
 
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.ToolErrorKind;
 import io.agentscope.core.message.ToolExecutionDetails;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolResultState;
@@ -93,6 +96,7 @@ class ShellExecuteToolTest {
 
         assertTrue(textOf(result).contains("Exit code: 0"));
         assertEquals(ToolResultState.SUCCESS, result.getState());
+        assertNoErrorMetadata(result);
         assertEquals("ls", sandbox.command);
         assertEquals(30, sandbox.timeoutSeconds);
     }
@@ -102,6 +106,7 @@ class ShellExecuteToolTest {
         for (int timeout : new int[] {0, -1}) {
             ToolResultBlock result = tool.execute(RT, "side-effect", null, timeout);
             assertEquals(ToolResultState.ERROR, result.getState());
+            assertErrorKind(result, ToolErrorKind.INVALID_ARGUMENT, null);
             assertEquals(null, sandbox.command);
         }
     }
@@ -132,6 +137,7 @@ class ShellExecuteToolTest {
         ToolResultBlock result = tool.execute(RT, "ls", "/etc", null);
 
         assertEquals(ToolResultState.ERROR, result.getState());
+        assertErrorKind(result, ToolErrorKind.INVALID_ARGUMENT, null);
         assertTrue(textOf(result).contains("must be a relative path"));
     }
 
@@ -187,6 +193,7 @@ class ShellExecuteToolTest {
         assertEquals(
                 new ToolExecutionDetails("shell", ToolExecutionDetails.Outcome.FAILED, 2, true),
                 result.getExecutionDetails());
+        assertErrorKind(result, ToolErrorKind.COMMAND_FAILED, "test");
     }
 
     @Test
@@ -198,6 +205,7 @@ class ShellExecuteToolTest {
         assertTrue(textOf(result).contains("Timed out: true"));
         assertTrue(textOf(result).contains("partial output"));
         assertEquals(ToolResultState.ERROR, result.getState());
+        assertErrorKind(result, ToolErrorKind.TIMEOUT, "sleep");
     }
 
     @Test
@@ -206,6 +214,7 @@ class ShellExecuteToolTest {
         var result = tool.execute(RT, "test", null, null);
         assertEquals(ToolResultState.ERROR, result.getState());
         assertEquals(ToolExecutionDetails.Outcome.UNKNOWN, result.getExecutionDetails().outcome());
+        assertErrorKind(result, ToolErrorKind.INTERNAL_ERROR, "test");
     }
 
     private static final class RecordingSandbox extends LocalFilesystemWithShell {

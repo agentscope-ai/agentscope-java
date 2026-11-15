@@ -51,12 +51,21 @@ import reactor.core.scheduler.Schedulers;
 public final class HarnessContextBuilder implements ModelRequestPreparer {
     private static final String ORIGINAL_SYSTEM_INPUTS =
             "agentscope.context.original_system_inputs";
+
+    /**
+     * Input allowance used only while the model's context window is still unknown. Deliberately
+     * conservative: loading less is safer than a failed request, and the learned window replaces
+     * it after the first overflow.
+     */
+    private static final long FALLBACK_INPUT_TOKENS = 64_000;
+
     private static final Logger log = LoggerFactory.getLogger(HarnessContextBuilder.class);
     private final ContextPolicy policy;
     private final CompactionMiddleware compaction;
     private final ToolResultEvictionMiddleware eviction;
     private final ContextSources sources;
     private final ContextSelectionPolicy selectionPolicy;
+    private final LearnedContextWindows learnedWindows;
 
     public HarnessContextBuilder(
             ContextPolicy policy,
@@ -76,11 +85,22 @@ public final class HarnessContextBuilder implements ModelRequestPreparer {
             ToolResultEvictionMiddleware eviction,
             ContextSources sources,
             ContextSelectionPolicy selectionPolicy) {
+        this(policy, compaction, eviction, sources, selectionPolicy, null);
+    }
+
+    public HarnessContextBuilder(
+            ContextPolicy policy,
+            CompactionMiddleware compaction,
+            ToolResultEvictionMiddleware eviction,
+            ContextSources sources,
+            ContextSelectionPolicy selectionPolicy,
+            LearnedContextWindows learnedWindows) {
         this.policy = Objects.requireNonNull(policy);
         this.compaction = compaction;
         this.eviction = eviction;
         this.sources = Objects.requireNonNull(sources);
         this.selectionPolicy = Objects.requireNonNull(selectionPolicy);
+        this.learnedWindows = learnedWindows;
     }
 
     public ContextSources sources() {
@@ -589,7 +609,10 @@ public final class HarnessContextBuilder implements ModelRequestPreparer {
     }
 
     private long inputLimit(ModelCallInput input) {
-        long window = input.model().getContextWindowSize();
+        long window =
+                learnedWindows != null
+                        ? learnedWindows.effectiveWindow(input.model())
+                        : input.model().getContextWindowSize();
         long output = policy.reservedOutputTokens();
         if (output == 0) output = window > 0 ? Math.min(4096, Math.max(1, window / 8)) : 4096;
         if (input.options() != null) {
@@ -602,7 +625,7 @@ public final class HarnessContextBuilder implements ModelRequestPreparer {
                 policy.safetyMarginTokens() > 0
                         ? policy.safetyMarginTokens()
                         : window > 0 ? Math.max(1, window / 50) : 1024;
-        long limit = window > 0 ? Math.max(0, window - output - safety) : 64000;
+        long limit = window > 0 ? Math.max(0, window - output - safety) : FALLBACK_INPUT_TOKENS;
         return policy.maxInputTokens() > 0 ? Math.min(limit, policy.maxInputTokens()) : limit;
     }
 

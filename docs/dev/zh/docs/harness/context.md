@@ -213,7 +213,7 @@ builder.toolResultEviction(ToolResultEvictionConfig.builder()
         .build());
 ```
 
-`read_file`、`write_file`、`edit_file`、`memory_search` 和 `memory_get` 默认不参与这种卸载。`execute`、`thread_search` 等工具仍可卸载；读取工具本身应合理分页，避免一次读回全部内容又占满窗口。
+`read_file`、`write_file`、`edit_file`、`memory_search` 和 `memory_get` 默认不参与这种卸载。`execute`、`thread_search` 等工具仍可卸载；`thread_search` 自身也会先限制搜索结果总量，再交给这套机制。读取工具本身应合理分页，避免一次读回全部内容又占满窗口。
 
 <span id="配置预算与观测" />
 
@@ -225,7 +225,7 @@ builder.toolResultEviction(ToolResultEvictionConfig.builder()
 
 工具输出的保护额度和裁剪阈值只计算该结果自身的成本，排除无关的任务投影和固定请求开销。减少消息可能需要重新投影任务状态，因此保留的每个候选后缀都会在投影后检查。
 
-默认预算根据模型报告的窗口大小，为输出和安全余量预留空间；模型没有报告窗口时，输入预算回退到 64,000 token。估算不是供应商的精确计数，尤其是包含图片等内容时，应给实际请求留有余量。若希望主动限制输入成本，可以配置：
+默认预算根据模型报告的窗口大小，为输出和安全余量预留空间；模型没有报告窗口时，输入预算回退到 64,000 token。若请求仍然溢出，框架会从供应商报错中解析真实窗口并记住它，后续请求改用该值，不再使用回退值。估算不是供应商的精确计数，尤其是包含图片等内容时，应给实际请求留有余量。若希望主动限制输入成本，可以配置：
 
 ```java
 import io.agentscope.harness.agent.context.ContextPolicy;

@@ -16,6 +16,8 @@
 package io.agentscope.harness.agent.tool;
 
 import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.core.message.ToolErrorKind;
+import io.agentscope.core.message.ToolErrorMetadata;
 import io.agentscope.core.message.ToolExecutionDetails;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolResultState;
@@ -78,8 +80,9 @@ public class ShellExecuteTool {
             String wd = workingDirectory.strip();
             if (wd.startsWith("/") || wd.startsWith("~") || wd.contains("..")) {
                 return ToolResultBlock.error(
-                        "working_directory must be a relative path within the workspace"
-                                + " (absolute paths, '~', and '..' are not allowed).");
+                                "working_directory must be a relative path within the workspace"
+                                        + " (absolute paths, '~', and '..' are not allowed).")
+                        .withMetadata(ToolErrorMetadata.of(ToolErrorKind.INVALID_ARGUMENT));
             }
             effectiveCommand =
                     commandWithWorkingDirectory(
@@ -91,7 +94,8 @@ public class ShellExecuteTool {
         }
 
         if (timeout != null && timeout <= 0) {
-            return ToolResultBlock.error("timeout must be a positive number of seconds.");
+            return ToolResultBlock.error("timeout must be a positive number of seconds.")
+                    .withMetadata(ToolErrorMetadata.of(ToolErrorKind.INVALID_ARGUMENT));
         }
         int timeoutSeconds = timeout != null ? timeout : 30;
         ExecuteResponse result = sandbox.execute(runtimeContext, effectiveCommand, timeoutSeconds);
@@ -113,11 +117,48 @@ public class ShellExecuteTool {
                         : result.isSuccess()
                                 ? ToolExecutionDetails.Outcome.SUCCEEDED
                                 : ToolExecutionDetails.Outcome.FAILED;
-        return ToolResultBlock.text(sb.toString())
-                .withExecutionDetails(
-                        new ToolExecutionDetails(
-                                "shell", outcome, result.exitCode(), result.truncated()))
-                .withState(result.isSuccess() ? ToolResultState.SUCCESS : ToolResultState.ERROR);
+        ToolResultBlock block =
+                ToolResultBlock.text(sb.toString())
+                        .withExecutionDetails(
+                                new ToolExecutionDetails(
+                                        "shell", outcome, result.exitCode(), result.truncated()))
+                        .withState(
+                                result.isSuccess()
+                                        ? ToolResultState.SUCCESS
+                                        : ToolResultState.ERROR);
+        if (result.isSuccess()) {
+            return block;
+        }
+        ToolErrorKind kind =
+                result.timedOut()
+                        ? ToolErrorKind.TIMEOUT
+                        : result.exitCode() == null
+                                ? ToolErrorKind.INTERNAL_ERROR
+                                : ToolErrorKind.COMMAND_FAILED;
+        return block.withMetadata(
+                ToolErrorMetadata.of(
+                        kind, executableScope(command), kind == ToolErrorKind.TIMEOUT));
+    }
+
+    /** Scope for a shell failure: the executable basename, never its arguments. */
+    static String executableScope(String command) {
+        if (command == null) {
+            return null;
+        }
+        String trimmed = command.strip();
+        int end = 0;
+        while (end < trimmed.length() && !Character.isWhitespace(trimmed.charAt(end))) {
+            end++;
+        }
+        String token = trimmed.substring(0, end);
+        if (token.length() >= 2
+                && ((token.startsWith("\"") && token.endsWith("\""))
+                        || (token.startsWith("'") && token.endsWith("'")))) {
+            token = token.substring(1, token.length() - 1);
+        }
+        int slash = Math.max(token.lastIndexOf('/'), token.lastIndexOf('\\'));
+        String base = slash >= 0 ? token.substring(slash + 1) : token;
+        return base.isBlank() ? null : base;
     }
 
     static boolean usesWindowsShell(AbstractFilesystem filesystem, boolean windowsHost) {

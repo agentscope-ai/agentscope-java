@@ -96,7 +96,7 @@ For multi-user applications, share a Builder and build an Agent per request. Con
 
 **Only `AGENTS.md` is something you actually need to write** (skip it and the agent still runs — you just lose the persona injection). Everything else appears as you turn on the matching capability:
 
-- Enable memory compaction (`.compaction(...)`) → `memory/` + `MEMORY.md`
+- Enable long-term memory (`.enableLongTermMemory()`) → `memory/` + `MEMORY.md` (compaction via `.compaction(...)` stays independent)
 - Drop in subagent specs → `subagents/`
 - Install skills → `skills/`
 - Enable Plan Mode → `plans/`
@@ -156,13 +156,15 @@ You are an XX assistant. Follow these behavior guidelines.
 - ...
 ```
 
+Long-term memory is **opt-in**: `enableLongTermMemory()` registers `memory_search` / `memory_get` / `memory_save`, runs flush + background maintenance, and injects `MEMORY.md`. The native Thread tools (`thread_search` / `thread_history` / `thread_list`) stay independent of this switch.
+
 Opt-out switches (rare in production, useful for debugging or self-management):
 
 | Method | What it disables |
 |--------|------------------|
 | `disableWorkspaceContext()` | workspace instruction and reference loading (`AGENTS.md` / `MEMORY.md` / `knowledge/`) |
-| `disableMemoryHooks()` | memory flush + background maintenance; also drops the "automatically extracted" Persistence line from the system prompt. Combined with `disableMemoryTools()`, also skips memory material in `HARNESS_CONTEXT` (`MEMORY.md`) injection |
-| `disableMemoryTools()` | `memory_search` / `memory_get` / `memory_save` / `thread_search` tools; also omits Memory Recall and tool-based Persistence guidance from the system prompt |
+| `disableMemoryHooks()` | memory flush + background maintenance; also drops the "automatically extracted" Persistence line from the system prompt. Combined with `disableMemoryTools()`, also skips memory material in `HARNESS_CONTEXT` (`MEMORY.md`) injection. Meaningful only after `enableLongTermMemory()` |
+| `disableMemoryTools()` | `memory_search` / `memory_get` / `memory_save` / `thread_search` tools; also omits Memory Recall and tool-based Persistence guidance from the system prompt. `memory_*` is already absent unless `enableLongTermMemory()`; the Thread tools are opt-out regardless |
 | `disableSubagents()` | the entire subagent subsystem |
 | `disableDynamicSkills()` | per-turn skill re-merge; falls back to one-shot merge at build time |
 | `disableToolsConfig()` | reading `tools.json` |

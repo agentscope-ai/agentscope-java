@@ -370,6 +370,35 @@ class HarnessContextBudgetTest {
         assertTrue(manifests.get(0).estimatedInputTokens() <= 999);
     }
 
+    @Test
+    void learnedWindowReplacesTheUnknownWindowInputFallback() {
+        when(primary.getContextWindowSize()).thenReturn(0);
+        LearnedContextWindows windows = new LearnedContextWindows();
+        windows.recordOverflow(
+                primary, new IllegalStateException("maximum context length is 2000 tokens"));
+        ContextTokenEstimator estimator = ContextTokenEstimator.approximate();
+
+        HarnessContextBuilder unknown =
+                new HarnessContextBuilder(
+                        new ContextPolicy(0, 0, 0, estimator, manifests::add), null, null);
+        prepare(unknown, input(List.of(message("hello"))));
+
+        state.contextMutable().clear();
+        HarnessContextBuilder learned =
+                new HarnessContextBuilder(
+                        new ContextPolicy(0, 0, 0, estimator, manifests::add),
+                        null,
+                        null,
+                        ContextSources.empty(),
+                        ContextSelectionPolicy.defaults(),
+                        windows);
+        prepare(learned, input(List.of(message("hello"))));
+
+        assertEquals(64_000, manifests.get(0).inputLimit());
+        // 2000 - min(4096, 2000 / 8) - 2000 / 50
+        assertEquals(1_710, manifests.get(1).inputLimit());
+    }
+
     private HarnessContextBuilder builder(
             int cap, ContextTokenEstimator estimator, int keepTokens) {
         CompactionConfig config =

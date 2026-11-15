@@ -338,6 +338,7 @@ final class HarnessAgentBuilderSupport {
         final boolean capturedDisableFilesystemTools = b.disableFilesystemTools;
         final int capturedReadFileMaxChars = b.readFileMaxChars;
         final boolean capturedDisableShellTool = b.disableShellTool;
+        final boolean capturedMemoryEnabled = b.enableLongTermMemory || b.memoryConfigured;
         final boolean capturedDisableMemoryTools = b.disableMemoryTools;
         final boolean capturedDisableMemoryHooks = b.disableMemoryHooks;
         final var capturedWebHttpClient = b.webHttpClient;
@@ -350,6 +351,7 @@ final class HarnessAgentBuilderSupport {
         final ToolResultEvictionConfig capturedToolResultEvictionConfig =
                 b.toolResultEvictionConfig;
         final boolean capturedDisableToolResultEviction = b.disableToolResultEviction;
+        final boolean capturedDisableRepeatedFailureGuard = b.disableRepeatedFailureGuard;
         final boolean capturedAgentTracingLogEnabled = b.agentTracingLogEnabled;
         final List<String> capturedAdditionalContextFiles = List.copyOf(b.additionalContextFiles);
         final int capturedMaxContextTokens = b.maxContextTokens;
@@ -376,11 +378,14 @@ final class HarnessAgentBuilderSupport {
                             .asLeafSubagent()
                             .maxIters(capturedMaxIters)
                             .environmentMemory(capturedEnvMemory)
-                            .memory(capturedMemoryConfig)
                             .contextPolicy(capturedContextPolicy)
                             .enableAgentTracingLog(capturedAgentTracingLogEnabled)
                             .readFileMaxChars(capturedReadFileMaxChars)
                             .maxContextTokens(capturedMaxContextTokens);
+
+            // Long-term memory is opt-in: only pass the config when the parent opted in, because
+            // calling memory(...) itself enables the pipeline.
+            if (capturedMemoryEnabled) sub.memory(capturedMemoryConfig);
 
             if (capturedPermissions != null) sub.permissionContext(capturedPermissions);
             if (capturedDisableDefaultSkills) sub.disableDefaultWorkspaceSkills();
@@ -395,8 +400,12 @@ final class HarnessAgentBuilderSupport {
 
             if (capturedDisableFilesystemTools) sub.disableFilesystemTools();
             if (capturedDisableShellTool) sub.disableShellTool();
-            if (capturedDisableMemoryTools) sub.disableMemoryTools();
-            if (capturedDisableMemoryHooks) sub.disableMemoryHooks();
+            // Long-term memory is opt-in: propagate an explicit opt-in, and only propagate
+            // disable flags alongside it (they are no-ops when memory stays off).
+            if (capturedMemoryEnabled) {
+                if (capturedDisableMemoryTools) sub.disableMemoryTools();
+                if (capturedDisableMemoryHooks) sub.disableMemoryHooks();
+            }
             if (capturedWebHttpClient != null) sub.webHttpClient(capturedWebHttpClient);
             if (capturedDisableWorkspaceContext) sub.disableWorkspaceContext();
             configurePlanMode(
@@ -422,6 +431,7 @@ final class HarnessAgentBuilderSupport {
             } else if (capturedToolResultEvictionConfig != null) {
                 sub.toolResultEviction(capturedToolResultEvictionConfig);
             }
+            if (capturedDisableRepeatedFailureGuard) sub.disableRepeatedFailureGuard();
 
             sub.middlewares(capturedMiddlewares);
             sub.hooks(capturedHooks);
@@ -462,6 +472,7 @@ final class HarnessAgentBuilderSupport {
         final boolean capturedDisableFilesystemTools = b.disableFilesystemTools;
         final int capturedReadFileMaxChars = b.readFileMaxChars;
         final boolean capturedDisableShellTool = b.disableShellTool;
+        final boolean capturedMemoryEnabled = b.enableLongTermMemory || b.memoryConfigured;
         final boolean capturedDisableMemoryTools = b.disableMemoryTools;
         final boolean capturedDisableMemoryHooks = b.disableMemoryHooks;
         final var capturedWebHttpClient = b.webHttpClient;
@@ -485,6 +496,7 @@ final class HarnessAgentBuilderSupport {
         final Path capturedProjectGlobalSkillsDir = b.projectGlobalSkillsDir;
         final CompactionConfig capturedCompactionConfig = b.compactionConfig;
         final boolean capturedDisableCompaction = b.disableCompaction;
+        final boolean capturedDisableRepeatedFailureGuard = b.disableRepeatedFailureGuard;
         // See buildGeneralPurposeFactory: propagate the parent's (distributed) state store so the
         // subagent's conversation survives cross-node re-materialization. Null in local defaults.
         final io.agentscope.core.state.AgentStateStore capturedStateStore = b.stateStoreOverride;
@@ -524,9 +536,10 @@ final class HarnessAgentBuilderSupport {
                             .defaultSessionId(childSessionId)
                             .maxIters(decl.getSteps())
                             .asLeafSubagent()
-                            .memory(capturedMemoryConfig)
                             .contextPolicy(capturedContextPolicy)
                             .sysPrompt(buildSubagentSysPrompt(sysPromptBase));
+
+            if (capturedMemoryEnabled) sub.memory(capturedMemoryConfig);
 
             // Overlay declaration-specified temperature/topP on top of the parent's
             // GenerateOptions.
@@ -581,8 +594,11 @@ final class HarnessAgentBuilderSupport {
             sub.readFileMaxChars(capturedReadFileMaxChars);
             if (capturedDisableFilesystemTools) sub.disableFilesystemTools();
             if (capturedDisableShellTool) sub.disableShellTool();
-            if (capturedDisableMemoryTools) sub.disableMemoryTools();
-            if (capturedDisableMemoryHooks) sub.disableMemoryHooks();
+            if (capturedDisableRepeatedFailureGuard) sub.disableRepeatedFailureGuard();
+            if (capturedMemoryEnabled) {
+                if (capturedDisableMemoryTools) sub.disableMemoryTools();
+                if (capturedDisableMemoryHooks) sub.disableMemoryHooks();
+            }
             if (capturedWebHttpClient != null) sub.webHttpClient(capturedWebHttpClient);
             configurePlanMode(
                     sub, capturedPlanModeEnabled, capturedPlanModeAllowShell, capturedPlanFileDir);

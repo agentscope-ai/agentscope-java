@@ -15,6 +15,8 @@
  */
 package io.agentscope.harness.agent.tool;
 
+import static io.agentscope.harness.agent.tool.ToolResultAssertions.assertErrorKind;
+import static io.agentscope.harness.agent.tool.ToolResultAssertions.assertNoErrorMetadata;
 import static io.agentscope.harness.agent.tool.ToolResultAssertions.assertText;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -27,6 +29,7 @@ import static org.mockito.Mockito.when;
 
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.ToolErrorKind;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolResultState;
 import io.agentscope.core.tool.AgentTool;
@@ -41,6 +44,7 @@ import io.agentscope.harness.agent.filesystem.model.GrepMatch;
 import io.agentscope.harness.agent.filesystem.model.GrepResult;
 import io.agentscope.harness.agent.filesystem.model.LsResult;
 import io.agentscope.harness.agent.filesystem.model.ReadResult;
+import io.agentscope.harness.agent.filesystem.model.WriteResult;
 import io.agentscope.harness.agent.filesystem.remote.store.NamespaceFactory;
 import io.agentscope.harness.agent.filesystem.spec.LocalFilesystemSpec;
 import io.agentscope.harness.agent.workspace.WorkspacePathNormalizer;
@@ -163,6 +167,7 @@ class FilesystemToolTest {
 
         ToolResultBlock result = tool.listFiles(RT, "/nonexistent");
         assertEquals(ToolResultState.ERROR, result.getState());
+        assertErrorKind(result, ToolErrorKind.NOT_FOUND, "/nonexistent");
 
         assertTrue(
                 textOf(result).startsWith("Error:"), "should report error for non-existent path");
@@ -177,6 +182,7 @@ class FilesystemToolTest {
 
         ToolResultBlock result = tool.listFiles(RT, "/path/to/file.txt");
         assertEquals(ToolResultState.ERROR, result.getState());
+        assertErrorKind(result, ToolErrorKind.INVALID_ARGUMENT, "/path/to/file.txt");
 
         assertTrue(textOf(result).startsWith("Error:"), "should report error for file path");
         assertTrue(
@@ -238,8 +244,30 @@ class FilesystemToolTest {
 
         ToolResultBlock result = tool.readFile(RT, "missing.txt", null, null);
         assertEquals(ToolResultState.ERROR, result.getState());
+        assertErrorKind(result, ToolErrorKind.NOT_FOUND, "missing.txt");
 
         assertTrue(textOf(result).contains("no such file"));
+    }
+
+    @Test
+    void writeFile_existingTargetIsAConflict() {
+        when(filesystem.write(RT, "f.txt", "x")).thenReturn(WriteResult.alreadyExists("f.txt"));
+
+        ToolResultBlock result = tool.writeFile(RT, "f.txt", "x");
+
+        assertEquals(ToolResultState.ERROR, result.getState());
+        assertErrorKind(result, ToolErrorKind.CONFLICT, "f.txt");
+    }
+
+    @Test
+    void successfulReadCarriesNoErrorMetadata() {
+        when(filesystem.read(eq(RT), eq("f.txt"), eq(0), eq(0)))
+                .thenReturn(ReadResult.success(new FileData("hello", "utf-8")));
+
+        ToolResultBlock result = tool.readFile(RT, "f.txt", null, null);
+
+        assertEquals(ToolResultState.SUCCESS, result.getState());
+        assertNoErrorMetadata(result);
     }
 
     @Test
@@ -322,6 +350,7 @@ class FilesystemToolTest {
     void grepFiles_nonPositiveLimit_isRejectedBeforeSearch() {
         ToolResultBlock result = tool.grepFiles(RT, "needle", ".", null, 0);
         assertEquals(ToolResultState.ERROR, result.getState());
+        assertErrorKind(result, ToolErrorKind.INVALID_ARGUMENT, null);
 
         assertEquals("Error: limit must be greater than 0", textOf(result));
         verifyNoInteractions(filesystem);

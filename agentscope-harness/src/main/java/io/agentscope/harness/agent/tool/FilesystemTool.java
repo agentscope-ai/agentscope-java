@@ -16,6 +16,8 @@
 package io.agentscope.harness.agent.tool;
 
 import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.core.message.ToolErrorKind;
+import io.agentscope.core.message.ToolErrorMetadata;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.tool.Tool;
 import io.agentscope.core.tool.ToolParam;
@@ -134,6 +136,57 @@ public class FilesystemTool {
         return pathNormalizer != null ? pathNormalizer.normalize(path, runtimeContext) : path;
     }
 
+    /**
+     * Classifies a backend error at the tool boundary. Filesystem backends report a message and,
+     * for writes, an explicit already-exists flag; the tool adds the machine-readable kind without
+     * changing the text or the backend contract.
+     */
+    private static ToolResultBlock filesystemError(String message, String scope) {
+        return ToolResultBlock.error(message)
+                .withMetadata(ToolErrorMetadata.of(classifyFilesystemError(message), scope));
+    }
+
+    private static ToolErrorKind classifyFilesystemError(String message) {
+        String lower = message == null ? "" : message.toLowerCase(java.util.Locale.ROOT);
+        if (lower.contains("string not found")) {
+            return ToolErrorKind.INVALID_ARGUMENT;
+        }
+        if (lower.contains("not found")
+                || lower.contains("does not exist")
+                || lower.contains("no such file")
+                || lower.contains("file_not_found")
+                || lower.contains("path does not exist")) {
+            return ToolErrorKind.NOT_FOUND;
+        }
+        if (lower.contains("already exists")) {
+            return ToolErrorKind.CONFLICT;
+        }
+        if (lower.contains("permission denied")
+                || lower.contains("access denied")
+                || lower.contains("not allowed")
+                || lower.contains("denied")
+                || lower.contains("outside")
+                || lower.contains("escape")
+                || lower.contains("read-only")
+                || lower.contains("cannot delete shared")
+                || lower.contains("cannot read shared")) {
+            return ToolErrorKind.PERMISSION_DENIED;
+        }
+        if (lower.contains("not a directory")
+                || lower.contains("invalid")
+                || lower.contains("must")
+                || lower.contains("required")
+                || lower.contains("cannot be")
+                || lower.contains("empty")
+                || lower.contains("not unique")
+                || lower.contains("more than once")
+                || lower.contains("occurs")
+                || lower.contains("expected exactly")) {
+            return ToolErrorKind.INVALID_ARGUMENT;
+        }
+        return ToolErrorKind.IO_ERROR;
+    }
+
     @Tool(
             name = "read_file",
             readOnly = true,
@@ -173,22 +226,26 @@ public class FilesystemTool {
                     Integer maxChars) {
         int start = charOffset != null ? charOffset : 0;
         int size = maxChars != null ? Math.min(maxChars, readFileMaxChars) : DEFAULT_READ_CHARS;
+        String normalizedPath = norm(path, runtimeContext);
         if (start < 0 || size < 1) {
             return ToolResultBlock.error(
-                    "char_offset must be non-negative and max_chars must be greater than 0");
+                            "char_offset must be non-negative and max_chars must be greater than 0")
+                    .withMetadata(
+                            ToolErrorMetadata.of(ToolErrorKind.INVALID_ARGUMENT, normalizedPath));
         }
         int off = offset != null ? offset : 0;
         int lim = limit != null ? limit : 0;
-        ReadResult r =
-                abstractFilesystem.read(runtimeContext, norm(path, runtimeContext), off, lim);
+        ReadResult r = abstractFilesystem.read(runtimeContext, normalizedPath, off, lim);
         if (!r.isSuccess()) {
-            return ToolResultBlock.error(r.error());
+            return filesystemError(r.error(), normalizedPath);
         }
         String content = r.fileData() != null ? r.fileData().content() : "";
         int total = content.codePointCount(0, content.length());
         if (start > total) {
             return ToolResultBlock.error(
-                    "char_offset exceeds the selected content length: " + total);
+                            "char_offset exceeds the selected content length: " + total)
+                    .withMetadata(
+                            ToolErrorMetadata.of(ToolErrorKind.INVALID_ARGUMENT, normalizedPath));
         }
         int end = start + Math.min(size, total - start);
         String page =
@@ -221,11 +278,18 @@ public class FilesystemTool {
             RuntimeContext runtimeContext,
             @ToolParam(name = "path", description = "Target file path") String path,
             @ToolParam(name = "content", description = "File content to write") String content) {
-        WriteResult r =
-                abstractFilesystem.write(runtimeContext, norm(path, runtimeContext), content);
-        return r.isSuccess()
-                ? ToolResultBlock.success("Written to " + r.path())
-                : ToolResultBlock.error(r.error());
+        String normalizedPath = norm(path, runtimeContext);
+        WriteResult r = abstractFilesystem.write(runtimeContext, normalizedPath, content);
+        if (r.isSuccess()) {
+            return ToolResultBlock.success("Written to " + r.path());
+        }
+        return ToolResultBlock.error(r.error())
+                .withMetadata(
+                        ToolErrorMetadata.of(
+                                r.isAlreadyExists()
+                                        ? ToolErrorKind.CONFLICT
+                                        : classifyFilesystemError(r.error()),
+                                normalizedPath));
     }
 
     @Tool(
@@ -254,17 +318,14 @@ public class FilesystemTool {
                             required = false)
                     Boolean replaceAll) {
         boolean shouldReplaceAll = Boolean.TRUE.equals(replaceAll);
+        String normalizedPath = norm(path, runtimeContext);
         EditResult r =
                 abstractFilesystem.edit(
-                        runtimeContext,
-                        norm(path, runtimeContext),
-                        oldString,
-                        newString,
-                        shouldReplaceAll);
+                        runtimeContext, normalizedPath, oldString, newString, shouldReplaceAll);
         return r.isSuccess()
                 ? ToolResultBlock.success(
                         "Edited " + r.path() + " (" + r.occurrences() + " replacement(s))")
-                : ToolResultBlock.error(r.error());
+                : filesystemError(r.error(), normalizedPath);
     }
 
     @Tool(
@@ -299,12 +360,15 @@ public class FilesystemTool {
                     Integer limit) {
         int effectiveLimit = effectiveLimit(limit, DEFAULT_GREP_LIMIT);
         if (effectiveLimit < 1) {
-            return ToolResultBlock.error("limit must be greater than 0");
+            return ToolResultBlock.error("limit must be greater than 0")
+                    .withMetadata(ToolErrorMetadata.of(ToolErrorKind.INVALID_ARGUMENT));
         }
-        GrepResult r =
-                abstractFilesystem.grep(runtimeContext, pattern, norm(path, runtimeContext), glob);
+        String normalizedPath = norm(path, runtimeContext);
+        GrepResult r = abstractFilesystem.grep(runtimeContext, pattern, normalizedPath, glob);
         if (!r.isSuccess()) {
-            return ToolResultBlock.error(r.error());
+            return filesystemError(
+                    r.error(),
+                    normalizedPath == null || normalizedPath.isBlank() ? "." : normalizedPath);
         }
         List<GrepMatch> matches = r.matches();
         if (matches == null || matches.isEmpty()) {
@@ -350,11 +414,15 @@ public class FilesystemTool {
                     Integer limit) {
         int effectiveLimit = effectiveLimit(limit, DEFAULT_GLOB_LIMIT);
         if (effectiveLimit < 1) {
-            return ToolResultBlock.error("limit must be greater than 0");
+            return ToolResultBlock.error("limit must be greater than 0")
+                    .withMetadata(ToolErrorMetadata.of(ToolErrorKind.INVALID_ARGUMENT));
         }
-        GlobResult r = abstractFilesystem.glob(runtimeContext, pattern, norm(path, runtimeContext));
+        String normalizedPath = norm(path, runtimeContext);
+        GlobResult r = abstractFilesystem.glob(runtimeContext, pattern, normalizedPath);
         if (!r.isSuccess()) {
-            return ToolResultBlock.error(r.error());
+            return filesystemError(
+                    r.error(),
+                    normalizedPath == null || normalizedPath.isBlank() ? "." : normalizedPath);
         }
         List<FileInfo> files = r.matches();
         if (files == null || files.isEmpty()) {
@@ -393,9 +461,10 @@ public class FilesystemTool {
     public ToolResultBlock listFiles(
             RuntimeContext runtimeContext,
             @ToolParam(name = "path", description = "Directory path to list") String path) {
-        LsResult r = abstractFilesystem.ls(runtimeContext, norm(path, runtimeContext));
+        String normalizedPath = norm(path, runtimeContext);
+        LsResult r = abstractFilesystem.ls(runtimeContext, normalizedPath);
         if (!r.isSuccess()) {
-            return ToolResultBlock.error(r.error());
+            return filesystemError(r.error(), normalizedPath);
         }
         List<FileInfo> infos = r.entries();
         if (infos == null || infos.isEmpty()) {

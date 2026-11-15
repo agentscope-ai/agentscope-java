@@ -35,9 +35,10 @@ en_link: /dev/en/docs/harness/architecture
 | 工作区驱动的人格 | 人格 / 知识 / 子 agent / 技能 / MCP 白名单都以文件形式存在 | `.workspace(path)` | [工作区](/dev/zh/docs/harness/workspace) |
 | 状态持久化与执行日志 | 完整事实、checkpoint、跨请求和跨节点恢复 | 默认日志模式；`.threadJournalStore(...)` 替换 | [会话日志](/dev/zh/docs/harness/session-log) |
 | 持久任务 | 后台执行、排队、补充信息和恢复 | `DurableRuntime` | [Durable](/dev/zh/docs/harness/durable) |
-| 双层长期记忆 | 长会话里有价值的事实自动沉淀到 `MEMORY.md` | 默认开启；`.memory(...)` 定制 prompt / 触发策略 | [记忆](/dev/zh/docs/harness/memory) |
+| 双层长期记忆 | 长会话里有价值的事实自动沉淀到 `MEMORY.md` | 默认关闭，用 `.enableLongTermMemory()` 开启；`.memory(...)` 定制 prompt / 触发策略 | [记忆](/dev/zh/docs/harness/memory) |
 | 对话压缩 | 上下文有界；模型真的溢出时强制重试 | `.compaction(...)` | [上下文管理](/dev/zh/docs/harness/context) |
 | 大工具结果卸载 | 超 80K 字符的结果落盘 + 占位符 | `.toolResultEviction(...)` | [上下文管理](/dev/zh/docs/harness/context) |
+| 工具重复失败 | 模型反复调用同一个失败工具时给一条短提醒 | 默认开启；`.disableRepeatedFailureGuard()` | 下文 |
 | 子 agent 编排 | 委派给子 agent，支持同步或后台，自动反向通知 | `.subagent(...)` 或 `workspace/subagents/` | [子 Agent](/dev/zh/docs/harness/subagent) |
 | 可插拔文件系统 | 本机 + shell / 共享存储 / 沙箱，不改代码切换 | `.filesystem(...)` | [文件系统](/dev/zh/docs/harness/filesystem) |
 | 沙箱隔离 | 文件与命令隔离，跨调用恢复，多副本部署 | `.filesystem(new DockerFilesystemSpec()...)` | [沙箱](/dev/zh/docs/harness/sandbox) |
@@ -59,6 +60,18 @@ en_link: /dev/en/docs/harness/architecture
 - 最终请求每轮重新构建，但工作区文件按 call 加载；修改 AGENTS.md 或 MEMORY.md 后下一次 call 生效，不需要重启。
 - 压缩、记忆提炼、后台维护都被节流闸门管着，不会每轮都跑。
 - `AgentState` 的持久化由 Core 执行生命周期管理：日志模式 写 checkpoint，快照模式写状态存储。Harness 配置默认日志后端。
+
+## 工具重复失败
+
+内置工具通过 `ToolResultBlock.metadata` 标注失败：
+
+- `agentscope_error_kind` —— `ToolErrorKind` 值，如 `not_found`、`invalid_argument`、`permission_denied`、`timeout`。
+- `agentscope_error_scope` —— 失败对象：工作区相对路径、host、thread id 等。
+- `agentscope_retriable` —— 原样重试是否可能成功；缺省表示未知。
+
+自定义工具构造错误结果时可用 `ToolErrorMetadata.of(kind, scope)` 接入同一契约。
+
+在这层 metadata 之上，`HarnessAgent` 默认安装 `RepeatedFailureGuard`：工具执行期间观察结果，当同一工具以相同 kind 和 scope 失败 3 次（标记为可重试时 5 次），下一次模型请求会附加一条不写入会话历史的短提醒。同一工具成功、进入新一轮或调用结束都会清零计数，每轮最多两条提醒。它不会自动重试、改写参数或中止运行。用 `.disableRepeatedFailureGuard()` 关闭，或注册自己的 middleware 采用不同策略。
 
 ## 自己加 middleware 时要注意什么
 

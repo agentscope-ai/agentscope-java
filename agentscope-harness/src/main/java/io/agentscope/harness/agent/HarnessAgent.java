@@ -65,6 +65,7 @@ import io.agentscope.harness.agent.context.ContextSource;
 import io.agentscope.harness.agent.context.ContextSourceOptions;
 import io.agentscope.harness.agent.context.ContextSources;
 import io.agentscope.harness.agent.context.HarnessContextBuilder;
+import io.agentscope.harness.agent.context.LearnedContextWindows;
 import io.agentscope.harness.agent.context.TaskContextOptions;
 import io.agentscope.harness.agent.coordination.LocalPeriodicGate;
 import io.agentscope.harness.agent.coordination.PeriodicGate;
@@ -215,6 +216,12 @@ public class HarnessAgent implements Agent, AutoCloseable {
     private final CompactionMiddleware compactionHook;
     private final SandboxLifecycleMiddleware sandboxLifecycleMw;
 
+    /**
+     * Context windows learned from provider overflow errors, shared by the compaction trigger
+     * and the input limit so both stop using the unknown-window fallbacks.
+     */
+    private final LearnedContextWindows learnedContextWindows;
+
     /** Per-user grant resolver; {@code null} = no trimming at the harness layer. */
     private final CapabilityResolver capabilityResolver;
 
@@ -262,7 +269,8 @@ public class HarnessAgent implements Agent, AutoCloseable {
             Object subagentMiddleware,
             DistributedStore distributedStore,
             WorkspacePathNormalizer pathNormalizer,
-            Toolkit ownedMcpToolkit) {
+            Toolkit ownedMcpToolkit,
+            LearnedContextWindows learnedContextWindows) {
         this.delegate = delegate;
         this.ownedMcpToolkit = ownedMcpToolkit;
         this.workspaceManager = workspaceManager;
@@ -280,6 +288,8 @@ public class HarnessAgent implements Agent, AutoCloseable {
         this.skillCurator = skillCurator;
         this.skillAuditLog = skillAuditLog;
         this.memoryConfig = memoryConfig != null ? memoryConfig : MemoryConfig.defaults();
+        this.learnedContextWindows =
+                learnedContextWindows != null ? learnedContextWindows : new LearnedContextWindows();
         this.subagentMiddleware = subagentMiddleware;
         this.distributedStore = distributedStore;
         this.pathNormalizer = pathNormalizer;
@@ -1057,6 +1067,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
             return base.onErrorResume(
                     e -> {
                         if (CompactionMiddleware.isContextOverflowError(e)) {
+                            learnOverflowWindow(effective, e);
                             return recoverFromOverflow(msgs, effective);
                         }
                         return Mono.error(e);
@@ -1187,6 +1198,15 @@ public class HarnessAgent implements Agent, AutoCloseable {
             b.put(WorkspacePathNormalizer.class, pathNormalizer);
         }
         return b.build();
+    }
+
+    /** Learning must never turn a recoverable overflow into a different failure. */
+    private void learnOverflowWindow(RuntimeContext ctx, Throwable error) {
+        try {
+            learnedContextWindows.recordOverflow(delegate.getModel(ctx), error);
+        } catch (RuntimeException e) {
+            log.debug("Could not learn the context window from the overflow error", e);
+        }
     }
 
     private Mono<Msg> recoverFromOverflow(List<Msg> msgs, RuntimeContext effective) {
@@ -1466,6 +1486,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
         }
 
         boolean disableToolResultEviction = false;
+        boolean disableRepeatedFailureGuard = false;
 
         final List<SubagentDeclaration> subagentDeclarations = new ArrayList<>();
         final List<HarnessAgentBuilderSupport.SubagentFactoryEntry> customSubagentFactories =
@@ -1485,6 +1506,15 @@ public class HarnessAgent implements Agent, AutoCloseable {
 
         /** Optional caller-supplied client used by the built-in web tools; {@code null} = default. */
         HttpClient webHttpClient;
+
+        /**
+         * Harness-owned long-term memory is opt-in: no memory tools, flush/consolidation, or
+         * {@code MEMORY.md} injection unless the application enables it.
+         */
+        boolean enableLongTermMemory = false;
+
+        /** Explicit {@code memory(MemoryConfig)} also opts in; see {@code memory()}. */
+        boolean memoryConfigured = false;
 
         boolean disableMemoryTools = false;
         boolean disableMemoryHooks = false;
@@ -1689,6 +1719,9 @@ public class HarnessAgent implements Agent, AutoCloseable {
                         agent.getToolkit().getToolsFromSource(RequirementTools.class));
             }
             b.toolkit(agent.getToolkit().copyExcludingTools(frameworkTools));
+            // Long-term memory is opt-in; preserve it only when the source actually exposed it
+            // (the toolkit is the observable signal, the builder flag is not).
+            b.enableLongTermMemory = agent.getToolkit().getTool("memory_search") != null;
             // Persistence.
             AgentStateStore srcSession = agent.getStateStore();
             if (srcSession != null) {
@@ -2195,14 +2228,19 @@ public class HarnessAgent implements Agent, AutoCloseable {
 
         /**
          * Overrides the long-term memory pipeline configuration (flush + consolidation +
-         * maintenance). When not called, {@link MemoryConfig#defaults()} is used and behaviour
-         * matches the harness's historical defaults.
+         * maintenance). When not called, {@link MemoryConfig#defaults()} is used.
+         *
+         * <p>Calling this method also enables long-term memory, exactly like
+         * {@link #enableLongTermMemory()}: supplying a memory configuration is treated as an
+         * explicit opt-in. Use {@code disableMemoryTools()} / {@code disableMemoryHooks()} to
+         * narrow the enabled pipeline afterwards.
          *
          * <p>For the compaction (in-context summarization) pipeline, see
          * {@link #compaction(CompactionConfig)}.
          */
         public Builder memory(MemoryConfig config) {
             this.memoryConfig = config != null ? config : MemoryConfig.defaults();
+            this.memoryConfigured = true;
             return this;
         }
 
@@ -2221,6 +2259,17 @@ public class HarnessAgent implements Agent, AutoCloseable {
         /** Disables the {@link ToolResultEvictionMiddleware} entirely. */
         public Builder disableToolResultEviction() {
             this.disableToolResultEviction = true;
+            return this;
+        }
+
+        /**
+         * Disables the {@link io.agentscope.harness.agent.middleware.RepeatedFailureGuard}, which
+         * by default adds a short reminder to the next model request after the model repeats the
+         * same failing tool call. The guard only ever adds context; disabling it restores the
+         * previous behaviour of letting the model observe repeated failures unaided.
+         */
+        public Builder disableRepeatedFailureGuard() {
+            this.disableRepeatedFailureGuard = true;
             return this;
         }
 
@@ -2611,9 +2660,26 @@ public class HarnessAgent implements Agent, AutoCloseable {
         }
 
         /**
+         * Enables Harness-owned long-term memory: registers {@code memory_search} /
+         * {@code memory_get} / {@code memory_save}, runs the memory flush and background
+         * consolidation, and injects {@code MEMORY.md} plus Memory Recall / Persistence guidance
+         * into the workspace context.
+         *
+         * <p>Long-term memory is off by default. Applications opt in explicitly; the native
+         * Thread journal ({@code thread_search} / {@code thread_history} / {@code thread_list})
+         * is independent of this switch and stays available while journaling is enabled.
+         */
+        public Builder enableLongTermMemory() {
+            this.enableLongTermMemory = true;
+            return this;
+        }
+
+        /**
          * Skips registration of {@code memory_search} / {@code memory_get} / {@code memory_save} /
          * {@code thread_search}, and omits matching Memory Recall / tool-based Persistence
-         * guidance from the workspace system prompt.
+         * guidance from the workspace system prompt. Only meaningful together with {@link
+         * #enableLongTermMemory()}; the Thread tools remain opt-out even when long-term memory is
+         * disabled.
          */
         public Builder disableMemoryTools() {
             this.disableMemoryTools = true;
@@ -2624,7 +2690,8 @@ public class HarnessAgent implements Agent, AutoCloseable {
          * Disables memory flush + background consolidation, and removes the "automatically
          * extracted" Persistence line from the workspace system prompt. Combined with {@link
          * #disableMemoryTools()}, also skips {@code MEMORY.md} injection into
-         * the reference materials in {@code HARNESS_CONTEXT}.
+         * the reference materials in {@code HARNESS_CONTEXT}. Only meaningful together with {@link
+         * #enableLongTermMemory()}.
          */
         public Builder disableMemoryHooks() {
             this.disableMemoryHooks = true;
@@ -2778,6 +2845,9 @@ public class HarnessAgent implements Agent, AutoCloseable {
         }
 
         private HarnessAgent buildInstance(ReActAgent.Builder inner) {
+            // Shared by the compaction trigger and the final request compiler; learns from
+            // provider overflow errors when a model reports no window.
+            LearnedContextWindows learnedWindows = new LearnedContextWindows();
             // Toolkit deep-copy: each agent gets its own toolkit so harness-registered tools and
             // user-registered tools never bleed across builds.
             Toolkit agentToolkit = this.toolkit.copy();
@@ -2949,6 +3019,13 @@ public class HarnessAgent implements Agent, AutoCloseable {
                                 filesystem, ".agentscope/bus/async-tools");
             }
 
+            // Long-term memory is opt-in. Fold the opt-in into the existing disable flags so the
+            // middleware, hooks, and tool registration all read one effective state. Supplying an
+            // explicit MemoryConfig counts as opting in.
+            boolean memoryEnabled = enableLongTermMemory || memoryConfigured;
+            boolean effectiveDisableMemoryTools = !memoryEnabled || disableMemoryTools;
+            boolean effectiveDisableMemoryHooks = !memoryEnabled || disableMemoryHooks;
+
             // ---- Middlewares ----
             inner.middleware(new ContextConventionsMiddleware());
             if (sandboxLifecycleMw != null) {
@@ -2966,8 +3043,8 @@ public class HarnessAgent implements Agent, AutoCloseable {
                                 name != null ? name : "ReActAgent",
                                 environmentMemory,
                                 maxContextTokens,
-                                disableMemoryTools,
-                                disableMemoryHooks);
+                                effectiveDisableMemoryTools,
+                                effectiveDisableMemoryHooks);
                 markdownMw.setAdditionalContextFiles(additionalContextFiles);
                 markdownMw.setArtifactDeliveryEnabled(artifactDeliveryEnabled);
                 inner.middleware(markdownMw);
@@ -2983,7 +3060,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
                                 : new WorkspaceThreadJournalStore(wsManager));
             }
             Model memoryModel = memoryConfig.model() != null ? memoryConfig.model() : model;
-            if (memoryModel != null && !disableMemoryHooks) {
+            if (memoryModel != null && !effectiveDisableMemoryHooks) {
                 // Flush middleware gets the dedicated config model only (may be null): without
                 // one it resolves the executing agent's per-call model at flush time. The
                 // consolidator below still uses the resolved memoryModel.
@@ -3032,7 +3109,10 @@ public class HarnessAgent implements Agent, AutoCloseable {
                     // time. The gate above still requires a dedicated or default model to exist.
                     compactionHook =
                             new CompactionMiddleware(
-                                    wsManager, compactionConfig.getModel(), compactionConfig);
+                                    wsManager,
+                                    compactionConfig.getModel(),
+                                    compactionConfig,
+                                    learnedWindows);
                     inner.middleware(compactionHook.overflowRecovery());
                 }
             }
@@ -3040,6 +3120,9 @@ public class HarnessAgent implements Agent, AutoCloseable {
                     !disableToolResultEviction && toolResultEvictionConfig != null
                             ? new ToolResultEvictionMiddleware(filesystem, toolResultEvictionConfig)
                             : null;
+            if (!disableRepeatedFailureGuard) {
+                inner.middleware(new io.agentscope.harness.agent.middleware.RepeatedFailureGuard());
+            }
             inner.enableTaskRequirements(contextSources.taskContext().requirementProposals());
             inner.modelRequestPreparer(
                     new HarnessContextBuilder(
@@ -3047,7 +3130,8 @@ public class HarnessAgent implements Agent, AutoCloseable {
                             compactionHook,
                             contextEviction,
                             contextSources,
-                            contextSelectionPolicy));
+                            contextSelectionPolicy,
+                            learnedWindows));
             if (messageBus != null) {
                 inner.middleware(new InboxMiddleware(messageBus, 100, asyncToolRegistry, null));
             }
@@ -3122,17 +3206,19 @@ public class HarnessAgent implements Agent, AutoCloseable {
             }
 
             // ---- Toolkit (memory / filesystem / shell tools) ----
-            if (!disableMemoryTools) {
+            if (!effectiveDisableMemoryTools) {
                 agentToolkit.registerTool(new MemorySearchTool(wsManager));
                 agentToolkit.registerTool(new MemoryGetTool(wsManager));
                 agentToolkit.registerTool(new MemorySaveTool(wsManager));
-                if (journalEnabled) {
-                    agentToolkit.registerTool(
-                            new ThreadHistoryTool(
-                                    threadJournalStore != null
-                                            ? threadJournalStore
-                                            : new WorkspaceThreadJournalStore(wsManager)));
-                }
+            }
+            // Thread tools expose the native journal, not long-term memory; they stay available
+            // unless explicitly opted out.
+            if (journalEnabled && !disableMemoryTools) {
+                agentToolkit.registerTool(
+                        new ThreadHistoryTool(
+                                threadJournalStore != null
+                                        ? threadJournalStore
+                                        : new WorkspaceThreadJournalStore(wsManager)));
             }
             WorkspacePathNormalizer pathNormalizer;
             if (filesystem instanceof OverlayFilesystem ov
@@ -3435,7 +3521,8 @@ public class HarnessAgent implements Agent, AutoCloseable {
                     capturedSubagentMw,
                     distributedStore,
                     pathNormalizer,
-                    agentToolkit);
+                    agentToolkit,
+                    learnedWindows);
         }
     }
 }
