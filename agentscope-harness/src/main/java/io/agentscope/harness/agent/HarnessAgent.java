@@ -3134,6 +3134,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
                                             : new WorkspaceThreadJournalStore(wsManager)));
                 }
             }
+            AbstractFilesystem shellView = shellCapableView(filesystem);
             WorkspacePathNormalizer pathNormalizer;
             if (filesystem instanceof OverlayFilesystem ov
                     && ov.getUpper() instanceof LocalFilesystemWithShell) {
@@ -3153,6 +3154,19 @@ public class HarnessAgent implements Agent, AutoCloseable {
                                 defaultSandboxContext != null
                                         ? defaultSandboxContext.getWorkspaceSpec().getRoot()
                                         : ShellPathPolicy.SANDBOX_WORKSPACE_PREFIX);
+            } else if (shellView instanceof LocalFilesystemWithShell) {
+                // Pass-through wrapper over a shell-capable local delegate: same namespace-aware
+                // local semantics as the overlay branch, which the wrapper would otherwise
+                // silently degrade (#3671).
+                pathNormalizer =
+                        WorkspacePathNormalizer.of(
+                                resolvedWorkspace.toAbsolutePath().toString(), nsFactory);
+            } else if (shellView instanceof AbstractSandboxFilesystem) {
+                pathNormalizer =
+                        WorkspacePathNormalizer.forSandbox(
+                                defaultSandboxContext != null
+                                        ? defaultSandboxContext.getWorkspaceSpec().getRoot()
+                                        : ShellPathPolicy.SANDBOX_WORKSPACE_PREFIX);
             } else {
                 pathNormalizer =
                         WorkspacePathNormalizer.of(resolvedWorkspace.toAbsolutePath().toString());
@@ -3166,7 +3180,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
                         new ArtifactDeliveryTool(
                                 filesystem, pathNormalizer, artifactDeliveryTarget));
             }
-            if (!disableShellTool && filesystem instanceof AbstractSandboxFilesystem sandbox) {
+            if (!disableShellTool && shellView instanceof AbstractSandboxFilesystem sandbox) {
                 agentToolkit.registerTool(new ShellExecuteTool(sandbox));
             }
             if (!disableWebTools) {
@@ -3331,6 +3345,11 @@ public class HarnessAgent implements Agent, AutoCloseable {
                     shellPolicy =
                             io.agentscope.harness.agent.skill.runtime.ShellPathPolicy
                                     .localWithShell(resolvedWorkspace);
+                } else if (shellView instanceof LocalFilesystemWithShell) {
+                    // Pass-through wrapper over a shell-capable local delegate (#3671).
+                    shellPolicy =
+                            io.agentscope.harness.agent.skill.runtime.ShellPathPolicy
+                                    .localWithShell(resolvedWorkspace);
                 } else if (filesystem instanceof SandboxBackedFilesystem
                         || (filesystem instanceof RoutedSandboxFilesystem routed
                                 && routed.primary() instanceof SandboxBackedFilesystem)) {
@@ -3436,6 +3455,64 @@ public class HarnessAgent implements Agent, AutoCloseable {
                     distributedStore,
                     pathNormalizer,
                     agentToolkit);
+        }
+
+        /**
+         * Returns the shell-capable filesystem visible through {@code filesystem}: the
+         * filesystem itself when it implements {@link AbstractSandboxFilesystem}, otherwise the
+         * single {@link AbstractFilesystem}-typed delegate it wraps (following one-delegate
+         * chains) when that delegate is shell-capable. Routing views (composites, overlays) own
+         * their capability surface and are never seen through, and a wrapper declaring zero or
+         * multiple filesystem-typed fields is treated as a leaf — only unambiguous pass-through
+         * delegation is detected (#3671). Returns {@code null} when no shell capability is
+         * visible.
+         */
+        private static AbstractFilesystem shellCapableView(AbstractFilesystem filesystem) {
+            if (filesystem instanceof AbstractSandboxFilesystem) {
+                return filesystem;
+            }
+            AbstractFilesystem current = filesystem;
+            Set<AbstractFilesystem> visited = new HashSet<>();
+            while (current != null
+                    && visited.add(current)
+                    && !(current instanceof CompositeFilesystem)
+                    && !(current instanceof OverlayFilesystem)) {
+                current = singleFilesystemDelegate(current);
+                if (current instanceof AbstractSandboxFilesystem) {
+                    return current;
+                }
+            }
+            return null;
+        }
+
+        /**
+         * Returns the value of the single field assignable to {@link AbstractFilesystem}, or
+         * {@code null} when the type declares zero or multiple such fields — the pure
+         * pass-through wrapper idiom has exactly one, while transformed/routing views keep
+         * several or none.
+         */
+        private static AbstractFilesystem singleFilesystemDelegate(AbstractFilesystem fs) {
+            AbstractFilesystem delegate = null;
+            Class<?> type = fs.getClass();
+            while (type != null && type != Object.class) {
+                for (java.lang.reflect.Field field : type.getDeclaredFields()) {
+                    if (java.lang.reflect.Modifier.isStatic(field.getModifiers())
+                            || !AbstractFilesystem.class.isAssignableFrom(field.getType())) {
+                        continue;
+                    }
+                    if (delegate != null) {
+                        return null;
+                    }
+                    try {
+                        field.setAccessible(true);
+                        delegate = (AbstractFilesystem) field.get(fs);
+                    } catch (IllegalAccessException e) {
+                        return null;
+                    }
+                }
+                type = type.getSuperclass();
+            }
+            return delegate;
         }
     }
 }
