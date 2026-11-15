@@ -441,6 +441,11 @@ class LocalFilesystemUserIsolationExampleTest {
                 HarnessAgent.builder()
                         .name("assistant")
                         .model(stubModel("done"))
+                        // The async memory pipeline (flush + consolidation) reuses the stub
+                        // model, so its fixed "done" response would land in MEMORY.md and
+                        // race these namespace assertions. These tests target isolation,
+                        // not flush behaviour.
+                        .disableMemoryHooks()
                         .workspace(workspace)
                         .build()) {
 
@@ -491,6 +496,8 @@ class LocalFilesystemUserIsolationExampleTest {
                 HarnessAgent.builder()
                         .name("assistant")
                         .model(stubModel("done"))
+                        // Same as above: keep the async flush/consolidation out of the race.
+                        .disableMemoryHooks()
                         .workspace(workspace)
                         .build()) {
 
