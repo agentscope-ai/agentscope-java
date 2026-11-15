@@ -195,13 +195,7 @@ public class ProcessRecoveryTest {
                     Files.writeString(workspace.resolve("ready"), "ready");
                     Thread.sleep(30000);
                 }
-                try {
-                    Thread.sleep(10);
-                } catch (InterruptedException ignored) {
-                    // The fixture must keep ticking until the acceptResult proxy records the
-                    // terminal handoff. A runtime wakeup may interrupt this polling sleep.
-                    Thread.interrupted();
-                }
+                pause(10);
             }
         }
     }
@@ -231,7 +225,7 @@ public class ProcessRecoveryTest {
             if ("during-tool".equals(mode)) {
                 while (!Files.exists(workspace.resolve("ready"))
                         && process.isAlive()
-                        && System.nanoTime() < deadline) Thread.sleep(20);
+                        && System.nanoTime() < deadline) pause(20);
                 assertTrue(
                         Files.exists(workspace.resolve("ready")),
                         () -> read(directory.resolve("brain.log")));
@@ -251,7 +245,7 @@ public class ProcessRecoveryTest {
                         && System.nanoTime() < deadline) {
                     replacement.tick(new ThreadKey(KEY, "main"));
                     assertNull(replacement.lastFailure(new ThreadKey(KEY, "main")));
-                    Thread.sleep(20);
+                    pause(20);
                 }
                 assertEquals(
                         TurnStatus.SUCCEEDED,
@@ -266,6 +260,15 @@ public class ProcessRecoveryTest {
             }
         } finally {
             if (process.isAlive()) process.destroyForcibly();
+        }
+    }
+
+    /** Sleeps through a runtime wakeup instead of failing the polling loop. */
+    private static void pause(long millis) {
+        try {
+            Thread.sleep(millis);
+        } catch (InterruptedException wakeup) {
+            Thread.interrupted();
         }
     }
 
