@@ -368,9 +368,11 @@ builder.contextPolicy(new ContextPolicy(
 | --- | --- |
 | `callId()`、`purpose()`、`model()` | 标识这次模型请求准备及其用途、模型。`callId` 不是 `sessionId`、`turnId` 或 `runId` |
 | `estimatedInputTokens()`、`inputLimit()` | 整个请求的估算输入量与最终可用输入上限；不是供应商账单中的实际 token 用量。`countingMethod()` 和 `exact()` 说明计数方式及是否精确 |
-| `items()` | 本轮保留的消息、工具 Schema 和材料元数据。材料可通过 `sourceId`、`revision`、`contentHash` 核对来源与版本，通过 `placement` 查看放置位置；消息和工具条目的版本、位置可能为空 |
+| `items()` | 本轮保留的消息、工具 Schema 和材料元数据。材料可通过 `sourceId`、`revision`、`contentHash` 核对来源与版本，通过 `placement` 查看放置位置；消息和工具条目的版本、位置可能为空。`contentChars()` 给出被计算哈希的那段内容的长度（UTF-16 码元），用于比较各来源；`0` 表示未记录长度 |
 | `transforms()` | 准备期间做过的处理，例如 `tool_result_offload`（大结果卸载）、`history_compaction`（历史压缩处理），以及材料省略或来源失败记录 |
 | `validation()` | `passed` 为准备通过；`budget_exceeded` 为超出预算；`invalid_tool_pairs` 为工具调用与结果配对异常；`state_conflict` / `history_conflict` 为准备期间状态或历史发生冲突；`build_failed` 为其他构建失败 |
+
+`items()` 不是可加划分。每个保留材料也会出现在渲染它的消息条目里：`SYSTEM` 放置的材料并入 `system_input`，其余进入一条合成消息。因此对所有条目求和会重复计算材料，`contentChars()` 适合比较或排序单个来源，不要用来加总整个请求。消息与工具条目记的是序列化 JSON 的长度，短消息会带有结构开销，媒体块计入编码后大小而不是 token 成本。合并后的 system prompt 无法做可加归因。
 
 例如，前文注册的 `project-guide` 来源返回了 `login` 块，它在清单中的 ID 是 `source/project-guide/login`。如果在 `items()` 中找到它，版本是 `guide-v3`，且校验通过，说明这份约定已经纳入本轮准备好的请求；若回答仍不符合约定，应进一步检查内容和指令是否清晰。
 

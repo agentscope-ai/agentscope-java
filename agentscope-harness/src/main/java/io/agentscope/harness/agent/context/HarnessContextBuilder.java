@@ -336,18 +336,22 @@ public final class HarnessContextBuilder implements ModelRequestPreparer {
                                         : msg.isRequestProjection(candidate.history())
                                                 ? "runtime_projection"
                                                 : "message";
+                        String messageJson = JsonUtils.getJsonCodec().toJson(msg.getContent());
                         items.add(
                                 new ContextManifest.Item(
                                         kind,
                                         msg.getId(),
-                                        hash(JsonUtils.getJsonCodec().toJson(msg.getContent()))));
+                                        hash(messageJson),
+                                        messageJson.length()));
                     }
                     for (var tool : prepared.tools()) {
+                        String toolJson = JsonUtils.getJsonCodec().toJson(tool);
                         items.add(
                                 new ContextManifest.Item(
                                         "tool_schema",
                                         tool.getName(),
-                                        hash(JsonUtils.getJsonCodec().toJson(tool))));
+                                        hash(toolJson),
+                                        toolJson.length()));
                     }
                     for (ContextItem item : selected) {
                         if (!item.content().isBlank())
@@ -359,7 +363,8 @@ public final class HarnessContextBuilder implements ModelRequestPreparer {
                                             item.revision(),
                                             item.placement().name(),
                                             item.required(),
-                                            item.priority()));
+                                            item.priority(),
+                                            item.content().length()));
                     }
                     ContextManifest manifest =
                             new ContextManifest(

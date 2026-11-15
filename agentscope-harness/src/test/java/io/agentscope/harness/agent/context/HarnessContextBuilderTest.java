@@ -18,6 +18,7 @@ package io.agentscope.harness.agent.context;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
@@ -39,6 +40,7 @@ import io.agentscope.core.model.ToolSchema;
 import io.agentscope.core.state.AgentState;
 import io.agentscope.core.tool.builtin.TodoTools;
 import io.agentscope.core.tool.builtin.TodoTools.TodoItem;
+import io.agentscope.core.util.JsonUtils;
 import io.agentscope.harness.agent.memory.compaction.CompactionConfig;
 import io.agentscope.harness.agent.middleware.CompactionMiddleware;
 import java.util.ArrayList;
@@ -131,6 +133,135 @@ class HarnessContextBuilderTest {
                 () -> ContextPolicy.fromMap(Map.of("maxInputTokens", 1.5)));
         assertThrows(
                 IllegalArgumentException.class, () -> ContextPolicy.fromMap(Map.of("unknown", 1)));
+    }
+
+    @Test
+    void blankItemContributesNoManifestEntry() {
+        var manifests = new ArrayList<ContextManifest>();
+        var policy =
+                new ContextPolicy(0, 0, 0, ContextTokenEstimator.approximate(), manifests::add);
+        var rc = RuntimeContext.builder().agentState(AgentState.builder().build()).build();
+        rc.put(
+                WorkspaceContextMaterials.class,
+                new WorkspaceContextMaterials(List.of(new ContextItem("memory", "blank", "   "))));
+        new HarnessContextBuilder(policy, null, null)
+                .prepare(
+                        mock(Agent.class),
+                        rc,
+                        input(100000, "hello"),
+                        "c",
+                        ModelRequestPreparer.Purpose.REASONING)
+                .block();
+        assertTrue(
+                manifests.get(0).items().stream()
+                        .noneMatch(item -> item.sourceId().equals("blank")));
+    }
+
+    @Test
+    void manifestRecordsContentCharsForEverySourceType() {
+        var manifests = new ArrayList<ContextManifest>();
+        var policy =
+                new ContextPolicy(0, 0, 0, ContextTokenEstimator.approximate(), manifests::add);
+        var rc = RuntimeContext.builder().agentState(AgentState.builder().build()).build();
+        var memory = new ContextItem("memory", "workspace:MEMORY.md", "remember this fact");
+        rc.put(WorkspaceContextMaterials.class, new WorkspaceContextMaterials(List.of(memory)));
+        var toolSchema =
+                ToolSchema.builder()
+                        .name("lookup")
+                        .description("look something up")
+                        .parameters(Map.of())
+                        .build();
+        var userMsg = Msg.builder().role(MsgRole.USER).textContent("hi").build();
+        var request =
+                new ModelCallInput(
+                        List.of(userMsg),
+                        List.of(toolSchema),
+                        GenerateOptions.builder().maxTokens(20).build(),
+                        model(100000));
+        new HarnessContextBuilder(policy, null, null)
+                .prepare(
+                        mock(Agent.class), rc, request, "c", ModelRequestPreparer.Purpose.REASONING)
+                .block();
+        var items = manifests.get(0).items();
+        assertEquals(
+                memory.content().length(),
+                items.stream()
+                        .filter(item -> item.sourceId().equals("workspace:MEMORY.md"))
+                        .findFirst()
+                        .orElseThrow()
+                        .contentChars());
+        assertEquals(
+                JsonUtils.getJsonCodec().toJson(toolSchema).length(),
+                items.stream()
+                        .filter(item -> item.sourceId().equals("lookup"))
+                        .findFirst()
+                        .orElseThrow()
+                        .contentChars());
+        assertEquals(
+                JsonUtils.getJsonCodec().toJson(userMsg.getContent()).length(),
+                items.stream()
+                        .filter(item -> item.sourceId().equals(userMsg.getId()))
+                        .findFirst()
+                        .orElseThrow()
+                        .contentChars());
+    }
+
+    @Test
+    void contentCharsAreRecordedPerMaterial() {
+        var manifests = new ArrayList<ContextManifest>();
+        var policy =
+                new ContextPolicy(0, 0, 0, ContextTokenEstimator.approximate(), manifests::add);
+        var rc = RuntimeContext.builder().agentState(AgentState.builder().build()).build();
+        rc.put(
+                WorkspaceContextMaterials.class,
+                new WorkspaceContextMaterials(
+                        List.of(
+                                new ContextItem("memory", "a", "x".repeat(10)),
+                                new ContextItem("memory", "b", "y".repeat(20)),
+                                new ContextItem("memory", "c", "z".repeat(30)))));
+        new HarnessContextBuilder(policy, null, null)
+                .prepare(
+                        mock(Agent.class),
+                        rc,
+                        input(100000, "hello"),
+                        "c",
+                        ModelRequestPreparer.Purpose.REASONING)
+                .block();
+        var items = manifests.get(0).items();
+        Map.of("a", 10, "b", 20, "c", 30)
+                .forEach(
+                        (sourceId, chars) ->
+                                assertEquals(
+                                        chars.intValue(),
+                                        items.stream()
+                                                .filter(item -> item.sourceId().equals(sourceId))
+                                                .findFirst()
+                                                .orElseThrow()
+                                                .contentChars()));
+    }
+
+    @Test
+    void itemConstructorsDefaultContentCharsToZero() {
+        assertEquals(0, new ContextManifest.Item("message", "id", "hash").contentChars());
+        var sized = new ContextManifest.Item("message", "id", "hash", 7);
+        assertEquals(7, sized.contentChars());
+        assertNull(sized.revision());
+        assertNull(sized.placement());
+        assertFalse(sized.required());
+        assertEquals(0, sized.priority());
+    }
+
+    @Test
+    void priorSevenArgConstructorStillWorksAndReportsUnknownSize() {
+        var legacy =
+                new ContextManifest.Item(
+                        "memory", "workspace:MEMORY.md", "hash", "rev-1", "REFERENCE", true, 5);
+        assertEquals("memory", legacy.sourceType());
+        assertEquals("rev-1", legacy.revision());
+        assertEquals("REFERENCE", legacy.placement());
+        assertTrue(legacy.required());
+        assertEquals(5, legacy.priority());
+        assertEquals(0, legacy.contentChars());
     }
 
     private Model model(int window) {

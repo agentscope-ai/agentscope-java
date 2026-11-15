@@ -351,9 +351,11 @@ Start with `validation()` and the budget, then find the material by `sourceId()`
 | --- | --- |
 | `callId()`, `purpose()`, `model()` | Identifies this model request preparation, its purpose, and model. `callId` is separate from session, turn, and run IDs |
 | `estimatedInputTokens()`, `inputLimit()` | Estimated size of the entire input and its effective input limit, not provider usage or billing. `countingMethod()` and `exact()` describe the count |
-| `items()` | Retained messages, tool schemas, and material metadata. For materials, use `sourceId`, `revision`, and `contentHash` to identify the source and version, and `placement` to check placement. Message and tool entries may have null revisions and placements |
+| `items()` | Retained messages, tool schemas, and material metadata. For materials, use `sourceId`, `revision`, and `contentHash` to identify the source and version, and `placement` to check placement. Message and tool entries may have null revisions and placements. `contentChars()` reports the size of that hashed content in UTF-16 code units, for comparing sources; `0` means the size was not recorded |
 | `transforms()` | Preparation actions, including `tool_result_offload`, `history_compaction`, budget omissions, and source failures |
 | `validation()` | `passed`: preparation succeeded; `budget_exceeded`: insufficient budget; `invalid_tool_pairs`: malformed tool exchanges; `state_conflict` / `history_conflict`: state or history changed during preparation; `build_failed`: another build failure |
+
+`items()` is not an additive partition. Every retained material also appears in the message entry that renders it: `SYSTEM` materials inside `system_input`, the rest in a synthetic message. Summing all entries therefore double-counts materials, so use `contentChars()` to compare or rank individual sources, not to total the request. Message and tool entries measure serialized JSON, so short messages carry structural overhead and media blocks contribute their encoded size rather than their token cost. The merged system prompt cannot be attributed additively.
 
 For example, the `format` block from the earlier `change-record` source has the ID `source/change-record/format`. If it appears in `items()` and validation passed, the material was included in the prepared request. Compare its revision or hash across requests to check which version was used. If the answer still ignores it, inspect the content and instructions themselves.
 
