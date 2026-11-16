@@ -75,7 +75,7 @@ class HarnessAgentIdTest {
                 HarnessAgent.builder()
                         .name("t")
                         .agentId("  harness-x  ")
-                        .legacySessionHistory(true)
+                        .journalEnabled(false)
                         .model(stubModel())
                         .workspace(workspace)
                         .build();
@@ -92,7 +92,7 @@ class HarnessAgentIdTest {
                 HarnessAgent.builder()
                         .name("fallback-name")
                         .agentId("   ")
-                        .legacySessionHistory(true)
+                        .journalEnabled(false)
                         .model(stubModel())
                         .workspace(workspace)
                         .build();
@@ -112,7 +112,7 @@ class HarnessAgentIdTest {
                         HarnessAgent.builder()
                                 .name("t")
                                 .agentId("../evil")
-                                .legacySessionHistory(true)
+                                .journalEnabled(false)
                                 .model(stubModel())
                                 .workspace(workspace)
                                 .build(),

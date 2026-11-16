@@ -54,7 +54,7 @@ class AguiInputErrorTest {
 
         assertInputError(
                 events,
-                "Structured content blocks are only supported for AG-UI user messages",
+                "Structured content blocks are only supported for AG-UI user and tool messages",
                 false);
         verify(agent).getToolkit();
         verifyNoMoreInteractions(agent);

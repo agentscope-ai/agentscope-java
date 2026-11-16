@@ -20,9 +20,14 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.core.message.DocumentBlock;
+import io.agentscope.core.message.FileIdSource;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.ToolResultBlock;
+import io.agentscope.core.message.ToolResultState;
+import io.agentscope.core.message.URLSource;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.Model;
@@ -74,6 +79,65 @@ class MemoryFlushManagerTest {
         }
 
         assertTrue(model.inputs.isEmpty());
+    }
+
+    @Test
+    void flushMemories_keepsDocumentReferences() {
+        RecordingModel model = new RecordingModel();
+        RuntimeContext rc = RuntimeContext.builder().sessionId("session-1").build();
+
+        Msg userMessage =
+                Msg.builder()
+                        .role(MsgRole.USER)
+                        .content(
+                                List.of(
+                                        TextBlock.builder()
+                                                .text("summarize the attachment")
+                                                .build(),
+                                        DocumentBlock.builder()
+                                                .name("q3.pdf")
+                                                .mimeType("application/pdf")
+                                                .source(new FileIdSource("dashscope", "file-42"))
+                                                .build()))
+                        .build();
+        Msg toolMessage =
+                Msg.builder()
+                        .role(MsgRole.TOOL)
+                        .content(
+                                ToolResultBlock.builder()
+                                        .id("call-fetch")
+                                        .name("fetch_report")
+                                        .output(
+                                                List.of(
+                                                        TextBlock.builder().text("fetched").build(),
+                                                        DocumentBlock.builder()
+                                                                .name("spec.docx")
+                                                                .mimeType("application/msword")
+                                                                .source(
+                                                                        new URLSource(
+                                                                                "https://example.com/spec.docx"))
+                                                                .build()))
+                                        .state(ToolResultState.SUCCESS)
+                                        .build())
+                        .build();
+
+        try (WorkspaceManager workspaceManager = new WorkspaceManager(workspace)) {
+            MemoryFlushManager flushManager = new MemoryFlushManager(workspaceManager, model);
+
+            flushManager.flushMemories(rc, List.of(userMessage, toolMessage)).block();
+        }
+
+        String userPrompt = model.userPrompt(0);
+        assertTrue(
+                userPrompt.contains(
+                        "[document: q3.pdf, application/pdf, provider file id: file-42"
+                                + " (dashscope)]"),
+                "user-attached documents must reach the flush prompt: " + userPrompt);
+        assertTrue(
+                userPrompt.contains(
+                        "[document: spec.docx, application/msword, url:"
+                                + " https://example.com/spec.docx]"),
+                "tool-result documents must reach the flush prompt: " + userPrompt);
     }
 
     private static Msg message(MsgRole role, String text) {

@@ -34,6 +34,7 @@ import io.agentscope.core.agui.model.DocumentInputContent;
 import io.agentscope.core.agui.model.ImageInputContent;
 import io.agentscope.core.agui.model.InputContent;
 import io.agentscope.core.agui.model.InputContentDataSource;
+import io.agentscope.core.agui.model.InputContentFileSource;
 import io.agentscope.core.agui.model.InputContentUrlSource;
 import io.agentscope.core.agui.model.MessageContent;
 import io.agentscope.core.agui.model.RunAgentInput;
@@ -44,6 +45,7 @@ import io.agentscope.core.message.AudioBlock;
 import io.agentscope.core.message.Base64Source;
 import io.agentscope.core.message.DataBlock;
 import io.agentscope.core.message.DocumentBlock;
+import io.agentscope.core.message.FileIdSource;
 import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
@@ -325,6 +327,36 @@ class AguiMessageConverterTest {
     }
 
     @Test
+    void testConvertToolMessageWithDocumentBlocks() {
+        AguiMessage aguiMsg =
+                AguiMessage.blocksMessage(
+                        "msg-t20",
+                        "tool",
+                        List.of(
+                                new DocumentInputContent(
+                                        "doc-1",
+                                        new InputContentUrlSource(
+                                                "https://example.com/report.pdf",
+                                                "application/pdf"),
+                                        null)),
+                        null,
+                        "tc-1");
+
+        Msg msg = converter.toMsg(aguiMsg);
+
+        ToolResultBlock result = msg.getFirstContentBlock(ToolResultBlock.class);
+        assertNotNull(result);
+        assertEquals("tc-1", result.getId());
+        assertEquals(ToolResultState.SUCCESS, result.getState());
+        assertEquals(1, result.getOutput().size());
+        DocumentBlock document = assertInstanceOf(DocumentBlock.class, result.getOutput().get(0));
+        assertEquals("doc-1", document.getId());
+        assertNull(document.getName());
+        assertEquals("application/pdf", document.getMimeType());
+        assertTrue(document.getSource() instanceof URLSource);
+    }
+
+    @Test
     void testConvertToolMessageWithBlankErrorStaysSuccess() {
         AguiMessage aguiMsg =
                 new AguiMessage(
@@ -381,6 +413,48 @@ class AguiMessageConverterTest {
                 "tool message content must be text or parts, never null: " + json);
         assertEquals("[ERROR] sandbox unavailable", wire.get("error"));
         assertEquals("[ERROR] sandbox unavailable", wire.get("content"));
+    }
+
+    @Test
+    void testToolResultDocumentIsSerializedAsBlocks() {
+        Msg msg =
+                Msg.builder()
+                        .id("msg-t21")
+                        .role(MsgRole.TOOL)
+                        .content(
+                                ToolResultBlock.builder()
+                                        .id("tc-1")
+                                        .output(
+                                                List.of(
+                                                        TextBlock.builder()
+                                                                .text("generated report")
+                                                                .build(),
+                                                        DocumentBlock.builder()
+                                                                .id("doc-1")
+                                                                .name("report.pdf")
+                                                                .mimeType("application/pdf")
+                                                                .source(
+                                                                        URLSource.builder()
+                                                                                .url(
+                                                                                        "https://example.com/report.pdf")
+                                                                                .mimeType(
+                                                                                        "application/pdf")
+                                                                                .build())
+                                                                .build()))
+                                        .build())
+                        .build();
+
+        AguiMessage wire = converter.toAguiMessages(msg).get(0);
+
+        assertTrue(wire.getContent() instanceof MessageContent.Blocks);
+        List<InputContent> parts = ((MessageContent.Blocks) wire.getContent()).parts();
+        assertEquals(2, parts.size());
+        DocumentInputContent document = assertInstanceOf(DocumentInputContent.class, parts.get(0));
+        assertEquals("doc-1", document.id());
+        assertNull(document.metadata());
+        TextInputContent text = assertInstanceOf(TextInputContent.class, parts.get(1));
+        assertEquals("generated report", text.text());
+        assertNull(wire.getError());
     }
 
     @Test
@@ -1072,11 +1146,11 @@ class AguiMessageConverterTest {
     }
 
     @Test
-    void testConvertBlocksContentRejectedForNonUserMessage() {
+    void testConvertBlocksContentRejectedForNonUserAndNonToolMessage() {
         AguiMessage aguiMsg =
                 AguiMessage.blocksMessage(
                         "msg-1",
-                        "tool",
+                        "assistant",
                         List.of(new TextInputContent("not a valid tool content block")),
                         null,
                         "tc-1");
@@ -1152,7 +1226,7 @@ class AguiMessageConverterTest {
     }
 
     @Test
-    void testConvertDocumentInputContentWithUrlSource() {
+    void testConvertDocumentInputContentFromUrlSource() {
         AguiMessage aguiMsg =
                 AguiMessage.userMessage(
                         "msg-1",
@@ -1160,22 +1234,333 @@ class AguiMessageConverterTest {
                                 new DocumentInputContent(
                                         new InputContentUrlSource(
                                                 "https://example.com/doc.pdf", "application/pdf"),
-                                        Map.of("sourcePage", 3))));
+                                        Map.of("private", "private-metadata"))));
 
         Msg msg = converter.toMsg(aguiMsg);
 
-        DocumentBlock document = msg.getFirstContentBlock(DocumentBlock.class);
-        assertNotNull(document);
-        assertEquals("application/pdf", document.getMimeType());
-        assertEquals(Map.of("sourcePage", 3), document.getMetadata());
-
-        URLSource source = (URLSource) document.getSource();
-        assertEquals("https://example.com/doc.pdf", source.getUrl());
-        assertEquals("application/pdf", source.getMimeType());
+        DocumentBlock block = msg.getFirstContentBlock(DocumentBlock.class);
+        assertNotNull(block, "a document part must reach the AgentScope message");
+        assertTrue(block.getSource() instanceof URLSource);
+        assertEquals("https://example.com/doc.pdf", ((URLSource) block.getSource()).getUrl());
+        assertEquals("application/pdf", block.getMimeType());
+        assertEquals(Map.of("private", "private-metadata"), block.getMetadata());
     }
 
     @Test
-    void testConvertDocumentInputContentWithDataSource() {
+    void testDocumentBlockSurvivesOutboundConversion() {
+        Msg msg =
+                Msg.builder()
+                        .role(MsgRole.USER)
+                        .content(
+                                List.of(
+                                        TextBlock.builder().text("read this").build(),
+                                        DocumentBlock.builder()
+                                                .name("doc.pdf")
+                                                .mimeType("application/pdf")
+                                                .source(
+                                                        new URLSource(
+                                                                "https://example.com/doc.pdf"))
+                                                .build()))
+                        .build();
+
+        AguiMessage aguiMessage = converter.toAguiMessageList(List.of(msg)).get(0);
+
+        assertTrue(
+                aguiMessage.getContent() instanceof MessageContent.Blocks,
+                "a document must be carried as a structured part, not folded into text");
+        List<InputContent> parts = ((MessageContent.Blocks) aguiMessage.getContent()).parts();
+        assertEquals(2, parts.size());
+        // Attachments keep the outbound contract of the URL media path: parts first, text last.
+        assertTrue(parts.get(0) instanceof DocumentInputContent);
+        assertTrue(parts.get(1) instanceof TextInputContent);
+    }
+
+    @Test
+    void testFileIdDocumentTravelsAsProtocolFileSource() {
+        Msg msg =
+                Msg.builder()
+                        .role(MsgRole.USER)
+                        .content(
+                                DocumentBlock.builder()
+                                        .name("report.pdf")
+                                        .mimeType("application/pdf")
+                                        .source(new FileIdSource("dashscope", "file-1"))
+                                        .metadata(Map.of("file_parsing_strategy", "auto"))
+                                        .build())
+                        .build();
+
+        AguiMessage aguiMessage = converter.toAguiMessageList(List.of(msg)).get(0);
+
+        assertTrue(
+                aguiMessage.getContent() instanceof MessageContent.Blocks,
+                "a provider file id has a protocol representation as a file source");
+        List<InputContent> parts = ((MessageContent.Blocks) aguiMessage.getContent()).parts();
+        assertTrue(parts.get(0) instanceof DocumentInputContent);
+        DocumentInputContent document = (DocumentInputContent) parts.get(0);
+        InputContentFileSource source = (InputContentFileSource) document.source();
+        assertEquals("file-1", source.value());
+        assertEquals("dashscope", source.provider());
+        assertEquals("application/pdf", source.mimeType());
+        // Block metadata survives the export; a round-trip must not reset it.
+        assertEquals("auto", document.metadata().get("file_parsing_strategy"));
+    }
+
+    @Test
+    void testUrlDocumentMetadataSurvivesTheRoundTrip() {
+        Msg msg =
+                Msg.builder()
+                        .role(MsgRole.USER)
+                        .content(
+                                DocumentBlock.builder()
+                                        .name("report.pdf")
+                                        .source(
+                                                URLSource.builder()
+                                                        .url("https://example.com/report.pdf")
+                                                        .mimeType("application/pdf")
+                                                        .build())
+                                        .metadata(Map.of("file_parsing_strategy", "text_only"))
+                                        .build())
+                        .build();
+
+        AguiMessage exported = converter.toAguiMessageList(List.of(msg)).get(0);
+        Msg imported = converter.toMsg(exported);
+
+        DocumentBlock block = imported.getFirstContentBlock(DocumentBlock.class);
+        assertNotNull(block, "an exported document must import back as a DocumentBlock");
+        assertEquals("text_only", block.getMetadata().get("file_parsing_strategy"));
+    }
+
+    @Test
+    void fileSourceDocumentDropsNameButKeepsIdAndMimeTypeThroughJsonRoundTrip() {
+        Msg msg =
+                Msg.builder()
+                        .role(MsgRole.USER)
+                        .content(
+                                DocumentBlock.builder()
+                                        .id("doc-1")
+                                        .name("report.pdf")
+                                        .source(new FileIdSource("gemini", "files/abc123"))
+                                        .build())
+                        .build();
+
+        AguiMessage exported = converter.toAguiMessageList(List.of(msg)).get(0);
+        String json = io.agentscope.core.util.JsonUtils.getJsonCodec().toJson(exported);
+        AguiMessage wire =
+                io.agentscope.core.util.JsonUtils.getJsonCodec().fromJson(json, AguiMessage.class);
+        Msg imported = converter.toMsg(wire);
+
+        DocumentBlock block = imported.getFirstContentBlock(DocumentBlock.class);
+        assertNotNull(block, "a file-source document must survive a JSON round-trip");
+        assertEquals("doc-1", block.getId());
+        assertNull(block.getName(), "AG-UI has no document display-name field");
+        assertEquals("application/pdf", block.getMimeType());
+    }
+
+    @Test
+    void urlDocumentIdSurvivesJsonRoundTrip() {
+        Msg msg =
+                Msg.builder()
+                        .role(MsgRole.USER)
+                        .content(
+                                DocumentBlock.builder()
+                                        .id("doc-1")
+                                        .name("report.pdf")
+                                        .source(
+                                                URLSource.builder()
+                                                        .url("https://example.com/report.pdf")
+                                                        .mimeType("application/pdf")
+                                                        .build())
+                                        .build())
+                        .build();
+
+        AguiMessage exported = converter.toAguiMessageList(List.of(msg)).get(0);
+        String json = io.agentscope.core.util.JsonUtils.getJsonCodec().toJson(exported);
+        AguiMessage wire =
+                io.agentscope.core.util.JsonUtils.getJsonCodec().fromJson(json, AguiMessage.class);
+        Msg imported = converter.toMsg(wire);
+
+        DocumentBlock block = imported.getFirstContentBlock(DocumentBlock.class);
+        assertNotNull(block);
+        assertEquals("doc-1", block.getId());
+        assertNull(block.getName());
+    }
+
+    @Test
+    void base64DocumentIdSurvivesJsonRoundTrip() {
+        Msg msg =
+                Msg.builder()
+                        .role(MsgRole.USER)
+                        .content(
+                                DocumentBlock.builder()
+                                        .id("doc-1")
+                                        .name("report.pdf")
+                                        .source(
+                                                Base64Source.builder()
+                                                        .mediaType("application/pdf")
+                                                        .data("aGVsbG8=")
+                                                        .build())
+                                        .build())
+                        .build();
+
+        AguiMessage exported = converter.toAguiMessageList(List.of(msg)).get(0);
+        String json = io.agentscope.core.util.JsonUtils.getJsonCodec().toJson(exported);
+        AguiMessage wire =
+                io.agentscope.core.util.JsonUtils.getJsonCodec().fromJson(json, AguiMessage.class);
+        Msg imported = converter.toMsg(wire);
+
+        DocumentBlock block = imported.getFirstContentBlock(DocumentBlock.class);
+        assertNotNull(block);
+        assertEquals("doc-1", block.getId());
+        assertNull(block.getName());
+    }
+
+    @Test
+    void stringUserMetadataSurvivesUnchangedWhenTheNameIsDropped() {
+        Msg msg =
+                Msg.builder()
+                        .role(MsgRole.USER)
+                        .content(
+                                DocumentBlock.builder()
+                                        .name("report.pdf")
+                                        .source(
+                                                URLSource.builder()
+                                                        .url("https://example.com/report.pdf")
+                                                        .mimeType("application/pdf")
+                                                        .build())
+                                        .metadata(Map.of("agentscope.name", "custom-tag"))
+                                        .build())
+                        .build();
+
+        AguiMessage exported = converter.toAguiMessageList(List.of(msg)).get(0);
+        Msg imported = converter.toMsg(exported);
+
+        DocumentBlock block = imported.getFirstContentBlock(DocumentBlock.class);
+        assertNotNull(block);
+        assertNull(block.getName());
+        assertEquals("custom-tag", block.getMetadata().get("agentscope.name"));
+    }
+
+    @Test
+    void nonStringUserMetadataSurvivesUnchangedWhenTheNameIsDropped() {
+        Map<String, Object> metadata = new java.util.HashMap<>();
+        metadata.put("agentscope.name", 42);
+        Msg msg =
+                Msg.builder()
+                        .role(MsgRole.USER)
+                        .content(
+                                DocumentBlock.builder()
+                                        .name("report.pdf")
+                                        .source(
+                                                URLSource.builder()
+                                                        .url("https://example.com/report.pdf")
+                                                        .mimeType("application/pdf")
+                                                        .build())
+                                        .metadata(metadata)
+                                        .build())
+                        .build();
+
+        AguiMessage exported = converter.toAguiMessageList(List.of(msg)).get(0);
+        Msg imported = converter.toMsg(exported);
+
+        DocumentBlock block = imported.getFirstContentBlock(DocumentBlock.class);
+        assertNotNull(block);
+        assertNull(block.getName());
+        assertEquals(42, block.getMetadata().get("agentscope.name"));
+    }
+
+    @Test
+    void urlDocumentWithoutANameRoundTripsWithoutMetadata() {
+        Msg msg =
+                Msg.builder()
+                        .role(MsgRole.USER)
+                        .content(
+                                DocumentBlock.builder()
+                                        .source(
+                                                URLSource.builder()
+                                                        .url("https://example.com/report.pdf")
+                                                        .mimeType("application/pdf")
+                                                        .build())
+                                        .build())
+                        .build();
+
+        AguiMessage exported = converter.toAguiMessageList(List.of(msg)).get(0);
+        Msg imported = converter.toMsg(exported);
+
+        DocumentBlock block = imported.getFirstContentBlock(DocumentBlock.class);
+        assertNotNull(block);
+        assertNull(block.getName());
+        assertTrue(
+                block.getMetadata() == null || block.getMetadata().isEmpty(),
+                String.valueOf(block.getMetadata()));
+    }
+
+    @Test
+    void testConvertDocumentInputContentFromFileSource() {
+        AguiMessage aguiMsg =
+                AguiMessage.userMessage(
+                        "msg-1",
+                        List.of(
+                                new DocumentInputContent(
+                                        "doc-1",
+                                        new InputContentFileSource(
+                                                "file-abc", "gemini", "application/pdf"),
+                                        null)));
+
+        Msg msg = converter.toMsg(aguiMsg);
+
+        DocumentBlock block = msg.getFirstContentBlock(DocumentBlock.class);
+        assertNotNull(block, "a file-source document must reach the AgentScope message");
+        assertTrue(block.getSource() instanceof FileIdSource);
+        FileIdSource fileId = (FileIdSource) block.getSource();
+        assertEquals("file-abc", fileId.getFileId());
+        assertEquals("gemini", fileId.getProvider());
+        assertEquals("doc-1", block.getId());
+        assertNull(block.getName());
+    }
+
+    @Test
+    void testConvertDocumentInputContentFromFileSourceWithoutProvider() {
+        AguiMessage aguiMsg =
+                AguiMessage.userMessage(
+                        "msg-1",
+                        List.of(
+                                new DocumentInputContent(
+                                        new InputContentFileSource("file-abc", null, null), null)));
+
+        Msg msg = converter.toMsg(aguiMsg);
+
+        DocumentBlock block = msg.getFirstContentBlock(DocumentBlock.class);
+        assertNotNull(block, "a file-source document must reach the AgentScope message");
+        assertTrue(block.getSource() instanceof FileIdSource);
+        assertEquals("agui", ((FileIdSource) block.getSource()).getProvider());
+    }
+
+    @Test
+    void testDocumentSourceOptionalFieldsAreOmittedFromWireJson() {
+        AguiMessage aguiMsg =
+                AguiMessage.userMessage(
+                        "msg-schema",
+                        List.of(
+                                new DocumentInputContent(
+                                        new InputContentUrlSource("https://example.com/report.pdf"),
+                                        null),
+                                new DocumentInputContent(
+                                        new InputContentFileSource("file-abc", null, null), null)));
+
+        String json = JsonUtils.getJsonCodec().toJson(aguiMsg);
+
+        assertFalse(json.contains("\"name\""), json);
+        assertFalse(json.contains("\"mimeType\""), json);
+        assertFalse(json.contains("\"provider\""), json);
+
+        AguiMessage parsed = JsonUtils.getJsonCodec().fromJson(json, AguiMessage.class);
+        List<InputContent> parsedParts = ((MessageContent.Blocks) parsed.getContent()).parts();
+        assertNull(((DocumentInputContent) parsedParts.get(0)).id());
+        assertNull(((DocumentInputContent) parsedParts.get(1)).id());
+    }
+
+    @Test
+    void testConvertDocumentInputContentFromDataSource() {
         AguiMessage aguiMsg =
                 AguiMessage.userMessage(
                         "msg-1",
@@ -1186,14 +1571,14 @@ class AguiMessageConverterTest {
 
         Msg msg = converter.toMsg(aguiMsg);
 
-        DocumentBlock document = msg.getFirstContentBlock(DocumentBlock.class);
-        assertNotNull(document);
-        assertEquals("application/pdf", document.getMimeType());
-        assertEquals(Map.of("sourcePage", 3), document.getMetadata());
-
-        Base64Source source = (Base64Source) document.getSource();
+        DocumentBlock block = msg.getFirstContentBlock(DocumentBlock.class);
+        assertNotNull(block, "an inline document must reach the AgentScope message");
+        assertTrue(block.getSource() instanceof Base64Source);
+        Base64Source source = (Base64Source) block.getSource();
         assertEquals("application/pdf", source.getMediaType());
         assertEquals("dGVzdA==", source.getData());
+        assertEquals("application/pdf", block.getMimeType());
+        assertEquals(Map.of("sourcePage", 3), block.getMetadata());
     }
 
     @Test

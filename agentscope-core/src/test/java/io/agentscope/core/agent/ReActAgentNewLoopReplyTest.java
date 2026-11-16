@@ -60,9 +60,11 @@ import io.agentscope.core.state.AgentState;
 import io.agentscope.core.tool.AgentTool;
 import io.agentscope.core.tool.ToolCallParam;
 import io.agentscope.core.tool.Toolkit;
+import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
@@ -715,6 +717,11 @@ class ReActAgentNewLoopReplyTest {
         AtomicReference<List<ToolSchema>> summaryTools = new AtomicReference<>();
         MiddlewareBase middleware =
                 new MiddlewareBase() {
+                    @Override
+                    public Set<ExtensionPoint> activePoints() {
+                        return EnumSet.of(ExtensionPoint.ON_MODEL_CALL);
+                    }
+
                     @Override
                     public Flux<AgentEvent> onModelCall(
                             Agent agent,

@@ -26,7 +26,7 @@ import io.agentscope.core.middleware.ReasoningInput;
 import io.agentscope.core.model.ChatModelBase;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.GenerateOptions;
-import io.agentscope.core.model.ModelRegistry;
+import io.agentscope.core.model.Model;
 import io.agentscope.core.model.ToolSchema;
 import io.agentscope.harness.agent.memory.MemoryConfig;
 import io.agentscope.harness.agent.memory.MemoryFlushManager;
@@ -36,7 +36,6 @@ import io.agentscope.harness.agent.workspace.WorkspaceManager;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.List;
-import java.util.UUID;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
@@ -129,8 +128,6 @@ class HarnessCompactionFlushPromptTest {
         RecordingModel defaultModel = new RecordingModel(false);
         RecordingModel perCallModel = new RecordingModel(overflow);
         RecordingModel auxiliary = new RecordingModel(false);
-        String modelId = "compaction-flush-" + UUID.randomUUID();
-        ModelRegistry.register(modelId, perCallModel);
         try (HarnessAgent agent =
                 HarnessAgent.builder()
                         .name("per-call-flush-prompt-test")
@@ -157,10 +154,8 @@ class HarnessCompactionFlushPromptTest {
                             message(MsgRole.ASSISTANT, "Decision recorded."),
                             message(MsgRole.USER, "What did we decide?"));
             RuntimeContext ctx =
-                    RuntimeContext.builder()
-                            .sessionId("per-call-prompt-session")
-                            .modelId(modelId)
-                            .build();
+                    RuntimeContext.builder().sessionId("per-call-prompt-session").build();
+            ctx.put(Model.class, perCallModel);
             if (streaming) {
                 agent.streamEvents(history, ctx).collectList().block(Duration.ofSeconds(20));
             } else {
@@ -178,8 +173,6 @@ class HarnessCompactionFlushPromptTest {
             Msg extractionPrompt = flushModel.inputs.get(flushCall).get(0);
             assertEquals(MsgRole.SYSTEM, extractionPrompt.getRole());
             assertEquals(prompt, extractionPrompt.getTextContent());
-        } finally {
-            ModelRegistry.unregister(modelId);
         }
     }
 

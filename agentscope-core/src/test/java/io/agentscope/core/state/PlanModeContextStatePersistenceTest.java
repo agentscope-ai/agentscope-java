@@ -43,11 +43,11 @@ class PlanModeContextStatePersistenceTest {
     }
 
     @Test
-    void legacyJsonWithoutPlanModeDeserializesToDefault() {
-        String legacy =
-                "{\"session_id\":\"s1\",\"summary\":\"\",\"context\":[],\"reply_id\":\"r1\","
-                        + "\"cur_iter\":0,\"shutdown_interrupted\":false}";
-        AgentState restored = AgentState.fromJsonString(legacy);
+    void jsonWithoutOptionalPlanModeDeserializesToDefault() {
+        String json =
+                "{\"session_id\":\"s1\",\"thread_id\":\"main\",\"summary\":\"\",\"context\":[],\"reply_id\":\"r1\","
+                    + "\"cur_iter\":0,\"shutdown_interrupted\":false}";
+        AgentState restored = AgentState.fromJsonString(json);
         assertFalse(restored.getPlanModeContext().isPlanActive());
     }
 }

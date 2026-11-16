@@ -350,6 +350,89 @@ class ToolCallsAccumulatorTest {
     }
 
     @Test
+    @DisplayName("Should serialize parsed input as content when no argument fragments arrived")
+    void testInputOnlyCompleteBlockSerializesInputAsContent() {
+        // A provider that emits the complete tool call in one chunk without streamed argument
+        // fragments (content unset, parsed input only). Fabricating "{}" here would mask the
+        // intact input for every content-first consumer (required-parameter validation,
+        // request builders, compaction).
+        Map<String, Object> input = new HashMap<>();
+        input.put("query", "beijing");
+        accumulator.add(ToolUseBlock.builder().id("call_1").name("search").input(input).build());
+
+        List<ToolUseBlock> result = accumulator.buildAllToolCalls();
+        assertEquals(1, result.size());
+
+        ToolUseBlock built = result.get(0);
+        assertTrue(
+                built.getContent() != null && built.getContent().contains("beijing"),
+                "content: " + built.getContent());
+        assertEquals(input, built.getInput());
+    }
+
+    @Test
+    @DisplayName("Should fall back to empty-object content when input cannot be serialized")
+    void testUnserializableInputFallsBackToEmptyObjectContent() {
+        // A serialization failure must never propagate out of the accumulator and fail the
+        // reply stream: fall back to "{}" (the resolveToolCallArgsJson recovery) while the
+        // input map remains available to a call that passes schema validation (a
+        // required-parameter tool is rejected by validation before execution).
+        Map<String, Object> input = new HashMap<>();
+        input.put("query", "beijing");
+        input.put("bad", new Object());
+        accumulator.add(ToolUseBlock.builder().id("call_1").name("search").input(input).build());
+
+        List<ToolUseBlock> result = accumulator.buildAllToolCalls();
+        assertEquals(1, result.size());
+
+        ToolUseBlock built = result.get(0);
+        assertEquals("{}", built.getContent());
+        assertEquals(input, built.getInput());
+    }
+
+    @Test
+    @DisplayName("Should keep truncated input-only calls with complete args executable")
+    void testTruncatedInputOnlyBlockWithArgsIsNotMalformed() {
+        // An output-limit stop after the parsed input already arrived complete: the arguments
+        // are whole, so the call must stay executable — truncation alone is not malformation.
+        Map<String, Object> input = new HashMap<>();
+        input.put("query", "beijing");
+        accumulator.add(ToolUseBlock.builder().id("call_1").name("search").input(input).build());
+
+        ToolUseBlock built = accumulator.buildAllToolCalls(true).get(0);
+
+        assertFalse(built.hasMalformedArguments());
+        assertTrue(
+                built.getContent() != null && built.getContent().contains("beijing"),
+                "content: " + built.getContent());
+    }
+
+    @Test
+    @DisplayName("Should mark argument-less input-only start malformed when truncated")
+    void testTruncatedInputOnlyBlockWithoutArgsIsMalformed() {
+        // Without fragments or parsed arguments, an output-limit stop cannot establish that
+        // the empty tool-call start was a complete no-arg call.
+        accumulator.add(ToolUseBlock.builder().id("call_1").name("search").build());
+
+        ToolUseBlock built = accumulator.buildAllToolCalls(true).get(0);
+
+        assertTrue(built.hasMalformedArguments());
+    }
+
+    @Test
+    @DisplayName("Should keep a true no-argument call unmarked")
+    void testNoArgInputOnlyBlockStaysUnmarked() {
+        // The other cell of the matrix: no fragments and no arguments on a completed stream
+        // is a legitimate no-arg call — "{}" content, no malformed marker.
+        accumulator.add(ToolUseBlock.builder().id("call_1").name("search").build());
+
+        ToolUseBlock built = accumulator.buildAllToolCalls().get(0);
+
+        assertFalse(built.hasMalformedArguments());
+        assertEquals("{}", built.getContent());
+    }
+
+    @Test
     @DisplayName("Should produce valid JSON content when multiple chunks are interrupted")
     void testInterruptedMultiChunkStreamingProducesValidJsonContent() {
         // First chunk starts the arguments

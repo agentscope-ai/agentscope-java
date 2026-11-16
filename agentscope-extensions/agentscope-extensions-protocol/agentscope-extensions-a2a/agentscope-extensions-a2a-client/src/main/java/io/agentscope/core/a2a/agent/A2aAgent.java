@@ -52,6 +52,7 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BiConsumer;
 import java.util.function.Function;
@@ -60,6 +61,7 @@ import org.a2aproject.sdk.client.Client;
 import org.a2aproject.sdk.client.ClientBuilder;
 import org.a2aproject.sdk.client.ClientEvent;
 import org.a2aproject.sdk.client.config.ClientConfig;
+import org.a2aproject.sdk.client.http.A2AHttpClientFactory;
 import org.a2aproject.sdk.client.transport.jsonrpc.JSONRPCTransport;
 import org.a2aproject.sdk.client.transport.jsonrpc.JSONRPCTransportConfig;
 import org.a2aproject.sdk.spec.A2AClientException;
@@ -73,6 +75,7 @@ import reactor.core.Disposable;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.FluxSink;
 import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Schedulers;
 import reactor.util.context.ContextView;
 
 /**
@@ -361,7 +364,11 @@ public class A2aAgent extends AgentBase {
                             + ". Check that the agent name matches the name registered on the"
                             + " server.");
         }
-        Client client = buildA2aClient(agentCard);
+        StreamTrackingHttpClient httpClient =
+                this.a2aAgentConfig.clientTransports().isEmpty()
+                        ? new StreamTrackingHttpClient(A2AHttpClientFactory.create())
+                        : null;
+        Client client = buildA2aClient(agentCard, httpClient);
         LoggerUtil.debug(
                 log, "[{}] A2aAgent build A2a Client with Agent Card: {}.", requestId, agentCard);
         A2aCall call =
@@ -369,8 +376,10 @@ public class A2aAgent extends AgentBase {
                         requestId,
                         session,
                         client,
+                        httpClient,
                         new ClientEventContext(requestId, this),
-                        isStreaming(agentCard));
+                        isStreaming(agentCard),
+                        new AtomicBoolean());
         runningCalls.put(session, call);
         return call;
     }
@@ -449,6 +458,42 @@ public class A2aAgent extends AgentBase {
 
     private void endCall(A2aCall call) {
         runningCalls.remove(call.session(), call);
+        // The JSON-RPC transport does not close its streams, so a cancelled call would keep
+        // receiving the events of the remote task.
+        if (null != call.httpClient()) {
+            call.httpClient().cancelStreams();
+        }
+        Task task = call.eventContext().getTask();
+        if (call.cancelled().get() && null != task) {
+            // Nobody waits for the reply anymore, so stop the remote work too. Off the cancelling
+            // thread, as the request blocks; the client is closed once it is done.
+            Schedulers.boundedElastic().schedule(() -> cancelAndClose(call, task.id()));
+            return;
+        }
+        closeClient(call);
+    }
+
+    private void cancelAndClose(A2aCall call, String taskId) {
+        try {
+            call.client().cancelTask(new CancelTaskParams(taskId), null);
+            LoggerUtil.debug(
+                    log,
+                    "[{}] A2aAgent cancelled task {} of a cancelled call.",
+                    call.requestId(),
+                    taskId);
+        } catch (RuntimeException e) {
+            LoggerUtil.warn(
+                    log,
+                    "[{}] A2aAgent failed to cancel task {} of a cancelled call: {}",
+                    call.requestId(),
+                    taskId,
+                    e.getMessage());
+        } finally {
+            closeClient(call);
+        }
+    }
+
+    private void closeClient(A2aCall call) {
         call.client().close();
         LoggerUtil.debug(log, "[{}] A2aAgent close A2a Client.", call.requestId());
     }
@@ -537,11 +582,15 @@ public class A2aAgent extends AgentBase {
                 && agentCard.capabilities().streaming();
     }
 
-    private Client buildA2aClient(AgentCard agentCard) {
+    /**
+     * Builds the client of a call. {@code httpClient} is the HTTP client of the default JSON-RPC
+     * transport, {@code null} when the transports were configured.
+     */
+    private Client buildA2aClient(AgentCard agentCard, StreamTrackingHttpClient httpClient) {
         ClientBuilder builder = Client.builder(agentCard);
-        if (this.a2aAgentConfig.clientTransports().isEmpty()) {
+        if (null != httpClient) {
             // Default Add The Basic JSON-RPC Transport
-            builder.withTransport(JSONRPCTransport.class, new JSONRPCTransportConfig());
+            builder.withTransport(JSONRPCTransport.class, new JSONRPCTransportConfig(httpClient));
         } else {
             this.a2aAgentConfig.clientTransports().forEach(builder::withTransport);
         }
@@ -557,8 +606,13 @@ public class A2aAgent extends AgentBase {
                     ClientEventContext eventContext = call.eventContext();
                     Client client = call.client();
                     eventContext.setSink(sink);
+                    sink.onCancel(() -> call.cancelled().set(true));
                     BiConsumer<ClientEvent, AgentCard> a2aEventConsumer =
                             (event, agentCard) -> {
+                                if (call.cancelled().get()) {
+                                    // Events still in flight when the call was cancelled.
+                                    return;
+                                }
                                 LoggerUtil.trace(
                                         log,
                                         "[{}] A2aAgent receive event {}: ",
@@ -620,8 +674,10 @@ public class A2aAgent extends AgentBase {
             String requestId,
             Session session,
             Client client,
+            StreamTrackingHttpClient httpClient,
             ClientEventContext eventContext,
-            boolean streaming) {}
+            boolean streaming,
+            AtomicBoolean cancelled) {}
 
     /** A session of the agent. */
     private record Session(String userId, String sessionId) {}

@@ -66,6 +66,8 @@ agent.call(msg, RuntimeContext.builder()
 - 没快照 → 按 `WorkspaceSpec` 全量初始化（冷启动）
 - 快照读取或恢复失败 → 本次 `call()` 报错，可重试；不会静默丢弃快照状态
 
+恢复时已经打开的快照归档流，即使工作区初始化失败也会关闭。
+
 快照存到哪里取决于你配的 `snapshotSpec`：
 
 | 选项 | 适合 |
@@ -74,7 +76,7 @@ agent.call(msg, RuntimeContext.builder()
 | `LocalSnapshotSpec` | 宿主本地文件（单机长期运行） |
 | `OssSnapshotSpec` | OSS / S3 兼容存储（多副本） |
 | `RedisSnapshotSpec` | Redis（低延迟、小工作区） |
-| `JdbcSnapshotSpec` | JDBC BLOB（已有关系型数据库） |
+| `JdbcSnapshotSpec` | MySQL / JDBC BLOB（已有关系型数据库） |
 
 ```java
 .filesystem(new DockerFilesystemSpec()
@@ -188,6 +190,14 @@ SandboxContext callCtx = SandboxContext.builder()
 | **AgentRun** | 阿里云托管沙箱（函数计算 FC 3.0），实例级 NAS / OSS 动态挂载，中国大陆区域低延迟。在 Harness 里和 Docker / K8s / Daytona / E2B 等后端等价对待，模板配置 / RAM 权限 / NAS-first 等接入细节归在 integration 文档下 |
 
 所有后端实现同一组接口，agent 代码、工具集、`AGENTS.md` 都不用变。
+
+### 工作区根目录
+
+系统提示词中的沙箱目录说明和文件工具的路径归一化使用当前调用绑定的沙箱工作区根目录。恢复旧会话时保留已保存的目录，不改用 Agent 的新配置。根目录内的绝对路径会转换为工作区相对路径，其他路径继续受现有文件系统策略约束。
+
+E2B 默认根目录是 `/home/user`，可通过 `new E2bFilesystemSpec().workspaceRoot("/home/user/project")` 修改，也可以提供设置了根目录的 `WorkspaceSpec`。如果显式提供两者，根目录必须一致（忽略末尾斜杠），否则构建沙箱上下文时报错。有效工作区配置通过复制生成，不修改调用者提供的对象，并保留其中的 entries 和 environment。恢复根目录字段不一致的旧 E2B 状态时，以已保存的实际执行目录为准，只对齐 manifest，不移动文件。Docker 默认目录仍为 `/workspace`。
+
+如果提供 `WorkspaceSpec` 只是为了配置 entries 或 environment，没有调用 `setRoot(...)`，其默认的 `/workspace` 不算显式配置，会沿用 E2B 的执行根目录。但是，主动调用 `setRoot("/workspace")` 属于显式选择，会与另一个不同的显式 `workspaceRoot(...)` 配置产生冲突。
 
 ## 运行时镜像约束
 
