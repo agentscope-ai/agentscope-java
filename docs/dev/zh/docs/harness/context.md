@@ -368,11 +368,26 @@ builder.contextPolicy(new ContextPolicy(
 | --- | --- |
 | `callId()`、`purpose()`、`model()` | 标识这次模型请求准备及其用途、模型。`callId` 不是 `sessionId`、`turnId` 或 `runId` |
 | `estimatedInputTokens()`、`inputLimit()` | 整个请求的估算输入量与最终可用输入上限；不是供应商账单中的实际 token 用量。`countingMethod()` 和 `exact()` 说明计数方式及是否精确 |
-| `items()` | 本轮保留的消息、工具 Schema 和材料元数据。材料可通过 `sourceId`、`revision`、`contentHash` 核对来源与版本，通过 `placement` 查看放置位置；消息和工具条目的版本、位置可能为空。`contentChars()` 给出被计算哈希的那段内容的长度（UTF-16 码元），用于比较各来源；`0` 表示未记录长度 |
+| `items()` | 本轮保留的消息、工具 Schema 和材料元数据。材料可通过 `sourceId`、`revision`、`contentHash` 核对来源与版本，通过 `placement` 查看放置位置；消息和工具条目的版本、位置可能为空。`contentChars()` 给出被计算哈希的那段内容的长度（UTF-16 码元），用于比较各来源，也可用于加总整个请求；`0` 表示未记录长度 |
 | `transforms()` | 准备期间做过的处理，例如 `tool_result_offload`（大结果卸载）、`history_compaction`（历史压缩处理），以及材料省略或来源失败记录 |
 | `validation()` | `passed` 为准备通过；`budget_exceeded` 为超出预算；`invalid_tool_pairs` 为工具调用与结果配对异常；`state_conflict` / `history_conflict` 为准备期间状态或历史发生冲突；`build_failed` 为其他构建失败 |
 
-`items()` 不是可加划分。每个保留材料也会出现在渲染它的消息条目里：`SYSTEM` 放置的材料并入 `system_input`，其余进入一条合成消息。因此对所有条目求和会重复计算材料，`contentChars()` 适合比较或排序单个来源，不要用来加总整个请求。消息与工具条目记的是序列化 JSON 的长度，短消息会带有结构开销，媒体块计入编码后大小而不是 token 成本。合并后的 system prompt 无法做可加归因。
+`items()` 是可加划分：每个贡献只出现一次，因此对 `contentChars()` 求和就是本轮请求的实测内容总量。合并后的系统消息和渲染 `ContextItem` 来源的材料消息不单独列出——它们的底层来源已经列出，求和不重复。记录下来的系统输入列表为空时，表示全部系统内容都来自材料，已经按材料计过一次。
+
+`sourceType()` 标明分段：`system_prompt` 为合并前的基础系统消息，`tool_mcp` / `tool_system` 为按来源区分的工具 Schema，`message_user` / `message_assistant` / `message_tool` / `message_summary` 为对话消息，`runtime_projection` 为尚未进入正式历史的注入状态，材料则沿用 `ContextItem` 的 kind。已持久化进历史的合成通知（任务投递、后台事件）此时属于对话内容，归入 `message_user`。
+
+`ContextUsage.breakdown(manifest)` 把这些分段汇总成展示类别，按大小从大到小排列，并省略没有记录长度的类别：
+
+| `Share.source()` | 汇总了哪些分段 |
+| --- | --- |
+| `system_prompt` | `system_prompt` 以及所有放在 `SYSTEM` 的材料 |
+| `skills` | `skills` |
+| `mcp_tool_schemas` | `tool_mcp` |
+| `system_tool_schemas` | `tool_system` |
+| `messages` | `message_user`、`message_assistant`、`message_tool`、`message_summary` |
+| `other` | 其余全部 kind：运行时状态、参考材料、投影、日期 |
+
+有三点边界。消息、工具与 `system_prompt` 条目记的是序列化 JSON 的长度，短消息会带有结构开销，媒体块计入编码后大小而不是 token 成本；材料条目记的是拼装前的原文长度，渲染时加的包裹标记不计入任何分段；在本轮工具配置下查不到的工具（按次注入的 Schema，或没有工具表的 agent）归入 `tool_system`，不做猜测。
 
 例如，前文注册的 `project-guide` 来源返回了 `login` 块，它在清单中的 ID 是 `source/project-guide/login`。如果在 `items()` 中找到它，版本是 `guide-v3`，且校验通过，说明这份约定已经纳入本轮准备好的请求；若回答仍不符合约定，应进一步检查内容和指令是否清晰。
 

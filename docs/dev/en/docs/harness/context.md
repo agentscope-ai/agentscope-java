@@ -351,11 +351,26 @@ Start with `validation()` and the budget, then find the material by `sourceId()`
 | --- | --- |
 | `callId()`, `purpose()`, `model()` | Identifies this model request preparation, its purpose, and model. `callId` is separate from session, turn, and run IDs |
 | `estimatedInputTokens()`, `inputLimit()` | Estimated size of the entire input and its effective input limit, not provider usage or billing. `countingMethod()` and `exact()` describe the count |
-| `items()` | Retained messages, tool schemas, and material metadata. For materials, use `sourceId`, `revision`, and `contentHash` to identify the source and version, and `placement` to check placement. Message and tool entries may have null revisions and placements. `contentChars()` reports the size of that hashed content in UTF-16 code units, for comparing sources; `0` means the size was not recorded |
+| `items()` | Retained messages, tool schemas, and material metadata. For materials, use `sourceId`, `revision`, and `contentHash` to identify the source and version, and `placement` to check placement. Message and tool entries may have null revisions and placements. `contentChars()` reports the size of that hashed content in UTF-16 code units, for comparing sources and totalling the request; `0` means the size was not recorded |
 | `transforms()` | Preparation actions, including `tool_result_offload`, `history_compaction`, budget omissions, and source failures |
 | `validation()` | `passed`: preparation succeeded; `budget_exceeded`: insufficient budget; `invalid_tool_pairs`: malformed tool exchanges; `state_conflict` / `history_conflict`: state or history changed during preparation; `build_failed`: another build failure |
 
-`items()` is not an additive partition. Every retained material also appears in the message entry that renders it: `SYSTEM` materials inside `system_input`, the rest in a synthetic message. Summing all entries therefore double-counts materials, so use `contentChars()` to compare or rank individual sources, not to total the request. Message and tool entries measure serialized JSON, so short messages carry structural overhead and media blocks contribute their encoded size rather than their token cost. The merged system prompt cannot be attributed additively.
+`items()` is an additive partition: each contribution appears exactly once, so `contentChars()` totals the request's measured content across entries. The merged system message and the material messages that render `ContextItem` sources are not listed separately — their underlying sources are, which keeps the sum free of double counting. An empty recorded system-input list means every system input came from a material and is already counted as that material.
+
+`sourceType()` names the segment: `system_prompt` for the pre-merge system inputs, `tool_mcp` / `tool_system` for tool schemas by origin, `message_user` / `message_assistant` / `message_tool` / `message_summary` for conversation turns, `runtime_projection` for injected state that is not yet part of the canonical history, and the `ContextItem` kind for every material. Durable synthetic notices persisted into history — task deliveries, background events — appear as `message_user` because they are conversation content at that point.
+
+`ContextUsage.breakdown(manifest)` groups these into display categories, ordered largest first and omitting categories with no recorded size:
+
+| `Share.source()` | Segments rolled in |
+| --- | --- |
+| `system_prompt` | `system_prompt` plus every material placed in `SYSTEM` |
+| `skills` | `skills` |
+| `mcp_tool_schemas` | `tool_mcp` |
+| `system_tool_schemas` | `tool_system` |
+| `messages` | `message_user`, `message_assistant`, `message_tool`, `message_summary` |
+| `other` | every remaining kind: runtime state, reference materials, projections, date |
+
+Three limits apply. Message, tool, and `system_prompt` entries measure serialized content JSON, so short messages carry structural overhead and media blocks contribute their encoded size rather than their token cost. Material entries measure their source text, so the wrapper markup added when they are rendered is not attributed to any segment. A tool name that does not resolve under this request's tool configuration — a schema-only injection, or an agent that exposes no toolkit — is reported as `tool_system` rather than guessed.
 
 For example, the `format` block from the earlier `change-record` source has the ID `source/change-record/format`. If it appears in `items()` and validation passed, the material was included in the prepared request. Compare its revision or hash across requests to check which version was used. If the answer still ignores it, inspect the content and instructions themselves.
 

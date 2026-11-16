@@ -53,8 +53,17 @@ public record ContextManifest(
     }
 
     /**
-     * One contribution to the assembled request.
+     * One segment of the assembled request.
      *
+     * <p>Segments are disjoint: every contribution is listed exactly once, so {@code contentChars}
+     * adds up across items. The merged system message and the rendered material messages are not
+     * listed separately — their underlying sources are, which keeps the totals additive. Use
+     * {@link ContextUsage#breakdown(ContextManifest)} to roll the segments into display categories.
+     *
+     * @param sourceType segment category: {@code system_prompt}, {@code tool_mcp},
+     *     {@code tool_system}, {@code message_user}, {@code message_assistant},
+     *     {@code message_tool}, {@code message_summary}, {@code runtime_projection}, or a
+     *     {@link ContextItem#kind()}
      * @param contentChars number of UTF-16 code units (the value of {@link String#length()}) in
      *     the string {@code contentHash} was computed over; {@code 0} when the size was not
      *     recorded. This is a source size, not a token count or the size of the rendered request

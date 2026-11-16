@@ -38,10 +38,14 @@ import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.Model;
 import io.agentscope.core.model.ToolSchema;
 import io.agentscope.core.state.AgentState;
+import io.agentscope.core.tool.Toolkit;
 import io.agentscope.core.tool.builtin.TodoTools;
 import io.agentscope.core.tool.builtin.TodoTools.TodoItem;
+import io.agentscope.core.tool.mcp.McpClientWrapper;
+import io.agentscope.core.tool.mcp.McpTool;
 import io.agentscope.core.util.JsonUtils;
 import io.agentscope.harness.agent.memory.compaction.CompactionConfig;
+import io.agentscope.harness.agent.memory.compaction.ConversationCompactor;
 import io.agentscope.harness.agent.middleware.CompactionMiddleware;
 import java.util.ArrayList;
 import java.util.List;
@@ -204,6 +208,270 @@ class HarnessContextBuilderTest {
                         .findFirst()
                         .orElseThrow()
                         .contentChars());
+        assertEquals("tool_system", itemFor(items, "lookup").sourceType());
+        assertEquals("message_user", itemFor(items, userMsg.getId()).sourceType());
+    }
+
+    @Test
+    void toolOriginsAreSplitBetweenMcpAndFramework() {
+        var manifests = new ArrayList<ContextManifest>();
+        var policy =
+                new ContextPolicy(0, 0, 0, ContextTokenEstimator.approximate(), manifests::add);
+        var rc = RuntimeContext.builder().agentState(AgentState.builder().build()).build();
+        McpTool mcp =
+                new McpTool(
+                        "mcp_search",
+                        "search",
+                        "search the web",
+                        Map.of(),
+                        null,
+                        mock(McpClientWrapper.class),
+                        null,
+                        "search-server",
+                        true,
+                        null);
+        var toolkit = new Toolkit();
+        toolkit.registerAgentTool(mcp);
+        var agent = mock(Agent.class);
+        when(agent.getToolkit()).thenReturn(toolkit);
+        var request =
+                new ModelCallInput(
+                        List.of(Msg.builder().role(MsgRole.USER).textContent("hi").build()),
+                        List.of(toolSchema("mcp_search"), toolSchema("shell")),
+                        GenerateOptions.builder().maxTokens(20).build(),
+                        model(100000));
+        new HarnessContextBuilder(policy, null, null)
+                .prepare(agent, rc, request, "c", ModelRequestPreparer.Purpose.REASONING)
+                .block();
+        var items = manifests.get(0).items();
+        assertEquals("tool_mcp", itemFor(items, "mcp_search").sourceType());
+        assertEquals("tool_system", itemFor(items, "shell").sourceType());
+    }
+
+    @Test
+    void messagesAreSplitByRole() {
+        var manifests = new ArrayList<ContextManifest>();
+        var policy =
+                new ContextPolicy(0, 0, 0, ContextTokenEstimator.approximate(), manifests::add);
+        var rc = RuntimeContext.builder().agentState(AgentState.builder().build()).build();
+        Msg user = Msg.builder().role(MsgRole.USER).textContent("hello").build();
+        Msg call =
+                Msg.builder()
+                        .role(MsgRole.ASSISTANT)
+                        .content(
+                                ToolUseBlock.builder().id("t").name("read").input(Map.of()).build())
+                        .build();
+        Msg result =
+                Msg.builder()
+                        .role(MsgRole.TOOL)
+                        .content(
+                                ToolResultBlock.of(
+                                        "t", "read", TextBlock.builder().text("ok").build()))
+                        .build();
+        var request =
+                new ModelCallInput(
+                        List.of(user, call, result),
+                        List.of(),
+                        GenerateOptions.builder().maxTokens(20).build(),
+                        model(100000));
+        new HarnessContextBuilder(policy, null, null)
+                .prepare(
+                        mock(Agent.class), rc, request, "c", ModelRequestPreparer.Purpose.REASONING)
+                .block();
+        var items = manifests.get(0).items();
+        assertEquals("message_user", itemFor(items, user.getId()).sourceType());
+        assertEquals("message_assistant", itemFor(items, call.getId()).sourceType());
+        assertEquals("message_tool", itemFor(items, result.getId()).sourceType());
+    }
+
+    @Test
+    void compactionSummaryIsNotReportedAsUserMessage() {
+        var manifests = new ArrayList<ContextManifest>();
+        var policy =
+                new ContextPolicy(0, 0, 0, ContextTokenEstimator.approximate(), manifests::add);
+        var rc = RuntimeContext.builder().agentState(AgentState.builder().build()).build();
+        Msg summary =
+                Msg.builder()
+                        .role(MsgRole.USER)
+                        .name(ConversationCompactor.SUMMARY_MSG_NAME)
+                        .textContent("condensed history")
+                        .build();
+        var request =
+                new ModelCallInput(
+                        List.of(summary),
+                        List.of(),
+                        GenerateOptions.builder().maxTokens(20).build(),
+                        model(100000));
+        new HarnessContextBuilder(policy, null, null)
+                .prepare(
+                        mock(Agent.class), rc, request, "c", ModelRequestPreparer.Purpose.REASONING)
+                .block();
+        assertEquals(
+                "message_summary", itemFor(manifests.get(0).items(), summary.getId()).sourceType());
+    }
+
+    @Test
+    void systemPromptIsMeasuredApartFromMaterials() {
+        var manifests = new ArrayList<ContextManifest>();
+        var policy =
+                new ContextPolicy(0, 0, 0, ContextTokenEstimator.approximate(), manifests::add);
+        var rc = RuntimeContext.builder().agentState(AgentState.builder().build()).build();
+        rc.put(
+                WorkspaceContextMaterials.class,
+                new WorkspaceContextMaterials(
+                        List.of(
+                                new ContextItem(
+                                        "memory", "workspace:MEMORY.md", "remember this"))));
+        Msg system = Msg.builder().role(MsgRole.SYSTEM).textContent("base prompt").build();
+        Msg user = Msg.builder().role(MsgRole.USER).textContent("hi").build();
+        var request =
+                new ModelCallInput(
+                        List.of(system, user),
+                        List.of(),
+                        GenerateOptions.builder().maxTokens(20).build(),
+                        model(100000));
+        new HarnessContextBuilder(policy, null, null)
+                .prepare(
+                        mock(Agent.class), rc, request, "c", ModelRequestPreparer.Purpose.REASONING)
+                .block();
+        var items = manifests.get(0).items();
+        assertEquals(
+                JsonUtils.getJsonCodec().toJson(system.getContent()).length(),
+                itemFor(items, system.getId()).contentChars());
+        assertEquals("system_prompt", itemFor(items, system.getId()).sourceType());
+        assertEquals(
+                1,
+                items.stream().filter(item -> "system_prompt".equals(item.sourceType())).count());
+        assertEquals(
+                1,
+                items.stream()
+                        .filter(item -> "workspace:MEMORY.md".equals(item.sourceId()))
+                        .count());
+        assertTrue(
+                items.stream().noneMatch(item -> item.sourceType().equals("workspace_materials")));
+    }
+
+    @Test
+    void systemMaterialsAloneDoNotCreateASystemPromptSegment() {
+        var manifests = new ArrayList<ContextManifest>();
+        var policy =
+                new ContextPolicy(0, 0, 0, ContextTokenEstimator.approximate(), manifests::add);
+        var rc = RuntimeContext.builder().agentState(AgentState.builder().build()).build();
+        var rules = ContextItem.instruction("project_rules", "harness:rules", "follow the rules");
+        rc.put(WorkspaceContextMaterials.class, new WorkspaceContextMaterials(List.of(rules)));
+        var request =
+                new ModelCallInput(
+                        List.of(Msg.builder().role(MsgRole.USER).textContent("hi").build()),
+                        List.of(),
+                        GenerateOptions.builder().maxTokens(20).build(),
+                        model(100000));
+        new HarnessContextBuilder(policy, null, null)
+                .prepare(
+                        mock(Agent.class), rc, request, "c", ModelRequestPreparer.Purpose.REASONING)
+                .block();
+        var items = manifests.get(0).items();
+        assertTrue(items.stream().noneMatch(item -> "system_prompt".equals(item.sourceType())));
+        assertEquals(
+                1, items.stream().filter(item -> "harness:rules".equals(item.sourceId())).count());
+        assertEquals("follow the rules".length(), itemFor(items, "harness:rules").contentChars());
+        assertEquals(
+                "follow the rules".length(),
+                shareFor(ContextUsage.breakdown(manifests.get(0)), ContextUsage.SYSTEM_PROMPT)
+                        .chars());
+    }
+
+    @Test
+    void breakdownGroupsSegmentsAndSumsToTotal() {
+        var manifests = new ArrayList<ContextManifest>();
+        var policy =
+                new ContextPolicy(0, 0, 0, ContextTokenEstimator.approximate(), manifests::add);
+        var rc = RuntimeContext.builder().agentState(AgentState.builder().build()).build();
+        rc.put(
+                WorkspaceContextMaterials.class,
+                new WorkspaceContextMaterials(
+                        List.of(
+                                new ContextItem(
+                                        "memory", "workspace:MEMORY.md", "remember this"))));
+        Msg user = Msg.builder().role(MsgRole.USER).textContent("hi").build();
+        var request =
+                new ModelCallInput(
+                        List.of(user),
+                        List.of(toolSchema("shell")),
+                        GenerateOptions.builder().maxTokens(20).build(),
+                        model(100000));
+        new HarnessContextBuilder(policy, null, null)
+                .prepare(
+                        mock(Agent.class), rc, request, "c", ModelRequestPreparer.Purpose.REASONING)
+                .block();
+        var manifest = manifests.get(0);
+        var shares = ContextUsage.breakdown(manifest);
+        assertEquals(
+                JsonUtils.getJsonCodec().toJson(user.getContent()).length(),
+                shareFor(shares, ContextUsage.MESSAGES).chars());
+        assertEquals(
+                JsonUtils.getJsonCodec().toJson(toolSchema("shell")).length(),
+                shareFor(shares, ContextUsage.SYSTEM_TOOLS).chars());
+        assertEquals("remember this".length(), shareFor(shares, ContextUsage.OTHER).chars());
+        assertEquals(3, shares.size());
+        assertEquals(
+                manifest.items().stream().mapToLong(ContextManifest.Item::contentChars).sum(),
+                shares.stream().mapToLong(ContextUsage.Share::chars).sum());
+        assertEquals(1.0, shares.stream().mapToDouble(ContextUsage.Share::ratio).sum(), 1e-9);
+        for (int index = 1; index < shares.size(); index++) {
+            assertTrue(shares.get(index - 1).chars() >= shares.get(index).chars());
+        }
+    }
+
+    @Test
+    void breakdownOmitsEmptyCategoriesAndHandlesMissingManifest() {
+        assertTrue(ContextUsage.breakdown(null).isEmpty());
+        var manifest =
+                new ContextManifest(
+                        "c",
+                        "REASONING",
+                        "test",
+                        "v",
+                        0,
+                        0,
+                        "approximate",
+                        false,
+                        0,
+                        List.of(
+                                new ContextManifest.Item("message_user", "u", "h", 5),
+                                new ContextManifest.Item("memory", "m", "h", 0),
+                                new ContextManifest.Item(null, "n", "h", 3),
+                                new ContextManifest.Item("message_user", "neg", "h", -4)),
+                        List.of(),
+                        "passed");
+        var shares = ContextUsage.breakdown(manifest);
+        assertEquals(2, shares.size());
+        assertEquals(ContextUsage.MESSAGES, shares.get(0).source());
+        assertEquals(5, shares.get(0).chars());
+        assertEquals(5.0 / 8.0, shares.get(0).ratio(), 1e-9);
+        assertEquals(ContextUsage.OTHER, shares.get(1).source());
+        assertEquals(3, shares.get(1).chars());
+    }
+
+    private ContextUsage.Share shareFor(List<ContextUsage.Share> shares, String source) {
+        return shares.stream()
+                .filter(share -> share.source().equals(source))
+                .findFirst()
+                .orElseThrow();
+    }
+
+    private ToolSchema toolSchema(String name) {
+        return ToolSchema.builder()
+                .name(name)
+                .description("does " + name)
+                .parameters(Map.of())
+                .build();
+    }
+
+    private ContextManifest.Item itemFor(List<ContextManifest.Item> items, String sourceId) {
+        return items.stream()
+                .filter(item -> item.sourceId().equals(sourceId))
+                .findFirst()
+                .orElseThrow();
     }
 
     @Test
