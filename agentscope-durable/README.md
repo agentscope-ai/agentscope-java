@@ -307,6 +307,10 @@ the hosts at the same database. Each host needs matching definition/state versio
 and access to the required tools and workspace resources. Close each host and its
 Backend at application shutdown; the application owns the supplied pool.
 
+PostgreSQL record transactions use a 30-second idle-in-transaction timeout when
+the database setting is disabled. An existing positive timeout takes precedence.
+This lets PostgreSQL release record locks after a disconnected host stops sending SQL.
+
 Runtime scans durable ready work and renews ownership while executing it. Fencing
 rejects writes from an expired owner even if that process later reconnects. Optional
 wakeup notifications reduce latency; durable scans compensate for lost hints.

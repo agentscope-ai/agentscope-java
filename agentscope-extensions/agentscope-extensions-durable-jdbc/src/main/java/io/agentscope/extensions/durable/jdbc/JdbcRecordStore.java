@@ -160,6 +160,17 @@ public final class JdbcRecordStore implements RecordStore {
         try (Connection c = connect()) {
             c.setAutoCommit(false);
             try {
+                if (dialect == Dialect.POSTGRESQL) {
+                    // Release the record lock if the owner disappears between statements.
+                    // A positive timeout configured by the database takes precedence.
+                    try (var statement = c.createStatement()) {
+                        statement.execute(
+                                "SELECT"
+                                    + " set_config('idle_in_transaction_session_timeout','30s',true)"
+                                    + " WHERE"
+                                    + " current_setting('idle_in_transaction_session_timeout')='0'");
+                    }
+                }
                 try (var s =
                         c.prepareStatement(
                                 "INSERT INTO durable_records(record_key,payload) VALUES (?,NULL) ON"
