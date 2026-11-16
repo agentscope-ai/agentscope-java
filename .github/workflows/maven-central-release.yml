@@ -1,0 +1,82 @@
+name: Maven Central staging
+
+on:
+  push:
+    tags: ['v[0-9]*']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: maven-central-staging
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Build, sign and stage Maven release
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Check tag matches Maven release versions
+        id: version
+        run: python3 .github/scripts/check-maven-release-version.py "$GITHUB_REF_NAME"
+
+      - name: Check published module declarations
+        run: bash .github/scripts/check-shade-and-bom-sync.sh
+
+      - name: Check required credentials
+        env:
+          MAVEN_CENTRAL_USERNAME: ${{ secrets.MAVEN_CENTRAL_USERNAME }}
+          MAVEN_CENTRAL_PASSWORD: ${{ secrets.MAVEN_CENTRAL_PASSWORD }}
+          MAVEN_GPG_PRIVATE_KEY: ${{ secrets.MAVEN_GPG_PRIVATE_KEY }}
+          MAVEN_GPG_PASSPHRASE: ${{ secrets.MAVEN_GPG_PASSPHRASE }}
+        run: |
+          for name in MAVEN_CENTRAL_USERNAME MAVEN_CENTRAL_PASSWORD MAVEN_GPG_PRIVATE_KEY MAVEN_GPG_PASSPHRASE; do
+            if [[ -z "${!name}" ]]; then
+              echo "::error::Missing repository secret: $name"
+              exit 1
+            fi
+          done
+
+      - name: Set up Java and signing key
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: maven
+          server-id: central
+          server-username-env-var: MAVEN_CENTRAL_USERNAME
+          server-password-env-var: MAVEN_CENTRAL_PASSWORD
+          gpg-private-key: ${{ secrets.MAVEN_GPG_PRIVATE_KEY }}
+          gpg-passphrase-env-var: MAVEN_GPG_PASSPHRASE
+
+      - name: Test, sign and upload for manual publication
+        env:
+          MAVEN_CENTRAL_USERNAME: ${{ secrets.MAVEN_CENTRAL_USERNAME }}
+          MAVEN_CENTRAL_PASSWORD: ${{ secrets.MAVEN_CENTRAL_PASSWORD }}
+          MAVEN_GPG_PASSPHRASE: ${{ secrets.MAVEN_GPG_PASSPHRASE }}
+          RELEASE_VERSION: ${{ steps.version.outputs.version }}
+          RELEASE_PROJECTS: ${{ steps.version.outputs.projects }}
+        run: |
+          mvn -B -ntp -T1 -Prelease clean deploy \
+            -pl "$RELEASE_PROJECTS" \
+            -DautoPublish=false \
+            -DwaitUntil=validated \
+            -Dgpg.bestPractices=true \
+            -Dgpg.passphraseEnvName=MAVEN_GPG_PASSPHRASE \
+            "-DdeploymentName=agentscope-java-$RELEASE_VERSION"
+
+      - name: Record staging result
+        env:
+          RELEASE_VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          {
+            echo "### Maven Central: $RELEASE_VERSION"
+            echo
+            echo 'Packages were uploaded and validated. Automatic publication is disabled.'
+            echo 'Review the deployment and select Publish manually in [Central Portal](https://central.sonatype.com/publishing/deployments).'
+          } >> "$GITHUB_STEP_SUMMARY"

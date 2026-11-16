@@ -23,6 +23,7 @@ import io.agentscope.core.event.TextBlockStartEvent;
 import io.agentscope.core.event.ThinkingBlockDeltaEvent;
 import io.agentscope.core.event.ThinkingBlockEndEvent;
 import io.agentscope.core.event.ThinkingBlockStartEvent;
+import io.agentscope.core.journal.InvocationRecorder;
 import io.agentscope.core.message.GenerateReason;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.TextBlock;
@@ -32,7 +33,6 @@ import io.agentscope.core.middleware.FinalAnswerInput;
 import io.agentscope.core.middleware.FinishReason;
 import io.agentscope.core.middleware.MiddlewareBase;
 import io.agentscope.core.model.ChatUsage;
-import io.agentscope.core.session.SessionRecorder;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -89,7 +89,7 @@ final class FinalAnswerGateEngine {
     /**
      * Retries honored in this call (a round with multiple vetoes counts once). The
      * 11th veto trips the fuse and fails the whole call closed — zero delivery,
-     * the rejected draft still reaching the session-recording audit — so a looping
+     * the rejected draft still reaching the journal audit — so a looping
      * gate can never spin the call forever nor force uncertified content out. Not
      * configurable on purpose; graceful exhaustion fallback is a gate's own job.
      */
@@ -113,7 +113,7 @@ final class FinalAnswerGateEngine {
     /** Observation event name emitted per honored retry. */
     private static final String RETRY_EVENT = "final_answer.retry";
 
-    /** Audit event name observed (session recording only) per rejected candidate. */
+    /** Audit event name observed (journal only) per rejected candidate. */
     private static final String REJECTED_EVENT = "final_answer.rejected";
 
     /**
@@ -408,8 +408,8 @@ final class FinalAnswerGateEngine {
     /**
      * Applies a retry decision: counts the retry (a multi-veto round counts
      * once), emits the observation event, audits the rejected original to the
-     * session recording, writes the original — never a gate's rewrite — plus the
-     * merged feedback (chain order) to memory, and re-enters reasoning.
+     * invocation journal, writes the original — never a gate's rewrite — plus
+     * the merged feedback (chain order) to memory, and re-enters reasoning.
      *
      * @param candidate the rejected final-answer candidate
      * @param decision the retry decision carrying the merged feedback
@@ -435,13 +435,13 @@ final class FinalAnswerGateEngine {
     }
 
     /**
-     * Audits a rejected candidate to the session recording only — the public
+     * Audits a rejected candidate to the journal only — the public
      * stream and telemetry payloads never carry it.
      *
      * @param candidate the rejected final-answer candidate
      */
     private void observeRejected(Msg candidate) {
-        SessionRecorder recorder = SessionRecorder.from(execution.rc);
+        InvocationRecorder recorder = InvocationRecorder.from(execution.rc);
         if (recorder == null) {
             return;
         }

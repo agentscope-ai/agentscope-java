@@ -37,6 +37,7 @@ import io.agentscope.core.hook.Hook;
 import io.agentscope.core.hook.HookEvent;
 import io.agentscope.core.hook.PostReasoningEvent;
 import io.agentscope.core.hook.PostSummaryEvent;
+import io.agentscope.core.journal.InMemoryThreadJournalStore;
 import io.agentscope.core.message.AssistantMessage;
 import io.agentscope.core.message.GenerateReason;
 import io.agentscope.core.message.Msg;
@@ -59,10 +60,6 @@ import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.ToolSchema;
 import io.agentscope.core.permission.PermissionContextState;
 import io.agentscope.core.permission.PermissionDecision;
-import io.agentscope.core.session.InMemorySessionLogStore;
-import io.agentscope.core.session.SessionKey;
-import io.agentscope.core.session.SessionLog;
-import io.agentscope.core.session.SessionRecorder;
 import io.agentscope.core.tool.ToolBase;
 import io.agentscope.core.tool.ToolCallParam;
 import io.agentscope.core.tool.Toolkit;
@@ -1799,13 +1796,9 @@ class ReActAgentFinalAnswerGateTest {
     }
 
     @Test
-    @DisplayName("rejected drafts reach the session recording and no public channel")
-    void rejectedDraftReachesSessionRecordingOnly() {
-        InMemorySessionLogStore store = new InMemorySessionLogStore();
-        SessionLog log = store.open(new SessionKey("u1", "asst", "s1"), RuntimeContext.empty());
-        SessionRecorder recorder = new SessionRecorder(log, "turn-1");
-        RuntimeContext ctx = rc("u1", "s1");
-        ctx.put(SessionRecorder.CONTEXT_KEY, recorder);
+    @DisplayName("rejected drafts reach the invocation journal and no public channel")
+    void rejectedDraftReachesJournalOnly() {
+        InMemoryThreadJournalStore store = new InMemoryThreadJournalStore();
         ScriptedModel model =
                 new ScriptedModel(
                         List.of(
@@ -1817,19 +1810,20 @@ class ReActAgentFinalAnswerGateTest {
                                 "raw draft".equals(input.candidate().getTextContent())
                                         ? FinalAnswerDecision.retry(reminder("Please fix it."))
                                         : FinalAnswerDecision.accept());
-        ReActAgent agent = baseBuilder(model).middleware(gate).build();
+        ReActAgent agent = baseBuilder(model).middleware(gate).threadJournalStore(store).build();
+        RuntimeContext ctx = rc("u1", "s1");
 
         Msg result = agent.call(List.of(new UserMessage("hi")), ctx).block(TIMEOUT);
 
         assertNotNull(result);
         assertEquals("clean", result.getTextContent());
         StringBuilder recorded = new StringBuilder();
-        for (var event : log.scan(0, log.head().seq())) {
+        for (var event : agent.threadJournal(ctx).readAfter(0, 10_000)) {
             recorded.append(event.toString());
         }
         assertTrue(
                 recorded.toString().contains("final_answer.rejected"),
-                "the rejected original is audited to the session recording");
+                "the rejected original is audited to the invocation journal");
         assertTrue(
                 recorded.toString().contains("raw draft"), "the audit carries the rejected text");
     }

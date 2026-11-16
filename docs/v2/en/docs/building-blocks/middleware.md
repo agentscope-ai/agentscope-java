@@ -8,7 +8,7 @@ zh_link: /v2/zh/docs/building-blocks/middleware
 
 Agent middleware lets you inject custom logic (logging, tracing, input rewriting, access control, …) at key points in an agent's execution flow without modifying the agent or model code.
 
-In AgentScope Java, you can hook into 7 places — covering everything from the outer reply flow down to the raw model API call:
+In AgentScope Java, you can hook into 8 places — covering the full call lifecycle: state binding before the pipeline, the reply flow down to the raw model API call, the final-answer boundary, and post-result completion:
 
 | Position | Type | Description |
 |----------|------|-------------|
@@ -19,15 +19,16 @@ In AgentScope Java, you can hook into 7 places — covering everything from the 
 | `onSystemPrompt` | Transformer | Triggers when the system prompt is assembled; multiple middlewares run in sequence, each transforming the previous output |
 | `onAgentStateReady` | Notification | Fires once per call as soon as this call's `AgentState` is ready — before the input enters the pipeline (pre-call hooks, memory, reasoning) |
 | `onFinalAnswer` | Gate | Last word on the final answer before anything ships; the moment any middleware participates, the agent switches to certified delivery (see the [final-answer gate](#final-answer-gate-onfinalanswer) section) |
+| `onAgentFinish` | Notification | Runs after a successful call result, before the invocation-journal checkpoint commit and writer release — the last point that still carries the active call's `RuntimeContext` |
 
 The four types differ:
 
 - **Onion** — middleware wraps the next handler; you can insert logic before/after `next.apply(input)` and observe the intermediate event stream.
 - **Transformer** — middlewares form a pipeline; the previous output is the next input. There's no "inner layer" concept.
-- **Notification** — one-way synchronous notification without `next` delegation; middlewares run in sequence at a fixed lifecycle point.
-- **Gate** — sequential consultation with the last word on delivery. Unlike the first three, it is a side-effect point: the moment any middleware participates, live answer content is withheld until the chain certifies it.
+- **Notification** — one-way notification without `next` delegation; middlewares run in sequence at a fixed lifecycle point. `onAgentStateReady` is a synchronous no-arg-effect call; `onAgentFinish` returns a completion signal (`Mono<Void>`).
+- **Gate** — sequential consultation with the last word on delivery. Unlike the others, it is a side-effect point: the moment any middleware participates, live answer content is withheld until the chain certifies it.
 
-The diagram below shows how the hooks nest in the agent lifecycle. `onSystemPrompt` is nested inside `onReasoning` because it fires when the reasoning step assembles the system prompt; `onAgentStateReady` fires right after the call's `AgentState` is bound to the `RuntimeContext`, before the input enters the pipeline:
+The diagram below shows how the hooks nest in the agent lifecycle. `onSystemPrompt` is nested inside `onReasoning` because it fires when the reasoning step assembles the system prompt; `onAgentFinish` runs only after a successful result, at the journal's finalization boundary:
 
 ```text
 onAgent/
@@ -37,10 +38,11 @@ onAgent/
 │   │   ├── onSystemPrompt (assemble system prompt)
 │   │   └── onModelCall (model API call)
 │   └── onActing (per tool call)
-└── onFinalAnswer (final-answer exits: normal finish / maxIters summary / returnDirect)
+├── onFinalAnswer (final-answer exits: normal finish / maxIters summary / returnDirect)
+└── onAgentFinish (successful call complete, before journal checkpoint/writer release)
 ```
 
-`onFinalAnswer` is the seventh extension point and the only side-effect point — its activation semantics and the certified-delivery mode it switches on are covered in the [final-answer gate](#final-answer-gate-onfinalanswer) section below.
+`onFinalAnswer` is the only side-effect point among these hooks — its activation semantics and the certified-delivery mode it switches on are covered in the [final-answer gate](#final-answer-gate-onfinalanswer) section below.
 
 <Note>
 
@@ -51,7 +53,7 @@ onAgent/
 
 ## Equipping middleware
 
-AgentScope packs a set of hooks into a single `MiddlewareBase` implementation — one middleware class can implement any subset of the 7 hooks (onion/transformer hooks not implemented default to `next.apply(input)`; notification hooks default to a no-op; gate hooks default to accepting the candidate). Pass the instances to the builder's `middlewares(...)`:
+AgentScope packs a set of hooks into a single `MiddlewareBase` implementation — one middleware class can implement any subset of the 8 hooks (onion/transformer hooks not implemented default to `next.apply(input)`; notification hooks default to a no-op / immediate completion; gate hooks default to accepting the candidate). Pass the instances to the builder's `middlewares(...)`:
 
 ```java
 import io.agentscope.core.ReActAgent;
@@ -83,7 +85,7 @@ ReActAgent agent =
 
 When no OpenTelemetry SDK is configured (only the default no-op provider), every hook short-circuits to `next.apply(input)` — near-zero overhead.
 
-By default, `OtelTracingMiddleware` reads the process-wide `GlobalOpenTelemetry` instance. The no-argument constructor looks that instance up lazily, when a hook runs, so the middleware can be constructed before the global SDK is registered. Applications that export spans themselves need the OpenTelemetry SDK and OTLP exporter in addition to AgentScope. Keep their versions aligned through the OpenTelemetry BOM (the version below matches the one currently used by AgentScope):
+`OtelTracingMiddleware` reads the process-wide `GlobalOpenTelemetry` instance. Applications that export spans themselves need the OpenTelemetry SDK and OTLP exporter in addition to AgentScope. Keep their versions aligned through the OpenTelemetry BOM (the version below matches the one currently used by AgentScope):
 
 ```xml
 <properties>
@@ -157,49 +159,6 @@ ReActAgent agent =
 
 The SDK must be registered before the middleware is used. If your runtime (for example, Spring Boot OpenTelemetry auto-configuration) already registers `GlobalOpenTelemetry`, reuse it and only add the middleware. Do not call the deprecated `TracerRegistry.register(...)` in the new setup. Close the `SdkTracerProvider` during application shutdown so its batch processor can flush pending spans.
 
-To export through an application-owned SDK instead of the process-wide one, build that SDK with `build()` (not `buildAndRegisterGlobal()`), point an OTLP HTTP exporter at the application's endpoint, and attach the middleware explicitly. This is an opt-in middleware path: the caller owns the SDK lifecycle and shuts the provider down. `ReActAgent.builder().middleware(...)` is already the production wiring; no other builder change is required.
-
-```java
-import io.agentscope.core.ReActAgent;
-import io.agentscope.core.tracing.OtelTracingMiddleware;
-import io.opentelemetry.api.OpenTelemetry;
-import io.opentelemetry.exporter.otlp.http.trace.OtlpHttpSpanExporter;
-import io.opentelemetry.sdk.OpenTelemetrySdk;
-import io.opentelemetry.sdk.trace.SdkTracerProvider;
-import io.opentelemetry.sdk.trace.export.BatchSpanProcessor;
-
-String endpoint =
-        System.getenv().getOrDefault(
-                "OTEL_EXPORTER_OTLP_ENDPOINT", "http://localhost:4318/v1/traces");
-
-SdkTracerProvider tracerProvider =
-        SdkTracerProvider.builder()
-                .addSpanProcessor(
-                        BatchSpanProcessor.builder(
-                                        OtlpHttpSpanExporter.builder()
-                                                .setEndpoint(endpoint)
-                                                .build())
-                                .build())
-                .build();
-
-OpenTelemetry appSdk =
-        OpenTelemetrySdk.builder().setTracerProvider(tracerProvider).build();
-Runtime.getRuntime().addShutdownHook(new Thread(tracerProvider::close));
-
-ReActAgent agent =
-        ReActAgent.builder()
-                .name("assistant")
-                .sysPrompt("You are a helpful assistant.")
-                .model(model)
-                .toolkit(toolkit)
-                .middleware(new OtelTracingMiddleware(appSdk))
-                .build();
-```
-
-Passing `appSdk` does not replace `GlobalOpenTelemetry` and does not change `StudioManager`. `StudioManager` still installs deprecated `TracerRegistry` tracing on its own during `initialize()`. Vendor instrumentation that rewrites tracer lookup, and a missing Studio call-tree expansion control, need separate verification against the deployment that produces them. This middleware selects which OpenTelemetry SDK records the `onAgent`, `onModelCall`, and `onActing` spans. `OpenTelemetry.noop()` is also a valid argument: the downstream chain still runs, and no spans are recorded.
-
-Constructing `OtelTracingMiddleware` — either `new OtelTracingMiddleware()` or `new OtelTracingMiddleware(appSdk)` — also registers a JVM-wide Reactor hook, `ContextPropagationOperator.registerOnEachOperator()`, the first time any instance is created. From then on, the hook wraps each `Flux` and `Mono` operator as it is assembled, in any code in the process, so parent spans survive `publishOn` / `subscribeOn` hops. It cannot reach chains that were assembled before it was registered: a publisher built earlier and reused later does not gain propagation, so construct the middleware before assembling pipelines that need it. It is independent of which SDK records spans: an application-owned SDK isolates tracer lookup from `GlobalOpenTelemetry`, not this instrumentation side effect. The hook is installed at most once per JVM and is not removed when the middleware or the SDK is closed.
-
 Each reply produces a nested span tree with attributes such as agent name, session ID, model name, token counts, tool name, and inputs.
 
 ### TaskReminderMiddleware
@@ -261,23 +220,12 @@ import io.agentscope.core.middleware.AgentInput;
 import io.agentscope.core.middleware.MiddlewareBase;
 import io.agentscope.core.middleware.ModelCallInput;
 import io.agentscope.core.middleware.ReasoningInput;
-import java.util.EnumSet;
-import java.util.Set;
 import java.util.function.Function;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 /** Observes agent / reasoning / model_call / system_prompt at the same time. */
 public class FullObservabilityMiddleware implements MiddlewareBase {
-
-    @Override
-    public Set<ExtensionPoint> activePoints() {
-        return EnumSet.of(
-                ExtensionPoint.ON_AGENT,
-                ExtensionPoint.ON_REASONING,
-                ExtensionPoint.ON_MODEL_CALL,
-                ExtensionPoint.ON_SYSTEM_PROMPT);
-    }
 
     @Override
     public Flux<AgentEvent> onAgent(
@@ -320,46 +268,11 @@ Input record types per hook (under `io.agentscope.core.middleware`):
 | `onSystemPrompt` | `String` | The current prompt |
 | `onAgentStateReady` | — (direct parameters) | `state: AgentState`, `inputMessages: List<Msg>` |
 | `onFinalAnswer` | `FinalAnswerInput` | `candidate: Msg`, `retryCount: int`, `cumulativeUsage: ChatUsage`, `finishReason: FinishReason` |
+| `onAgentFinish` | — (direct parameters) | `result: Msg` (returns a `Mono<Void>` completion signal) |
 
 To replace fields flowing into the next layer, construct a new input record, then call `next.apply(...)`.
 
-Changes made through `onModelCall` affect that model request; they do not automatically rewrite stored conversation history. For the legacy `PostActingEvent`, `setToolResult(...)` updates the tool message stored for the next reasoning step. An explicitly replaced `Msg` takes precedence, and the original tool-call identity is preserved. `returnDirect` retains its direct-return behavior; replacing a result does not rewrite streaming deltas already emitted.
-
 Runnable examples: `agentscope-examples/documentation/.../middleware/CustomizedMiddlewareExample.java`, `middleware/ModelCallMiddlewareExample.java`, `middleware/SystemPromptMiddlewareExample.java`.
-
-### State-ready notification
-
-`onAgentStateReady` is a notification hook (no `next`): it fires synchronously once per call, right after the call-scoped `AgentState` is bound to the `RuntimeContext` and before the input enters the pipeline. `state` is the same instance as `ctx.getAgentState()` and is never `null` — a brand-new session receives a freshly-created state with an empty context. `inputMessages` is this call's input as a private mutable copy: in-place modification applies to the whole call, while the caller's original list stays untouched.
-
-```java
-import io.agentscope.core.agent.Agent;
-import io.agentscope.core.agent.RuntimeContext;
-import io.agentscope.core.message.Msg;
-import io.agentscope.core.middleware.MiddlewareBase;
-import io.agentscope.core.state.AgentState;
-import java.util.EnumSet;
-import java.util.List;
-import java.util.Set;
-
-/** Prepends a profile prompt on a brand-new session. */
-public class SessionBootstrapMiddleware implements MiddlewareBase {
-
-    @Override
-    public Set<ExtensionPoint> activePoints() {
-        return EnumSet.of(ExtensionPoint.ON_AGENT_STATE_READY);
-    }
-
-    @Override
-    public void onAgentStateReady(
-            Agent agent, RuntimeContext ctx, AgentState state, List<Msg> inputMessages) {
-        if (state.getContext().isEmpty()) {  // cold start: brand-new session
-            inputMessages.add(0, loadUserProfilePrompt(ctx.getUserId()));
-        }
-    }
-}
-```
-
-Keep implementations non-blocking: the notification runs on the call's subscription thread (possibly a Reactor event-loop thread in streaming scenarios). Firing is per lifecycle execution (subscription) — re-subscribing a cold stream triggers it again. A thrown exception fails the call unchanged and the remaining middlewares are not invoked. Middlewares that don't override this hook simply run their no-op default; the only fixed cost is one shallow copy of the input list per call, which keeps the caller's list isolated unconditionally. Participation follows `activePoints()` like every extension point: a middleware that omits `ExtensionPoint.ON_AGENT_STATE_READY` is never notified, even if it overrides the hook. Lifecycle window: the notification runs after the call has been admitted and registered for interruption, but before the tracing envelope and the error-event chain are in place — an interrupt issued during the notification is honored, while a thrown exception reaches the caller directly, without ErrorEvent hooks or tracing spans.
 
 ### Final-answer gate (`onFinalAnswer`)
 
@@ -415,18 +328,18 @@ public class ComplianceGate implements MiddlewareBase {
 
 #### Activation and certified delivery
 
-`ON_FINAL_ANSWER` is the seventh extension point — and a side-effect one: the moment any middleware participates there, the agent switches to **certified delivery**. Participation is never vacuous: auto-detection lights up exactly the classes that factually implement `onFinalAnswer` (writing the hook is writing gate logic), and the only other path is an explicit declaration. A gate is simply a `MiddlewareBase` that overrides `onFinalAnswer` — no dedicated interface exists; participation follows the same `activePoints()` contract as every other extension point, with an explicit `EnumSet.of(ExtensionPoint.ON_FINAL_ANSWER)` declaration recommended as everywhere else.
+`ON_FINAL_ANSWER` is a side-effect extension point: the moment any middleware participates there, the agent switches to **certified delivery**. Participation is never vacuous: auto-detection lights up exactly the classes that factually implement `onFinalAnswer` (writing the hook is writing gate logic), and the only other path is an explicit declaration. A gate is simply a `MiddlewareBase` that overrides `onFinalAnswer` — no dedicated interface exists; participation follows the same `activePoints()` contract as every other extension point, with an explicit `EnumSet.of(ExtensionPoint.ON_FINAL_ANSWER)` declaration recommended as everywhere else.
 
 The hook never receives the agent. Binding runs one way — the agent binds its middlewares at construction; a middleware never holds or branches on the agent it serves. A verdict function needs only the per-call context and the gate input, and keeping the agent out of the signature makes a stateless gate a pure function whose single instance safely serves any number of agents and concurrent calls — singleton reuse is safe by construction, not by discipline. Cross-round state belongs in `RuntimeContext` attributes, never in gate fields.
 
 Under certified delivery, the public event stream behaves as follows:
 
 - Live `TextBlock*` / `ThinkingBlock*` events of every round are withheld from the public stream — dropped, not buffered, so nothing can leak on cancel or error. Real-time streaming is consciously sacrificed; drive a "reviewing…" placeholder UI from the content-free `final_answer.reviewing` custom event, and animate the certified text locally once it arrives.
-- After the verdict, the certified message (the chain's output — thinking first, then text) is projected in one burst. The projected content, `call()`'s return value, `AgentResultEvent`, and memory are the same message by construction; rejected candidates never reach the public stream — they go to memory for self-correction and to the session-recording audit only.
+- After the verdict, the certified message (the chain's output — thinking first, then text) is projected in one burst. The projected content, `call()`'s return value, `AgentResultEvent`, and memory are the same message by construction; rejected candidates never reach the public stream — they go to memory for self-correction and to the invocation-journal audit only.
 - `ModelCallEndEvent` still fires live (usage only) and may precede the certified content — assemble text on `TextBlockEnd` / `AgentResultEvent`, never on `ModelCallEnd`.
 - Agents without a gate are byte-for-byte unchanged: live token streaming stays, no gate events appear.
 
-The session-recording audit event `final_answer.rejected` keeps the rejected draft; the `final_answer.retry` telemetry event carries only `retryCount` and `finishReason`, never candidate text. The `CUSTOM` channel always bypasses the guard, so by convention it carries narrative progress only — never answer content.
+The invocation-journal audit event `final_answer.rejected` keeps the rejected draft; the `final_answer.retry` telemetry event carries only `retryCount` and `finishReason`, never candidate text. The `CUSTOM` channel always bypasses the guard, so by convention it carries narrative progress only — never answer content.
 
 #### Chain semantics
 
@@ -438,7 +351,7 @@ Multiple gates stack, consulted sequentially in `order()` sequence (higher first
 - **Two valid orderings — not both at once.** Transforms at the head + veto gates at the tail: the veto certifies exactly what ships (best for compliance sign-off; feedback may reference transformed text). Veto gates at the head + transforms at the tail: the veto judges the model's own words (cleanest correction loop; transforms must then be trusted deterministic assembly — redaction, stitching, disclaimers — not semantic rewrites). Having both would require re-review loops with no convergence guarantee; the framework does not offer them.
 - **Fail closed.** A gate error fails the whole call — never a silent pass. The framework fuse honors at most 10 retries per call (not configurable): the 11th veto terminates the call with an error and zero delivery. Graceful exhaustion fallback comes from a gate managing its own budget via `input.retryCount()`, not from the framework.
 
-Purely observational uses (logging, metrics, audit) should not implement the hook — the event stream and session recording already serve them, and becoming a gate sacrifices real-time streaming for nothing. Likewise, if you only want intermediate-round text suppressed without a verdict, register [`FinalAnswerFilterMiddleware`](#finalanswerfiltermiddleware) on a gate-free agent; with a gate registered it is redundant but harmless.
+Purely observational uses (logging, metrics, audit) should not implement the hook — the event stream and invocation journal already serve them, and becoming a gate sacrifices real-time streaming for nothing. Likewise, if you only want intermediate-round text suppressed without a verdict, register [`FinalAnswerFilterMiddleware`](#finalanswerfiltermiddleware) on a gate-free agent; with a gate registered it is redundant but harmless.
 
 `input.retryCount()` tells you how many retries have already been honored in this call (0 for the first candidate, reset across calls — parallel calls on one agent keep separate budgets), and `input.cumulativeUsage()` sums the token usage of every attempt, so nothing is lost across retries.
 
@@ -452,18 +365,11 @@ import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.middleware.AgentInput;
 import io.agentscope.core.middleware.MiddlewareBase;
-import java.util.EnumSet;
-import java.util.Set;
 import java.util.function.Function;
 import reactor.core.publisher.Flux;
 
 /** Log user / request id and propagate a trace id for downstream tools. */
 public class RequestContextMiddleware implements MiddlewareBase {
-
-    @Override
-    public Set<ExtensionPoint> activePoints() {
-        return EnumSet.of(ExtensionPoint.ON_AGENT);
-    }
 
     @Override
     public Flux<AgentEvent> onAgent(
@@ -503,11 +409,6 @@ MiddlewareBase lowerPriority = new MiddlewareBase() {
     public int order() {
         return 0;
     }
-
-    @Override
-    public Set<ExtensionPoint> activePoints() {
-        return EnumSet.noneOf(ExtensionPoint.class);  // no hooks, zero participation
-    }
 };
 ```
 
@@ -524,11 +425,11 @@ middlewares = [mw1, mw2]
 // originalPrompt → mw1.onSystemPrompt() → mw2.onSystemPrompt() → final
 ```
 
-Notification hooks (`onAgentStateReady`) run once per call in `order()` sequence — higher values first, matching the onion entry order:
+Notification hooks (`onAgentStateReady`, `onAgentFinish`) run once per call in `order()` sequence — higher values first, matching the onion entry order:
 
 ```
 middlewares = [mw1(order=2), mw2(order=1)]
-// onAgentStateReady: mw1 → mw2
+// onAgentStateReady / onAgentFinish: mw1 → mw2
 ```
 
 Gate middlewares (participating at `ON_FINAL_ANSWER`) are consulted in the same `order()` sequence at each final-answer exit; see [the gate section](#final-answer-gate-onfinalanswer) for the chain rules (feed-forward working draft, no veto short-circuit, merged feedback):
@@ -548,48 +449,9 @@ onAgent
   │     │     ├── prepare model input → onSystemPrompt
   │     │     └── onModelCall
   │     └── onActing (per tool call)
-  └── onFinalAnswer (final-answer exits: normal finish / maxIters summary / returnDirect)
+  ├── onFinalAnswer (final-answer exits: normal finish / maxIters summary / returnDirect)
+  └── onAgentFinish (successful result fixed, before journal checkpoint/writer release)
 ```
-
-### `onActing` or tool call interceptors?
-
-Use `onActing` to manipulate the event stream, gate a whole batch of tool calls, or handle turn-level output. Use [tool call interceptors](/v2/en/docs/building-blocks/tool#tool-call-interceptors) to validate / rewrite / deny a single call's final arguments, including on paths that never enter an agent loop (direct `Toolkit#callTool`, subagent Toolkits). The two can be used together.
-
-### Extension point participation (`activePoints()`)
-
-**Implement `activePoints()` in every middleware you write and return the exact set of points it hooks.** This is the expected practice for application code, libraries, and AI-generated middlewares alike; the `null` default below exists only for API compatibility. `MiddlewareBase.activePoints()` is a **participation switch**, not a statement about which methods are overridden:
-
-- Including a point means participating there; without an overridden method, the default pass-through runs — legal redundancy.
-- Omitting a point means the middleware does not exist there: it takes no slot in the chain, and even an overridden method is never invoked (an intentional opt-out).
-
-Key semantics:
-
-- **Declare exactly the points you hook.** Every middleware should override `activePoints()` with exactly the set it hooks — `EnumSet.allOf(ExtensionPoint.class)` declares participation at every point. The declaration is authoritative: read once at agent construction, it beats auto-detection below.
-- **The `null` default exists for API compatibility only — do not rely on it.** The default implementation returns `null` so that middlewares written before this contract keep compiling and running unchanged. Today `null` resolves through auto-detection: the middleware participates exactly at the points whose hook methods its class implements (inherited implementations count), computed once per class and cached. Auto-detection is a legacy fallback, not a substitute for declaring intent — it cannot express an intentional opt-out, and it lights up points for hooks overridden only by pass-through base classes. Its behavior may change in future releases, so always implement `activePoints()` in new code.
-- **Empty set is legal.** `EnumSet.noneOf(ExtensionPoint.class)` disables the middleware at every point while keeping its registration — useful as a runtime switch.
-- **Frozen at construction.** The agent resolves participation once when it is built; later changes to the returned set have no effect on an already-built agent.
-- **Orthogonal to `order()`.** The declaration only answers *whether* a middleware participates at a point, never *in what order* — participants keep the usual `order()` semantics.
-
-```java
-import io.agentscope.core.middleware.MiddlewareBase;
-import java.util.EnumSet;
-import java.util.Set;
-
-MiddlewareBase timingOnly =
-        new MiddlewareBase() {
-            @Override
-            public Set<ExtensionPoint> activePoints() {
-                // Active only at onModelCall; skipped at every other point.
-                return EnumSet.of(ExtensionPoint.ON_MODEL_CALL);
-            }
-        };
-```
-
-Precise declarations keep chains short: an extension point with no participants builds no wrapper at all (zero wrapper layers, no pipeline assembly), and the effective execution plan is visible at build time. `middlewaresAt(point)` contains the declared (or detected) participants — never middlewares with no logic at the point. Do not lean on auto-detection just because it works today: detection behavior may change in a future release, while an explicit declaration is a stable contract.
-
-The same applies when subclassing a built-in middleware: shipped classes declare exactly the points they hook, so a subclass that overrides an additional hook (e.g. adding `onModelCall` to `TaskReminderMiddleware`) must extend the inherited `activePoints()` — otherwise the new hook is never invoked.
-
-Adding a new extension point follows one review rule: a point whose activation has side effects beyond the participating middleware itself (for example, changing global event routing) must be activated only by a clear statement of intent — the fact of implementing the hook, or an explicit declaration; never a default, never an unrelated inference. `ON_FINAL_ANSWER` is the worked example: activating it switches the agent to certified delivery, yet it cannot be tripped accidentally — auto-detection lights up exactly the classes that factually implement `onFinalAnswer` (writing that hook is writing gate logic), and the empty-accept default is reachable only through an explicit declaration. Both paths are deliberate.
 
 ## Practical examples
 
@@ -602,18 +464,10 @@ import io.agentscope.core.agent.Agent;
 import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.middleware.MiddlewareBase;
 import io.agentscope.core.middleware.ModelCallInput;
-import java.util.EnumSet;
-import java.util.Set;
 import java.util.function.Function;
 import reactor.core.publisher.Flux;
 
 public class TimingMiddleware implements MiddlewareBase {
-
-    @Override
-    public Set<ExtensionPoint> activePoints() {
-        return EnumSet.of(ExtensionPoint.ON_MODEL_CALL);
-    }
-
     @Override
     public Flux<AgentEvent> onModelCall(
             Agent agent, ModelCallInput input, Function<ModelCallInput, Flux<AgentEvent>> next) {
@@ -638,8 +492,6 @@ import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.middleware.MiddlewareBase;
 import io.agentscope.core.middleware.ModelCallInput;
 import java.time.Duration;
-import java.util.EnumSet;
-import java.util.Set;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Function;
 import reactor.core.publisher.Flux;
@@ -652,11 +504,6 @@ public class RateLimitMiddleware implements MiddlewareBase {
 
     public RateLimitMiddleware(Duration minInterval) {
         this.minIntervalMs = minInterval.toMillis();
-    }
-
-    @Override
-    public Set<ExtensionPoint> activePoints() {
-        return EnumSet.of(ExtensionPoint.ON_MODEL_CALL);
     }
 
     @Override
@@ -679,8 +526,6 @@ Inject runtime context into the system prompt. Or reuse the example `middleware/
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.middleware.MiddlewareBase;
 import java.time.Instant;
-import java.util.EnumSet;
-import java.util.Set;
 import java.util.function.Supplier;
 import reactor.core.publisher.Mono;
 
@@ -690,11 +535,6 @@ public class DynamicContextMiddleware implements MiddlewareBase {
 
     public DynamicContextMiddleware(Supplier<String> contextFn) {
         this.contextFn = contextFn;
-    }
-
-    @Override
-    public Set<ExtensionPoint> activePoints() {
-        return EnumSet.of(ExtensionPoint.ON_SYSTEM_PROMPT);
     }
 
     @Override
@@ -717,8 +557,6 @@ import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.middleware.MiddlewareBase;
 import io.agentscope.core.middleware.ModelCallInput;
 import io.agentscope.core.model.Model;
-import java.util.EnumSet;
-import java.util.Set;
 import java.util.function.Function;
 import reactor.core.publisher.Flux;
 
@@ -728,11 +566,6 @@ public class ModelFallbackMiddleware implements MiddlewareBase {
 
     public ModelFallbackMiddleware(Model fallback) {
         this.fallback = fallback;
-    }
-
-    @Override
-    public Set<ExtensionPoint> activePoints() {
-        return EnumSet.of(ExtensionPoint.ON_MODEL_CALL);
     }
 
     @Override
@@ -774,17 +607,10 @@ import io.agentscope.core.event.RequestStopEvent;
 import io.agentscope.core.message.GenerateReason;
 import io.agentscope.core.middleware.ActingInput;
 import io.agentscope.core.middleware.MiddlewareBase;
-import java.util.EnumSet;
-import java.util.Set;
 import java.util.function.Function;
 import reactor.core.publisher.Flux;
 
 public class StopOnAllDeniedMiddleware implements MiddlewareBase {
-
-    @Override
-    public Set<ExtensionPoint> activePoints() {
-        return EnumSet.of(ExtensionPoint.ON_ACTING);
-    }
 
     @Override
     public Flux<AgentEvent> onActing(

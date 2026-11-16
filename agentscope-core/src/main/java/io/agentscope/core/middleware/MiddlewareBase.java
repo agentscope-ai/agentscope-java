@@ -27,10 +27,10 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 /**
- * Middleware provides interception mechanisms at 7 key execution points
+ * Middleware provides interception mechanisms at key execution points
  * in the Agent lifecycle.
  *
- * <p><b>Onion Pattern</b> (4 hooks — wrap execution with before/after logic):
+ * <p><b>Onion Pattern</b> (wrap execution with before/after logic):
  * <ul>
  *   <li>{@link #onAgent} — intercepts the entire agent invocation</li>
  *   <li>{@link #onReasoning} — intercepts the reasoning/model-call phase</li>
@@ -38,18 +38,20 @@ import reactor.core.publisher.Mono;
  *   <li>{@link #onModelCall} — intercepts the raw model API call</li>
  * </ul>
  *
- * <p><b>Transformer/Pipeline Pattern</b> (1 hook — sequential transform):
+ * <p><b>Transformer/Pipeline Pattern</b> (sequential transform):
  * <ul>
  *   <li>{@link #onSystemPrompt} — transforms the system prompt string</li>
  * </ul>
  *
- * <p><b>Notification Pattern</b> (one-way synchronous notification, no {@code next}
+ * <p><b>Notification Pattern</b> (one-way notification, no {@code next}
  * delegation):
  * <ul>
  *   <li>{@link #onAgentStateReady} — notified once this call's AgentState is ready</li>
+ *   <li>{@link #onAgentFinish} — notified after a successful call result, before
+ *       the invocation-journal checkpoint commit and writer release</li>
  * </ul>
  *
- * <p><b>Gate Pattern</b> (1 hook — verdict on the final answer):
+ * <p><b>Gate Pattern</b> (verdict on the final answer):
  * <ul>
  *   <li>{@link #onFinalAnswer} — decides what becomes this call's final answer</li>
  * </ul>
@@ -57,6 +59,7 @@ import reactor.core.publisher.Mono;
  * <p>Each onion/transformer hook has a default implementation that delegates
  * directly to {@code next}, so subclasses only need to override the hooks they
  * care about; {@link #onAgentStateReady} defaults to a no-op; {@link
+ * #onAgentFinish} defaults to an immediate empty completion; {@link
  * #onFinalAnswer} defaults to an empty completion that accepts the candidate,
  * reachable only through an explicit {@code ON_FINAL_ANSWER} declaration. Every
  * implementation should additionally declare the points it participates in via
@@ -111,7 +114,8 @@ public interface MiddlewareBase {
         ON_MODEL_CALL("onModelCall"),
         ON_SYSTEM_PROMPT("onSystemPrompt"),
         ON_AGENT_STATE_READY("onAgentStateReady"),
-        ON_FINAL_ANSWER("onFinalAnswer");
+        ON_FINAL_ANSWER("onFinalAnswer"),
+        ON_AGENT_FINISH("onAgentFinish");
 
         private final String hookMethod;
 
@@ -352,6 +356,15 @@ public interface MiddlewareBase {
      *     accept
      */
     default Mono<FinalAnswerDecision> onFinalAnswer(RuntimeContext ctx, FinalAnswerInput input) {
+        return Mono.empty();
+    }
+
+    /**
+     * Runs after a successful call result, before native checkpoints and writer release.
+     * Unlike onAgent completion, this boundary still carries the active call's RuntimeContext.
+     * Implementations return their completion signal and must preserve cancellation.
+     */
+    default Mono<Void> onAgentFinish(Agent agent, RuntimeContext ctx, Msg result) {
         return Mono.empty();
     }
 }

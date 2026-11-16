@@ -34,6 +34,8 @@ public final class RunControl {
     private final InterruptControl interruption = new InterruptControl();
     private final Sinks.Empty<Void> cancellation = Sinks.empty();
     private final Sinks.One<AgentRun.Status> termination = Sinks.one();
+    private final Sinks.One<RunOutcome> outcome = Sinks.one();
+    private RunOutcome result;
     private volatile AgentRun.Status status = AgentRun.Status.CREATED;
 
     public RunControl(String agentId) {
@@ -97,6 +99,7 @@ public final class RunControl {
             status = AgentRun.Status.CANCELLED;
         }
         cancellation.tryEmitEmpty();
+        outcome.tryEmitValue(new RunOutcome(RunOutcome.Status.CANCELLED, "cancelled"));
         termination.tryEmitValue(AgentRun.Status.CANCELLED);
         return true;
     }
@@ -115,14 +118,33 @@ public final class RunControl {
         return cancel();
     }
 
-    public void finish(AgentRun.Status outcome) {
+    synchronized void result(RunOutcome value) {
+        if (!status.isTerminal()) result = value;
+    }
+
+    public void finish(AgentRun.Status terminal) {
+        if (!terminal.isTerminal()) throw new IllegalArgumentException("Expected terminal status");
+        RunOutcome completed;
         synchronized (this) {
             if (status.isTerminal()) {
                 return;
             }
-            status = outcome;
+            status = terminal;
+            completed =
+                    terminal == AgentRun.Status.COMPLETED
+                            ? result == null
+                                    ? new RunOutcome(RunOutcome.Status.COMPLETED, null)
+                                    : result
+                            : new RunOutcome(
+                                    terminal == AgentRun.Status.CANCELLED
+                                            ? RunOutcome.Status.CANCELLED
+                                            : RunOutcome.Status.FAILED,
+                                    terminal == AgentRun.Status.CANCELLED
+                                            ? "cancelled"
+                                            : "execution_failed");
         }
-        termination.tryEmitValue(outcome);
+        outcome.tryEmitValue(completed);
+        termination.tryEmitValue(terminal);
     }
 
     /** Cancel upstream first, then report cancellation instead of a successful empty completion. */
@@ -141,5 +163,9 @@ public final class RunControl {
 
     public Mono<AgentRun.Status> termination() {
         return termination.asMono();
+    }
+
+    public Mono<RunOutcome> outcome() {
+        return outcome.asMono();
     }
 }
