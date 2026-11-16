@@ -95,7 +95,7 @@ public final class SessionEventSubscription implements AutoCloseable {
                             session.liveEvents()
                                     .subscribe(
                                             event -> {
-                                                if (filter.matches(event)) {
+                                                if (filter.matches(session.key(), event)) {
                                                     live.add(event);
                                                     changed();
                                                 }

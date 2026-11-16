@@ -141,6 +141,14 @@ class SessionStreamEventTest {
                                 preview.data())));
     }
 
+    @Test
+    void matchingTurnCannotAdmitAnotherSessionsLivePreview() {
+        var filter = new EventFilter("main", "turn-1", null);
+        var preview = live("tool.arguments.delta", Map.of("toolCallId", "same", "text", "private"));
+        assertTrue(filter.matches(session, preview));
+        assertFalse(filter.matches(new SessionKey("another-tenant", session.sessionId()), preview));
+    }
+
     private LiveEvent live(String type, Map<String, ?> data) {
         return new LiveEvent(
                 "1",

@@ -79,7 +79,7 @@ public final class SessionEventStream implements AutoCloseable {
                                 .subscribe(
                                         event -> {
                                             if (!closed.get()
-                                                    && filter.matches(event)
+                                                    && filter.matches(session.key(), event)
                                                     && options.accepts(event)) live.add(event);
                                         });
             } catch (RuntimeException error) {

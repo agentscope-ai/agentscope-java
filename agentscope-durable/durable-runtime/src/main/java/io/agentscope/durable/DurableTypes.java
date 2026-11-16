@@ -696,6 +696,10 @@ public final class DurableTypes {
             return matches(event.threadId(), event.turnId(), event.runId());
         }
 
+        boolean matches(SessionKey session, LiveEvent event) {
+            return session.equals(event.session()) && matches(event);
+        }
+
         public boolean matches(LiveEvent event) {
             return matches(event.threadId(), event.turnId(), event.runId());
         }

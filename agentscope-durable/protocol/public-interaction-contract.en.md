@@ -267,6 +267,8 @@ they do not reconstruct state from private native logs. A control receipt confir
 admission, while application events or the resulting Turn state confirm processing.
 User input does not acquire system privileges, and public events exclude private reasoning.
 
+A client that displays an answer and crashes before saving its cursor can receive the same completion again. Upsert the answer by `messageId` within its Session for both snapshots and replay. Consumers that need an event-by-event audit must retain the events before pruning.
+
 ## 6. Capabilities, errors and recovery
 
 Public capabilities reports operations, registered definition names and checkpoint bindings;
