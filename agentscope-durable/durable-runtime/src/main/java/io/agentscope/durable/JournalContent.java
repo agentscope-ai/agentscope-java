@@ -27,6 +27,9 @@ final class JournalContent {
     private static final int MIN = 1024;
     private static final int MAX = 8192;
     private static final int DESCRIPTOR = 36;
+    // The manifest changes on every append. Small, descriptor-aligned pages allow the
+    // stable interior of the index to be reused before it reaches data-chunk size.
+    private static final int MAX_INDEX = 32 * DESCRIPTOR;
     private static final HexFormat HEX = HexFormat.of();
 
     record Root(Reference reference, int levels, int size, String digest) {}
@@ -36,7 +39,7 @@ final class JournalContent {
             throw new IllegalArgumentException("Journal content too large");
         byte[] layer = bytes;
         int levels = 0;
-        while (layer.length > MAX) {
+        if (layer.length > MAX) {
             var index = new ByteArrayOutputStream();
             int hash = 0;
             int start = 0;
@@ -46,12 +49,7 @@ final class JournalContent {
                 if (length >= MAX
                         || (length >= MIN && (hash & 2047) == 0)
                         || i == layer.length - 1) {
-                    var chunk = store.put(scope, Arrays.copyOfRange(layer, start, i + 1));
-                    index.writeBytes(
-                            ByteBuffer.allocate(DESCRIPTOR)
-                                    .putInt(length)
-                                    .put(HEX.parseHex(chunk.digest()))
-                                    .array());
+                    appendChunk(store, scope, layer, start, i + 1, index);
                     start = i + 1;
                     hash = 0;
                 }
@@ -59,7 +57,38 @@ final class JournalContent {
             layer = index.toByteArray();
             levels++;
         }
+        while (levels > 0 && layer.length > MAX_INDEX) {
+            var index = new ByteArrayOutputStream();
+            int start = 0;
+            for (int end = DESCRIPTOR; end <= layer.length; end += DESCRIPTOR) {
+                int length = end - start;
+                // The last digest byte is stable even when preceding descriptors change.
+                if (length == MAX_INDEX
+                        || (length >= 4 * DESCRIPTOR && (layer[end - 1] & 7) == 0)
+                        || end == layer.length) {
+                    appendChunk(store, scope, layer, start, end, index);
+                    start = end;
+                }
+            }
+            layer = index.toByteArray();
+            levels++;
+        }
         return new Root(store.put(scope, layer), levels, bytes.length, ObjectStore.digest(bytes));
+    }
+
+    private static void appendChunk(
+            ObjectStore store,
+            String scope,
+            byte[] layer,
+            int start,
+            int end,
+            ByteArrayOutputStream index) {
+        var chunk = store.put(scope, Arrays.copyOfRange(layer, start, end));
+        index.writeBytes(
+                ByteBuffer.allocate(DESCRIPTOR)
+                        .putInt(end - start)
+                        .put(HEX.parseHex(chunk.digest()))
+                        .array());
     }
 
     private static final int[] GEAR = gearTable();
@@ -72,7 +101,7 @@ final class JournalContent {
     }
 
     static byte[] read(ObjectStore store, String scope, Root root) {
-        if (!root.reference().scope().equals(scope) || root.levels() < 0 || root.levels() > 4)
+        if (!root.reference().scope().equals(scope) || root.levels() < 0 || root.levels() > 8)
             throw new DurableException(DurableException.Code.INVALID, "Invalid journal index");
         var expected = new Reference(store.id(), scope, root.digest(), root.size());
         byte[] layer = store.read(root.reference());

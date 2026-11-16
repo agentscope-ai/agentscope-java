@@ -53,6 +53,11 @@ class JournalContentTest {
             roots.add(JournalContent.put(objects, scope, Arrays.copyOf(history, turn * 2048)));
         }
         assertTrue(roots.get(511).levels() >= 2);
+        assertTrue(
+                roots.stream()
+                        .filter(root -> root.levels() > 0)
+                        .allMatch(root -> root.reference().size() <= 32 * 36),
+                "Growing histories must share the index instead of copying all leaf descriptors");
         long stored = chunks.values().stream().mapToLong(chunk -> chunk.length).sum();
         assertTrue(stored < history.length * 10L, "Unique chunk and index bytes: " + stored);
         for (int i = 0; i < roots.size(); i++)
