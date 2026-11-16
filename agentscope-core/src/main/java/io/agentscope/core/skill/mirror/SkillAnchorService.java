@@ -15,9 +15,9 @@
  */
 package io.agentscope.core.skill.mirror;
 
-import io.agentscope.core.session.SessionEvent;
-import io.agentscope.core.session.SessionEventCodecRegistry;
-import io.agentscope.core.session.SessionRecorder;
+import io.agentscope.core.journal.InvocationRecorder;
+import io.agentscope.core.journal.JournalEvent;
+import io.agentscope.core.journal.JournalEventCodecRegistry;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Objects;
@@ -27,7 +27,7 @@ import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Predicate;
 
 /**
- * Persists skill version anchors on the {@link SessionRecorder} event journal: which version
+ * Persists skill version anchors on the {@link InvocationRecorder} event journal: which version
  * a {@code SkillVersionPolicy.PIN} session is bound to, restored when the session resumes.
  * The anchor is a journal event, so it survives eviction of in-memory session state. Event
  * semantics:
@@ -68,10 +68,10 @@ public final class SkillAnchorService {
     // Registers the anchor and refresh event types with validation-only codecs: the events
     // carry no session-state side effects, replay simply exposes them to findAnchor.
     static {
-        SessionEventCodecRegistry registry = SessionEventCodecRegistry.defaultRegistry();
+        JournalEventCodecRegistry registry = JournalEventCodecRegistry.defaultRegistry();
         registry.register(
                 EVENT_TYPE,
-                new SessionEventCodecRegistry.Codec(
+                new JournalEventCodecRegistry.Codec(
                         data -> {
                             Objects.requireNonNull(data.get("skillId"), "skillId");
                             Objects.requireNonNull(data.get("version"), "version");
@@ -81,7 +81,7 @@ public final class SkillAnchorService {
                         (state, data) -> {}));
         registry.register(
                 REFRESH_EVENT_TYPE,
-                new SessionEventCodecRegistry.Codec(
+                new JournalEventCodecRegistry.Codec(
                         data -> Objects.requireNonNull(data.get("skillId"), "skillId"),
                         (state, data) -> {}));
     }
@@ -103,7 +103,7 @@ public final class SkillAnchorService {
      * @return the effective anchor after this call, possibly another racer's
      */
     public static AnchoredVersion anchorInitial(
-            SessionRecorder recorder, String skillId, String version, String mode) {
+            InvocationRecorder recorder, String skillId, String version, String mode) {
         Objects.requireNonNull(skillId, "skillId must not be null");
         Objects.requireNonNull(version, "version must not be null");
         Objects.requireNonNull(mode, "mode must not be null");
@@ -144,7 +144,7 @@ public final class SkillAnchorService {
      * @param toVersion the fallback version actually materialized (never null)
      */
     public static void anchorFallback(
-            SessionRecorder recorder, String skillId, String fromVersion, String toVersion) {
+            InvocationRecorder recorder, String skillId, String fromVersion, String toVersion) {
         Objects.requireNonNull(skillId, "skillId must not be null");
         Objects.requireNonNull(fromVersion, "fromVersion must not be null");
         Objects.requireNonNull(toVersion, "toVersion must not be null");
@@ -175,7 +175,7 @@ public final class SkillAnchorService {
      * @param toVersion the newly observed version (never null)
      */
     public static void refreshAudit(
-            SessionRecorder recorder, String skillId, String fromVersion, String toVersion) {
+            InvocationRecorder recorder, String skillId, String fromVersion, String toVersion) {
         Objects.requireNonNull(skillId, "skillId must not be null");
         Objects.requireNonNull(toVersion, "toVersion must not be null");
         if (recorder == null) {
@@ -197,12 +197,13 @@ public final class SkillAnchorService {
      * @param skillId the composite skill id (never null)
      * @return the effective anchor, or {@code empty()} when never anchored
      */
-    public static Optional<AnchoredVersion> findAnchor(SessionRecorder recorder, String skillId) {
+    public static Optional<AnchoredVersion> findAnchor(
+            InvocationRecorder recorder, String skillId) {
         Objects.requireNonNull(skillId, "skillId must not be null");
         if (recorder == null) {
             return Optional.empty();
         }
-        Predicate<SessionEvent> matching = event -> skillId.equals(dataOf(event).get("skillId"));
+        Predicate<JournalEvent> matching = event -> skillId.equals(dataOf(event).get("skillId"));
         return recorder.findLast(EVENT_TYPE, matching).map(SkillAnchorService::anchoredFrom);
     }
 
@@ -210,7 +211,7 @@ public final class SkillAnchorService {
      * to {@link #findAnchor} (first-writer-wins depends on read-your-own-write). {@code
      * fromVersion} is carried only by FALLBACK events (null omits the key). */
     private static void appendAnchored(
-            SessionRecorder recorder,
+            InvocationRecorder recorder,
             String skillId,
             String version,
             String mode,
@@ -235,7 +236,7 @@ public final class SkillAnchorService {
     }
 
     /** Rebuilds an {@link AnchoredVersion} from a journaled anchor event's data map. */
-    private static AnchoredVersion anchoredFrom(SessionEvent event) {
+    private static AnchoredVersion anchoredFrom(JournalEvent event) {
         Map<String, Object> data = dataOf(event);
         Object anchoredAt = data.get("anchoredAt");
         return new AnchoredVersion(
@@ -246,7 +247,7 @@ public final class SkillAnchorService {
     }
 
     /** Returns the event's data map (never null for journaled events). */
-    private static Map<String, Object> dataOf(SessionEvent event) {
+    private static Map<String, Object> dataOf(JournalEvent event) {
         return event.data();
     }
 }

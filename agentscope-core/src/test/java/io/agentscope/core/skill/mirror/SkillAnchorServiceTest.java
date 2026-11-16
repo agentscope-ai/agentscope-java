@@ -21,11 +21,11 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.agent.RuntimeContext;
-import io.agentscope.core.session.InMemorySessionLogStore;
-import io.agentscope.core.session.SessionEvent;
-import io.agentscope.core.session.SessionKey;
-import io.agentscope.core.session.SessionLog;
-import io.agentscope.core.session.SessionRecorder;
+import io.agentscope.core.agent.ThreadKey;
+import io.agentscope.core.journal.InMemoryThreadJournalStore;
+import io.agentscope.core.journal.InvocationRecorder;
+import io.agentscope.core.journal.JournalEvent;
+import io.agentscope.core.journal.ThreadJournal;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.ExecutorService;
@@ -45,19 +45,19 @@ import org.junit.jupiter.api.Test;
 @DisplayName("SkillAnchorService session anchoring")
 class SkillAnchorServiceTest {
 
-    private InMemorySessionLogStore store;
-    private SessionLog log;
+    private InMemoryThreadJournalStore store;
+    private ThreadJournal log;
 
     @BeforeEach
     void setUp() {
-        store = new InMemorySessionLogStore();
-        log = store.open(new SessionKey("user", "agent", "session"), RuntimeContext.empty());
+        store = new InMemoryThreadJournalStore();
+        log = store.open(new ThreadKey("user", "agent", "session", "main"), RuntimeContext.empty());
     }
 
     @Test
     @DisplayName("INITIAL anchoring is first-writer-wins")
     void testInitialAnchorFirstWriterWins() {
-        SessionRecorder recorder = new SessionRecorder(log, "t1");
+        InvocationRecorder recorder = new InvocationRecorder(log, "t1");
 
         SkillAnchorService.AnchoredVersion first =
                 SkillAnchorService.anchorInitial(recorder, "demo-skill_src", "v1", "pin");
@@ -75,11 +75,11 @@ class SkillAnchorServiceTest {
     @Test
     @DisplayName("Anchors persist across recorder instances (replay rebuild)")
     void testAnchorsPersistAcrossRecorders() {
-        SessionRecorder first = new SessionRecorder(log, "t1");
+        InvocationRecorder first = new InvocationRecorder(log, "t1");
         SkillAnchorService.anchorInitial(first, "demo-skill_src", "v1", "pin");
         first.close();
 
-        SessionRecorder second = new SessionRecorder(log, "t2");
+        InvocationRecorder second = new InvocationRecorder(log, "t2");
         assertEquals(
                 "v1",
                 SkillAnchorService.findAnchor(second, "demo-skill_src").orElseThrow().version(),
@@ -90,7 +90,7 @@ class SkillAnchorServiceTest {
     @Test
     @DisplayName("FALLBACK is the only legal re-anchor of an existing pin")
     void testFallbackReanchors() {
-        SessionRecorder recorder = new SessionRecorder(log, "t1");
+        InvocationRecorder recorder = new InvocationRecorder(log, "t1");
         SkillAnchorService.anchorInitial(recorder, "demo-skill_src", "v1", "pin");
 
         SkillAnchorService.anchorFallback(recorder, "demo-skill_src", "v1", "v5");
@@ -99,7 +99,7 @@ class SkillAnchorServiceTest {
                 "v5",
                 SkillAnchorService.findAnchor(recorder, "demo-skill_src").orElseThrow().version(),
                 "the one-shot fallback re-anchor takes effect");
-        SessionEvent fallback =
+        JournalEvent fallback =
                 recorder.findLast(SkillAnchorService.EVENT_TYPE, event -> true).orElseThrow();
         assertEquals("FALLBACK", fallback.data().get("reason"));
         assertEquals(
@@ -112,7 +112,7 @@ class SkillAnchorServiceTest {
     @Test
     @DisplayName("FALLBACK without a matching current anchor is a no-op (compare-and-set)")
     void testFallbackRequiresMatchingAnchor() {
-        SessionRecorder recorder = new SessionRecorder(log, "t1");
+        InvocationRecorder recorder = new InvocationRecorder(log, "t1");
 
         SkillAnchorService.anchorFallback(recorder, "demo-skill_src", "v1", "v5");
         assertTrue(
@@ -130,9 +130,9 @@ class SkillAnchorServiceTest {
     @Test
     @DisplayName("INITIAL events carry no fromVersion; null arguments are rejected")
     void testInitialShapeAndNullContracts() {
-        SessionRecorder recorder = new SessionRecorder(log, "t1");
+        InvocationRecorder recorder = new InvocationRecorder(log, "t1");
         SkillAnchorService.anchorInitial(recorder, "demo-skill_src", "v1", "pin");
-        SessionEvent initial =
+        JournalEvent initial =
                 recorder.findLast(SkillAnchorService.EVENT_TYPE, event -> true).orElseThrow();
         assertEquals("INITIAL", initial.data().get("reason"));
         assertFalse(
@@ -155,7 +155,7 @@ class SkillAnchorServiceTest {
     @Test
     @DisplayName("Refresh audits never change the effective anchor")
     void testRefreshAuditDoesNotAffectAnchors() {
-        SessionRecorder recorder = new SessionRecorder(log, "t1");
+        InvocationRecorder recorder = new InvocationRecorder(log, "t1");
         SkillAnchorService.anchorInitial(recorder, "demo-skill_src", "v1", "pin");
 
         SkillAnchorService.refreshAudit(recorder, "demo-skill_src", "v1", "v9");
@@ -186,12 +186,12 @@ class SkillAnchorServiceTest {
         // The check-then-append window is narrow; many fresh journals make the race likely
         // at least once, and the assertion must hold on every round either way.
         for (int round = 0; round < 50; round++) {
-            InMemorySessionLogStore roundStore = new InMemorySessionLogStore();
-            SessionLog roundLog =
+            InMemoryThreadJournalStore roundStore = new InMemoryThreadJournalStore();
+            ThreadJournal roundLog =
                     roundStore.open(
-                            new SessionKey("user", "agent", "race-" + round),
+                            new ThreadKey("user", "agent", "race-" + round, "main"),
                             RuntimeContext.empty());
-            SessionRecorder recorder = new SessionRecorder(roundLog, "t1");
+            InvocationRecorder recorder = new InvocationRecorder(roundLog, "t1");
             SkillAnchorService.AnchoredVersion[] results =
                     new SkillAnchorService.AnchoredVersion[2];
             CountDownLatch done = new CountDownLatch(2);

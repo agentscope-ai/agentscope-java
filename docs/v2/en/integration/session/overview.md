@@ -17,10 +17,6 @@ State is addressed by `(userId, sessionId)`:
 - `sessionId` — required, non-blank, identifies a session.
 - `userId` — optional. `null` means anonymous / single-tenant (CLI, tests, etc.).
 
-## Native Session Log is a separate contract
-
-This page covers AgentStateStore. HarnessAgent defaults to EVENT_LOG recovery through SessionLogStore; changing stateStore alone does not migrate/share native history. LEGACY still use this interface. A file-capable BaseStore does not necessarily offer journal CAS: current OSS/COS need a separate native backend. See [Session logs](/v2/en/docs/harness/session-log).
-
 ## Available Implementations
 
 | Implementation | Module | When to use |
@@ -28,7 +24,7 @@ This page covers AgentStateStore. HarnessAgent defaults to EVENT_LOG recovery th
 | `InMemoryAgentStateStore` | `agentscope-core` | Unit tests |
 | `JsonFileAgentStateStore` | `agentscope-core` | Single-node dev (**HarnessAgent default**) |
 | `RedisAgentStateStore` | `agentscope-extensions-redis` | [Multi-replica production default](/v2/en/integration/distributed/redis) |
-| `JdbcAgentStateStore` | `agentscope-extensions-jdbc` | [Existing database infrastructure](/v2/en/integration/distributed/jdbc) |
+| `MysqlAgentStateStore` | `agentscope-extensions-mysql` | [Existing database infrastructure](/v2/en/integration/distributed/mysql) |
 | `OssAgentStateStore` | `agentscope-extensions-oss` | [Alibaba Cloud ecosystem](/v2/en/integration/distributed/oss) |
 
 ## Standalone Configuration
@@ -44,5 +40,5 @@ ReActAgent agent = ReActAgent.builder()
 For detailed usage and code examples, see each store's documentation:
 
 - [Redis](/v2/en/integration/distributed/redis#1-redisagentstatestore)
-- [JDBC](/v2/en/integration/distributed/jdbc#1-jdbcagentstatestore)
+- [MySQL](/v2/en/integration/distributed/mysql#1-mysqlagentstatestore)
 - [OSS](/v2/en/integration/distributed/oss#1-ossagentstatestore)

@@ -57,6 +57,25 @@ import org.junit.jupiter.params.provider.ValueSource;
 class WorkspaceContextMiddlewareSandboxPromptTest {
 
     @Test
+    void sandboxPrompt_usesActiveWorkspaceRoot(@TempDir Path workspace) {
+        WorkspaceSpec spec = new WorkspaceSpec();
+        spec.setRoot("/home/user");
+        SandboxState state = mock(SandboxState.class);
+        when(state.getWorkspaceSpec()).thenReturn(spec);
+        Sandbox sandbox = mock(Sandbox.class);
+        when(sandbox.getState()).thenReturn(state);
+        RuntimeContext context = RuntimeContext.empty();
+        context.put(SandboxAcquireResult.class, SandboxAcquireResult.selfManaged(sandbox));
+        try (WorkspaceManager wm = new WorkspaceManager(workspace, mockSandboxFilesystem())) {
+            String prompt =
+                    WorkspacePromptTestSupport.render(
+                            new WorkspaceContextMiddleware(wm), context, "BASE\n");
+            assertTrue(prompt.contains("Sandbox root: /home/user"), () -> prompt);
+            assertFalse(prompt.contains("Sandbox root: /workspace"), () -> prompt);
+        }
+    }
+
+    @Test
     void emptyKnowledgeOmitsNavigation(@TempDir Path workspace) {
         try (WorkspaceManager wm = new WorkspaceManager(workspace, mockSandboxFilesystem())) {
             String prompt = prompt(wm, false);

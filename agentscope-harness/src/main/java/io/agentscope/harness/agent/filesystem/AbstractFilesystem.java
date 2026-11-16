@@ -43,7 +43,7 @@ import java.util.Map;
  */
 public interface AbstractFilesystem {
     /** Optional durable atomic storage capability. No silent fallback to local or unversioned writes. */
-    default io.agentscope.core.session.AtomicSessionStorage sessionStorage(RuntimeContext context) {
+    default io.agentscope.core.journal.AtomicJournalStorage journalStorage(RuntimeContext context) {
         throw new UnsupportedOperationException(
                 "Filesystem does not support durable session storage: " + getClass().getName());
     }

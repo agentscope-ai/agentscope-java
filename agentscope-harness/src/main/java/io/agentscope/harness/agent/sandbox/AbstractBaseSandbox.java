@@ -97,8 +97,8 @@ public abstract class AbstractBaseSandbox implements Sandbox {
                     Optional<InputStream> archive = openSnapshotArchive(snapshot);
                     if (archive.isPresent()) {
                         restoredFromSnapshot = true;
-                        doSetupWorkspace();
                         try (InputStream stream = archive.get()) {
+                            doSetupWorkspace();
                             doHydrateWorkspace(stream);
                         }
                         workspaceSpecApplier.applyWorkspaceSpec(spec, true);
@@ -116,8 +116,8 @@ public abstract class AbstractBaseSandbox implements Sandbox {
                     // Branch C: restore from snapshot + all spec entries
                     log.debug("[sandbox] Branch C: restoring from snapshot");
                     restoredFromSnapshot = true;
-                    doSetupWorkspace();
                     try (InputStream stream = archive.get()) {
+                        doSetupWorkspace();
                         doHydrateWorkspace(stream);
                     }
                     workspaceSpecApplier.applyWorkspaceSpec(spec, false);

@@ -18,8 +18,8 @@ package io.agentscope.core.skill;
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.CapabilitySurface;
 import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.core.journal.InvocationRecorder;
 import io.agentscope.core.middleware.MiddlewareBase;
-import io.agentscope.core.session.SessionRecorder;
 import io.agentscope.core.skill.mirror.SkillAnchorService;
 import io.agentscope.core.skill.repository.AgentSkillRepository;
 import io.agentscope.core.skill.repository.RuntimeContextSkillRepository;
@@ -550,7 +550,7 @@ public class DynamicSkillMiddleware implements MiddlewareBase {
      * @param session the session state to populate; established on return
      */
     private void establishSession(Agent agent, RuntimeContext ctx, MirrorSession session) {
-        SessionRecorder recorder = SessionRecorder.from(ctx);
+        InvocationRecorder recorder = InvocationRecorder.from(ctx);
         boolean pin = isPinPolicy(agent);
         SkillFilter baseline = resolveBaseline(agent);
         boolean anyCandidateNames = false;
@@ -701,7 +701,7 @@ public class DynamicSkillMiddleware implements MiddlewareBase {
         SkillFilter effective = resolveFilter(agent, ctx);
         List<String> baselineSelection = explicitSelectionOf(resolveBaseline(agent));
         boolean pin = isPinPolicy(agent);
-        SessionRecorder recorder = SessionRecorder.from(ctx);
+        InvocationRecorder recorder = InvocationRecorder.from(ctx);
         for (int i = repositories.size() - 1; i >= 0; i--) {
             AgentSkillRepository repo = repositories.get(i);
             boolean contextRepo = repo instanceof RuntimeContextSkillRepository;
@@ -787,7 +787,7 @@ public class DynamicSkillMiddleware implements MiddlewareBase {
             return;
         }
         session.lastFreshnessMillis = now;
-        SessionRecorder recorder = SessionRecorder.from(ctx);
+        InvocationRecorder recorder = InvocationRecorder.from(ctx);
         for (SkillEntry entry : session.entriesByName.values()) {
             if (entry.pinned || !session.versionedRepositories.contains(entry.repository)) {
                 continue;
@@ -864,7 +864,7 @@ public class DynamicSkillMiddleware implements MiddlewareBase {
      * @param entry the entry to anchor and pin; always left {@code pinned = true}
      */
     private void anchorEntry(
-            Agent agent, RuntimeContext ctx, SessionRecorder recorder, SkillEntry entry) {
+            Agent agent, RuntimeContext ctx, InvocationRecorder recorder, SkillEntry entry) {
         String anchored =
                 SkillAnchorService.anchorInitial(
                                 recorder, entry.skill.getSkillId(), entry.version(), "pin")
@@ -923,7 +923,7 @@ public class DynamicSkillMiddleware implements MiddlewareBase {
                 unreachable,
                 fallback.getVersion());
         SkillAnchorService.anchorFallback(
-                SessionRecorder.from(ctx),
+                InvocationRecorder.from(ctx),
                 fallback.getSkillId(),
                 unreachable,
                 fallback.getVersion());

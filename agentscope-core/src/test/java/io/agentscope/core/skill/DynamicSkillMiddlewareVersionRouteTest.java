@@ -423,11 +423,12 @@ class DynamicSkillMiddlewareVersionRouteTest {
     @Test
     @DisplayName("Unreachable PIN falls back once: one-hop null pull, re-anchored, error log")
     void testUnreachablePinFallsBackOnce() throws IOException {
-        io.agentscope.core.session.InMemorySessionLogStore store =
-                new io.agentscope.core.session.InMemorySessionLogStore();
-        io.agentscope.core.session.SessionLog log =
+        io.agentscope.core.journal.InMemoryThreadJournalStore store =
+                new io.agentscope.core.journal.InMemoryThreadJournalStore();
+        io.agentscope.core.journal.ThreadJournal log =
                 store.open(
-                        new io.agentscope.core.session.SessionKey("u", "version-route-agent", "j1"),
+                        new io.agentscope.core.agent.ThreadKey(
+                                "u", "version-route-agent", "j1", "main"),
                         RuntimeContext.empty());
         VersionedFakeRepository repository =
                 new VersionedFakeRepository(tempDir.resolve("repo-cache"));
@@ -438,9 +439,9 @@ class DynamicSkillMiddlewareVersionRouteTest {
 
         // Session one (journaled) anchors v1; the repository materializes the version dir.
         RuntimeContext rc1 = RuntimeContext.builder().userId("u").sessionId("s2a").build();
-        io.agentscope.core.session.SessionRecorder anchorWriter =
-                new io.agentscope.core.session.SessionRecorder(log, "t1");
-        rc1.put(io.agentscope.core.session.SessionRecorder.CONTEXT_KEY, anchorWriter);
+        io.agentscope.core.journal.InvocationRecorder anchorWriter =
+                new io.agentscope.core.journal.InvocationRecorder(log, "t1");
+        rc1.put(io.agentscope.core.journal.InvocationRecorder.CONTEXT_KEY, anchorWriter);
         String first = middleware.onSystemPrompt(agent, rc1, "").block();
         assertTrue(first.contains("demo-skill"));
         anchorWriter.close();
@@ -453,9 +454,9 @@ class DynamicSkillMiddlewareVersionRouteTest {
         evictCache(repository);
 
         RuntimeContext rc2 = RuntimeContext.builder().userId("u").sessionId("s2b").build();
-        io.agentscope.core.session.SessionRecorder resume =
-                new io.agentscope.core.session.SessionRecorder(log, "t2");
-        rc2.put(io.agentscope.core.session.SessionRecorder.CONTEXT_KEY, resume);
+        io.agentscope.core.journal.InvocationRecorder resume =
+                new io.agentscope.core.journal.InvocationRecorder(log, "t2");
+        rc2.put(io.agentscope.core.journal.InvocationRecorder.CONTEXT_KEY, resume);
         String second = middleware.onSystemPrompt(agent, rc2, "").block();
 
         assertTrue(
@@ -477,11 +478,12 @@ class DynamicSkillMiddlewareVersionRouteTest {
     @Test
     @DisplayName("Unreachable PIN with failOnUnreachable() fails loudly")
     void testUnreachablePinStrictFails() throws IOException {
-        io.agentscope.core.session.InMemorySessionLogStore store =
-                new io.agentscope.core.session.InMemorySessionLogStore();
-        io.agentscope.core.session.SessionLog log =
+        io.agentscope.core.journal.InMemoryThreadJournalStore store =
+                new io.agentscope.core.journal.InMemoryThreadJournalStore();
+        io.agentscope.core.journal.ThreadJournal log =
                 store.open(
-                        new io.agentscope.core.session.SessionKey("u", "version-route-agent", "j2"),
+                        new io.agentscope.core.agent.ThreadKey(
+                                "u", "version-route-agent", "j2", "main"),
                         RuntimeContext.empty());
         VersionedFakeRepository repository =
                 new VersionedFakeRepository(tempDir.resolve("repo-cache"));
@@ -495,9 +497,9 @@ class DynamicSkillMiddlewareVersionRouteTest {
 
         // Session one (journaled) anchors v1.
         RuntimeContext rc1 = RuntimeContext.builder().userId("u").sessionId("s3a").build();
-        io.agentscope.core.session.SessionRecorder anchorWriter =
-                new io.agentscope.core.session.SessionRecorder(log, "t1");
-        rc1.put(io.agentscope.core.session.SessionRecorder.CONTEXT_KEY, anchorWriter);
+        io.agentscope.core.journal.InvocationRecorder anchorWriter =
+                new io.agentscope.core.journal.InvocationRecorder(log, "t1");
+        rc1.put(io.agentscope.core.journal.InvocationRecorder.CONTEXT_KEY, anchorWriter);
         String first = middleware.onSystemPrompt(agent, rc1, "").block();
         assertTrue(first.contains("demo-skill"));
         anchorWriter.close();
@@ -511,8 +513,8 @@ class DynamicSkillMiddlewareVersionRouteTest {
 
         RuntimeContext rc2 = RuntimeContext.builder().userId("u").sessionId("s3b").build();
         rc2.put(
-                io.agentscope.core.session.SessionRecorder.CONTEXT_KEY,
-                new io.agentscope.core.session.SessionRecorder(log, "t2"));
+                io.agentscope.core.journal.InvocationRecorder.CONTEXT_KEY,
+                new io.agentscope.core.journal.InvocationRecorder(log, "t2"));
         assertThrows(
                 IllegalStateException.class,
                 () -> middleware.onSystemPrompt(agent, rc2, "").block(),
@@ -522,11 +524,12 @@ class DynamicSkillMiddlewareVersionRouteTest {
     @Test
     @DisplayName("Mismatched PIN serve (stamp ≠ requested) is refused and routed to the fallback")
     void testMismatchedServeRefusedAndFallsBack() throws IOException {
-        io.agentscope.core.session.InMemorySessionLogStore store =
-                new io.agentscope.core.session.InMemorySessionLogStore();
-        io.agentscope.core.session.SessionLog log =
+        io.agentscope.core.journal.InMemoryThreadJournalStore store =
+                new io.agentscope.core.journal.InMemoryThreadJournalStore();
+        io.agentscope.core.journal.ThreadJournal log =
                 store.open(
-                        new io.agentscope.core.session.SessionKey("u", "version-route-agent", "j4"),
+                        new io.agentscope.core.agent.ThreadKey(
+                                "u", "version-route-agent", "j4", "main"),
                         RuntimeContext.empty());
         VersionedFakeRepository repository =
                 new VersionedFakeRepository(tempDir.resolve("repo-cache"));
@@ -537,9 +540,9 @@ class DynamicSkillMiddlewareVersionRouteTest {
 
         // Session one (journaled) anchors v1.
         RuntimeContext rc1 = RuntimeContext.builder().userId("u").sessionId("s4a").build();
-        io.agentscope.core.session.SessionRecorder anchorWriter =
-                new io.agentscope.core.session.SessionRecorder(log, "t1");
-        rc1.put(io.agentscope.core.session.SessionRecorder.CONTEXT_KEY, anchorWriter);
+        io.agentscope.core.journal.InvocationRecorder anchorWriter =
+                new io.agentscope.core.journal.InvocationRecorder(log, "t1");
+        rc1.put(io.agentscope.core.journal.InvocationRecorder.CONTEXT_KEY, anchorWriter);
         String first = middleware.onSystemPrompt(agent, rc1, "").block();
         assertTrue(first.contains("demo-skill"));
         anchorWriter.close();
@@ -552,9 +555,9 @@ class DynamicSkillMiddlewareVersionRouteTest {
         repository.markMismatched("demo-skill", "v1", "v3");
 
         RuntimeContext rc2 = RuntimeContext.builder().userId("u").sessionId("s4b").build();
-        io.agentscope.core.session.SessionRecorder resume =
-                new io.agentscope.core.session.SessionRecorder(log, "t2");
-        rc2.put(io.agentscope.core.session.SessionRecorder.CONTEXT_KEY, resume);
+        io.agentscope.core.journal.InvocationRecorder resume =
+                new io.agentscope.core.journal.InvocationRecorder(log, "t2");
+        rc2.put(io.agentscope.core.journal.InvocationRecorder.CONTEXT_KEY, resume);
         String second = middleware.onSystemPrompt(agent, rc2, "").block();
 
         assertTrue(
