@@ -1259,6 +1259,10 @@ public final class TransactionalSessionBackend implements SessionBackend {
                         return old;
                     }
                     owned(s, lease, now);
+                    // Cancellation and native commits serialize on this record. A late inference
+                    // must not publish an answer or checkpoint before cancellation settlement.
+                    if (r.cancel && command.status() != TurnStatus.CANCELLED)
+                        throw error(DurableException.Code.FENCED, "Invocation cancelled");
                     policy.check(s.tx, s.thread.definition, lease, command);
                     if (command.journal() != null) {
                         var append = command.journal();
@@ -1477,8 +1481,6 @@ public final class TransactionalSessionBackend implements SessionBackend {
                     r.waiting = command.waiting();
                     r.output = DurableJson.copy(command.output());
                     r.error = command.error();
-                    if (r.cancel)
-                        next = next.terminal() ? TurnStatus.CANCELLED : TurnStatus.CANCELLING;
                     r.status = next;
                     for (EventInput event : command.events()) {
                         if (event.type().startsWith("session.")

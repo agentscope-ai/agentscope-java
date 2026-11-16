@@ -3288,6 +3288,33 @@ public abstract class SessionBackendContract {
     }
 
     @Test
+    protected void acceptedCancellationFencesLateModelAndCompletionCommits() {
+        var turn = submit();
+        var owner = claim();
+        var stale = backend.frame(owner);
+        backend.cancel(owner.thread(), turn.turnId(), "cancel");
+        for (var frame : List.of(stale, backend.frame(owner))) {
+            for (var status : List.of(TurnStatus.RUNNING, TurnStatus.SUCCEEDED)) {
+                var late = commit(frame, "late-" + status, status, List.of(), List.of(), List.of());
+                code(DurableException.Code.FENCED, () -> backend.commit(owner, late));
+                assertTrue(
+                        backend.receipt(owner.thread(), turn.turnId(), late.commitId()).isEmpty());
+            }
+        }
+        assertEquals(TurnStatus.CANCELLING, backend.frame(owner).turn().status());
+        backend.commit(
+                owner,
+                commit(
+                        backend.frame(owner),
+                        "settle",
+                        TurnStatus.CANCELLED,
+                        List.of(),
+                        List.of(),
+                        List.of()));
+        assertEquals(TurnStatus.CANCELLED, backend.turn(owner.thread(), turn.turnId()).status());
+    }
+
+    @Test
     protected void cancellingUnknownExternalEffectDoesNotClaimItStopped() {
         submit();
         Lease l = claim();

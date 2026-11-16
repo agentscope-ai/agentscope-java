@@ -213,7 +213,8 @@ with task completion can be rejected because its state precondition no longer ho
 clients should re-read the Turn. Steer does not interrupt a model mid-token or undo
 an already dispatched tool. Active cancellation records intent and coordinates
 outstanding execution; a remote operation is only cancelled when its outcome is
-confirmed.
+confirmed. Once the backend accepts cancellation, it rejects subsequent invocation
+commits except cancellation settlement. Previously committed messages remain in history.
 
 Other controls cover context injection, withdrawal of unapplied input, interaction
 responses, and explicit pause/resume. Pause takes effect at a safe boundary; observe
