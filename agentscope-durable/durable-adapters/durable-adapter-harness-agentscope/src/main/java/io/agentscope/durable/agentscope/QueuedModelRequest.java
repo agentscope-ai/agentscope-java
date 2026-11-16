@@ -21,7 +21,6 @@ import io.agentscope.core.message.Msg;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.ToolSchema;
-import io.agentscope.durable.DurableException;
 import io.agentscope.durable.DurableJson;
 import io.agentscope.durable.DurableTurn;
 import io.agentscope.durable.DurableTypes.Signal;
@@ -31,8 +30,9 @@ import java.util.List;
 
 /**
  * A recoverable model dispatch. A publisher acknowledges only after durable MQ acceptance,
- * and deduplicates redelivery of the same callId. Reply consumers persist each signal on this Turn
- * before acknowledging their MQ delivery. Sequence numbers start at zero.
+ * and preserves the same callId on uncertain acceptance. Workers fence each replacement generation
+ * with a unique begin ID. Reply consumers persist each signal on this Turn before acknowledging
+ * their MQ delivery. Sequence numbers start at zero within each generation.
  */
 public record QueuedModelRequest(
         ThreadKey thread,
@@ -80,18 +80,71 @@ public record QueuedModelRequest(
      * whose Turn has already completed or has accepted cancellation.
      */
     public static boolean accept(DurableTurn turn, Signal signal) {
-        validateReply(signal);
-        var status = turn.status();
-        if (status.status().terminal() || status.cancellationRequested()) return false;
-        try {
-            turn.signal(signal.id(), signal.key(), signal.value());
-            return true;
-        } catch (DurableException error) {
-            if (error.code() != DurableException.Code.CONFLICT) throw error;
-            status = turn.status();
-            if (status.status().terminal() || status.cancellationRequested()) return false;
-            throw error;
-        }
+        if (!signal.key().startsWith("x.model:"))
+            throw new IllegalArgumentException("Expected a model reply signal");
+        return !"ignored".equals(turn.signal(signal.id(), signal.key(), signal.value()).status());
+    }
+
+    /** A delivery uses one stable unique ID. A replacement delivery uses a fresh ID. */
+    public static boolean begin(DurableTurn turn, String callId, String attempt) {
+        DurableJson.text(attempt, "worker attempt");
+        if ("0".equals(attempt))
+            throw new IllegalArgumentException("Worker attempt 0 is reserved for inline replies");
+        String id = "model-begin:" + callId + ":" + attempt;
+        var receipt =
+                turn.signal(
+                        id,
+                        key(callId, 0),
+                        DurableJson.value(
+                                java.util.Map.of(
+                                        "modelCallId",
+                                        callId,
+                                        "workerAttempt",
+                                        attempt,
+                                        "modelOperation",
+                                        "begin")));
+        return !"ignored".equals(receipt.status());
+    }
+
+    static Signal seal(String callId, String attempt) {
+        String id = "x.model:" + callId + ":seal";
+        return new Signal(
+                id,
+                id,
+                DurableJson.value(
+                        java.util.Map.of(
+                                "modelCallId",
+                                callId,
+                                "workerAttempt",
+                                attempt,
+                                "modelOperation",
+                                "seal")));
+    }
+
+    static String key(String callId, String attempt, long sequence) {
+        return "0".equals(attempt) ? key(callId, sequence) : key(callId, sequence) + ":" + attempt;
+    }
+
+    public static Signal reply(
+            String callId, String attempt, long sequence, ChatResponse response, boolean last) {
+        var original = reply(callId, sequence, response, last);
+        var data = (ObjectNode) original.value().deepCopy();
+        data.put("modelCallId", callId);
+        data.put("workerAttempt", attempt);
+        data.put("modelOperation", "reply");
+        String key = key(callId, attempt, sequence);
+        return new Signal(key, key, data);
+    }
+
+    public static Signal failure(
+            String callId, String attempt, long sequence, String error, boolean retryable) {
+        var data = (ObjectNode) failure(callId, sequence, error).value().deepCopy();
+        data.put("modelCallId", callId);
+        data.put("workerAttempt", attempt);
+        data.put("modelOperation", "reply");
+        data.put("retryable", retryable);
+        String key = key(callId, attempt, sequence);
+        return new Signal(key, key, data);
     }
 
     static String key(String callId, long sequence) {
@@ -114,6 +167,21 @@ public record QueuedModelRequest(
             throw new IllegalArgumentException("Missing model error");
         String key = key(callId, sequence);
         return new Signal(key, key, DurableJson.value(java.util.Map.of("error", error)));
+    }
+
+    /** Provider-neutral classification. Workers may override classification with the boolean overload. */
+    public static Signal failure(String callId, String attempt, long sequence, Throwable failure) {
+        java.util.Objects.requireNonNull(failure, "failure");
+        boolean retryable = false;
+        for (Throwable cause = failure; cause != null; cause = cause.getCause()) {
+            if (cause instanceof io.agentscope.core.model.ModelHttpException http) {
+                retryable = http.isRetryableHttpStatus();
+                break;
+            }
+            if (cause instanceof java.io.IOException
+                    || cause instanceof java.util.concurrent.TimeoutException) retryable = true;
+        }
+        return failure(callId, attempt, sequence, failure.getClass().getSimpleName(), retryable);
     }
 
     /** Check the broker consumer's wire payload before advancing to the next sequence. */

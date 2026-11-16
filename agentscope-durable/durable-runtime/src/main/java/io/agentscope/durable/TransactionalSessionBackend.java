@@ -765,11 +765,27 @@ public final class TransactionalSessionBackend implements SessionBackend {
                     String identity = "control:" + command.requestId();
                     String digest = DurableJson.hash(List.of(key, command));
                     String receiptKey = "control-receipt:" + DurableJson.hash(command.requestId());
+                    TurnData turn = requireTurn(s, command.turnId());
+                    if (command.kind() == ControlKind.SIGNAL
+                            && command.target().startsWith("x.model:")
+                            && (turn.status.terminal()
+                                    || turn.cancel
+                                    || !ModelReplyProtocol.accepts(
+                                            turn.signals.values(),
+                                            new Signal(
+                                                    command.requestId(),
+                                                    command.target(),
+                                                    command.value()))))
+                        return new CommandReceipt(
+                                command.requestId(),
+                                turn.id,
+                                command.kind().name(),
+                                "ignored",
+                                cursor(s, s.sequence));
                     if (s.commands.containsKey(identity)) {
                         equal(s.commands.get(identity), digest, "Command identity/content changed");
                         return DurableJson.convert(s.tx.get(receiptKey), CommandReceipt.class);
                     }
-                    TurnData turn = requireTurn(s, command.turnId());
                     if (command.kind() == ControlKind.CANCEL) {
                         cancel(s, turn.id, command.requestId());
                     } else {
@@ -1440,7 +1456,7 @@ public final class TransactionalSessionBackend implements SessionBackend {
                     }
                     TurnStatus previousStatus = r.status;
                     r.revision++;
-                    r.waiting = command.waiting();
+                    r.waiting = ModelReplyProtocol.waiting(r.signals.values(), command.waiting());
                     r.output = DurableJson.copy(command.output());
                     r.error = command.error();
                     if (r.cancel)
@@ -2074,14 +2090,34 @@ public final class TransactionalSessionBackend implements SessionBackend {
     }
 
     private static void acceptSignal(State s, TurnData r, Signal signal) {
+        if (!ModelReplyProtocol.accepts(r.signals.values(), signal)) return;
         Signal old = r.signals.get(signal.id());
         if (old != null) {
-            equal(DurableJson.hash(old), DurableJson.hash(signal), "Signal content changed");
+            var stored = old.value().deepCopy();
+            if ("begin".equals(old.value().path("modelOperation").asText())
+                    && old.key().startsWith("x.model:")
+                    && stored instanceof com.fasterxml.jackson.databind.node.ObjectNode object)
+                object.remove("workerEpoch");
+            equal(
+                    DurableJson.hash(new Signal(old.id(), old.key(), stored)),
+                    DurableJson.hash(signal),
+                    "Signal content changed");
             return;
         }
         if (r.withdrawn.contains(signal.id()))
             throw error(DurableException.Code.CONFLICT, "Input was withdrawn");
         if (r.status.terminal()) throw error(DurableException.Code.CONFLICT, "Turn is terminal");
+        if (signal.key().startsWith("x.model:")
+                && "begin".equals(signal.value().path("modelOperation").asText())) {
+            var value = (com.fasterxml.jackson.databind.node.ObjectNode) signal.value().deepCopy();
+            value.put("workerEpoch", Math.addExact(s.sequence, 1));
+            signal = new Signal(signal.id(), signal.key(), value);
+            if (r.waiting != null
+                    && r.waiting
+                            .key()
+                            .startsWith("x.model:" + value.required("modelCallId").asText() + ":"))
+                r.waiting = new WaitCondition(signal.key(), r.waiting.deadline());
+        }
         r.signals.put(signal.id(), signal);
         r.nextAttemptAt = 0;
         append(

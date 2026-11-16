@@ -39,6 +39,7 @@ import io.agentscope.durable.DurableTypes.TurnStatus;
 import io.agentscope.durable.DurableTypes.TurnView;
 import io.agentscope.durable.DurableTypes.WaitCondition;
 import io.agentscope.durable.HarnessContext;
+import io.agentscope.durable.ModelReplyProtocol;
 import io.agentscope.durable.codec.agentscope.DurableEventSchemas;
 import java.time.Clock;
 import java.time.Duration;
@@ -73,7 +74,6 @@ final class AgentScopeExecutionHost implements AgentExecutionHost, ModelInvocati
     private final HarnessContext durable;
     private final BackendThreadJournal log;
     private final QueuedModelRequest.Publisher publisher;
-    private final Duration replyTimeout;
     private QueuedModelRequest pendingRequest;
     private boolean queuedFallback;
 
@@ -87,6 +87,8 @@ final class AgentScopeExecutionHost implements AgentExecutionHost, ModelInvocati
     private long replyDeadline;
     private long replyProgress = -1;
     private long replyIdleMillis;
+    private String workerAttempt = "0";
+    private String replyProgressAttempt = "0";
     private WaitCondition waitingForModel;
 
     WaitCondition waitingForModel() {
@@ -182,7 +184,6 @@ final class AgentScopeExecutionHost implements AgentExecutionHost, ModelInvocati
         this.durable = durable;
         this.log = log;
         this.publisher = publisher;
-        this.replyTimeout = replyTimeout;
         this.replyIdleMillis = replyTimeout.toMillis();
         for (var event : log.scan(0, log.head().seq())) {
             if ("state/checkpoint".equals(event.type())) replayAfter = event.seq();
@@ -195,12 +196,14 @@ final class AgentScopeExecutionHost implements AgentExecutionHost, ModelInvocati
                 pendingIteration = ((Number) data.get("iteration")).intValue();
                 queuedFallback = Boolean.TRUE.equals(data.get("fallback"));
                 replyDeadline = 0;
+                replyProgress = -1;
             } else if (isQueued(data.get("modelCallId"))) {
                 if (DurableEventSchemas.MODEL_ACCEPTED.equals(event.type())) {
                     replyDeadline = ((Number) data.get("replyDeadline")).longValue();
                     replyIdleMillis =
                             ((Number) data.getOrDefault("idleMillis", replyIdleMillis)).longValue();
                     replyProgress = ((Number) data.getOrDefault("sequence", -1L)).longValue();
+                    replyProgressAttempt = String.valueOf(data.getOrDefault("workerAttempt", "0"));
                 }
                 if ("model/end".equals(event.type()) && "completed".equals(data.get("status")))
                     pendingRequest = null;
@@ -452,9 +455,13 @@ final class AgentScopeExecutionHost implements AgentExecutionHost, ModelInvocati
             throw new DurableException(
                     DurableException.Code.CONFLICT,
                     "Recovered reasoning position changed for call " + pendingRequest.callId());
-        String first = QueuedModelRequest.key(pendingRequest.callId(), 0);
         if (replyDeadline > 0) {
             var frame = durable.frame();
+            String first =
+                    QueuedModelRequest.key(
+                            pendingRequest.callId(),
+                            ModelReplyProtocol.active(frame.signals(), pendingRequest.callId()),
+                            0);
             if (frame.signals().stream().noneMatch(s -> s.key().equals(first))) {
                 checkReplyDeadline(frame.now(), 0);
                 waitingForModel = new WaitCondition(first, replyDeadline);
@@ -536,80 +543,188 @@ final class AgentScopeExecutionHost implements AgentExecutionHost, ModelInvocati
             List<ToolSchema> tools,
             GenerateOptions options) {
         if (!isQueued(callId)) return model.stream(messages, tools, options);
+        workerAttempt = ModelReplyProtocol.active(durable.frame().signals(), callId);
+        if (!workerAttempt.equals(replyProgressAttempt)) {
+            replyProgress = -1;
+            replyProgressAttempt = workerAttempt;
+        }
         var seq = new AtomicLong();
         var buffered = new HashMap<String, Signal>();
         var emptyPolls = new AtomicLong();
-        return Mono.defer(
+        var changed = new AtomicLong();
+        var observed = new AtomicLong();
+        reactor.core.publisher.Sinks.Many<Long> hints =
+                reactor.core.publisher.Sinks.many().replay().latest();
+        Flux<ChatResponse> replies =
+                Mono.defer(
+                                () -> {
+                                    String key =
+                                            QueuedModelRequest.key(
+                                                    callId, workerAttempt, seq.get());
+                                    {
+                                        observed.set(changed.get());
+                                        var frame = durable.frame();
+                                        checkControl(frame.turn());
+                                        if (!workerAttempt.equals(
+                                                ModelReplyProtocol.active(frame.signals(), callId)))
+                                            throw new DurableException(
+                                                    DurableException.Code.UNAVAILABLE,
+                                                    "Model worker attempt replaced for call "
+                                                            + callId);
+                                        buffered.clear();
+                                        for (var signal : frame.signals())
+                                            buffered.put(signal.key(), signal);
+                                        if (!buffered.containsKey(key))
+                                            checkReplyDeadline(frame.now(), seq.get());
+                                    }
+                                    Signal signal = buffered.remove(key);
+                                    if (signal != null && signal.value().path("last").asBoolean())
+                                        durable.sealModelReply(
+                                                QueuedModelRequest.seal(callId, workerAttempt));
+                                    if (signal != null) {
+                                        emptyPolls.set(0);
+                                        if (seq.get() > replyProgress) {
+                                            replyProgress = seq.get();
+                                            replyDeadline =
+                                                    Math.addExact(
+                                                            durable.frame().now(), replyIdleMillis);
+                                            var recorder = InvocationRecorder.from(context);
+                                            recorder.append(
+                                                    DurableEventSchemas.MODEL_ACCEPTED,
+                                                    Map.of(
+                                                            "modelCallId",
+                                                            callId,
+                                                            "replyDeadline",
+                                                            replyDeadline,
+                                                            "sequence",
+                                                            replyProgress,
+                                                            "idleMillis",
+                                                            replyIdleMillis,
+                                                            "workerAttempt",
+                                                            workerAttempt),
+                                                    true);
+                                            recorder.flushNow();
+                                        }
+                                    }
+                                    return Mono.justOrEmpty(signal);
+                                })
+                        .subscribeOn(Schedulers.boundedElastic())
+                        .repeatWhenEmpty(
+                                empty ->
+                                        empty.concatMap(
+                                                ignored ->
+                                                        Mono.firstWithSignal(
+                                                                hints.asFlux()
+                                                                        .filter(
+                                                                                version ->
+                                                                                        version
+                                                                                                > observed
+                                                                                                        .get())
+                                                                        .next(),
+                                                                Mono.delay(
+                                                                        Duration.ofMillis(
+                                                                                Math.min(
+                                                                                        1000,
+                                                                                        25L
+                                                                                                << Math
+                                                                                                        .min(
+                                                                                                                6,
+                                                                                                                emptyPolls
+                                                                                                                        .getAndIncrement())))))))
+                        .doOnNext(QueuedModelRequest::validateReply)
+                        .doOnNext(
+                                s -> {
+                                    if (s.value().path("retryable").asBoolean()) {
+                                        var old = pendingRequest;
+                                        pendingRequest =
+                                                new QueuedModelRequest(
+                                                        old.thread(),
+                                                        old.turnId(),
+                                                        java.util.UUID.randomUUID().toString(),
+                                                        old.model(),
+                                                        old.messages(),
+                                                        old.tools(),
+                                                        old.options());
+                                        InvocationRecorder.from(context)
+                                                .checkpointedRecordNow(
+                                                        context.getAgentState(),
+                                                        "queued_model_retry",
+                                                        DurableEventSchemas.QUEUED_MODEL,
+                                                        Map.of(
+                                                                "request",
+                                                                pendingRequest,
+                                                                "iteration",
+                                                                pendingIteration,
+                                                                "fallback",
+                                                                queuedFallback));
+                                        throw new DurableException(
+                                                DurableException.Code.UNAVAILABLE,
+                                                "Retryable provider failure for call " + callId);
+                                    }
+                                    seq.incrementAndGet();
+                                })
+                        .repeat()
+                        .takeUntil(
+                                s -> s.value().path("last").asBoolean() || s.value().has("error"))
+                        .handle(
+                                (s, sink) -> {
+                                    var data = s.value();
+                                    if (data.has("error")) {
+                                        sink.error(
+                                                new RemoteModelFailure(
+                                                        "Remote model call "
+                                                                + callId
+                                                                + " failed: "
+                                                                + data.path("error").asText()));
+                                    } else if (data.hasNonNull("response"))
+                                        sink.next(
+                                                response(
+                                                        DurableJson.convert(
+                                                                data.get("response"), Map.class)));
+                                });
+        Flux<ChatResponse> notified =
+                Flux.using(
                         () -> {
-                            String key = QueuedModelRequest.key(callId, seq.get());
-                            if (!buffered.containsKey(key)) {
-                                var frame = durable.frame();
-                                checkControl(frame.turn());
-                                buffered.clear();
-                                for (var signal : frame.signals())
-                                    buffered.put(signal.key(), signal);
-                                if (!buffered.containsKey(key))
-                                    checkReplyDeadline(frame.now(), seq.get());
+                            try {
+                                return durable.wakeups()
+                                        .subscribe(
+                                                session -> {
+                                                    if (session.equals(durable.lease().session()))
+                                                        hints.tryEmitNext(
+                                                                changed.incrementAndGet());
+                                                });
+                            } catch (RuntimeException error) {
+                                System.getLogger(AgentScopeExecutionHost.class.getName())
+                                        .log(
+                                                System.Logger.Level.WARNING,
+                                                "Model wakeup subscription failed; polling callId="
+                                                        + callId,
+                                                error);
+                                return (AutoCloseable) () -> {};
                             }
-                            Signal signal = buffered.remove(key);
-                            if (signal != null) {
-                                emptyPolls.set(0);
-                                if (seq.get() > replyProgress) {
-                                    replyProgress = seq.get();
-                                    replyDeadline =
-                                            Math.addExact(durable.frame().now(), replyIdleMillis);
-                                    var recorder = InvocationRecorder.from(context);
-                                    recorder.append(
-                                            DurableEventSchemas.MODEL_ACCEPTED,
-                                            Map.of(
-                                                    "modelCallId",
-                                                    callId,
-                                                    "replyDeadline",
-                                                    replyDeadline,
-                                                    "sequence",
-                                                    replyProgress,
-                                                    "idleMillis",
-                                                    replyIdleMillis),
-                                            true);
-                                    recorder.flushNow();
-                                }
+                        },
+                        subscription -> replies,
+                        subscription -> {
+                            try {
+                                subscription.close();
+                            } catch (Exception error) {
+                                System.getLogger(AgentScopeExecutionHost.class.getName())
+                                        .log(
+                                                System.Logger.Level.WARNING,
+                                                "Model wakeup subscription close failed callId="
+                                                        + callId,
+                                                error);
                             }
-                            return Mono.justOrEmpty(signal);
-                        })
-                .subscribeOn(Schedulers.boundedElastic())
-                .repeatWhenEmpty(
-                        empty ->
-                                empty.concatMap(
-                                        ignored ->
-                                                Mono.delay(
-                                                        Duration.ofMillis(
-                                                                Math.min(
-                                                                        500,
-                                                                        25L
-                                                                                << Math.min(
-                                                                                        4,
-                                                                                        emptyPolls
-                                                                                                .getAndIncrement()))))))
-                .doOnNext(QueuedModelRequest::validateReply)
-                .doOnNext(s -> seq.incrementAndGet())
-                .repeat()
-                .takeUntil(s -> s.value().path("last").asBoolean() || s.value().has("error"))
-                .handle(
-                        (s, sink) -> {
-                            var data = s.value();
-                            if (data.has("error"))
-                                sink.error(
-                                        new RemoteModelFailure(
-                                                "Remote model call "
-                                                        + callId
-                                                        + " failed: "
-                                                        + data.path("error").asText()));
-                            else if (data.hasNonNull("response"))
-                                sink.next(
-                                        response(
-                                                DurableJson.convert(
-                                                        data.get("response"), Map.class)));
                         });
+        return Flux.deferContextual(
+                reactorContext -> {
+                    io.agentscope.core.model.ModelRequestObserver observer =
+                            reactorContext.getOrDefault(
+                                    io.agentscope.core.model.ModelRequestObserver.class, null);
+                    return observer == null
+                            ? notified
+                            : observer.observe(notified, pendingRequest.model(), "queued");
+                });
     }
 
     private void checkReplyDeadline(long now, long sequence) {

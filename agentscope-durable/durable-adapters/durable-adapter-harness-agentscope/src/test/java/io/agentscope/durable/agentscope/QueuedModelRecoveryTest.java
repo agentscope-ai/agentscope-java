@@ -367,6 +367,179 @@ class QueuedModelRecoveryTest {
         }
     }
 
+    @Test
+    @Timeout(30)
+    void workerReplacementFencesOldFramesAndSealsWinner() throws Exception {
+        var sent = new AtomicReference<QueuedModelRequest>();
+        Path db = directory.resolve("epochs.db");
+        try (var rt = runtime(db, sent::set, LiveEvents.none(), Duration.ofSeconds(10))) {
+            var turn = rt.createSession(KEY, "agent").submit("epochs", "hello");
+            rt.tick(THREAD);
+            String call = sent.get().callId();
+            assertTrue(QueuedModelRequest.begin(turn, call, "old"));
+            assertTrue(
+                    QueuedModelRequest.accept(
+                            turn,
+                            QueuedModelRequest.reply(call, "old", 0, text("discard"), false)));
+            assertTrue(QueuedModelRequest.begin(turn, call, "new"));
+            assertEquals(
+                    false,
+                    QueuedModelRequest.accept(
+                            turn,
+                            QueuedModelRequest.reply(call, "old", 0, text("changed late"), false)));
+            assertTrue(
+                    QueuedModelRequest.accept(
+                            turn, QueuedModelRequest.reply(call, "new", 1, text(" world"), true)));
+            assertTrue(
+                    QueuedModelRequest.accept(
+                            turn, QueuedModelRequest.reply(call, "new", 0, text("hello"), false)));
+            var bad = QueuedModelRequest.reply(call, "old", 0, text("old"), false);
+            var malformed =
+                    new io.agentscope.durable.DurableTypes.Signal(
+                            bad.id(),
+                            bad.key(),
+                            DurableJson.value(
+                                    Map.of(
+                                            "modelCallId",
+                                            call,
+                                            "workerAttempt",
+                                            "old",
+                                            "modelOperation",
+                                            "reply",
+                                            "response",
+                                            "malformed",
+                                            "last",
+                                            true)));
+            assertEquals(false, QueuedModelRequest.accept(turn, malformed));
+            rt.tick(THREAD);
+            assertEquals(TurnStatus.SUCCEEDED, turn.status().status(), turn.status()::toString);
+            assertEquals(
+                    "hello world",
+                    turn.status().output().path("content").get(0).path("text").asText());
+            assertEquals(false, QueuedModelRequest.begin(turn, call, "late"));
+            assertEquals(
+                    false,
+                    QueuedModelRequest.accept(
+                            turn, QueuedModelRequest.reply(call, "old", 1, text("wrong"), true)));
+        }
+    }
+
+    @Test
+    @Timeout(30)
+    void retryableProviderFailureDispatchesSuccessorWithoutRepeatingTurn() throws Exception {
+        var requests = new java.util.concurrent.CopyOnWriteArrayList<QueuedModelRequest>();
+        try (var rt =
+                runtime(
+                        directory.resolve("provider.db"),
+                        requests::add,
+                        LiveEvents.none(),
+                        Duration.ofSeconds(5))) {
+            var turn = rt.createSession(KEY, "agent").submit("provider", "hello");
+            rt.tick(THREAD);
+            var first = requests.get(0);
+            var failure =
+                    QueuedModelRequest.failure(
+                            first.callId(), "0", 0, "provider unavailable", true);
+            turn.signal(failure.id(), failure.key(), failure.value());
+            rt.tick(THREAD);
+            long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
+            while (requests.size() < 2 && System.nanoTime() < deadline) {
+                rt.tick(THREAD);
+                Thread.sleep(30);
+            }
+            assertEquals(2, requests.size(), turn.status()::toString);
+            assertEquals(first.turnId(), requests.get(1).turnId());
+            assertTrue(!first.callId().equals(requests.get(1).callId()));
+            var result =
+                    QueuedModelRequest.reply(requests.get(1).callId(), 0, text("recovered"), true);
+            turn.signal(result.id(), result.key(), result.value());
+            rt.tick(THREAD);
+            assertEquals(TurnStatus.SUCCEEDED, turn.status().status(), turn.status()::toString);
+        }
+    }
+
+    private static final class HttpFailure extends RuntimeException
+            implements io.agentscope.core.model.ModelHttpException {
+        private final int status;
+
+        HttpFailure(int status) {
+            this.status = status;
+        }
+
+        public Integer getStatusCode() {
+            return status;
+        }
+    }
+
+    @Test
+    void providerFailureClassification() {
+        for (int status : new int[] {429, 500, 503})
+            assertTrue(
+                    QueuedModelRequest.failure("call", "attempt", 0, new HttpFailure(status))
+                            .value()
+                            .path("retryable")
+                            .asBoolean());
+        for (int status : new int[] {400, 401, 403, 404})
+            assertEquals(
+                    false,
+                    QueuedModelRequest.failure("call", "attempt", 0, new HttpFailure(status))
+                            .value()
+                            .path("retryable")
+                            .asBoolean());
+        assertTrue(
+                QueuedModelRequest.failure(
+                                "call",
+                                "attempt",
+                                0,
+                                new RuntimeException(new java.io.IOException()))
+                        .value()
+                        .path("retryable")
+                        .asBoolean());
+        assertTrue(
+                QueuedModelRequest.failure(
+                                "call", "attempt", 0, new java.util.concurrent.TimeoutException())
+                        .value()
+                        .path("retryable")
+                        .asBoolean());
+        assertEquals(
+                false,
+                QueuedModelRequest.failure("call", "attempt", 0, new IllegalArgumentException())
+                        .value()
+                        .path("retryable")
+                        .asBoolean());
+    }
+
+    @Test
+    @Timeout(20)
+    void beginningWorkerAttemptKeepsRuntimeReleasedUntilFirstReply() throws Exception {
+        var sent = new AtomicReference<QueuedModelRequest>();
+        try (var rt =
+                runtime(
+                        directory.resolve("before-first.db"),
+                        sent::set,
+                        LiveEvents.none(),
+                        Duration.ofSeconds(5))) {
+            var turn = rt.createSession(KEY, "agent").submit("before-first", "hello");
+            rt.tick(THREAD);
+            String call = sent.get().callId();
+            assertTrue(QueuedModelRequest.begin(turn, call, "first-worker"));
+            rt.tick(THREAD);
+            assertEquals(TurnStatus.WAITING, turn.status().status());
+            assertTrue(turn.status().waiting().key().contains("first-worker"));
+            assertTrue(QueuedModelRequest.begin(turn, call, "replacement"));
+            rt.tick(THREAD);
+            assertEquals(TurnStatus.WAITING, turn.status().status());
+            assertTrue(turn.status().waiting().key().contains("replacement"));
+            assertTrue(
+                    QueuedModelRequest.accept(
+                            turn,
+                            QueuedModelRequest.reply(
+                                    call, "replacement", 0, text("recovered"), true)));
+            rt.tick(THREAD);
+            assertEquals(TurnStatus.SUCCEEDED, turn.status().status(), turn.status()::toString);
+        }
+    }
+
     public static class EffectTool {
         private final Path receipt;
         private final boolean crash;

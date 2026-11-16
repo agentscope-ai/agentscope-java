@@ -103,8 +103,8 @@ Register `adapter.withQueuedModel(publisher)` as the harness for this definition
 ReAct and Harness factories support this option. The publisher receives a
 `QueuedModelRequest` with the target Thread and Turn, call ID, model, prepared
 messages, tool schemas and generation options. Acknowledge only after the broker accepts the
-request. Deduplicate by call ID at the broker or worker because recovery can repeat a send
-whose acknowledgement was lost. Workers use their configured provider credentials.
+request. Recovery can repeat a send whose acknowledgement was lost, using the same call ID,
+and may trigger another provider request. Workers use their configured provider credentials.
 Harness memory and finalization model calls keep their own execution path.
 
 Once dispatched, the Turn waits without holding its Runtime invocation. To wake it,
@@ -113,9 +113,19 @@ the reply consumer uses the original request's Thread and Turn:
 ```java
 var turn = runtime.getSession(request.thread().session())
         .getThread(request.thread().threadId()).getTurn(request.turnId());
-var signal = QueuedModelRequest.reply(request.callId(), sequence, chatResponse, last);
-turn.signal(signal.id(), signal.key(), signal.value());
+String deliveryId = java.util.UUID.randomUUID().toString();
+boolean accepted = QueuedModelRequest.begin(turn, request.callId(), deliveryId);
 ```
+
+Call begin once before generation. If accepted is false, acknowledge the MQ delivery and return. Every frame from an accepted generation uses the same delivery ID.
+
+```java
+var signal = QueuedModelRequest.reply(
+        request.callId(), deliveryId, sequence, chatResponse, last);
+boolean stored = QueuedModelRequest.accept(turn, signal);
+```
+
+A false stored result is an authoritative ignored reply and can also be acknowledged.
 
 Start at sequence zero. A complete response uses a single terminal frame. For streaming,
 use consecutive sequence numbers and mark the last frame terminal. A terminal frame may
@@ -1034,3 +1044,24 @@ by unfinished delegations. `turn.delegated`, `tool.delegated` and `tool.delegati
 public events; they do not replace the actual child result or its application by the parent.
 
 Publisher RuntimeExceptions represent unknown broker acceptance and use the bounded host recovery policy with the same call ID. Throw a DurableException with an explicit code for definite rejection. Reply consumers can use QueuedModelRequest.accept to persist replies and safely acknowledge late deliveries to completed or cancelling Turns. Duplicate provider billing after uncertain provider acceptance remains possible.
+
+Workers start each generation with `QueuedModelRequest.begin(turn, callId, deliveryId)`.
+Use a unique delivery ID for each replacement generation, and reuse it when retrying that
+generation's begin command. Check its boolean result before calling the provider. A false
+result means the call is sealed or the Turn has ended and the delivery can be acknowledged.
+Pass the delivery ID to the attempt-aware `reply` and `failure` overloads. The backend assigns
+begin commands a monotonic epoch inside its transaction. New attempts replace previously
+displayed partial text on the original Turn. Old-attempt replies return an ignored receipt
+and can be acknowledged, including conflicting late content. After receiving the ordered
+terminal frame, the collector atomically seals the winning attempt before allowing tool dispatch.
+A concurrent takeover forces collector recovery, and a sealed call rejects further takeovers.
+
+The Throwable failure overload classifies provider HTTP 429 and 5xx, I/O failures and timeouts
+as transient. Other HTTP statuses and unclassified errors are permanent. Workers can specify
+retryability explicitly. Transient errors consume the persisted host retry budget and dispatch
+a successor model call on the same Turn. Permanent errors retain the configured fallback
+behavior. The queue collector emits the standard model request started, usage and ended events
+through the core request observer. These events describe collector observation, and a collector
+replacement starts a new observation of persisted replies.
+
+Collectors subscribe to the configured backend wakeups before reading replies and unsubscribe on completion, failure or cancellation. Lost hints are repaired by bounded backoff polling up to one second. Beginning a worker generation keeps the Turn suspended until its first response arrives.
