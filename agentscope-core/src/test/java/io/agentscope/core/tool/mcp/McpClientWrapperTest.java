@@ -68,14 +68,9 @@ class McpClientWrapperTest {
     void testGetCachedTool_Exists() {
         // Add a tool to cache
         McpSchema.Tool tool =
-                new McpSchema.Tool(
-                        "test-tool",
-                        null,
-                        "A test tool",
-                        new McpSchema.JsonSchema("object", null, null, null, null, null),
-                        null,
-                        null,
-                        null);
+                McpSchema.Tool.builder("test-tool", Map.of("type", "object"))
+                        .description("A test tool")
+                        .build();
         wrapper.cachedTools.put("test-tool", tool);
 
         McpSchema.Tool retrieved = wrapper.getCachedTool("test-tool");
@@ -88,23 +83,13 @@ class McpClientWrapperTest {
     void testCachedTools_MultipleTools() {
         // Add multiple tools
         McpSchema.Tool tool1 =
-                new McpSchema.Tool(
-                        "tool1",
-                        null,
-                        "First tool",
-                        new McpSchema.JsonSchema("object", null, null, null, null, null),
-                        null,
-                        null,
-                        null);
+                McpSchema.Tool.builder("tool1", Map.of("type", "object"))
+                        .description("First tool")
+                        .build();
         McpSchema.Tool tool2 =
-                new McpSchema.Tool(
-                        "tool2",
-                        null,
-                        "Second tool",
-                        new McpSchema.JsonSchema("object", null, null, null, null, null),
-                        null,
-                        null,
-                        null);
+                McpSchema.Tool.builder("tool2", Map.of("type", "object"))
+                        .description("Second tool")
+                        .build();
 
         wrapper.cachedTools.put("tool1", tool1);
         wrapper.cachedTools.put("tool2", tool2);
@@ -118,14 +103,9 @@ class McpClientWrapperTest {
     void testConcurrentAccess_CachedTools() {
         // Test that ConcurrentHashMap is used (thread-safe)
         McpSchema.Tool tool =
-                new McpSchema.Tool(
-                        "concurrent-tool",
-                        null,
-                        "Test",
-                        new McpSchema.JsonSchema("object", null, null, null, null, null),
-                        null,
-                        null,
-                        null);
+                McpSchema.Tool.builder("concurrent-tool", Map.of("type", "object"))
+                        .description("Test")
+                        .build();
 
         // This should not throw ConcurrentModificationException
         wrapper.cachedTools.put("concurrent-tool", tool);
@@ -192,15 +172,9 @@ class McpClientWrapperTest {
                         initializeCallCount++;
                         // Simulate caching tools during initialization
                         McpSchema.Tool tool =
-                                new McpSchema.Tool(
-                                        "test-tool",
-                                        null,
-                                        "A test tool",
-                                        new McpSchema.JsonSchema(
-                                                "object", null, null, null, null, null),
-                                        null,
-                                        null,
-                                        null);
+                                McpSchema.Tool.builder("test-tool", Map.of("type", "object"))
+                                        .description("A test tool")
+                                        .build();
                         cachedTools.put("test-tool", tool);
                         initialized = true;
                     });
@@ -232,7 +206,7 @@ class McpClientWrapperTest {
             }
 
             // Return a simple success result
-            McpSchema.TextContent content = new McpSchema.TextContent(null, "Success", meta);
+            McpSchema.TextContent content = McpSchema.TextContent.builder("Success").build();
             return Mono.just(
                     McpSchema.CallToolResult.builder()
                             .content(List.of(content))

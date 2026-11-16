@@ -409,6 +409,70 @@ class DifyRAGClientTest {
     }
 
     @Test
+    void testParseResponseWithBareStringQuery() throws Exception {
+        // Dify Cloud returns "query" as a bare string, while the documented self-hosted
+        // shape is {"content": "..."}. Both shapes must be accepted, otherwise the whole
+        // retrieval fails and every record is dropped.
+        String responseBody =
+                """
+                {
+                    "query": "What is RAG?",
+                    "records": [
+                        {
+                            "segment": {
+                                "id": "seg-1",
+                                "content": "Test content",
+                                "document_id": "doc-1"
+                            },
+                            "score": 0.95
+                        }
+                    ]
+                }
+                """;
+        mockWebServer.enqueue(
+                new MockResponse()
+                        .setResponseCode(200)
+                        .setHeader("Content-Type", "application/json")
+                        .setBody(responseBody));
+
+        DifyRAGClient client = new DifyRAGClient(createConfig());
+        DifyResponse response = client.retrieve("test query", 5).block();
+
+        assertNotNull(response);
+        assertNotNull(response.getQuery());
+        assertEquals("What is RAG?", response.getQuery().getContent());
+        assertNotNull(response.getRecords());
+        assertEquals(1, response.getRecords().size());
+        assertEquals("seg-1", response.getRecords().get(0).getSegment().getId());
+    }
+
+    @Test
+    void testParseResponseWithObjectQuery() throws Exception {
+        // Self-hosted Dify serializes query as {"content": "..."}; keep that shape working.
+        String responseBody =
+                """
+                {
+                    "query": { "content": "What is RAG?" },
+                    "records": []
+                }
+                """;
+        mockWebServer.enqueue(
+                new MockResponse()
+                        .setResponseCode(200)
+                        .setHeader("Content-Type", "application/json")
+                        .setBody(responseBody));
+
+        DifyRAGClient client = new DifyRAGClient(createConfig());
+        DifyResponse response = client.retrieve("test query", 5).block();
+
+        assertNotNull(response);
+        assertNotNull(response.getQuery());
+        assertEquals("What is RAG?", response.getQuery().getContent());
+        assertNotNull(response.getRecords());
+        assertTrue(response.getRecords().isEmpty());
+    }
+
+    @Test
     void testHandleEmptyResponse() throws Exception {
         mockWebServer.enqueue(createEmptyResponse());
 

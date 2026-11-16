@@ -1,0 +1,21 @@
+# Add status filtering and pagination to order queries
+
+Implement OrderQuery.query(orders, status, page, size) in the supplied Java 17 exercise.
+The query is the core of an order-list API; this exercise does not provide an HTTP server.
+
+Acceptance criteria:
+- null or blank status means all orders; otherwise match status exactly.
+- Preserve input order. Filter BEFORE pagination.
+- page starts at 1; size is 1..100. Invalid pagination throws IllegalArgumentException.
+- A page past the last result returns an empty list, including very large page numbers.
+- Do not mutate the input list. Preserve the supplied five acceptance checks.
+- Add tests for blank status, no matches, size bounds, and Integer.MAX_VALUE as page.
+- Deliver the PR, final head SHA, local test output, CI URL, and review evidence.
+
+Run:
+mkdir -p out
+javac --release 17 -d out OrderQuery.java OrderQueryTest.java
+java -cp out OrderQueryTest
+
+The starting point deliberately fails three of the five supplied checks.
+CI should use the same compile and execution commands and run additional tests too.

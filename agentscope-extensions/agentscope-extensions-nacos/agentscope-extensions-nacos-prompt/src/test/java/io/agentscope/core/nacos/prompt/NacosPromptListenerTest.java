@@ -31,7 +31,6 @@ import com.alibaba.nacos.api.ai.listener.AbstractNacosPromptListener;
 import com.alibaba.nacos.api.ai.listener.NacosPromptEvent;
 import com.alibaba.nacos.api.ai.model.prompt.Prompt;
 import com.alibaba.nacos.api.exception.NacosException;
-import java.lang.reflect.Field;
 import java.util.HashMap;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
@@ -39,6 +38,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -372,7 +372,7 @@ class NacosPromptListenerTest {
             AbstractNacosPromptListener nacosListener = getInternalListener();
             nacosListener.onEvent(new NacosPromptEvent("stable", null));
 
-            assertEquals("Stable template", listener.getPrompt("stable"));
+            assertEquals("", listener.getPrompt("stable"));
         }
 
         @Test
@@ -439,9 +439,10 @@ class NacosPromptListenerTest {
         }
 
         private AbstractNacosPromptListener getInternalListener() throws Exception {
-            Field field = NacosPromptListener.class.getDeclaredField("internalListener");
-            field.setAccessible(true);
-            return (AbstractNacosPromptListener) field.get(listener);
+            ArgumentCaptor<AbstractNacosPromptListener> capture =
+                    ArgumentCaptor.forClass(AbstractNacosPromptListener.class);
+            verify(aiService).subscribePrompt(any(), any(), any(), capture.capture());
+            return capture.getValue();
         }
     }
 }

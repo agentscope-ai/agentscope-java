@@ -75,6 +75,73 @@ public final class WorkspaceMountSupport {
         return args;
     }
 
+    /**
+     * {@code tar} CLI {@code --exclude} arguments ({@code ./relative}) for absolute in-sandbox
+     * mount paths (e.g. cloud volume mounts) that sit strictly beneath {@code workspaceRoot}.
+     *
+     * <p>Mounts equal to the root or outside of it contribute nothing: an equal mount means the
+     * whole workspace lives on the volume (callers short-circuit persistence instead), and an
+     * outside mount is never traversed by {@code tar -C root .} in the first place.
+     *
+     * @param workspaceRoot absolute workspace root the tar archive is taken from
+     * @param absoluteMountPaths absolute in-sandbox mount paths
+     * @return {@code --exclude} args for mounts beneath the root, in input order
+     */
+    public static List<String> tarExcludeArgsForAbsolutePaths(
+            String workspaceRoot, List<String> absoluteMountPaths) {
+        if (workspaceRoot == null
+                || workspaceRoot.isBlank()
+                || absoluteMountPaths == null
+                || absoluteMountPaths.isEmpty()) {
+            return List.of();
+        }
+        String root = normalizeVirtualPath(workspaceRoot);
+        List<String> args = new ArrayList<>();
+        for (String raw : absoluteMountPaths) {
+            if (raw == null || raw.isBlank()) {
+                continue;
+            }
+            String mount = normalizeVirtualPath(raw);
+            if (!mount.startsWith("/") || mount.equals(root) || !isBeneath(root, mount)) {
+                continue;
+            }
+            args.add("--exclude=./" + mount.substring(root.equals("/") ? 1 : root.length() + 1));
+        }
+        return args;
+    }
+
+    private static boolean isBeneath(String root, String mount) {
+        if (root.equals("/")) {
+            return mount.length() > 1;
+        }
+        return mount.startsWith(root + "/");
+    }
+
+    /**
+     * Shared normalizer for absolute POSIX paths used as sandbox workspace roots or mount paths:
+     * trims surrounding whitespace, converts backslashes to slashes, collapses repeated slashes
+     * and strips a trailing slash (except for the root {@code /} itself). Blank or empty input
+     * yields {@code /}.
+     *
+     * @param raw raw path (may be null or blank)
+     * @return normalized absolute path
+     */
+    public static String normalizeVirtualPath(String raw) {
+        // Collapse repeated slashes first, then drop the (single) trailing slash: the other
+        // order leaves a trailing slash behind for inputs like "//mnt//data//".
+        String normalized =
+                stripTrailingSlash(
+                        raw == null ? "" : raw.strip().replace('\\', '/').replaceAll("/+", "/"));
+        return normalized.isEmpty() ? "/" : normalized;
+    }
+
+    private static String stripTrailingSlash(String s) {
+        if (s.length() > 1 && s.endsWith("/")) {
+            return s.substring(0, s.length() - 1);
+        }
+        return s;
+    }
+
     private static void walk(Map<String, WorkspaceEntry> entries, String prefix, List<String> out) {
         for (Map.Entry<String, WorkspaceEntry> e : entries.entrySet()) {
             String rel =

@@ -18,6 +18,7 @@ package io.agentscope.harness.agent.tools;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.core.tool.mcp.McpClientBuilder;
 import io.agentscope.core.tool.mcp.McpClientWrapper;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -31,6 +32,11 @@ import org.slf4j.LoggerFactory;
  * <p>Each entry is built into an {@link McpClientWrapper} via {@link McpClientBuilder} according
  * to its {@code transport} ({@code stdio} / {@code sse} / {@code http}) and then registered through
  * {@link Toolkit#registration()} so that per-server {@code enableTools} allowlists are honoured.
+ *
+ * <p>Per-server metadata propagation is honoured as well: {@code propagateMeta} maps to the
+ * connection-level switch on the builder/wrapper, {@code propagateMetaDefault} to the
+ * registration-level default and {@code propagateMetaOverrides} to per-tool entries — mirroring
+ * the three-level switches exposed by the core MCP client.
  *
  * <p>Required connections abort bootstrap. Optional failures are reported through the configured
  * callback and do not prevent other connections from registering.
@@ -138,6 +144,14 @@ public final class McpServerRegistrar {
             Toolkit.ToolRegistration reg =
                     toolkit.registration().mcpClient(wrapper).enableTools(selected);
             if (cfg.isPrefixToolNames()) reg.mcpToolNamePrefix(name + "__");
+            validatePropagateMetaOverrides(name, cfg.getPropagateMetaOverrides());
+            if (cfg.getPropagateMetaDefault() != null) {
+                reg.propagateMeta(cfg.getPropagateMetaDefault());
+            }
+            Map<String, Boolean> overrides = cfg.getPropagateMetaOverrides();
+            if (overrides != null) {
+                overrides.forEach((tool, flag) -> reg.propagateMeta(tool, flag));
+            }
             reg.apply();
         } catch (RuntimeException | Error failure) {
             closeAfterFailedRegistration(wrapper, failure);
@@ -149,6 +163,15 @@ public final class McpServerRegistrar {
                 name,
                 cfg.getTransport(),
                 enableTools);
+        if (hasMetaPolicy(cfg)) {
+            log.info(
+                    "Meta propagation policy for MCP server '{}' (propagateMeta={},"
+                            + " propagateMetaDefault={}, propagateMetaOverrides={}).",
+                    name,
+                    cfg.getPropagateMeta(),
+                    cfg.getPropagateMetaDefault(),
+                    cfg.getPropagateMetaOverrides());
+        }
     }
 
     static boolean isToolEnabled(String tool, McpServerConfig cfg) {
@@ -157,6 +180,33 @@ public final class McpServerRegistrar {
         return allow != null && !allow.isEmpty()
                 ? allow.contains(tool)
                 : cfg.isDefaultToolsEnabled();
+    }
+
+    static boolean hasMetaPolicy(McpServerConfig cfg) {
+        return cfg.getPropagateMeta() != null
+                || cfg.getPropagateMetaDefault() != null
+                || (cfg.getPropagateMetaOverrides() != null
+                        && !cfg.getPropagateMetaOverrides().isEmpty());
+    }
+
+    static void validatePropagateMetaOverrides(String serverName, Map<String, Boolean> overrides) {
+        if (overrides == null) {
+            return;
+        }
+        List<String> nullKeys =
+                overrides.entrySet().stream()
+                        .filter(e -> e.getValue() == null)
+                        .map(Map.Entry::getKey)
+                        .sorted(Comparator.nullsFirst(String::compareTo))
+                        .toList();
+        if (!nullKeys.isEmpty()) {
+            throw new IllegalArgumentException(
+                    "MCP server '"
+                            + serverName
+                            + "' has null value(s) for tool(s) "
+                            + nullKeys
+                            + " in propagateMetaOverrides.");
+        }
     }
 
     private static void closeAfterFailedRegistration(
@@ -198,6 +248,9 @@ public final class McpServerRegistrar {
         }
         if (cfg.getInitializationTimeout() != null) {
             builder.initializationTimeout(cfg.getInitializationTimeout());
+        }
+        if (cfg.getPropagateMeta() != null) {
+            builder.propagateMeta(cfg.getPropagateMeta());
         }
         return builder.buildAsync().block();
     }

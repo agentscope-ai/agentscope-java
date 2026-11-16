@@ -233,7 +233,7 @@ class HarnessContextBuilderTest {
     }
 
     @Test
-    void workspaceMaterialsAreEscapedAndNotPersisted() {
+    void workspaceMaterialsNeutralizeClosingTagsAndAreNotPersisted() {
         var rc = RuntimeContext.builder().agentState(AgentState.builder().build()).build();
         rc.put(
                 WorkspaceContextMaterials.class,
@@ -248,7 +248,7 @@ class HarnessContextBuilderTest {
                                 "c",
                                 ModelRequestPreparer.Purpose.REASONING)
                         .block();
-        assertTrue(prepared.messages().get(1).getTextContent().contains("&lt;/context_item&gt;"));
+        assertTrue(prepared.messages().get(1).getTextContent().contains("<\\/context_item>"));
         assertTrue(rc.getAgentState().contextMutable().isEmpty());
     }
 

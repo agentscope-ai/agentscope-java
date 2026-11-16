@@ -26,11 +26,17 @@ public enum SandboxErrorCode {
     /** Command execution timed out. */
     EXEC_TIMEOUT,
 
+    /** Command submission did not produce a trustworthy process result. */
+    EXEC_STATUS_UNKNOWN,
+
     /** Failed to start the workspace store. */
     WORKSPACE_START_ERROR,
 
     /** Failed to stop/persist the workspace store. */
     WORKSPACE_STOP_ERROR,
+
+    /** An operation was attempted after the sandbox connection was closed. */
+    SANDBOX_CONNECTION_CLOSED,
 
     /** Failed to read or parse a workspace archive (tar). */
     WORKSPACE_ARCHIVE_READ_ERROR,

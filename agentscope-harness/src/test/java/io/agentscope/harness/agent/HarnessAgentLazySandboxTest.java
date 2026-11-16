@@ -29,13 +29,13 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.core.journal.InMemoryThreadJournalStore;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.Model;
-import io.agentscope.core.session.InMemorySessionLogStore;
 import io.agentscope.core.state.InMemoryAgentStateStore;
 import io.agentscope.harness.agent.bus.AsyncToolRegistry;
 import io.agentscope.harness.agent.bus.MessageBus;
@@ -216,7 +216,7 @@ class HarnessAgentLazySandboxTest {
                         .model(model)
                         .filesystem(spec)
                         .stateStore(new InMemoryAgentStateStore())
-                        .sessionLogStore(new InMemorySessionLogStore())
+                        .threadJournalStore(new InMemoryThreadJournalStore())
                         .messageBus(bus)
                         .asyncToolRegistry(registry)
                         .disableMemoryHooks()

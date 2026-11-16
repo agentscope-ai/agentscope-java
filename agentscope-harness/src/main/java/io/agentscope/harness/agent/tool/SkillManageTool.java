@@ -63,12 +63,13 @@ public class SkillManageTool implements AgentTool {
 
     public static final String NAME = "skill_manage";
 
-    // Validation constants (mirrored from hermes tools/skill_manager_tool.py)
-    static final int MAX_NAME_LENGTH = 64;
+    // Validation constants (mirrored from hermes tools/skill_manager_tool.py); the name rule
+    // is sourced from core so authoring and construction reject the same names
+    static final int MAX_NAME_LENGTH = SkillUtil.MAX_SKILL_NAME_LENGTH;
     static final int MAX_DESCRIPTION_LENGTH = 1024;
     static final int MAX_SKILL_CONTENT_CHARS = 100_000;
     static final int MAX_SKILL_FILE_BYTES = 1_048_576; // 1 MiB
-    static final Pattern VALID_NAME_RE = Pattern.compile("^[a-z0-9][a-z0-9._-]*$");
+    static final Pattern VALID_NAME_RE = SkillUtil.VALID_SKILL_NAME_PATTERN;
     static final Set<String> ALLOWED_SUBDIRS =
             Set.of("references", "templates", "scripts", "assets");
 
@@ -699,7 +700,7 @@ public class SkillManageTool implements AgentTool {
         if (!VALID_NAME_RE.matcher(name).matches()) {
             return "Invalid skill name '"
                     + name
-                    + "'. Use lowercase letters, digits, hyphens, dots, and underscores. "
+                    + "'. Use lowercase letters, digits, and hyphens only. "
                     + "Must start with a letter or digit.";
         }
         return null;

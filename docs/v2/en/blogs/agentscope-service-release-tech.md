@@ -239,7 +239,7 @@ It is recommended to validate at least three paths:
 2. HITL: trigger Ask Policy, continue after confirmation, and verify the history is complete;
 3. `self_hosted`: Worker poll / ack / heartbeat / return `tool_result`, and confirm the Turn recovers correctly.
 
-See [`docs/guide/14-validation.md`](/v2/en/service/service-api) and the architecture notes in [`docs/guide/02-architecture.md`](/v2/en/service/index).
+The historical `docs/guide/14-validation.md` is not present in the `v2.0.4` tag. Available references are the [API reference](/v2/en/service/api-reference) and [architecture overview](/v2/en/service/index).
 
 ## Implementation Pitfalls Worth Avoiding Early
 
@@ -298,4 +298,4 @@ The technical kernel of AgentScope Service can be summarized in three sentences:
 2. **The persisted event sequence is the source of truth for Session; in-process objects are only disposable caches**;
 3. **Managed and BYO share the fleet contract; framework differences converge in adapters, not scattered across the Console**.
 
-If you are moving from "a single Harness Agent" to "an operable agent fleet," this layering eliminates a lot of duplicated infrastructure. You are welcome to read [`agentscope-service/README.md`](/v2/en/service/quickstart) directly; for product capabilities and onboarding stories, return to the [release post](/v2/en/blogs/agentscope-service-release).
+If you are moving from "a single Harness Agent" to "an operable agent fleet," this layering eliminates a lot of duplicated infrastructure. You are welcome to read [`agentscope-service/README.md`](https://github.com/agentscope-ai/agentscope-java/blob/v2.0.4/agentscope-service/README.md) directly; for product capabilities and onboarding stories, return to the [release post](/v2/en/blogs/agentscope-service-release).

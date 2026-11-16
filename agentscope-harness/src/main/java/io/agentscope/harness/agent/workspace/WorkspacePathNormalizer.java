@@ -17,8 +17,11 @@ package io.agentscope.harness.agent.workspace;
 
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.harness.agent.filesystem.remote.store.NamespaceFactory;
+import io.agentscope.harness.agent.sandbox.LazySandboxBinding;
+import io.agentscope.harness.agent.sandbox.SandboxWorkspaceRoot;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.regex.Pattern;
 
 /**
  * Normalizes file paths to workspace-relative form by stripping the active mode's workspace
@@ -33,12 +36,31 @@ import java.util.List;
  */
 public final class WorkspacePathNormalizer {
 
+    private static final Pattern ABSOLUTE_PATH = Pattern.compile("^(?:[/\\\\]|[A-Za-z]:[/\\\\])");
+
     private final List<String> prefixes;
     private final NamespaceFactory namespaceFactory;
+    private final boolean sandbox;
 
     private WorkspacePathNormalizer(List<String> prefixes, NamespaceFactory namespaceFactory) {
+        this(prefixes, namespaceFactory, false);
+    }
+
+    private WorkspacePathNormalizer(
+            List<String> prefixes, NamespaceFactory namespaceFactory, boolean sandbox) {
         this.prefixes = List.copyOf(prefixes);
         this.namespaceFactory = namespaceFactory;
+        this.sandbox = sandbox;
+    }
+
+    /**
+     * Creates a normalizer whose prefix follows the sandbox bound to each call.
+     *
+     * @param fallbackRoot configured root to use before sandbox acquisition
+     * @return a call-scoped sandbox path normalizer
+     */
+    public static WorkspacePathNormalizer forSandbox(String fallbackRoot) {
+        return new WorkspacePathNormalizer(List.of(fallbackRoot), null, true);
     }
 
     /**
@@ -120,6 +142,16 @@ public final class WorkspacePathNormalizer {
         if (path == null || path.isBlank()) {
             return path;
         }
+        if (sandbox) {
+            // Relative paths can be routed without consulting a deferred sandbox's root.
+            if (runtimeContext != null
+                    && runtimeContext.get(LazySandboxBinding.class) != null
+                    && !ABSOLUTE_PATH.matcher(path).lookingAt()) {
+                return path;
+            }
+            return of(SandboxWorkspaceRoot.resolve(runtimeContext, prefixes.get(0)))
+                    .normalize(path, runtimeContext);
+        }
         if (namespaceFactory != null) {
             List<String> namespace =
                     namespaceFactory.getNamespace(
@@ -146,6 +178,9 @@ public final class WorkspacePathNormalizer {
     private static String tryStrip(String path, String prefix) {
         String normalizedPath = path.replace('\\', '/');
         String normalizedPrefix = prefix.replace('\\', '/');
+        if ("/".equals(normalizedPrefix) && normalizedPath.startsWith("/")) {
+            return normalizedPath.length() == 1 ? "." : normalizedPath.substring(1);
+        }
         if (normalizedPath.startsWith(normalizedPrefix + "/")) {
             return normalizedPath.substring(normalizedPrefix.length() + 1);
         }
@@ -156,8 +191,8 @@ public final class WorkspacePathNormalizer {
     }
 
     private static String trimTrailingSlash(String s) {
-        if (s != null && s.length() > 1 && s.endsWith("/")) {
-            return s.substring(0, s.length() - 1);
+        while (s != null && s.length() > 1 && s.endsWith("/")) {
+            s = s.substring(0, s.length() - 1);
         }
         return s;
     }

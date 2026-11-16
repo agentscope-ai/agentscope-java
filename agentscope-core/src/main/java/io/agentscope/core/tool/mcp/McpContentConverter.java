@@ -15,12 +15,14 @@
  */
 package io.agentscope.core.tool.mcp;
 
+import io.agentscope.core.message.AudioBlock;
 import io.agentscope.core.message.Base64Source;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.URLSource;
+import io.agentscope.core.util.JsonUtils;
 import io.modelcontextprotocol.spec.McpSchema;
 import java.util.ArrayList;
 import java.util.List;
@@ -33,10 +35,11 @@ import java.util.stream.Collectors;
  *
  * <p>Supported conversions:
  * <ul>
- *   <li>MCP CallToolResult → AgentScope ToolResultBlock</li>
  *   <li>MCP TextContent → AgentScope TextBlock</li>
  *   <li>MCP ImageContent → AgentScope ImageBlock</li>
- *   <li>MCP AudioContent → AgentScope AudioBlock (future)</li>
+ *   <li>MCP AudioContent → AgentScope AudioBlock</li>
+ *   <li>MCP CallToolResult → AgentScope ToolResultBlock</li>
+ *   <li>MCP CallToolResult.structuredContent → AgentScope TextBlock (JSON)</li>
  * </ul>
  */
 public class McpContentConverter {
@@ -65,8 +68,12 @@ public class McpContentConverter {
             return ToolResultBlock.error(errorMsg);
         }
 
-        // Convert successful result
-        List<ContentBlock> contentBlocks = convertContentList(mcpResult.content());
+        // Convert successful result: content blocks + structured content (if present)
+        List<ContentBlock> contentBlocks = new ArrayList<>(convertContentList(mcpResult.content()));
+        if (mcpResult.structuredContent() != null) {
+            contentBlocks.add(
+                    TextBlock.builder().text(toJson(mcpResult.structuredContent())).build());
+        }
 
         return ToolResultBlock.of(contentBlocks);
     }
@@ -110,10 +117,7 @@ public class McpContentConverter {
         } else if (content instanceof McpSchema.ImageContent imageContent) {
             return convertImageContent(imageContent);
         } else if (content instanceof McpSchema.AudioContent audioContent) {
-            // Audio content not yet supported in AgentScope ContentBlock
-            return TextBlock.builder()
-                    .text("[Audio content: " + audioContent.mimeType() + "]")
-                    .build();
+            return convertAudioContent(audioContent);
         } else if (content instanceof McpSchema.EmbeddedResource embeddedResource) {
             return convertEmbeddedResource(embeddedResource);
         }
@@ -157,6 +161,41 @@ public class McpContentConverter {
 
         Base64Source source = new Base64Source(mimeType, data);
         return new ImageBlock(source);
+    }
+
+    /**
+     * Converts MCP AudioContent to AgentScope AudioBlock.
+     *
+     * @param audioContent the MCP audio content
+     * @return the converted AudioBlock
+     */
+    private static AudioBlock convertAudioContent(McpSchema.AudioContent audioContent) {
+        String data = audioContent.data();
+        String mimeType = audioContent.mimeType();
+
+        if (data == null || data.isEmpty()) {
+            return null;
+        }
+
+        if (data.startsWith("http://")
+                || data.startsWith("https://")
+                || data.startsWith("file://")) {
+            return new AudioBlock(new URLSource(data, mimeType));
+        }
+
+        return new AudioBlock(new Base64Source(mimeType, data));
+    }
+
+    /**
+     * Serializes an MCP structuredContent value to a JSON string for inclusion
+     * as a TextBlock in the tool result.
+     */
+    private static String toJson(Object structuredContent) {
+        try {
+            return JsonUtils.getJsonCodec().toJson(structuredContent);
+        } catch (Exception e) {
+            return String.valueOf(structuredContent);
+        }
     }
 
     /**

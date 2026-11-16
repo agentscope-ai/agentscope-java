@@ -123,6 +123,7 @@ public class KubernetesSandboxClient
                             CreateSandboxOptions.builder(merged.getWarmPoolName())
                                     .namespace(merged.getNamespace())
                                     .claimName(claimName)
+                                    .env(merged.getClaimEnv())
                                     .sandboxReadyTimeoutSeconds(
                                             merged.getSandboxReadyTimeoutSeconds())
                                     .build());
@@ -251,6 +252,9 @@ public class KubernetesSandboxClient
             return copy(base);
         }
         KubernetesSandboxClientOptions o = copy(base);
+        if (callOptions.getClaimEnv() != null) {
+            o.setClaimEnv(callOptions.getClaimEnv());
+        }
         if (callOptions.getKubernetesClient() != null) {
             o.setKubernetesClient(callOptions.getKubernetesClient());
         }
@@ -293,6 +297,7 @@ public class KubernetesSandboxClient
         o.setKubernetesConfig(src.getKubernetesConfig());
         o.setNamespace(src.getNamespace());
         o.setWarmPoolName(src.getWarmPoolName());
+        o.setClaimEnv(src.getClaimEnv());
         o.setWorkspaceRoot(src.getWorkspaceRoot());
         o.setFileApiBaseDir(src.getFileApiBaseDir());
         o.setApiUrl(src.getApiUrl());

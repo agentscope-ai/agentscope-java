@@ -52,6 +52,16 @@ public record ContextItem(
                 kind, sourceId, versionOf(content), Placement.SYSTEM, true, 100, content);
     }
 
+    /**
+     * Per-call state rendered after the conversation. Required materials remain visible during
+     * history compaction; optional facts may be omitted under budget.
+     */
+    public static ContextItem runtimeState(
+            String kind, String sourceId, boolean required, String content) {
+        return new ContextItem(
+                kind, sourceId, versionOf(content), Placement.RUNTIME, required, 50, content);
+    }
+
     private static String versionOf(String content) {
         try {
             return HexFormat.of()

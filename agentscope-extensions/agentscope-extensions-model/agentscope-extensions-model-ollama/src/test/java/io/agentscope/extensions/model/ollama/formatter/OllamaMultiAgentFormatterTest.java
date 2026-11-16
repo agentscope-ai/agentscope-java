@@ -21,6 +21,8 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.message.ContentBlock;
+import io.agentscope.core.message.DocumentBlock;
+import io.agentscope.core.message.FileIdSource;
 import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
@@ -619,6 +621,41 @@ class OllamaMultiAgentFormatterTest {
         assertEquals(1, formatted.size());
         assertEquals("tool", formatted.get(0).getRole());
         assertEquals("Result: 42", formatted.get(0).getContent());
+    }
+
+    @Test
+    @DisplayName("Should keep a document reference inside a tool result")
+    void testFormatToolResultWithDocument() {
+        // Arrange
+        ToolResultBlock toolResult =
+                new ToolResultBlock(
+                        "call123",
+                        "read_file",
+                        List.of(
+                                TextBlock.builder().text("attached the report").build(),
+                                DocumentBlock.builder()
+                                        .name("report.pdf")
+                                        .mimeType("application/pdf")
+                                        .source(new FileIdSource("ollama", "file-1"))
+                                        .build()),
+                        null);
+        Msg toolMsg = Msg.builder().role(MsgRole.TOOL).content(toolResult).build();
+
+        // Act
+        List<OllamaMessage> formatted = formatter.format(List.of(toolMsg));
+
+        // Assert
+        assertEquals(1, formatted.size());
+        assertTrue(formatted.get(0).getContent().contains("attached the report"));
+        assertTrue(
+                formatted
+                        .get(0)
+                        .getContent()
+                        .contains(
+                                "[document: report.pdf, application/pdf, provider file id:"
+                                        + " file-1 (ollama)]"),
+                "document must not be dropped by the tool sequence path: "
+                        + formatted.get(0).getContent());
     }
 
     @Test

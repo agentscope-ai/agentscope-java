@@ -17,18 +17,22 @@ package io.agentscope.core.tool;
 
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.core.journal.JournalException;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.state.AgentState;
 import io.agentscope.core.util.ExceptionUtils;
 import io.agentscope.core.util.JsonUtils;
+import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.lang.reflect.Parameter;
 import java.lang.reflect.ParameterizedType;
 import java.lang.reflect.Type;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
+import java.util.concurrent.ExecutionException;
 import reactor.core.publisher.Mono;
 
 /**
@@ -83,13 +87,16 @@ class ToolMethodInvoker {
                             })
                     .flatMap(
                             future ->
-                                    Mono.fromFuture(future)
-                                            .map(
-                                                    r ->
-                                                            converter.convert(
-                                                                    r, extractGenericType(method)))
-                                            .onErrorResume(this::handleError))
-                    .onErrorResume(this::handleError);
+                                    convertAsyncResult(
+                                                    Mono.fromFuture(future),
+                                                    extractGenericType(method),
+                                                    converter)
+                                            .onErrorResume(
+                                                    error ->
+                                                            handleError(
+                                                                    error,
+                                                                    param.isPropagateErrors())))
+                    .onErrorResume(error -> handleError(error, param.isPropagateErrors()));
 
         } else if (returnType == Mono.class) {
             // Async method returning Mono: invoke and flatMap
@@ -105,9 +112,13 @@ class ToolMethodInvoker {
                             })
                     .flatMap(
                             mono ->
-                                    mono.map(r -> converter.convert(r, extractGenericType(method)))
-                                            .onErrorResume(this::handleError))
-                    .onErrorResume(this::handleError);
+                                    convertAsyncResult(mono, extractGenericType(method), converter)
+                                            .onErrorResume(
+                                                    error ->
+                                                            handleError(
+                                                                    error,
+                                                                    param.isPropagateErrors())))
+                    .onErrorResume(error -> handleError(error, param.isPropagateErrors()));
 
         } else {
             // Sync method: wrap in Mono.fromCallable
@@ -120,8 +131,16 @@ class ToolMethodInvoker {
                                 Object result = method.invoke(toolObject, args);
                                 return converter.convert(result, method.getGenericReturnType());
                             })
-                    .onErrorResume(this::handleError);
+                    .onErrorResume(error -> handleError(error, param.isPropagateErrors()));
         }
+    }
+
+    private Mono<ToolResultBlock> convertAsyncResult(
+            Mono<Object> result, Type returnType, ToolResultConverter converter) {
+        if (returnType == Void.class) {
+            return result.then(Mono.fromSupplier(() -> converter.convert(null, returnType)));
+        }
+        return result.map(value -> converter.convert(value, returnType));
     }
 
     /**
@@ -346,7 +365,14 @@ class ToolMethodInvoker {
      * @return Mono containing ToolResultBlock with error info
      * @throws ToolSuspendException if found in the exception chain
      */
-    private Mono<ToolResultBlock> handleError(Throwable e) {
+    private Mono<ToolResultBlock> handleError(Throwable e, boolean propagate) {
+        if (propagate) {
+            while ((e instanceof InvocationTargetException
+                            || e instanceof CompletionException
+                            || e instanceof ExecutionException)
+                    && e.getCause() != null) e = e.getCause();
+            return Mono.error(e);
+        }
         return Mono.just(handleInvocationError(e));
     }
 
@@ -361,6 +387,11 @@ class ToolMethodInvoker {
      * @throws ToolSuspendException if found in the exception chain
      */
     private ToolResultBlock handleInvocationError(Throwable e) {
+        // A recovery boundary failure must reach the caller, never become model-visible output.
+        if (JournalException.causedBy(e)) {
+            for (Throwable cause = e; cause != null; cause = cause.getCause())
+                if (cause instanceof JournalException failure) throw failure;
+        }
         // Check if the exception itself is ToolSuspendException
         if (e instanceof ToolSuspendException) {
             throw (ToolSuspendException) e;

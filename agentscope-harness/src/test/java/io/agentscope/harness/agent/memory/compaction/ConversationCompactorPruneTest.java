@@ -20,10 +20,14 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 
+import io.agentscope.core.message.AudioBlock;
+import io.agentscope.core.message.Base64Source;
 import io.agentscope.core.message.ContentBlock;
+import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.ToolExecutionDetails;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolResultState;
 import io.agentscope.core.model.ChatUsage;
@@ -35,6 +39,8 @@ import java.util.Map;
 import java.util.Set;
 import java.util.stream.IntStream;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 
 /**
  * Tests that aggregate tool-result pruning trims only the output text: the rebuilt block keeps
@@ -46,6 +52,39 @@ class ConversationCompactorPruneTest {
     private final ConversationCompactor compactor =
             new ConversationCompactor(mock(Model.class), mock(MemoryFlushManager.class));
 
+    @Test
+    void pruneToolResults_usesConfiguredCounterForProtectionAndMinimum() {
+        ConversationCompactor custom =
+                new ConversationCompactor(
+                        null, null, messages -> 1000L * messages.size(), message -> 1000L);
+        Msg older =
+                Msg.builder()
+                        .role(MsgRole.TOOL)
+                        .content(
+                                ToolResultBlock.of(
+                                        "older",
+                                        "read",
+                                        TextBlock.builder().text("x".repeat(1000)).build()))
+                        .build();
+        Msg recent =
+                Msg.builder()
+                        .role(MsgRole.TOOL)
+                        .content(
+                                ToolResultBlock.of(
+                                        "recent",
+                                        "read",
+                                        TextBlock.builder().text("y".repeat(1000)).build()))
+                        .build();
+
+        List<Msg> result =
+                custom.pruneToolResults(
+                        List.of(older, recent), pruneConfig(100, 800, 1000, Set.of()));
+
+        ToolResultBlock pruned = (ToolResultBlock) result.get(0).getContent().get(0);
+        assertTrue(((TextBlock) pruned.getOutput().get(0)).getText().contains("chars pruned"));
+        assertSame(recent, result.get(1));
+    }
+
     /**
      * Verifies a pruned tool result keeps metadata markers (eviction, suspension), the execution
      * state, and the carrying message keeps its id/usage/timestamp.
@@ -56,6 +95,8 @@ class ConversationCompactorPruneTest {
         metadata.put("agentscope.tool_result_evicted", Boolean.TRUE);
         metadata.put(ToolResultBlock.METADATA_SUSPENDED, Boolean.TRUE);
         metadata.put("custom_key", "custom_value");
+        ToolExecutionDetails details =
+                new ToolExecutionDetails("process", ToolExecutionDetails.Outcome.FAILED, 1, false);
         ToolResultBlock original =
                 ToolResultBlock.builder()
                         .id("call-1")
@@ -63,6 +104,7 @@ class ConversationCompactorPruneTest {
                         .output(TextBlock.builder().text("x".repeat(1_000)).build())
                         .metadata(metadata)
                         .state(ToolResultState.ERROR)
+                        .executionDetails(details)
                         .build();
         Msg toolMsg =
                 Msg.builder()
@@ -85,6 +127,7 @@ class ConversationCompactorPruneTest {
         assertEquals(metadata, pruned.getMetadata());
         assertTrue(pruned.isSuspended());
         assertEquals(ToolResultState.ERROR, pruned.getState());
+        assertEquals(details, pruned.getExecutionDetails());
         assertEquals("call-1", pruned.getId());
         assertEquals("execute", pruned.getName());
 
@@ -95,6 +138,101 @@ class ConversationCompactorPruneTest {
         assertEquals("2026-09-28T10:00:00Z", rebuilt.getTimestamp());
         assertEquals(10, rebuilt.getUsage().getInputTokens());
         assertEquals(5, rebuilt.getUsage().getOutputTokens());
+    }
+
+    @ParameterizedTest
+    @EnumSource(
+            value = ToolResultState.class,
+            names = {"SUCCESS", "ERROR"})
+    void pruneToolResults_preservesRichBlockOrderWithOneTextBudget(ToolResultState state) {
+        ImageBlock leading = image("AA==");
+        AudioBlock audio =
+                AudioBlock.builder().source(new Base64Source("audio/wav", "AQ==")).build();
+        ImageBlock middle = image("Ag==");
+        ImageBlock trailing = image("Aw==");
+        List<ContentBlock> output =
+                List.of(
+                        leading,
+                        text("H".repeat(30)),
+                        text("A".repeat(30)),
+                        audio,
+                        text("M".repeat(100)),
+                        middle,
+                        text("T".repeat(30)),
+                        text("Z".repeat(30)),
+                        trailing);
+        ToolExecutionDetails details =
+                new ToolExecutionDetails("process", ToolExecutionDetails.Outcome.PARTIAL, 7, true);
+        ToolResultBlock original =
+                ToolResultBlock.builder()
+                        .id("rich-call")
+                        .name("execute")
+                        .output(output)
+                        .metadata(Map.of("source", "rich-tool"))
+                        .state(state)
+                        .executionDetails(details)
+                        .build();
+        Msg message = Msg.builder().role(MsgRole.TOOL).content(original).build();
+
+        ToolResultBlock pruned =
+                compactor
+                        .pruneToolResults(List.of(message), pruneConfig(100, 1, 0, Set.of()))
+                        .get(0)
+                        .getContentBlocks(ToolResultBlock.class)
+                        .get(0);
+
+        List<ContentBlock> preview = pruned.getOutput();
+        assertEquals(8, preview.size(), "Fully removed text must not leave an empty block");
+        assertSame(leading, preview.get(0));
+        assertEquals("H".repeat(30), ((TextBlock) preview.get(1)).getText());
+        assertEquals(
+                "A".repeat(20) + "\n\n...(120 chars pruned)...\n\n",
+                ((TextBlock) preview.get(2)).getText());
+        assertSame(audio, preview.get(3));
+        assertSame(middle, preview.get(4));
+        assertEquals("T".repeat(20), ((TextBlock) preview.get(5)).getText());
+        assertEquals("Z".repeat(30), ((TextBlock) preview.get(6)).getText());
+        assertSame(trailing, preview.get(7));
+        assertEquals(original.getId(), pruned.getId());
+        assertEquals(original.getName(), pruned.getName());
+        assertEquals(original.getMetadata(), pruned.getMetadata());
+        assertEquals(state, pruned.getState());
+        assertEquals(details, pruned.getExecutionDetails());
+        assertEquals(output, original.getOutput(), "Pruning must not mutate the source result");
+        assertSame(original, message.getContent().get(0));
+    }
+
+    @Test
+    void pruneToolResults_leavesMediaOnlyAndWithinBudgetResultsUntouched() {
+        ImageBlock image = image("AA==");
+        List<Msg> messages =
+                List.of(
+                        Msg.builder()
+                                .role(MsgRole.TOOL)
+                                .content(
+                                        ToolResultBlock.of("media", "execute", image),
+                                        ToolResultBlock.of(
+                                                "blank",
+                                                "execute",
+                                                List.of(text(" \t".repeat(100)), image)),
+                                        ToolResultBlock.of(
+                                                "small",
+                                                "execute",
+                                                List.of(
+                                                        text("a".repeat(50)),
+                                                        image,
+                                                        text("b".repeat(50)))),
+                                        ToolResultBlock.of(
+                                                "mixed-whitespace",
+                                                "execute",
+                                                List.of(
+                                                        text(" ".repeat(50)),
+                                                        image,
+                                                        text("b".repeat(50)))))
+                                .build());
+
+        assertSame(
+                messages, compactor.pruneToolResults(messages, pruneConfig(100, 1, 0, Set.of())));
     }
 
     /** Verifies excluded tools are never pruned even when oversized and outside protection. */
@@ -241,6 +379,14 @@ class ConversationCompactorPruneTest {
                         .compactIfNeeded(null, messages, config, "agent", "session")
                         .block()
                         .isEmpty());
+    }
+
+    private static TextBlock text(String value) {
+        return TextBlock.builder().text(value).build();
+    }
+
+    private static ImageBlock image(String data) {
+        return ImageBlock.builder().source(new Base64Source("image/png", data)).build();
     }
 
     private static List<ContentBlock> largeResults() {

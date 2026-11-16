@@ -55,8 +55,7 @@ import reactor.core.publisher.Flux;
 @TestPropertySource(
         properties = {
             "claw.home=${java.io.tmpdir}/agentscope-claw-context-load-test",
-            "claw.dashscope.api-key=",
-            "claw.controlplane.enabled=false"
+            "claw.dashscope.api-key="
         })
 class BuilderAppContextLoadTest {
 
