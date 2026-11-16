@@ -22,6 +22,7 @@ import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.event.ToolResultDataDeltaEvent;
 import io.agentscope.core.event.ToolResultEndEvent;
+import io.agentscope.core.event.ToolResultStartEvent;
 import io.agentscope.core.event.ToolResultTextDeltaEvent;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.TextBlock;
@@ -29,9 +30,9 @@ import io.agentscope.core.message.ToolErrorMetadata;
 import io.agentscope.core.message.ToolResultState;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.message.UserMessage;
-import io.agentscope.core.middleware.ActingInput;
 import io.agentscope.core.middleware.AgentInput;
 import io.agentscope.core.middleware.ReasoningInput;
+import io.agentscope.core.state.AgentState;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.security.DigestOutputStream;
@@ -77,7 +78,8 @@ import reactor.core.publisher.Mono;
  * {@code not_found} does.
  *
  * <p><b>Repetition.</b> Independently, identical arguments and identical streamed results are
- * fingerprinted, including successful (exit 0) results. This path uses a neutral repetition
+ * fingerprinted, including successful (exit 0) results. Valid output SHA-256 metadata takes
+ * precedence over the exact streamed text/data digest. This path uses a neutral repetition
  * reminder, never infers failure from text, and stores hashes rather than raw inputs or output.
  * Changed results reset only that call's repetition history. Both paths share the reminder cap.
  *
@@ -92,7 +94,7 @@ import reactor.core.publisher.Mono;
  * adds context to the next model request; the model remains in charge. The reminder is added to
  * the {@link ReasoningInput} of the following step and is never written to the agent state.
  *
- * <p><b>Reset.</b> Counters are reset at the start of every agent call (a new user turn), on a
+ * <p><b>Reset.</b> Counters are reset after admission of every agent call (a new user turn), on a
  * successful result for the same call (or matching scope when arguments are unavailable), and
  * when the call finishes; per-session state is bounded
  * to {@value #MAX_TRACKED_SESSIONS} sessions and evicted least-recently-used first.
@@ -129,6 +131,7 @@ public class RepeatedFailureGuard implements HarnessRuntimeMiddleware {
     private static final String METADATA_SYNTHETIC = "synthetic";
     private static final String METADATA_REMINDER_KIND = "reminderKind";
     private static final String REMINDER_KIND = "repeated_failure";
+    private static final String METADATA_OUTPUT_SHA256 = "agentscope_output_sha256";
 
     private final Map<String, SessionState> sessions =
             Collections.synchronizedMap(
@@ -144,65 +147,114 @@ public class RepeatedFailureGuard implements HarnessRuntimeMiddleware {
     public Set<ExtensionPoint> activePoints() {
         return EnumSet.of(
                 ExtensionPoint.ON_AGENT,
+                ExtensionPoint.ON_AGENT_STATE_READY,
                 ExtensionPoint.ON_REASONING,
-                ExtensionPoint.ON_ACTING,
+                ExtensionPoint.ON_AGENT_EVENT,
                 ExtensionPoint.ON_AGENT_FINISH);
     }
 
-    /** A new agent call is a new user turn: forget the previous turn's failures. */
+    /** Invocation lifetime only; event observation happens before buffering or forwarding. */
     @Override
     public Flux<AgentEvent> onAgent(
             Agent agent,
             RuntimeContext ctx,
             AgentInput input,
             Function<AgentInput, Flux<AgentEvent>> next) {
-        SessionState state = stateFor(ctx);
-        synchronized (state) {
-            state.reset();
-        }
-        return next.apply(input);
-    }
-
-    @Override
-    public Flux<AgentEvent> onActing(
-            Agent agent,
-            RuntimeContext ctx,
-            ActingInput input,
-            Function<ActingInput, Flux<AgentEvent>> next) {
-        SessionState state = stateFor(ctx);
+        // Subscription can precede admission to the same-thread call gate. A queued call must
+        // neither claim the active window nor clear it when cancelled.
         return Flux.defer(
                 () -> {
-                    Map<String, CallObservation> calls = new HashMap<>();
-                    for (ToolUseBlock call : input.toolCalls()) {
-                        if (call.getId() != null) {
-                            calls.put(call.getId(), new CallObservation(call));
-                        }
+                    InvocationToken token = ctx == null ? null : new InvocationToken();
+                    if (ctx != null) {
+                        // Core supplies an independent effective context per subscription. Copies
+                        // within this invocation retain the token; child/new calls replace it.
+                        ctx.put(InvocationToken.class, token);
                     }
-                    return next.apply(input)
-                            .doOnNext(
-                                    event -> {
+                    return Flux.defer(() -> next.apply(input))
+                            .doFinally(
+                                    signal -> {
+                                        SessionState state = stateFor(ctx);
                                         synchronized (state) {
-                                            if (event instanceof ToolResultTextDeltaEvent text) {
-                                                CallObservation call =
-                                                        calls.get(text.getToolCallId());
-                                                if (call != null) {
-                                                    call.text(text.getDelta());
-                                                }
-                                            } else if (event
-                                                    instanceof ToolResultDataDeltaEvent data) {
-                                                CallObservation call =
-                                                        calls.get(data.getToolCallId());
-                                                if (call != null) {
-                                                    call.data(data.getData());
-                                                }
-                                            } else if (event instanceof ToolResultEndEvent result) {
-                                                state.observe(
-                                                        result,
-                                                        calls.remove(result.getToolCallId()));
+                                            // Capture this subscription's token: a late drain must
+                                            // not read a replacement token and clear its window.
+                                            if (state.owner == token) {
+                                                state.reset();
                                             }
                                         }
                                     });
                 });
+    }
+
+    @Override
+    public void onAgentStateReady(
+            Agent agent, RuntimeContext ctx, AgentState agentState, List<Msg> inputMessages) {
+        SessionState state = stateFor(ctx);
+        synchronized (state) {
+            state.reset();
+            state.owner = invocationToken(ctx);
+            state.input = new AgentInput(inputMessages);
+        }
+    }
+
+    @Override
+    public void onAgentEvent(Agent agent, RuntimeContext ctx, AgentEvent event) {
+        // The child's own production notification precedes source-tagging by its emitter.
+        // Already-forwarded events never belong to this invocation's failure window.
+        if (event.getSource() != null && !event.getSource().isBlank()) {
+            return;
+        }
+        SessionState state = stateFor(ctx);
+        synchronized (state) {
+            if (state.owner != invocationToken(ctx) || state.input == null) {
+                return;
+            }
+            if (event instanceof ToolResultStartEvent start) {
+                ToolUseBlock use =
+                        findCall(ctx, state.input, start.getToolCallId(), start.getToolCallName());
+                if (use != null) {
+                    state.calls.put(start.getToolCallId(), new CallObservation(use));
+                }
+            } else if (event instanceof ToolResultTextDeltaEvent text) {
+                CallObservation call = state.calls.get(text.getToolCallId());
+                if (call != null) {
+                    call.text(text.getDelta());
+                }
+            } else if (event instanceof ToolResultDataDeltaEvent data) {
+                CallObservation call = state.calls.get(data.getToolCallId());
+                if (call != null) {
+                    call.data(data.getData());
+                }
+            } else if (event instanceof ToolResultEndEvent result) {
+                state.observe(result, state.calls.remove(result.getToolCallId()));
+            }
+        }
+    }
+
+    private static ToolUseBlock findCall(
+            RuntimeContext ctx, AgentInput input, String id, String name) {
+        // Never fall back to the agent's shared/default slot: only this invocation's history
+        // identifies resumed calls safely. At result start, reasoning has already persisted them.
+        if (ctx != null && ctx.getAgentState() != null) {
+            ToolUseBlock use = findCall(ctx.getAgentState().getContext(), id, name);
+            if (use != null) {
+                return use;
+            }
+        }
+        return findCall(input.msgs(), id, name);
+    }
+
+    private static ToolUseBlock findCall(List<Msg> messages, String id, String name) {
+        if (id == null || messages == null) {
+            return null;
+        }
+        for (int i = messages.size() - 1; i >= 0; i--) {
+            for (ToolUseBlock use : messages.get(i).getContentBlocks(ToolUseBlock.class)) {
+                if (id.equals(use.getId()) && java.util.Objects.equals(name, use.getName())) {
+                    return use;
+                }
+            }
+        }
+        return null;
     }
 
     @Override
@@ -214,7 +266,10 @@ public class RepeatedFailureGuard implements HarnessRuntimeMiddleware {
         SessionState state = stateFor(ctx);
         Msg reminder;
         synchronized (state) {
-            reminder = state.takeReminder();
+            reminder =
+                    state.owner == invocationToken(ctx) && state.input != null
+                            ? state.takeReminder()
+                            : null;
         }
         if (reminder == null) {
             return next.apply(input);
@@ -228,7 +283,9 @@ public class RepeatedFailureGuard implements HarnessRuntimeMiddleware {
     public Mono<Void> onAgentFinish(Agent agent, RuntimeContext ctx, Msg result) {
         SessionState state = stateFor(ctx);
         synchronized (state) {
-            state.reset();
+            if (state.owner == invocationToken(ctx)) {
+                state.reset();
+            }
         }
         return Mono.empty();
     }
@@ -252,8 +309,18 @@ public class RepeatedFailureGuard implements HarnessRuntimeMiddleware {
         return value == null ? "" : value;
     }
 
+    private static InvocationToken invocationToken(RuntimeContext ctx) {
+        return ctx == null ? null : ctx.get(InvocationToken.class);
+    }
+
+    /** Identity survives context derivation, but is replaced for every subscription. */
+    private static final class InvocationToken {}
+
     /** Per-session failure window and pending reminder. Guarded by its own monitor. */
     private static final class SessionState {
+        private final Map<String, CallObservation> calls = new HashMap<>();
+        private InvocationToken owner;
+        private AgentInput input;
         private final Deque<Failure> window = new ArrayDeque<>(WINDOW_SIZE);
         private final Map<String, Integer> failuresSinceReminder = new HashMap<>();
         private final Deque<Repetition> repetitions = new ArrayDeque<>(WINDOW_SIZE);
@@ -262,6 +329,9 @@ public class RepeatedFailureGuard implements HarnessRuntimeMiddleware {
         private PendingReminder pending;
 
         void reset() {
+            calls.clear();
+            owner = null;
+            input = null;
             window.clear();
             failuresSinceReminder.clear();
             repetitions.clear();
@@ -271,9 +341,10 @@ public class RepeatedFailureGuard implements HarnessRuntimeMiddleware {
         }
 
         void observe(ToolResultEndEvent event, CallObservation call) {
+            String suppliedDigest = outputDigest(event.getMetadata());
             if (call == null
                     || call.arguments == null
-                    || !call.valid
+                    || (!call.valid && suppliedDigest == null)
                     || (event.getState() != ToolResultState.SUCCESS
                             && event.getState() != ToolResultState.ERROR
                             && event.getState() != ToolResultState.DENIED)) {
@@ -288,7 +359,10 @@ public class RepeatedFailureGuard implements HarnessRuntimeMiddleware {
                             call.arguments,
                             event.getState()
                                     + ":"
-                                    + HexFormat.of().formatHex(call.output.digest()));
+                                    + (suppliedDigest == null
+                                            ? "stream:"
+                                                    + HexFormat.of().formatHex(call.output.digest())
+                                            : "output:" + suppliedDigest));
             boolean classified =
                     event.getState() == ToolResultState.DENIED
                             || (event.getState() == ToolResultState.ERROR
@@ -481,7 +555,7 @@ public class RepeatedFailureGuard implements HarnessRuntimeMiddleware {
         }
     }
 
-    /** Only hashes survive an acting batch; raw arguments/results are never retained. */
+    /** Only hashes survive a result stream; raw arguments/results are never retained. */
     private static final class CallObservation {
         private final String arguments;
         private final MessageDigest output = digest();
@@ -597,7 +671,11 @@ public class RepeatedFailureGuard implements HarnessRuntimeMiddleware {
     private static String guidance(String kind) {
         String normalized = kind.toLowerCase(Locale.ROOT);
         return switch (normalized) {
-            case "not_found", "permission_denied" ->
+            case "permission_denied" ->
+                    "Permission was denied: stop this operation. Do not bypass the denial by"
+                            + " changing tools, identities, or paths. Report the blocker and seek"
+                            + " explicit authorization before proceeding.";
+            case "not_found" ->
                     "Verify that the path or identifier exists and is inside the allowed"
                             + " workspace, or choose another one before trying again.";
             case "command_failed" ->
@@ -617,6 +695,12 @@ public class RepeatedFailureGuard implements HarnessRuntimeMiddleware {
                     "Treat this failure as a fact: change the inputs, use another tool, or tell"
                             + " the user what is blocking the task.";
         };
+    }
+
+    private static String outputDigest(Map<String, Object> metadata) {
+        Object value = metadata == null ? null : metadata.get(METADATA_OUTPUT_SHA256);
+        // Exact contract validation; no trimming, text heuristics, or lossy normalization.
+        return value instanceof String text && text.matches("[0-9a-f]{64}") ? text : null;
     }
 
     private static String stringValue(Map<String, Object> metadata, String key) {

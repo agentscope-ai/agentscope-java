@@ -262,6 +262,10 @@ The estimator cannot exactly predict every provider's token accounting. When nat
 
 Once validation succeeds, Harness commits the candidate working-history changes and sends the model request. If the model calls a tool, the ReAct loop handles permissions and execution, records the result, and returns to context preparation. Business sources and task projections are refreshed; the call's workspace material is reused. If the model replies, the call ends.
 
+When `ON_ACTING` middleware requests an ordinary stop, completed tool results are added to conversation history before the call ends. Stopping does not undo an executed action or require rerunning it to recover its result. `GenerateReason.PERMISSION_ASKING` instead leaves the operation suspended, without executing it before approval; continue through the permission-confirmation flow. Interpret the typed `GenerateReason` together with tool execution state, whether consuming `call()` or `streamEvents()`. A `returnDirect` tool can return its successful result without another reasoning step, but does not turn a failed, unexecuted or pending-approval operation into success.
+
+At `GenerateReason.MAX_ITERATIONS`, the closing response is a factual wrap-up, not execution of the remaining plan or a declaration of business success. It should distinguish actions already executed from actions not executed, pending confirmation and unfinished work. For example, “The file was edited; tests were not run; deployment awaits approval” preserves the next steps without claiming the change is verified. Check the recorded results and obtain any required approval before continuing unfinished work.
+
 Working context and durable history serve different purposes. Native Thread journal records committed conversation and execution facts; checkpoints retain the working state used for continuation. Compaction does not rewrite that full conversation history. With the session capability enabled, the Agent can inspect earlier evidence through:
 
 - `thread_list agentId="..."` — find prior sessions.

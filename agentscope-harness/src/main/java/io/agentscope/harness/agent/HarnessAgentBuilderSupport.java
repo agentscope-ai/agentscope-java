@@ -338,6 +338,7 @@ final class HarnessAgentBuilderSupport {
         final boolean capturedDisableFilesystemTools = b.disableFilesystemTools;
         final int capturedReadFileMaxChars = b.readFileMaxChars;
         final boolean capturedDisableShellTool = b.disableShellTool;
+        final boolean capturedDisableWebTools = b.disableWebTools;
         final boolean capturedMemoryEnabled = b.enableLongTermMemory || b.memoryConfigured;
         final boolean capturedDisableMemoryTools = b.disableMemoryTools;
         final boolean capturedDisableMemoryHooks = b.disableMemoryHooks;
@@ -400,6 +401,7 @@ final class HarnessAgentBuilderSupport {
 
             if (capturedDisableFilesystemTools) sub.disableFilesystemTools();
             if (capturedDisableShellTool) sub.disableShellTool();
+            if (capturedDisableWebTools) sub.disableWebTools();
             // Long-term memory is opt-in: propagate an explicit opt-in, and only propagate
             // disable flags alongside it (they are no-ops when memory stays off).
             if (capturedMemoryEnabled) {
@@ -472,6 +474,7 @@ final class HarnessAgentBuilderSupport {
         final boolean capturedDisableFilesystemTools = b.disableFilesystemTools;
         final int capturedReadFileMaxChars = b.readFileMaxChars;
         final boolean capturedDisableShellTool = b.disableShellTool;
+        final boolean capturedDisableWebTools = b.disableWebTools;
         final boolean capturedMemoryEnabled = b.enableLongTermMemory || b.memoryConfigured;
         final boolean capturedDisableMemoryTools = b.disableMemoryTools;
         final boolean capturedDisableMemoryHooks = b.disableMemoryHooks;
@@ -594,6 +597,7 @@ final class HarnessAgentBuilderSupport {
             sub.readFileMaxChars(capturedReadFileMaxChars);
             if (capturedDisableFilesystemTools) sub.disableFilesystemTools();
             if (capturedDisableShellTool) sub.disableShellTool();
+            if (capturedDisableWebTools) sub.disableWebTools();
             if (capturedDisableRepeatedFailureGuard) sub.disableRepeatedFailureGuard();
             if (capturedMemoryEnabled) {
                 if (capturedDisableMemoryTools) sub.disableMemoryTools();

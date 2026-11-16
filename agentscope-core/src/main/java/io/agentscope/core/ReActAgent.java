@@ -3005,6 +3005,14 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                 event.withExecution(executionIdentity);
             InvocationRecorder recorder = InvocationRecorder.from(rc);
             if (recorder != null) recorder.observe(event);
+            for (MiddlewareBase middleware :
+                    middlewaresAt(MiddlewareBase.ExtensionPoint.ON_AGENT_EVENT)) {
+                try {
+                    middleware.onAgentEvent(ReActAgent.this, rc, event);
+                } catch (Exception error) {
+                    log.warn("Agent event observer threw an exception, ignoring", error);
+                }
+            }
         }
 
         private void emitEvent(AgentEvent event) {
@@ -3962,24 +3970,36 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                             })
                     .flatMap(
                             results -> {
-                                // Middleware requested stop during acting — return immediately with
-                                // the requested GenerateReason, preserving any results already
-                                // collected.
+                                // A stop must not discard results or repeat executed side effects.
+                                // Persist completed results before returning; suspended calls stay
+                                // pending and partial progress is never converted into success.
                                 RequestStopEvent rs = actingStopRequested.get();
                                 if (rs != null) {
-                                    if (rs.getGenerateReason()
-                                            == GenerateReason.PERMISSION_ASKING) {
-                                        Msg lastAssistant =
-                                                MessageUtils.lastAssistantMessage(
-                                                        state.contextMutable());
-                                        if (lastAssistant != null) {
-                                            return Mono.just(
-                                                    lastAssistant.withGenerateReason(
-                                                            GenerateReason.PERMISSION_ASKING));
-                                        }
+                                    Map<String, Integer> callOrder = new HashMap<>();
+                                    for (int i = 0; i < pendingToolCalls.size(); i++) {
+                                        callOrder.put(pendingToolCalls.get(i).getId(), i);
                                     }
-                                    Msg stopMsg = buildStopMsg(results, rs.getGenerateReason());
-                                    return Mono.just(stopMsg);
+                                    List<Map.Entry<ToolUseBlock, ToolResultBlock>> orderedResults =
+                                            results.stream()
+                                                    .sorted(
+                                                            Comparator.comparingInt(
+                                                                    e ->
+                                                                            callOrder.getOrDefault(
+                                                                                    e.getKey()
+                                                                                            .getId(),
+                                                                                    Integer
+                                                                                            .MAX_VALUE)))
+                                                    .toList();
+                                    return Flux.fromIterable(orderedResults)
+                                            .filter(e -> !e.getValue().isSuspended())
+                                            .concatMap(e -> notifyPostActingHook(e, false))
+                                            .collectList()
+                                            .map(
+                                                    events ->
+                                                            buildStopMsg(
+                                                                    orderedResults,
+                                                                    events,
+                                                                    rs.getGenerateReason()));
                                 }
                                 List<Map.Entry<ToolUseBlock, ToolResultBlock>> successPairs =
                                         results.stream()
@@ -4283,8 +4303,8 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                                                                         PERMISSION_DENIED_BY_RULES)));
                                                     }));
 
+            resultHolder.set(combineResolvedResults(ungranted, deniedEntries, List.of()));
             if (approved.isEmpty()) {
-                resultHolder.set(combineResolvedResults(ungranted, deniedEntries, List.of()));
                 return deniedEvents;
             }
 
@@ -4305,7 +4325,10 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                                 // start instead of batch admission.
                                                 ToolResultCallback callback =
                                                         new ToolResultCallback(
-                                                                replyId, sink, parentCtx);
+                                                                replyId,
+                                                                sink,
+                                                                parentCtx,
+                                                                resultHolder);
                                                 Disposable toolCallsDisposable =
                                                         executeToolCalls(approved, callback)
                                                                 .contextWrite(
@@ -4625,6 +4648,8 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             private final String replyId;
             private final FluxSink<AgentEvent> sink;
             private final reactor.util.context.ContextView parentContext;
+            private final AtomicReference<List<Map.Entry<ToolUseBlock, ToolResultBlock>>>
+                    resultHolder;
 
             /** Results resolved before batch settlement, by call id. */
             private final ConcurrentHashMap<String, ToolResultBlock> combineResolvedResults =
@@ -4636,10 +4661,12 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             private ToolResultCallback(
                     String replyId,
                     FluxSink<AgentEvent> sink,
-                    reactor.util.context.ContextView parentContext) {
+                    reactor.util.context.ContextView parentContext,
+                    AtomicReference<List<Map.Entry<ToolUseBlock, ToolResultBlock>>> resultHolder) {
                 this.replyId = replyId;
                 this.sink = sink;
                 this.parentContext = parentContext;
+                this.resultHolder = resultHolder;
             }
 
             private void emit(AgentEvent event) {
@@ -4674,6 +4701,15 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                 // Record before the suspended check so an earlier suspension survives the batch
                 // error fallback; only the first resolution publishes events.
                 if (combineResolvedResults.putIfAbsent(call.getId(), result) != null) return;
+                // Publish the completed fact before its events: middleware can end the acting
+                // stream on a result event, before the batch's final collector has run.
+                resultHolder.updateAndGet(
+                        resolved -> {
+                            List<Map.Entry<ToolUseBlock, ToolResultBlock>> snapshot =
+                                    new ArrayList<>(resolved);
+                            snapshot.add(Map.entry(call, result));
+                            return List.copyOf(snapshot);
+                        });
                 if (result.isSuspended()) return;
                 Map<String, Object> metadata = result.getMetadata();
                 if (result.getOutput() != null) {
@@ -4751,12 +4787,26 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
          * any already-collected tool results so the caller sees partial progress.
          */
         private Msg buildStopMsg(
-                List<Map.Entry<ToolUseBlock, ToolResultBlock>> results, GenerateReason reason) {
+                List<Map.Entry<ToolUseBlock, ToolResultBlock>> results,
+                List<PostActingEvent> completedEvents,
+                GenerateReason reason) {
+            if (reason == GenerateReason.PERMISSION_ASKING) {
+                Msg lastAssistant = MessageUtils.lastAssistantMessage(state.contextMutable());
+                if (lastAssistant != null) {
+                    return lastAssistant.withGenerateReason(GenerateReason.PERMISSION_ASKING);
+                }
+            }
             List<ContentBlock> content = new ArrayList<>();
-            if (results != null) {
-                for (Map.Entry<ToolUseBlock, ToolResultBlock> pair : results) {
-                    content.add(pair.getKey());
+            int completedIndex = 0;
+            for (Map.Entry<ToolUseBlock, ToolResultBlock> pair : results) {
+                content.add(pair.getKey());
+                if (pair.getValue().isSuspended()) {
                     content.add(pair.getValue());
+                } else {
+                    // Hooks ran in this same order. Use the message actually written to history:
+                    // a message rewrite takes precedence over a block rewrite or the raw result.
+                    content.addAll(
+                            completedEvents.get(completedIndex++).getToolResultMsg().getContent());
                 }
             }
             return AssistantMessage.builder()
@@ -5404,7 +5454,16 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                                     "You have failed to generate response within"
                                                             + " the maximum iterations. Now respond"
                                                             + " directly by summarizing the current"
-                                                            + " situation.")
+                                                            + " situation. Distinguish what was"
+                                                            + " executed, not executed, incomplete,"
+                                                            + " and awaiting confirmation, citing"
+                                                            + " observed results and remaining"
+                                                            + " uncertainty. Do not claim the goal"
+                                                            + " is complete based only on a plan,"
+                                                            + " successful tool execution, or a"
+                                                            + " partial subagent response. Do not"
+                                                            + " retry tools or perform additional"
+                                                            + " side effects while summarizing.")
                                             .build())
                             .build());
             return messageList;

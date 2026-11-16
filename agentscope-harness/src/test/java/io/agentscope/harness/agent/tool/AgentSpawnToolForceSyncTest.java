@@ -32,6 +32,7 @@ import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.ChatUsage;
 import io.agentscope.core.model.ExecutionConfig;
+import io.agentscope.core.state.AgentState;
 import io.agentscope.core.tool.AgentTool;
 import io.agentscope.core.tool.ToolCallParam;
 import io.agentscope.core.tool.Toolkit;
@@ -194,6 +195,7 @@ class AgentSpawnToolForceSyncTest {
                 RuntimeContext.builder()
                         .sessionId("parent")
                         .userId("user")
+                        .agentState(AgentState.builder().sessionId("parent").userId("user").build())
                         .put(AgentSpawnTool.CTX_FORCE_SYNC, true)
                         .put(AgentSpawnTool.CTX_FORCE_SYNC_TIMEOUT_SECONDS, 5)
                         .build();

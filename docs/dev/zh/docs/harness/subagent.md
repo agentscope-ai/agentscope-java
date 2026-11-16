@@ -35,13 +35,15 @@ agent_spawn agent_id="reviewer" task="review 这次 PR 的所有改动"
 
 ## 几种声明方式
 
-支持下面三类来源，构建时合并：
+子 Agent 声明支持下面三类来源：
 
 | 方式 | 适用 | 怎么配 |
 |------|------|--------|
 | 内置 `general-purpose` | 通用兜底（镜像主 agent 能力） | 总是有，不需要配 |
 | 工作区 spec 文件 | 项目特有的、能版本控制的 | `workspace/subagents/<id>.md` |
 | 编程式声明 | 跑时才能确定（远程、动态参数） | `builder.subagent(SubagentDeclaration.builder()...)` |
+
+`DynamicSubagentsMiddleware` 将工作区中的子 Agent 目录及对应 manager 作为调用级快照放入 `RuntimeContext`。不同用户的调用交错执行时，各自保留自己的子 Agent 目录；加载一个用户的声明不会替换另一会话的目录。每次调用应传入已授权的 `userId` 和父 `sessionId`。声明在推理前重新加载，该次模型请求与随后的工具执行共用同一快照。
 
 ### 工作区 spec 文件
 
@@ -101,6 +103,8 @@ HarnessAgent.builder()
 `enablePendingToolRecovery` 写法。开启后，新的普通消息会为悬空工具调用补充错误结果，
 也适用于从失败会话中重新加载的工具调用。等待人工审批的工具仍须提供审批结果；空输入恢复执行、
 调用方补交工具结果的行为保持原有语义。远端 agent 和自定义工厂需自行配置恢复策略。
+
+框架自动构建的本地子 Agent 也继承父级 `disableWebTools()` 配置。默认工厂和按声明构建的工厂都会应用该设置，`general-purpose` 也不例外，因此委派任务不会重新启用父级关闭的 Web 工具。若任务需要联网，应在已授权的父级配置中解决限制，而不是通过子 Agent 绕过。
 
 ### 内置 `general-purpose`
 
@@ -200,6 +204,8 @@ agent_send label="pr-reviewer" message="顺便也看下 schema 变更"
 ```
 
 要列当前活跃的子 agent：`agent_list`。
+
+`agent_key`、按 label 追加消息和 `agent_list` 都受调用方用户与父会话的范围限制。其他用户或父会话的句柄不能用于查看或联系该实例；未知 key 与越权 key 返回不可区分的错误。追加消息时若无法定位目标，应在原来已授权的父会话中使用 `agent_list` 查找句柄，而不是切换身份或猜测 key。
 
 ## 持久会话
 

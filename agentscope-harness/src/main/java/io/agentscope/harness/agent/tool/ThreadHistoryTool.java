@@ -31,6 +31,7 @@ import io.agentscope.core.util.JsonUtils;
 import io.agentscope.harness.agent.journal.WorkspaceThreadJournalStore;
 import io.agentscope.harness.agent.workspace.WorkspaceManager;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -60,6 +61,9 @@ public class ThreadHistoryTool {
      */
     static final int MAX_RESULT_CHARS = 32_000;
 
+    /** Ceiling for a serialized recovery error, including JSON escaping and error metadata. */
+    private static final int MAX_RECOVERY_ERROR_CHARS = 12_000;
+
     /** Minimum preview allowance so a summary never collapses to only its reference line. */
     private static final int MIN_PREVIEW_CHARS = 200;
 
@@ -83,6 +87,15 @@ public class ThreadHistoryTool {
     public ToolResultBlock threadSearch(
             RuntimeContext runtimeContext, String query, String agentId, Integer maxResults) {
         return threadSearch(runtimeContext, query, agentId, maxResults, null);
+    }
+
+    public ToolResultBlock threadSearch(
+            RuntimeContext runtimeContext,
+            String query,
+            String agentId,
+            Integer maxResults,
+            String matchMode) {
+        return threadSearch(runtimeContext, query, agentId, maxResults, matchMode, null);
     }
 
     @Tool(
@@ -118,7 +131,18 @@ public class ThreadHistoryTool {
                                             + " same message; any: at least one keyword in that"
                                             + " message. Case-insensitive literal matching.",
                             required = false)
-                    String matchMode) {
+                    String matchMode,
+            @ToolParam(
+                            name = "offset",
+                            description =
+                                    "Non-negative match offset (default: 0). Continue with"
+                                            + " nextOffset; pages re-read current data, not a"
+                                            + " snapshot.",
+                            required = false)
+                    Integer offset) {
+        if (offset != null && offset < 0) {
+            return invalidOffset();
+        }
         if (query == null || query.isBlank()) {
             return ToolResultBlock.error(
                             "query is required: pass a literal phrase or whitespace-separated"
@@ -146,6 +170,8 @@ public class ThreadHistoryTool {
         int budget = MAX_RESULT_CHARS - TRAILER_RESERVE;
         boolean limitReached = false;
         boolean budgetReached = false;
+        int startOffset = offset == null ? 0 : offset;
+        long candidateOffset = 0;
         search:
         for (ThreadKey key : threads(rc, agentId)) {
             RuntimeContext sessionContext =
@@ -157,6 +183,10 @@ public class ThreadHistoryTool {
             for (var message : view.messages()) {
                 String text = JsonUtils.getJsonCodec().toJson(message.getContent());
                 if (!matcher.test(text.toLowerCase(Locale.ROOT))) {
+                    continue;
+                }
+                if (candidateOffset < startOffset) {
+                    candidateOffset++;
                     continue;
                 }
                 // Prove that at least one later match exists before reporting truncation.
@@ -172,11 +202,15 @@ public class ThreadHistoryTool {
                 match.put("messageId", message.getId());
                 match.put("message", bounded(message, key));
                 int size = matchSize(match);
-                if (!matches.isEmpty() && totalChars + size + 1 > budget) {
+                if (totalChars + size + 1 > budget) {
+                    if (matches.isEmpty()) {
+                        return oversizedIdentity(key, message.getId());
+                    }
                     budgetReached = true;
                     break search;
                 }
                 matches.add(match);
+                candidateOffset++;
                 totalChars += size + 1; // separator
             }
         }
@@ -186,22 +220,27 @@ public class ThreadHistoryTool {
             // one more result.
             Map<String, Object> last = matches.get(matches.size() - 1);
             last.put("truncated", true);
+            last.put("nextOffset", candidateOffset);
             if (limitReached) {
                 last.put("limit", limit);
             }
             last.put(
                     "note",
                     budgetReached
-                            ? "Result budget reached; later matches were omitted. Narrow the query,"
-                                    + " use matchMode, or read one message with thread_history"
-                                    + " messageId."
-                            : "Limit reached; later matches were omitted. Raise maxResults (hard"
+                            ? "Result budget reached; continue thread_search with the same query"
+                                    + " and filters and offset=nextOffset, or read one message with"
+                                    + " thread_history messageId. Pages re-read current data."
+                            : "Limit reached; continue thread_search with the same query and"
+                                    + " filters and offset=nextOffset, or raise maxResults (hard"
                                     + " maximum "
                                     + MAX_RESULTS_CEILING
-                                    + "), narrow the query, or read one message with"
-                                    + " thread_history messageId.");
+                                    + "). Pages re-read current data.");
         }
         return ToolResultBlock.success(JsonUtils.getJsonCodec().toJson(matches));
+    }
+
+    public ToolResultBlock threadList(RuntimeContext runtimeContext, String agentId) {
+        return threadList(runtimeContext, agentId, null);
     }
 
     @Tool(
@@ -213,7 +252,18 @@ public class ThreadHistoryTool {
     public ToolResultBlock threadList(
             RuntimeContext runtimeContext,
             @ToolParam(name = "agentId", description = "Agent ID to list Threads for")
-                    String agentId) {
+                    String agentId,
+            @ToolParam(
+                            name = "offset",
+                            description =
+                                    "Non-negative Thread offset (default: 0). Continue with"
+                                            + " nextOffset; pages re-read current data, not a"
+                                            + " snapshot.",
+                            required = false)
+                    Integer offset) {
+        if (offset != null && offset < 0) {
+            return invalidOffset();
+        }
         if (agentId == null || agentId.isBlank()) {
             return ToolResultBlock.error(
                             "agentId is required: pass the agent ID whose Threads you want to"
@@ -226,28 +276,37 @@ public class ThreadHistoryTool {
         int budget = MAX_RESULT_CHARS - TRAILER_RESERVE;
         boolean truncated = false;
         var keys = threads(rc, agentId);
-        for (ThreadKey key : keys) {
-            String serialized = JsonUtils.getJsonCodec().toJson(key);
-            if (!entries.isEmpty() && totalChars + serialized.length() + 1 > budget) {
-                truncated = true;
-                break;
-            }
-            entries.add(
+        int nextOffset = offset == null ? 0 : offset;
+        while (nextOffset < keys.size()) {
+            ThreadKey key = keys.get(nextOffset);
+            Map<String, Object> entry =
                     Map.of(
                             "agentId", key.agentId(),
                             "sessionId", key.sessionId(),
-                            "threadId", key.threadId()));
-            totalChars += serialized.length() + 1; // separator
+                            "threadId", key.threadId());
+            int size = matchSize(entry);
+            if (totalChars + size + 1 > budget) {
+                if (entries.isEmpty()) {
+                    return oversizedIdentity(key, null);
+                }
+                truncated = true;
+                break;
+            }
+            entries.add(entry);
+            nextOffset++;
+            totalChars += size + 1; // separator
         }
         if (truncated) {
             var note = new LinkedHashMap<String, Object>();
             note.put("truncated", true);
             note.put("returned", entries.size());
             note.put("total", keys.size());
+            note.put("nextOffset", nextOffset);
             note.put(
                     "note",
-                    "Result budget reached; the remaining Threads were omitted. Narrow the scope,"
-                            + " or read a known session directly with thread_history.");
+                    "Result budget reached; continue thread_list with the same agentId and"
+                            + " offset=nextOffset. Pages re-read current data; alternatively read a"
+                            + " known session with thread_history.");
             entries.add(note);
         }
         return ToolResultBlock.success(JsonUtils.getJsonCodec().toJson(entries));
@@ -260,6 +319,16 @@ public class ThreadHistoryTool {
             String threadId,
             Integer lastN) {
         return threadHistory(runtimeContext, agentId, sessionId, threadId, lastN, null);
+    }
+
+    public ToolResultBlock threadHistory(
+            RuntimeContext runtimeContext,
+            String agentId,
+            String sessionId,
+            String threadId,
+            Integer lastN,
+            String messageId) {
+        return threadHistory(runtimeContext, agentId, sessionId, threadId, lastN, messageId, null);
     }
 
     @Tool(
@@ -290,7 +359,21 @@ public class ThreadHistoryTool {
                             description =
                                     "Read this exact message instead of the lastN recent messages",
                             required = false)
-                    String messageId) {
+                    String messageId,
+            @ToolParam(
+                            name = "beforeMessageId",
+                            description =
+                                    "Exclusive original message ID anchor for older history. Cannot"
+                                            + " be combined with messageId; reads the latest"
+                                            + " projection.",
+                            required = false)
+                    String beforeMessageId) {
+        if (beforeMessageId != null && (beforeMessageId.isBlank() || messageId != null)) {
+            return ToolResultBlock.error(
+                            "beforeMessageId must be a non-blank original message ID and cannot be"
+                                    + " combined with messageId.")
+                    .withMetadata(ToolErrorMetadata.of(ToolErrorKind.INVALID_ARGUMENT));
+        }
         if (agentId == null || agentId.isBlank() || sessionId == null || sessionId.isBlank()) {
             return ToolResultBlock.error(
                             "agentId and sessionId are required: take both from thread_list"
@@ -341,39 +424,78 @@ public class ThreadHistoryTool {
                     JsonUtils.getJsonCodec()
                             .toJson(Map.of("asOfSeq", view.asOfSeq(), "message", found)));
         }
+        int end = messages.size();
+        if (beforeMessageId != null) {
+            end = -1;
+            for (int i = 0; i < messages.size(); i++) {
+                if (beforeMessageId.equals(messages.get(i).getId())) {
+                    end = i;
+                    break;
+                }
+            }
+            if (end < 0) {
+                return ToolResultBlock.error(
+                                "Anchor not found in this Thread. Use an original message ID from"
+                                        + " thread_history or thread_search in this Thread.")
+                        .withMetadata(
+                                ToolErrorMetadata.of(ToolErrorKind.NOT_FOUND, threadScope(key)));
+            }
+        }
         int limit = positiveLimit(lastN, 20);
-        int windowStart = Math.max(0, messages.size() - limit);
-        var window = messages.subList(windowStart, messages.size());
+        int windowStart = Math.max(0, end - limit);
         var selected = new ArrayList<Msg>();
-        int totalChars = 0;
-        int omitted = 0;
+        int totalChars = 2;
         int budget = MAX_RESULT_CHARS - TRAILER_RESERVE;
-        for (int i = window.size() - 1; i >= 0; i--) {
-            Msg message = bounded(window.get(i), key);
+        for (int i = end - 1; i >= windowStart; i--) {
+            Msg message = bounded(messages.get(i), key);
             int size = JsonUtils.getJsonCodec().toJson(message).length();
-            if (!selected.isEmpty() && totalChars + size + 1 > budget) {
-                omitted = i + 1;
+            selected.add(0, message);
+            // Include the actual escaped anchor and trailer in the serialized budget, not
+            // just the messages. A rejected candidate remains before the next page's anchor.
+            Map<String, Object> candidate =
+                    historyPage(view.asOfSeq(), messages.size(), selected, i, windowStart);
+            if (totalChars + size + 1 > budget || matchSize(candidate) > MAX_RESULT_CHARS) {
+                selected.remove(0);
+                if (selected.isEmpty()) {
+                    return oversizedIdentity(key, messages.get(i).getId());
+                }
                 break;
             }
-            selected.add(0, message);
-            totalChars += size + 1; // separator
+            totalChars += size + 1;
         }
+        return ToolResultBlock.success(
+                JsonUtils.getJsonCodec()
+                        .toJson(
+                                historyPage(
+                                        view.asOfSeq(),
+                                        messages.size(),
+                                        selected,
+                                        end - selected.size(),
+                                        windowStart)));
+    }
+
+    private static Map<String, Object> historyPage(
+            long asOfSeq, int total, List<Msg> selected, int firstIncluded, int windowStart) {
         var result = new LinkedHashMap<String, Object>();
-        result.put("asOfSeq", view.asOfSeq());
-        result.put("totalMessages", messages.size());
+        result.put("asOfSeq", asOfSeq);
+        result.put("totalMessages", total);
         result.put("messages", selected);
+        result.put("hasMore", firstIncluded > 0);
+        if (!selected.isEmpty()) {
+            result.put("nextBeforeMessageId", selected.get(0).getId());
+        }
+        int omitted = firstIncluded - windowStart;
         if (omitted > 0) {
             result.put("truncated", true);
             result.put("omittedFromWindow", omitted);
             result.put(
                     "note",
-                    "Result budget reached; the "
-                            + omitted
-                            + " oldest message(s) of the requested lastN window were omitted."
-                            + " Locate them with thread_search, then read one at a time with"
-                            + " thread_history messageId=<id>.");
+                    "Result budget reached; continue thread_history with"
+                            + " beforeMessageId=nextBeforeMessageId. Pages read the latest"
+                            + " projection, not a snapshot. Recover a full message with"
+                            + " thread_search and thread_history messageId=<id>.");
         }
-        return ToolResultBlock.success(JsonUtils.getJsonCodec().toJson(result));
+        return result;
     }
 
     /**
@@ -451,7 +573,45 @@ public class ThreadHistoryTool {
                                 agentId == null
                                         || agentId.isBlank()
                                         || key.agentId().equals(agentId))
+                .sorted(
+                        Comparator.comparing(ThreadKey::agentId)
+                                .thenComparing(ThreadKey::sessionId)
+                                .thenComparing(ThreadKey::threadId))
                 .toList();
+    }
+
+    private static ToolResultBlock invalidOffset() {
+        return ToolResultBlock.error("offset must be non-negative (default: 0).")
+                .withMetadata(ToolErrorMetadata.of(ToolErrorKind.INVALID_ARGUMENT));
+    }
+
+    private static ToolResultBlock oversizedIdentity(ThreadKey key, String messageId) {
+        var arguments = new LinkedHashMap<String, Object>();
+        arguments.put("agentId", key.agentId());
+        arguments.put("sessionId", key.sessionId());
+        arguments.put("threadId", key.threadId());
+        if (messageId != null) {
+            arguments.put("messageId", messageId);
+        }
+        ToolResultBlock recovery =
+                ToolResultBlock.error(
+                                "Thread or message preview exceeds the result budget; read directly"
+                                        + " with thread_history arguments: "
+                                        + JsonUtils.getJsonCodec().toJson(arguments))
+                        .withMetadata(ToolErrorMetadata.of(ToolErrorKind.INVALID_ARGUMENT));
+        // Count the whole serialized error: identity quoting in the arguments is escaped again
+        // inside the TextBlock. Never shorten an ID or let a recovery hint exceed its budget.
+        if (JsonUtils.getJsonCodec().toJson(recovery).length() <= MAX_RECOVERY_ERROR_CHARS) {
+            return recovery;
+        }
+        return oversizedIdentity();
+    }
+
+    private static ToolResultBlock oversizedIdentity() {
+        return ToolResultBlock.error(
+                        "Thread or message identity exceeds the result budget; read a known message"
+                                + " directly with thread_history messageId.")
+                .withMetadata(ToolErrorMetadata.of(ToolErrorKind.INVALID_ARGUMENT));
     }
 
     private static String normalizeUser(String user) {

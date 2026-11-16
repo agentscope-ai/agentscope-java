@@ -36,13 +36,15 @@ No registration step.
 
 ## Three ways to declare
 
-Three sources are merged at build time:
+Declarations come from three sources:
 
 | Way | Use for | How |
 |-----|---------|-----|
 | Built-in `general-purpose` | Generic fallback (mirrors parent capability) | Always present, no config |
 | Workspace spec files | Project-specific, version-controlled | `workspace/subagents/<id>.md` |
 | Programmatic declarations | Decided at runtime (remote, dynamic params) | `builder.subagent(SubagentDeclaration.builder()...)` |
+
+`DynamicSubagentsMiddleware` loads the workspace catalog and its manager as a call-scoped snapshot in `RuntimeContext`. Interleaved calls for different users keep their own catalogs; loading one user's declarations does not replace another session's catalog. Supply the authorized `userId` and parent `sessionId` on each call. Declarations are reloaded before reasoning, and the resulting snapshot is shared by that model request and its tool execution.
 
 ### Workspace spec files
 
@@ -103,6 +105,8 @@ When enabled, a new ordinary message repairs orphaned pending tool calls with sy
 results, including calls loaded from a failed session. Pending permission confirmations still
 require confirmation; empty-input resume and caller-supplied tool results retain their existing
 behavior. Remote agents and custom factories configure recovery themselves.
+
+Automatically built local children also inherit the parent's `disableWebTools()` setting. Both the default factory and the declaration-aware factory apply it, including for `general-purpose`, so delegating a task does not restore web tools disabled on the parent. If the task needs web access, resolve that restriction in the authorized parent configuration instead of using a child as a workaround.
 
 ### Built-in `general-purpose`
 
@@ -202,6 +206,8 @@ agent_send label="pr-reviewer" message="also check the schema changes"
 ```
 
 To list active subagents: `agent_list`.
+
+`agent_key`, label-based follow-ups and `agent_list` are scoped to the caller's user and parent session. A handle from another user or parent session cannot be used to inspect or message that instance; an unknown key and an out-of-scope key return indistinguishable errors. If a follow-up cannot resolve its target, use `agent_list` in the original authorized parent session to find the handle rather than try other identities or guess keys.
 
 ## Persistent sessions
 

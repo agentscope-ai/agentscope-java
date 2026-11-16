@@ -18,15 +18,19 @@ package io.agentscope.harness.agent.middleware;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.event.ToolResultDataDeltaEvent;
 import io.agentscope.core.event.ToolResultEndEvent;
+import io.agentscope.core.event.ToolResultStartEvent;
 import io.agentscope.core.event.ToolResultTextDeltaEvent;
 import io.agentscope.core.message.Msg;
+import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolErrorKind;
 import io.agentscope.core.message.ToolErrorMetadata;
@@ -35,14 +39,20 @@ import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.middleware.ActingInput;
 import io.agentscope.core.middleware.AgentInput;
 import io.agentscope.core.middleware.ReasoningInput;
+import io.agentscope.core.state.AgentState;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Function;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
+import reactor.core.Disposable;
 import reactor.core.publisher.Flux;
+import reactor.core.publisher.Sinks;
 
 class RepeatedFailureGuardTest {
 
@@ -53,6 +63,88 @@ class RepeatedFailureGuardTest {
             RuntimeContext.builder().userId("u").sessionId("s2").threadId("main").build();
 
     private final RepeatedFailureGuard guard = new RepeatedFailureGuard();
+    private final Map<RuntimeContext, TestTurn> turns = new HashMap<>();
+
+    private record TestTurn(
+            AgentState state,
+            RuntimeContext effectiveContext,
+            RuntimeContext context,
+            Sinks.Many<AgentEvent> events,
+            Disposable subscription) {}
+
+    private TestTurn turn(RuntimeContext ctx) {
+        return turns.computeIfAbsent(
+                ctx,
+                unused -> {
+                    AgentState state = AgentState.builder().build();
+                    RuntimeContext live =
+                            ctx == null
+                                    ? null
+                                    : RuntimeContext.builder(ctx).agentState(state).build();
+                    Sinks.Many<AgentEvent> events = Sinks.many().unicast().onBackpressureBuffer();
+                    AtomicReference<RuntimeContext> execution = new AtomicReference<>();
+                    Disposable subscription =
+                            guard.onAgent(
+                                            null,
+                                            live,
+                                            new AgentInput(List.of()),
+                                            in -> {
+                                                // Mirror journal derivation before admission and
+                                                // capability derivation after state-ready.
+                                                RuntimeContext ready =
+                                                        live == null
+                                                                ? null
+                                                                : RuntimeContext.builder(live)
+                                                                        .build();
+                                                guard.onAgentStateReady(
+                                                        null, ready, state, in.msgs());
+                                                execution.set(
+                                                        ready == null
+                                                                ? null
+                                                                : RuntimeContext.builder(ready)
+                                                                        .build());
+                                                return events.asFlux();
+                                            })
+                                    .subscribe();
+                    return new TestTurn(state, live, execution.get(), events, subscription);
+                });
+    }
+
+    // Drive window/cap assertions through the synchronous production notification only.
+    private Flux<AgentEvent> observeActing(
+            Object unused,
+            RuntimeContext ctx,
+            ActingInput input,
+            Function<ActingInput, Flux<AgentEvent>> next) {
+        return Flux.defer(
+                () -> {
+                    TestTurn turn = turn(ctx);
+                    if (!input.toolCalls().isEmpty()) {
+                        turn.state
+                                .contextMutable()
+                                .add(
+                                        Msg.builder()
+                                                .role(MsgRole.ASSISTANT)
+                                                .content(new ArrayList<>(input.toolCalls()))
+                                                .build());
+                        for (ToolUseBlock call : input.toolCalls()) {
+                            guard.onAgentEvent(
+                                    null,
+                                    turn.context,
+                                    new ToolResultStartEvent(
+                                            "reply", call.getId(), call.getName()));
+                        }
+                    }
+                    return next.apply(input)
+                            .doOnNext(event -> guard.onAgentEvent(null, turn.context, event));
+                });
+    }
+
+    @AfterEach
+    void closeTurns() {
+        turns.values().forEach(turn -> turn.subscription.dispose());
+        turns.clear();
+    }
 
     private void fail(RuntimeContext ctx, String tool, ToolErrorKind kind, String scope) {
         fail(ctx, tool, kind, scope, false);
@@ -77,11 +169,15 @@ class RepeatedFailureGuardTest {
     }
 
     private void emit(RuntimeContext ctx, ToolResultEndEvent event) {
-        guard.onActing(null, ctx, new ActingInput(List.of()), input -> Flux.just(event))
-                .blockLast();
+        observeActing(null, ctx, new ActingInput(List.of()), input -> Flux.just(event)).blockLast();
     }
 
     private List<Msg> nextReasoning(RuntimeContext ctx) {
+        TestTurn turn = turns.get(ctx);
+        return reasoningMessages(turn == null ? ctx : turn.context);
+    }
+
+    private List<Msg> reasoningMessages(RuntimeContext ctx) {
         AtomicReference<ReasoningInput> seen = new AtomicReference<>();
         guard.onReasoning(
                         null,
@@ -97,7 +193,11 @@ class RepeatedFailureGuardTest {
     }
 
     private void newTurn(RuntimeContext ctx) {
-        guard.onAgent(null, ctx, new AgentInput(List.of()), input -> Flux.empty()).blockLast();
+        TestTurn previous = turns.remove(ctx);
+        if (previous != null) {
+            previous.subscription.dispose();
+        }
+        turn(ctx);
     }
 
     @Test
@@ -231,10 +331,287 @@ class RepeatedFailureGuardTest {
         for (int i = 0; i < 3; i++) {
             fail(SESSION_1, TOOL, ToolErrorKind.NOT_FOUND, "a.txt");
         }
-        guard.onAgentFinish(null, SESSION_1, null).block();
+        guard.onAgentFinish(null, turn(SESSION_1).context, null).block();
+        assertTrue(nextReasoning(SESSION_1).isEmpty());
+        newTurn(SESSION_1);
         fail(SESSION_1, TOOL, ToolErrorKind.NOT_FOUND, "a.txt");
         fail(SESSION_1, TOOL, ToolErrorKind.NOT_FOUND, "a.txt");
         assertTrue(nextReasoning(SESSION_1).isEmpty());
+    }
+
+    private static Object invocationToken(RuntimeContext ctx) throws ClassNotFoundException {
+        return ctx.get(Class.forName(RepeatedFailureGuard.class.getName() + "$InvocationToken"));
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void copiedContextsShareTheWindowAndFinishOrCancellationClearsIt(boolean finish)
+            throws Exception {
+        TestTurn active = turn(SESSION_1);
+        assertNotSame(active.effectiveContext, active.context);
+        Object token = invocationToken(active.effectiveContext);
+        assertNotNull(token);
+        assertSame(token, invocationToken(active.context));
+        for (int i = 0; i < 3; i++) {
+            fail(SESSION_1, TOOL, ToolErrorKind.NOT_FOUND, "a.txt");
+        }
+        RuntimeContext reasoning = RuntimeContext.builder(active.context).build();
+        assertEquals(1, reasoningMessages(reasoning).size());
+        for (int i = 0; i < 3; i++) {
+            fail(SESSION_1, TOOL, ToolErrorKind.NOT_FOUND, "a.txt");
+        }
+        if (finish) {
+            guard.onAgentFinish(null, RuntimeContext.builder(reasoning).build(), null).block();
+        } else {
+            active.subscription.dispose();
+        }
+        assertTrue(reasoningMessages(reasoning).isEmpty(), "pending second reminder was cleared");
+    }
+
+    @Test
+    void reusingSourceContextInstallsFreshTokensWithoutMutatingTheSource() throws Exception {
+        RuntimeContext source = RuntimeContext.builder().sessionId("reused-source").build();
+        TestTurn first = turn(source);
+        Object firstToken = invocationToken(first.context);
+        assertNotNull(firstToken);
+        assertNull(invocationToken(source));
+        fail(source, TOOL, ToolErrorKind.NOT_FOUND, "a.txt");
+        fail(source, TOOL, ToolErrorKind.NOT_FOUND, "a.txt");
+        newTurn(source);
+        TestTurn second = turn(source);
+        assertNotSame(firstToken, invocationToken(second.context));
+        assertNull(invocationToken(source));
+        fail(source, TOOL, ToolErrorKind.NOT_FOUND, "a.txt");
+        fail(source, TOOL, ToolErrorKind.NOT_FOUND, "a.txt");
+        assertTrue(nextReasoning(source).isEmpty());
+        fail(source, TOOL, ToolErrorKind.NOT_FOUND, "a.txt");
+        assertEquals(1, nextReasoning(source).size());
+    }
+
+    @Test
+    void childSubscriptionReplacesInheritedTokenWithoutChangingTheParent() throws Exception {
+        TestTurn parent = turn(SESSION_1);
+        Object parentToken = invocationToken(parent.context);
+        RuntimeContext childSource =
+                RuntimeContext.builder(parent.context).threadId("child").build();
+        assertSame(parentToken, invocationToken(childSource));
+        TestTurn child = turn(childSource);
+        Object childToken = invocationToken(child.context);
+        assertNotNull(childToken);
+        assertNotSame(parentToken, childToken);
+        assertSame(parentToken, invocationToken(parent.context));
+        assertSame(parentToken, invocationToken(childSource));
+        for (int i = 0; i < 2; i++) {
+            fail(SESSION_1, TOOL, ToolErrorKind.NOT_FOUND, "a.txt");
+            fail(childSource, TOOL, ToolErrorKind.NOT_FOUND, "a.txt");
+        }
+        assertTrue(nextReasoning(SESSION_1).isEmpty());
+        assertTrue(nextReasoning(childSource).isEmpty());
+        fail(SESSION_1, TOOL, ToolErrorKind.NOT_FOUND, "a.txt");
+        fail(childSource, TOOL, ToolErrorKind.NOT_FOUND, "a.txt");
+        child.subscription.dispose();
+        assertTrue(nextReasoning(childSource).isEmpty());
+        assertEquals(1, nextReasoning(SESSION_1).size(), "child cleanup preserves parent reminder");
+    }
+
+    @Test
+    void lateFinallyUsesCapturedTokenEvenIfTheEffectiveContextMarkerWasReplaced() throws Exception {
+        RuntimeContext effective = RuntimeContext.builder(SESSION_1).build();
+        Sinks.Many<AgentEvent> oldEvents = Sinks.many().unicast().onBackpressureBuffer();
+        Sinks.Many<AgentEvent> newEvents = Sinks.many().unicast().onBackpressureBuffer();
+        List<RuntimeContext> admitted = new ArrayList<>();
+        Flux<AgentEvent> invocation =
+                guard.onAgent(
+                        null,
+                        effective,
+                        new AgentInput(List.of()),
+                        input -> {
+                            RuntimeContext ready = RuntimeContext.builder(effective).build();
+                            guard.onAgentStateReady(
+                                    null, ready, AgentState.builder().build(), input.msgs());
+                            admitted.add(ready);
+                            return admitted.size() == 1 ? oldEvents.asFlux() : newEvents.asFlux();
+                        });
+        Disposable oldSubscription = invocation.subscribe();
+        RuntimeContext old = admitted.get(0);
+        Object oldToken = invocationToken(old);
+        guard.onAgentFinish(null, old, null).block();
+        Disposable newSubscription = invocation.subscribe();
+        try {
+            RuntimeContext fresh = admitted.get(1);
+            assertNotSame(oldToken, invocationToken(fresh));
+            assertSame(invocationToken(fresh), invocationToken(effective));
+            for (int i = 0; i < 3; i++) {
+                guard.onAgentEvent(
+                        null,
+                        fresh,
+                        eventFor(
+                                TOOL,
+                                ToolResultState.ERROR,
+                                ToolErrorKind.NOT_FOUND,
+                                "a.txt",
+                                null));
+            }
+            assertTrue(reasoningMessages(old).isEmpty());
+            guard.onAgentFinish(null, old, null).block();
+            assertEquals(Sinks.EmitResult.OK, oldEvents.tryEmitComplete());
+            assertEquals(1, reasoningMessages(fresh).size(), "old drain cannot clear new owner");
+        } finally {
+            oldSubscription.dispose();
+            newSubscription.dispose();
+        }
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void queuedSubscriptionCannotClaimOrClearTheActiveWindow(boolean cancelQueued)
+            throws Exception {
+        TestTurn active = turn(SESSION_1);
+        fail(SESSION_1, TOOL, ToolErrorKind.NOT_FOUND, "a.txt");
+        fail(SESSION_1, TOOL, ToolErrorKind.NOT_FOUND, "a.txt");
+        RuntimeContext queued = RuntimeContext.builder(active.context).build();
+        assertSame(invocationToken(active.context), invocationToken(queued));
+        Sinks.One<Void> admission = Sinks.one();
+        Sinks.Many<AgentEvent> events = Sinks.many().unicast().onBackpressureBuffer();
+        Disposable subscription =
+                guard.onAgent(
+                                null,
+                                queued,
+                                new AgentInput(List.of()),
+                                input ->
+                                        admission
+                                                .asMono()
+                                                .thenMany(
+                                                        Flux.defer(
+                                                                () -> {
+                                                                    guard.onAgentStateReady(
+                                                                            null,
+                                                                            queued,
+                                                                            AgentState.builder()
+                                                                                    .build(),
+                                                                            input.msgs());
+                                                                    return events.asFlux();
+                                                                })))
+                        .subscribe();
+        try {
+            assertNotSame(invocationToken(active.context), invocationToken(queued));
+            for (int i = 0; i < 3; i++) {
+                guard.onAgentEvent(
+                        null,
+                        queued,
+                        eventFor(
+                                TOOL,
+                                ToolResultState.ERROR,
+                                ToolErrorKind.NOT_FOUND,
+                                "a.txt",
+                                null));
+            }
+            assertTrue(reasoningMessages(queued).isEmpty(), "queued events have no owner");
+            assertTrue(nextReasoning(SESSION_1).isEmpty(), "queued events cannot enter A's window");
+            if (cancelQueued) {
+                subscription.dispose();
+            }
+            fail(SESSION_1, TOOL, ToolErrorKind.NOT_FOUND, "a.txt");
+            assertTrue(reasoningMessages(queued).isEmpty(), "B cannot consume A's reminder");
+            List<Msg> activeReminder = nextReasoning(SESSION_1);
+            assertEquals(1, activeReminder.size(), "subscription/cancellation preserves A's count");
+            assertTrue(activeReminder.get(0).getTextContent().contains("3 times"));
+            guard.onAgentFinish(null, active.context, null).block();
+            if (!cancelQueued) {
+                assertEquals(Sinks.EmitResult.OK, admission.tryEmitEmpty());
+                for (int i = 0; i < 2; i++) {
+                    guard.onAgentEvent(
+                            null,
+                            queued,
+                            eventFor(
+                                    TOOL,
+                                    ToolResultState.ERROR,
+                                    ToolErrorKind.NOT_FOUND,
+                                    "a.txt",
+                                    null));
+                }
+                assertTrue(reasoningMessages(queued).isEmpty(), "B starts with fresh counters");
+                guard.onAgentEvent(
+                        null,
+                        queued,
+                        eventFor(
+                                TOOL,
+                                ToolResultState.ERROR,
+                                ToolErrorKind.NOT_FOUND,
+                                "a.txt",
+                                null));
+                assertEquals(1, reasoningMessages(queued).size(), "B initializes on admission");
+                guard.onAgentFinish(null, queued, null).block();
+                assertEquals(Sinks.EmitResult.OK, events.tryEmitComplete());
+            }
+        } finally {
+            subscription.dispose();
+        }
+    }
+
+    @Test
+    void lateOldEventsReasoningFinishAndDrainCannotTouchTheNewOwner() {
+        TestTurn old = turn(SESSION_1);
+        fail(SESSION_1, TOOL, ToolErrorKind.NOT_FOUND, "a.txt");
+        guard.onAgentFinish(null, old.context, null).block();
+        RuntimeContext fresh = RuntimeContext.builder(old.context).build();
+        Sinks.Many<AgentEvent> events = Sinks.many().unicast().onBackpressureBuffer();
+        Disposable subscription =
+                guard.onAgent(
+                                null,
+                                fresh,
+                                new AgentInput(List.of()),
+                                input ->
+                                        Flux.defer(
+                                                () -> {
+                                                    guard.onAgentStateReady(
+                                                            null,
+                                                            fresh,
+                                                            AgentState.builder().build(),
+                                                            input.msgs());
+                                                    return events.asFlux();
+                                                }))
+                        .subscribe();
+        try {
+            for (int i = 0; i < 2; i++) {
+                guard.onAgentEvent(
+                        null,
+                        fresh,
+                        eventFor(
+                                TOOL,
+                                ToolResultState.ERROR,
+                                ToolErrorKind.NOT_FOUND,
+                                "a.txt",
+                                null));
+            }
+            for (int i = 0; i < 3; i++) {
+                guard.onAgentEvent(
+                        null,
+                        old.context,
+                        eventFor(
+                                TOOL,
+                                ToolResultState.ERROR,
+                                ToolErrorKind.NOT_FOUND,
+                                "a.txt",
+                                null));
+            }
+            assertTrue(reasoningMessages(fresh).isEmpty(), "late events cannot count for B");
+            guard.onAgentEvent(
+                    null,
+                    fresh,
+                    eventFor(TOOL, ToolResultState.ERROR, ToolErrorKind.NOT_FOUND, "a.txt", null));
+            assertTrue(reasoningMessages(old.context).isEmpty(), "old reasoning cannot consume B");
+            guard.onAgentFinish(null, old.context, null).block();
+            assertEquals(Sinks.EmitResult.OK, old.events.tryEmitComplete());
+            List<Msg> reminder = reasoningMessages(fresh);
+            assertEquals(1, reminder.size(), "late finish/drain cannot clear B's pending reminder");
+            assertTrue(reminder.get(0).getTextContent().contains("3 times"));
+            guard.onAgentFinish(null, fresh, null).block();
+            assertEquals(Sinks.EmitResult.OK, events.tryEmitComplete());
+            assertTrue(reasoningMessages(fresh).isEmpty());
+        } finally {
+            subscription.dispose();
+        }
     }
 
     @Test
@@ -303,7 +680,7 @@ class RepeatedFailureGuardTest {
             events.add(new ToolResultTextDeltaEvent("reply", "call", "execute", chunk));
         }
         events.add(eventFor("execute", state, null, null, null));
-        guard.onActing(
+        observeActing(
                         null,
                         SESSION_1,
                         new ActingInput(List.of(new ToolUseBlock("call", "execute", arguments))),
@@ -390,7 +767,7 @@ class RepeatedFailureGuardTest {
                             ToolErrorKind.COMMAND_FAILED,
                             "python",
                             null);
-            guard.onActing(
+            observeActing(
                             null,
                             SESSION_1,
                             new ActingInput(
@@ -413,7 +790,7 @@ class RepeatedFailureGuardTest {
     void dataResultsAreFingerprintedAndInterleavedCallsStayIsolated() {
         for (int i = 0; i < 3; i++) {
             String id = "data-" + i;
-            guard.onActing(
+            observeActing(
                             null,
                             SESSION_1,
                             new ActingInput(
@@ -495,7 +872,7 @@ class RepeatedFailureGuardTest {
                 events.add(new ToolResultEndEvent("reply", id, "execute", ToolResultState.SUCCESS));
             }
         }
-        guard.onActing(null, SESSION_1, new ActingInput(calls), input -> Flux.fromIterable(events))
+        observeActing(null, SESSION_1, new ActingInput(calls), input -> Flux.fromIterable(events))
                 .blockLast();
         assertEquals(1, nextReasoning(SESSION_1).size());
         completedCall(Map.of("command", "b"), ToolResultState.SUCCESS, "same");
@@ -516,7 +893,7 @@ class RepeatedFailureGuardTest {
                             ToolErrorKind.COMMAND_FAILED,
                             "python",
                             null);
-            guard.onActing(
+            observeActing(
                             null,
                             SESSION_1,
                             new ActingInput(
@@ -540,7 +917,7 @@ class RepeatedFailureGuardTest {
                         ToolErrorKind.COMMAND_FAILED,
                         "python",
                         null);
-        guard.onActing(
+        observeActing(
                         null,
                         SESSION_1,
                         new ActingInput(
@@ -574,7 +951,7 @@ class RepeatedFailureGuardTest {
             }
             events.add(end);
         }
-        guard.onActing(null, SESSION_1, new ActingInput(calls), input -> Flux.fromIterable(events))
+        observeActing(null, SESSION_1, new ActingInput(calls), input -> Flux.fromIterable(events))
                 .blockLast();
     }
 
@@ -615,6 +992,177 @@ class RepeatedFailureGuardTest {
                         .get(0)
                         .getTextContent()
                         .contains("does not imply failure"));
+    }
+
+    private void digestCall(Object digest, ToolResultState state, String output) {
+        ToolResultEndEvent end = eventFor("execute", state, null, null, null);
+        if (digest != null) {
+            end.withMetadata(Map.of("agentscope_output_sha256", digest));
+        }
+        observeActing(
+                        null,
+                        SESSION_1,
+                        new ActingInput(
+                                List.of(
+                                        new ToolUseBlock(
+                                                "call", "execute", Map.of("command", "a")))),
+                        input ->
+                                Flux.just(
+                                        new ToolResultTextDeltaEvent(
+                                                "reply", "call", "execute", output),
+                                        end))
+                .blockLast();
+    }
+
+    @Test
+    void trustedDigestCountsIdenticalRawOutputDespiteRandomDisplayPaths() {
+        for (int i = 0; i < 3; i++) {
+            digestCall("a".repeat(64), ToolResultState.SUCCESS, "output at /tmp/random-" + i);
+        }
+        String reminder = nextReasoning(SESSION_1).get(0).getTextContent();
+        assertTrue(reminder.contains("does not imply failure"), reminder);
+        assertFalse(reminder.contains("has failed"), reminder);
+        assertFalse(reminder.contains("/tmp/"), reminder);
+    }
+
+    @Test
+    void digestChangeRetractsPendingReminderWithoutSpendingBudget() {
+        for (int i = 0; i < 3; i++) {
+            digestCall("a".repeat(64), ToolResultState.SUCCESS, "same display");
+        }
+        digestCall("b".repeat(64), ToolResultState.SUCCESS, "same display");
+        assertTrue(nextReasoning(SESSION_1).isEmpty());
+        for (int n = 0; n < 2; n++) {
+            for (int i = 0; i < 3; i++) {
+                digestCall("b".repeat(64), ToolResultState.SUCCESS, "random-" + i);
+            }
+            assertEquals(1, nextReasoning(SESSION_1).size());
+        }
+    }
+
+    @Test
+    void digestDoesNotEraseResultStateDifferences() {
+        digestCall("a".repeat(64), ToolResultState.SUCCESS, "same");
+        digestCall("a".repeat(64), ToolResultState.SUCCESS, "same");
+        digestCall("a".repeat(64), ToolResultState.ERROR, "same");
+        assertTrue(nextReasoning(SESSION_1).isEmpty());
+    }
+
+    @Test
+    void absentOrInvalidDigestFallsBackToExactTextAndData() {
+        for (Object invalid :
+                List.of(
+                        "",
+                        "a".repeat(63),
+                        "A".repeat(64),
+                        "g".repeat(64),
+                        " " + "a".repeat(64),
+                        123)) {
+            newTurn(SESSION_1);
+            digestCall(null, ToolResultState.SUCCESS, "same");
+            digestCall(invalid, ToolResultState.SUCCESS, "same");
+            digestCall(invalid, ToolResultState.SUCCESS, "same");
+            assertEquals(1, nextReasoning(SESSION_1).size(), "invalid digest: " + invalid);
+            newTurn(SESSION_1);
+            for (int i = 0; i < 3; i++) {
+                digestCall(invalid, ToolResultState.SUCCESS, "exact path /tmp/" + i);
+            }
+            assertTrue(nextReasoning(SESSION_1).isEmpty(), "paths must not be normalized");
+        }
+        newTurn(SESSION_1);
+        for (int i = 0; i < 3; i++) {
+            ToolResultEndEvent end = eventFor(TOOL, ToolResultState.SUCCESS, null, null, null);
+            end.withMetadata(Map.of("agentscope_output_sha256", "bad"));
+            observeActing(
+                            null,
+                            SESSION_1,
+                            new ActingInput(List.of(new ToolUseBlock("call", TOOL, Map.of()))),
+                            input ->
+                                    Flux.just(
+                                            new ToolResultDataDeltaEvent(
+                                                    "reply",
+                                                    "call",
+                                                    TOOL,
+                                                    TextBlock.builder().text("same").build()),
+                                            end))
+                    .blockLast();
+        }
+        assertEquals(1, nextReasoning(SESSION_1).size());
+    }
+
+    @Test
+    void stateReadyInputIdentifiesResumedCallsWithoutSharedAgentState() {
+        List<ToolUseBlock> calls = new ArrayList<>();
+        List<AgentEvent> events = new ArrayList<>();
+        for (int i = 0; i < 3; i++) {
+            String id = "resumed-" + i;
+            calls.add(new ToolUseBlock(id, TOOL, Map.of("path", "a")));
+            events.add(new ToolResultStartEvent("reply", id, TOOL));
+            events.add(new ToolResultTextDeltaEvent("reply", id, TOOL, "same"));
+            events.add(new ToolResultEndEvent("reply", id, TOOL, ToolResultState.SUCCESS));
+        }
+        List<Msg> acceptedMessages =
+                List.of(
+                        Msg.builder()
+                                .role(MsgRole.ASSISTANT)
+                                .content(new ArrayList<>(calls))
+                                .build());
+        guard.onAgent(
+                        null,
+                        SESSION_1,
+                        new AgentInput(List.of()),
+                        input ->
+                                Flux.defer(
+                                        () -> {
+                                            guard.onAgentStateReady(
+                                                    null,
+                                                    SESSION_1,
+                                                    AgentState.builder().build(),
+                                                    acceptedMessages);
+                                            return Flux.fromIterable(events)
+                                                    .doOnNext(
+                                                            event ->
+                                                                    guard.onAgentEvent(
+                                                                            null, SESSION_1, event))
+                                                    .doOnComplete(
+                                                            () ->
+                                                                    assertEquals(
+                                                                            1,
+                                                                            nextReasoning(SESSION_1)
+                                                                                    .size()));
+                                        }))
+                .blockLast();
+        assertTrue(nextReasoning(SESSION_1).isEmpty(), "completion clears the turn");
+        assertFalse(
+                guard.activePoints()
+                        .contains(
+                                io.agentscope.core.middleware.MiddlewareBase.ExtensionPoint
+                                        .ON_ACTING));
+    }
+
+    @Test
+    void permissionDenialGuidanceStopsInsteadOfSuggestingBypass() {
+        String text = RepeatedFailureGuard.renderText(TOOL, "permission_denied", "a", 3);
+        assertTrue(text.contains("stop this operation"), text);
+        assertTrue(text.contains("Do not bypass"), text);
+        assertTrue(text.contains("tools, identities, or paths"), text);
+        assertTrue(text.contains("explicit authorization"), text);
+        assertFalse(text.contains("choose another"), text);
+        assertFalse(text.contains("use another tool"), text);
+        assertTrue(
+                RepeatedFailureGuard.renderText(TOOL, "not_found", "a", 3)
+                        .contains("or choose another one before trying again"));
+    }
+
+    @Test
+    void forwardedChildFailuresDoNotEnterTheParentWindow() {
+        for (int i = 0; i < 3; i++) {
+            ToolResultEndEvent child =
+                    eventFor(TOOL, ToolResultState.ERROR, ToolErrorKind.NOT_FOUND, "a", null);
+            child.withSource("parent/child/session");
+            emit(SESSION_1, child);
+        }
+        assertTrue(nextReasoning(SESSION_1).isEmpty());
     }
 
     @Test

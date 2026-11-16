@@ -170,25 +170,16 @@ public class MemoryFlushManager {
                         .build());
 
         return ContextModelCalls.auxiliary(model, flushInput)
-                .reduce(
-                        new StringBuilder(),
-                        (sb, chatResponse) -> {
-                            List<ContentBlock> blocks = chatResponse.getContent();
-                            if (blocks != null) {
-                                for (ContentBlock block : blocks) {
-                                    if (block instanceof TextBlock tb) {
-                                        String t = tb.getText();
-                                        if (t != null) {
-                                            sb.append(t);
-                                        }
-                                    }
-                                }
-                            }
-                            return sb;
-                        })
+                .collect(
+                        MemoryConsolidator.ConsolidationOutput::new,
+                        MemoryConsolidator.ConsolidationOutput::accept)
                 .flatMap(
-                        sb -> {
-                            String extracted = sb.toString();
+                        output -> {
+                            String extracted = output.text();
+                            if (output.incomplete() || output.sawToolBlock()) {
+                                log.debug("Incomplete or mixed memory extraction; not flushing");
+                                return Mono.empty();
+                            }
                             if (extracted.isBlank() || extracted.strip().equals("NO_REPLY")) {
                                 log.debug("No memories to flush");
                                 return Mono.empty();

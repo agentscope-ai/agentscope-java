@@ -59,6 +59,11 @@ public class MemoryGetTool {
         this.workspaceManager = workspaceManager;
     }
 
+    public ToolResultBlock memoryGet(
+            RuntimeContext runtimeContext, String path, int startLine, int endLine) {
+        return memoryGet(runtimeContext, path, startLine, endLine, null);
+    }
+
     @Tool(
             name = "memory_get",
             readOnly = true,
@@ -66,7 +71,8 @@ public class MemoryGetTool {
                     "Read specific lines from a memory file. Use after memory_search to pull"
                             + " full context around matched lines. Path is relative to the"
                             + " caller's memory namespace. Output is bounded; continue with the"
-                            + " startLine given in the truncation notice.")
+                            + " startLine given in the truncation notice. For a long line, use"
+                            + " startLine=endLine and charOffset to read consecutive segments.")
     public ToolResultBlock memoryGet(
             RuntimeContext runtimeContext,
             @ToolParam(
@@ -78,7 +84,15 @@ public class MemoryGetTool {
             @ToolParam(name = "startLine", description = "Start line number (1-based, inclusive)")
                     int startLine,
             @ToolParam(name = "endLine", description = "End line number (1-based, inclusive)")
-                    int endLine) {
+                    int endLine,
+            @ToolParam(
+                            name = "charOffset",
+                            description =
+                                    "Optional zero-based Unicode codepoint offset; only valid when"
+                                            + " startLine=endLine. Returns at most 2000 codepoints"
+                                            + " with nextCharOffset when more remain.",
+                            required = false)
+                    Integer charOffset) {
         if (path == null || path.isBlank()) {
             return ToolResultBlock.error("path is required")
                     .withMetadata(ToolErrorMetadata.of(ToolErrorKind.INVALID_ARGUMENT));
@@ -146,38 +160,105 @@ public class MemoryGetTool {
                     .withMetadata(ToolErrorMetadata.of(ToolErrorKind.INVALID_ARGUMENT, scope));
         }
 
+        if (charOffset != null) {
+            String line = lines.get(start);
+            int total = line.codePointCount(0, line.length());
+            if (startLine != endLine || charOffset < 0 || charOffset > total) {
+                return ToolResultBlock.error(
+                                "charOffset requires startLine=endLine and must be between 0 and "
+                                        + total
+                                        + " Unicode codepoints (inclusive).")
+                        .withMetadata(ToolErrorMetadata.of(ToolErrorKind.INVALID_ARGUMENT, scope));
+            }
+            int next = (int) Math.min((long) total, (long) charOffset + MAX_LINE_CHARS);
+            String segment =
+                    line.substring(
+                            line.offsetByCodePoints(0, charOffset),
+                            line.offsetByCodePoints(0, next));
+            String entry = String.format("%d|%s%n", startLine, segment);
+            String trailer =
+                    next < total
+                            ? "[nextCharOffset="
+                                    + next
+                                    + "; continue memory_get with the same path and startLine="
+                                    + startLine
+                                    + " endLine="
+                                    + startLine
+                                    + " charOffset="
+                                    + next
+                                    + ".]"
+                            : "";
+            // A 2000-codepoint segment occupies at most 4000 UTF-16 units. Include the
+            // actual line prefix and footer, rather than treating codepoints as chars.
+            if (entry.length() + trailer.length() > MAX_OUTPUT_CHARS) {
+                return ToolResultBlock.error("Line segment exceeds the memory_get output budget.")
+                        .withMetadata(ToolErrorMetadata.of(ToolErrorKind.INVALID_ARGUMENT, scope));
+            }
+            return ToolResultBlock.success(entry + trailer);
+        }
+
         StringBuilder sb = new StringBuilder();
         int lastIncluded = startLine - 1;
         boolean pageTruncated = false;
+        boolean sawLongLine = false;
         for (int i = start; i < end; i++) {
-            String entry = String.format("%d|%s%n", i + 1, boundedLine(lines.get(i)));
-            if (sb.length() + entry.length() > MAX_OUTPUT_CHARS - TRAILER_RESERVE) {
+            String line = lines.get(i);
+            boolean longLine = line.codePointCount(0, line.length()) > MAX_LINE_CHARS;
+            String entry = String.format("%d|%s%n", i + 1, boundedLine(line));
+            String trailer = i + 1 < end ? pageTrailer(path, startLine, i + 1, end) : "";
+            String recovery = sawLongLine || longLine ? longLineTrailer() : "";
+            if (sb.length() + entry.length() > MAX_OUTPUT_CHARS - TRAILER_RESERVE
+                    || sb.length() + entry.length() + trailer.length() + recovery.length()
+                            > MAX_OUTPUT_CHARS) {
                 pageTruncated = true;
                 break;
             }
             sb.append(entry);
+            sawLongLine |= longLine;
             lastIncluded = i + 1;
         }
         if (pageTruncated) {
-            sb.append("[Output truncated: showing lines ")
-                    .append(startLine)
-                    .append('-')
-                    .append(lastIncluded)
-                    .append(" of the requested ")
-                    .append(startLine)
-                    .append('-')
-                    .append(end)
-                    .append("; the ")
-                    .append(MAX_OUTPUT_CHARS)
-                    .append("-character page budget was reached. Continue with memory_get path=")
-                    .append(path)
-                    .append(" startLine=")
-                    .append(lastIncluded + 1)
-                    .append(" endLine=")
-                    .append(end)
-                    .append(".]");
+            sb.append(pageTrailer(path, startLine, lastIncluded, end));
+        }
+        if (sawLongLine) {
+            sb.append(longLineTrailer());
         }
         return ToolResultBlock.success(sb.toString());
+    }
+
+    private static String pageTrailer(String path, int start, int last, int end) {
+        String continuation = "path=" + path;
+        String trailer = pageTrailerText(continuation, start, last, end);
+        // Do not let a long path crowd out data or exceed the existing trailer allowance.
+        return trailer.length() <= TRAILER_RESERVE
+                ? trailer
+                : pageTrailerText("using the same path", start, last, end);
+    }
+
+    private static String pageTrailerText(String path, int start, int last, int end) {
+        return "[Output truncated: showing lines "
+                + start
+                + '-'
+                + last
+                + " of the requested "
+                + start
+                + '-'
+                + end
+                + "; the "
+                + MAX_OUTPUT_CHARS
+                + "-character page budget was reached. Continue with memory_get "
+                + path
+                + " startLine="
+                + (last + 1)
+                + " endLine="
+                + end
+                + ".]";
+    }
+
+    private static String longLineTrailer() {
+        return "[Long lines are previews only. Recover each with memory_get using the same path,"
+                + " startLine=endLine set to its line number and charOffset=0; continue with"
+                + " nextCharOffset until absent.]";
     }
 
     /** Keeps the head and tail of an oversized line so both ends stay visible. */

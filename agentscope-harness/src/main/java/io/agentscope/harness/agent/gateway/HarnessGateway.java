@@ -368,6 +368,16 @@ public final class HarnessGateway implements Gateway, WakeupDispatcher.WakeupTar
      */
     public String exposeSubagent(
             String agentId, String sessionId, Agent agent, OutboundAddress replyTo) {
+        return exposeSubagent(agentId, sessionId, agent, replyTo, null);
+    }
+
+    /**
+     * Exposes a subagent with the trusted caller identity used for cold materialization.
+     *
+     * @param userId the parent invocation's user identity; null preserves anonymous exposure
+     */
+    public String exposeSubagent(
+            String agentId, String sessionId, Agent agent, OutboundAddress replyTo, String userId) {
         Objects.requireNonNull(agent, "agent");
         String subagentId = "sub-" + UUID.randomUUID().toString().substring(0, 8);
         exposedSessions.put(
@@ -375,7 +385,7 @@ public final class HarnessGateway implements Gateway, WakeupDispatcher.WakeupTar
         try {
             subagentRegistry.register(
                     new SubagentRecord(
-                            subagentId, agentId, sessionId, null, null, Instant.now(), null));
+                            subagentId, agentId, sessionId, userId, null, Instant.now(), null));
         } catch (RuntimeException e) {
             log.warn(
                     "Failed to persist exposed-subagent record {}: {}", subagentId, e.getMessage());

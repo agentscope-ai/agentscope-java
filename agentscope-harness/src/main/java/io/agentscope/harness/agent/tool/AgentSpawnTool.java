@@ -238,7 +238,14 @@ public class AgentSpawnTool {
     private volatile RemoteSubagentTransport remoteTransport = new AgentProtocolTransport();
 
     private record SpawnedAgent(
-            String key, String agentId, String sessionId, String label, Agent agent, int depth) {}
+            String key,
+            String agentId,
+            String sessionId,
+            String label,
+            Agent agent,
+            int depth,
+            String userId,
+            String parentSessionId) {}
 
     private final ConcurrentHashMap<String, SpawnedAgent> agentsByKey = new ConcurrentHashMap<>();
 
@@ -356,6 +363,17 @@ public class AgentSpawnTool {
                             required = false)
                     Boolean exposeToUser) {
 
+        if (parentState == null && runtimeContext != null) {
+            parentState = runtimeContext.getAgentState();
+        }
+        if (!hostOwnsChildState(runtimeContext)
+                && runtimeContext != null
+                && runtimeContext.getSessionId() != null
+                && !runtimeContext.getSessionId().isBlank()
+                && parentState != null
+                && !isParentStateOwner(parentState, runtimeContext)) {
+            return Mono.just(ToolResultBlock.error("Unknown agent_key."));
+        }
         log.debug(
                 "agent_spawn called: agentId={}, timeoutSeconds={}, task={}",
                 agentId,
@@ -411,6 +429,7 @@ public class AgentSpawnTool {
 
         // Create only on a cache miss, including concurrent spawns of the same identity.
         AtomicBoolean created = new AtomicBoolean();
+        AgentState registryState = parentState;
         SpawnedAgent spawned =
                 agentsByKey.computeIfAbsent(
                         key,
@@ -420,18 +439,35 @@ public class AgentSpawnTool {
                             if (agentOpt.isEmpty()) {
                                 return null;
                             }
+                            // Publish the parent registry and label before the cached child can
+                            // be observed by a concurrent reuse's accessibility gate.
+                            persistSpawnEntry(
+                                    registryState, key, agentId, sessionId, canonLabel, nextDepth);
+                            if (labelKey != null) {
+                                labelToKey.put(labelKey, key);
+                            }
                             created.set(true);
                             return new SpawnedAgent(
-                                    key, agentId, sessionId, canonLabel, agentOpt.get(), nextDepth);
+                                    key,
+                                    agentId,
+                                    sessionId,
+                                    canonLabel,
+                                    agentOpt.get(),
+                                    nextDepth,
+                                    currentUserId,
+                                    parentSessionId);
                         });
         if (spawned == null) {
             return Mono.just(ToolResultBlock.error("Unknown agent_id: " + agentId));
+        }
+        if (!isOwner(spawned, runtimeContext)
+                || (!created.get() && !isAccessible(spawned, runtimeContext, parentState))) {
+            return Mono.just(ToolResultBlock.error("Unknown agent_key."));
         }
         Agent agent = spawned.agent();
         if (labelKey != null) {
             labelToKey.put(labelKey, key);
         }
-        persistSpawnEntry(parentState, key, agentId, sessionId, canonLabel, nextDepth);
         if (!created.get()) {
             if (!hostOwnsChildState(runtimeContext)) {
                 propagatePlanMode(parentState, currentUserId, sessionId, agent);
@@ -486,7 +522,7 @@ public class AgentSpawnTool {
                             ? runtimeContext.get("outboundAddress", OutboundAddress.class)
                             : null;
             SubagentGatewayBridge.ExposeResult er =
-                    gatewayBridge.expose(agentId, sessionId, agent, replyTo);
+                    gatewayBridge.expose(agentId, sessionId, agent, replyTo, runtimeContext);
             subagentId = er.subagentId();
         }
 
@@ -649,6 +685,9 @@ public class AgentSpawnTool {
             return Mono.just(ToolResultBlock.error("message is required"));
         }
 
+        if (parentState == null && runtimeContext != null) {
+            parentState = runtimeContext.getAgentState();
+        }
         String key;
         if (hasKey) {
             key = agentKey.trim();
@@ -666,8 +705,10 @@ public class AgentSpawnTool {
         if (resolved == null) {
             resolved = tryRestoreFromState(parentState, key, runtimeContext);
         }
-        if (resolved == null) {
-            return Mono.just(ToolResultBlock.error("Unknown agent_key: " + key));
+        if (resolved == null || !isAccessible(resolved, runtimeContext, parentState)) {
+            return Mono.just(
+                    ToolResultBlock.error(
+                            hasKey ? "Unknown agent_key." : "Unknown label: " + label.trim()));
         }
         final SpawnedAgent spawned = resolved;
 
@@ -748,15 +789,27 @@ public class AgentSpawnTool {
                 forceSync);
     }
 
-    @Tool(name = "agent_list", description = "List active subagents spawned by this agent.")
+    /** Compatibility entry point without call identity; never enumerates the shared cache. */
     public ToolResultBlock agentList() {
-        if (agentsByKey.isEmpty()) {
+        return agentList(RuntimeContext.empty());
+    }
+
+    @Tool(
+            name = "agent_list",
+            description = "List active subagents spawned in this parent session.")
+    public ToolResultBlock agentList(RuntimeContext runtimeContext) {
+        AgentState parentState = runtimeContext == null ? null : runtimeContext.getAgentState();
+        List<SpawnedAgent> visible =
+                agentsByKey.values().stream()
+                        .filter(a -> isAccessible(a, runtimeContext, parentState))
+                        .toList();
+        if (visible.isEmpty()) {
             return ToolResultBlock.success("No active subagents.");
         }
 
         StringBuilder sb =
-                new StringBuilder("Active subagents (").append(agentsByKey.size()).append("):\n");
-        for (SpawnedAgent a : agentsByKey.values()) {
+                new StringBuilder("Active subagents (").append(visible.size()).append("):\n");
+        for (SpawnedAgent a : visible) {
             sb.append("- agent_key: ").append(a.key()).append("\n");
             sb.append("  agent_id: ").append(a.agentId()).append("\n");
             if (a.label() != null) {
@@ -777,6 +830,46 @@ public class AgentSpawnTool {
                         ? runtimeContext.get(CTX_AGENT_MANAGER, DefaultAgentManager.class)
                         : null;
         return scoped != null ? scoped : agentManager;
+    }
+
+    private static boolean isOwner(SpawnedAgent spawned, RuntimeContext context) {
+        return Objects.equals(spawned.userId(), context == null ? null : context.getUserId())
+                && Objects.equals(
+                        spawned.parentSessionId(), context == null ? null : context.getSessionId());
+    }
+
+    private static boolean isAccessible(
+            SpawnedAgent spawned, RuntimeContext context, AgentState parentState) {
+        if (!isOwner(spawned, context)) {
+            return false;
+        }
+        // Durable hosts own their child state and validate continuation at the execution boundary.
+        if (hostOwnsChildState(context)) {
+            return true;
+        }
+        if (!isParentStateOwner(parentState, context)) {
+            return false;
+        }
+        var entry = parentState.getToolContext().getSpawnRegistry().get(spawned.key());
+        return entry != null
+                && Objects.equals(entry.key(), spawned.key())
+                && Objects.equals(entry.agentId(), spawned.agentId())
+                && Objects.equals(entry.sessionId(), spawned.sessionId())
+                && Objects.equals(entry.label(), spawned.label())
+                && entry.depth() == spawned.depth();
+    }
+
+    /**
+     * Never infer a caller's identity from supplied state. Anonymous users remain valid, but local
+     * continuation requires an explicit context with a non-blank session matching that state.
+     */
+    private static boolean isParentStateOwner(AgentState parentState, RuntimeContext context) {
+        return parentState != null
+                && context != null
+                && context.getSessionId() != null
+                && !context.getSessionId().isBlank()
+                && Objects.equals(parentState.getUserId(), context.getUserId())
+                && Objects.equals(parentState.getSessionId(), context.getSessionId());
     }
 
     private static boolean hostOwnsChildState(RuntimeContext context) {
@@ -1190,33 +1283,43 @@ public class AgentSpawnTool {
 
     private SpawnedAgent tryRestoreFromState(
             AgentState parentState, String key, RuntimeContext runtimeContext) {
-        if (parentState == null) {
+        if (!isParentStateOwner(parentState, runtimeContext)) {
             return null;
         }
         io.agentscope.core.state.ToolContextState.SpawnEntry entry =
                 parentState.getToolContext().getSpawnRegistry().get(key);
-        if (entry == null) {
-            return null;
-        }
-        Optional<Agent> agentOpt =
-                managerFor(runtimeContext).createAgentIfPresent(entry.agentId(), runtimeContext);
-        if (agentOpt.isEmpty()) {
-            log.warn(
-                    "Failed to restore subagent from state: agentId={} not found in registry",
-                    entry.agentId());
+        if (entry == null || !Objects.equals(key, entry.key())) {
             return null;
         }
         SpawnedAgent restored =
-                new SpawnedAgent(
+                agentsByKey.computeIfAbsent(
                         key,
-                        entry.agentId(),
-                        entry.sessionId(),
-                        entry.label(),
-                        agentOpt.get(),
-                        entry.depth());
-        agentsByKey.put(key, restored);
-        if (entry.label() != null) {
-            labelToKey.put(labelKey(runtimeContext, entry.label()), key);
+                        ignored -> {
+                            Optional<Agent> agentOpt =
+                                    managerFor(runtimeContext)
+                                            .createAgentIfPresent(entry.agentId(), runtimeContext);
+                            if (agentOpt.isEmpty()) {
+                                log.warn(
+                                        "Failed to restore subagent from state: agentId={} not"
+                                                + " found in registry",
+                                        entry.agentId());
+                                return null;
+                            }
+                            return new SpawnedAgent(
+                                    key,
+                                    entry.agentId(),
+                                    entry.sessionId(),
+                                    entry.label(),
+                                    agentOpt.get(),
+                                    entry.depth(),
+                                    parentState.getUserId(),
+                                    parentState.getSessionId());
+                        });
+        if (restored == null || !isAccessible(restored, runtimeContext, parentState)) {
+            return null;
+        }
+        if (restored.label() != null) {
+            labelToKey.put(labelKey(runtimeContext, restored.label()), key);
         }
         log.info(
                 "Restored subagent from persisted state: key={}, agentId={}", key, entry.agentId());

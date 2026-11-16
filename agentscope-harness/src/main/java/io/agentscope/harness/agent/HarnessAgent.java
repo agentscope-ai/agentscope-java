@@ -84,6 +84,7 @@ import io.agentscope.harness.agent.filesystem.spec.SandboxFilesystemSpec;
 import io.agentscope.harness.agent.gateway.HarnessGateway;
 import io.agentscope.harness.agent.gateway.SubagentGatewayBridge;
 import io.agentscope.harness.agent.gateway.channel.Channel;
+import io.agentscope.harness.agent.gateway.channel.OutboundAddress;
 import io.agentscope.harness.agent.journal.WorkspaceThreadJournalStore;
 import io.agentscope.harness.agent.memory.MemoryConfig;
 import io.agentscope.harness.agent.memory.MemoryConsolidator;
@@ -759,9 +760,32 @@ public class HarnessAgent implements Agent, AutoCloseable {
         gw.bindMainAgent(this);
 
         SubagentGatewayBridge bridge =
-                (agentId, sessionId, agent, replyTo) -> {
-                    String subagentId = gw.exposeSubagent(agentId, sessionId, agent, replyTo);
-                    return new SubagentGatewayBridge.ExposeResult(subagentId);
+                new SubagentGatewayBridge() {
+                    @Override
+                    public ExposeResult expose(
+                            String agentId,
+                            String sessionId,
+                            Agent agent,
+                            OutboundAddress replyTo) {
+                        return expose(agentId, sessionId, agent, replyTo, null);
+                    }
+
+                    @Override
+                    public ExposeResult expose(
+                            String agentId,
+                            String sessionId,
+                            Agent agent,
+                            OutboundAddress replyTo,
+                            RuntimeContext context) {
+                        String subagentId =
+                                gw.exposeSubagent(
+                                        agentId,
+                                        sessionId,
+                                        agent,
+                                        replyTo,
+                                        context != null ? context.getUserId() : null);
+                        return new ExposeResult(subagentId);
+                    }
                 };
         io.agentscope.harness.agent.subagent.DefaultAgentManager agentManager = null;
         if (subagentMiddleware instanceof SubagentsMiddleware sm) {
@@ -776,8 +800,11 @@ public class HarnessAgent implements Agent, AutoCloseable {
         // durable registry (when a distributed store is present) makes the subagentId resolvable
         // beyond this process. Without these, exposure stays in-process (legacy behaviour).
         if (agentManager != null) {
-            final io.agentscope.harness.agent.subagent.DefaultAgentManager am = agentManager;
-            gw.setSubagentMaterializer(am::createAgentIfPresent);
+            gw.setSubagentMaterializer(
+                    (agentId, rc) -> {
+                        DefaultAgentManager scoped = getSubagentAgentManager(rc);
+                        return scoped.createAgentIfPresent(agentId, rc);
+                    });
         }
         if (distributedStore != null) {
             gw.setSubagentRegistry(

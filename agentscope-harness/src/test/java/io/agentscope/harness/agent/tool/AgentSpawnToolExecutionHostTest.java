@@ -74,6 +74,7 @@ class AgentSpawnToolExecutionHostTest {
                         .sessionId("parent")
                         .userId("user")
                         .put(SubagentExecution.class, host)
+                        .agentState(AgentState.builder().sessionId("parent").userId("user").build())
                         .put(AgentSpawnTool.CTX_FORCE_SYNC, true)
                         .build();
         String first =

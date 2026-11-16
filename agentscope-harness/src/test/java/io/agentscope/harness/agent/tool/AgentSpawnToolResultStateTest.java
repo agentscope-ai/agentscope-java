@@ -43,6 +43,7 @@ import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolResultState;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.message.URLSource;
+import io.agentscope.core.state.AgentState;
 import io.agentscope.core.tool.ToolCallParam;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.harness.agent.middleware.SubagentEntry;
@@ -68,7 +69,11 @@ import reactor.core.publisher.Mono;
 class AgentSpawnToolResultStateTest {
     private final Agent agent = mock(Agent.class);
     private final TaskRepository repository = mock(TaskRepository.class);
-    private final RuntimeContext context = RuntimeContext.builder().sessionId("parent").build();
+    private final RuntimeContext context =
+            RuntimeContext.builder()
+                    .sessionId("parent")
+                    .agentState(AgentState.builder().sessionId("parent").build())
+                    .build();
 
     private AgentSpawnTool tool(SubagentDeclaration declaration) {
         return new AgentSpawnTool(
@@ -154,7 +159,7 @@ class AgentSpawnToolResultStateTest {
 
     @ParameterizedTest
     @EnumSource(GenerateReason.class)
-    void syncSpawnSendAndReusePreserveCompletionReasonAndDocuments(GenerateReason reason) {
+    void syncSpawnSendReuseAndRestorePreserveCompletionReasonAndDocuments(GenerateReason reason) {
         Msg reply = replyWithDocument(reason);
         when(agent.call(anyList())).thenReturn(Mono.just(reply));
         AgentSpawnTool tool = localTool(true);
@@ -164,8 +169,10 @@ class AgentSpawnToolResultStateTest {
         ToolResultBlock sent = tool.agentSend(context, null, agentKey, null, "next", 1).block();
         ToolResultBlock reused =
                 tool.agentSpawn(context, null, "worker", "again", "worker", 1, null).block();
+        ToolResultBlock restored =
+                localTool(true).agentSend(context, null, agentKey, null, "restore", 1).block();
 
-        for (ToolResultBlock result : List.of(spawned, sent, reused)) {
+        for (ToolResultBlock result : List.of(spawned, sent, reused, restored)) {
             assertNoErrorMetadata(result);
             assertLocalReply(assertText(result, ToolResultState.SUCCESS), reply, true);
         }
@@ -340,8 +347,7 @@ class AgentSpawnToolResultStateTest {
         ToolResultBlock result =
                 toolkit.callTool(ToolCallParam.builder().toolUseBlock(call).build())
                         .block(Duration.ofSeconds(5));
-        assertEquals(
-                "Error: Unknown agent_key: missing", assertText(result, ToolResultState.ERROR));
+        assertEquals("Error: Unknown agent_key.", assertText(result, ToolResultState.ERROR));
     }
 
     @Test

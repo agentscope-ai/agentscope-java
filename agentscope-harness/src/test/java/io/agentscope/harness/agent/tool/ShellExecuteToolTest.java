@@ -25,6 +25,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolErrorKind;
@@ -293,6 +294,81 @@ class ShellExecuteToolTest {
         assertEquals(ToolResultState.ERROR, timedOut.getState());
         assertTrue(textOf(timedOut).contains("Timed out: true"));
         assertErrorKind(timedOut, ToolErrorKind.TIMEOUT, "python");
+    }
+
+    @Test
+    void outputDigestMetadataIsIndependentOfSuccessFailureTruncationAndTimeout() {
+        String digest = "AB".repeat(32);
+        for (ExecuteResponse response :
+                new ExecuteResponse[] {
+                    new ExecuteResponse("ok", 0, false, false, digest),
+                    new ExecuteResponse("failed", 7, true, false, digest),
+                    new ExecuteResponse("partial", 124, true, true, digest)
+                }) {
+            sandbox.response = response;
+            ToolResultBlock result = tool.execute(RT, "test", null, null);
+            assertEquals(
+                    digest.toLowerCase(java.util.Locale.ROOT),
+                    result.getMetadata().get("agentscope_output_sha256"));
+            assertEquals(
+                    response.isSuccess() ? ToolResultState.SUCCESS : ToolResultState.ERROR,
+                    result.getState());
+            assertEquals(response.exitCode(), result.getExecutionDetails().exitCode());
+            assertEquals(response.truncated(), result.getExecutionDetails().outputTruncated());
+            if (response.isSuccess()) {
+                assertNoErrorMetadata(result);
+            } else {
+                assertErrorKind(
+                        result,
+                        response.timedOut() ? ToolErrorKind.TIMEOUT : ToolErrorKind.COMMAND_FAILED,
+                        "test");
+            }
+        }
+    }
+
+    @Test
+    void absentOrInvalidBackendDigestsDoNotAddMetadata() {
+        for (String digest :
+                new String[] {
+                    null,
+                    "",
+                    "a".repeat(63),
+                    "g".repeat(64),
+                    "a".repeat(64) + "\n",
+                    "large_tool_results/execute/uuid.txt"
+                }) {
+            sandbox.response = new ExecuteResponse("failed", 7, true, false, digest);
+            ToolResultBlock result = tool.execute(RT, "test", null, null);
+            assertFalse(result.getMetadata().containsKey("agentscope_output_sha256"));
+            assertErrorKind(result, ToolErrorKind.COMMAND_FAILED, "test");
+        }
+    }
+
+    @Test
+    void executeResponseJsonOmitsNullDigestAndPreservesLegacyConstructors() throws Exception {
+        ObjectMapper mapper = new ObjectMapper();
+        ExecuteResponse legacy = new ExecuteResponse("same", 0, false);
+        assertNull(legacy.outputDigest());
+        assertFalse(mapper.readTree(mapper.writeValueAsString(legacy)).has("outputDigest"));
+        assertEquals(
+                legacy,
+                mapper.readValue(
+                        "{\"output\":\"same\",\"exitCode\":0,\"truncated\":false,\"timedOut\":false}",
+                        ExecuteResponse.class));
+        String digest = "ab".repeat(32);
+        ExecuteResponse withDigest = new ExecuteResponse("same", 0, false, false, digest);
+        var json = mapper.readTree(mapper.writeValueAsString(withDigest));
+        assertEquals(digest, json.get("outputDigest").asText());
+        // isSuccess() already serializes as a derived getter; preserve that legacy behavior.
+        assertEquals(
+                withDigest,
+                mapper.readValue(
+                        "{\"output\":\"same\",\"exitCode\":0,\"truncated\":false,"
+                                + "\"timedOut\":false,\"outputDigest\":\""
+                                + digest
+                                + "\"}",
+                        ExecuteResponse.class));
+        assertTrue(withDigest.isSuccess());
     }
 
     @ParameterizedTest

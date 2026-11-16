@@ -31,6 +31,7 @@ import io.agentscope.harness.agent.filesystem.model.ExecuteResponse;
 import io.agentscope.harness.agent.filesystem.sandbox.AbstractSandboxFilesystem;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Shell execution tool backed by a {@link AbstractSandboxFilesystem}.
@@ -131,6 +132,13 @@ public class ShellExecuteTool {
                                 result.isSuccess()
                                         ? ToolResultState.SUCCESS
                                         : ToolResultState.ERROR);
+        if (result.outputDigest() != null && result.outputDigest().matches("[0-9a-fA-F]{64}")) {
+            block =
+                    block.withMetadata(
+                            Map.of(
+                                    "agentscope_output_sha256",
+                                    result.outputDigest().toLowerCase(java.util.Locale.ROOT)));
+        }
         if (result.isSuccess()) {
             return block;
         }
