@@ -28,6 +28,8 @@ import io.agentscope.durable.DurableTypes.SessionKey;
 import io.agentscope.durable.DurableTypes.SessionSpec;
 import io.agentscope.durable.DurableTypes.ThreadBinding;
 import io.agentscope.durable.TransactionalSessionBackend;
+import io.agentscope.durable.store.ObjectStore;
+import io.agentscope.durable.store.RecordObjectStore;
 import io.agentscope.durable.store.RecordStore;
 import java.nio.file.Path;
 import java.sql.DriverManager;
@@ -81,6 +83,35 @@ class ScopedWorkStoreTest {
                     var s = c.createStatement()) {
                 s.execute("DROP SCHEMA " + schema + " CASCADE");
             }
+    }
+
+    @Test
+    void immutableChunkHitsAvoidDatabaseTransactionsAndNeverExposeCachedBytes() throws Exception {
+        var borrows = new java.util.concurrent.atomic.AtomicInteger();
+        try (var counted =
+                new JdbcRecordStore(
+                        () -> {
+                            borrows.incrementAndGet();
+                            return connections.open();
+                        },
+                        dialect,
+                        false)) {
+            var objects = new RecordObjectStore(counted);
+            byte[] value = {1, 2, 3};
+            var scope = ObjectStore.digest(new byte[0]);
+            var ref = objects.put(scope, value);
+            int afterCommit = borrows.get();
+            value[0] = 9;
+            objects.read(ref)[1] = 9;
+            assertEquals(ref, objects.put(scope, new byte[] {1, 2, 3}));
+            org.junit.jupiter.api.Assertions.assertArrayEquals(
+                    new byte[] {1, 2, 3}, objects.read(ref));
+            assertEquals(afterCommit, borrows.get());
+            var cold = new RecordObjectStore(counted);
+            org.junit.jupiter.api.Assertions.assertArrayEquals(
+                    new byte[] {1, 2, 3}, cold.read(ref));
+            assertEquals(afterCommit + 1, borrows.get());
+        }
     }
 
     @Test

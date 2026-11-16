@@ -20,11 +20,25 @@ import io.agentscope.durable.DurableJson;
 import java.io.ByteArrayOutputStream;
 import java.util.Arrays;
 import java.util.Base64;
+import java.util.LinkedHashMap;
 import java.util.Objects;
 
 /** Database fallback for small installations; production hosts may supply object storage. */
 public final class RecordObjectStore implements ObjectStore {
     private final RecordStore records;
+    // Large journal entries revisit the same immutable chunks on both append and recovery.
+    // Retain at most 16 MiB of verified content per store, allowing cold readers to use the DB.
+    private final LinkedHashMap<Reference, byte[]> chunks = new LinkedHashMap<>(64, 0.75f, true);
+
+    private synchronized byte[] cached(Reference ref) {
+        return chunks.get(ref);
+    }
+
+    private synchronized void remember(Reference ref, byte[] bytes) {
+        if (bytes.length > 8192) return;
+        chunks.put(ref, bytes.clone());
+        if (chunks.size() > 2048) chunks.remove(chunks.keySet().iterator().next());
+    }
 
     public RecordObjectStore(RecordStore records) {
         this.records = Objects.requireNonNull(records);
@@ -38,6 +52,7 @@ public final class RecordObjectStore implements ObjectStore {
 
     public Reference put(String scope, byte[] bytes) {
         var reference = ObjectStore.reference(id(), scope, bytes);
+        if (cached(reference) != null) return reference;
         records.transaction(
                 "object:" + reference.key(),
                 tx -> {
@@ -61,35 +76,45 @@ public final class RecordObjectStore implements ObjectStore {
                     tx.put("", DurableJson.value(reference));
                     return null;
                 });
+        remember(reference, bytes);
         return reference;
     }
 
     public byte[] read(Reference reference) {
         if (!id().equals(reference.store()))
             throw new DurableException(DurableException.Code.INVALID, "Object store differs");
-        return records.transaction(
-                "object:" + reference.key(),
-                tx -> {
-                    var existing = tx.get("");
-                    if (existing == null)
-                        throw new DurableException(
-                                DurableException.Code.NOT_FOUND, "Object not found");
-                    if (!reference.equals(DurableJson.convert(existing, Reference.class)))
-                        throw new DurableException(
-                                DurableException.Code.INVALID, "Object header differs");
-                    var bytes = new ByteArrayOutputStream();
-                    for (long offset = 0; offset < reference.size(); offset += CHUNK_BYTES) {
-                        var chunk = tx.get("chunk:" + offset / CHUNK_BYTES);
-                        if (chunk == null)
-                            throw new DurableException(
-                                    DurableException.Code.INVALID, "Object chunk missing");
-                        byte[] decoded = Base64.getDecoder().decode(chunk.asText());
-                        if (decoded.length != Math.min(CHUNK_BYTES, reference.size() - offset))
-                            throw new DurableException(
-                                    DurableException.Code.INVALID, "Object chunk size differs");
-                        bytes.writeBytes(decoded);
-                    }
-                    return ObjectStore.verify(id(), reference, bytes.toByteArray());
-                });
+        byte[] hit = cached(reference);
+        if (hit != null) return hit.clone();
+        byte[] loaded =
+                records.transaction(
+                        "object:" + reference.key(),
+                        tx -> {
+                            var existing = tx.get("");
+                            if (existing == null)
+                                throw new DurableException(
+                                        DurableException.Code.NOT_FOUND, "Object not found");
+                            if (!reference.equals(DurableJson.convert(existing, Reference.class)))
+                                throw new DurableException(
+                                        DurableException.Code.INVALID, "Object header differs");
+                            var bytes = new ByteArrayOutputStream();
+                            for (long offset = 0;
+                                    offset < reference.size();
+                                    offset += CHUNK_BYTES) {
+                                var chunk = tx.get("chunk:" + offset / CHUNK_BYTES);
+                                if (chunk == null)
+                                    throw new DurableException(
+                                            DurableException.Code.INVALID, "Object chunk missing");
+                                byte[] decoded = Base64.getDecoder().decode(chunk.asText());
+                                if (decoded.length
+                                        != Math.min(CHUNK_BYTES, reference.size() - offset))
+                                    throw new DurableException(
+                                            DurableException.Code.INVALID,
+                                            "Object chunk size differs");
+                                bytes.writeBytes(decoded);
+                            }
+                            return ObjectStore.verify(id(), reference, bytes.toByteArray());
+                        });
+        remember(reference, loaded);
+        return loaded;
     }
 }
