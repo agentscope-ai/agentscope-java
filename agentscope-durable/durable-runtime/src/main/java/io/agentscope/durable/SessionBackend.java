@@ -207,6 +207,9 @@ public interface SessionBackend extends AutoCloseable {
 
     void acceptResult(ThreadKey session, String executionId, ExecutionResult result);
 
+    /** Persist a nonterminal direct executor observation under the active Brain lease. */
+    void acceptResult(Lease lease, String executionId, ExecutionResult result);
+
     void signal(ThreadKey session, String turnId, Signal signal);
 
     /** Withdrawal wins only before the input is atomically applied to native state. */

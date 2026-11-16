@@ -1777,7 +1777,16 @@ public final class TransactionalSessionBackend implements SessionBackend {
     }
 
     @Override
+    public void acceptResult(Lease lease, String id, ExecutionResult result) {
+        acceptResult(lease.thread(), lease, id, result);
+    }
+
+    @Override
     public void acceptResult(ThreadKey key, String id, ExecutionResult result) {
+        acceptResult(key, null, id, result);
+    }
+
+    private void acceptResult(ThreadKey key, Lease lease, String id, ExecutionResult result) {
         Objects.requireNonNull(result);
         if (result.state() == ExecutionState.NOT_FOUND)
             throw error(DurableException.Code.INVALID, "NOT_FOUND is not an accepted outcome");
@@ -1787,7 +1796,7 @@ public final class TransactionalSessionBackend implements SessionBackend {
                     String turnId = s.executions.get(id);
                     if (turnId == null)
                         throw error(DurableException.Code.NOT_FOUND, "Execution not found");
-                    TurnData r = requireTurn(s, turnId);
+                    TurnData r = lease == null ? requireTurn(s, turnId) : owned(s, lease, n);
                     ToolData t = requireTool(r, id);
                     acceptResult(s, r, t, id, result);
                     return null;

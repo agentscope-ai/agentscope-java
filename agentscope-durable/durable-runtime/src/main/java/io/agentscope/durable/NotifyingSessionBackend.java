@@ -362,6 +362,12 @@ final class NotifyingSessionBackend implements SessionBackend {
     }
 
     @Override
+    public void acceptResult(Lease lease, String executionId, ExecutionResult result) {
+        delegate.acceptResult(lease, executionId, result);
+        changed(lease.thread());
+    }
+
+    @Override
     public void acceptResult(ThreadKey session, String executionId, ExecutionResult result) {
         delegate.acceptResult(session, executionId, result);
         changed(session);

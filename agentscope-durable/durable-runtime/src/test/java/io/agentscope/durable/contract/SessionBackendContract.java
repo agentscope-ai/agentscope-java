@@ -1401,7 +1401,18 @@ public abstract class SessionBackendContract {
         var id = backend.frame(lease).tools().get(0).request().executionId();
         backend.beginDispatch(lease, id);
         var running = new ExecutionResult(ExecutionState.RUNNING, "original", null, null);
-        backend.acceptResult(new ThreadKey(key, "main"), id, running);
+        backend.release(lease, Duration.ZERO);
+        var replacement = claim();
+        backend.acceptResult(replacement, id, running);
+        assertEquals(
+                DurableException.Code.FENCED,
+                assertThrows(
+                                DurableException.class,
+                                () ->
+                                        backend.acceptResult(
+                                                lease, id, ExecutionResult.unknown("late")))
+                        .code());
+        assertEquals("original", backend.frame(replacement).tools().get(0).result().handle());
         backend.acceptResult(new ThreadKey(key, "main"), id, running);
         backend.acceptResult(
                 new ThreadKey(key, "main"), id, ExecutionResult.unknown("temporarily unreachable"));

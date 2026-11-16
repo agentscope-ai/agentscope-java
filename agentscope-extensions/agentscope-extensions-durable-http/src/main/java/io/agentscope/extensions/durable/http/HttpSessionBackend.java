@@ -400,6 +400,20 @@ public final class HttpSessionBackend implements SessionBackend {
     }
 
     @Override
+    public void acceptResult(Lease lease, String executionId, ExecutionResult result) {
+        call(
+                "acceptResult",
+                "thread",
+                lease.thread(),
+                "lease",
+                lease,
+                "executionId",
+                executionId,
+                "result",
+                result);
+    }
+
+    @Override
     public void acceptResult(ThreadKey session, String executionId, ExecutionResult result) {
         call("acceptResult", "thread", session, "executionId", executionId, "result", result);
     }

@@ -4051,6 +4051,9 @@
               "minLength": 1,
               "maxLength": 256
             },
+            "lease": {
+              "$ref": "#/$defs/lease"
+            },
             "result": {
               "$ref": "#/$defs/executionResult"
             },

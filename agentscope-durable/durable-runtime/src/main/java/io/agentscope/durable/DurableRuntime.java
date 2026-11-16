@@ -753,7 +753,11 @@ public final class DurableRuntime implements AutoCloseable {
                         before.result(),
                         before.dispatchAttempted(),
                         cancel);
-        backend.acceptResult(lease.thread(), tool.request().executionId(), result);
+        if (result.state().terminal()) {
+            backend.acceptResult(lease.thread(), tool.request().executionId(), result);
+        } else {
+            backend.acceptResult(lease, tool.request().executionId(), result);
+        }
     }
 
     private void ensureExecution() {
