@@ -97,6 +97,33 @@ runtime context and Durable workspace. The Runtime owns the durable lease and ta
 ThreadJournal owns native Agent history; Durable scheduling remains in the Durable Runtime.
 The namespace maps to `RuntimeContext.userId`; identity is invocation-scoped.
 
+### Dispatch reasoning to a model queue
+
+Register `adapter.withQueuedModel(publisher)` as the harness for this definition. Both
+ReAct and Harness factories support this option. The publisher receives a
+`QueuedModelRequest` with the target Thread and Turn, call ID, model, prepared
+messages, tool schemas and generation options. Acknowledge only after the broker accepts the
+request. Deduplicate by call ID at the broker or worker because recovery can repeat a send
+whose acknowledgement was lost. Workers use their configured provider credentials.
+Harness memory and finalization model calls keep their own execution path.
+
+Once dispatched, the Turn waits without holding its Runtime invocation. To wake it,
+the reply consumer uses the original request's Thread and Turn:
+
+```java
+var turn = runtime.getSession(request.thread().session())
+        .getThread(request.thread().threadId()).getTurn(request.turnId());
+var signal = QueuedModelRequest.reply(request.callId(), sequence, chatResponse, last);
+turn.signal(signal.id(), signal.key(), signal.value());
+```
+
+Start at sequence zero. A complete response uses a single terminal frame. For streaming,
+use consecutive sequence numbers and mark the last frame terminal. A terminal frame may
+omit the response if all chunks were sent earlier. Use `QueuedModelRequest.failure` for
+a terminal error. Acknowledge each broker delivery after the signal is persisted. Retrying
+the same frame uses the same signal ID and payload. The first frame wakes a compatible
+host, which displays ordered deltas and advances the ReAct loop after the terminal frame.
+
 ## Reconnect and control tasks
 
 ### Reopen an existing task

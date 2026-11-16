@@ -15,6 +15,7 @@
  */
 package io.agentscope.core.journal;
 
+import io.agentscope.core.agent.AgentExecutionHost;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.middleware.ModelCallInput;
@@ -90,8 +91,11 @@ public final class RecordedModels {
                         var last = new AtomicReference<ChatResponse>();
                         var usage = new AtomicReference<ChatUsage>();
                         var requests = new RecordedModelRequests(recorder, callId, purpose);
+                        var host = context.get(ModelInvocation.class);
+                        var admission = before(callId);
+                        if (host != null) admission = host.admit(callId, admission);
                         return Flux.usingWhen(
-                                before(callId)
+                                admission
                                         .then(
                                                 recorder.prepareModel(
                                                         new ModelCallInput(
@@ -101,7 +105,16 @@ public final class RecordedModels {
                                                         context.getAgentState()))
                                         .thenReturn(callId),
                                 id ->
-                                        Flux.defer(() -> delegate.stream(messages, tools, options))
+                                        Flux.defer(
+                                                        () -> {
+                                                            return host == null
+                                                                    ? delegate.stream(
+                                                                            messages, tools,
+                                                                            options)
+                                                                    : host.responses(
+                                                                            id, delegate, messages,
+                                                                            tools, options);
+                                                        })
                                                 .doOnNext(
                                                         chunk -> {
                                                             last.set(chunk);
@@ -135,6 +148,8 @@ public final class RecordedModels {
                                                 null),
                                 (id, error) ->
                                         JournalException.causedBy(error)
+                                                        || error
+                                                                instanceof AgentExecutionHost.Paused
                                                 ? Mono.empty()
                                                 : end(
                                                         recorder,

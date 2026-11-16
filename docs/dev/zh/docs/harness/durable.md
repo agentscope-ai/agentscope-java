@@ -85,6 +85,27 @@ runtime.start();
 ThreadJournal 负责 Agent 原生历史，Durable 调度仍由 Durable Runtime 负责。
 namespace 映射为 `RuntimeContext.userId`，身份限定在每次调用内。
 
+### 通过消息队列执行模型推理
+
+将 `adapter.withQueuedModel(publisher)` 注册为当前定义的 Harness。ReAct 和 Harness 工厂均支持。
+发布方收到的 `QueuedModelRequest` 包含目标 Thread、Turn、调用 ID、模型名、已准备的消息、工具定义和生成参数。
+发布方应在队列确认接收后返回。如果发送成功但确认丢失，恢复时可能按原调用 ID 重投，队列或 Worker 须据此去重。
+Worker 使用自身配置的模型凭据。Harness 的记忆和收尾阶段沿用各自的模型调用路径。
+
+投递完成后，Turn 进入等待并释放本次 Runtime 执行。回包消费者通过原请求定位 Turn：
+
+```java
+var turn = runtime.getSession(request.thread().session())
+        .getThread(request.thread().threadId()).getTurn(request.turnId());
+var signal = QueuedModelRequest.reply(request.callId(), sequence, chatResponse, last);
+turn.signal(signal.id(), signal.key(), signal.value());
+```
+
+序号从零开始。整体返回只发一个终态帧；流式返回按连续序号发分片，并在最后一帧设置终态。
+已发完内容时可用空响应结束流。远端失败使用 `QueuedModelRequest.failure`。
+消费者在信号写入成功后确认 MQ 消息，重投时使用相同的信号 ID 和内容。
+第零帧唤醒可用 Runtime；接手的实例按序展示分片，在成功终态后推进原 ReAct 循环。
+
 ## 重连与控制任务
 
 ### 重新打开原任务

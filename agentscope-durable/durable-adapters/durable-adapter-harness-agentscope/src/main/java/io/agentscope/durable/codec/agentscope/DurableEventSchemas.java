@@ -26,8 +26,26 @@ public final class DurableEventSchemas {
     public static final String START = "durable/finalization_started";
     public static final String END = "durable/finalization_completed";
     public static final String MODEL = "durable/finalization_model";
+    public static final String QUEUED_MODEL = "durable/queued_model";
+    public static final String MODEL_ACCEPTED = "durable/model_accepted";
 
     public static void register(JournalEventCodecRegistry registry) {
+        registry.register(
+                QUEUED_MODEL,
+                new JournalEventCodecRegistry.Codec(
+                        data -> {
+                            if (!(data.get("request") instanceof Map<?, ?> request)
+                                    || !(request.get("callId") instanceof String id)
+                                    || id.isBlank()
+                                    || !(data.get("iteration") instanceof Number iteration)
+                                    || iteration.intValue() < 0)
+                                throw new IllegalArgumentException("Invalid queued model request");
+                        },
+                        (state, data) -> {}));
+        registry.register(
+                MODEL_ACCEPTED,
+                new JournalEventCodecRegistry.Codec(
+                        data -> text(data, "modelCallId"), (state, data) -> {}));
         registry.register(
                 START,
                 new JournalEventCodecRegistry.Codec(

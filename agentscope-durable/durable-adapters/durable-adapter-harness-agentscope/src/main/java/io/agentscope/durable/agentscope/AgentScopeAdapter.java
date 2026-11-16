@@ -91,14 +91,30 @@ public final class AgentScopeAdapter implements HarnessAdapter {
     private final Function<InvocationBinding, NativeAgent> factory;
     private final Map<String, String> executors;
     private final Map<String, ToolBinding> bindings;
+    private final QueuedModelRequest.Publisher publisher;
 
     private AgentScopeAdapter(
             Function<InvocationBinding, NativeAgent> factory,
             Map<String, String> executors,
             Map<String, ToolBinding> bindings) {
+        this(factory, executors, bindings, null);
+    }
+
+    private AgentScopeAdapter(
+            Function<InvocationBinding, NativeAgent> factory,
+            Map<String, String> executors,
+            Map<String, ToolBinding> bindings,
+            QueuedModelRequest.Publisher publisher) {
+        this.publisher = publisher;
         this.factory = factory;
         this.executors = Map.copyOf(executors);
         this.bindings = Map.copyOf(bindings);
+    }
+
+    /** Dispatch reasoning model calls to a durable message queue. */
+    public AgentScopeAdapter withQueuedModel(QueuedModelRequest.Publisher publisher) {
+        return new AgentScopeAdapter(
+                factory, executors, bindings, Objects.requireNonNull(publisher));
     }
 
     /** Registers schemas from the same immutable definitions used by the remote worker. */
@@ -264,7 +280,7 @@ public final class AgentScopeAdapter implements HarnessAdapter {
     public void execute(HarnessContext context) {
         if (pauseIfRequested(context)) return;
         var log = new BackendThreadJournal(context, executors, bindings);
-        var host = new AgentScopeExecutionHost(context, log);
+        var host = new AgentScopeExecutionHost(context, log, publisher);
         if (host.pending()) host.restoreEntry();
         else if (completeInvocation(context, log)) return;
         var frame = context.frame();
@@ -396,6 +412,10 @@ public final class AgentScopeAdapter implements HarnessAdapter {
                     failure);
         }
         if (pauseIfRequested(context)) return;
+        if (host.waitingForModel() != null) {
+            waitFor(context, new WaitCondition(host.waitingForModel(), 0));
+            return;
+        }
         if (host.pending())
             throw new DurableException(
                     DurableException.Code.UNAVAILABLE, "Native finalization is incomplete");
