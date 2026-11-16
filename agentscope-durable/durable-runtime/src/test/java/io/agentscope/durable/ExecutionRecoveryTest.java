@@ -110,6 +110,25 @@ class ExecutionRecoveryTest {
     }
 
     @Test
+    void uncertainLookupOfRunningExecutionDoesNotRestartEvenAnIdempotentProvider() {
+        when(executor.capabilities()).thenReturn(new Executor.Capabilities(true, true, false));
+        when(executor.query(request, "recovered")).thenReturn(unknown);
+        assertEquals(
+                ExecutionState.UNKNOWN,
+                ExecutionRecovery.resolve(executor, request, running, true, false).state());
+        verify(executor, never()).startExecution(any());
+    }
+
+    @Test
+    void authoritativeAbsenceAllowsIdempotentStartWithTheSameExecutionId() {
+        when(executor.capabilities()).thenReturn(new Executor.Capabilities(true, true, false));
+        when(executor.query(request, "recovered")).thenReturn(ExecutionResult.missing());
+        when(executor.startExecution(request)).thenReturn(running);
+        assertEquals(running, ExecutionRecovery.resolve(executor, request, running, true, false));
+        verify(executor).startExecution(request);
+    }
+
+    @Test
     void uncertainNonIdempotentEffectsAreNeverRepeated() {
         when(executor.capabilities()).thenReturn(new Executor.Capabilities(false, false, false));
         assertEquals(
