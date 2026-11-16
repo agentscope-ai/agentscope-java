@@ -218,6 +218,7 @@ common envelope; consult `userRequest` and the operation-specific definitions in
 | `getModelCall / listModelCalls` | Thread/Turn/Run scope plus `modelCallId` or nullable `stepId, cursor, limit`; returns model-call diagnostics |
 | `control` | `session, threadId, command`; returns a CommandReceipt |
 | `interactions` | `session, threadId, turnId`; returns pending interactions |
+| `previewEligibility` | `session, identities` (up to 32 message/tool keys with attempt and revision). Returns one eligibility flag per identity in request order. |
 | `snapshot / events` | `session` and optional `filter`; events also takes `cursor, limit` |
 | `checkpoints` | `session, threadId, after, limit`; lists checkpoint metadata |
 | `restore` | `session, threadId, position, expectedPosition, requestId`; returns CommitReceipt |
@@ -260,6 +261,7 @@ private state and execution authority and must not be exposed as public user RPC
 | `commit / receipt / recordFailure` | Atomically commit progress, resolve commit receipts, and record recovery failures |
 | `execution / beginDispatch / acceptResult / acceptExecutionEvent` | Read persisted intent, fence dispatch, and accept execution results/events |
 | `delegate / delegation / cancelDelegation` | Atomically admit child work, retain its mapping, and persist cancellation |
+| `previewEligibility` | Look up the projected version and completion status of a bounded batch of preview identities. |
 | `snapshot / events / pruneEvents` | Read public projections and replay, or prune retained events |
 | `checkpoints / checkpoint / checkpointJournal / checkpointResources / restore` | Inspect and restore retained recovery boundaries |
 | `resource` | Resolve recovery resources under fenced access |

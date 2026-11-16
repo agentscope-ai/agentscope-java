@@ -448,6 +448,21 @@ make -C agentscope-durable check
 make -C agentscope-durable independent
 ```
 
+Run the Docker fault regression from the repository root with Docker, Python 3, Maven and a JDK on PATH:
+
+```sh
+python3 agentscope-durable/scripts/docker-regression/run.py
+```
+
+The runner builds the current checkout and creates a private Docker network with PostgreSQL,
+RocketMQ, independent Brain and Hands JVMs, a counting model endpoint and subscription clients.
+It disconnects receivers before ACK, kills the model requester and checkpoint writer, and
+reconnects a subscriber during pruning. A blocked subscriber competes with a healthy subscriber
+for 4,096 previews. A separate long Thread commits 2,048 message completions, prunes the log and injects delayed previews. The tool recovery cases query a committed effect or reconcile an opaque effect against external evidence. The checks compare broker message IDs, provider executions, committed effects,
+terminal events, displayed answers and subscriber cursors. The runner removes its containers,
+volumes and network on exit. Set `ROCKETMQ_IMAGE` to use a locally available RocketMQ 5 image
+with the broker proxy and `mqadmin` tools.
+
 Normal checking covers build, formatting and tests. Isolation checking builds source
 dependencies in a separate Maven cache and audits dependency trees.
 Validate broker delivery, provider query/cancel
