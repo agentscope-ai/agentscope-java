@@ -75,6 +75,9 @@ Durable keeps three kinds of information connected: the Harness's private native
 state, durable execution facts, and public messages/events. A display snapshot can
 rebuild a UI; the native checkpoint and execution facts determine how work continues.
 Applications use the public API without interpreting private checkpoint formats.
+The AgentScope adapter advances the native recovery cursor when it commits a
+settled Turn, including cancellation and failure settlement. A replacement Brain
+loads the last complete state checkpoint and replays the journal entries after it.
 
 ### Session, Thread, Turn, and Run
 

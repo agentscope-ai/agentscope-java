@@ -173,14 +173,17 @@ final class BackendThreadJournal implements ThreadJournal {
     /** Publish the last complete native state only in the commit settling the Turn. */
     JsonNode settledCheckpoint(JsonNode current) {
         var checkpoint = (ObjectNode) current.deepCopy();
-        var events = cached.path("events");
+        checkpoint.put("recoveryCursor", settledCursor(cached.path("events")));
+        return checkpoint;
+    }
+
+    private long settledCursor(JsonNode events) {
         for (int i = events.size() - 1; i >= 0; i--) {
             if ("state/checkpoint".equals(events.get(i).path("type").asText())) {
-                checkpoint.put("recoveryCursor", recoveryCursor + i);
-                break;
+                return recoveryCursor + i;
             }
         }
-        return checkpoint;
+        return recoveryCursor;
     }
 
     @Override
@@ -439,7 +442,9 @@ final class BackendThreadJournal implements ThreadJournal {
                                         "position",
                                         seq,
                                         "recoveryCursor",
-                                        recoveryCursor,
+                                        turnStatus.terminal()
+                                                ? settledCursor(state.path("events"))
+                                                : recoveryCursor,
                                         "lastCommit",
                                         batchId)),
                         tools,

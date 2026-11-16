@@ -2670,6 +2670,16 @@ class AgentScopeAdapterTest {
             assertEquals(
                     TurnStatus.CANCELLED,
                     backend.turn(new ThreadKey(key, "main"), turn.turnId()).status());
+            var thread = new ThreadKey(key, "main");
+            var checkpoints = backend.checkpoints(thread, 0, 1000);
+            long position = Long.parseLong(checkpoints.get(checkpoints.size() - 1).position());
+            var checkpoint = backend.checkpoint(thread, position);
+            assertTrue(checkpoint.settled());
+            long cursor = checkpoint.checkpoint().required("recoveryCursor").asLong();
+            assertTrue(cursor > 0);
+            var first = backend.checkpointJournal(thread, position, cursor, 1).get(0);
+            assertEquals("state/checkpoint", first.required("type").asText());
+            assertEquals(turn.turnId(), first.required("turnId").asText());
         }
         var nextModel = new ScriptedModel(false);
         try (var runtime =
