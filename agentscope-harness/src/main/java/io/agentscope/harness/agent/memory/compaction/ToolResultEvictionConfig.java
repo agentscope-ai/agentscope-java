@@ -62,7 +62,7 @@ public class ToolResultEvictionConfig {
      * </ul>
      *
      * Shell ({@code execute}) is intentionally NOT excluded: command output can be very large.
-     * {@code session_search} is NOT excluded either: its result count is capped, but each match
+     * {@code thread_search} is NOT excluded either: its result count is capped, but each match
      * carries a whole stored message, so a few matching tool outputs can exceed the threshold.
      */
     public static final Set<String> DEFAULT_EXCLUDED_TOOLS =

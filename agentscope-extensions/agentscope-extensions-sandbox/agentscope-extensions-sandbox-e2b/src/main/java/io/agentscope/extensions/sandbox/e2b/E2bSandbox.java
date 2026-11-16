@@ -300,6 +300,13 @@ public class E2bSandbox extends AbstractBaseSandbox implements SandboxFileTransf
         JsonNode sandbox;
         if (e2bState.getSandboxId() == null || e2bState.getSandboxId().isBlank()) {
             sandbox = createSandboxForRestore();
+        } else if (!e2bState.isSandboxOwned()) {
+            sandbox = platform.getSandbox(e2bState.getSandboxId());
+            if (sandbox.hasNonNull("sandboxID")
+                    && !e2bState.getSandboxId().equals(sandbox.get("sandboxID").asText())) {
+                throw new IllegalStateException("Sandbox lookup returned a different instance");
+            }
+            nativeSnapshotPlan = NativeSnapshotPlan.DEFAULT;
         } else {
             try {
                 sandbox =
@@ -307,6 +314,9 @@ public class E2bSandbox extends AbstractBaseSandbox implements SandboxFileTransf
                                 e2bState.getSandboxId(), opt.getSandboxTimeoutSeconds());
                 nativeSnapshotPlan = NativeSnapshotPlan.DEFAULT;
             } catch (Exception e) {
+                if (!opt.isRecreateOnConnectFailure()) {
+                    throw e;
+                }
                 log.warn("[sandbox-e2b] connect failed, recreating sandbox: {}", e.getMessage());
                 sandbox = createSandboxForRestore();
                 e2bState.setWorkspaceRootReady(false);
@@ -315,6 +325,7 @@ public class E2bSandbox extends AbstractBaseSandbox implements SandboxFileTransf
         }
         platform.applySandboxFields(e2bState, sandbox);
         applyDefaultDomain();
+        envd = null;
     }
 
     /**

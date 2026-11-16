@@ -24,12 +24,6 @@ code-reviewer/
     └── run-checks.sh
 ```
 
-Save `SKILL.md` as UTF-8. A byte order mark (BOM) before the opening `---` is supported.
-
-Close the YAML frontmatter with an unindented line containing only `---` and optional spaces or tabs. A `---` inside a description or an indented YAML block scalar remains part of the metadata.
-
-Skill names must match `^[a-z0-9][a-z0-9-]*$` and be at most 64 characters (lowercase letters, digits, and hyphens only — no underscores or dots), following the industry naming standard for Agent Skills. Names are used verbatim as directory keys and skill identifiers, so non-conforming names are rejected when the skill is constructed or loaded.
-
 SKILL.md format:
 
 ```markdown
@@ -180,7 +174,7 @@ This requires the caller to pass `userId="alice"` in `RuntimeContext`.
 `workspace/<userId>/skills/` is a **logical path**, not necessarily "a directory on the local disk." Skill files are read and written through the `AbstractFilesystem` abstraction, and where they physically land depends on the [filesystem mode](/v2/en/docs/harness/filesystem) you configure — so per-user skill isolation is decoupled from the storage backend:
 
 - **Local + shell** — literally `workspace/alice/skills/...` on the host disk.
-- **Shared store (remote filesystem)** — the `skills/` prefix is routed to the KV store; per-user isolation shows up as the namespace key `agents/<agentId>/users/alice/skills/...`, consistent across replicas, and edits from an admin console take effect on the next call.
+- **Shared store (remote filesystem)** — the `skills/` prefix is routed to the KV store; per-user isolation shows up as the namespace key `agents/<agentId>/users/alice/skills/...`, consistent across replicas, and edits from an admin console take effect on the next reasoning step.
 - **Sandbox (sandbox filesystem)** — the host-side user directory is hydrated into the container's `/workspace` via workspace projection at sandbox start, so the agent reads the same copy inside the sandbox.
 
 Whichever mode you run, `<userId>/skills/` overrides the shared version at the same priority. For the per-mode isolation keys, physical representation, and the role of `userId`, see [Filesystem](/v2/en/docs/harness/filesystem#how-multi-user-isolation-works).
@@ -207,11 +201,11 @@ Example: the team Git has a generic `code-reviewer`; the project's `workspace/sk
 | `skillRepository(repo)` | Append a marketplace; callable multiple times |
 | `skillRepositories(list)` | Replace all marketplaces at once |
 | `projectGlobalSkillsDir(path)` | Enable the project-global dir; skipped if missing |
-| `disableDynamicSkills()` | Turn off "re-merge before each call"; merge once at build |
+| `disableDynamicSkills()` | Turn off "re-merge before each reasoning"; merge once at build |
 
 Subagents inherit the parent's marketplaces and project-global dir automatically.
 
-When to use `disableDynamicSkills()`: one-shot tasks; or slow marketplace stores you don't want to refetch per call. Usually don't touch it.
+When to use `disableDynamicSkills()`: one-shot tasks; or slow marketplace stores you don't want to refetch per turn. Usually don't touch it.
 
 ## Self-learning loop (optional)
 
@@ -278,7 +272,7 @@ agent.promoteSkill("notes-taker", "alice")                   // manually promote
 
 ## How the agent reads and runs skills
 
-On each call, harness builds an `<available_skills>` block listing every skill currently in scope. The block is built once per call (during PreCall, seeded together with the system message) as a per-call runtime material and rendered after the conversation, so it stays visible as-is across every reasoning step of that call without shifting the system-prompt prefix — it is not rebuilt per step:
+When the agent reasons, it sees an `<available_skills>` block in the system prompt listing every skill currently in scope:
 
 ```xml
 <available_skills>
@@ -294,13 +288,11 @@ On each call, harness builds an `<available_skills>` block listing every skill c
 
 Each entry carries just enough metadata for the agent to decide whether to load it. `<files-root>`, when present, is the absolute path the agent uses for shell execution (see below).
 
-The directory contains summaries, not the skill instructions. When the user names a skill or the task clearly matches its description, the agent is instructed to load `SKILL.md` using the exact `<skill-id>` before acting. It can reuse the full instructions while they remain in the conversation and load supporting files only as needed. For entries without `<files-root>`, it uses the loader rather than inventing a shell path, even if another entry has one.
-
 ### Reading SKILL.md and resources
 
 To activate a skill the agent calls a built-in tool — `load_skill_through_path`:
 
-- `load_skill_through_path(skillId, path="SKILL.md")` returns YAML frontmatter and the markdown body; a content-aware fence preserves embedded code blocks
+- `load_skill_through_path(skillId, path="SKILL.md")` returns the markdown body
 - `load_skill_through_path(skillId, path="references/style-guide.md")` returns any other file under the skill directory
 
 How the file gets fetched depends on where the skill came from:
@@ -312,39 +304,31 @@ How the file gets fetched depends on where the skill came from:
 | `workspace/skills/` shared (Layer 3) | preloaded into memory at registration |
 | `<userId>/skills/` per-user (Layer 4) | SKILL.md preloaded; other files read on demand through `AbstractFilesystem` (per-user namespace + sandbox routing honored automatically) |
 
-The agent doesn't see this difference — `load_skill_through_path` always works the same way. The fallback chain is "in-memory hit → source-provided resource reader → error with an enumeration of available paths." Filesystem-backed skills that only preload `SKILL.md` can read supporting files on demand from their origin directory. A repository's own lazy reader takes precedence; the origin-directory fallback does not bypass it or grant a shell path.
+The agent doesn't see this difference — `load_skill_through_path` always works the same way. The fallback chain is "in-memory hit → filesystem read → error with an enumeration of every path actually available," so a wrong path returns a useful list rather than a dead end.
 
 ### `<files-root>` and shell execution
 
-When a skill ships scripts (e.g. `scripts/run-checks.sh`), the agent needs an absolute path to invoke them via `execute`. That path comes from the `<files-root>` element on each skill entry. Resolution depends on the filesystem mode:
+When a skill ships scripts (e.g. `scripts/run-checks.sh`), the agent needs an absolute path to invoke them via `execute_shell_command`. That path comes from the `<files-root>` element on each skill entry. Resolution depends on the filesystem mode:
 
 | FS mode (shell available?) | Workspace skill `<files-root>` | Marketplace skill `<files-root>` |
 |----------------------------|--------------------------------|-----------------------------------|
-| Sandbox | `/workspace/skills/<name>` | `/workspace/.skills-cache/<scope>/<source>/<name>` |
-| Local-with-shell | `<wsRoot>/skills/<name>` | `<wsRoot>/.skills-cache/<scope>/<source>/<name>` |
+| Sandbox | `/workspace/skills/<name>` | `/workspace/.skills-cache/<source>/<name>` |
+| Local-with-shell | `<wsRoot>/skills/<name>` | `<wsRoot>/.skills-cache/<source>/<name>` |
 | Local without shell / Composite | (not rendered — no shell tool registered) | (not rendered) |
 
-`<files-root>` is a raw absolute path in the execution environment, including any spaces. The agent resolves script paths against it and quotes them for that environment's shell. Local Windows execution uses `cmd.exe`; local POSIX execution uses `sh`; Docker and Kubernetes execute in their sandbox. The host JVM's OS, paths, and installed runtimes do not describe the sandbox. Follow the loaded skill's script instructions and use an interpreter available where the command runs, rather than assuming `ls` or `python3` exists. The execution guidance appears only when at least one visible skill has `<files-root>`.
+So the agent's shell call is always `execute_shell_command("python3 <files-root>/scripts/foo.py")` — no path guessing, no per-source variations to remember.
 
 ### Where marketplace files actually live
 
-For repository skills with no materialized auxiliary resources (for example, an inline-only skill), staging reports `NONE` and no `<files-root>` is advertised. The skill remains available through `load_skill_through_path(..., path="SKILL.md")`. In a mixed catalog, only entries that provide `<files-root>` support file listing and script execution at that path.
-
-Marketplace skill resources start as in-memory bytes. For shell execution to work, harness materializes them to `<wsRoot>/.skills-cache/<scope>/<source>/<name>/` before each call (during PreCall, in the same `onSystemPrompt` pass that builds `<available_skills>`):
+Marketplace skill resources start as in-memory bytes. For shell execution to work, harness materializes them to `<wsRoot>/.skills-cache/<source>/<name>/` before each reasoning step:
 
 - Per-file SHA-256 dedup — only changed files are rewritten
-- Orphan directories (skills no longer published, or repos removed from the builder) are cleaned up in the same pass once untouched for the grace period (30 minutes by default)
+- Orphan directories (skills no longer published, or repos removed from the builder) are cleaned up in the same pass
 - In sandbox mode, `.skills-cache` is in the default workspace projection roots, so the staged tree is hydrated into the sandbox alongside `workspace/skills/` at sandbox start time (and on content change)
-
-For staging, the skill name must be a single directory name. Absolute paths, `/` or `\` separators, drive/stream syntax (`:`), `.`/`..`, names ending in a dot or space, and Windows device names (such as `CON`, `NUL.txt`, or `COM1`) are rejected before staging writes or resource cleanup. The affected skill has no staged `<files-root>`; other skills continue staging normally. Skill names are not rewritten, and this check imposes neither a lowercase-only convention nor a 64-character limit on them.
-
-Source identifiers and isolation scopes use a shared mapping to one safe segment of at most 64 characters. Identifiers such as `git-owner/repo` and `classpath-agentscope/skills` remain usable: when mapping changes an identifier, a digest suffix disambiguates it. Windows device names are mapped safely too. Blank scopes use `_shared`; a literal `_shared` identity is mapped separately.
-
-**Upgrade note:** source mapping changes existing nested cache paths (for example, `git-owner/repo/<name>` becomes `git-owner_repo-<digest>/<name>` within the same scope). The cache is rebuilt at the new path on the next staging pass. Old nested directories can be reclaimed by orphan GC after the grace period; GC recursively removes stale second-level directories. Cached `<files-root>` paths are not stable across upgrades: persisted prompts and transcripts are not rewritten, so use the path from the newly rendered skill context.
 
 Workspace skills (Layer 3 / Layer 4) need no staging — they already live in the workspace tree.
 
-If repositories report the same `getSource()`, each receives an index suffix (`<source>_1`, `<source>_2`, …) before segment mapping, with a warning log.
+If two repositories report the same `getSource()`, the second is auto-suffixed (`<source>_2`, `<source>_3`, …) with a warning log, so paths and skill-ids never collide.
 
 ## Running skills in a sandbox
 
@@ -357,14 +341,14 @@ Two classes of skills can run in the container, with different staging points:
 | Source | Where it lives before the sandbox | Path inside the sandbox |
 |--------|-----------------------------------|-------------------------|
 | Workspace skills (Layer 3 `workspace/skills/`, Layer 4 `<userId>/skills/`) | already in the workspace tree | `/workspace/skills/<name>` |
-| Marketplace skills (Layer 1 project-global, Layer 2 Git / MySQL / Nacos / classpath) | start as in-memory bytes | `/workspace/.skills-cache/<scope>/<source>/<name>` |
+| Marketplace skills (Layer 1 project-global, Layer 2 Git / MySQL / Nacos / classpath) | start as in-memory bytes | `/workspace/.skills-cache/<source>/<name>` |
 
 ### Step 1: materialize marketplace skills to the host
 
-Marketplace skill resources arrive as in-memory bytes — shell can't execute those directly. Before each call (during PreCall), `MarketplaceStager` writes them to the host at `<wsRoot>/.skills-cache/<scope>/<source>/<name>/`:
+Marketplace skill resources arrive as in-memory bytes — shell can't execute those directly. Before each reasoning step, `MarketplaceStager` writes them to the host at `<wsRoot>/.skills-cache/<source>/<name>/`:
 
 - **Per-file SHA-256 dedup** — only changed files are rewritten; unchanged ones are skipped.
-- **Orphan cleanup** — directories left by skills that are no longer published, or by repos removed from the builder, are deleted in the same pass once untouched for the grace period.
+- **Orphan cleanup** — directories left by skills that are no longer published, or by repos removed from the builder, are deleted in the same pass.
 - **Exec-bit recovery** — ingestion turns resources into Strings and discards POSIX mode, so the stager re-derives `+x` heuristically: a shebang (`#!`) at byte 0, or a known script suffix (`.sh`/`.bash`/`.py`/`.rb`/`.pl`/`.js`/`.mjs`), adds the execute bit (following `chmod +x` semantics — only bits that already have read get execute). Pure static assets (`.json`/`.md`/`.txt`) stay 644.
 
 Workspace skills (Layer 3 / Layer 4) skip this step — they already live in the workspace tree.
@@ -393,12 +377,12 @@ In sandbox mode, each skill's `<files-root>` in the `<available_skills>` block i
 | Skill type | `<files-root>` |
 |------------|----------------|
 | Workspace skill | `/workspace/skills/<name>` |
-| Marketplace skill | `/workspace/.skills-cache/<scope>/<source>/<name>` |
+| Marketplace skill | `/workspace/.skills-cache/<source>/<name>` |
 
-For the default `/workspace` root and a sandbox with `sh`, the agent can call `execute` with:
+So the agent simply issues:
 
-```json
-{"command": "sh '/workspace/skills/code-reviewer/scripts/run-checks.sh' '<target>'"}
+```
+execute_shell_command("python3 /workspace/skills/code-reviewer/scripts/run-checks.sh <target>")
 ```
 
 That command runs in the container and reads exactly the file that was projected in. The agent doesn't need to know which layer a skill came from — the framework computes the prefix.
@@ -431,4 +415,4 @@ A common point of confusion: **reading** a skill (`load_skill_through_path` fetc
 
 - [Workspace](/v2/en/docs/harness/workspace) — overall layout of `skills/`
 - [Filesystem](/v2/en/docs/harness/filesystem) — multi-tenant isolation and per-user bucketing
-- [Architecture](/v2/en/docs/harness/architecture) — how the skill set is rebuilt each call
+- [Architecture](/v2/en/docs/harness/architecture) — how the skill set is rebuilt each reasoning step
