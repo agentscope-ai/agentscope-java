@@ -18,6 +18,7 @@ package io.agentscope.core.a2a.agent.utils;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertNull;
 
 import io.agentscope.core.a2a.agent.message.MessageConstants;
 import io.agentscope.core.message.MessageMetadataKeys;
@@ -69,6 +70,65 @@ class MessageConvertUtilTest {
         assertJsonUsage(input.get("usage"));
         assertEquals("USER", input.get("role"));
         assertJsonUsage(part.metadata().get("usage"));
+    }
+
+    @Test
+    @DisplayName("Should carry the call identity on the envelope")
+    void shouldCarryCallIdentityOnEnvelope() {
+        Msg msg =
+                Msg.builder()
+                        .id("msg-1")
+                        .role(MsgRole.USER)
+                        .textContent("hi")
+                        .metadata(Map.of("turn", 1))
+                        .build();
+
+        Message message = MessageConvertUtil.convertFromMsg(List.of(msg), "alice", "session-1");
+
+        assertEquals("alice", message.metadata().get(MessageConstants.USER_ID_METADATA_KEY));
+        assertEquals("session-1", message.contextId());
+        // The envelope key stays flat: the per-message metadata is still wrapped by msg id.
+        Map<?, ?> wrapped = assertInstanceOf(Map.class, message.metadata().get("msg-1"));
+        assertEquals(1, wrapped.get("turn"));
+    }
+
+    @Test
+    @DisplayName("Should skip blank identity instead of sending empty values")
+    void shouldSkipBlankIdentity() {
+        Msg msg = Msg.builder().id("msg-1").role(MsgRole.USER).textContent("hi").build();
+
+        Message message = MessageConvertUtil.convertFromMsg(List.of(msg), "  ", "");
+
+        assertNull(message.metadata().get(MessageConstants.USER_ID_METADATA_KEY));
+        assertNull(message.contextId());
+    }
+
+    @Test
+    @DisplayName("Should not send identity on the legacy identity-less overload")
+    void shouldNotSendIdentityOnLegacyOverload() {
+        Msg msg = Msg.builder().id("msg-1").role(MsgRole.USER).textContent("hi").build();
+
+        Message message = MessageConvertUtil.convertFromMsg(List.of(msg));
+
+        assertNull(message.metadata().get(MessageConstants.USER_ID_METADATA_KEY));
+        assertNull(message.contextId());
+    }
+
+    @Test
+    @DisplayName("Should keep the reserved identity key safe from a colliding message id")
+    void shouldKeepReservedKeySafeFromCollidingMessageId() {
+        Msg msg =
+                Msg.builder()
+                        .id(MessageConstants.USER_ID_METADATA_KEY)
+                        .role(MsgRole.USER)
+                        .textContent("hi")
+                        .metadata(Map.of("turn", 1))
+                        .build();
+
+        Message message = MessageConvertUtil.convertFromMsg(List.of(msg), "alice", null);
+
+        // The reserved entry is written last: the colliding wrapper cannot overwrite the identity.
+        assertEquals("alice", message.metadata().get(MessageConstants.USER_ID_METADATA_KEY));
     }
 
     private static void assertJsonUsage(Object value) {

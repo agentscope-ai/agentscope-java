@@ -138,6 +138,7 @@ public final class ModelContextWindows {
 
     public static final Map<String, Integer> GEMINI =
             Map.ofEntries(
+                    Map.entry("gemini-3", 1_048_576),
                     Map.entry("gemini-2.5", 1_048_576),
                     Map.entry("gemini-2.0", 1_048_576),
                     Map.entry("gemini-1.5", 2_097_152));

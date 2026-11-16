@@ -22,26 +22,31 @@ import com.alibaba.nacos.api.ai.model.a2a.AgentExtension;
 import com.alibaba.nacos.api.ai.model.a2a.AgentInterface;
 import com.alibaba.nacos.api.ai.model.a2a.AgentProvider;
 import com.alibaba.nacos.api.ai.model.a2a.AgentSkill;
+import com.alibaba.nacos.api.utils.json.JsonUtils;
+import com.alibaba.nacos.api.utils.json.NacosTypeReference;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.function.Function;
+import org.a2aproject.sdk.jsonrpc.common.json.JsonProcessingException;
+import org.a2aproject.sdk.jsonrpc.common.json.JsonUtil;
+import org.a2aproject.sdk.spec.AgentCardSignature;
 import org.a2aproject.sdk.spec.SecurityRequirement;
 
 /**
  * AgentCard Converter between Nacos {@link AgentCard} and A2A specification {@link org.a2aproject.sdk.spec.AgentCard}.
  *
- * <p>The Nacos model follows the A2A 0.3 agent card, the A2A SDK model the A2A 1.0 one:
+ * <p>Nacos supports both legacy A2A fields and the A2A 1.0 model used by the A2A SDK:
  * <ul>
- *     <li>The A2A supported interfaces are the Nacos url and preferred transport, which come
- *     first, and the Nacos additional interfaces. The Nacos protocol version is the version of
- *     these interfaces.</li>
- *     <li>The A2A security requirements are the Nacos security.</li>
- *     <li>The A2A {@code capabilities.extendedAgentCard} is the Nacos
- *     {@code supportsAuthenticatedExtendedCard}.</li>
+ *     <li>Native supported interfaces retain their protocol binding, protocol version, and tenant.
+ *     Legacy cards fall back to url, preferred transport, and additional interfaces.</li>
+ *     <li>Native security requirements and extended-card capabilities take precedence over
+ *     their legacy aliases. Both forms are populated when writing for older consumers.</li>
  *     <li>Capability extensions keep their URI, description, required flag, and parameters.</li>
- *     <li>A2A security schemes are stored in Nacos as maps in the A2A 0.3 format, see
+ *     <li>Signature metadata is preserved; conversion does not verify signatures or re-sign
+ *     cards whose endpoints have been changed by discovery.</li>
+ *     <li>A2A security schemes accept native wrappers and legacy maps, see
  *     {@code SecuritySchemeConverterUtil}.</li>
  * </ul>
  */
@@ -52,6 +57,7 @@ public class AgentCardConverterUtil {
      *
      * @param agentCard the Nacos AgentCard object
      * @return the converted A2A specification AgentCard object, or null if input is null
+     * @throws IllegalArgumentException if native security scheme or signature metadata cannot be decoded
      */
     public static org.a2aproject.sdk.spec.AgentCard convertToA2aAgentCard(AgentCard agentCard) {
         if (agentCard == null) {
@@ -76,7 +82,17 @@ public class AgentCardConverterUtil {
                 .securitySchemes(
                         SecuritySchemeConverterUtil.convertToA2aSecuritySchemes(
                                 agentCard.getSecuritySchemes()))
-                .securityRequirements(convertToA2aSecurityRequirements(agentCard.getSecurity()))
+                .securityRequirements(
+                        convertToA2aSecurityRequirements(
+                                agentCard.getSecurityRequirements() != null
+                                        ? agentCard.getSecurityRequirements()
+                                        : agentCard.getSecurity()))
+                .signatures(
+                        agentCard.getSignatures() == null
+                                ? null
+                                : mapList(
+                                        agentCard.getSignatures(),
+                                        AgentCardConverterUtil::convertToA2aSignature))
                 .defaultInputModes(agentCard.getDefaultInputModes())
                 .defaultOutputModes(agentCard.getDefaultOutputModes())
                 .build();
@@ -97,6 +113,21 @@ public class AgentCardConverterUtil {
                 null != agentCard.getProtocolVersion()
                         ? agentCard.getProtocolVersion()
                         : org.a2aproject.sdk.spec.AgentInterface.CURRENT_PROTOCOL_VERSION;
+        if (agentCard.getSupportedInterfaces() != null
+                && !agentCard.getSupportedInterfaces().isEmpty()) {
+            return mapList(
+                    agentCard.getSupportedInterfaces(),
+                    each ->
+                            new org.a2aproject.sdk.spec.AgentInterface(
+                                    each.getProtocolBinding() != null
+                                            ? each.getProtocolBinding()
+                                            : each.getTransport(),
+                                    each.getUrl(),
+                                    each.getTenant(),
+                                    each.getProtocolVersion() != null
+                                            ? each.getProtocolVersion()
+                                            : protocolVersion));
+        }
         List<org.a2aproject.sdk.spec.AgentInterface> result = new ArrayList<>();
         if (null != agentCard.getUrl()) {
             String transport =
@@ -129,6 +160,9 @@ public class AgentCardConverterUtil {
                 org.a2aproject.sdk.spec.AgentCapabilities.builder()
                         .extendedAgentCard(Boolean.TRUE.equals(extendedAgentCard));
         if (nacosCapabilities != null) {
+            if (nacosCapabilities.getExtendedAgentCard() != null) {
+                builder.extendedAgentCard(nacosCapabilities.getExtendedAgentCard());
+            }
             builder.streaming(Boolean.TRUE.equals(nacosCapabilities.getStreaming()))
                     .pushNotifications(
                             Boolean.TRUE.equals(nacosCapabilities.getPushNotifications()));
@@ -170,11 +204,28 @@ public class AgentCardConverterUtil {
         return null == security ? null : mapList(security, SecurityRequirement::new);
     }
 
+    private static AgentCardSignature convertToA2aSignature(Map<String, Object> signature) {
+        try {
+            return JsonUtil.fromJson(JsonUtils.toJson(signature), AgentCardSignature.class);
+        } catch (JsonProcessingException e) {
+            throw new IllegalArgumentException("Invalid AgentCard signature metadata", e);
+        }
+    }
+
+    private static Map<String, Object> convertToNacosSignature(AgentCardSignature signature) {
+        try {
+            return JsonUtils.toObj(JsonUtil.toJson(signature), new NacosTypeReference<>() {});
+        } catch (JsonProcessingException e) {
+            throw new IllegalArgumentException("Cannot serialize AgentCard signature metadata", e);
+        }
+    }
+
     /**
      * Converts A2A specification AgentCard object to Nacos AgentCard object.
      *
      * @param agentCard the A2A specification AgentCard object
      * @return the converted Nacos AgentCard object
+     * @throws IllegalArgumentException if signature metadata cannot be serialized
      */
     public static AgentCard convertToNacosAgentCard(org.a2aproject.sdk.spec.AgentCard agentCard) {
         AgentCard card = new AgentCard();
@@ -186,6 +237,8 @@ public class AgentCardConverterUtil {
             card.setPreferredTransport(preferred.protocolBinding());
         }
         card.setAdditionalInterfaces(
+                mapList(interfaces, AgentCardConverterUtil::convertToNacosAgentInterface));
+        card.setSupportedInterfaces(
                 mapList(interfaces, AgentCardConverterUtil::convertToNacosAgentInterface));
         card.setName(agentCard.name());
         card.setDescription(agentCard.description());
@@ -203,6 +256,13 @@ public class AgentCardConverterUtil {
                 null == agentCard.securityRequirements()
                         ? null
                         : mapList(agentCard.securityRequirements(), SecurityRequirement::schemes));
+        card.setSecurityRequirements(card.getSecurity());
+        card.setSignatures(
+                agentCard.signatures() == null
+                        ? null
+                        : mapList(
+                                agentCard.signatures(),
+                                AgentCardConverterUtil::convertToNacosSignature));
         card.setDefaultInputModes(agentCard.defaultInputModes());
         card.setDefaultOutputModes(agentCard.defaultOutputModes());
         card.setSupportsAuthenticatedExtendedCard(agentCard.capabilities().extendedAgentCard());
@@ -214,6 +274,7 @@ public class AgentCardConverterUtil {
         AgentCapabilities nacosCapabilities = new AgentCapabilities();
         nacosCapabilities.setStreaming(capabilities.streaming());
         nacosCapabilities.setPushNotifications(capabilities.pushNotifications());
+        nacosCapabilities.setExtendedAgentCard(capabilities.extendedAgentCard());
         // Not part of A2A 1.0.
         nacosCapabilities.setStateTransitionHistory(false);
         if (capabilities.extensions() != null) {
@@ -253,6 +314,9 @@ public class AgentCardConverterUtil {
         AgentInterface nacosAgentInterface = new AgentInterface();
         nacosAgentInterface.setUrl(agentInterface.url());
         nacosAgentInterface.setTransport(agentInterface.protocolBinding());
+        nacosAgentInterface.setProtocolBinding(agentInterface.protocolBinding());
+        nacosAgentInterface.setProtocolVersion(agentInterface.protocolVersion());
+        nacosAgentInterface.setTenant(agentInterface.tenant());
         return nacosAgentInterface;
     }
 

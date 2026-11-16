@@ -17,6 +17,7 @@ package io.agentscope.extensions.sandbox.kubernetes;
 
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.extensions.sandbox.kubernetes.client.Sandbox;
+import io.agentscope.extensions.sandbox.kubernetes.client.exceptions.SandboxRequestException;
 import io.agentscope.extensions.sandbox.kubernetes.client.model.ExecutionResult;
 import io.agentscope.harness.agent.sandbox.AbstractBaseSandbox;
 import io.agentscope.harness.agent.sandbox.ExecResult;
@@ -95,16 +96,27 @@ public class KubernetesSandbox extends AbstractBaseSandbox implements SandboxFil
         }
         String wrapped =
                 "cd " + shellQuote(k8sState.getWorkspaceRoot()) + " && (\n" + command + "\n)";
-        ExecutionResult result =
-                sdkSandbox.commands().run(wrapped, Duration.ofSeconds(Math.max(timeoutSeconds, 1)));
+        ExecutionResult result;
+        try {
+            result =
+                    sdkSandbox
+                            .commands()
+                            .run(wrapped, Duration.ofSeconds(Math.max(timeoutSeconds, 1)));
+        } catch (SandboxRequestException e) {
+            if (e.isExecutionOutcomeUnknown()) {
+                throw new SandboxException.ExecStatusUnknownException(e.getMessage(), e);
+            }
+            throw e;
+        }
 
         boolean truncated = false;
         String stdout = result.getStdout() != null ? result.getStdout() : "";
         String stderr = result.getStderr() != null ? result.getStderr() : "";
 
         ExecResult execResult = new ExecResult(result.getExitCode(), stdout, stderr, truncated);
-        if (!execResult.ok()) {
-            throw new SandboxException.ExecException(result.getExitCode(), stdout, stderr);
+        if (result.isTimedOut() || !execResult.ok()) {
+            throw new SandboxException.ExecException(
+                    result.getExitCode(), stdout, stderr, result.isTimedOut());
         }
         return execResult;
     }
@@ -172,7 +184,7 @@ public class KubernetesSandbox extends AbstractBaseSandbox implements SandboxFil
     protected void doHydrateWorkspace(InputStream archive) throws Exception {
         requireActiveConnection();
         String root = k8sState.getWorkspaceRoot();
-        sdkSandbox.commands().run("mkdir -p " + shellQuote(root));
+        createWorkspaceDirectory(root);
 
         byte[] tarBytes = archive.readAllBytes();
         if (fileApiEnabled()) {
@@ -234,7 +246,7 @@ public class KubernetesSandbox extends AbstractBaseSandbox implements SandboxFil
 
     @Override
     protected void doSetupWorkspace() throws Exception {
-        sdkSandbox.commands().run("mkdir -p " + shellQuote(k8sState.getWorkspaceRoot()));
+        createWorkspaceDirectory(k8sState.getWorkspaceRoot());
     }
 
     @Override
@@ -282,7 +294,12 @@ public class KubernetesSandbox extends AbstractBaseSandbox implements SandboxFil
             if (mkdir.getExitCode() != 0) {
                 throw new SandboxException.SandboxRuntimeException(
                         SandboxErrorCode.WORKSPACE_START_ERROR,
-                        "mkdir failed for " + absolutePath + ": " + mkdir.getStderr());
+                        "mkdir failed (exit="
+                                + mkdir.getExitCode()
+                                + ") for "
+                                + absolutePath
+                                + ": "
+                                + mkdir.getStderr());
             }
         }
         sdkSandbox.files().write(rel, content);
@@ -292,6 +309,20 @@ public class KubernetesSandbox extends AbstractBaseSandbox implements SandboxFil
     public byte[] downloadFile(String absolutePath) throws Exception {
         requireActiveConnection();
         return sdkSandbox.files().read(requireFileApiRelative(absolutePath));
+    }
+
+    private void createWorkspaceDirectory(String directory) {
+        ExecutionResult result = sdkSandbox.commands().run("mkdir -p " + shellQuote(directory));
+        if (result.getExitCode() != 0) {
+            throw new SandboxException.SandboxRuntimeException(
+                    SandboxErrorCode.WORKSPACE_START_ERROR,
+                    "mkdir failed (exit="
+                            + result.getExitCode()
+                            + ") for "
+                            + directory
+                            + ": "
+                            + result.getStderr());
+        }
     }
 
     private void requireActiveConnection() {

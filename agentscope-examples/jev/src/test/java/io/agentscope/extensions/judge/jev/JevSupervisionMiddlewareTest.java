@@ -23,8 +23,11 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.event.AgentResultEvent;
+import io.agentscope.core.event.AllToolsDeniedEvent;
+import io.agentscope.core.event.RequestStopEvent;
 import io.agentscope.core.event.TextBlockDeltaEvent;
 import io.agentscope.core.message.AssistantMessage;
+import io.agentscope.core.message.GenerateReason;
 import io.agentscope.core.message.UserMessage;
 import io.agentscope.core.middleware.AgentInput;
 import io.agentscope.examples.jev.JevSupervisionExample;
@@ -41,6 +44,8 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Function;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.publisher.Sinks;
@@ -379,6 +384,99 @@ class JevSupervisionMiddlewareTest {
                 .blockLast(Duration.ofSeconds(8));
         assertEquals(JevTaskSupervisor.Advice.MANUAL_REVIEW, observations.get(0).advice());
         assertEquals("WORKER_FAILED", observations.get(0).decision().reason());
+    }
+
+    @ParameterizedTest
+    @CsvSource({
+        "MODEL_STOP, false, false, REVIEW_COMPLETION",
+        "STRUCTURED_OUTPUT, false, false, REVIEW_COMPLETION",
+        "TOOL_RETURN_DIRECT, false, false, REVIEW_COMPLETION",
+        "PERMISSION_ASKING, true, false, CONTINUE",
+        "TOOL_SUSPENDED, true, false, CONTINUE",
+        "REASONING_STOP_REQUESTED, true, false, CONTINUE",
+        "ACTING_STOP_REQUESTED, true, false, CONTINUE",
+        "MIDDLEWARE_STOP_REQUESTED, true, false, CONTINUE",
+        "ALL_TOOLS_DENIED, false, true, MANUAL_REVIEW",
+        "MAX_ITERATIONS, false, true, MANUAL_REVIEW",
+        "INTERRUPTED, false, true, MANUAL_REVIEW"
+    })
+    void supervisionUsesLogicalResultAfterDenialOrPause(
+            GenerateReason reason,
+            boolean active,
+            boolean failed,
+            JevTaskSupervisor.Advice advice) {
+        var result =
+                new AgentResultEvent(new AssistantMessage("result").withGenerateReason(reason));
+        List<AgentEvent> events =
+                failed
+                        ? List.of(result)
+                        : active
+                                ? List.of(new RequestStopEvent("pause", reason), result)
+                                : List.of(new AllToolsDeniedEvent(List.of()), result);
+        assertSupervisionOutcome(events, active, failed, advice);
+    }
+
+    @Test
+    void forwardedChildFailureCannotOverwriteParentOutcome() {
+        var parent = new AgentResultEvent(new AssistantMessage("parent done"));
+        var childLimit =
+                new io.agentscope.core.event.ExceedMaxItersEvent("child", 2, 2)
+                        .withSource("parent/child");
+        var childResult =
+                new AgentResultEvent(
+                                new AssistantMessage("child stopped")
+                                        .withGenerateReason(GenerateReason.MAX_ITERATIONS))
+                        .withSource("parent/child");
+        assertSupervisionOutcome(
+                List.of(parent, childLimit, childResult),
+                false,
+                false,
+                JevTaskSupervisor.Advice.REVIEW_COMPLETION);
+    }
+
+    private static void assertSupervisionOutcome(
+            List<AgentEvent> events,
+            boolean active,
+            boolean failed,
+            JevTaskSupervisor.Advice advice) {
+        var observations = new CopyOnWriteArrayList<JevSupervisionMiddleware.Observation>();
+        var states = new CopyOnWriteArrayList<Map<?, ?>>();
+        var m =
+                new JevSupervisionMiddleware(
+                        JevSupervisionTest.supervisor(
+                                request -> {
+                                    states.add((Map<?, ?>) request.state());
+                                    return JevSupervisionExample.syntheticAnswers(request);
+                                }),
+                        new JevSupervisionMiddleware.Schedule(
+                                Duration.ofDays(1), Duration.ofDays(1), 5, 3),
+                        (ctx, observation) -> observations.add(observation));
+        var ctx = context("logical-result");
+        ctx.put(
+                JevSupervisionMiddleware.EvidenceSource.class,
+                new JevSupervisionMiddleware.EvidenceSource(
+                        request ->
+                                Mono.just(
+                                        JevSupervisionTest.evidence(
+                                                "revision",
+                                                JevSupervisionTest.verification(
+                                                        request.scope().userId(),
+                                                        request.scope().sessionId(),
+                                                        request.scope().runId(),
+                                                        "revision",
+                                                        true)))));
+        assertEquals(
+                events,
+                invoke(m, ctx, Flux.fromIterable(events))
+                        .collectList()
+                        .block(Duration.ofSeconds(8)));
+        assertEquals(1, states.size());
+        assertEquals(active, states.get(0).get("worker_active"));
+        assertEquals(failed, states.get(0).get("worker_failed"));
+        assertEquals(1, observations.size());
+        assertEquals(advice, observations.get(0).advice());
+        assertTrue(observations.get(0).decision().value().verifiedRevision());
+        if (failed) assertEquals("WORKER_FAILED", observations.get(0).decision().reason());
     }
 
     @Test

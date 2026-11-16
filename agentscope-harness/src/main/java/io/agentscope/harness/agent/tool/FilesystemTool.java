@@ -41,8 +41,15 @@ public class FilesystemTool {
     static final int DEFAULT_GLOB_LIMIT = 200;
     static final int MAX_SEARCH_LIMIT = 1_000;
 
+    /** Default read page size in Unicode code points. */
+    public static final int DEFAULT_READ_CHARS = 16_000;
+
+    /** Default application limit for a read page in Unicode code points. */
+    public static final int DEFAULT_MAX_READ_CHARS = 32_000;
+
     private final AbstractFilesystem abstractFilesystem;
     private final WorkspacePathNormalizer pathNormalizer;
+    private final int readFileMaxChars;
 
     public FilesystemTool(AbstractFilesystem abstractFilesystem) {
         this(abstractFilesystem, null);
@@ -50,8 +57,27 @@ public class FilesystemTool {
 
     public FilesystemTool(
             AbstractFilesystem abstractFilesystem, WorkspacePathNormalizer pathNormalizer) {
+        this(abstractFilesystem, pathNormalizer, DEFAULT_MAX_READ_CHARS);
+    }
+
+    /**
+     * Creates file tools with an application-defined read page limit.
+     *
+     * @param readFileMaxChars maximum Unicode code points per page, at least {@link
+     *     #DEFAULT_READ_CHARS}
+     * @throws IllegalArgumentException if the limit is smaller than the default page size
+     */
+    public FilesystemTool(
+            AbstractFilesystem abstractFilesystem,
+            WorkspacePathNormalizer pathNormalizer,
+            int readFileMaxChars) {
+        if (readFileMaxChars < DEFAULT_READ_CHARS) {
+            throw new IllegalArgumentException(
+                    "readFileMaxChars must be at least " + DEFAULT_READ_CHARS);
+        }
         this.abstractFilesystem = abstractFilesystem;
         this.pathNormalizer = pathNormalizer;
+        this.readFileMaxChars = readFileMaxChars;
     }
 
     static final int MAX_LISTING_ENTRIES = 200;
@@ -113,10 +139,11 @@ public class FilesystemTool {
             readOnly = true,
             description =
                     "Read a file's content. Binary files come back base64-encoded. Paginate large"
-                            + " files with offset (0-indexed start line) and limit (max lines)"
-                            + " instead of reading everything at once; before editing, read the"
-                            + " target region with enough surrounding context so your edit"
-                            + " matches the current content.")
+                        + " files with offset (0-indexed start line) and limit (max lines). Output"
+                        + " is also bounded by max_chars (Unicode code points). Continue with"
+                        + " char_offset, keeping path, offset and limit unchanged, instead of"
+                        + " reading everything at once; before editing, read the target region with"
+                        + " enough surrounding context so your edit matches the current content.")
     public ToolResultBlock readFile(
             RuntimeContext runtimeContext,
             @ToolParam(name = "path", description = "File path to read") String path,
@@ -129,7 +156,27 @@ public class FilesystemTool {
                             name = "limit",
                             description = "Max lines to return. Default: 0 (all lines)",
                             required = false)
-                    Integer limit) {
+                    Integer limit,
+            @ToolParam(
+                            name = "char_offset",
+                            description =
+                                    "Unicode code point offset within the selected line range."
+                                            + " Default: 0",
+                            required = false)
+                    Integer charOffset,
+            @ToolParam(
+                            name = "max_chars",
+                            description =
+                                    "Maximum Unicode code points per page. Default: 16000; clamped"
+                                        + " to the application-configured maximum (default: 32000)",
+                            required = false)
+                    Integer maxChars) {
+        int start = charOffset != null ? charOffset : 0;
+        int size = maxChars != null ? Math.min(maxChars, readFileMaxChars) : DEFAULT_READ_CHARS;
+        if (start < 0 || size < 1) {
+            return ToolResultBlock.error(
+                    "char_offset must be non-negative and max_chars must be greater than 0");
+        }
         int off = offset != null ? offset : 0;
         int lim = limit != null ? limit : 0;
         ReadResult r =
@@ -137,7 +184,30 @@ public class FilesystemTool {
         if (!r.isSuccess()) {
             return ToolResultBlock.error(r.error());
         }
-        return ToolResultBlock.success(r.fileData() != null ? r.fileData().content() : "");
+        String content = r.fileData() != null ? r.fileData().content() : "";
+        int total = content.codePointCount(0, content.length());
+        if (start > total) {
+            return ToolResultBlock.error(
+                    "char_offset exceeds the selected content length: " + total);
+        }
+        int end = start + Math.min(size, total - start);
+        String page =
+                content.substring(
+                        content.offsetByCodePoints(0, start), content.offsetByCodePoints(0, end));
+        if (end < total) {
+            page +=
+                    "\n[Output truncated. Continue with char_offset="
+                            + end
+                            + " and the same path, offset and limit. Offsets count Unicode code"
+                            + " points within the selected line range.]";
+        }
+        return ToolResultBlock.success(page);
+    }
+
+    /** Read using the default character page size. */
+    public ToolResultBlock readFile(
+            RuntimeContext runtimeContext, String path, Integer offset, Integer limit) {
+        return readFile(runtimeContext, path, offset, limit, null, null);
     }
 
     @Tool(
@@ -201,8 +271,10 @@ public class FilesystemTool {
             name = "grep_files",
             readOnly = true,
             description =
-                    "Search file contents for a literal text pattern. Returns at most 100 matches"
-                            + " by default to keep tool output bounded.")
+                    "Search file contents for literal text, not a regular expression. Returns"
+                            + " path:line:text matches, at most 100 by default. Use glob_files for"
+                            + " file path/name patterns and read_file on a matched file for"
+                            + " surrounding context.")
     public ToolResultBlock grepFiles(
             RuntimeContext runtimeContext,
             @ToolParam(name = "pattern", description = "Literal text pattern to search for")

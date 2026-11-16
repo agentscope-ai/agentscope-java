@@ -21,10 +21,16 @@ package io.agentscope.harness.agent.filesystem.model;
  * @param output combined stdout and stderr output of the executed command
  * @param exitCode the process exit code (0 indicates success, non-zero indicates failure)
  * @param truncated whether the output was truncated due to filesystem limitations
+ * @param timedOut whether the execution path confirmed that the command timed out
  */
-public record ExecuteResponse(String output, Integer exitCode, boolean truncated) {
+public record ExecuteResponse(
+        String output, Integer exitCode, boolean truncated, boolean timedOut) {
+
+    public ExecuteResponse(String output, Integer exitCode, boolean truncated) {
+        this(output, exitCode, truncated, false);
+    }
 
     public boolean isSuccess() {
-        return exitCode != null && exitCode == 0;
+        return !timedOut && exitCode != null && exitCode == 0;
     }
 }

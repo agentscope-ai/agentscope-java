@@ -19,6 +19,8 @@ import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNotSame;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -34,6 +36,7 @@ import io.agentscope.core.model.ToolSchema;
 import io.agentscope.core.tool.mcp.McpClientWrapper;
 import io.agentscope.core.tool.mcp.McpClientWrapperTestSupport;
 import io.agentscope.core.tool.mcp.McpTool;
+import io.agentscope.core.tool.test.GrantTestUtils;
 import io.agentscope.core.tool.test.SampleTools;
 import io.agentscope.core.tool.test.ToolTestUtils;
 import io.agentscope.core.util.JsonUtils;
@@ -286,7 +289,8 @@ class ToolkitTest {
         AgentTool first = namedAgentTool("remove_if_same_b");
         AgentTool second = namedAgentTool("remove_if_same_b");
         toolkit.registerAgentTool(first);
-        toolkit.registerAgentTool(second);
+        // Duplicate names fail fast since #3328; the replacement here is intentional.
+        toolkit.replaceAgentTool(second);
         assertFalse(
                 toolkit.removeToolIfSame("remove_if_same_b", first),
                 "stale instance after replace must return false");
@@ -328,6 +332,60 @@ class ToolkitTest {
                 tk.removeToolIfSame("remove_if_same_no_delete", tool),
                 "allowToolDeletion=false must return false");
         assertSame(tool, tk.getTool("remove_if_same_no_delete"));
+    }
+
+    @Test
+    @DisplayName("Build-time exclusions preserve deletion policy and group bindings")
+    void copyExcludingTools_preservesPolicyAndGroupsForRebinding() {
+        Toolkit source = new Toolkit(ToolkitConfig.builder().allowToolDeletion(false).build());
+        AgentTool original = new SchemaOnlyTool("original", "Original", Map.of());
+        AgentTool custom = new SchemaOnlyTool("custom", "Custom", Map.of());
+        source.createToolGroup("inactive", "Inactive tools", false);
+        source.registration().agentTool(original).group("inactive").apply();
+        source.registerAgentTool(custom);
+
+        Toolkit copy = source.copyExcludingTools(List.of(original));
+        assertNull(copy.getTool("original"));
+        assertSame(original, source.getTool("original"));
+        assertSame(custom, copy.getTool("custom"));
+        assertNotSame(source.getToolGroup("inactive"), copy.getToolGroup("inactive"));
+
+        AgentTool rebuilt = new SchemaOnlyTool("original", "Rebuilt", Map.of());
+        copy.registerAgentTool(rebuilt);
+        assertTrue(
+                copy.getToolSchemas().stream()
+                        .noneMatch(schema -> schema.getName().equals("original")));
+        copy.removeTool("custom");
+        assertSame(custom, copy.getTool("custom"));
+        assertSame(original, source.getTool("original"));
+    }
+
+    @Test
+    void copyExcludingTools_preservesNewerBindingAndItsMetadata() {
+        AgentTool original = new SchemaOnlyTool("sample", "Original", Map.of());
+        AgentTool replacement = new SchemaOnlyTool("sample", "Replacement", Map.of());
+        toolkit.registerAgentTool(original);
+        toolkit.replaceAgentTool(replacement);
+        toolkit.createToolGroup("inactive", "Inactive tools", false);
+        toolkit.addToolToGroup("inactive", "sample");
+
+        Toolkit copy = toolkit.copyExcludingTools(List.of(original));
+        assertSame(replacement, copy.getTool("sample"));
+        assertSame(replacement, toolkit.getTool("sample"));
+        assertTrue(copy.getToolSchemas().isEmpty());
+        copy.updateToolGroups(List.of("inactive"), true);
+        assertEquals("Replacement", copy.getToolSchemas().get(0).getDescription());
+        assertTrue(toolkit.getToolSchemas().isEmpty());
+    }
+
+    @Test
+    void copyExcludingTools_doesNotRecreateExcludedMetaTool() {
+        toolkit.registerMetaTool();
+        AgentTool metaTool = toolkit.getTool("reset_equipped_tools");
+        assertNotNull(metaTool);
+        assertNull(toolkit.copyExcludingTools(List.of(metaTool)).getTool("reset_equipped_tools"));
+        assertSame(metaTool, toolkit.getTool("reset_equipped_tools"));
+        assertNotSame(metaTool, toolkit.copy().getTool("reset_equipped_tools"));
     }
 
     @Test
@@ -422,12 +480,11 @@ class ToolkitTest {
         toolkit.createToolGroup("activeGroup", "Active tools", true);
         toolkit.createToolGroup("inactiveGroup", "Inactive tools", false);
 
-        // Register tools to different groups
+        // Register tools to the active group. The inactive group keeps a differently-named
+        // tool: the original test relied on a second same-named registration silently
+        // overriding the tool's group binding, which #3328 turned into a fail-fast error.
         toolkit.registration().tool(sampleTools).group("activeGroup").apply();
-
-        // Create a separate tool for inactive group
-        SampleTools inactiveTools = new SampleTools();
-        toolkit.registration().tool(inactiveTools).group("inactiveGroup").apply();
+        toolkit.registration().tool(new InactiveGroupTools()).group("inactiveGroup").apply();
 
         // Get a tool from inactive group (should exist in registry)
         AgentTool tool = toolkit.getTool("add");
@@ -447,13 +504,23 @@ class ToolkitTest {
         toolkit.updateToolGroups(List.of("activeGroup"), true);
         toolkit.updateToolGroups(List.of("inactiveGroup"), false);
         ToolResultBlock result1 =
-                toolkit.callTool(ToolCallParam.builder().toolUseBlock(toolCall).build()).block();
+                toolkit.callTool(
+                                ToolCallParam.builder()
+                                        .toolUseBlock(toolCall)
+                                        .runtimeContext(GrantTestUtils.grantRc())
+                                        .build())
+                        .block();
         assertNotNull(result1, "Should execute when group is active");
 
         // Now deactivate the group and try again
         toolkit.updateToolGroups(List.of("activeGroup"), false);
         ToolResultBlock result2 =
-                toolkit.callTool(ToolCallParam.builder().toolUseBlock(toolCall).build()).block();
+                toolkit.callTool(
+                                ToolCallParam.builder()
+                                        .toolUseBlock(toolCall)
+                                        .runtimeContext(GrantTestUtils.grantRc())
+                                        .build())
+                        .block();
         assertNotNull(result2, "Should return error response");
         assertTrue(
                 isErrorResult(result2),
@@ -484,7 +551,12 @@ class ToolkitTest {
                         .build();
 
         ToolResultBlock result =
-                toolkit.callTool(ToolCallParam.builder().toolUseBlock(toolCall).build()).block();
+                toolkit.callTool(
+                                ToolCallParam.builder()
+                                        .toolUseBlock(toolCall)
+                                        .runtimeContext(GrantTestUtils.grantRc())
+                                        .build())
+                        .block();
         assertNotNull(result, "Ungrouped tool should be callable");
         assertFalse(isErrorResult(result), "Ungrouped tool should execute successfully");
     }
@@ -509,7 +581,12 @@ class ToolkitTest {
                         .build();
 
         ToolResultBlock result =
-                toolkit.callTool(ToolCallParam.builder().toolUseBlock(toolCall).build()).block();
+                toolkit.callTool(
+                                ToolCallParam.builder()
+                                        .toolUseBlock(toolCall)
+                                        .runtimeContext(GrantTestUtils.grantRc())
+                                        .build())
+                        .block();
         assertNotNull(result, "Should execute tool from active group");
         assertFalse(isErrorResult(result), "Should succeed: " + getResultText(result));
     }
@@ -543,7 +620,12 @@ class ToolkitTest {
         toolkit.updateToolGroups(List.of("groupA"), true);
         toolkit.updateToolGroups(List.of("groupB"), false);
         ToolResultBlock resultWithGroupA =
-                toolkit.callTool(ToolCallParam.builder().toolUseBlock(toolCall).build()).block();
+                toolkit.callTool(
+                                ToolCallParam.builder()
+                                        .toolUseBlock(toolCall)
+                                        .runtimeContext(GrantTestUtils.grantRc())
+                                        .build())
+                        .block();
         assertNotNull(resultWithGroupA, "Should execute when groupA is active");
         assertFalse(
                 isErrorResult(resultWithGroupA),
@@ -552,7 +634,12 @@ class ToolkitTest {
         toolkit.updateToolGroups(List.of("groupA"), false);
         toolkit.updateToolGroups(List.of("groupB"), true);
         ToolResultBlock resultWithGroupB =
-                toolkit.callTool(ToolCallParam.builder().toolUseBlock(toolCall).build()).block();
+                toolkit.callTool(
+                                ToolCallParam.builder()
+                                        .toolUseBlock(toolCall)
+                                        .runtimeContext(GrantTestUtils.grantRc())
+                                        .build())
+                        .block();
         assertNotNull(resultWithGroupB, "Should execute when groupB is active");
         assertFalse(
                 isErrorResult(resultWithGroupB),
@@ -560,7 +647,12 @@ class ToolkitTest {
 
         toolkit.updateToolGroups(List.of("groupA", "groupB"), true);
         ToolResultBlock resultWithBoth =
-                toolkit.callTool(ToolCallParam.builder().toolUseBlock(toolCall).build()).block();
+                toolkit.callTool(
+                                ToolCallParam.builder()
+                                        .toolUseBlock(toolCall)
+                                        .runtimeContext(GrantTestUtils.grantRc())
+                                        .build())
+                        .block();
         assertNotNull(resultWithBoth, "Should execute when both groups are active");
         assertFalse(
                 isErrorResult(resultWithBoth),
@@ -568,7 +660,12 @@ class ToolkitTest {
 
         toolkit.updateToolGroups(List.of("groupA", "groupB"), false);
         ToolResultBlock resultWithNone =
-                toolkit.callTool(ToolCallParam.builder().toolUseBlock(toolCall).build()).block();
+                toolkit.callTool(
+                                ToolCallParam.builder()
+                                        .toolUseBlock(toolCall)
+                                        .runtimeContext(GrantTestUtils.grantRc())
+                                        .build())
+                        .block();
         assertNotNull(resultWithNone, "Should execute when no groups are active");
         assertTrue(
                 isErrorResult(resultWithNone),
@@ -613,7 +710,12 @@ class ToolkitTest {
 
         // First call should succeed
         ToolResultBlock result1 =
-                toolkit.callTool(ToolCallParam.builder().toolUseBlock(toolCall).build()).block();
+                toolkit.callTool(
+                                ToolCallParam.builder()
+                                        .toolUseBlock(toolCall)
+                                        .runtimeContext(GrantTestUtils.grantRc())
+                                        .build())
+                        .block();
         assertNotNull(result1, "First call should work");
         assertFalse(isErrorResult(result1), "First call should succeed");
 
@@ -622,7 +724,12 @@ class ToolkitTest {
 
         // Second call should be rejected
         ToolResultBlock result2 =
-                toolkit.callTool(ToolCallParam.builder().toolUseBlock(toolCall).build()).block();
+                toolkit.callTool(
+                                ToolCallParam.builder()
+                                        .toolUseBlock(toolCall)
+                                        .runtimeContext(GrantTestUtils.grantRc())
+                                        .build())
+                        .block();
         assertNotNull(result2, "Should return error response");
         assertTrue(isErrorResult(result2), "Second call should fail after group deactivation");
         String errorText = getResultText(result2);
@@ -689,7 +796,12 @@ class ToolkitTest {
                         .build();
 
         ToolResultBlock result =
-                toolkit.callTool(ToolCallParam.builder().toolUseBlock(toolCall).build()).block();
+                toolkit.callTool(
+                                ToolCallParam.builder()
+                                        .toolUseBlock(toolCall)
+                                        .runtimeContext(GrantTestUtils.grantRc())
+                                        .build())
+                        .block();
         assertNotNull(result, "Result should not be null");
         assertFalse(isErrorResult(result), "Execution should succeed");
 
@@ -733,7 +845,12 @@ class ToolkitTest {
                         .build();
 
         ToolResultBlock result =
-                toolkit.callTool(ToolCallParam.builder().toolUseBlock(toolCall).build()).block();
+                toolkit.callTool(
+                                ToolCallParam.builder()
+                                        .toolUseBlock(toolCall)
+                                        .runtimeContext(GrantTestUtils.grantRc())
+                                        .build())
+                        .block();
         String resultText = getResultText(result);
 
         // Preset values should not be overridden by agent input
@@ -770,7 +887,12 @@ class ToolkitTest {
                         .content(JsonUtils.getJsonCodec().toJson(emptyInput))
                         .build();
         ToolResultBlock result1 =
-                toolkit.callTool(ToolCallParam.builder().toolUseBlock(toolCall1).build()).block();
+                toolkit.callTool(
+                                ToolCallParam.builder()
+                                        .toolUseBlock(toolCall1)
+                                        .runtimeContext(GrantTestUtils.grantRc())
+                                        .build())
+                        .block();
         assertTrue(getResultText(result1).contains("session_001"), "Should use initial session");
 
         // Update preset parameters
@@ -785,7 +907,12 @@ class ToolkitTest {
                         .content(JsonUtils.getJsonCodec().toJson(emptyInput))
                         .build();
         ToolResultBlock result2 =
-                toolkit.callTool(ToolCallParam.builder().toolUseBlock(toolCall2).build()).block();
+                toolkit.callTool(
+                                ToolCallParam.builder()
+                                        .toolUseBlock(toolCall2)
+                                        .runtimeContext(GrantTestUtils.grantRc())
+                                        .build())
+                        .block();
         assertTrue(getResultText(result2).contains("session_002"), "Should use updated session");
     }
 
@@ -1047,7 +1174,12 @@ class ToolkitTest {
         // This is the bug: callTool triggers ToolValidator.validateInput which fails
         // with "Schema validation error: Reference /$defs/Material cannot be resolved"
         ToolResultBlock result =
-                toolkit.callTool(ToolCallParam.builder().toolUseBlock(toolCall).build()).block();
+                toolkit.callTool(
+                                ToolCallParam.builder()
+                                        .toolUseBlock(toolCall)
+                                        .runtimeContext(GrantTestUtils.grantRc())
+                                        .build())
+                        .block();
 
         assertNotNull(result, "Result should not be null");
         assertFalse(
@@ -1141,7 +1273,12 @@ class ToolkitTest {
                         .build();
 
         ToolResultBlock result =
-                toolkit.callTool(ToolCallParam.builder().toolUseBlock(toolCall).build()).block();
+                toolkit.callTool(
+                                ToolCallParam.builder()
+                                        .toolUseBlock(toolCall)
+                                        .runtimeContext(GrantTestUtils.grantRc())
+                                        .build())
+                        .block();
 
         // Verify the custom converter was used
         assertNotNull(result, "Result should not be null");
@@ -1170,7 +1307,12 @@ class ToolkitTest {
                         .build();
 
         ToolResultBlock result =
-                toolkit.callTool(ToolCallParam.builder().toolUseBlock(toolCall).build()).block();
+                toolkit.callTool(
+                                ToolCallParam.builder()
+                                        .toolUseBlock(toolCall)
+                                        .runtimeContext(GrantTestUtils.grantRc())
+                                        .build())
+                        .block();
 
         // Verify the default converter was used (no custom prefix)
         assertNotNull(result, "Result should not be null");
@@ -1235,7 +1377,12 @@ class ToolkitTest {
                         .build();
 
         ToolResultBlock result =
-                toolkit.callTool(ToolCallParam.builder().toolUseBlock(toolCall).build()).block();
+                toolkit.callTool(
+                                ToolCallParam.builder()
+                                        .toolUseBlock(toolCall)
+                                        .runtimeContext(GrantTestUtils.grantRc())
+                                        .build())
+                        .block();
         assertNotNull(result, "Tool should execute successfully");
         assertFalse(isErrorResult(result), "Tool execution should not have errors");
     }
@@ -1364,6 +1511,14 @@ class ToolkitTest {
         assertThrows(
                 IllegalArgumentException.class,
                 () -> toolkit.registration().propagateMeta(null, false));
+    }
+
+    /** Fixture: a tool that only lives in the inactive group of the group-gating test. */
+    static class InactiveGroupTools {
+        @Tool(name = "inactive_only", description = "Bound to the inactive group")
+        public String inactiveOnly() {
+            return "inactive";
+        }
     }
 
     @Test

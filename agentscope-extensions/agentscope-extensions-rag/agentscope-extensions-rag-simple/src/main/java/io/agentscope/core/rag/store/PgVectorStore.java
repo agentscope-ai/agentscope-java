@@ -213,17 +213,18 @@ public class PgVectorStore implements VDBStoreBase, AutoCloseable {
             // Create connection
             tempConnection = DriverManager.getConnection(jdbcUrl, props);
 
-            // Register pgvector type
-            PGvector.addVectorType(tempConnection);
-
             log.debug(
                     "Initialized PostgreSQL connection: url={}, schema={}, table={}",
                     jdbcUrl,
                     schema,
                     tableName);
 
-            // Ensure table exists
+            // Ensure the vector extension and the table exist
             ensureTable(tempConnection);
+
+            // Register pgvector type only after the extension exists: registering it on a
+            // database without the extension leaves this connection unable to bind vectors
+            PGvector.addVectorType(tempConnection);
 
             // Assign to final field only after successful initialization
             this.connection = tempConnection;

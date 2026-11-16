@@ -15,10 +15,12 @@
  */
 package io.agentscope.extensions.sandbox.kubernetes;
 
+import io.agentscope.extensions.sandbox.kubernetes.client.crd.SandboxClaimSpec.EnvVar;
 import io.agentscope.harness.agent.sandbox.SandboxClient;
 import io.agentscope.harness.agent.sandbox.SandboxClientOptions;
 import io.fabric8.kubernetes.client.Config;
 import io.fabric8.kubernetes.client.KubernetesClient;
+import java.util.List;
 
 /** Options for {@link KubernetesSandboxClient} (agent-sandbox mode). */
 public class KubernetesSandboxClientOptions extends SandboxClientOptions {
@@ -29,6 +31,7 @@ public class KubernetesSandboxClientOptions extends SandboxClientOptions {
     // agent-sandbox core
     private String namespace = "default";
     private String warmPoolName;
+    private List<EnvVar> claimEnv;
     private String workspaceRoot = "/workspace";
 
     /**
@@ -57,6 +60,15 @@ public class KubernetesSandboxClientOptions extends SandboxClientOptions {
     @Override
     public String getType() {
         return "kubernetes";
+    }
+
+    /** Null inherits client defaults; an empty list clears them. */
+    public List<EnvVar> getClaimEnv() {
+        return claimEnv;
+    }
+
+    public void setClaimEnv(List<EnvVar> claimEnv) {
+        this.claimEnv = claimEnv == null ? null : List.copyOf(claimEnv);
     }
 
     @Override

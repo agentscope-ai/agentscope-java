@@ -102,6 +102,53 @@ class ConversationCompactorTruncateArgsTest {
     }
 
     @Test
+    void usesConfiguredCounterForTruncationTriggerAndTokenKeepWindow() {
+        ConversationCompactor custom =
+                new ConversationCompactor(
+                        null, null, messages -> 1000L * messages.size(), message -> 1000L);
+        Msg old = assistant(tool("x".repeat(100)));
+        Msg recent = assistant(tool("y".repeat(100)));
+        Msg tail = Msg.builder().role(MsgRole.USER).textContent("now").build();
+        var tokenConfig =
+                CompactionConfig.TruncateArgsConfig.builder()
+                        .triggerMessages(0)
+                        .triggerTokens(2500)
+                        .keepTokens(1500)
+                        .maxArgLength(40)
+                        .build();
+
+        List<Msg> result = custom.truncateArgs(List.of(old, recent, tail), tokenConfig);
+
+        assertEquals(
+                "x".repeat(20) + tokenConfig.getTruncationText(),
+                toolBlock(result.get(0)).getInput().get("code"));
+        assertEquals(
+                "y".repeat(20) + tokenConfig.getTruncationText(),
+                toolBlock(result.get(1)).getInput().get("code"));
+        assertSame(tail, result.get(2));
+    }
+
+    @Test
+    void preservesOriginalWhenNoMessageFitsTheTokenKeepWindow() {
+        ConversationCompactor custom =
+                new ConversationCompactor(
+                        null, null, messages -> 1000L * messages.size(), message -> 1000L);
+        Msg old = assistant(tool("x".repeat(100)));
+        Msg recent = assistant(tool("y".repeat(100)));
+        var tokenConfig =
+                CompactionConfig.TruncateArgsConfig.builder()
+                        .triggerMessages(0)
+                        .triggerTokens(1500)
+                        .keepTokens(500)
+                        .maxArgLength(40)
+                        .build();
+
+        List<Msg> messages = List.of(old, recent);
+
+        assertSame(messages, custom.truncateArgs(messages, tokenConfig));
+    }
+
+    @Test
     void returnsOriginalWhenNoArgumentNeedsTruncation() {
         Msg original = assistant(tool("short"));
         assertSame(original, truncate(original));

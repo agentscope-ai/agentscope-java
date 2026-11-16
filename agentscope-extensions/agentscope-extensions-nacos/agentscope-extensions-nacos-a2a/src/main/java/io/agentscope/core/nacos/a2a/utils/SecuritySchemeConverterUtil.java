@@ -17,8 +17,12 @@
 package io.agentscope.core.nacos.a2a.utils;
 
 import com.alibaba.nacos.api.ai.model.a2a.SecurityScheme;
+import com.alibaba.nacos.api.utils.json.JsonUtils;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Set;
+import org.a2aproject.sdk.jsonrpc.common.json.JsonProcessingException;
+import org.a2aproject.sdk.jsonrpc.common.json.JsonUtil;
 import org.a2aproject.sdk.spec.APIKeySecurityScheme;
 import org.a2aproject.sdk.spec.AuthorizationCodeOAuthFlow;
 import org.a2aproject.sdk.spec.ClientCredentialsOAuthFlow;
@@ -32,14 +36,22 @@ import org.a2aproject.sdk.spec.OpenIdConnectSecurityScheme;
 /**
  * Security scheme converter between Nacos and the A2A specification.
  *
- * <p>Nacos stores A2A security schemes as maps in the A2A 0.3 format, with the scheme kind in
- * {@code type}. A scheme Nacos does not describe this way is left out when reading.
+ * <p>Reads native A2A 1.0 scheme wrappers as well as legacy maps with a {@code type} discriminator.
+ * Writes retain the legacy representation for compatibility with existing Nacos consumers.
  */
 final class SecuritySchemeConverterUtil {
 
     private static final String TYPE = "type";
 
     private static final String DESCRIPTION = "description";
+
+    private static final Set<String> NATIVE_SCHEME_KEYS =
+            Set.of(
+                    "apiKeySecurityScheme",
+                    "httpAuthSecurityScheme",
+                    "oauth2SecurityScheme",
+                    "openIdConnectSecurityScheme",
+                    "mtlsSecurityScheme");
 
     private SecuritySchemeConverterUtil() {}
 
@@ -64,6 +76,17 @@ final class SecuritySchemeConverterUtil {
             Map<String, Object> scheme) {
         if (null == scheme) {
             return null;
+        }
+        if (!scheme.containsKey(TYPE)) {
+            if (scheme.keySet().stream().noneMatch(NATIVE_SCHEME_KEYS::contains)) {
+                return null;
+            }
+            try {
+                return JsonUtil.fromJson(
+                        JsonUtils.toJson(scheme), org.a2aproject.sdk.spec.SecurityScheme.class);
+            } catch (JsonProcessingException e) {
+                throw new IllegalArgumentException("Invalid A2A security scheme", e);
+            }
         }
         String description = string(scheme, DESCRIPTION);
         return switch (String.valueOf(scheme.get(TYPE))) {

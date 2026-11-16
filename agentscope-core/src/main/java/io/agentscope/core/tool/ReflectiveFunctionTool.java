@@ -146,7 +146,8 @@ final class ReflectiveFunctionTool extends ToolBase {
                         .concurrencySafe(annotation.concurrencySafe())
                         .externalTool(annotation.externalTool())
                         .stateInjected(annotation.stateInjected())
-                        .returnDirect(annotation.returnDirect());
+                        .returnDirect(annotation.returnDirect())
+                        .system(annotation.system());
         if (annotation.dangerousFiles().length > 0) {
             builder.dangerousFiles(List.of(annotation.dangerousFiles()));
         }
@@ -169,6 +170,11 @@ final class ReflectiveFunctionTool extends ToolBase {
     @Override
     public Boolean getDeferLoading() {
         return deferLoading;
+    }
+
+    @Override
+    public boolean isTimeoutManaged() {
+        return method.getAnnotation(Tool.class).timeoutManaged();
     }
 
     @Override

@@ -336,6 +336,18 @@ public class McpTool extends ToolBase {
     }
 
     /**
+     * Returns whether both tools use the same wrapper instance and remote tool name.
+     *
+     * @param other the incoming MCP tool
+     * @return true when both tools address the same remote target on the same connection
+     */
+    public boolean isFromSameSource(McpTool other) {
+        return other != null
+                && this.clientWrapper == other.clientWrapper
+                && this.remoteToolName.equals(other.remoteToolName);
+    }
+
+    /**
      * Gets the preset arguments configured for this tool.
      *
      * @return the preset arguments, or null if none configured

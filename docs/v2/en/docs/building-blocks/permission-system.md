@@ -209,16 +209,34 @@ PermissionContextState permCtx =
 ```java
 import io.agentscope.core.event.ConfirmResult;
 
-// ASK decisions carry suggested rules on the PermissionDecision (visible to
-// permission hooks), not on the ToolUseBlock. At the resume layer, accept the
-// call as-is, or pass your own rules to remember a choice for future calls:
+// ASK decisions carry suggestedRules on the ToolUseBlock.
+// Accept them by attaching to the result:
 ConfirmResult result =
         new ConfirmResult(
                 /* confirmed = */ true,
-                /* toolCall  = */ toolCall);
+                /* toolCall  = */ toolCall,
+                /* rules     = */ toolCall.getSuggestedRules());
 ```
 
 Runnable examples: `agentscope-examples/documentation/.../tool/PermissionContextExample.java`, `hitl/PermissionHITLExample.java`.
+
+### Permission contexts and existing sessions
+
+A non-null `permissionContext` replaces a slot's persisted permission context when the current agent instance loads that slot for the first time. Passing `null` leaves an existing slot's context untouched.
+
+This also applies when rebuilding an agent against the same state store. To preserve runtime permission state across a rebuild, read the old context first and construct the new one from it:
+
+```java
+PermissionContextState old =
+        agent.getAgentState(userId, sessionId).getPermissionContext();
+PermissionContextState next =
+        PermissionContextState.builder()
+                .mode(old.getMode())
+                // carry over working directories and rules you want to keep
+                .build();
+```
+
+A non-null `PermissionContextState.builder().build()` is a valid trivial context, not a no-op: it replaces the old context with the default mode and no rules. Use `null` when you want to leave the existing context unchanged.
 
 ## Built-in checks
 
@@ -371,6 +389,8 @@ See [Middleware — Stop agent when all tools are denied](/v2/en/docs/building-b
 ### Streaming mode
 
 When using `streamEvents()`, you don't need to extract `ToolUseBlock`s from the returned `Msg` — the event stream delivers a `RequireUserConfirmEvent` that carries the pending tool calls directly:
+
+When a state store or native session log is configured, the agent saves the pending tool states and confirmation reply identity before publishing this event. Native session logs also commit the pending interaction in that boundary. A failed save fails the invocation without publishing the confirmation prompt. Recovery across process restarts requires a persistent backend; an in-memory backend does not provide it. This ordering does not guarantee delivery of the prompt if the subscriber disconnects after the save.
 
 ```java
 import io.agentscope.core.event.AgentEvent;

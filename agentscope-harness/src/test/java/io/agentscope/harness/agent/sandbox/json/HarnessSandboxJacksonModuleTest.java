@@ -16,6 +16,7 @@
 package io.agentscope.harness.agent.sandbox.json;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -24,6 +25,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.harness.agent.sandbox.SandboxState;
+import io.agentscope.harness.agent.sandbox.WorkspaceSpec;
 import io.agentscope.harness.agent.sandbox.impl.docker.DockerSandboxClient;
 import io.agentscope.harness.agent.sandbox.impl.docker.DockerSandboxState;
 import io.agentscope.harness.agent.sandbox.snapshot.LocalSandboxSnapshot;
@@ -38,6 +40,30 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 class HarnessSandboxJacksonModuleTest {
+
+    @Test
+    void workspaceRootExplicitnessSurvivesCopyWithoutChangingJsonShape() throws Exception {
+        WorkspaceSpec spec = new WorkspaceSpec();
+        assertFalse(spec.isRootExplicitlySet());
+        assertFalse(spec.copy().isRootExplicitlySet());
+        spec.setRoot("/workspace");
+        assertTrue(spec.isRootExplicitlySet());
+        assertTrue(spec.copy().isRootExplicitlySet());
+
+        ObjectMapper mapper = new ObjectMapper();
+        JsonNode json = mapper.valueToTree(spec);
+        assertEquals(3, json.size());
+        assertEquals("/workspace", json.get("root").asText());
+        assertTrue(json.has("entries"));
+        assertTrue(json.has("environment"));
+        assertFalse(json.has("rootExplicitlySet"));
+        WorkspaceSpec restored = mapper.treeToValue(json, WorkspaceSpec.class);
+        assertEquals("/workspace", restored.getRoot());
+        assertTrue(restored.isRootExplicitlySet());
+        WorkspaceSpec absent = mapper.readValue("{}", WorkspaceSpec.class);
+        assertEquals("/workspace", absent.getRoot());
+        assertFalse(absent.isRootExplicitlySet());
+    }
 
     @Test
     void roundTripsDockerSandboxState() throws Exception {

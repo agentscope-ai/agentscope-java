@@ -19,6 +19,7 @@ import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.EventSource;
 import io.agentscope.core.agent.EventType;
+import io.agentscope.core.agent.RunOutcome;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.agent.StreamOptions;
 import io.agentscope.core.agent.SubagentEventBus;
@@ -27,16 +28,18 @@ import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.event.AgentEventEmitter;
 import io.agentscope.core.event.AgentStartEvent;
 import io.agentscope.core.event.SubagentExposedEvent;
+import io.agentscope.core.formatter.DocumentReferenceRenderer;
+import io.agentscope.core.journal.JournalException;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolResultState;
 import io.agentscope.core.permission.PermissionContextState;
 import io.agentscope.core.permission.PermissionMode;
 import io.agentscope.core.permission.PermissionRule;
-import io.agentscope.core.session.SessionRecorder;
 import io.agentscope.core.state.AgentState;
 import io.agentscope.core.tool.Tool;
 import io.agentscope.core.tool.ToolParam;
+import io.agentscope.core.tool.ToolSuspendException;
 import io.agentscope.harness.agent.HarnessAgent;
 import io.agentscope.harness.agent.gateway.SessionIdUtils;
 import io.agentscope.harness.agent.gateway.SubagentGatewayBridge;
@@ -44,6 +47,7 @@ import io.agentscope.harness.agent.gateway.channel.OutboundAddress;
 import io.agentscope.harness.agent.subagent.DefaultAgentManager;
 import io.agentscope.harness.agent.subagent.RemoteAskPolicy;
 import io.agentscope.harness.agent.subagent.SubagentDeclaration;
+import io.agentscope.harness.agent.subagent.SubagentExecution;
 import io.agentscope.harness.agent.subagent.protocol.RemoteConfirmDecision;
 import io.agentscope.harness.agent.subagent.protocol.RemoteEventCodec;
 import io.agentscope.harness.agent.subagent.protocol.RemotePendingConfirm;
@@ -197,7 +201,8 @@ public class AgentSpawnTool implements AutoCloseable {
      *
      * <p>When present (and force-sync is on), this value fully replaces the LLM's {@code
      * timeout_seconds} for the call. Values {@code <= 0} fall back to the default sync timeout
-     * (30s); values above 600 are clamped.
+     * (30s). Positive values are honored as-is — the deployer owns the sync-wait budget; the
+     * 600s ceiling ({@code MAX_TIMEOUT_SECONDS}) applies only to LLM-requested timeouts.
      *
      * <p>Ignored when force-sync is off.
      *
@@ -399,6 +404,7 @@ public class AgentSpawnTool implements AutoCloseable {
     @Tool(
             name = "agent_spawn",
             stateInjected = true,
+            timeoutManaged = true,
             description =
                     """
                     Spawn an isolated subagent for delegated or background work. \
@@ -488,7 +494,11 @@ public class AgentSpawnTool implements AutoCloseable {
                 String hash =
                         deterministicHash(currentUserId, parentSessionId, agentId, canonLabel);
                 key = "agent:" + agentId + ":" + hash;
-                sessionId = "sub-" + hash;
+                SubagentExecution execution =
+                        runtimeContext == null ? null : runtimeContext.get(SubagentExecution.class);
+                String ownedChild =
+                        execution == null ? null : execution.childSessionId(runtimeContext);
+                sessionId = ownedChild == null ? "sub-" + hash : ownedChild;
                 // Reuse existing agent if same deterministic key was already spawned.
                 ManagedAgent existing = registry.agentsByKey.get(key);
                 if (existing != null) {
@@ -499,7 +509,8 @@ public class AgentSpawnTool implements AutoCloseable {
                     String spawnInfo = formatSpawnInfo(key, agentId, sessionId, null);
                     boolean hasTask = task != null && !task.isBlank();
                     if (!hasTask) {
-                        if (!propagateWithLease(existing, parentState, currentUserId, declOpt)) {
+                        if (!propagateWithLease(
+                                existing, runtimeContext, parentState, currentUserId, declOpt)) {
                             return Mono.just(
                                     ToolResultBlock.error("Agent is being released: " + key));
                         }
@@ -517,7 +528,11 @@ public class AgentSpawnTool implements AutoCloseable {
                 }
             } else {
                 key = "agent:" + agentId + ":" + UUID.randomUUID();
-                sessionId = "sub-" + UUID.randomUUID();
+                SubagentExecution execution =
+                        runtimeContext == null ? null : runtimeContext.get(SubagentExecution.class);
+                String ownedChild =
+                        execution == null ? null : execution.childSessionId(runtimeContext);
+                sessionId = ownedChild == null ? "sub-" + UUID.randomUUID() : ownedChild;
             }
 
             String lowerLabel = canonLabel != null ? canonLabel.toLowerCase(Locale.ROOT) : null;
@@ -562,8 +577,10 @@ public class AgentSpawnTool implements AutoCloseable {
             // below before it becomes addressable.
             String subagentId = null;
             try {
-                propagatePlanMode(parentState, currentUserId, sessionId, agent);
-                propagateParentDenyRules(parentState, currentUserId, sessionId, agent, declOpt);
+                if (!hostOwnsChildState(runtimeContext)) {
+                    propagatePlanMode(parentState, currentUserId, sessionId, agent);
+                    propagateParentDenyRules(parentState, currentUserId, sessionId, agent, declOpt);
+                }
 
                 boolean effectiveExpose =
                         resolveExposeToUser(exposeToUser, declOpt, runtimeContext);
@@ -605,7 +622,8 @@ public class AgentSpawnTool implements AutoCloseable {
                 spawned = winner.spawned;
                 String spawnInfo = formatSpawnInfo(key, agentId, spawned.sessionId(), null);
                 if (task == null || task.isBlank()) {
-                    if (!propagateWithLease(winner, parentState, currentUserId, declOpt)) {
+                    if (!propagateWithLease(
+                            winner, runtimeContext, parentState, currentUserId, declOpt)) {
                         return Mono.just(ToolResultBlock.error("Agent is being released: " + key));
                     }
                     return Mono.just(
@@ -621,7 +639,8 @@ public class AgentSpawnTool implements AutoCloseable {
                         declOpt);
             }
 
-            SessionRecorder recorder = SessionRecorder.from(runtimeContext);
+            io.agentscope.core.journal.InvocationRecorder recorder =
+                    io.agentscope.core.journal.InvocationRecorder.from(runtimeContext);
             if (recorder != null) {
                 recorder.recordNow(
                         "subagent/spawned",
@@ -634,7 +653,7 @@ public class AgentSpawnTool implements AutoCloseable {
                                 key,
                                 "childLogAgentId",
                                 agent instanceof HarnessAgent child
-                                        ? child.sessionKey(
+                                        ? child.threadKey(
                                                         RuntimeContext.builder()
                                                                 .userId(currentUserId)
                                                                 .sessionId(sessionId)
@@ -673,6 +692,7 @@ public class AgentSpawnTool implements AutoCloseable {
     @Tool(
             name = "agent_send",
             stateInjected = true,
+            timeoutManaged = true,
             description =
                     """
                     Send a message to an existing subagent. Use the exact string from the \
@@ -1013,6 +1033,7 @@ public class AgentSpawnTool implements AutoCloseable {
 
     private static boolean propagateWithLease(
             ManagedAgent managed,
+            RuntimeContext runtimeContext,
             AgentState parentState,
             String userId,
             Optional<SubagentDeclaration> declaration) {
@@ -1022,13 +1043,20 @@ public class AgentSpawnTool implements AutoCloseable {
         }
         try {
             SpawnedAgent spawned = managed.spawned;
-            propagatePlanMode(parentState, userId, spawned.sessionId(), spawned.agent());
-            propagateParentDenyRules(
-                    parentState, userId, spawned.sessionId(), spawned.agent(), declaration);
+            if (!hostOwnsChildState(runtimeContext)) {
+                propagatePlanMode(parentState, userId, spawned.sessionId(), spawned.agent());
+                propagateParentDenyRules(
+                        parentState, userId, spawned.sessionId(), spawned.agent(), declaration);
+            }
             return true;
         } finally {
             lease.close();
         }
+    }
+
+    private static boolean hostOwnsChildState(RuntimeContext context) {
+        var host = context == null ? null : context.get(SubagentExecution.class);
+        return host != null && host.ownsChildState();
     }
 
     /**
@@ -1075,87 +1103,119 @@ public class AgentSpawnTool implements AutoCloseable {
             SpawnedAgent spawned,
             RuntimeContext parentCtx) {
         return Mono.deferContextual(
-                ctxView -> {
-                    DefaultAgentManager manager = managerFor(parentCtx);
-                    // ── Path 1: streamEvents() — AgentEvent forwarding ──
-                    Optional<AgentEventEmitter> emitterOpt = AgentEventEmitter.fromContext(ctxView);
-                    if (emitterOpt.isPresent()) {
-                        AgentEventEmitter parentEmitter = emitterOpt.get();
-                        String sourcePath = buildSourcePath(spawned, parentCtx);
-                        String replyId = UUID.randomUUID().toString().replace("-", "");
-                        AgentEventEmitter taggedEmitter =
-                                event -> parentEmitter.emit(event.withSource(sourcePath));
+                        ctxView -> {
+                            DefaultAgentManager manager = managerFor(parentCtx);
+                            // ── Path 1: streamEvents() — AgentEvent forwarding ──
+                            Optional<AgentEventEmitter> emitterOpt =
+                                    AgentEventEmitter.fromContext(ctxView);
+                            if (emitterOpt.isPresent()) {
+                                AgentEventEmitter parentEmitter = emitterOpt.get();
+                                String sourcePath = buildSourcePath(spawned, parentCtx);
+                                String replyId = UUID.randomUUID().toString().replace("-", "");
+                                AgentEventEmitter taggedEmitter =
+                                        event -> parentEmitter.emit(event.withSource(sourcePath));
 
-                        parentEmitter.emit(
-                                new AgentStartEvent(spawned.sessionId(), replyId, spawned.agentId())
-                                        .withSource(sourcePath));
+                                parentEmitter.emit(
+                                        new AgentStartEvent(
+                                                        spawned.sessionId(),
+                                                        replyId,
+                                                        spawned.agentId())
+                                                .withSource(sourcePath));
 
-                        AtomicBoolean endEmitted = new AtomicBoolean();
-                        Runnable emitEnd =
-                                () -> {
-                                    if (endEmitted.compareAndSet(false, true)) {
-                                        parentEmitter.emit(
-                                                new AgentEndEvent(replyId).withSource(sourcePath));
-                                    }
-                                };
-
-                        return manager.invokeAgent(agent, sessionId, userId, prompt, parentCtx)
-                                .contextWrite(
-                                        c ->
-                                                c.put(
-                                                        AgentEventEmitter.FORWARDING_CONTEXT_KEY,
-                                                        taggedEmitter))
-                                // Emit before success or error reaches the parent, which may
-                                // otherwise complete its event sink before doFinally runs.
-                                .doOnSuccess(ignored -> emitEnd.run())
-                                .doOnError(ignored -> emitEnd.run())
-                                // Preserve best-effort cancellation signaling without emitting a
-                                // duplicate if cancellation races with normal termination.
-                                .doFinally(
-                                        signal -> {
-                                            if (signal == SignalType.CANCEL) {
-                                                emitEnd.run();
+                                AtomicBoolean endEmitted = new AtomicBoolean();
+                                Runnable emitEnd =
+                                        () -> {
+                                            if (endEmitted.compareAndSet(false, true)) {
+                                                parentEmitter.emit(
+                                                        new AgentEndEvent(replyId)
+                                                                .withSource(sourcePath));
                                             }
-                                        });
-                    }
+                                        };
 
-                    // ── Path 2: stream() (deprecated) — SubagentEventBus forwarding ──
-                    if (ctxView.hasKey(SubagentEventBus.CONTEXT_KEY)) {
-                        SubagentEventBus bus = ctxView.get(SubagentEventBus.CONTEXT_KEY);
-                        EventSource childSource = buildChildSource(spawned, parentCtx);
+                                return manager.invokeAgent(
+                                                agent, sessionId, userId, prompt, parentCtx)
+                                        .contextWrite(
+                                                c ->
+                                                        c.put(
+                                                                AgentEventEmitter
+                                                                        .FORWARDING_CONTEXT_KEY,
+                                                                taggedEmitter))
+                                        // Emit before success or error reaches the parent, which
+                                        // may
+                                        // otherwise complete its event sink before doFinally runs.
+                                        .doOnSuccess(ignored -> emitEnd.run())
+                                        .doOnError(ignored -> emitEnd.run())
+                                        // Preserve best-effort cancellation signaling without
+                                        // emitting a
+                                        // duplicate if cancellation races with normal termination.
+                                        .doFinally(
+                                                signal -> {
+                                                    if (signal == SignalType.CANCEL) {
+                                                        emitEnd.run();
+                                                    }
+                                                });
+                            }
 
-                        return manager.invokeAgentStream(
-                                        agent,
-                                        sessionId,
-                                        userId,
-                                        prompt,
-                                        childSource,
-                                        StreamOptions.defaults(),
-                                        parentCtx)
-                                .doOnNext(
-                                        e -> {
-                                            log.debug(
-                                                    "[execLocalSync] forwarding child event to"
-                                                            + " bus: type={} msgId={} isLast={}",
-                                                    e.getType(),
-                                                    e.getMessage().getId(),
-                                                    e.isLast());
-                                            bus.emit(e);
-                                        })
-                                .filter(e -> e.isLast() && e.getType() == EventType.AGENT_RESULT)
-                                .last()
-                                .map(e -> e.getMessage())
-                                .switchIfEmpty(
-                                        Mono.defer(
-                                                () ->
-                                                        manager.invokeAgent(
-                                                                agent, sessionId, userId, prompt,
-                                                                parentCtx)));
-                    }
+                            // ── Path 2: stream() (deprecated) — SubagentEventBus forwarding ──
+                            if (ctxView.hasKey(SubagentEventBus.CONTEXT_KEY)) {
+                                SubagentEventBus bus = ctxView.get(SubagentEventBus.CONTEXT_KEY);
+                                EventSource childSource = buildChildSource(spawned, parentCtx);
 
-                    // ── Path 3: non-streaming ──
-                    return manager.invokeAgent(agent, sessionId, userId, prompt, parentCtx);
-                });
+                                return manager.invokeAgentStream(
+                                                agent,
+                                                sessionId,
+                                                userId,
+                                                prompt,
+                                                childSource,
+                                                StreamOptions.defaults(),
+                                                parentCtx)
+                                        .doOnNext(
+                                                e -> {
+                                                    log.debug(
+                                                            "[execLocalSync] forwarding child event"
+                                                                    + " to bus: type={} msgId={}"
+                                                                    + " isLast={}",
+                                                            e.getType(),
+                                                            e.getMessage().getId(),
+                                                            e.isLast());
+                                                    bus.emit(e);
+                                                })
+                                        .filter(
+                                                e ->
+                                                        e.isLast()
+                                                                && e.getType()
+                                                                        == EventType.AGENT_RESULT)
+                                        .last()
+                                        .map(e -> e.getMessage())
+                                        .switchIfEmpty(
+                                                Mono.defer(
+                                                        () ->
+                                                                manager.invokeAgent(
+                                                                        agent, sessionId, userId,
+                                                                        prompt, parentCtx)));
+                            }
+
+                            // ── Path 3: non-streaming ──
+                            return manager.invokeAgent(agent, sessionId, userId, prompt, parentCtx);
+                        })
+                .doOnSuccess(
+                        reply -> {
+                            var recorder =
+                                    io.agentscope.core.journal.InvocationRecorder.from(parentCtx);
+                            if (recorder != null
+                                    && RunOutcome.fromResult(reply).status()
+                                            != RunOutcome.Status.SUSPENDED) {
+                                recorder.recordIfOpen(
+                                        "subagent/completed",
+                                        Map.of(
+                                                "childSessionId",
+                                                sessionId,
+                                                "childAgentId",
+                                                spawned.agentId(),
+                                                "status",
+                                                "completed"));
+                            }
+                        });
     }
 
     /**
@@ -1194,6 +1254,13 @@ public class AgentSpawnTool implements AutoCloseable {
                     SpawnedAgent spawned = managed.spawned;
                     CompletableFuture<Msg> bridge = new CompletableFuture<>();
                     bridge.whenComplete((ignored, error) -> lease.close());
+                    RuntimeContext invocationContext =
+                            RuntimeContext.builder(runtimeContext)
+                                    .put(
+                                            SubagentExecution.Invocation.class,
+                                            new SubagentExecution.Invocation(
+                                                    spawned.agentId(), task, header))
+                                    .build();
                     return Mono.<ToolResultBlock>create(
                             sink -> {
                                 Mono<Msg> inner =
@@ -1205,7 +1272,7 @@ public class AgentSpawnTool implements AutoCloseable {
                                                                 : null,
                                                         task,
                                                         spawned,
-                                                        runtimeContext)
+                                                        invocationContext)
                                                 .contextWrite(
                                                         c ->
                                                                 reactor.util.context.Context.of(
@@ -1316,6 +1383,10 @@ public class AgentSpawnTool implements AutoCloseable {
             Disposable innerSub) {
 
         Throwable cause = err instanceof CompletionException ? err.getCause() : err;
+        if (cause instanceof ToolSuspendException || cause instanceof JournalException) {
+            sink.error(cause);
+            return;
+        }
         if (cause instanceof TimeoutException) {
             if (forceSync) {
                 // Hard timeout: dispose triggers doFinally(CANCEL) → interruptAgent; no promote.
@@ -1458,8 +1529,14 @@ public class AgentSpawnTool implements AutoCloseable {
         }
     }
 
+    /**
+     * Renders a subagent reply as text for the task result.
+     *
+     * <p>The background task contract stores a string, so a delivered document cannot travel as
+     * a block here. It is named in a reference instead of disappearing.
+     */
     private static String textOf(Msg msg) {
-        return msg != null ? msg.getTextContent() : "";
+        return DocumentReferenceRenderer.renderMessageText(msg);
     }
 
     private static String formatTimeoutPromoted(String taskId, long timeoutMs) {
@@ -1506,26 +1583,28 @@ public class AgentSpawnTool implements AutoCloseable {
     }
 
     /**
-     * Builds a source path string for the {@link AgentEvent#withSource} tag. Uses the same
-     * parent-session / child-agent-id convention as {@link #buildChildSource}.
+     * Builds a source path string for the {@link AgentEvent#withSource} tag. The child's own
+     * session id is the final segment so consumers can distinguish multiple instances of the same
+     * subagent type within one parent session.
      */
     private String buildSourcePath(SpawnedAgent spawned, RuntimeContext parentCtx) {
         String parentName =
                 (parentCtx != null && parentCtx.getSessionId() != null)
                         ? parentCtx.getSessionId()
                         : "main";
-        return parentName + "/" + spawned.agentId();
+        return parentName + "/" + spawned.agentId() + "/" + spawned.sessionId();
     }
 
     /**
-     * Builds a {@code parentSession/agentId} source path for remote events forwarded into the
-     * parent's stream.
+     * Builds a {@code parentSession/agentId/taskId} source path for remote events forwarded into
+     * the parent's stream. The task id is the remote invocation discriminator.
      */
-    static String buildRemoteSourcePath(String parentSessionId, String agentId) {
+    static String buildRemoteSourcePath(String parentSessionId, String agentId, String taskId) {
         String parent =
                 parentSessionId != null && !parentSessionId.isBlank() ? parentSessionId : "main";
         String child = agentId != null && !agentId.isBlank() ? agentId : "remote";
-        return parent + "/" + child;
+        String invocation = taskId != null && !taskId.isBlank() ? taskId.trim() : "task";
+        return parent + "/" + child + "/" + invocation;
     }
 
     /**
@@ -1706,7 +1785,7 @@ public class AgentSpawnTool implements AutoCloseable {
 
         RemoteTarget target = new RemoteTarget(decl.getUrl(), decl.getHeaders());
         RemoteSubagentTransport transport = this.remoteTransport;
-        String sourcePath = buildRemoteSourcePath(parentSessionId, agentId);
+        String sourcePath = buildRemoteSourcePath(parentSessionId, agentId, taskId);
         boolean wantStream = emitter != null && decl.isRemoteStreaming();
         AtomicBoolean autoDenied = new AtomicBoolean(false);
         AtomicBoolean resumedEpisode = new AtomicBoolean(false);
@@ -1897,7 +1976,7 @@ public class AgentSpawnTool implements AutoCloseable {
             Integer override = forceSyncTimeoutSeconds(ctx);
             if (override != null) {
                 int seconds = override <= 0 ? DEFAULT_TIMEOUT_SECONDS : override;
-                return (long) Math.min(seconds, MAX_TIMEOUT_SECONDS) * 1_000;
+                return (long) seconds * 1_000;
             }
         }
         long timeoutMs = resolveTimeoutMs(timeoutSeconds, DEFAULT_TIMEOUT_SECONDS);
@@ -2016,14 +2095,19 @@ public class AgentSpawnTool implements AutoCloseable {
                         DefaultAgentManager manager = managerFor(runtimeContext);
                         boolean remote = declOpt.map(SubagentDeclaration::isRemote).orElse(false);
 
-                        propagatePlanMode(
-                                parentState, currentUserId, spawned.sessionId(), spawned.agent());
-                        propagateParentDenyRules(
-                                parentState,
-                                currentUserId,
-                                spawned.sessionId(),
-                                spawned.agent(),
-                                declOpt);
+                        if (!hostOwnsChildState(runtimeContext)) {
+                            propagatePlanMode(
+                                    parentState,
+                                    currentUserId,
+                                    spawned.sessionId(),
+                                    spawned.agent());
+                            propagateParentDenyRules(
+                                    parentState,
+                                    currentUserId,
+                                    spawned.sessionId(),
+                                    spawned.agent(),
+                                    declOpt);
+                        }
 
                         if (timeoutMs == 0) {
                             String taskId = "task_" + UUID.randomUUID();
@@ -2052,9 +2136,7 @@ public class AgentSpawnTool implements AutoCloseable {
                                                                                 capturedTask,
                                                                                 runtimeContext)
                                                                         .block();
-                                                        return reply != null
-                                                                ? reply.getTextContent()
-                                                                : "";
+                                                        return textOf(reply);
                                                     } finally {
                                                         lease.close();
                                                     }

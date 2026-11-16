@@ -309,7 +309,7 @@ class SkillBoxTest {
                     List.of(
                             skillDir.resolve("ok.txt"),
                             skillDir.resolve("scripts").resolve("run.sh")),
-                    filesUnder(tempDir));
+                    filesUnder(tempDir).stream().sorted().toList());
         }
     }
 
