@@ -18,6 +18,8 @@ package io.agentscope.harness.agent.context;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -349,6 +351,47 @@ class HarnessContextBuilderTest {
                         .count());
         assertTrue(
                 items.stream().noneMatch(item -> item.sourceType().equals("workspace_materials")));
+        // One system message means one block: appended text could not be separated from it.
+        assertTrue(ContextUsage.systemChannelIsSingleBlock(manifests.get(0)));
+        assertEquals(1, ContextUsage.systemBreakdown(manifests.get(0)).size());
+    }
+
+    @Test
+    void systemContentHashCorrelatesCallsWhoseMessageIdsDiffer() {
+        var first = prepareSystemPrompt("call-1", "base prompt");
+        var second = prepareSystemPrompt("call-2", "base prompt");
+        var firstRows = ContextUsage.systemBreakdown(first);
+        var secondRows = ContextUsage.systemBreakdown(second);
+        assertEquals(1, firstRows.size());
+        assertEquals(1, secondRows.size());
+        assertNotEquals(firstRows.get(0).sourceId(), secondRows.get(0).sourceId());
+        assertNotNull(firstRows.get(0).contentHash());
+        assertEquals(firstRows.get(0).contentHash(), secondRows.get(0).contentHash());
+        assertEquals(firstRows.get(0).chars(), secondRows.get(0).chars());
+    }
+
+    private ContextManifest prepareSystemPrompt(String callId, String text) {
+        var manifests = new ArrayList<ContextManifest>();
+        var policy =
+                new ContextPolicy(0, 0, 0, ContextTokenEstimator.approximate(), manifests::add);
+        var rc = RuntimeContext.builder().agentState(AgentState.builder().build()).build();
+        var request =
+                new ModelCallInput(
+                        List.of(
+                                Msg.builder().role(MsgRole.SYSTEM).textContent(text).build(),
+                                Msg.builder().role(MsgRole.USER).textContent("hi").build()),
+                        List.of(),
+                        GenerateOptions.builder().maxTokens(20).build(),
+                        model(100000));
+        new HarnessContextBuilder(policy, null, null)
+                .prepare(
+                        mock(Agent.class),
+                        rc,
+                        request,
+                        callId,
+                        ModelRequestPreparer.Purpose.REASONING)
+                .block();
+        return manifests.get(0);
     }
 
     @Test

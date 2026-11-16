@@ -385,9 +385,12 @@ An early build failure can leave the item list empty, both token figures at `-1`
 | Call | Returns |
 | --- | --- |
 | `breakdown(manifest, includeEmpty)` | The same shares; with `includeEmpty` every category is present, absent ones with `chars` and `ratio` of `0`, so a panel keeps a stable row set |
-| `itemBreakdown(manifest)` | One `ItemShare` per source — category, source type, source ID, placement, characters, ratio, and how many items were merged — largest first. It sums to the same total as `breakdown` |
+| `itemBreakdown(manifest)` | One `ItemShare` per source — category, source type, source ID, placement, characters, ratio, how many items were merged, and the content hash they share — largest first. It sums to the same total as `breakdown` |
 | `systemBreakdown(manifest)` | The same rows, restricted to the system channel, with ratios over that channel rather than the whole request |
+| `systemChannelIsSingleBlock(manifest)` | `true` when the request carried exactly one system source — the shape in which everything a middleware appended to the system prompt sits inside one block and cannot be separated. The default harness registers several `SYSTEM` materials, so it is normally `false` there; it reports how many blocks the channel has, not whether skills were appended |
 | `summary(manifest)` | `totalChars`, `estimatedInputTokens`, `inputLimit`, `countingMethod`, `exact`, `validation`, and all six category totals in display order |
+
+`ItemShare.contentHash()` identifies content, not a stable identity. Items merged into one row share a hash only when they agree on it; a disagreement, or any merged item without a hash, yields `null`. Two calls report the same hash for the same content, which is how a source whose `sourceId` is regenerated per call can be correlated — but a source whose content grows also changes its hash.
 
 ```java
 Consumer<ContextManifest> panel =
@@ -398,7 +401,7 @@ Consumer<ContextManifest> panel =
         };
 ```
 
-A category at `0` means the prepared request carried nothing attributable to it: the source may be unused, its size may be unrecorded, or its text may have been merged into a higher-priority category — a `SYSTEM`-placed material counts toward `system_prompt`. It does not mean the framework failed to collect it. The manifest describes the request after preparation, so content injected by pre-call hooks, system-prompt middleware, and model-call middleware is included: memory arrives as conversation messages, and the resolved date and the skill listing arrive as materials when the application registers them. Only content added after preparation is missing, along with text a middleware appends to the already-assembled system string — that stays inside one item and cannot be split back into its contributors. `totalChars` and `estimatedInputTokens` are different lenses on the same request: the first counts source characters, the second runs the configured estimator. Neither is provider usage.
+A category at `0` means the prepared request carried nothing attributable to it: the source may be unused, its size may be unrecorded, or its text may have been merged into a higher-priority category — a `SYSTEM`-placed material counts toward `system_prompt`. It does not mean the framework failed to collect it. The manifest describes the request after preparation, so content injected by pre-call hooks, system-prompt middleware, and model-call middleware is included: memory arrives as conversation messages, and the resolved date and the skill listing arrive as materials when the application registers them. Only content added after preparation is missing. Text a middleware appends to the system prompt is counted, but it merges into one item and cannot be split back into its contributors. `totalChars` and `estimatedInputTokens` are different lenses on the same request: the first counts source characters, the second runs the configured estimator. Neither is provider usage. When an application lets a middleware append the skill listing to the system prompt instead of registering it as a material, `skills` stays `0` while that text counts toward `system_prompt`. `systemChannelIsSingleBlock` tells you whether the channel arrived as one block, which is the shape that case can produce; the default harness registers several `SYSTEM` materials, so it is normally `false` there. Either way, treat a zero as a floor rather than as proof that no skills exist.
 
 ### Read live events and stored logs
 

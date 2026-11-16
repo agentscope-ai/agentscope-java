@@ -42,18 +42,23 @@ import java.util.function.Predicate;
  * <p><b>What is measured.</b> The manifest describes the request after preparation, so content that
  * pre-call hooks, system-prompt middleware, and model-call middleware injected is included: recalled
  * memory arrives as conversation messages, and the resolved date and the skill listing arrive as
- * materials when the application registers them. What is missing is content added after preparation,
- * and any text a middleware appends to the already-assembled system string — that text stays inside a
- * single item and cannot be split back into its contributors. A category at zero therefore means the
- * prepared request carried nothing attributable to it: the source may be unused, its size may be
- * unrecorded, or its text may have been merged into a higher-priority category. Use {@link
- * #summary(ContextManifest)} for the measurement method and limits.
+ * materials when the application registers them. What is missing is content added after preparation.
+ * Text a middleware appends to the system prompt is counted, but it merges into one item and cannot
+ * be split back into its contributors. A category at zero therefore means the prepared request
+ * carried nothing attributable to it: the source may be unused, its size may be unrecorded, or its
+ * text may have been merged into a higher-priority category. Use {@link #summary(ContextManifest)}
+ * for the measurement method and limits.
  */
 public final class ContextUsage {
     /** Content placed in the system channel: the base prompt and {@code SYSTEM} materials. */
     public static final String SYSTEM_PROMPT = "system_prompt";
 
-    /** Skill listing injected as runtime material. */
+    /**
+     * Skill listing injected as runtime material. Zero when no non-blank listing is registered as a
+     * material — the builder skips a blank one — or when the listing is appended to the system
+     * prompt; in that case the text counts toward {@link #SYSTEM_PROMPT} instead, so zero does not
+     * mean the agent has no skills.
+     */
     public static final String SKILLS = "skills";
 
     /** Tool schemas whose implementation lives in an MCP server. */
@@ -93,6 +98,15 @@ public final class ContextUsage {
      * of {@code 0} means the source was present without a recorded size, and its {@code items} count
      * still tells you the source exists.
      *
+     * <p>{@code contentHash} identifies the content, not a logical source. Two rows from different
+     * calls share a hash when their content is identical — which is how a caller correlates a source
+     * whose {@code sourceId} is regenerated per call — but a source whose content grows also changes
+     * its hash, so the hash cannot track a changing source across calls.
+     *
+     * <p>Record equality includes {@code contentHash}, so a row built with the convenience
+     * constructor never equals a row from {@link #itemBreakdown(ContextManifest)} that carries a
+     * hash.
+     *
      * @param source display category, one of this class's constants
      * @param sourceType raw {@link ContextManifest.Item#sourceType()}
      * @param sourceId raw {@link ContextManifest.Item#sourceId()}
@@ -100,6 +114,8 @@ public final class ContextUsage {
      * @param chars summed {@code contentChars} of the merged items
      * @param ratio {@code chars} over the measured total, {@code 0} when the total is {@code 0}
      * @param items how many manifest items were merged into this row
+     * @param contentHash hash shared by every merged item; {@code null} when they disagree or when
+     *     any merged item carries no hash
      */
     public record ItemShare(
             String source,
@@ -108,7 +124,20 @@ public final class ContextUsage {
             String placement,
             long chars,
             double ratio,
-            int items) {}
+            int items,
+            String contentHash) {
+        /** Convenience constructor for callers that do not read the hash. */
+        public ItemShare(
+                String source,
+                String sourceType,
+                String sourceId,
+                String placement,
+                long chars,
+                double ratio,
+                int items) {
+            this(source, sourceType, sourceId, placement, chars, ratio, items, null);
+        }
+    }
 
     /**
      * Totals and provenance for one manifest, so a caller does not have to recompute them.
@@ -228,6 +257,28 @@ public final class ContextUsage {
     }
 
     /**
+     * Whether the request carried exactly one system source.
+     *
+     * <p>When this is {@code true}, the system channel holds a single source, so text appended to
+     * it cannot be separated from it. That is the shape an application gets when it lets a
+     * middleware append, for example, a skill listing to the prompt instead of registering a
+     * material.
+     *
+     * <p>The default harness registers several {@code SYSTEM} materials — context conventions,
+     * workspace guidance, workspace environment — so this is normally {@code false} there. A
+     * listing can still be appended to one of those items, so either way a category at zero is a
+     * floor rather than proof the source is absent; use {@link #systemBreakdown(ContextManifest)} to
+     * see how many blocks the channel holds.
+     *
+     * @param manifest the manifest produced for one model request
+     * @return {@code true} when the manifest holds exactly one system source; {@code false} for a
+     *     {@code null} manifest, no system source, or more than one
+     */
+    public static boolean systemChannelIsSingleBlock(ContextManifest manifest) {
+        return systemBreakdown(manifest).size() == 1;
+    }
+
+    /**
      * Collects the totals a context panel needs, with the caveats that make them readable.
      *
      * @param manifest the manifest produced for one model request
@@ -264,7 +315,10 @@ public final class ContextUsage {
         for (ContextManifest.Item item : manifest.items()) {
             if (!filter.test(item)) continue;
             Key key = new Key(category(item), item.sourceType(), item.sourceId(), item.placement());
-            tallies.merge(key, new Tally(Math.max(0, item.contentChars()), 1), Tally::plus);
+            tallies.merge(
+                    key,
+                    new Tally(Math.max(0, item.contentChars()), 1, item.contentHash()),
+                    Tally::plus);
         }
         long total = tallies.values().stream().mapToLong(Tally::chars).sum();
         return tallies.entrySet().stream()
@@ -292,7 +346,8 @@ public final class ContextUsage {
                                         entry.getKey().placement(),
                                         entry.getValue().chars(),
                                         total == 0 ? 0 : (double) entry.getValue().chars() / total,
-                                        entry.getValue().items()))
+                                        entry.getValue().items(),
+                                        entry.getValue().contentHash()))
                 .toList();
     }
 
@@ -310,9 +365,11 @@ public final class ContextUsage {
 
     private record Key(String source, String sourceType, String sourceId, String placement) {}
 
-    private record Tally(long chars, int items) {
+    private record Tally(long chars, int items, String contentHash) {
         Tally plus(Tally other) {
-            return new Tally(chars + other.chars, items + other.items);
+            // A row merges by identity, so the hash survives only while every item agrees on it.
+            String hash = Objects.equals(contentHash, other.contentHash) ? contentHash : null;
+            return new Tally(chars + other.chars, items + other.items, hash);
         }
     }
 }

@@ -269,6 +269,115 @@ class ContextUsageTest {
         assertEquals(0, summary.categoryChars().values().stream().mapToLong(Long::longValue).sum());
     }
 
+    @Test
+    void itemBreakdownCarriesTheSharedContentHash() {
+        var manifest =
+                manifest(
+                        List.of(
+                                itemWithHash("message_user", "dup", null, 5, "h1"),
+                                itemWithHash("message_user", "dup", null, 7, "h1"),
+                                itemWithHash("tool_system", "shell", null, 3, "h2")));
+        var rows = ContextUsage.itemBreakdown(manifest);
+        assertEquals(2, rows.size());
+        assertEquals("h1", rows.get(0).contentHash());
+        assertEquals(2, rows.get(0).items());
+        assertEquals("h2", rows.get(1).contentHash());
+    }
+
+    @Test
+    void itemBreakdownDropsTheHashWhenMergedItemsDisagree() {
+        var manifest =
+                manifest(
+                        List.of(
+                                itemWithHash("message_user", "dup", null, 5, "h1"),
+                                itemWithHash("message_user", "dup", null, 7, "h2")));
+        var rows = ContextUsage.itemBreakdown(manifest);
+        assertEquals(1, rows.size());
+        assertNull(rows.get(0).contentHash());
+        assertEquals(12, rows.get(0).chars());
+    }
+
+    @Test
+    void itemBreakdownDropsTheHashWhenOneItemHasNone() {
+        var manifest =
+                manifest(
+                        List.of(
+                                itemWithHash("message_user", "dup", null, 5, "h1"),
+                                itemWithHash("message_user", "dup", null, 7, null)));
+        assertNull(ContextUsage.itemBreakdown(manifest).get(0).contentHash());
+    }
+
+    @Test
+    void itemBreakdownDropsTheHashWhenThreeItemsDisagree() {
+        var manifest =
+                manifest(
+                        List.of(
+                                itemWithHash("message_user", "dup", null, 5, "h1"),
+                                itemWithHash("message_user", "dup", null, 7, "h1"),
+                                itemWithHash("message_user", "dup", null, 9, "h2")));
+        var rows = ContextUsage.itemBreakdown(manifest);
+        assertEquals(1, rows.size());
+        assertNull(rows.get(0).contentHash());
+        assertEquals(3, rows.get(0).items());
+        assertEquals(21, rows.get(0).chars());
+    }
+
+    @Test
+    void itemBreakdownDropsTheHashWhateverOrderTheItemsArriveIn() {
+        var manifest =
+                manifest(
+                        List.of(
+                                itemWithHash("message_user", "dup", null, 5, "h1"),
+                                itemWithHash("message_user", "dup", null, 7, null),
+                                itemWithHash("message_user", "dup", null, 9, "h1")));
+        assertNull(ContextUsage.itemBreakdown(manifest).get(0).contentHash());
+    }
+
+    @Test
+    void systemBreakdownCarriesTheHashSoCallsCanBeCorrelated() {
+        var manifest =
+                manifest(List.of(itemWithHash("system_prompt", "call-1", null, 8991, "stable")));
+        var rows = ContextUsage.systemBreakdown(manifest);
+        assertEquals(1, rows.size());
+        assertEquals("stable", rows.get(0).contentHash());
+    }
+
+    @Test
+    void legacyItemShareConstructorLeavesTheHashUnknown() {
+        var legacy =
+                new ContextUsage.ItemShare(
+                        "system_prompt", "system_prompt", "sys", "SYSTEM", 10, 1.0, 2);
+        assertEquals("system_prompt", legacy.source());
+        assertEquals("sys", legacy.sourceId());
+        assertEquals("SYSTEM", legacy.placement());
+        assertEquals(10, legacy.chars());
+        assertEquals(2, legacy.items());
+        assertNull(legacy.contentHash());
+    }
+
+    @Test
+    void systemChannelIsSingleBlockTracksTheSourceCount() {
+        assertTrue(
+                ContextUsage.systemChannelIsSingleBlock(
+                        manifest(List.of(item("system_prompt", "a", null, 100)))));
+        assertTrue(
+                ContextUsage.systemChannelIsSingleBlock(
+                        manifest(List.of(item("project_rules", "b", "SYSTEM", 20)))));
+        assertTrue(
+                ContextUsage.systemChannelIsSingleBlock(
+                        manifest(List.of(item("system_prompt", "a", null, 0)))));
+        assertFalse(
+                ContextUsage.systemChannelIsSingleBlock(
+                        manifest(
+                                List.of(
+                                        item("system_prompt", "a", null, 100),
+                                        item("project_rules", "b", "SYSTEM", 20)))));
+        assertFalse(
+                ContextUsage.systemChannelIsSingleBlock(
+                        manifest(List.of(item("message_user", "u", null, 10)))));
+        assertFalse(ContextUsage.systemChannelIsSingleBlock(null));
+    }
+
     private static String category(String sourceType, String placement) {
         return ContextUsage.category(
                 new ContextManifest.Item(sourceType, "id", "hash", null, placement, false, 0, 1));
@@ -276,8 +385,13 @@ class ContextUsageTest {
 
     private static ContextManifest.Item item(
             String sourceType, String sourceId, String placement, int contentChars) {
+        return itemWithHash(sourceType, sourceId, placement, contentChars, "hash");
+    }
+
+    private static ContextManifest.Item itemWithHash(
+            String sourceType, String sourceId, String placement, int contentChars, String hash) {
         return new ContextManifest.Item(
-                sourceType, sourceId, "hash", null, placement, false, 0, contentChars);
+                sourceType, sourceId, hash, null, placement, false, 0, contentChars);
     }
 
     private static ContextManifest manifest(List<ContextManifest.Item> items) {

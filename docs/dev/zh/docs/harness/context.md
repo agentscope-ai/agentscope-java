@@ -402,9 +402,12 @@ builder.contextPolicy(new ContextPolicy(
 | 方法 | 返回 |
 | --- | --- |
 | `breakdown(manifest, includeEmpty)` | 与上面相同的份额；传入 `includeEmpty` 时每个类别都会返回，没有内容的类别 `chars` 与 `ratio` 为 `0`，面板可以保持固定的行集合 |
-| `itemBreakdown(manifest)` | 每个来源一行 `ItemShare`：类别、来源类型、来源 ID、放置位置、字符数、占比，以及合并了多少个条目；按大小从大到小排列，合计与 `breakdown` 相等 |
+| `itemBreakdown(manifest)` | 每个来源一行 `ItemShare`：类别、来源类型、来源 ID、放置位置、字符数、占比、合并了多少个条目，以及这些条目共有的内容哈希；按大小从大到小排列，合计与 `breakdown` 相等 |
 | `systemBreakdown(manifest)` | 同样的行，但只限系统通道；占比以系统通道自身合计为分母，不是整轮请求 |
+| `systemChannelIsSingleBlock(manifest)` | 请求只带了一个系统来源时为 `true`，此时中间件追加到系统提示词里的文字全在这一块里，无法再拆开。默认 Harness 会注册多个 `SYSTEM` 材料，因此在默认配置下它通常是 `false`；它回答的是「系统通道有几块」，而不是「是否追加了技能目录」 |
 | `summary(manifest)` | `totalChars`、`estimatedInputTokens`、`inputLimit`、`countingMethod`、`exact`、`validation`，以及六个类别按展示顺序的合计 |
+
+`ItemShare.contentHash()` 标识的是内容，不是一个稳定身份。合并进同一行的条目只有在哈希一致时才保留该值，不一致、或其中任一条目没有哈希时返回 `null`。两次调用若内容相同则哈希相同，这正是「`sourceId` 每次重新生成」的来源可以跨调用对上的依据——但内容变长时哈希也会变，因此它不能追踪一个不断变化的来源。
 
 ```java
 Consumer<ContextManifest> panel =
@@ -415,7 +418,7 @@ Consumer<ContextManifest> panel =
         };
 ```
 
-某个类别为 `0`，表示本轮准备好的请求里没有可归因到它的内容：来源可能没被使用，长度可能未记录，也可能被合并进了优先级更高的类别（放在 `SYSTEM` 的材料计入 `system_prompt`）。这不代表框架没有采集到。这些数字描述的是准备好之后的请求，因此前置钩子、系统提示词中间件、模型调用中间件注入的内容都在其中：记忆以对话消息进入，解析出的日期与技能目录在应用注册为材料时进入。真正缺少的是准备之后才追加的内容，以及中间件拼进已合并系统字符串的文字——那部分只属于一个条目，无法还原成各个贡献者。`totalChars` 与 `estimatedInputTokens` 是同一请求的两个视角：前者数原文字符，后者走配置的估算器；两者都不是供应商的实际用量。
+某个类别为 `0`，表示本轮准备好的请求里没有可归因到它的内容：来源可能没被使用，长度可能未记录，也可能被合并进了优先级更高的类别（放在 `SYSTEM` 的材料计入 `system_prompt`）。这不代表框架没有采集到。这些数字描述的是准备好之后的请求，因此前置钩子、系统提示词中间件、模型调用中间件注入的内容都在其中：记忆以对话消息进入，解析出的日期与技能目录在应用注册为材料时进入。真正缺少的是准备之后才追加的内容；中间件拼进系统提示词的文字仍会被统计，但只属于一个条目，无法还原成各个贡献者。`totalChars` 与 `estimatedInputTokens` 是同一请求的两个视角：前者数原文字符，后者走配置的估算器；两者都不是供应商的实际用量。当应用让中间件把技能目录追加到系统提示词、而不是注册成材料时，`skills` 会一直是 `0`，而那段文字计入 `system_prompt`。`systemChannelIsSingleBlock` 能告诉你系统通道是否只有一块——那正是这种用法可能产生的形态；但默认 Harness 会注册多个 `SYSTEM` 材料，所以在默认配置下它通常是 `false`。无论哪种情况，都应把 0 当作下限，而不是「没有技能」的证据。
 
 ### 在事件流和会话日志中查看
 
