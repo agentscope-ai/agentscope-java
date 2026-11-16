@@ -41,9 +41,9 @@ import io.agentscope.durable.DurableTypes.HistoryPage;
 import io.agentscope.durable.DurableTypes.Interaction;
 import io.agentscope.durable.DurableTypes.Lease;
 import io.agentscope.durable.DurableTypes.Lifecycle;
-import io.agentscope.durable.DurableTypes.LiveEvent;
 import io.agentscope.durable.DurableTypes.ModelCallPage;
 import io.agentscope.durable.DurableTypes.ModelCallView;
+import io.agentscope.durable.DurableTypes.PreviewIdentity;
 import io.agentscope.durable.DurableTypes.PublicEvent;
 import io.agentscope.durable.DurableTypes.RecoveryView;
 import io.agentscope.durable.DurableTypes.Restoration;
@@ -2305,15 +2305,18 @@ public final class TransactionalSessionBackend implements SessionBackend {
     }
 
     @Override
-    public List<LiveEvent> pendingPreviews(SessionKey key, List<LiveEvent> batch) {
+    public List<Boolean> previewEligibility(SessionKey key, List<PreviewIdentity> identities) {
+        if (identities.size() > PreviewBuffer.BATCH)
+            throw error(DurableException.Code.INVALID, "Too many preview identities");
         return store.transaction(
                 key.storageKey(),
                 tx -> {
                     var state = load(tx);
                     if (!key.equals(state.session.key()))
                         throw error(DurableException.Code.CONFLICT, "Session key mismatch");
-                    return PreviewBuffer.pending(
-                            batch, state.messages::get, state.projectedTools::get);
+                    return identities.stream()
+                            .map(id -> id.pending(state.messages::get, state.projectedTools::get))
+                            .toList();
                 });
     }
 

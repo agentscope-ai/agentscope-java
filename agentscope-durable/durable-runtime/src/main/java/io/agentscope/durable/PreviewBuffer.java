@@ -16,22 +16,22 @@
 
 package io.agentscope.durable;
 
-import com.fasterxml.jackson.databind.JsonNode;
 import io.agentscope.durable.DurableTypes.LiveEvent;
 import java.util.ArrayList;
-import java.util.List;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.function.Consumer;
-import java.util.function.Function;
 
 /** Best-effort previews never block publishers or advance the durable cursor. */
 final class PreviewBuffer {
     static final int CAPACITY = 128;
+    static final int MAX_ENCODED_BYTES = 64 * 1024;
     static final int BATCH = 32;
     private final ArrayBlockingQueue<LiveEvent> queue = new ArrayBlockingQueue<>(CAPACITY);
 
     boolean offer(LiveEvent event) {
-        return queue.offer(event);
+        return queue.remainingCapacity() > 0
+                && DurableJson.fitsEncodedLimit(event, MAX_ENCODED_BYTES)
+                && queue.offer(event);
     }
 
     int drain(DurableSession session, Consumer<LiveEvent> sink) {
@@ -39,30 +39,5 @@ final class PreviewBuffer {
         queue.drainTo(batch, BATCH);
         if (!batch.isEmpty()) session.pendingPreviews(batch).forEach(sink);
         return batch.size();
-    }
-
-    static List<LiveEvent> pending(
-            List<LiveEvent> events,
-            Function<String, JsonNode> messages,
-            Function<String, JsonNode> tools) {
-        return events.stream()
-                .filter(
-                        event -> {
-                            var message = event.data().path("messageId").asText(null);
-                            if (message != null) {
-                                var row = messages.apply(message);
-                                if (row != null && row.path("complete").asBoolean()) return false;
-                            }
-                            var call = event.data().path("toolCallId").asText(null);
-                            if (call == null) return true;
-                            var row =
-                                    tools.apply(
-                                            EventProjection.toolId(
-                                                    event.threadId(), event.turnId(), call));
-                            return row == null
-                                    || "GENERATING_ARGUMENTS"
-                                            .equals(row.path("data").path("status").asText());
-                        })
-                .toList();
     }
 }

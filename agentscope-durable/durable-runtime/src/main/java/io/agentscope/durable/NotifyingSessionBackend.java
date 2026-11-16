@@ -34,9 +34,9 @@ import io.agentscope.durable.DurableTypes.HarnessSelector;
 import io.agentscope.durable.DurableTypes.HistoryPage;
 import io.agentscope.durable.DurableTypes.Interaction;
 import io.agentscope.durable.DurableTypes.Lease;
-import io.agentscope.durable.DurableTypes.LiveEvent;
 import io.agentscope.durable.DurableTypes.ModelCallPage;
 import io.agentscope.durable.DurableTypes.ModelCallView;
+import io.agentscope.durable.DurableTypes.PreviewIdentity;
 import io.agentscope.durable.DurableTypes.RecoveryView;
 import io.agentscope.durable.DurableTypes.Restoration;
 import io.agentscope.durable.DurableTypes.RunPage;
@@ -393,8 +393,8 @@ final class NotifyingSessionBackend implements SessionBackend {
     }
 
     @Override
-    public List<LiveEvent> pendingPreviews(SessionKey key, List<LiveEvent> batch) {
-        return delegate.pendingPreviews(key, batch);
+    public List<Boolean> previewEligibility(SessionKey key, List<PreviewIdentity> identities) {
+        return delegate.previewEligibility(key, identities);
     }
 
     @Override

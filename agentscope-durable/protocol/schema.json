@@ -4515,6 +4515,9 @@
         },
         {
           "$ref": "#/$defs/backend_cancelDelegationRequest"
+        },
+        {
+          "$ref": "#/$defs/backend_previewEligibilityRequest"
         }
       ]
     },
@@ -8105,6 +8108,9 @@
         },
         {
           "$ref": "#/$defs/user_listModelCallsRequest"
+        },
+        {
+          "$ref": "#/$defs/user_previewEligibilityRequest"
         }
       ]
     },
@@ -11802,6 +11808,148 @@
         },
         "result": {
           "$ref": "#/$defs/delegationView"
+        }
+      }
+    },
+    "user_previewEligibilityRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "version",
+        "operation",
+        "payload"
+      ],
+      "properties": {
+        "version": {
+          "const": "durable.v1"
+        },
+        "operation": {
+          "const": "previewEligibility"
+        },
+        "payload": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "session",
+            "identities"
+          ],
+          "properties": {
+            "session": {
+              "$ref": "#/$defs/session"
+            },
+            "identities": {
+              "$ref": "#/$defs/previewIdentities"
+            }
+          }
+        }
+      }
+    },
+    "user_previewEligibilityResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "version",
+        "result"
+      ],
+      "properties": {
+        "version": {
+          "const": "durable.v1"
+        },
+        "result": {
+          "type": "array",
+          "maxItems": 32,
+          "items": {
+            "type": "boolean"
+          }
+        }
+      }
+    },
+    "backend_previewEligibilityRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "version",
+        "operation",
+        "payload"
+      ],
+      "properties": {
+        "version": {
+          "const": "durable.v1"
+        },
+        "operation": {
+          "const": "previewEligibility"
+        },
+        "payload": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "session",
+            "identities"
+          ],
+          "properties": {
+            "session": {
+              "$ref": "#/$defs/session"
+            },
+            "identities": {
+              "$ref": "#/$defs/previewIdentities"
+            }
+          }
+        }
+      }
+    },
+    "backend_previewEligibilityResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "version",
+        "result"
+      ],
+      "properties": {
+        "version": {
+          "const": "durable.v1"
+        },
+        "result": {
+          "type": "array",
+          "maxItems": 32,
+          "items": {
+            "type": "boolean"
+          }
+        }
+      }
+    },
+    "previewIdentities": {
+      "type": "array",
+      "maxItems": 32,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "messageId",
+          "toolKey",
+          "attempt",
+          "revision"
+        ],
+        "properties": {
+          "messageId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "toolKey": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "attempt": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "revision": {
+            "type": "integer",
+            "minimum": 0
+          }
         }
       }
     }

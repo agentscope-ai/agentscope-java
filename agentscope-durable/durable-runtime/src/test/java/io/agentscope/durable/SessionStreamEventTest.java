@@ -123,11 +123,10 @@ class SessionStreamEventTest {
                                                                 Map.of("status", "RUNNING"))))));
         java.util.function.Predicate<LiveEvent> superseded =
                 e ->
-                        PreviewBuffer.pending(
-                                        List.of(e),
+                        !DurableTypes.PreviewIdentity.of(e)
+                                .pending(
                                         snapshot.projection().path("messages")::get,
-                                        snapshot.projection().path("tools")::get)
-                                .isEmpty();
+                                        snapshot.projection().path("tools")::get);
         assertTrue(superseded.test(live("message.delta", Map.of("messageId", "done"))));
         assertFalse(superseded.test(live("message.delta", Map.of("messageId", "partial"))));
         var preview = live("tool.arguments.delta", Map.of("toolCallId", "call"));
@@ -148,9 +147,47 @@ class SessionStreamEventTest {
     }
 
     @Test
+    void earlierAttemptAndRevisionCannotOverwriteAnActivePreview() {
+        var partial = DurableJson.value(Map.of("complete", false, "attempt", 2, "revision", 4));
+        var tool =
+                DurableJson.value(
+                        Map.of(
+                                "data",
+                                Map.of(
+                                        "status",
+                                        "GENERATING_ARGUMENTS",
+                                        "attempt",
+                                        2,
+                                        "revision",
+                                        4)));
+        for (var ref : List.of(Map.of("messageId", "msg"), Map.of("toolCallId", "call"))) {
+            var fields = new java.util.HashMap<String, Object>(ref);
+            fields.put("attempt", 1);
+            fields.put("revision", 20);
+            assertFalse(
+                    DurableTypes.PreviewIdentity.of(live("message.delta", fields))
+                            .pending(k -> partial, k -> tool));
+            fields.put("attempt", 2);
+            fields.put("revision", 3);
+            assertFalse(
+                    DurableTypes.PreviewIdentity.of(live("message.delta", fields))
+                            .pending(k -> partial, k -> tool));
+            fields.put("revision", 4);
+            assertTrue(
+                    DurableTypes.PreviewIdentity.of(live("message.delta", fields))
+                            .pending(k -> partial, k -> tool));
+        }
+    }
+
+    @Test
     void previewOverflowDropsOnlyBestEffortDataAndOneDrainYieldsAfterOneBatch() {
         var buffer = new PreviewBuffer();
         var event = live("tool.arguments.delta", Map.of("toolCallId", "call", "text", "delta"));
+        assertFalse(
+                buffer.offer(
+                        live(
+                                "tool.arguments.delta",
+                                Map.of("toolCallId", "large", "text", "界".repeat(24_000)))));
         for (int i = 0; i < PreviewBuffer.CAPACITY; i++) assertTrue(buffer.offer(event));
         assertFalse(buffer.offer(event));
         var session = mock(DurableSession.class);

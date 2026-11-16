@@ -305,6 +305,18 @@ public final class SessionBackendHandler implements HttpHandler {
                         backend.cancel(thread, text(p, "turnId"), text(p, "requestId"));
                         result = null;
                     }
+                    case "previewEligibility" ->
+                            result =
+                                    backend.previewEligibility(
+                                            key,
+                                            List.of(
+                                                    get(
+                                                            p,
+                                                            "identities",
+                                                            io.agentscope.durable.DurableTypes
+                                                                                    .PreviewIdentity
+                                                                            []
+                                                                    .class)));
                     case "snapshot" -> result = backend.snapshot(key);
                     case "events" ->
                             result =

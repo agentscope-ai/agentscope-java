@@ -353,10 +353,21 @@ public final class DurableRuntime implements AutoCloseable {
     }
 
     List<LiveEvent> pendingPreviews(DurableSession session, List<LiveEvent> batch) {
-        if (backend != null) return backend.pendingPreviews(session.key(), batch);
-        var projection = session.snapshot().projection();
-        return PreviewBuffer.pending(
-                batch, projection.path("messages")::get, projection.path("tools")::get);
+        var identities = batch.stream().map(DurableTypes.PreviewIdentity::of).toList();
+        List<Boolean> eligible =
+                backend != null
+                        ? backend.previewEligibility(session.key(), identities)
+                        : List.of(
+                                DurableJson.convert(
+                                        session.call(
+                                                "previewEligibility", "identities", identities),
+                                        Boolean[].class));
+        if (eligible.size() != batch.size())
+            throw new DurableException(
+                    DurableException.Code.INCOMPATIBLE, "Preview response length differs");
+        var pending = new java.util.ArrayList<LiveEvent>();
+        for (int i = 0; i < eligible.size(); i++) if (eligible.get(i)) pending.add(batch.get(i));
+        return pending;
     }
 
     LiveEvents liveEvents() {

@@ -625,6 +625,38 @@ public final class DurableTypes {
             String type,
             JsonNode data) {}
 
+    /** Durable projection keys for one best-effort preview. */
+    public record PreviewIdentity(String messageId, String toolKey, long attempt, long revision) {
+        static PreviewIdentity of(LiveEvent event) {
+            var call = event.data().path("toolCallId").asText(null);
+            return new PreviewIdentity(
+                    event.data().path("messageId").asText(null),
+                    call == null
+                            ? null
+                            : EventProjection.toolId(event.threadId(), event.turnId(), call),
+                    event.data().path("attempt").asLong(),
+                    event.data().path("revision").asLong());
+        }
+
+        boolean pending(
+                java.util.function.Function<String, JsonNode> messages,
+                java.util.function.Function<String, JsonNode> tools) {
+            var message = messageId == null ? null : messages.apply(messageId);
+            if (message != null && (message.path("complete").asBoolean() || olderThan(message)))
+                return false;
+            var tool = toolKey == null ? null : tools.apply(toolKey);
+            return tool == null
+                    || ("GENERATING_ARGUMENTS".equals(tool.path("data").path("status").asText())
+                            && !olderThan(tool.path("data")));
+        }
+
+        private boolean olderThan(JsonNode projection) {
+            var currentAttempt = projection.path("attempt").asLong();
+            return attempt < currentAttempt
+                    || attempt == currentAttempt && revision < projection.path("revision").asLong();
+        }
+    }
+
     /**
      * Best-effort live presentation signal. Live events have no durable sequence or cursor and are
      * never returned by event history or included in snapshots.
