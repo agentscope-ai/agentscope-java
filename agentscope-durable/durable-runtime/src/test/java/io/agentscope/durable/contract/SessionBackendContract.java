@@ -1386,6 +1386,18 @@ public abstract class SessionBackendContract {
     }
 
     @Test
+    protected void repeatedExpiryOfUnfinishedRunsStopsInvocationRecovery() {
+        submit();
+        var lease = claim();
+        for (int i = 0; i <= RecoveryPolicy.defaults().maxRetries(); i++) {
+            backend.prepareRun(lease, "invoke-" + i);
+            clock.set(lease.expiresAt() + 1);
+            lease = claim();
+        }
+        assertFalse(backend.frame(lease).turn().recovery().retryAllowed());
+    }
+
+    @Test
     protected void changedProgressIsReplayableEvenWhenAnEarlierStateReturns() {
         submit();
         var lease = claim();

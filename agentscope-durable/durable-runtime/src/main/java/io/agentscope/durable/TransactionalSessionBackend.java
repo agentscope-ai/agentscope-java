@@ -249,6 +249,7 @@ public final class TransactionalSessionBackend implements SessionBackend {
         public WaitCondition waiting;
         public RecoveryView recovery;
         public long failedEpoch;
+        public int consecutiveLostRuns;
         @JsonIgnore public Map<String, ToolData> tools = new LinkedHashMap<>();
         @JsonIgnore public Map<String, Signal> signals = new LinkedHashMap<>();
         public List<String> consumed = new ArrayList<>();
@@ -1047,7 +1048,36 @@ public final class TransactionalSessionBackend implements SessionBackend {
                                 new Lease(key, turn.id, owner, turn.epoch, turn.expiresAt));
                     long ready = readyAt(s, now);
                     if (ready < 0 || ready > now) return Optional.empty();
-                    invocations(s, turn).abandon(now, true);
+                    var records = invocations(s, turn);
+                    if (turn.owner != null
+                            && turn.lastRunId != null
+                            && !records.run(turn.lastRunId).status().terminal()
+                            && (turn.recovery == null || turn.recovery.retryAllowed())) {
+                        var policy =
+                                turn.recovery == null
+                                        ? DurableTypes.RecoveryPolicy.defaults()
+                                        : turn.recovery.policy();
+                        if (++turn.consecutiveLostRuns > policy.maxRetries()) {
+                            turn.error =
+                                    "Repeated ownership loss without completed execution progress";
+                            turn.recovery =
+                                    new RecoveryView(
+                                            policy.maxRetries() + 1,
+                                            policy,
+                                            false,
+                                            null,
+                                            turn.error);
+                            turn.revision++;
+                            append(
+                                    s,
+                                    turn,
+                                    new EventInput(
+                                            "lost-limit:" + turn.id + ":" + turn.epoch,
+                                            "turn.recovery",
+                                            DurableJson.value(turn.recovery)));
+                        }
+                    }
+                    records.abandon(now, true);
                     turn.owner = owner;
                     turn.epoch = ++s.thread.epoch;
                     turn.expiresAt = Math.addExact(now, ttl);
@@ -1088,6 +1118,7 @@ public final class TransactionalSessionBackend implements SessionBackend {
                         return null;
                     }
                     invocations(s, r).abandon(n, false);
+                    r.consecutiveLostRuns = 0;
                     r.owner = null;
                     r.expiresAt = 0;
                     r.nextAttemptAt = Math.max(r.nextAttemptAt, Math.addExact(n, delay.toMillis()));
@@ -1246,6 +1277,9 @@ public final class TransactionalSessionBackend implements SessionBackend {
                     if (r.revision != command.expectedRevision())
                         throw error(DurableException.Code.CONFLICT, "Revision changed");
                     var effectPositions = new ArrayList<RunStepRef>();
+                    if (command.steps().stream()
+                            .anyMatch(step -> step.status() == DurableTypes.StepStatus.COMPLETED))
+                        r.consecutiveLostRuns = 0;
                     for (var call : command.tools())
                         if (!r.tools.containsKey(executionId(lease.thread(), r.id, call.callId())))
                             effectPositions.add(call.origin());
