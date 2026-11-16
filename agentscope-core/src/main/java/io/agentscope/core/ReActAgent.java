@@ -90,6 +90,7 @@ import io.agentscope.core.message.UserMessage;
 import io.agentscope.core.middleware.ActingInput;
 import io.agentscope.core.middleware.ActivePointsResolver;
 import io.agentscope.core.middleware.AgentInput;
+import io.agentscope.core.middleware.FinishReason;
 import io.agentscope.core.middleware.MiddlewareBase;
 import io.agentscope.core.middleware.MiddlewareChain;
 import io.agentscope.core.middleware.ModelCallInput;
@@ -1915,7 +1916,17 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                             .flatMap(
                                     result -> {
                                         Msg out = result;
-                                        if (scope.soCompleted && scope.soResultMsg != null) {
+                                        // Gate the structured answer only when the loop
+                                        // ended via the acting stop of a successful
+                                        // generate_response — that terminal never passes
+                                        // the in-loop gate. Any other terminal (give-up
+                                        // round, or a retry round after a gate veto) was
+                                        // already gated in the loop and must not be
+                                        // re-gated or overwritten by a stale extraction.
+                                        if (scope.soCompleted
+                                                && scope.soResultMsg != null
+                                                && result.getGenerateReason()
+                                                        == GenerateReason.ACTING_STOP_REQUESTED) {
                                             ChatUsage aggregatedUsage =
                                                     collectAggregatedUsage(scope.state);
                                             ThinkingBlock aggregatedThinking =
@@ -1930,7 +1941,18 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                                                 aggregatedUsage,
                                                                 aggregatedThinking);
                                             }
-                                            scope.state.contextMutable().add(out);
+                                            // The completed structured answer passes the
+                                            // final-answer gate before delivery: this is a
+                                            // completion exit, not an interrupt-like stop —
+                                            // memory write and any certified projection land
+                                            // inside the gate. A veto re-enters reasoning,
+                                            // so the session is saved only after the gate.
+                                            return scope.finalAnswerGateEngine
+                                                    .gate(out, 0, FinishReason.FINAL_ANSWER)
+                                                    .flatMap(
+                                                            gated ->
+                                                                    saveStateToSession(scope)
+                                                                            .thenReturn(gated));
                                         }
                                         return saveStateToSession(scope).thenReturn(out);
                                     })
@@ -2433,6 +2455,15 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
          */
         int soForceToolChoiceCount;
 
+        /**
+         * Per-call referee of the {@code ON_FINAL_ANSWER} chain: consultation protocol,
+         * per-call counters, guard, and projection. Owns the frozen chain (its working
+         * data) and reaches every per-call service through the execution it holds.
+         */
+        final FinalAnswerGateEngine finalAnswerGateEngine =
+                new FinalAnswerGateEngine(
+                        middlewaresAt(MiddlewareBase.ExtensionPoint.ON_FINAL_ANSWER), this);
+
         /** Placeholder sentence written to the tool_result of a returnDirect tool. */
         private static final String RETURN_DIRECT_PLACEHOLDER =
                 "Tool call completed. The result has been presented to the user as the final output"
@@ -2458,8 +2489,10 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
 
         /**
          * Reads this execution's own signal; queued calls never share cancellation state.
+         * Package-private: the gate engine re-checks it at the verdict boundary, so an
+         * interrupt issued during a slow consultation is honored before anything ships.
          */
-        private Mono<Void> checkInterrupted() {
+        Mono<Void> checkInterrupted() {
             return Mono.defer(
                     () ->
                             interruption.isInterrupted()
@@ -2576,8 +2609,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                         returnDirectResume ? placeholderToolResultMsgs(msgs) : msgs,
                         pendingIds);
                 if (returnDirectResume) {
-                    return settleSession(
-                            Mono.just(finalizeReturnDirect(externalPairs, externalReplyId)));
+                    return settleSession(finalizeReturnDirect(0, externalPairs, externalReplyId));
                 }
                 return !MessageUtils.pendingToolUseIds(state.contextMutable()).isEmpty()
                         ? resumeAgent()
@@ -2914,7 +2946,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             }
         }
 
-        private void publishEvent(AgentEvent event) {
+        void publishEvent(AgentEvent event) {
             if (event.getSource() == null || event.getSource().isBlank())
                 event.withExecution(executionIdentity);
             SessionRecorder recorder = SessionRecorder.from(rc);
@@ -3125,7 +3157,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
          * structured-output forced retries)
          * @return Mono containing the final result message
          */
-        private Mono<Msg> reasoning(int iter, boolean ignoreMaxIters) {
+        Mono<Msg> reasoning(int iter, boolean ignoreMaxIters) {
             lastSessionIteration = iter;
             // Check maxIters unless ignoreMaxIters is set
             if (!ignoreMaxIters && iter >= maxIters) {
@@ -3228,7 +3260,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                 // so events added by onReasoning middlewares are forwarded too.
                                 AtomicReference<RequestStopEvent> stopRequested =
                                         new AtomicReference<>();
-                                return stream.doOnNext(this::publishEvent)
+                                return stream.doOnNext(finalAnswerGateEngine::publishEvent)
                                         .doOnNext(
                                                 ev -> {
                                                     if (ev instanceof RequestStopEvent rs) {
@@ -3240,6 +3272,8 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                                         () -> {
                                                             Msg finalMsg =
                                                                     context.buildFinalMessage();
+                                                            finalAnswerGateEngine.accumulateUsage(
+                                                                    context.getChatUsage());
                                                             RequestStopEvent rs =
                                                                     stopRequested.get();
                                                             if (rs != null && finalMsg != null) {
@@ -3298,15 +3332,13 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                     .flatMap(
                             event -> {
                                 Msg eventMsg = event.getReasoningMessage();
-                                if (eventMsg != null) {
-                                    state.contextMutable().add(eventMsg);
-                                }
 
                                 // HITL stop
                                 if (event.isStopRequested()) {
                                     if (eventMsg == null) {
                                         return Mono.empty();
                                     }
+                                    state.contextMutable().add(eventMsg);
                                     return Mono.just(
                                             eventMsg.withGenerateReason(
                                                     GenerateReason.REASONING_STOP_REQUESTED));
@@ -3314,6 +3346,9 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
 
                                 // gotoReasoning requested (e.g., by a PostReasoning hook)
                                 if (event.isGotoReasoningRequested()) {
+                                    if (eventMsg != null) {
+                                        state.contextMutable().add(eventMsg);
+                                    }
                                     List<Msg> gotoMsgs = event.getGotoReasoningMsgs();
                                     if (gotoMsgs != null) {
                                         state.contextMutable().addAll(gotoMsgs);
@@ -3326,6 +3361,9 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                     // Structured output still pending: force the model to call
                                     // generate_response. Retry up to 3 times, then give up to
                                     // avoid a deadlock loop when the model refuses to call it.
+                                    // The final-answer gate only fires on the attempt that is
+                                    // actually returned, so an accept is never undone by a
+                                    // forced retry.
                                     if (soTool != null && !soCompleted) {
                                         if (soForceToolChoiceCount < 3) {
                                             soForceToolChoiceCount++;
@@ -3335,6 +3373,12 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                                     soForceToolChoiceCount,
                                                     getAgentId(),
                                                     getName());
+                                            // Persist this round's refusal like any other
+                                            // finished round, so the forced retry sees the
+                                            // model's own prior answer in context.
+                                            if (eventMsg != null) {
+                                                state.contextMutable().add(eventMsg);
+                                            }
                                             // ignoreMaxIters is deliberate: a forced retry
                                             // must not be cut short by maxIters (e.g. a
                                             // maxIters=1 caller still gets the pending
@@ -3351,7 +3395,39 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                                 getAgentId(),
                                                 getName());
                                     }
-                                    return Mono.justOrEmpty(eventMsg);
+                                    if (eventMsg == null) {
+                                        return Mono.empty();
+                                    }
+                                    // Final-answer gate: consult before the terminal message is
+                                    // written to memory so accept(replacement) rewrites what the
+                                    // session keeps. Native structured output wraps (parse /
+                                    // validate / stamp metadata) INSIDE the gate's accept
+                                    // transform, before any landing or projection — a wrap
+                                    // failure fails this round before anything ships and the
+                                    // caller's fallback re-run goes through the gate too; a
+                                    // gate replacement that breaks the exit's JSON contract
+                                    // fails closed instead of silently restarting.
+                                    if (nativeResponseFormat != null) {
+                                        return finalAnswerGateEngine.gate(
+                                                eventMsg,
+                                                iter,
+                                                FinishReason.FINAL_ANSWER,
+                                                accepted ->
+                                                        Mono.fromCallable(
+                                                                () ->
+                                                                        wrapNativeStructuredResult(
+                                                                                accepted,
+                                                                                nativeResponseFormat
+                                                                                        .getJsonSchema())),
+                                                null);
+                                    }
+                                    return finalAnswerGateEngine.gate(
+                                            eventMsg, iter, FinishReason.FINAL_ANSWER);
+                                }
+
+                                // Non-terminal round: persist the reasoning message, then act.
+                                if (eventMsg != null) {
+                                    state.contextMutable().add(eventMsg);
                                 }
 
                                 // Empty final response: no tool calls and no visible content
@@ -3416,7 +3492,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                     modelForCall(
                                             rc,
                                             ModelRequestPreparer.Purpose.REASONING,
-                                            this::publishEvent)))
+                                            finalAnswerGateEngine::publishEvent)))
                     .doOnNext(
                             event -> {
                                 if (event instanceof TextBlockDeltaEvent textDelta) {
@@ -3464,7 +3540,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                                     input,
                                                     callId,
                                                     purpose,
-                                                    this::publishEvent))
+                                                    finalAnswerGateEngine::publishEvent))
                             .switchIfEmpty(
                                     Mono.error(
                                             new IllegalStateException(
@@ -3472,6 +3548,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         }
 
         private AgentEvent modelCallStart(String replyId) {
+            finalAnswerGateEngine.recordReplyId(replyId);
             if (rc == null) return new ModelCallStartEvent(replyId);
             String key = ModelRequestPreparer.MANIFEST_ATTRIBUTE_PREFIX + replyId;
             Object manifest = rc.get(key);
@@ -3946,9 +4023,8 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                                     }
 
                                                     if (returnDirect) {
-                                                        return Mono.just(
-                                                                finalizeReturnDirect(
-                                                                        successPairs, replyId));
+                                                        return finalizeReturnDirect(
+                                                                iter, successPairs, replyId);
                                                     }
 
                                                     if (!pendingPairs.isEmpty()) {
@@ -4948,50 +5024,62 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         }
 
         /**
-         * Finalize a returnDirect turn: synthesize the closing assistant message, persist it,
-         * emit the closing text events, and log.
+         * Finalize a returnDirect turn: synthesize the closing assistant message, consult
+         * the final-answer gate, persist the accepted (possibly replaced) message, and
+         * project its certified text events after the verdict.
          *
          * <p>Shared by the in-framework path ({@code acting}) and the external-resume path
          * ({@code doCallInner}), so both produce identical message, context, return-contract,
-         * and event-stream shapes. {@code replyId} correlates the emitted events with the
-         * originating reply (the acting replyId, or the suspended external-execution request).
+         * and event-stream shapes. {@code replyId} correlates the projected events with the
+         * originating reply (the acting replyId, or the suspended external-execution
+         * request). The closing text is round-synthesized — it never streamed live — so its
+         * projection is unconditional and always the accept landing point's message. The
+         * placeholder tool_results already persisted in the pairing slots are not affected
+         * by the gate.
+         *
+         * @param iter the acting iteration; a retry re-enters reasoning at {@code iter + 1}
+         * @param pairs the succeeded returnDirect tool call/result pairs
+         * @param replyId reply id correlating the projected closing text events
+         * @return the accepted (possibly replaced) closing message
          */
-        private Msg finalizeReturnDirect(
-                List<Map.Entry<ToolUseBlock, ToolResultBlock>> pairs, String replyId) {
+        private Mono<Msg> finalizeReturnDirect(
+                int iter, List<Map.Entry<ToolUseBlock, ToolResultBlock>> pairs, String replyId) {
             Msg result = buildReturnDirectResultMsg(pairs);
-            state.contextMutable().add(result);
-            publishReturnDirectTextEvents(result, replyId);
-            logReturnDirect(pairs);
-            return result;
+            return finalAnswerGateEngine.gate(
+                    result,
+                    iter,
+                    FinishReason.RETURN_DIRECT,
+                    accepted -> {
+                        if (accepted != result) {
+                            return Mono.just(asReturnDirectClose(accepted));
+                        }
+                        // Audit only when the tool result itself ships: a replacement or
+                        // retry supersedes it (a retry is logged by the gate).
+                        logReturnDirect(pairs);
+                        return Mono.just(accepted);
+                    },
+                    replyId);
         }
 
         /**
-         * Emit the standard text-block lifecycle ({@code TextBlockStart/Delta/End}) for the
-         * returnDirect closing message, so event-stream consumers (AG-UI, A2A, ...) see the
-         * same projection they would for a model-generated final answer.
+         * Keeps a replacement answer within the returnDirect exit contract: the closing
+         * message consumers see always carries {@link GenerateReason#TOOL_RETURN_DIRECT} and
+         * the {@code _tool_return_direct} marker, whether it came from the framework or from
+         * an {@code accept(replacement)} decision.
          *
-         * <p>The delta carries {@link AgentEvent#METADATA_GENERATE_REASON} set to {@code
-         * TOOL_RETURN_DIRECT} for audit purposes. Non-text blocks (images, data) emit nothing
-         * and keep travelling via the Msg-level {@code AgentResultEvent}. Events are published
-         * synchronously before the closing message is returned, hence ahead of {@code
-         * AgentResultEvent}/{@code AgentEndEvent}.
+         * @param replacement the gate's replacement message
+         * @return the replacement stamped with the returnDirect reason and marker
          */
-        private void publishReturnDirectTextEvents(Msg closingMsg, String replyId) {
-            String effectiveReplyId =
-                    replyId == null || replyId.isEmpty()
-                            ? UUID.randomUUID().toString().replace("-", "")
-                            : replyId;
-            for (TextBlock block : closingMsg.getContentBlocks(TextBlock.class)) {
-                String blockId = UUID.randomUUID().toString().replace("-", "");
-                publishEvent(new TextBlockStartEvent(effectiveReplyId, blockId));
-                publishEvent(
-                        new TextBlockDeltaEvent(effectiveReplyId, blockId, block.getText())
-                                .withMetadata(
-                                        Map.of(
-                                                AgentEvent.METADATA_GENERATE_REASON,
-                                                GenerateReason.TOOL_RETURN_DIRECT.name())));
-                publishEvent(new TextBlockEndEvent(effectiveReplyId, blockId));
-            }
+        private Msg asReturnDirectClose(Msg replacement) {
+            Map<String, Object> metadata =
+                    new HashMap<>(
+                            replacement.getMetadata() != null
+                                    ? replacement.getMetadata()
+                                    : Map.of());
+            metadata.put(MessageMetadataKeys.TOOL_RETURN_DIRECT, true);
+            return replacement
+                    .withMetadata(metadata)
+                    .withGenerateReason(GenerateReason.TOOL_RETURN_DIRECT);
         }
 
         /**
@@ -5055,6 +5143,41 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         }
 
         /**
+         * Certifies the summary candidate: the PostSummary hook rewrites FIRST (like
+         * PostReasoning, pre-gate), then the gate chain certifies the hook's summary, and
+         * the exit's {@code GenerateReason} is re-stamped post-verdict as metadata. No
+         * rewrite ships post-verdict. PostSummary failures keep the error-summary
+         * fallback; gate consultation and retry-re-entry failures are marked inside the
+         * gate so {@code handleSummaryError} rethrows them.
+         *
+         * @param summaryMsg the summary candidate straight from the summary model call
+         * @param lastSessionIteration the reasoning iteration the summary re-enters from
+         * @param effectiveOptions effective generate options for the hook
+         * @param summaryModelName model name reported to the hook
+         * @return the certified (possibly replaced, reason-stamped) summary message
+         */
+        private Mono<Msg> certifySummary(
+                Msg summaryMsg,
+                int lastSessionIteration,
+                GenerateOptions effectiveOptions,
+                String summaryModelName) {
+            return hookDispatcher
+                    .firePostSummary(summaryMsg, effectiveOptions, summaryModelName)
+                    .map(postEvent -> postEvent.getSummaryMessage())
+                    .flatMap(
+                            hooked ->
+                                    finalAnswerGateEngine.gate(
+                                            hooked,
+                                            lastSessionIteration,
+                                            FinishReason.MAX_ITERATIONS,
+                                            accepted ->
+                                                    Mono.just(
+                                                            accepted.withGenerateReason(
+                                                                    GenerateReason.MAX_ITERATIONS)),
+                                            null));
+        }
+
+        /**
          * Generate summary when max iterations reached.
          */
         protected Mono<Msg> summarizing() {
@@ -5087,7 +5210,10 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             GenerateOptions generateOptions = buildGenerateOptions();
             ReasoningContext context = new ReasoningContext(getName());
             Model summaryModel =
-                    modelForCall(rc, ModelRequestPreparer.Purpose.SUMMARY, this::publishEvent);
+                    modelForCall(
+                            rc,
+                            ModelRequestPreparer.Purpose.SUMMARY,
+                            finalAnswerGateEngine::publishEvent);
             publishEvent(new ExceedMaxItersEvent("", maxIters, maxIters));
 
             return hookDispatcher
@@ -5113,29 +5239,21 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                                 summaryModel)
                                         .then(
                                                 Mono.defer(
-                                                        () ->
-                                                                Mono.justOrEmpty(
-                                                                        context
-                                                                                .buildFinalMessage())))
+                                                        () -> {
+                                                            finalAnswerGateEngine.accumulateUsage(
+                                                                    context.getChatUsage());
+                                                            return Mono.justOrEmpty(
+                                                                    context.buildFinalMessage());
+                                                        }))
                                         .flatMap(
                                                 msg ->
-                                                        hookDispatcher
-                                                                .firePostSummary(
-                                                                        msg,
-                                                                        effectiveOptions,
-                                                                        summaryModel.getModelName())
-                                                                .map(
-                                                                        postEvent -> {
-                                                                            Msg finalMsg =
-                                                                                    postEvent
-                                                                                            .getSummaryMessage()
-                                                                                            .withGenerateReason(
-                                                                                                    GenerateReason
-                                                                                                            .MAX_ITERATIONS);
-                                                                            state.contextMutable()
-                                                                                    .add(finalMsg);
-                                                                            return finalMsg;
-                                                                        }));
+                                                        // Hook first (pre-gate), then the gate
+                                                        // chain — see certifySummary.
+                                                        certifySummary(
+                                                                msg,
+                                                                lastSessionIteration,
+                                                                effectiveOptions,
+                                                                summaryModel.getModelName()));
                             })
                     .onErrorResume(this::handleSummaryError);
         }
@@ -5168,7 +5286,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                             MiddlewareBase::onModelCall,
                             summaryModelCallCore)
                     .apply(new ModelCallInput(messages, List.of(), options, model))
-                    .doOnNext(this::publishEvent);
+                    .doOnNext(finalAnswerGateEngine::publishEvent);
         }
 
         private Flux<AgentEvent> summaryModelCallStream(
@@ -5286,6 +5404,9 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         }
 
         private Mono<Msg> handleSummaryError(Throwable error) {
+            if (error instanceof FinalAnswerGateEngine.GateError gateError) {
+                return Mono.error(gateError.getCause());
+            }
             if (error instanceof InterruptedException) {
                 return Mono.error(error);
             }

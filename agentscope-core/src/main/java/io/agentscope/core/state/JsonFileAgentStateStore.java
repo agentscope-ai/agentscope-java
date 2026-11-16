@@ -107,7 +107,12 @@ public class JsonFileAgentStateStore implements AgentStateStore {
      */
     public JsonFileAgentStateStore(Path rootDirectory) {
         try {
-            Files.createDirectories(rootDirectory);
+            // Follow links: an already existing root — including one reached through a
+            // root alias — is accepted as-is; Files.createDirectories rejects an existing
+            // symlink as the final path element.
+            if (!Files.isDirectory(rootDirectory)) {
+                Files.createDirectories(rootDirectory);
+            }
             this.rootDirectory = rootDirectory.toRealPath();
         } catch (IOException e) {
             throw new RuntimeException("Failed to initialize root directory: " + rootDirectory, e);

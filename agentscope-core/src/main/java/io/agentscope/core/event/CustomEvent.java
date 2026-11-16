@@ -34,7 +34,21 @@ import java.util.Map;
  *   <li>{@code "state_updated"} — agent state (tasks / permission) changed during a tool call</li>
  *   <li>{@code "team_updated"} — team membership changed (member added / team created or
  *   dissolved)</li>
+ *   <li>{@code "final_answer.reviewing"} — a final-answer gate is reviewing the candidate;
+ *   content-free placeholder for "reviewing" UI — the certified answer arrives later as
+ *   {@code TextBlock*}/{@code ThinkingBlock*} events, so never treat {@code ModelCallEnd} as
+ *   the end of a round's text</li>
+ *   <li>{@code "final_answer.retry"} — a final-answer gate rejected the candidate; the
+ *   value carries {@code retryCount} (1-based: the retry just honored) and {@code
+ *   finishReason}, never the candidate text</li>
+ *   <li>{@code "final_answer.rejected"} — session-recording audit only, never the public
+ *   stream: the rejected draft's text and retry count, observed when a candidate is
+ *   discarded (retry, fuse, or gate error)</li>
  * </ul>
+ *
+ * <p>Carrying boundary: the {@code CUSTOM} channel is for narrative progress and lifecycle
+ * markers only — it always bypasses the final-answer guard, so it must never carry answer
+ * content.
  */
 public class CustomEvent extends AgentEvent {
 

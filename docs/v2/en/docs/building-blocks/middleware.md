@@ -8,7 +8,7 @@ zh_link: /v2/zh/docs/building-blocks/middleware
 
 Agent middleware lets you inject custom logic (logging, tracing, input rewriting, access control, …) at key points in an agent's execution flow without modifying the agent or model code.
 
-In AgentScope Java, you can hook into 6 places — covering everything from the outer reply flow down to the raw model API call:
+In AgentScope Java, you can hook into 7 places — covering everything from the outer reply flow down to the raw model API call:
 
 | Position | Type | Description |
 |----------|------|-------------|
@@ -18,25 +18,29 @@ In AgentScope Java, you can hook into 6 places — covering everything from the 
 | `onModelCall` | Onion | Wraps a raw `ChatModel` API call — closest to the model |
 | `onSystemPrompt` | Transformer | Triggers when the system prompt is assembled; multiple middlewares run in sequence, each transforming the previous output |
 | `onAgentStateReady` | Notification | Fires once per call as soon as this call's `AgentState` is ready — before the input enters the pipeline (pre-call hooks, memory, reasoning) |
+| `onFinalAnswer` | Gate | Last word on the final answer before anything ships; the moment any middleware participates, the agent switches to certified delivery (see the [final-answer gate](#final-answer-gate-onfinalanswer) section) |
 
-The three types differ:
+The four types differ:
 
 - **Onion** — middleware wraps the next handler; you can insert logic before/after `next.apply(input)` and observe the intermediate event stream.
 - **Transformer** — middlewares form a pipeline; the previous output is the next input. There's no "inner layer" concept.
 - **Notification** — one-way synchronous notification without `next` delegation; middlewares run in sequence at a fixed lifecycle point.
+- **Gate** — sequential consultation with the last word on delivery. Unlike the first three, it is a side-effect point: the moment any middleware participates, live answer content is withheld until the chain certifies it.
 
 The diagram below shows how the hooks nest in the agent lifecycle. `onSystemPrompt` is nested inside `onReasoning` because it fires when the reasoning step assembles the system prompt; `onAgentStateReady` fires right after the call's `AgentState` is bound to the `RuntimeContext`, before the input enters the pipeline:
 
 ```text
 onAgent/
 ├── onAgentStateReady (call-scoped AgentState ready, input not yet in pipeline)
-└── ReAct loop (per round)/
-    ├── onReasoning/
-    │   ├── onSystemPrompt (assemble system prompt)
-    │   └── onModelCall (model API call)
-    └── onActing (per tool call)
+├── ReAct loop (per round)/
+│   ├── onReasoning/
+│   │   ├── onSystemPrompt (assemble system prompt)
+│   │   └── onModelCall (model API call)
+│   └── onActing (per tool call)
+└── onFinalAnswer (final-answer exits: normal finish / maxIters summary / returnDirect)
 ```
 
+`onFinalAnswer` is the seventh extension point and the only side-effect point — its activation semantics and the certified-delivery mode it switches on are covered in the [final-answer gate](#final-answer-gate-onfinalanswer) section below.
 
 <Note>
 
@@ -47,7 +51,7 @@ onAgent/
 
 ## Equipping middleware
 
-AgentScope packs a set of hooks into a single `MiddlewareBase` implementation — one middleware class can implement any subset of the 6 hooks (onion/transformer hooks not implemented default to `next.apply(input)`; notification hooks default to a no-op). Pass the instances to the builder's `middlewares(...)`:
+AgentScope packs a set of hooks into a single `MiddlewareBase` implementation — one middleware class can implement any subset of the 7 hooks (onion/transformer hooks not implemented default to `next.apply(input)`; notification hooks default to a no-op; gate hooks default to accepting the candidate). Pass the instances to the builder's `middlewares(...)`:
 
 ```java
 import io.agentscope.core.ReActAgent;
@@ -240,6 +244,8 @@ ReActAgent agent =
 
 The middleware buffers each round's text until the model call ends, because it cannot know whether the round is final until no tool call is observed.
 
+Division of labor with the [final-answer gate](#final-answer-gate-onfinalanswer): this middleware serves gate-free agents that only want a clean stream. Registering any gate makes it redundant but harmless — the gate's guard already withholds every round's live text and publishes only the certified content, so the per-round buffering simply never matters.
+
 ## Custom middleware
 
 Implement `MiddlewareBase` (`io.agentscope.core.middleware`) and override only the hooks you need.
@@ -313,6 +319,7 @@ Input record types per hook (under `io.agentscope.core.middleware`):
 | `onModelCall` | `ModelCallInput` | `messages`, `tools`, `options`, `model: Model` |
 | `onSystemPrompt` | `String` | The current prompt |
 | `onAgentStateReady` | — (direct parameters) | `state: AgentState`, `inputMessages: List<Msg>` |
+| `onFinalAnswer` | `FinalAnswerInput` | `candidate: Msg`, `retryCount: int`, `cumulativeUsage: ChatUsage`, `finishReason: FinishReason` |
 
 To replace fields flowing into the next layer, construct a new input record, then call `next.apply(...)`.
 
@@ -353,6 +360,87 @@ public class SessionBootstrapMiddleware implements MiddlewareBase {
 ```
 
 Keep implementations non-blocking: the notification runs on the call's subscription thread (possibly a Reactor event-loop thread in streaming scenarios). Firing is per lifecycle execution (subscription) — re-subscribing a cold stream triggers it again. A thrown exception fails the call unchanged and the remaining middlewares are not invoked. Middlewares that don't override this hook simply run their no-op default; the only fixed cost is one shallow copy of the input list per call, which keeps the caller's list isolated unconditionally. Participation follows `activePoints()` like every extension point: a middleware that omits `ExtensionPoint.ON_AGENT_STATE_READY` is never notified, even if it overrides the hook. Lifecycle window: the notification runs after the call has been admitted and registered for interruption, but before the tracing envelope and the error-event chain are in place — an interrupt issued during the notification is honored, while a thrown exception reaches the caller directly, without ErrorEvent hooks or tracing spans.
+
+### Final-answer gate (`onFinalAnswer`)
+
+The final answer is the last thing a call produces — compliance review, PII redaction, format validation, fallback rewriting all want a look at it *before* it ships. The `onFinalAnswer` hook is that checkpoint: whenever an output is about to become this call's final answer, the gate middleware is consulted first, and it has the last word on what gets delivered.
+
+All three exits pass the gate — a normal finish (no pending tool calls this round), the forced summary after maxIters, and a returnDirect short-circuit (every tool call of the round is returnDirect and succeeds) — distinguished by `input.finishReason()` (`FINAL_ANSWER` / `MAX_ITERATIONS` / `RETURN_DIRECT`). Interrupt-like exits (HITL suspension, acting stops) are not final answers and never pass it.
+
+The decision is entirely yours:
+
+- `FinalAnswerDecision.accept()` — the candidate counts; deliver it unchanged;
+- `FinalAnswerDecision.accept(replacement)` — deliver the given message instead: the replacement is fed forward to later gates and, if the round is accepted, memorized and delivered as the chain's output (the session keeps the sanitized version, not the original);
+- `FinalAnswerDecision.retry(msgs)` — the candidate does not count: the model's original draft plus your feedback enters the context and reasoning re-runs. A gate completing empty counts as a plain accept — not answering means the candidate counts.
+
+```java
+import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.core.middleware.FinalAnswerDecision;
+import io.agentscope.core.middleware.FinalAnswerInput;
+import io.agentscope.core.middleware.FinishReason;
+import io.agentscope.core.middleware.MiddlewareBase;
+import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Schedulers;
+
+public class ComplianceGate implements MiddlewareBase {
+
+    private static final int MAX_RETRIES = 3;  // your own policy: well below the framework fuse
+
+    @Override
+    public Mono<FinalAnswerDecision> onFinalAnswer(RuntimeContext ctx, FinalAnswerInput input) {
+        // Retrying an exhausted summary rarely converges — swap in a fallback instead.
+        if (input.finishReason() == FinishReason.MAX_ITERATIONS) {
+            return Mono.just(FinalAnswerDecision.accept(fallbackMessage()));
+        }
+        // Tool-direct output usually comes from your own tool code — skip by finishReason.
+        if (input.finishReason() == FinishReason.RETURN_DIRECT) {
+            return Mono.just(FinalAnswerDecision.accept());
+        }
+        return Mono.fromCallable(() -> checker.check(textOf(input.candidate())))
+                .subscribeOn(Schedulers.boundedElastic())
+                .map(result -> {
+                    if (result.passed()) {
+                        return FinalAnswerDecision.accept();
+                    }
+                    if (input.retryCount() >= MAX_RETRIES) {
+                        // Graceful exhaustion fallback is the gate's own job — the
+                        // framework's fuse fails closed, it never degrades to deliver.
+                        return FinalAnswerDecision.accept(fallbackMessage());
+                    }
+                    return FinalAnswerDecision.retry(reminder(result.issues()));
+                });
+    }
+}
+```
+
+#### Activation and certified delivery
+
+`ON_FINAL_ANSWER` is the seventh extension point — and a side-effect one: the moment any middleware participates there, the agent switches to **certified delivery**. Participation is never vacuous: auto-detection lights up exactly the classes that factually implement `onFinalAnswer` (writing the hook is writing gate logic), and the only other path is an explicit declaration. A gate is simply a `MiddlewareBase` that overrides `onFinalAnswer` — no dedicated interface exists; participation follows the same `activePoints()` contract as every other extension point, with an explicit `EnumSet.of(ExtensionPoint.ON_FINAL_ANSWER)` declaration recommended as everywhere else.
+
+The hook never receives the agent. Binding runs one way — the agent binds its middlewares at construction; a middleware never holds or branches on the agent it serves. A verdict function needs only the per-call context and the gate input, and keeping the agent out of the signature makes a stateless gate a pure function whose single instance safely serves any number of agents and concurrent calls — singleton reuse is safe by construction, not by discipline. Cross-round state belongs in `RuntimeContext` attributes, never in gate fields.
+
+Under certified delivery, the public event stream behaves as follows:
+
+- Live `TextBlock*` / `ThinkingBlock*` events of every round are withheld from the public stream — dropped, not buffered, so nothing can leak on cancel or error. Real-time streaming is consciously sacrificed; drive a "reviewing…" placeholder UI from the content-free `final_answer.reviewing` custom event, and animate the certified text locally once it arrives.
+- After the verdict, the certified message (the chain's output — thinking first, then text) is projected in one burst. The projected content, `call()`'s return value, `AgentResultEvent`, and memory are the same message by construction; rejected candidates never reach the public stream — they go to memory for self-correction and to the session-recording audit only.
+- `ModelCallEndEvent` still fires live (usage only) and may precede the certified content — assemble text on `TextBlockEnd` / `AgentResultEvent`, never on `ModelCallEnd`.
+- Agents without a gate are byte-for-byte unchanged: live token streaming stays, no gate events appear.
+
+The session-recording audit event `final_answer.rejected` keeps the rejected draft; the `final_answer.retry` telemetry event carries only `retryCount` and `finishReason`, never candidate text. The `CUSTOM` channel always bypasses the guard, so by convention it carries narrative progress only — never answer content.
+
+#### Chain semantics
+
+Multiple gates stack, consulted sequentially in `order()` sequence (higher first; registration order within ties):
+
+- **Working draft feeds forward.** Each gate receives the current working draft: the chain head sees the model's original, later gates see their predecessors' replacements. `input.candidate()` is what that gate judges.
+- **Vetoes never short-circuit.** Every gate is consulted; all feedback of a round is collected in chain order; one round with multiple vetoes counts as a single retry. The retry writes the model's **original** draft (never a gate's rewrite) plus the merged feedback to memory, and re-enters reasoning ignoring `maxIters`.
+- **Dead rounds are discarded whole.** A replacement accepted by a later gate on a vetoed round is fed forward for judging but thrown away at round end — the next round rebuilds from the new candidate.
+- **Two valid orderings — not both at once.** Transforms at the head + veto gates at the tail: the veto certifies exactly what ships (best for compliance sign-off; feedback may reference transformed text). Veto gates at the head + transforms at the tail: the veto judges the model's own words (cleanest correction loop; transforms must then be trusted deterministic assembly — redaction, stitching, disclaimers — not semantic rewrites). Having both would require re-review loops with no convergence guarantee; the framework does not offer them.
+- **Fail closed.** A gate error fails the whole call — never a silent pass. The framework fuse honors at most 10 retries per call (not configurable): the 11th veto terminates the call with an error and zero delivery. Graceful exhaustion fallback comes from a gate managing its own budget via `input.retryCount()`, not from the framework.
+
+Purely observational uses (logging, metrics, audit) should not implement the hook — the event stream and session recording already serve them, and becoming a gate sacrifices real-time streaming for nothing. Likewise, if you only want intermediate-round text suppressed without a verdict, register [`FinalAnswerFilterMiddleware`](#finalanswerfiltermiddleware) on a gate-free agent; with a gate registered it is redundant but harmless.
+
+`input.retryCount()` tells you how many retries have already been honored in this call (0 for the first candidate, reset across calls — parallel calls on one agent keep separate budgets), and `input.cumulativeUsage()` sums the token usage of every attempt, so nothing is lost across retries.
 
 ### Reading RuntimeContext
 
@@ -443,16 +531,24 @@ middlewares = [mw1(order=2), mw2(order=1)]
 // onAgentStateReady: mw1 → mw2
 ```
 
+Gate middlewares (participating at `ON_FINAL_ANSWER`) are consulted in the same `order()` sequence at each final-answer exit; see [the gate section](#final-answer-gate-onfinalanswer) for the chain rules (feed-forward working draft, no veto short-circuit, merged feedback):
+
+```
+middlewares = [mw1(order=2), mw2(order=1)]
+// onFinalAnswer: mw1 → mw2 → round verdict
+```
+
 Overall hook execution order across one reply:
 
 ```
 onAgent
   ├── onAgentStateReady (state bound to RuntimeContext, before input enters pipeline)
-  └── per ReAct round:
-        ├── onReasoning
-        │     ├── prepare model input → onSystemPrompt
-        │     └── onModelCall
-        └── onActing (per tool call)
+  ├── per ReAct round:
+  │     ├── onReasoning
+  │     │     ├── prepare model input → onSystemPrompt
+  │     │     └── onModelCall
+  │     └── onActing (per tool call)
+  └── onFinalAnswer (final-answer exits: normal finish / maxIters summary / returnDirect)
 ```
 
 ### `onActing` or tool call interceptors?
@@ -493,7 +589,7 @@ Precise declarations keep chains short: an extension point with no participants 
 
 The same applies when subclassing a built-in middleware: shipped classes declare exactly the points they hook, so a subclass that overrides an additional hook (e.g. adding `onModelCall` to `TaskReminderMiddleware`) must extend the inherited `activePoints()` — otherwise the new hook is never invoked.
 
-Adding a new extension point follows one review rule: a point whose activation has side effects beyond the participating middleware itself (for example, changing global event routing) must never be activated through auto-detection alone — activation with global effects requires an explicit declaration or an explicit switch, never `!middlewaresAt(point).isEmpty()`.
+Adding a new extension point follows one review rule: a point whose activation has side effects beyond the participating middleware itself (for example, changing global event routing) must be activated only by a clear statement of intent — the fact of implementing the hook, or an explicit declaration; never a default, never an unrelated inference. `ON_FINAL_ANSWER` is the worked example: activating it switches the agent to certified delivery, yet it cannot be tripped accidentally — auto-detection lights up exactly the classes that factually implement `onFinalAnswer` (writing that hook is writing gate logic), and the empty-accept default is reachable only through an explicit declaration. Both paths are deliberate.
 
 ## Practical examples
 
