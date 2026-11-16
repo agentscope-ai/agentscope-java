@@ -317,6 +317,12 @@ public final class AgentScopeAdapter implements HarnessAdapter {
         if (host.pending()) host.restoreEntry();
         else if (completeInvocation(context, log)) return;
         var frame = context.frame();
+        var nativeCalls = new HashSet<>(JournalProjection.read(log).uncertainToolCalls());
+        frame.tools().forEach(tool -> nativeCalls.remove(tool.request().call().callId()));
+        if (!nativeCalls.isEmpty()) {
+            waitFor(context, WaitCondition.NATIVE_RECONCILIATION);
+            return;
+        }
         var input = new ArrayList<Msg>();
         var results = new ArrayList<ToolResultBlock>();
         var confirmations = new ArrayList<ConfirmResult>();
@@ -641,9 +647,12 @@ public final class AgentScopeAdapter implements HarnessAdapter {
         var projection = JournalProjection.read(log);
         var reconciled =
                 frame.tools().stream().map(tool -> tool.request().call().callId()).toList();
-        if (projection.uncertainToolCalls().stream().anyMatch(id -> !reconciled.contains(id)))
-            throw new DurableException(
-                    DurableException.Code.CONFLICT, "Native tool outcome requires reconciliation");
+        var uncertain = new HashSet<>(projection.uncertainToolCalls());
+        uncertain.removeAll(reconciled);
+        if (!uncertain.isEmpty() && status != TurnStatus.CANCELLED) {
+            waitFor(context, WaitCondition.NATIVE_RECONCILIATION);
+            return;
+        }
         var state = projection.restore();
         if (state == null) state = AgentState.builder().build();
         var facts = new ArrayList<Map.Entry<String, Object>>();
@@ -686,6 +695,30 @@ public final class AgentScopeAdapter implements HarnessAdapter {
                             "tool/result",
                             Map.of("message", message, "synthetic", execution.isEmpty())));
         }
+        for (String id : uncertain) {
+            var name =
+                    state.contextMutable().stream()
+                            .flatMap(msg -> msg.getContentBlocks(ToolUseBlock.class).stream())
+                            .filter(call -> id.equals(call.getId()))
+                            .map(ToolUseBlock::getName)
+                            .findFirst()
+                            .orElse("unknown");
+            var outcome =
+                    ToolResultBlock.text("Turn cancelled; external outcome unverified.")
+                            .withIdAndName(id, name)
+                            .withState(ToolResultState.INTERRUPTED)
+                            .withExecutionDetails(
+                                    new io.agentscope.core.message.ToolExecutionDetails(
+                                            "native",
+                                            io.agentscope.core.message.ToolExecutionDetails.Outcome
+                                                    .UNKNOWN,
+                                            null,
+                                            false));
+            var message = ToolResultMessage.builder().id("cancelled:" + id).result(outcome).build();
+            state.contextMutable().add(message);
+            calls.add(id);
+            facts.add(Map.entry("tool/result", Map.of("message", message, "synthetic", true)));
+        }
         var messages = state.contextMutable();
         for (int i = 0; i < messages.size(); i++) {
             var content = new ArrayList<ContentBlock>();
@@ -714,7 +747,11 @@ public final class AgentScopeAdapter implements HarnessAdapter {
                                     "interruptedRuns",
                                     projection.activeRuns(),
                                     "resolvedToolCallIds",
-                                    reconciled,
+                                    java.util.stream.Stream.concat(
+                                                    reconciled.stream(), uncertain.stream())
+                                            .toList(),
+                                    "unverifiedToolCallIds",
+                                    uncertain,
                                     "reason",
                                     reason)));
         log.append(context.lease().turnId(), facts, status, error);

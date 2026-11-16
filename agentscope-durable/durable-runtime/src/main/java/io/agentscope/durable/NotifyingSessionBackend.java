@@ -264,8 +264,17 @@ final class NotifyingSessionBackend implements SessionBackend {
     }
 
     @Override
-    public Optional<Lease> claim(ThreadKey session, String owner, Duration duration) {
-        var result = delegate.claim(session, owner, duration);
+    public Optional<Lease> claim(ThreadKey key, String owner, Duration duration) {
+        return claim(key, owner, duration, null);
+    }
+
+    @Override
+    public Optional<Lease> claim(
+            ThreadKey session,
+            String owner,
+            Duration duration,
+            io.agentscope.durable.DurableTypes.RecoveryPolicy policy) {
+        var result = delegate.claim(session, owner, duration, policy);
         if (result.isPresent()) changed(session);
         return result;
     }

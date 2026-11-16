@@ -58,6 +58,7 @@ public final class RocketMqWorker implements AutoCloseable {
         updatesTopic = topology.updates();
         authorizer = builder.authorizer;
         interval = builder.interval;
+        builder.records.boundIdleTransactionTime(builder.lease);
         store = new TransactionalExecutionStore(builder.records, name);
         ClientServiceProvider provider = builder.provider;
         Producer configuredProducer;

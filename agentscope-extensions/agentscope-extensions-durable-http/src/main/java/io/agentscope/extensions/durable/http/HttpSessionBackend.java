@@ -284,7 +284,16 @@ public final class HttpSessionBackend implements SessionBackend {
     }
 
     @Override
-    public Optional<Lease> claim(ThreadKey session, String owner, Duration duration) {
+    public Optional<Lease> claim(ThreadKey key, String owner, Duration duration) {
+        return claim(key, owner, duration, null);
+    }
+
+    @Override
+    public Optional<Lease> claim(
+            ThreadKey session,
+            String owner,
+            Duration duration,
+            io.agentscope.durable.DurableTypes.RecoveryPolicy policy) {
         return Optional.ofNullable(
                 as(
                         call(
@@ -294,7 +303,9 @@ public final class HttpSessionBackend implements SessionBackend {
                                 "owner",
                                 owner,
                                 "duration",
-                                duration.toMillis()),
+                                duration.toMillis(),
+                                "policy",
+                                policy),
                         Lease.class));
     }
 

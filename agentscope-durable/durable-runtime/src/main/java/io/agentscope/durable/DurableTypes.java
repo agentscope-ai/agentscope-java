@@ -432,6 +432,9 @@ public final class DurableTypes {
     }
 
     public record WaitCondition(String key, long deadline) {
+        public static final WaitCondition NATIVE_RECONCILIATION =
+                new WaitCondition("native:reconciliation", 0);
+
         public WaitCondition {
             DurableJson.text(key, "wait key");
             if (deadline < 0) throw new IllegalArgumentException("Negative deadline");

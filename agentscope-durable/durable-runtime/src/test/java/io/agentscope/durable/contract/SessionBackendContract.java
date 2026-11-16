@@ -1388,8 +1388,10 @@ public abstract class SessionBackendContract {
     @Test
     protected void repeatedExpiryOfUnfinishedRunsStopsInvocationRecovery() {
         submit();
-        var lease = claim();
-        for (int i = 0; i <= RecoveryPolicy.defaults().maxRetries(); i++) {
+        var thread = new ThreadKey(key, "main");
+        var policy = new RecoveryPolicy(2, 100, 500);
+        var lease = backend.claim(thread, "owner", Duration.ofSeconds(1), policy).orElseThrow();
+        for (int i = 0; i <= policy.maxRetries(); i++) {
             backend.prepareRun(lease, "invoke-" + i);
             clock.set(lease.expiresAt() + 1);
             lease = claim();
@@ -1850,7 +1852,7 @@ public abstract class SessionBackendContract {
                 tx -> {
                     assertTrue(
                             tx.get("thread-data:" + DurableJson.hash("main") + ":checkpoint")
-                                    .hasNonNull("reference"));
+                                    .hasNonNull("chunked"));
                     assertTrue(
                             tx.get("thread-data:" + DurableJson.hash("main") + ":checkpoint")
                                             .toString()
@@ -1861,7 +1863,7 @@ public abstract class SessionBackendContract {
                                             "thread-data:"
                                                     + DurableJson.hash("main")
                                                     + ":journal:initial:00000000000000000001")
-                                    .hasNonNull("reference"));
+                                    .hasNonNull("chunked"));
                     return null;
                 });
         byte[] bytes = "private artifact".getBytes(StandardCharsets.UTF_8);
@@ -2932,6 +2934,7 @@ public abstract class SessionBackendContract {
         assertTrue(backend.claim(thread, "early", Duration.ofSeconds(1)).isEmpty());
         assertEquals(1, backend.turn(thread, turn.turnId()).recovery().failures());
         backend.cancel(thread, turn.turnId(), "cancel");
+        backend.cancel(thread, turn.turnId(), "cancel-again");
         var cancellation = claim();
         assertTrue(backend.frame(cancellation).turn().cancellationRequested());
         assertEquals(1, backend.frame(cancellation).turn().recovery().failures());

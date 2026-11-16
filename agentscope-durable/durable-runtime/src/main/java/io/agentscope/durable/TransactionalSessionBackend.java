@@ -136,14 +136,21 @@ public final class TransactionalSessionBackend implements SessionBackend {
 
     private JsonNode storeContent(SessionKey session, JsonNode value) {
         byte[] bytes = DurableJson.value(value).toString().getBytes(StandardCharsets.UTF_8);
-        return bytes.length > 16384
-                ? DurableJson.value(
-                        new StoredContent(null, objects.put(objectScope(session), bytes)))
-                : DurableJson.value(new StoredContent(DurableJson.copy(value), null));
+        if (bytes.length > 8192)
+            return DurableJson.value(
+                    Map.of("chunked", JournalContent.put(objects, objectScope(session), bytes)));
+        return DurableJson.value(new StoredContent(DurableJson.copy(value), null));
     }
 
     private JsonNode readContent(SessionKey session, JsonNode stored) {
         if (stored == null || stored.isNull()) return DurableJson.value(null);
+        if (stored.hasNonNull("chunked")) {
+            var root = DurableJson.convert(stored.get("chunked"), JournalContent.Root.class);
+            return DurableJson.parse(
+                    new String(
+                            JournalContent.read(objects, objectScope(session), root),
+                            StandardCharsets.UTF_8));
+        }
         var value = DurableJson.convert(stored, StoredContent.class);
         return value.reference() == null
                 ? DurableJson.copy(value.inline())
@@ -248,6 +255,7 @@ public final class TransactionalSessionBackend implements SessionBackend {
         public JsonNode output;
         public String error;
         public WaitCondition waiting;
+        public DurableTypes.RecoveryPolicy claimPolicy;
         public RecoveryView recovery;
         public long failedEpoch;
         public int consecutiveLostRuns;
@@ -335,6 +343,7 @@ public final class TransactionalSessionBackend implements SessionBackend {
         if (turn.status == TurnStatus.PAUSED) return -1;
         if (turn.owner != null && turn.expiresAt > now) return turn.expiresAt;
         if (turn.cancel || turn.status == TurnStatus.PAUSING) return turn.nextAttemptAt;
+        if (WaitCondition.NATIVE_RECONCILIATION.equals(turn.waiting)) return -1;
         long ready = turn.nextAttemptAt;
         if (turn.recovery != null) {
             if (!turn.recovery.retryAllowed()) return ready;
@@ -1037,8 +1046,18 @@ public final class TransactionalSessionBackend implements SessionBackend {
 
     @Override
     public Optional<Lease> claim(ThreadKey key, String owner, Duration duration) {
+        return claim(key, owner, duration, null);
+    }
+
+    @Override
+    public Optional<Lease> claim(
+            ThreadKey key,
+            String owner,
+            Duration duration,
+            io.agentscope.durable.DurableTypes.RecoveryPolicy policy) {
         DurableJson.text(owner, "owner");
         long ttl = positive(duration);
+        store.boundIdleTransactionTime(duration);
         return change(
                 key,
                 (s, now) -> {
@@ -1048,23 +1067,29 @@ public final class TransactionalSessionBackend implements SessionBackend {
                         return Optional.of(
                                 new Lease(key, turn.id, owner, turn.epoch, turn.expiresAt));
                     long ready = readyAt(s, now);
-                    if (ready < 0 || ready > now) return Optional.empty();
+                    boolean repair =
+                            policy == null
+                                    && turn.status == TurnStatus.WAITING
+                                    && WaitCondition.NATIVE_RECONCILIATION.equals(turn.waiting)
+                                    && (turn.owner == null || turn.expiresAt <= now);
+                    if (!repair && (ready < 0 || ready > now)) return Optional.empty();
+                    if (turn.claimPolicy == null)
+                        turn.claimPolicy =
+                                policy == null ? DurableTypes.RecoveryPolicy.defaults() : policy;
                     var records = invocations(s, turn);
                     if (turn.owner != null
                             && turn.lastRunId != null
                             && !records.run(turn.lastRunId).status().terminal()
                             && (turn.recovery == null || turn.recovery.retryAllowed())) {
-                        var policy =
-                                turn.recovery == null
-                                        ? DurableTypes.RecoveryPolicy.defaults()
-                                        : turn.recovery.policy();
-                        if (++turn.consecutiveLostRuns > policy.maxRetries()) {
+                        var lostPolicy =
+                                turn.recovery == null ? turn.claimPolicy : turn.recovery.policy();
+                        if (++turn.consecutiveLostRuns > lostPolicy.maxRetries()) {
                             turn.error =
                                     "Repeated ownership loss without completed execution progress";
                             turn.recovery =
                                     new RecoveryView(
-                                            policy.maxRetries() + 1,
-                                            policy,
+                                            lostPolicy.maxRetries() + 1,
+                                            lostPolicy,
                                             false,
                                             null,
                                             turn.error);
@@ -2287,7 +2312,7 @@ public final class TransactionalSessionBackend implements SessionBackend {
         }
         TurnData r = requireTurn(s, turnId);
         s.commands.put(command, turnId);
-        if (!r.status.terminal()) {
+        if (!r.status.terminal() && !r.cancel) {
             r.cancel = true;
             boolean queued = r.epoch == 0;
             r.status = queued ? TurnStatus.CANCELLED : TurnStatus.CANCELLING;

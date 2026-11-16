@@ -48,6 +48,12 @@ public interface Executor extends AutoCloseable {
     /** Starts or recovers the execution identified by the request. */
     ExecutionResult startExecution(ExecutionRequest request);
 
+    /**
+     * Return NOT_FOUND only for authoritative absence. A worker may then issue another start
+     * when idempotentStart is advertised. A timeout, partition, or eventually consistent lookup
+     * cannot establish absence and must report UNKNOWN or a transient failure. Idempotent start
+     * must suppress duplicate effects across concurrent workers using the same execution ID.
+     */
     ExecutionResult query(ExecutionRequest request, String handle);
 
     ExecutionResult cancel(ExecutionRequest request, String handle);

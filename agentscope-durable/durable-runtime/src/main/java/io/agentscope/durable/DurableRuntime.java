@@ -609,10 +609,10 @@ public final class DurableRuntime implements AutoCloseable {
         String claimId = owner + ":" + UUID.randomUUID();
         Optional<Lease> claimed;
         try {
-            claimed = backend.claim(key, claimId, leaseDuration);
+            claimed = backend.claim(key, claimId, leaseDuration, recoveryPolicy);
         } catch (DurableException error) {
             if (error.code() != DurableException.Code.UNAVAILABLE) throw error;
-            claimed = backend.claim(key, claimId, leaseDuration);
+            claimed = backend.claim(key, claimId, leaseDuration, recoveryPolicy);
         }
         if (claimed.isEmpty()) return;
         Lease lease = claimed.get();

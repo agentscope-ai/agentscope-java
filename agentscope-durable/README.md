@@ -189,6 +189,18 @@ request whose result was never committed may need another model invocation.
 Workspace files and remote resources must also remain accessible; a saved checkpoint
 cannot reconstruct a deleted workspace or an expired external operation.
 
+If an interrupted native tool has no verified result, the Turn waits for explicit
+reconciliation. Scheduled Brains leave it parked. An operator can claim it and
+call `reconcileNativeTools` with a verified outcome and evidence reference.
+Cancelling the Turn closes the native call with an unverified outcome. A repeated
+cancel request can use a new request ID.
+
+The first scheduled owner persists its recovery policy for consecutive lease
+losses. PostgreSQL hosts bound idle transactions by the shortest lease they serve
+and respect shorter database limits. Large journal entries and checkpoints share
+immutable content-defined chunks within a Session. Readers support the original
+whole-object references. Upgrade every reader before writing the chunked format.
+
 ### 2. Queue Turns, add instructions, and cancel work
 
 While an assistant investigates an incident, the user asks for a follow-up summary

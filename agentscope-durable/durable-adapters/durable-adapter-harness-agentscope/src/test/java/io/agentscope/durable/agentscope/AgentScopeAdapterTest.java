@@ -230,8 +230,9 @@ class AgentScopeAdapterTest {
         return builder.build();
     }
 
-    @Test
-    void verifiedNativeToolRepairSurvivesReopenAndRejectsChangedEvidence() {
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(booleans = {false, true})
+    void parkedNativeToolCanBeCancelledOrReconciled(boolean cancel) {
         var adapter = adapter(new ScriptedModel(false), PermissionMode.BYPASS, Map.of());
         try (var backend = LocalBackend.open(directory.resolve("repair"));
                 var runtime = runtime(backend, adapter, null)) {
@@ -249,24 +250,94 @@ class AgentScopeAdapterTest {
                                     Map.of(
                                             "stateJson",
                                             io.agentscope.core.state.AgentState.builder()
+                                                    .userId(key.namespace())
+                                                    .sessionId(key.sessionId())
+                                                    .threadId("main")
                                                     .build()
                                                     .toJson(),
                                             "projectorVersion",
                                             1)),
                             Map.entry("tool/dispatch", Map.of("toolCallId", "local-1"))));
+            adapter.execute(context);
+            assertEquals(TurnStatus.WAITING, turn.status().status());
+            var thread = new ThreadKey(key, "main");
+            assertTrue(
+                    backend.claim(
+                                    thread,
+                                    "scheduler",
+                                    Duration.ofMinutes(1),
+                                    io.agentscope.durable.DurableTypes.RecoveryPolicy.defaults())
+                            .isEmpty());
+            if (cancel) {
+                backend.cancel(thread, turn.turnId(), "cancel-1");
+                backend.cancel(thread, turn.turnId(), "cancel-2");
+                runtime.tick(thread);
+                assertEquals(TurnStatus.CANCELLED, turn.status().status());
+                return;
+            }
+            var repairContext =
+                    new HarnessContext(
+                            backend,
+                            backend.claim(thread, "operator", Duration.ofMinutes(1)).orElseThrow(),
+                            new AtomicBoolean());
             var outcomes =
                     Map.of(
                             "local-1",
                             ToolResultBlock.text("verified")
                                     .withIdAndName("local-1", "local")
                                     .withState(ToolResultState.SUCCESS));
-            adapter.reconcileNativeTools(context, "repair-1", "audit/123", outcomes);
-            long position = new BackendThreadJournal(context, Map.of()).head().seq();
-            adapter.reconcileNativeTools(context, "repair-1", "audit/123", outcomes);
-            assertEquals(position, new BackendThreadJournal(context, Map.of()).head().seq());
+            adapter.reconcileNativeTools(repairContext, "repair-1", "audit/123", outcomes);
+            long position = new BackendThreadJournal(repairContext, Map.of()).head().seq();
+            adapter.reconcileNativeTools(repairContext, "repair-1", "audit/123", outcomes);
+            assertEquals(position, new BackendThreadJournal(repairContext, Map.of()).head().seq());
             assertThrows(
                     DurableException.class,
-                    () -> adapter.reconcileNativeTools(context, "repair-1", "other", outcomes));
+                    () ->
+                            adapter.reconcileNativeTools(
+                                    repairContext, "repair-1", "other", outcomes));
+            backend.release(repairContext.lease(), Duration.ZERO);
+            runtime.tick(thread);
+            assertEquals(TurnStatus.SUCCEEDED, turn.status().status());
+        }
+    }
+
+    @Test
+    void growingConversationSharesHistoricalJournalPayloads() throws Exception {
+        var database = directory.resolve("history.db");
+        var adapter = adapter(new ScriptedModel(false), PermissionMode.BYPASS, Map.of());
+        try (var backend =
+                        new io.agentscope.durable.TransactionalSessionBackend(
+                                io.agentscope.extensions.durable.jdbc.JdbcRecordStore.sqlite(
+                                        database));
+                var runtime = runtime(backend, adapter, null);
+                var connection = java.sql.DriverManager.getConnection("jdbc:sqlite:" + database);
+                var measure =
+                        connection.prepareStatement(
+                                "SELECT SUM(length(payload)) FROM durable_parts")) {
+            var session = runtime.createSession(key, "agent");
+            var random = new java.util.Random(57);
+            long firstHalf = 0;
+            for (int i = 1; i <= 24; i++) {
+                byte[] bytes = new byte[1536];
+                random.nextBytes(bytes);
+                var turn =
+                        session.submit(
+                                "input-" + i, java.util.Base64.getEncoder().encodeToString(bytes));
+                runtime.tick(new ThreadKey(key, "main"));
+                assertEquals(TurnStatus.SUCCEEDED, turn.status().status());
+                if (i == 12 || i == 24) {
+                    try (var result = measure.executeQuery()) {
+                        assertTrue(result.next());
+                        long size = result.getLong(1);
+                        System.out.println("durable_parts payload at turn " + i + " = " + size);
+                        if (i == 12) firstHalf = size;
+                        else
+                            assertTrue(
+                                    size < 3 * firstHalf,
+                                    "History amplification: " + size + " / " + firstHalf);
+                    }
+                }
+            }
         }
     }
 

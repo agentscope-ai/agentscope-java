@@ -3683,6 +3683,16 @@
             },
             "thread": {
               "$ref": "#/$defs/thread"
+            },
+            "policy": {
+              "anyOf": [
+                {
+                  "type": "null"
+                },
+                {
+                  "$ref": "#/$defs/recoveryPolicy"
+                }
+              ]
             }
           }
         }

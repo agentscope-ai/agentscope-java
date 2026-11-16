@@ -215,7 +215,15 @@ public final class SessionBackendHandler implements HttpHandler {
                                     backend.claim(
                                                     thread,
                                                     text(p, "owner"),
-                                                    Duration.ofMillis(p.path("duration").asLong()))
+                                                    Duration.ofMillis(p.path("duration").asLong()),
+                                                    p.hasNonNull("policy")
+                                                            ? get(
+                                                                    p,
+                                                                    "policy",
+                                                                    io.agentscope.durable
+                                                                            .DurableTypes
+                                                                            .RecoveryPolicy.class)
+                                                            : null)
                                             .orElse(null);
                     case "renew" -> {
                         backend.renew(lease, Duration.ofMillis(p.path("duration").asLong()));
