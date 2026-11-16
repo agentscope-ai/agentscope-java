@@ -15,7 +15,7 @@ def exercise(folder, memory):
     lab.start(
         broker,
         lab.MQ,
-        ["-e", f"JAVA_OPT_EXT=-Xms512m -Xmx1g -XX:MaxDirectMemorySize={memory}"],
+        ["-e", f"JAVA_OPT_EXT=-Xms128m -Xmx256m -XX:MaxDirectMemorySize={memory}"],
         "sh",
         "-c",
         f"printf 'brokerName=paired\nbrokerIP1={broker}\nautoCreateTopicEnable=true\nautoCreateSubscriptionGroup=true\n' >/tmp/b.conf && exec sh mqbroker -n {ns}:9876 -c /tmp/b.conf",
@@ -35,6 +35,13 @@ def exercise(folder, memory):
         )
 
     lab.wait("broker registration", lambda: "paired" in admin("clusterList").stdout)
+    flags = lab.docker(
+        "exec", lab.name(broker), "sh", "-c",
+        """pid=$(jps -l | awk '/BrokerStartup$/ {print $1}'); jcmd "$pid" VM.flags""",
+    ).split()
+    expected = {"256m": 256 << 20, "1g": 1 << 30}[memory]
+    if f"-XX:MaxDirectMemorySize={expected}" not in flags:
+        raise RuntimeError(f"Broker JVM did not apply the {memory} direct-memory limit")
     for args in (
         (
             "updateTopic",
@@ -58,7 +65,7 @@ def exercise(folder, memory):
     lab.start(
         proxy,
         lab.MQ,
-        ["-e", "JAVA_OPT_EXT=-Xms512m -Xmx1g -XX:MaxDirectMemorySize=1g"],
+        ["-e", "JAVA_OPT_EXT=-Xms128m -Xmx256m -XX:MaxDirectMemorySize=1g"],
         "sh",
         "-c",
         f"echo '{config}' >/tmp/proxy.json && exec sh mqproxy -n {ns}:9876 -pc /tmp/proxy.json -pm cluster",
@@ -90,7 +97,10 @@ def exercise(folder, memory):
     )
 
     def send(prefix, count):
+        next_index = 0
+
         def publish():
+            nonlocal next_index
             result = lab.run(
                 "docker",
                 "run",
@@ -100,14 +110,18 @@ def exercise(folder, memory):
                 "send",
                 prefix,
                 str(count),
+                str(next_index),
                 check=False,
             )
             if result.returncode == 0:
                 return True
-            if (
-                "ClientImpl.startUp" in result.stdout
-                and "response-code=40402" in result.stdout
-            ):
+            if "response-code=40402" in result.stdout:
+                # NO_TOPIC_ROUTE rejects the current send. Resume after confirmed receipts.
+                for line in result.stdout.splitlines():
+                    if line.startswith("SENT "):
+                        if int(line[5:]) != next_index:
+                            raise RuntimeError("Unexpected producer receipt sequence")
+                        next_index += 1
                 print(memory, "producer waiting for topic route", flush=True)
                 return False
             raise RuntimeError(result.stdout[-3500:])
@@ -135,7 +149,14 @@ def exercise(folder, memory):
     send("healthy", 16)
     lab.wait("healthy delivery", lambda: len(acks()) == 16)
     normal = deadlines()
-    print(memory, "normal deadlines", normal, flush=True)
+    print(
+        memory,
+        "normal deadlines",
+        normal,
+        "POP direct-memory error lines",
+        lab.pop_memory_errors(broker),
+        flush=True,
+    )
 
     lab.docker("pause", lab.name(proxy))
     try:
@@ -164,8 +185,13 @@ def exercise(folder, memory):
         ["fault0"] + [f"{p}{i}" for p in ("healthy", "recovered") for i in range(16)]
     ):
         raise RuntimeError("Unexpected delivery counts")
+    errors = lab.pop_memory_errors(broker)
+    if memory == "1g" and errors:
+        raise RuntimeError("Broker POP exhausted direct memory in the 1g control")
     print(
         memory,
+        "POP direct-memory error lines",
+        errors,
         "paused proxy deadlines",
         [a - b for a, b in zip(interrupted, normal)],
         "acknowledged=33 redelivery=1,2",

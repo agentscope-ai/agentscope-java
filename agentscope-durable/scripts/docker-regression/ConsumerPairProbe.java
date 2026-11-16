@@ -38,7 +38,7 @@ public final class ConsumerPairProbe {
                     .setTopics(topic)
                     .build()) {
                 int count = Integer.parseInt(args[2]);
-                for (int i = 0; i < count; i++) {
+                for (int i = Integer.parseInt(args[3]); i < count; i++) {
                     String key = args[1] + i;
                     var message = provider.newMessageBuilder()
                             .setTopic(topic)
@@ -46,6 +46,7 @@ public final class ConsumerPairProbe {
                             .setBody(key.getBytes(StandardCharsets.UTF_8))
                             .build();
                     producer.send(message);
+                    System.out.println("SENT " + i);
                 }
             }
             return;

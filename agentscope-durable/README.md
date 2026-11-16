@@ -481,8 +481,16 @@ volumes and network on exit. Set `ROCKETMQ_IMAGE` to use a locally available Roc
 with the broker proxy and `mqadmin` tools.
 
 The paired-consumer comparison starts separate NameServer, Broker, Proxy and consumer JVMs,
-runs eight queues with the same consumer group, and varies only the broker direct-memory limit.
-It checks ordinary delivery, repeated receive deadlines during a Proxy pause, and redelivery
+runs eight queues with the same consumer group, and verifies each Broker direct-memory limit
+from the running JVM before delivery.
+The normal fault suite sets the Broker JVM direct-memory limit to 1 GiB and checks the POP log
+for Netty allocation failures. In the two-Hands PostgreSQL fixture on RocketMQ 5.5.1, a
+128 MiB Broker direct-memory limit caused POP allocations to fail. The Proxy then
+timed out waiting for the Broker, and the clients reported receive deadlines. A Proxy pause
+can also produce this client error. Use the Broker POP log and Proxy response together to
+identify which path occurred.
+
+The comparison checks ordinary delivery, repeated receive deadlines during a Proxy pause, and redelivery
 to the surviving consumer after killing its peer before ACK.
 
 ```sh

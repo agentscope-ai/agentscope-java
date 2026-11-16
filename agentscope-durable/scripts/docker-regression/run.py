@@ -77,6 +77,17 @@ def logs(service):
     return docker("logs", name(service))
 
 
+def pop_memory_errors(service):
+    count = docker(
+        "exec",
+        name(service),
+        "sh",
+        "-c",
+        """awk '/OutOfDirectMemoryError/{n++} END{print n+0}' "$HOME/logs/rocketmqlogs/pop.log" """,
+    )
+    return int(count)
+
+
 def sql(query):
     return docker(
         "exec",
@@ -322,7 +333,7 @@ def exercise(folder):
     start(
         "broker",
         MQ,
-        ["-e", "JAVA_OPT_EXT=-Xms256m -Xmx384m -XX:MaxDirectMemorySize=256m"],
+        ["-e", "JAVA_OPT_EXT=-Xms256m -Xmx384m -XX:MaxDirectMemorySize=1g"],
         "sh",
         "-c",
         "printf 'brokerName=regression\nbrokerIP1=broker\nautoCreateTopicEnable=true\n' >/tmp/b.conf && exec sh mqbroker -n ns:9876 -c /tmp/b.conf --enable-proxy",
@@ -572,6 +583,9 @@ if __name__ == "__main__":
         docker("network", "create", PROJECT)
         try:
             exercise(folder)
+            if pop_memory_errors("broker"):
+                raise RuntimeError("Broker POP encountered direct-memory exhaustion")
+            print("broker POP direct-memory errors=0", flush=True)
         except BaseException:
             for container in containers:
                 print(
