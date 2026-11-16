@@ -60,6 +60,9 @@ public record ContextManifest(
      * listed separately — their underlying sources are, which keeps the totals additive. Use
      * {@link ContextUsage#breakdown(ContextManifest)} to roll the segments into display categories.
      *
+     * <p>Record equality includes {@code contentChars}, so an item built with a convenience
+     * constructor never equals one that carries a recorded size.
+     *
      * @param sourceType segment category: {@code system_prompt}, {@code tool_mcp},
      *     {@code tool_system}, {@code message_user}, {@code message_assistant},
      *     {@code message_tool}, {@code message_summary}, {@code runtime_projection}, or a

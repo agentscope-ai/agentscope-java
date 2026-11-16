@@ -264,11 +264,11 @@ public final class ContextUsage {
      * middleware append, for example, a skill listing to the prompt instead of registering a
      * material.
      *
-     * <p>The default harness registers several {@code SYSTEM} materials — context conventions,
-     * workspace guidance, workspace environment — so this is normally {@code false} there. A
-     * listing can still be appended to one of those items, so either way a category at zero is a
-     * floor rather than proof the source is absent; use {@link #systemBreakdown(ContextManifest)} to
-     * see how many blocks the channel holds.
+     * <p>The default harness registers several {@code SYSTEM} materials — for example context
+     * conventions, project rules, workspace guidance, and workspace environment — so this is
+     * normally {@code false} there. A listing can still be appended to one of those items, so
+     * either way a category at zero is a floor rather than proof the source is absent; use {@link
+     * #systemBreakdown(ContextManifest)} to see how many blocks the channel holds.
      *
      * @param manifest the manifest produced for one model request
      * @return {@code true} when the manifest holds exactly one system source; {@code false} for a
