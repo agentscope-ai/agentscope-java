@@ -532,6 +532,38 @@ class HarnessContextBuilderTest {
         assertEquals(0, legacy.contentChars());
     }
 
+    @Test
+    void summaryMatchesTheEstimatorThatProducedTheManifest() {
+        var manifests = new ArrayList<ContextManifest>();
+        var policy =
+                new ContextPolicy(0, 0, 0, ContextTokenEstimator.approximate(), manifests::add);
+        var rc = RuntimeContext.builder().agentState(AgentState.builder().build()).build();
+        var request =
+                new ModelCallInput(
+                        List.of(Msg.builder().role(MsgRole.USER).textContent("hello").build()),
+                        List.of(toolSchema("shell")),
+                        GenerateOptions.builder().maxTokens(20).build(),
+                        model(100000));
+        new HarnessContextBuilder(policy, null, null)
+                .prepare(
+                        mock(Agent.class), rc, request, "c", ModelRequestPreparer.Purpose.REASONING)
+                .block();
+        var manifest = manifests.get(0);
+        var summary = ContextUsage.summary(manifest);
+        assertEquals(
+                ContextTokenEstimator.approximate().estimate(request).method(),
+                summary.countingMethod());
+        assertFalse(summary.exact());
+        assertEquals(manifest.estimatedInputTokens(), summary.estimatedInputTokens());
+        assertEquals(manifest.inputLimit(), summary.inputLimit());
+        assertEquals(
+                manifest.items().stream().mapToLong(item -> Math.max(0, item.contentChars())).sum(),
+                summary.totalChars());
+        assertEquals(
+                manifest.items().stream().mapToLong(item -> Math.max(0, item.contentChars())).sum(),
+                summary.categoryChars().values().stream().mapToLong(Long::longValue).sum());
+    }
+
     private Model model(int window) {
         Model model = mock(Model.class);
         when(model.getContextWindowSize()).thenReturn(window);

@@ -15,10 +15,14 @@
  */
 package io.agentscope.harness.agent.context;
 
+import java.util.Collections;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
+import java.util.function.Predicate;
 
 /**
  * Rolls a {@link ContextManifest}'s disjoint segments up into the shares a context-usage panel
@@ -32,7 +36,18 @@ import java.util.Set;
  *
  * <p>Every item placed in the system channel — the base prompt and {@code SYSTEM} materials alike —
  * counts toward {@link #SYSTEM_PROMPT}, because all of it is merged into the single system message
- * the model receives.
+ * the model receives. A category that is absent from {@link #breakdown(ContextManifest)} has no
+ * measured content; it does not mean the framework failed to collect it (see below).
+ *
+ * <p><b>What is measured.</b> The manifest describes the request after preparation, so content that
+ * pre-call hooks, system-prompt middleware, and model-call middleware injected is included: recalled
+ * memory arrives as conversation messages, and the resolved date and the skill listing arrive as
+ * materials when the application registers them. What is missing is content added after preparation,
+ * and any text a middleware appends to the already-assembled system string — that text stays inside a
+ * single item and cannot be split back into its contributors. A category at zero therefore means the
+ * prepared request carried nothing attributable to it: the source may be unused, its size may be
+ * unrecorded, or its text may have been merged into a higher-priority category. Use {@link
+ * #summary(ContextManifest)} for the measurement method and limits.
  */
 public final class ContextUsage {
     /** Content placed in the system channel: the base prompt and {@code SYSTEM} materials. */
@@ -56,6 +71,9 @@ public final class ContextUsage {
     private static final Set<String> MESSAGE_KINDS =
             Set.of("message_user", "message_assistant", "message_tool", "message_summary");
 
+    private static final List<String> CATEGORIES =
+            List.of(SYSTEM_PROMPT, SKILLS, MCP_TOOLS, SYSTEM_TOOLS, MESSAGES, OTHER);
+
     private ContextUsage() {}
 
     /**
@@ -68,29 +86,213 @@ public final class ContextUsage {
     public record Share(String source, long chars, double ratio) {}
 
     /**
-     * Groups {@code manifest} into category shares, largest first.
+     * One source's attribution: the segment-level view of a category.
+     *
+     * <p>Items sharing the same category, source type, source id, and placement are merged, so
+     * repeated materials report one row each. Zero-sized items are kept: a row with {@code chars}
+     * of {@code 0} means the source was present without a recorded size, and its {@code items} count
+     * still tells you the source exists.
+     *
+     * @param source display category, one of this class's constants
+     * @param sourceType raw {@link ContextManifest.Item#sourceType()}
+     * @param sourceId raw {@link ContextManifest.Item#sourceId()}
+     * @param placement raw {@link ContextManifest.Item#placement()}, {@code null} when unknown
+     * @param chars summed {@code contentChars} of the merged items
+     * @param ratio {@code chars} over the measured total, {@code 0} when the total is {@code 0}
+     * @param items how many manifest items were merged into this row
+     */
+    public record ItemShare(
+            String source,
+            String sourceType,
+            String sourceId,
+            String placement,
+            long chars,
+            double ratio,
+            int items) {}
+
+    /**
+     * Totals and provenance for one manifest, so a caller does not have to recompute them.
+     *
+     * <p>{@code totalChars} and {@code categoryChars} come from the segments; {@code
+     * estimatedInputTokens} comes from the policy's estimator over the {@code ModelCallInput}. The
+     * built-in approximate estimator counts per-message overhead and charges a fixed cost for media;
+     * an adapter that plugs in a real tokenizer reports its own method and does not. The two are
+     * different lenses on the same request and will not agree, and neither is provider usage.
+     *
+     * <p>A manifest from a failed build carries {@code -1} for both token figures and {@code
+     * unavailable} as the counting method; render those as "not measured" rather than as sizes.
+     *
+     * @param totalChars measured content across every segment
+     * @param estimatedInputTokens the policy estimator's estimate for this request, {@code -1} when
+     *     the build failed
+     * @param inputLimit input budget the policy computed for this request, {@code -1} when the build
+     *     failed
+     * @param countingMethod estimator identifier, {@code null} for a missing manifest
+     * @param exact whether the estimate is exact; {@code false} for char-based estimators
+     * @param validation validation status the framework recorded
+     * @param categoryChars every category, in display order, {@code 0} when absent
+     */
+    public record Summary(
+            long totalChars,
+            long estimatedInputTokens,
+            long inputLimit,
+            String countingMethod,
+            boolean exact,
+            String validation,
+            Map<String, Long> categoryChars) {
+        public Summary {
+            categoryChars =
+                    Collections.unmodifiableMap(
+                            new LinkedHashMap<>(
+                                    Objects.requireNonNull(categoryChars, "categoryChars")));
+        }
+    }
+
+    /**
+     * Groups {@code manifest} into category shares, largest first, omitting empty categories.
      *
      * @param manifest the manifest produced for one model request
      * @return category shares; empty when the manifest has no items or no recorded sizes
      */
     public static List<Share> breakdown(ContextManifest manifest) {
-        if (manifest == null || manifest.items().isEmpty()) return List.of();
+        return breakdown(manifest, false);
+    }
+
+    /**
+     * Groups {@code manifest} into category shares, largest first.
+     *
+     * @param manifest the manifest produced for one model request
+     * @param includeEmpty when {@code true}, every category is returned, absent ones with {@code
+     *     chars} of {@code 0} and {@code ratio} of {@code 0}, so a panel can keep a stable row set;
+     *     when {@code false}, empty categories are omitted
+     * @return category shares; empty only when {@code manifest} is {@code null} and {@code
+     *     includeEmpty} is {@code false}. Equal sizes fall back to this class's display order, so
+     *     both overloads order a given manifest the same way
+     */
+    public static List<Share> breakdown(ContextManifest manifest, boolean includeEmpty) {
+        if (manifest == null && !includeEmpty) return List.of();
         Map<String, Long> totals = new LinkedHashMap<>();
-        for (ContextManifest.Item item : manifest.items()) {
-            // A negative size cannot describe a contribution; treat it as unrecorded.
-            long chars = Math.max(0, item.contentChars());
-            totals.merge(category(item), chars, Long::sum);
+        if (includeEmpty) for (String category : CATEGORIES) totals.put(category, 0L);
+        if (manifest != null) {
+            for (ContextManifest.Item item : manifest.items()) {
+                // A negative size cannot describe a contribution; treat it as unrecorded.
+                totals.merge(category(item), Math.max(0L, item.contentChars()), Long::sum);
+            }
         }
         long total = totals.values().stream().mapToLong(Long::longValue).sum();
         return totals.entrySet().stream()
-                .filter(entry -> entry.getValue() > 0)
-                .sorted(Map.Entry.<String, Long>comparingByValue().reversed())
+                .filter(entry -> includeEmpty || entry.getValue() > 0)
+                .sorted(
+                        Map.Entry.<String, Long>comparingByValue()
+                                .reversed()
+                                .thenComparingInt(entry -> CATEGORIES.indexOf(entry.getKey())))
                 .map(
                         entry ->
                                 new Share(
                                         entry.getKey(),
                                         entry.getValue(),
-                                        (double) entry.getValue() / total))
+                                        total == 0 ? 0 : (double) entry.getValue() / total))
+                .toList();
+    }
+
+    /**
+     * Attributes every segment to its source, largest first.
+     *
+     * <p>This is the item-level companion to {@link #breakdown(ContextManifest)}: it answers which
+     * sources make up a category, for example how many distinct entries the system channel holds.
+     * The shares sum to the same total as the category breakdown. Only metadata is exposed, never
+     * prompt bodies.
+     *
+     * @param manifest the manifest produced for one model request
+     * @return one row per distinct source; empty when {@code manifest} is {@code null} or empty
+     */
+    public static List<ItemShare> itemBreakdown(ContextManifest manifest) {
+        return shareByItem(manifest, item -> true);
+    }
+
+    /**
+     * Attributes the system channel alone, largest first.
+     *
+     * <p>The framework merges the base prompt and every {@code SYSTEM} material into one system
+     * message before the model call. Because the merge happens before the manifest is built, the
+     * items listed here are the pre-merge sources: when a middleware appends to the assembled system
+     * string, that text is part of a single item and cannot be split further.
+     *
+     * @param manifest the manifest produced for one model request
+     * @return one row per distinct system source; empty when the manifest has none. Ratios are over
+     *     the system channel's own total, not over the whole request, so this view is not directly
+     *     comparable with {@link #itemBreakdown(ContextManifest)}
+     */
+    public static List<ItemShare> systemBreakdown(ContextManifest manifest) {
+        return shareByItem(manifest, item -> SYSTEM_PROMPT.equals(category(item)));
+    }
+
+    /**
+     * Collects the totals a context panel needs, with the caveats that make them readable.
+     *
+     * @param manifest the manifest produced for one model request
+     * @return totals; all zeros with a {@code null} counting method when {@code manifest} is {@code
+     *     null}
+     */
+    public static Summary summary(ContextManifest manifest) {
+        if (manifest == null) {
+            Map<String, Long> empty = new LinkedHashMap<>();
+            for (String category : CATEGORIES) empty.put(category, 0L);
+            return new Summary(0, 0, 0, null, false, null, empty);
+        }
+        Map<String, Long> totals = new LinkedHashMap<>();
+        for (String category : CATEGORIES) totals.put(category, 0L);
+        for (ContextManifest.Item item : manifest.items()) {
+            long chars = Math.max(0, item.contentChars());
+            totals.merge(category(item), chars, Long::sum);
+        }
+        long total = totals.values().stream().mapToLong(Long::longValue).sum();
+        return new Summary(
+                total,
+                manifest.estimatedInputTokens(),
+                manifest.inputLimit(),
+                manifest.countingMethod(),
+                manifest.exact(),
+                manifest.validation(),
+                totals);
+    }
+
+    private static List<ItemShare> shareByItem(
+            ContextManifest manifest, Predicate<ContextManifest.Item> filter) {
+        if (manifest == null || manifest.items().isEmpty()) return List.of();
+        Map<Key, Tally> tallies = new LinkedHashMap<>();
+        for (ContextManifest.Item item : manifest.items()) {
+            if (!filter.test(item)) continue;
+            Key key = new Key(category(item), item.sourceType(), item.sourceId(), item.placement());
+            tallies.merge(key, new Tally(Math.max(0, item.contentChars()), 1), Tally::plus);
+        }
+        long total = tallies.values().stream().mapToLong(Tally::chars).sum();
+        return tallies.entrySet().stream()
+                .sorted(
+                        Map.Entry.<Key, Tally>comparingByValue(
+                                        Comparator.comparingLong(Tally::chars))
+                                .reversed()
+                                .thenComparingInt(
+                                        entry -> CATEGORIES.indexOf(entry.getKey().source()))
+                                .thenComparing(
+                                        entry -> entry.getKey().sourceId(),
+                                        Comparator.nullsFirst(Comparator.naturalOrder()))
+                                .thenComparing(
+                                        entry -> entry.getKey().sourceType(),
+                                        Comparator.nullsFirst(Comparator.naturalOrder()))
+                                .thenComparing(
+                                        entry -> entry.getKey().placement(),
+                                        Comparator.nullsFirst(Comparator.naturalOrder())))
+                .map(
+                        entry ->
+                                new ItemShare(
+                                        entry.getKey().source(),
+                                        entry.getKey().sourceType(),
+                                        entry.getKey().sourceId(),
+                                        entry.getKey().placement(),
+                                        entry.getValue().chars(),
+                                        total == 0 ? 0 : (double) entry.getValue().chars() / total,
+                                        entry.getValue().items()))
                 .toList();
     }
 
@@ -104,5 +306,13 @@ public final class ContextUsage {
         if ("tool_system".equals(sourceType)) return SYSTEM_TOOLS;
         if (sourceType != null && MESSAGE_KINDS.contains(sourceType)) return MESSAGES;
         return OTHER;
+    }
+
+    private record Key(String source, String sourceType, String sourceId, String placement) {}
+
+    private record Tally(long chars, int items) {
+        Tally plus(Tally other) {
+            return new Tally(chars + other.chars, items + other.items);
+        }
     }
 }

@@ -378,6 +378,28 @@ If the item is absent, check `transforms()`. `omitted_for_budget:source/change-r
 
 An early build failure can leave the item list empty, both token figures at `-1`, and the counting method at `unavailable`. These indicate missing statistics. Inspect the accompanying exception instead of assuming all materials were omitted for budget reasons.
 
+#### Attribute a category to its sources
+
+`ContextUsage` also answers which sources make up a category, and carries the totals a panel needs:
+
+| Call | Returns |
+| --- | --- |
+| `breakdown(manifest, includeEmpty)` | The same shares; with `includeEmpty` every category is present, absent ones with `chars` and `ratio` of `0`, so a panel keeps a stable row set |
+| `itemBreakdown(manifest)` | One `ItemShare` per source — category, source type, source ID, placement, characters, ratio, and how many items were merged — largest first. It sums to the same total as `breakdown` |
+| `systemBreakdown(manifest)` | The same rows, restricted to the system channel, with ratios over that channel rather than the whole request |
+| `summary(manifest)` | `totalChars`, `estimatedInputTokens`, `inputLimit`, `countingMethod`, `exact`, `validation`, and all six category totals in display order |
+
+```java
+Consumer<ContextManifest> panel =
+        manifest -> {
+            ContextUsage.Summary totals = ContextUsage.summary(manifest);
+            List<ContextUsage.Share> rows = ContextUsage.breakdown(manifest, true);
+            List<ContextUsage.ItemShare> sources = ContextUsage.itemBreakdown(manifest);
+        };
+```
+
+A category at `0` means the prepared request carried nothing attributable to it: the source may be unused, its size may be unrecorded, or its text may have been merged into a higher-priority category — a `SYSTEM`-placed material counts toward `system_prompt`. It does not mean the framework failed to collect it. The manifest describes the request after preparation, so content injected by pre-call hooks, system-prompt middleware, and model-call middleware is included: memory arrives as conversation messages, and the resolved date and the skill listing arrive as materials when the application registers them. Only content added after preparation is missing, along with text a middleware appends to the already-assembled system string — that stays inside one item and cannot be split back into its contributors. `totalChars` and `estimatedInputTokens` are different lenses on the same request: the first counts source characters, the second runs the configured estimator. Neither is provider usage.
+
 ### Read live events and stored logs
 
 If your application already consumes `streamEvents`, handle the `context_build` custom event in that same stream. There is no need to start another Agent call just to obtain a Manifest. This example shows a complete subscription; keep your existing handlers for text and tool events alongside it.

@@ -395,6 +395,28 @@ builder.contextPolicy(new ContextPolicy(
 
 构建过早失败时，清单可能没有条目，token 数和上限为 `-1`、计数方式为 `unavailable`，表示尚未获得统计结果。这时应结合调用抛出的异常排查，不能据此认定所有材料都被预算策略省略了。
 
+#### 把类别拆回具体来源
+
+`ContextUsage` 还能回答「这个类别由哪些来源组成」，并给出面板需要的汇总值：
+
+| 方法 | 返回 |
+| --- | --- |
+| `breakdown(manifest, includeEmpty)` | 与上面相同的份额；传入 `includeEmpty` 时每个类别都会返回，没有内容的类别 `chars` 与 `ratio` 为 `0`，面板可以保持固定的行集合 |
+| `itemBreakdown(manifest)` | 每个来源一行 `ItemShare`：类别、来源类型、来源 ID、放置位置、字符数、占比，以及合并了多少个条目；按大小从大到小排列，合计与 `breakdown` 相等 |
+| `systemBreakdown(manifest)` | 同样的行，但只限系统通道；占比以系统通道自身合计为分母，不是整轮请求 |
+| `summary(manifest)` | `totalChars`、`estimatedInputTokens`、`inputLimit`、`countingMethod`、`exact`、`validation`，以及六个类别按展示顺序的合计 |
+
+```java
+Consumer<ContextManifest> panel =
+        manifest -> {
+            ContextUsage.Summary totals = ContextUsage.summary(manifest);
+            List<ContextUsage.Share> rows = ContextUsage.breakdown(manifest, true);
+            List<ContextUsage.ItemShare> sources = ContextUsage.itemBreakdown(manifest);
+        };
+```
+
+某个类别为 `0`，表示本轮准备好的请求里没有可归因到它的内容：来源可能没被使用，长度可能未记录，也可能被合并进了优先级更高的类别（放在 `SYSTEM` 的材料计入 `system_prompt`）。这不代表框架没有采集到。这些数字描述的是准备好之后的请求，因此前置钩子、系统提示词中间件、模型调用中间件注入的内容都在其中：记忆以对话消息进入，解析出的日期与技能目录在应用注册为材料时进入。真正缺少的是准备之后才追加的内容，以及中间件拼进已合并系统字符串的文字——那部分只属于一个条目，无法还原成各个贡献者。`totalChars` 与 `estimatedInputTokens` 是同一请求的两个视角：前者数原文字符，后者走配置的估算器；两者都不是供应商的实际用量。
+
 ### 在事件流和会话日志中查看
 
 如果应用已经消费 `streamEvents`，也可以直接在现有流中处理 `context_build` 自定义事件，无需额外发起一次 Agent 调用。下面展示一次完整的订阅；业务中的文本、工具等事件仍按原来的方式处理。
