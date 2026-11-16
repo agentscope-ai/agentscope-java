@@ -269,6 +269,8 @@ User input does not acquire system privileges, and public events exclude private
 
 A client that displays an answer and crashes before saving its cursor can receive the same completion again. Upsert the answer by `messageId` within its Session for both snapshots and replay. Consumers that need an event-by-event audit must retain the events before pruning.
 
+Each subscription buffers up to 128 live previews and processes up to 32 per poll. A full queue drops incoming previews. Committed events continue through backend paging. Delivery checks each preview against the current message or tool projection, including completions before the subscription cursor. Callbacks share `observerParallelism` execution slots (default 2). Each blocked callback occupies one slot.
+
 ## 6. Capabilities, errors and recovery
 
 Public capabilities reports operations, registered definition names and checkpoint bindings;

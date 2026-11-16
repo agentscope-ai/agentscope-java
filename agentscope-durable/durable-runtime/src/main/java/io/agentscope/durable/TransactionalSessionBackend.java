@@ -41,6 +41,7 @@ import io.agentscope.durable.DurableTypes.HistoryPage;
 import io.agentscope.durable.DurableTypes.Interaction;
 import io.agentscope.durable.DurableTypes.Lease;
 import io.agentscope.durable.DurableTypes.Lifecycle;
+import io.agentscope.durable.DurableTypes.LiveEvent;
 import io.agentscope.durable.DurableTypes.ModelCallPage;
 import io.agentscope.durable.DurableTypes.ModelCallView;
 import io.agentscope.durable.DurableTypes.PublicEvent;
@@ -2301,6 +2302,13 @@ public final class TransactionalSessionBackend implements SessionBackend {
             if (queued)
                 append(s, r, new EventInput("cancelled:" + r.id, "turn.cancelled", lifecycle(r)));
         }
+    }
+
+    @Override
+    public List<LiveEvent> pendingPreviews(SessionKey key, List<LiveEvent> batch) {
+        return change(
+                key,
+                (s, now) -> PreviewBuffer.pending(batch, s.messages::get, s.projectedTools::get));
     }
 
     @Override

@@ -94,7 +94,7 @@ class SessionStreamEventTest {
 
     @Test
     void resetSupersedesOnlyCompletedMessagesAndMatchingToolCalls() {
-        var completed = new CompletedPreviews();
+
         var snapshot = mock(DurableTypes.Snapshot.class);
         when(snapshot.projection())
                 .thenReturn(
@@ -121,13 +121,19 @@ class SessionStreamEventTest {
                                                         Map.of(
                                                                 "data",
                                                                 Map.of("status", "RUNNING"))))));
-        completed.reset(snapshot);
-        assertTrue(completed.contains(live("message.delta", Map.of("messageId", "done"))));
-        assertFalse(completed.contains(live("message.delta", Map.of("messageId", "partial"))));
+        java.util.function.Predicate<LiveEvent> superseded =
+                e ->
+                        PreviewBuffer.pending(
+                                        List.of(e),
+                                        snapshot.projection().path("messages")::get,
+                                        snapshot.projection().path("tools")::get)
+                                .isEmpty();
+        assertTrue(superseded.test(live("message.delta", Map.of("messageId", "done"))));
+        assertFalse(superseded.test(live("message.delta", Map.of("messageId", "partial"))));
         var preview = live("tool.arguments.delta", Map.of("toolCallId", "call"));
-        assertTrue(completed.contains(preview));
+        assertTrue(superseded.test(preview));
         assertFalse(
-                completed.contains(
+                superseded.test(
                         new LiveEvent(
                                 "1",
                                 "next",
@@ -139,6 +145,22 @@ class SessionStreamEventTest {
                                 2,
                                 preview.type(),
                                 preview.data())));
+    }
+
+    @Test
+    void previewOverflowDropsOnlyBestEffortDataAndOneDrainYieldsAfterOneBatch() {
+        var buffer = new PreviewBuffer();
+        var event = live("tool.arguments.delta", Map.of("toolCallId", "call", "text", "delta"));
+        for (int i = 0; i < PreviewBuffer.CAPACITY; i++) assertTrue(buffer.offer(event));
+        assertFalse(buffer.offer(event));
+        var session = mock(DurableSession.class);
+        when(session.pendingPreviews(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        var delivered = new java.util.concurrent.atomic.AtomicInteger();
+        assertEquals(
+                PreviewBuffer.BATCH, buffer.drain(session, ignored -> delivered.incrementAndGet()));
+        assertEquals(PreviewBuffer.BATCH, delivered.get());
+        for (int i = 0; i < PreviewBuffer.BATCH; i++) assertTrue(buffer.offer(event));
+        assertFalse(buffer.offer(event));
     }
 
     @Test

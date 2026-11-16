@@ -22,7 +22,6 @@ import io.agentscope.durable.DurableTypes.PublicEvent;
 import io.agentscope.durable.DurableTypes.Snapshot;
 import java.time.Duration;
 import java.util.Objects;
-import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
@@ -57,8 +56,7 @@ public final class SessionEventSubscription implements AutoCloseable {
     private long generation;
     private long retryAfter;
     private ScheduledFuture<?> scheduled;
-    private final ConcurrentLinkedQueue<LiveEvent> live = new ConcurrentLinkedQueue<>();
-    private final CompletedPreviews completed = new CompletedPreviews();
+    private final PreviewBuffer live = new PreviewBuffer();
     private AutoCloseable liveSubscription;
 
     SessionEventSubscription(
@@ -95,8 +93,8 @@ public final class SessionEventSubscription implements AutoCloseable {
                             session.liveEvents()
                                     .subscribe(
                                             event -> {
-                                                if (filter.matches(session.key(), event)) {
-                                                    live.add(event);
+                                                if (filter.matches(session.key(), event)
+                                                        && live.offer(event)) {
                                                     changed();
                                                 }
                                             });
@@ -151,7 +149,6 @@ public final class SessionEventSubscription implements AutoCloseable {
                                 initialCursor,
                                 snapshot -> {
                                     snapshots.accept(snapshot);
-                                    if (liveEvents != null) completed.reset(snapshot);
                                 },
                                 this::durable,
                                 this::changed);
@@ -189,17 +186,10 @@ public final class SessionEventSubscription implements AutoCloseable {
     }
 
     private int drainLive() {
-        int delivered = 0;
-        for (LiveEvent event; (event = live.poll()) != null; ) {
-            if (completed.contains(event)) continue;
-            liveEvents.accept(event);
-            delivered++;
-        }
-        return delivered;
+        return live.drain(session, liveEvents);
     }
 
     private void durable(PublicEvent event) {
-        completed.accept(event);
         events.accept(event);
     }
 

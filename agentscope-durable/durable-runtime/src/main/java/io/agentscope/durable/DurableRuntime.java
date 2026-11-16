@@ -352,6 +352,13 @@ public final class DurableRuntime implements AutoCloseable {
         return backend == null ? Wakeups.none() : backend.wakeups();
     }
 
+    List<LiveEvent> pendingPreviews(DurableSession session, List<LiveEvent> batch) {
+        if (backend != null) return backend.pendingPreviews(session.key(), batch);
+        var projection = session.snapshot().projection();
+        return PreviewBuffer.pending(
+                batch, projection.path("messages")::get, projection.path("tools")::get);
+    }
+
     LiveEvents liveEvents() {
         return liveEvents;
     }

@@ -29,6 +29,7 @@ import io.agentscope.durable.DurableTypes.Failure;
 import io.agentscope.durable.DurableTypes.Frame;
 import io.agentscope.durable.DurableTypes.HarnessSelector;
 import io.agentscope.durable.DurableTypes.Lease;
+import io.agentscope.durable.DurableTypes.LiveEvent;
 import io.agentscope.durable.DurableTypes.ModelCallPage;
 import io.agentscope.durable.DurableTypes.ModelCallView;
 import io.agentscope.durable.DurableTypes.RecoveryView;
@@ -218,6 +219,13 @@ public interface SessionBackend extends AutoCloseable {
     void cancel(ThreadKey session, String turnId, String requestId);
 
     Snapshot snapshot(SessionKey session);
+
+    /** Suppress previews superseded by committed facts, including facts before a saved cursor. */
+    default List<LiveEvent> pendingPreviews(SessionKey session, List<LiveEvent> batch) {
+        var projection = snapshot(session).projection();
+        return PreviewBuffer.pending(
+                batch, projection.path("messages")::get, projection.path("tools")::get);
+    }
 
     EventPage events(SessionKey session, String cursor, int limit);
 

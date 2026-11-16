@@ -22,7 +22,6 @@ import io.agentscope.durable.DurableTypes.PublicEvent;
 import io.agentscope.durable.DurableTypes.Snapshot;
 import java.time.Duration;
 import java.util.Objects;
-import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
 
@@ -56,8 +55,7 @@ public final class SessionEventStream implements AutoCloseable {
     private final DurableSession session;
     private final EventFilter filter;
     private final EventPage firstPage;
-    private final ConcurrentLinkedQueue<LiveEvent> live = new ConcurrentLinkedQueue<>();
-    private final CompletedPreviews completed = new CompletedPreviews();
+    private final PreviewBuffer live = new PreviewBuffer();
     private final AutoCloseable liveSubscription;
     private final AtomicBoolean started = new AtomicBoolean();
     private final AtomicBoolean closed = new AtomicBoolean();
@@ -80,7 +78,7 @@ public final class SessionEventStream implements AutoCloseable {
                                         event -> {
                                             if (!closed.get()
                                                     && filter.matches(session.key(), event)
-                                                    && options.accepts(event)) live.add(event);
+                                                    && options.accepts(event)) live.offer(event);
                                         });
             } catch (RuntimeException error) {
                 logLiveFailure(error);
@@ -181,7 +179,7 @@ public final class SessionEventStream implements AutoCloseable {
             while (!closed.get()) {
                 int delivered = current.poll();
                 if (reset.get()) return;
-                replayCaughtUp = replayCaughtUp || current.replayCaughtUp();
+                replayCaughtUp = current.replayCaughtUp();
                 if (replayCaughtUp) delivered += drainLive(sink);
                 if (filter.threadId() != null) sink.cursor(current.cursor());
                 if (expired(until)) return;
@@ -203,18 +201,11 @@ public final class SessionEventStream implements AutoCloseable {
     }
 
     private void durable(Sink sink, PublicEvent event) {
-        completed.accept(event);
         sink.accept(event);
     }
 
     private int drainLive(Sink sink) {
-        int delivered = 0;
-        for (LiveEvent event; (event = live.poll()) != null; ) {
-            if (completed.contains(event)) continue;
-            sink.live(event);
-            delivered++;
-        }
-        return delivered;
+        return live.drain(session, sink::live);
     }
 
     private static boolean expired(long until) {

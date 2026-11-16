@@ -34,6 +34,7 @@ import io.agentscope.durable.DurableTypes.HarnessSelector;
 import io.agentscope.durable.DurableTypes.HistoryPage;
 import io.agentscope.durable.DurableTypes.Interaction;
 import io.agentscope.durable.DurableTypes.Lease;
+import io.agentscope.durable.DurableTypes.LiveEvent;
 import io.agentscope.durable.DurableTypes.ModelCallPage;
 import io.agentscope.durable.DurableTypes.ModelCallView;
 import io.agentscope.durable.DurableTypes.RecoveryView;
@@ -389,6 +390,11 @@ final class NotifyingSessionBackend implements SessionBackend {
     public void cancel(ThreadKey session, String turnId, String requestId) {
         delegate.cancel(session, turnId, requestId);
         changed(session);
+    }
+
+    @Override
+    public List<LiveEvent> pendingPreviews(SessionKey key, List<LiveEvent> batch) {
+        return delegate.pendingPreviews(key, batch);
     }
 
     @Override
