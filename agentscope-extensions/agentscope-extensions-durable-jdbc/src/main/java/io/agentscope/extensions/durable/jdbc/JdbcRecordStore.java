@@ -204,7 +204,7 @@ public final class JdbcRecordStore implements RecordStore {
         }
     }
 
-    private static final class Parts implements Transaction {
+    private final class Parts implements Transaction {
         private final Connection connection;
         private final String scope;
         private final long now;
@@ -269,11 +269,11 @@ public final class JdbcRecordStore implements RecordStore {
             checkLimit(limit);
             try (var s =
                     connection.prepareStatement(
-                            "SELECT part_key FROM durable_parts WHERE record_key=? AND part_key>=?"
-                                    + " AND part_key<? AND part_key>? ORDER BY part_key LIMIT ?")) {
+                            "SELECT part_key FROM durable_parts WHERE record_key=? AND "
+                                    + prefixPage("part_key"))) {
                 s.setString(1, scope);
                 s.setString(2, prefix);
-                s.setString(3, prefix + "\uffff");
+                s.setString(3, dialect == Dialect.POSTGRESQL ? prefix : prefix + "\uffff");
                 s.setString(4, after == null ? "" : after);
                 s.setInt(5, limit);
                 try (var rs = s.executeQuery()) {
@@ -352,6 +352,28 @@ public final class JdbcRecordStore implements RecordStore {
             throw new IllegalArgumentException("Invalid " + name);
     }
 
+    private String prefixPage(String column) {
+        if (dialect == Dialect.POSTGRESQL) {
+            String key = column + " COLLATE \"C\"";
+            return key
+                    + ">=? AND starts_with("
+                    + column
+                    + ",?) AND "
+                    + key
+                    + ">? ORDER BY "
+                    + key
+                    + " LIMIT ?";
+        }
+        return column
+                + ">=? AND "
+                + column
+                + "<? AND "
+                + column
+                + ">? ORDER BY "
+                + column
+                + " LIMIT ?";
+    }
+
     @Override
     public List<String> keys(String prefix, String after, int limit) {
         if (limit < 1 || limit > 1000) throw new IllegalArgumentException("Limit must be 1..1000");
@@ -360,10 +382,10 @@ public final class JdbcRecordStore implements RecordStore {
                 var s =
                         c.prepareStatement(
                                 "SELECT record_key FROM durable_records WHERE payload IS NOT NULL"
-                                    + " AND record_key>=? AND record_key<? AND record_key>? ORDER"
-                                    + " BY record_key LIMIT ?")) {
+                                        + " AND "
+                                        + prefixPage("record_key"))) {
             s.setString(1, prefix);
-            s.setString(2, prefix + "\uffff");
+            s.setString(2, dialect == Dialect.POSTGRESQL ? prefix : prefix + "\uffff");
             s.setString(3, after == null ? "" : after);
             s.setInt(4, limit);
             try (var rs = s.executeQuery()) {
