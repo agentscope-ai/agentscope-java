@@ -8,11 +8,12 @@ import json
 import re
 import struct
 import subprocess
+import zlib
 
 DESCRIPTOR = struct.Struct(">I32s")
 
 
-def profile(container, database, user, milestones):
+def profile(container, database, user, milestones, detail_turn=None):
     # One statement gives the journal roots and the immutable chunks one MVCC view.
     query = """
         SELECT record_key, part_key, payload
@@ -44,8 +45,14 @@ def profile(container, database, user, milestones):
             record, part, payload = row.rstrip("\n").split("\t", 2)
             if record.startswith("object:"):
                 if part == "chunk:0":
+                    encoded = json.loads(payload)
+                    data = (
+                        zlib.decompress(base64.b64decode(encoded[1:]))
+                        if encoded.startswith("~")
+                        else base64.b64decode(encoded)
+                    )
                     objects[record.split("/", 1)[1]] = (
-                        base64.b64decode(json.loads(payload)),
+                        data,
                         len(payload.encode()),
                     )
             else:
@@ -65,6 +72,7 @@ def profile(container, database, user, milestones):
     usage = collections.defaultdict(int)
     manifests = set()
     turns = set()
+    detail = {}
     inline_and_roots = [0, 0]
 
     def report():
@@ -119,6 +127,19 @@ def profile(container, database, user, milestones):
             if len(turns) in milestones:
                 report()
             turns.add(turn)
+        if detail_turn == len(turns):
+            row = detail.setdefault(
+                kind, {"entries": 0, "serialized_bytes": 0, "new_stored_payload_bytes": 0}
+            )
+            row["entries"] += 1
+            if "chunked" in stored:
+                row["serialized_bytes"] += root["size"]
+            else:
+                inline = json.dumps(stored["inline"], separators=(",", ":"), ensure_ascii=False)
+                row["serialized_bytes"] += len(inline.encode())
+            row["new_stored_payload_bytes"] += length + sum(
+                objects[key][1] for key in references if key not in usage
+            )
         manifests.update(index_references)
         snapshot = kind == "state/checkpoint"
         inline_and_roots[int(snapshot)] += length
@@ -126,6 +147,10 @@ def profile(container, database, user, milestones):
             usage[key] |= 2 if snapshot else 1
     if len(turns) in milestones:
         report()
+    if detail_turn is not None:
+        if not detail:
+            raise ValueError("Requested detail Turn was not found")
+        print(json.dumps({"detail_turn": detail_turn, "types": detail}, sort_keys=True))
     if not milestones or max(milestones) > len(turns):
         raise ValueError(f"Only {len(turns)} Turns have journal entries")
 
@@ -136,5 +161,6 @@ if __name__ == "__main__":
     parser.add_argument("database")
     parser.add_argument("user")
     parser.add_argument("milestones", nargs="+", type=int)
+    parser.add_argument("--detail-turn", type=int, help="attribute new bytes to first-writing journal event types in this Turn")
     args = parser.parse_args()
-    profile(args.container, args.database, args.user, set(args.milestones))
+    profile(args.container, args.database, args.user, set(args.milestones), args.detail_turn)

@@ -499,13 +499,16 @@ python3 agentscope-durable/scripts/docker-regression/compare_consumers.py
 
 For a single-Thread PostgreSQL test database, the read-only profiler attributes
 `durable_parts.payload` bytes to native checkpoints, other journal entries and their
-shared immutable chunks. Each shared chunk is counted once. The milestone is the
+shared immutable chunks. Each shared chunk is counted once. The record-backed
+object store compresses each compressible chunk after deduplication, preserving
+its original content digest. The profiler reports the stored payload length. With `--detail-turn`, the per-type breakdown attributes a shared chunk to the first
+event that wrote it. The milestone is the
 number of distinct Turns encountered in journal order. Take the measurement after
 the last measured Turn finishes. Checkpoint-history rows, events, PostgreSQL indexes
 and TOAST statistics can be measured separately.
 
 ```sh
-python3 agentscope-durable/scripts/docker-regression/profile_journal.py CONTAINER DATABASE USER 100 1000
+python3 agentscope-durable/scripts/docker-regression/profile_journal.py CONTAINER DATABASE USER 100 1000 --detail-turn 100
 ```
 
 Normal checking covers build, formatting and tests. Isolation checking builds source

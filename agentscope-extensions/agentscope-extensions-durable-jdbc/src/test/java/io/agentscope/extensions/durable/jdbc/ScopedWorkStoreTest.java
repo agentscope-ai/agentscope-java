@@ -110,6 +110,30 @@ class ScopedWorkStoreTest {
     }
 
     @Test
+    void coldReadsVerifyMixedCompressedAndRawChunksAndRejectTruncatedData() {
+        var objects = new RecordObjectStore(store);
+        byte[] bytes = new byte[2 * 1024 * 1024];
+        byte[] random = new byte[1024 * 1024];
+        new java.util.Random(43).nextBytes(random);
+        System.arraycopy(random, 0, bytes, random.length, random.length);
+        var ref = objects.put(ObjectStore.digest(new byte[0]), bytes);
+        org.junit.jupiter.api.Assertions.assertArrayEquals(
+                bytes, new RecordObjectStore(store).read(ref));
+        store.transaction(
+                "object:" + ref.key(),
+                tx -> {
+                    String encoded = tx.get("chunk:0").asText();
+                    assertTrue(encoded.startsWith("~"));
+                    assertFalse(tx.get("chunk:1").asText().startsWith("~"));
+                    tx.put(
+                            "chunk:0",
+                            DurableJson.value(encoded.substring(0, encoded.length() - 4)));
+                    return null;
+                });
+        assertThrows(DurableException.class, () -> new RecordObjectStore(store).read(ref));
+    }
+
+    @Test
     void immutableChunkHitsAvoidDatabaseTransactionsAndNeverExposeCachedBytes() throws Exception {
         var borrows = new java.util.concurrent.atomic.AtomicInteger();
         try (var counted =
