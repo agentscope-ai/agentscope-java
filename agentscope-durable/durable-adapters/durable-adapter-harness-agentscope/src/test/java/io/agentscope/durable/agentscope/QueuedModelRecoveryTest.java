@@ -49,6 +49,32 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 
 class QueuedModelRecoveryTest {
+    @Test
+    void queuedRequestDecodesWithCoreCodec() {
+        var tool =
+                io.agentscope.core.model.ToolSchema.builder()
+                        .name("lookup")
+                        .description("Find order")
+                        .parameters(Map.of("type", "object"))
+                        .strict(true)
+                        .build();
+        var options =
+                io.agentscope.core.model.GenerateOptions.builder()
+                        .temperature(0.3)
+                        .maxTokens(123)
+                        .build();
+        var codec = io.agentscope.core.util.JsonUtils.getJsonCodec();
+        var decodedTool =
+                codec.fromJson(codec.toJson(tool), io.agentscope.core.model.ToolSchema.class);
+        var decodedOptions =
+                codec.fromJson(
+                        codec.toJson(options), io.agentscope.core.model.GenerateOptions.class);
+        assertEquals(tool.getParameters(), decodedTool.getParameters());
+        assertEquals(tool.getStrict(), decodedTool.getStrict());
+        assertEquals(options.getTemperature(), decodedOptions.getTemperature());
+        assertEquals(options.getMaxTokens(), decodedOptions.getMaxTokens());
+    }
+
     private static final SessionKey KEY = new SessionKey("test", "queue");
     private static final ThreadKey THREAD = new ThreadKey(KEY, "main");
     @TempDir Path directory;
