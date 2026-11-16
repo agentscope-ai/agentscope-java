@@ -311,6 +311,13 @@ PostgreSQL record transactions use a 30-second idle-in-transaction timeout when
 the database setting is disabled. An existing positive timeout takes precedence.
 This lets PostgreSQL release record locks after a disconnected host stops sending SQL.
 
+The AgentScope adapter supplies an `Idempotency-Key` for each model generation.
+After a crash with a request in flight, recovery can send a second HTTP request
+with the same key. A provider that implements idempotency can return the original
+generation. Providers that ignore the key can generate and bill twice. Completed
+journaled responses replay locally. Explicit per-request idempotency headers
+take precedence.
+
 Runtime scans durable ready work and renews ownership while executing it. Fencing
 rejects writes from an expired owner even if that process later reconnects. Optional
 wakeup notifications reduce latency; durable scans compensate for lost hints.

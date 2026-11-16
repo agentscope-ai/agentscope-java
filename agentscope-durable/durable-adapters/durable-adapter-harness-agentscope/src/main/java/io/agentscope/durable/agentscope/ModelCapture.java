@@ -39,7 +39,8 @@ final class ModelCapture {
     static final String OUTCOME = "durableModelOutcome";
     private static final long MAX_BYTES = 16L * 1024 * 1024;
     private final Map<String, Object> request;
-    private final String replayHash;
+    final String replayHash;
+    final String providerKey;
     private final ReasoningContext content = new ReasoningContext("durable");
     private final List<ContentBlock> additional = new ArrayList<>();
     private final Map<String, Object> metadata = new LinkedHashMap<>();
@@ -54,7 +55,9 @@ final class ModelCapture {
             List<Msg> messages,
             List<ToolSchema> tools,
             GenerateOptions options,
-            String replayHash) {
+            String replayHash,
+            String providerKey) {
+        this.providerKey = providerKey;
         var data = new LinkedHashMap<String, Object>();
         data.put("model", model);
         data.put("purpose", purpose);

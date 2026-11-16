@@ -123,6 +123,10 @@ final class BackendThreadJournal implements ThreadJournal {
         captures.put(id, capture);
     }
 
+    synchronized String providerKey(String id) {
+        return captures.get(id).providerKey;
+    }
+
     synchronized void modelChunk(String id, ChatResponse chunk) {
         captures.get(id).accept(chunk);
     }
@@ -132,11 +136,15 @@ final class BackendThreadJournal implements ThreadJournal {
             var capture = captures.get(String.valueOf(event.data().get("modelCallId")));
             if (capture != null) capture.nextAttempt();
         }
-        if (!"model/end".equals(event.type())) return event;
+        boolean prepared = "request/prepared".equals(event.type());
+        if (!prepared && !"model/end".equals(event.type())) return event;
         var capture = captures.get(String.valueOf(event.data().get("modelCallId")));
         if (capture == null) return event;
         var data = new LinkedHashMap<String, Object>(event.data());
-        data.put(ModelCapture.OUTCOME, capture.freeze(String.valueOf(data.get("status"))));
+        if (prepared) {
+            data.put("durableRequestHash", capture.replayHash);
+            data.put("durableProviderKey", capture.providerKey);
+        } else data.put(ModelCapture.OUTCOME, capture.freeze(String.valueOf(data.get("status"))));
         return new JournalEvent(
                 event.schemaVersion(),
                 event.eventId(),

@@ -101,7 +101,19 @@ public final class RecordedModels {
                                                         context.getAgentState()))
                                         .thenReturn(callId),
                                 id ->
-                                        Flux.defer(() -> delegate.stream(messages, tools, options))
+                                        Flux.defer(
+                                                        () -> {
+                                                            var host =
+                                                                    context.get(
+                                                                            ModelInvocation.class);
+                                                            return delegate.stream(
+                                                                    messages,
+                                                                    tools,
+                                                                    host == null
+                                                                            ? options
+                                                                            : host.providerOptions(
+                                                                                    id, options));
+                                                        })
                                                 .doOnNext(
                                                         chunk -> {
                                                             last.set(chunk);

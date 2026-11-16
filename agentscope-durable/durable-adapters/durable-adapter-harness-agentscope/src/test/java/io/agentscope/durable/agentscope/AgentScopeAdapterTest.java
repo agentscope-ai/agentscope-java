@@ -498,6 +498,60 @@ class AgentScopeAdapterTest {
     }
 
     @Test
+    void inFlightModelReusesProviderKeyAcrossTakeover() throws Exception {
+        var calls = new CopyOnWriteArrayList<String>();
+        Model model =
+                new Model() {
+                    public String getModelName() {
+                        return "counting";
+                    }
+
+                    public Flux<ChatResponse> stream(
+                            List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
+                        calls.add(options.getAdditionalHeaders().get("Idempotency-Key"));
+                        return Flux.just(
+                                ChatResponse.builder()
+                                        .content(List.of(TextBlock.builder().text("done").build()))
+                                        .build());
+                    }
+                };
+        var thread = new ThreadKey(key, "main");
+        try (var storage = LocalBackend.open(directory.resolve("in-flight-model"))) {
+            var interrupted = spy(storage);
+            doAnswer(
+                            invocation -> {
+                                if (!calls.isEmpty())
+                                    throw new DurableException(
+                                            DurableException.Code.UNAVAILABLE,
+                                            "Interrupted after provider admission");
+                                return invocation.callRealMethod();
+                            })
+                    .when(interrupted)
+                    .commit(any(), any());
+            String turn;
+            try (var runtime =
+                    runtime(interrupted, adapter(model, PermissionMode.BYPASS, Map.of()), null)) {
+                turn = runtime.createSession(key, "agent").submit("one", "hello").turnId();
+                runtime.tick(thread);
+                assertEquals(1, calls.size());
+            }
+            Thread.sleep(5);
+            try (var runtime =
+                    runtime(storage, adapter(model, PermissionMode.BYPASS, Map.of()), null)) {
+                runtime.tick(thread);
+                assertEquals(TurnStatus.SUCCEEDED, storage.turn(thread, turn).status());
+                assertEquals(2, calls.size());
+                assertNotNull(calls.get(0));
+                assertEquals(calls.get(0), calls.get(1));
+                runtime.getSession(key).submit("two", "hello");
+                runtime.tick(thread);
+                assertEquals(3, calls.size());
+                assertFalse(calls.get(0).equals(calls.get(2)));
+            }
+        }
+    }
+
+    @Test
     void completedModelSurvivesCrashBeforeStateApplication() throws Exception {
         var model = new ScriptedModel(false);
         var crash = new AtomicBoolean();
