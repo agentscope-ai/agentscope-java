@@ -1000,3 +1000,7 @@ tasks in a reused Thread. Cancellation before admission stores a tombstone; a la
 The transaction rejects cross-Session targets, the parent Thread itself and Thread dependency cycles formed
 by unfinished delegations. `turn.delegated`, `tool.delegated` and `tool.delegation.cancel_requested` are common
 public events; they do not replace the actual child result or its application by the parent.
+
+### Uncertain Hands executions
+
+Hands keeps querying an admitted provider handle across worker replacement. A missing lookup retains that handle. Before a handle exists, repeated start requires provider-side idempotency across all workers. After eight consecutive UNKNOWN observations by default, the transactional Hands ledger pauses automatic recovery. RocketMQ hosts can set `RocketMqWorker.Builder.unknownLimit` for new executions. The ledger freezes the limit at admission. An operator can claim the exact execution and reconcile with external evidence. The first cancellation wakes parked work to check cancellation; duplicate cancellations preserve its budget.

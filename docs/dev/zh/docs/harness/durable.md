@@ -875,3 +875,7 @@ var children = new DelegationExecutor(backend, request ->
 取消先于受理时只保存取消记录，后续迟到的 start 不会创建子任务。事务内拒绝跨 Session、父 Thread
 自身及未完成委派形成的 Thread 依赖环。`turn.delegated`、`tool.delegated` 和
 `tool.delegation.cancel_requested` 是统一公开事件；它们不替代真实子任务结果及父任务的结果应用。
+
+### Hands 执行结果不确定时的恢复
+
+服务端已返回执行句柄时，接管的 Hands 会继续查询原句柄。查询返回缺失时仍保留该句柄。没有句柄时，只有提供方能对所有 Hands 按同一 executionId 去重才允许再次启动。事务型 Hands 账本默认在连续 8 次 UNKNOWN 后暂停自动恢复。RocketMQ 宿主可通过 `RocketMqWorker.Builder.unknownLimit` 设置新执行的上限，账本在接纳执行时固定该值。运维端可按原执行身份领取租约，依据外部证据核实结果。首次取消会唤醒已暂停的执行以核实取消结果，重复取消保留原有预算。

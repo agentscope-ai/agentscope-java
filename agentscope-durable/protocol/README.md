@@ -446,12 +446,24 @@ leave the outcome unconfirmed. `NOT_FOUND` permits another start only under the
 frozen idempotent-start guarantee. Pending cancellation remains `PENDING` or
 `RUNNING` until the provider confirms a terminal outcome.
 
+Once a provider has issued a handle, recovery preserves it through missing or
+uncertain lookups and only queries or cancels that admitted operation. Without a
+handle, repeated admission still requires an idempotent provider using the
+original execution ID. Provider-side idempotency must span Hands processes.
+
 ### Verified UNKNOWN reconciliation
 
 `executionReconciliation` carries a stable request ID, a terminal ExecutionResult,
 and an evidence reference. This is a host operations contract. The host verifies
 the external fact and authorizes the operator, claims the original execution with
 `ExecutionStore.claim(request, owner, lease)`, then calls `reconcile(work, command)`.
+
+The transactional Hands ledger stops automatic starts and queries after its
+admission-time limit of consecutive UNKNOWN observations (default eight).
+It retains the uncertain result and pending result publications. An exact
+operator claim still observes the active lease fence. The first cancellation
+opens a separate observation budget; redelivering that cancellation cannot
+reset it again.
 
 Only `UNKNOWN` can be settled through this path. Audit evidence, outcome, and
 outbox commit together; missing output receives an explicit terminal gap before

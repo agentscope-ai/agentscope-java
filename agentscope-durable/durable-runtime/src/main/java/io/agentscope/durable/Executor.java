@@ -50,7 +50,7 @@ public interface Executor extends AutoCloseable {
 
     /**
      * Return NOT_FOUND only for authoritative absence. A worker may then issue another start
-     * when idempotentStart is advertised. A timeout, partition, or eventually consistent lookup
+     * when idempotentStart is advertised and the provider has not already issued a handle. A timeout, partition, or eventually consistent lookup
      * cannot establish absence and must report UNKNOWN or a transient failure. Idempotent start
      * must suppress duplicate effects across concurrent workers using the same execution ID.
      */

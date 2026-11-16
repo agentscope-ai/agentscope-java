@@ -278,6 +278,47 @@ class WorkerRuntimeTest {
     }
 
     @Test
+    void parkedUnknownBudgetIsFrozenAndOnlyExplicitControlReopensIt() throws Exception {
+        try (var records = JdbcRecordStore.sqlite(directory.resolve("parked.db"))) {
+            var original = new TransactionalExecutionStore(records, "hands", 1);
+            original.admit(request);
+            var replacement = new TransactionalExecutionStore(records, "hands", 10);
+            var lease = Duration.ofSeconds(5);
+            var key = replacement.ready(1).get(0);
+            var work = replacement.claim(key, "worker", lease).orElseThrow();
+            replacement.begin(work);
+            replacement.update(work, ExecutionResult.unknown("provider unreachable"));
+            replacement.defer(work, lease, lease);
+            assertTrue(original.ready(1).isEmpty());
+            assertTrue(
+                    original.query(request).error().contains("external reconciliation required"));
+            assertTrue(original.claim(key, "background", lease).isEmpty());
+            var inspector = original.claim(request, "operator", lease).orElseThrow();
+            original.release(inspector, Duration.ZERO);
+            replacement.cancel(request);
+            var cancelling = original.claim(key, "worker", lease).orElseThrow();
+            original.update(cancelling, ExecutionResult.unknown("cancel unconfirmed"));
+            original.release(cancelling, Duration.ZERO);
+            replacement.cancel(request);
+            assertTrue(original.ready(true, 1).isEmpty());
+        }
+    }
+
+    @Test
+    void aLateUnknownFromStartCannotExhaustConcurrentCancellationBudget() throws Exception {
+        try (var records = JdbcRecordStore.sqlite(directory.resolve("cancel-race.db"))) {
+            var store = new TransactionalExecutionStore(records, "hands", 1);
+            store.admit(request);
+            var work = store.claim(request, "original", Duration.ofSeconds(5)).orElseThrow();
+            store.begin(work);
+            store.cancel(request);
+            store.update(work, ExecutionResult.unknown("start lost"));
+            store.release(work, Duration.ZERO);
+            assertEquals(List.of(work.key()), store.ready(true, 1));
+        }
+    }
+
+    @Test
     void deferredRecoverySurvivesReplacementAndCancellationBypassesBackoff() throws Exception {
         try (var records = JdbcRecordStore.sqlite(directory.resolve("backoff.db"))) {
             var store = new TransactionalExecutionStore(records);

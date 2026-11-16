@@ -65,7 +65,10 @@ public final class ExecutionRecovery {
                                     : unknown(observed, "Provider cannot confirm cancellation");
                 } else if (queryable) {
                     observed = retainHandle(executor.query(request, observed.handle()), observed);
+                    // A previously issued provider handle is evidence of admission. A
+                    // different Hands may have a weaker view; never replace that operation.
                     if (observed.state() == ExecutionState.NOT_FOUND
+                            && previous.handle() == null
                             && capabilities.idempotentStart())
                         observed = retainHandle(executor.startExecution(request), observed);
                 } else if (capabilities.idempotentStart()) {
