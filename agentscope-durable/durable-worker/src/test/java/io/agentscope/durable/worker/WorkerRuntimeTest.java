@@ -543,28 +543,35 @@ class WorkerRuntimeTest {
 
     @Test
     void staleWorkerCannotPublishResult() throws Exception {
-        var store =
-                new TransactionalExecutionStore(
-                        JdbcRecordStore.sqlite(directory.resolve("fence.db")));
-        store.admit(request);
-        var key = store.keys(null, 1).get(0);
-        var old = store.claim(key, "old", Duration.ofSeconds(1)).orElseThrow();
-        store.begin(old);
-        store.release(old, Duration.ZERO);
-        var current = store.claim(key, "new", Duration.ofSeconds(1)).orElseThrow();
-        assertThrows(
-                DurableException.class,
-                () ->
-                        store.update(
-                                old,
-                                new ExecutionResult(
-                                        ExecutionState.SUCCEEDED,
-                                        null,
-                                        DurableJson.value("late"),
-                                        null)));
-        store.update(
-                current, new ExecutionResult(ExecutionState.UNKNOWN, null, null, "Needs query"));
-        assertEquals(ExecutionState.UNKNOWN, store.query(request).state());
+        var file = directory.resolve("fence.db");
+        try (var first = JdbcRecordStore.sqlite(file);
+                var second = JdbcRecordStore.sqlite(file)) {
+            var store = new TransactionalExecutionStore(first);
+            var replacement = new TransactionalExecutionStore(second);
+            var command = ExecutionMessages.command(ExecutionMessages.Kind.EXECUTE, request);
+            store.receive(command);
+            var old = store.claim(request, "old", Duration.ofSeconds(1)).orElseThrow();
+            store.begin(old);
+            replacement.receive(command);
+            assertTrue(replacement.claim(request, "new", Duration.ofSeconds(1)).isEmpty());
+            Thread.sleep(1100);
+            var current = replacement.claim(request, "new", Duration.ofSeconds(5)).orElseThrow();
+            assertTrue(replacement.begin(current).attempted());
+            var confirmed =
+                    new ExecutionResult(
+                            ExecutionState.SUCCEEDED,
+                            request.executionId(),
+                            DurableJson.value("verified"),
+                            null);
+            replacement.update(current, confirmed);
+            assertEquals(
+                    DurableException.Code.FENCED,
+                    assertThrows(
+                                    DurableException.class,
+                                    () -> store.update(old, ExecutionResult.unknown("late return")))
+                            .code());
+            assertEquals(confirmed, store.query(request));
+        }
     }
 
     @Test
