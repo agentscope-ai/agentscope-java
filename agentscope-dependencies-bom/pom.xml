@@ -75,6 +75,7 @@
         <jackson.version>2.21.1</jackson.version>
         <mockito.version>5.23.0</mockito.version>
         <junit-jupiter.version>6.0.2</junit-jupiter.version>
+        <langchain4j.version>1.22.0</langchain4j.version>
         <testcontainers.version>1.21.4</testcontainers.version>
         <guava.version>33.7.2-jre</guava.version>
         <google-genai.version>1.80.0</google-genai.version>
@@ -209,6 +210,13 @@
                 <version>${testcontainers.version}</version>
                 <type>pom</type>
                 <scope>import</scope>
+            </dependency>
+
+            <!-- Optional LangChain4j tool interoperability -->
+            <dependency>
+                <groupId>dev.langchain4j</groupId>
+                <artifactId>langchain4j</artifactId>
+                <version>${langchain4j.version}</version>
             </dependency>
 
             <!-- Google Guava -->

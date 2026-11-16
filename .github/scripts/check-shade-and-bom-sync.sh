@@ -22,7 +22,8 @@ echo ""
 #   - *starter*   : Spring Boot starters
 #   - *quarkus*   : Quarkus extensions
 #   - *micronaut* : Micronaut extensions
-EXCLUDED_KEYWORDS=("starter" "quarkus" "micronaut")
+#   - *langchain4j*: Optional foreign-framework tool interoperability
+EXCLUDED_KEYWORDS=("starter" "quarkus" "micronaut" "langchain4j")
 
 # Test-only modules are part of the reactor but are not published runtime artifacts.
 EXCLUDED_FROM_DISTRIBUTION=("agentscope-extensions-model-e2e-tests")
