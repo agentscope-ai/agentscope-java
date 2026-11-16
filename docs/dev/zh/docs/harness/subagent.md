@@ -120,6 +120,8 @@ HarnessAgent.builder()
 - `timeout_seconds > 0`（默认 30，最大 600）—— **同步**调用，主 agent 在这一步 block 等待结果，结果作为工具结果返回。默认超时后会 **promote** 成后台任务（`status: timeout_promoted` + `task_id`），子 agent 继续跑。
 - `timeout_seconds = 0` —— **后台**调用，立即返回一个 `task_id`，子 agent 在后台跑。
 
+本地子代理返回 `GenerateReason.MAX_ITERATIONS` 时，结果标注 `status: max_iterations`，明确说明已有内容只是部分结果，保留全部文本和文档引用。这同时适用于同步回复、后台结果以及超时转后台的结果。工具结果仍为成功，后台任务生命周期仍为 `COMPLETED`，表示执行已返回，不代表请求的工作全部完成。其他回复和继承的轮数预算不变。远程任务若协议未提供生成原因，不从回复文本猜测终止原因。
+
 **通过 `RuntimeContext` 强制同步。** 应用侧可在当前调用的 `RuntimeContext` 里放入 `AgentSpawnTool.CTX_FORCE_SYNC = true`，覆盖 LLM 的异步选择；可选再放 `CTX_FORCE_SYNC_TIMEOUT_SECONDS` 指定硬超时（秒）：
 
 ```java

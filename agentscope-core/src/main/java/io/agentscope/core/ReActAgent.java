@@ -95,6 +95,8 @@ import io.agentscope.core.message.SystemMessage;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ThinkingBlock;
 import io.agentscope.core.message.ToolCallState;
+import io.agentscope.core.message.ToolErrorKind;
+import io.agentscope.core.message.ToolErrorMetadata;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolResultState;
 import io.agentscope.core.message.ToolUseBlock;
@@ -4206,7 +4208,11 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             String message =
                     outputLimitReached ? OUTPUT_LIMIT_TOOL_ARGUMENTS : INVALID_TOOL_ARGUMENTS;
             for (ToolUseBlock tc : toolCalls) {
-                ToolResultBlock errorResult = ToolResultBlock.error(tc.getId(), message);
+                ToolResultBlock errorResult =
+                        ToolResultBlock.error(tc.getId(), message)
+                                .withMetadata(
+                                        ToolErrorMetadata.of(
+                                                ToolErrorKind.INVALID_ARGUMENT, tc.getName()));
                 Msg toolResultMsg =
                         ToolResultMessageBuilder.buildToolResultMsg(errorResult, tc, getName());
                 state.contextMutable().add(toolResultMsg);
@@ -4215,7 +4221,8 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                         new ToolResultTextDeltaEvent(replyId, tc.getId(), tc.getName(), message));
                 publishEvent(
                         new ToolResultEndEvent(
-                                replyId, tc.getId(), tc.getName(), ToolResultState.ERROR));
+                                        replyId, tc.getId(), tc.getName(), ToolResultState.ERROR)
+                                .withMetadata(errorResult.getMetadata()));
             }
         }
 
@@ -4510,10 +4517,14 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             for (ToolUseBlock tc : toolCalls) {
                 String denial = grantDenialFor(tc);
                 if (denial != null) {
+                    // Same text and metadata as the executor's not-found result.
                     ungranted.add(
                             Map.entry(
                                     tc,
                                     ToolResultBlock.error(denial)
+                                            .withMetadata(
+                                                    ToolErrorMetadata.of(
+                                                            ToolErrorKind.NOT_FOUND, tc.getName()))
                                             .withIdAndName(tc.getId(), tc.getName())));
                 } else {
                     granted.add(tc);
@@ -4558,9 +4569,11 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             String text = ((TextBlock) entry.getValue().getOutput().get(0)).getText();
             return List.of(
                     new ToolResultStartEvent(replyId, use.getId(), use.getName()),
-                    new ToolResultTextDeltaEvent(replyId, use.getId(), use.getName(), text),
+                    new ToolResultTextDeltaEvent(replyId, use.getId(), use.getName(), text)
+                            .withMetadata(entry.getValue().getMetadata()),
                     new ToolResultEndEvent(
-                            replyId, use.getId(), use.getName(), ToolResultState.ERROR));
+                                    replyId, use.getId(), use.getName(), ToolResultState.ERROR)
+                            .withMetadata(entry.getValue().getMetadata()));
         }
 
         /**
@@ -4934,11 +4947,15 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             if (validationError != null) {
                 return Mono.just(
                         ToolResultBlock.error(
-                                use.getId(),
-                                "Parameter validation failed for tool '"
-                                        + STRUCTURED_OUTPUT_TOOL_NAME
-                                        + "': "
-                                        + validationError));
+                                        use.getId(),
+                                        "Parameter validation failed for tool '"
+                                                + STRUCTURED_OUTPUT_TOOL_NAME
+                                                + "': "
+                                                + validationError)
+                                .withMetadata(
+                                        ToolErrorMetadata.of(
+                                                ToolErrorKind.INVALID_ARGUMENT,
+                                                STRUCTURED_OUTPUT_TOOL_NAME)));
             }
             return soTool.callAsync(param).map(rb -> rb.withIdAndName(use.getId(), use.getName()));
         }

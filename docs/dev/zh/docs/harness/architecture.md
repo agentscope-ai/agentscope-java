@@ -69,9 +69,15 @@ en_link: /dev/en/docs/harness/architecture
 - `agentscope_error_scope` —— 失败对象：工作区相对路径、host、thread id 等。
 - `agentscope_retriable` —— 原样重试是否可能成功；缺省表示未知。
 
+Core 也会分类工具查找、可用性和参数校验失败，scope 使用工具名。不存在与未获能力授权的工具共用 `not_found` 文本和元数据，不泄露工具存在性；未激活工具使用 `permission_denied`，畸形或不符合 schema 的参数使用 `invalid_argument`。这些控制面字段传递到 `ToolResultEndEvent`，不改变模型可见的错误文本。
+
 自定义工具构造错误结果时可用 `ToolErrorMetadata.of(kind, scope)` 接入同一契约。
 
-在这层 metadata 之上，`HarnessAgent` 默认安装 `RepeatedFailureGuard`：工具执行期间观察结果，当同一工具以相同 kind 和 scope 失败 3 次（标记为可重试时 5 次），下一次模型请求会附加一条不写入会话历史的短提醒。同一工具成功、进入新一轮或调用结束都会清零计数，每轮最多两条提醒。它不会自动重试、改写参数或中止运行。用 `.disableRepeatedFailureGuard()` 关闭，或注册自己的 middleware 采用不同策略。
+`HarnessAgent` 默认安装 `RepeatedFailureGuard`，在工具执行期间观察结果。最近 8 条已分类失败按工具、kind 和 scope 计数，出现 3 次时在下一次模型请求中附加短提醒（标记为可重试时 5 次）。成功只清除相同参数的调用对应的失败；参数不可用时按相同 scope 清除，不再清空同名工具的所有失败。`command_failed` 提醒要求先检查退出码及诊断输出，再修改命令。
+
+另一个 8 条结果的窗口对相同参数和流式输出计算指纹，包括 `SUCCESS` / exit 0 和未分类错误。重复 3 次（标记为可重试时 5 次）会触发不暗示失败的中性提醒；结果变化时清除该调用的重复记录。指纹只保留散列值，不保存原始参数或输出。两条检测路径每轮合计最多提醒 2 次，同一 signature 的第二次提醒须再出现 3 次。提醒不写入会话历史，新一轮或调用结束重置两个窗口。守卫不会自动重试、改写参数、中止运行，也不会从文本推断业务错误。用 `.disableRepeatedFailureGuard()` 关闭，或注册自己的 middleware 采用不同策略。
+
+内置上下文约定还要求：副作用操作结果不确定时，先查当前状态再决定是否重试；精确引用前取回原文并逐字保留。这些是模型行为指引，不是运行时幂等保证或权限授权。
 
 ## 自己加 middleware 时要注意什么
 

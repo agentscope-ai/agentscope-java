@@ -30,6 +30,7 @@ import io.agentscope.core.event.AgentStartEvent;
 import io.agentscope.core.event.SubagentExposedEvent;
 import io.agentscope.core.formatter.DocumentReferenceRenderer;
 import io.agentscope.core.journal.JournalException;
+import io.agentscope.core.message.GenerateReason;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolResultState;
@@ -1054,9 +1055,8 @@ public class AgentSpawnTool {
                                                             ToolResultBlock.success(
                                                                     header
                                                                             + "\n"
-                                                                            + "status: ok\n"
-                                                                            + "reply:\n"
-                                                                            + textOf(msg)));
+                                                                            + formatLocalSyncReply(
+                                                                                    msg)));
                                                 }
                                             });
 
@@ -1223,14 +1223,30 @@ public class AgentSpawnTool {
         return restored;
     }
 
+    private static String formatLocalSyncReply(Msg msg) {
+        String reply = textOf(msg);
+        if (msg != null && msg.getGenerateReason() == GenerateReason.MAX_ITERATIONS) {
+            return reply;
+        }
+        return "status: ok\nreply:\n" + reply;
+    }
+
     /**
      * Renders a subagent reply as text for the task result.
      *
      * <p>The background task contract stores a string, so a delivered document cannot travel as
-     * a block here. It is named in a reference instead of disappearing.
+     * a block here. It is named in a reference instead of disappearing. Replies stopped by the
+     * iteration limit retain their completion reason and are explicitly marked as partial.
      */
     private static String textOf(Msg msg) {
-        return DocumentReferenceRenderer.renderMessageText(msg);
+        String reply = DocumentReferenceRenderer.renderMessageText(msg);
+        if (msg != null && msg.getGenerateReason() == GenerateReason.MAX_ITERATIONS) {
+            return "status: max_iterations\ngenerate_reason: MAX_ITERATIONS\n"
+                    + "note: The subagent reached its maximum iterations. The reply is a partial"
+                    + " result; the task may be incomplete.\nreply:\n"
+                    + reply;
+        }
+        return reply;
     }
 
     private static String formatTimeoutPromoted(String taskId, long timeoutMs) {

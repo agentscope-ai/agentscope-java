@@ -15,23 +15,34 @@
  */
 package io.agentscope.harness.agent.tool;
 
+import static io.agentscope.harness.agent.tool.ToolResultAssertions.assertNoErrorMetadata;
 import static io.agentscope.harness.agent.tool.ToolResultAssertions.assertText;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.core.formatter.DocumentReferenceRenderer;
+import io.agentscope.core.message.DocumentBlock;
+import io.agentscope.core.message.GenerateReason;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
+import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolResultState;
 import io.agentscope.core.message.ToolUseBlock;
+import io.agentscope.core.message.URLSource;
 import io.agentscope.core.tool.ToolCallParam;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.harness.agent.middleware.SubagentEntry;
@@ -49,7 +60,9 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.params.provider.ValueSource;
+import org.mockito.ArgumentCaptor;
 import reactor.core.publisher.Mono;
 
 class AgentSpawnToolResultStateTest {
@@ -137,6 +150,101 @@ class AgentSpawnToolResultStateTest {
                                 ToolResultState.SUCCESS)
                         .endsWith(reply));
         assertText(tool.agentList(), ToolResultState.SUCCESS);
+    }
+
+    @ParameterizedTest
+    @EnumSource(GenerateReason.class)
+    void syncSpawnSendAndReusePreserveCompletionReasonAndDocuments(GenerateReason reason) {
+        Msg reply = replyWithDocument(reason);
+        when(agent.call(anyList())).thenReturn(Mono.just(reply));
+        AgentSpawnTool tool = localTool(true);
+        ToolResultBlock spawned =
+                tool.agentSpawn(context, null, "worker", "go", "worker", 1, null).block();
+        String agentKey = key(spawned);
+        ToolResultBlock sent = tool.agentSend(context, null, agentKey, null, "next", 1).block();
+        ToolResultBlock reused =
+                tool.agentSpawn(context, null, "worker", "again", "worker", 1, null).block();
+
+        for (ToolResultBlock result : List.of(spawned, sent, reused)) {
+            assertNoErrorMetadata(result);
+            assertLocalReply(assertText(result, ToolResultState.SUCCESS), reply, true);
+        }
+    }
+
+    @ParameterizedTest
+    @EnumSource(GenerateReason.class)
+    void asyncSpawnSendAndReusePreserveCompletionReasonAndDocuments(GenerateReason reason) {
+        Msg reply = replyWithDocument(reason);
+        when(agent.call(anyList())).thenReturn(Mono.just(reply));
+        AgentSpawnTool tool = localTool(true);
+        ToolResultBlock spawned =
+                tool.agentSpawn(context, null, "worker", "go", "worker", 0, null).block();
+        String agentKey = key(spawned);
+        assertText(
+                tool.agentSend(context, null, agentKey, null, "next", 0).block(),
+                ToolResultState.SUCCESS);
+        assertText(
+                tool.agentSpawn(context, null, "worker", "again", "worker", 0, null).block(),
+                ToolResultState.SUCCESS);
+
+        ArgumentCaptor<TaskRunSpec> specs = ArgumentCaptor.forClass(TaskRunSpec.class);
+        verify(repository, times(3))
+                .putTask(eq(context), anyString(), eq("worker"), eq("parent"), specs.capture());
+        for (TaskRunSpec spec : specs.getAllValues()) {
+            TaskRunSpec.LocalTaskRunSpec local =
+                    assertInstanceOf(TaskRunSpec.LocalTaskRunSpec.class, spec);
+            String result = local.execution().get();
+            assertLocalReply(result, reply, false);
+            BackgroundTask task =
+                    new BackgroundTask("task", "worker", CompletableFuture.completedFuture(result));
+            assertEquals(TaskStatus.COMPLETED, task.getTaskStatus());
+            assertNull(task.getError());
+            when(repository.getTask(context, "parent", "task")).thenReturn(task);
+            ToolResultBlock output =
+                    new TaskTool(repository).taskOutput(context, "task", false, 0L);
+            assertNoErrorMetadata(output);
+            assertTrue(
+                    assertText(output, ToolResultState.SUCCESS).endsWith("\nResult:\n" + result));
+        }
+    }
+
+    private static Msg replyWithDocument(GenerateReason reason) {
+        return Msg.builder()
+                .role(MsgRole.ASSISTANT)
+                .content(
+                        List.of(
+                                TextBlock.builder()
+                                        .text("[ERROR] log content\nFindings so far.")
+                                        .build(),
+                                DocumentBlock.builder()
+                                        .name("report.pdf")
+                                        .mimeType("application/pdf")
+                                        .source(
+                                                URLSource.builder()
+                                                        .url("https://example.com/report.pdf")
+                                                        .build())
+                                        .build()))
+                .generateReason(reason)
+                .build();
+    }
+
+    private static void assertLocalReply(String result, Msg reply, boolean sync) {
+        String rendered = DocumentReferenceRenderer.renderMessageText(reply);
+        if (reply.getGenerateReason() == GenerateReason.MAX_ITERATIONS) {
+            assertTrue(
+                    result.contains("status: max_iterations\ngenerate_reason: MAX_ITERATIONS\n"));
+            assertEquals(
+                    1L,
+                    result.lines().filter(line -> line.equals("status: max_iterations")).count());
+            assertTrue(result.contains("partial result"));
+            assertFalse(result.contains("status: ok"));
+            assertTrue(result.endsWith("\nreply:\n" + rendered));
+        } else if (sync) {
+            assertTrue(result.endsWith("\nstatus: ok\nreply:\n" + rendered));
+            assertFalse(result.contains("generate_reason:"));
+        } else {
+            assertEquals(rendered, result);
+        }
     }
 
     @Test

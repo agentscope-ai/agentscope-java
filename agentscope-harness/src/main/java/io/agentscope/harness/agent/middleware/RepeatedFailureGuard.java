@@ -15,18 +15,28 @@
  */
 package io.agentscope.harness.agent.middleware;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.SerializationFeature;
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.event.AgentEvent;
+import io.agentscope.core.event.ToolResultDataDeltaEvent;
 import io.agentscope.core.event.ToolResultEndEvent;
+import io.agentscope.core.event.ToolResultTextDeltaEvent;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolErrorMetadata;
 import io.agentscope.core.message.ToolResultState;
+import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.message.UserMessage;
 import io.agentscope.core.middleware.ActingInput;
 import io.agentscope.core.middleware.AgentInput;
 import io.agentscope.core.middleware.ReasoningInput;
+import java.io.IOException;
+import java.io.OutputStream;
+import java.security.DigestOutputStream;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -34,6 +44,7 @@ import java.util.Deque;
 import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -58,12 +69,17 @@ import reactor.core.publisher.Mono;
  * ToolResultState#ERROR} or {@link ToolResultState#DENIED} and whose metadata carries
  * {@link ToolErrorMetadata#METADATA_ERROR_KIND} are classified failures. An {@code ERROR}
  * result without a kind is treated as unclassified and ignored, so tools that do not adopt the
- * metadata contract are never second-guessed. A {@code DENIED} result without a kind is counted
+ * metadata contract are never classified by their output text. A {@code DENIED} result without a kind is counted
  * as {@code permission_denied}, because denial is unambiguous.
  *
  * <p><b>Signature.</b> Failures are merged per {@code toolName|errorKind[|errorScope]}. Two
  * different files failing with {@code not_found} do not add up; the same file failing with
  * {@code not_found} does.
+ *
+ * <p><b>Repetition.</b> Independently, identical arguments and identical streamed results are
+ * fingerprinted, including successful (exit 0) results. This path uses a neutral repetition
+ * reminder, never infers failure from text, and stores hashes rather than raw inputs or output.
+ * Changed results reset only that call's repetition history. Both paths share the reminder cap.
  *
  * <p><b>Thresholds.</b> The guard remembers the last {@value #WINDOW_SIZE} classified failures
  * and intervenes when one signature reaches {@value #FAILURE_THRESHOLD} occurrences. Failures
@@ -77,12 +93,15 @@ import reactor.core.publisher.Mono;
  * the {@link ReasoningInput} of the following step and is never written to the agent state.
  *
  * <p><b>Reset.</b> Counters are reset at the start of every agent call (a new user turn), on a
- * successful result for the same tool, and when the call finishes; per-session state is bounded
+ * successful result for the same call (or matching scope when arguments are unavailable), and
+ * when the call finishes; per-session state is bounded
  * to {@value #MAX_TRACKED_SESSIONS} sessions and evicted least-recently-used first.
  */
 public class RepeatedFailureGuard implements HarnessRuntimeMiddleware {
 
     private static final Logger log = LoggerFactory.getLogger(RepeatedFailureGuard.class);
+    private static final ObjectMapper JSON =
+            new ObjectMapper().enable(SerializationFeature.ORDER_MAP_ENTRIES_BY_KEYS);
 
     /** Number of recent classified failures considered when counting a signature. */
     static final int WINDOW_SIZE = 8;
@@ -137,7 +156,10 @@ public class RepeatedFailureGuard implements HarnessRuntimeMiddleware {
             RuntimeContext ctx,
             AgentInput input,
             Function<AgentInput, Flux<AgentEvent>> next) {
-        stateFor(ctx).reset();
+        SessionState state = stateFor(ctx);
+        synchronized (state) {
+            state.reset();
+        }
         return next.apply(input);
     }
 
@@ -148,15 +170,39 @@ public class RepeatedFailureGuard implements HarnessRuntimeMiddleware {
             ActingInput input,
             Function<ActingInput, Flux<AgentEvent>> next) {
         SessionState state = stateFor(ctx);
-        return next.apply(input)
-                .doOnNext(
-                        event -> {
-                            if (event instanceof ToolResultEndEvent result) {
-                                synchronized (state) {
-                                    state.observe(result);
-                                }
-                            }
-                        });
+        return Flux.defer(
+                () -> {
+                    Map<String, CallObservation> calls = new HashMap<>();
+                    for (ToolUseBlock call : input.toolCalls()) {
+                        if (call.getId() != null) {
+                            calls.put(call.getId(), new CallObservation(call));
+                        }
+                    }
+                    return next.apply(input)
+                            .doOnNext(
+                                    event -> {
+                                        synchronized (state) {
+                                            if (event instanceof ToolResultTextDeltaEvent text) {
+                                                CallObservation call =
+                                                        calls.get(text.getToolCallId());
+                                                if (call != null) {
+                                                    call.text(text.getDelta());
+                                                }
+                                            } else if (event
+                                                    instanceof ToolResultDataDeltaEvent data) {
+                                                CallObservation call =
+                                                        calls.get(data.getToolCallId());
+                                                if (call != null) {
+                                                    call.data(data.getData());
+                                                }
+                                            } else if (event instanceof ToolResultEndEvent result) {
+                                                state.observe(
+                                                        result,
+                                                        calls.remove(result.getToolCallId()));
+                                            }
+                                        }
+                                    });
+                });
     }
 
     @Override
@@ -180,7 +226,10 @@ public class RepeatedFailureGuard implements HarnessRuntimeMiddleware {
 
     @Override
     public Mono<Void> onAgentFinish(Agent agent, RuntimeContext ctx, Msg result) {
-        stateFor(ctx).reset();
+        SessionState state = stateFor(ctx);
+        synchronized (state) {
+            state.reset();
+        }
         return Mono.empty();
     }
 
@@ -206,18 +255,94 @@ public class RepeatedFailureGuard implements HarnessRuntimeMiddleware {
     /** Per-session failure window and pending reminder. Guarded by its own monitor. */
     private static final class SessionState {
         private final Deque<Failure> window = new ArrayDeque<>(WINDOW_SIZE);
-        private final Map<String, Integer> lastInterventionCounts = new HashMap<>();
+        private final Map<String, Integer> failuresSinceReminder = new HashMap<>();
+        private final Deque<Repetition> repetitions = new ArrayDeque<>(WINDOW_SIZE);
+        private final Map<String, Integer> repetitionsSinceReminder = new HashMap<>();
         private int interventions;
         private PendingReminder pending;
 
         void reset() {
             window.clear();
-            lastInterventionCounts.clear();
+            failuresSinceReminder.clear();
+            repetitions.clear();
+            repetitionsSinceReminder.clear();
             interventions = 0;
             pending = null;
         }
 
-        void observe(ToolResultEndEvent event) {
+        void observe(ToolResultEndEvent event, CallObservation call) {
+            if (call == null
+                    || call.arguments == null
+                    || !call.valid
+                    || (event.getState() != ToolResultState.SUCCESS
+                            && event.getState() != ToolResultState.ERROR
+                            && event.getState() != ToolResultState.DENIED)) {
+                observeFailure(event, call);
+                return;
+            }
+            String domain =
+                    event.getToolCallName() == null ? DEFAULT_DOMAIN : event.getToolCallName();
+            Repetition repetition =
+                    new Repetition(
+                            domain,
+                            call.arguments,
+                            event.getState()
+                                    + ":"
+                                    + HexFormat.of().formatHex(call.output.digest()));
+            boolean classified =
+                    event.getState() == ToolResultState.DENIED
+                            || (event.getState() == ToolResultState.ERROR
+                                    && stringValue(
+                                                    event.getMetadata(),
+                                                    ToolErrorMetadata.METADATA_ERROR_KIND)
+                                            != null);
+            repetitions.removeIf(
+                    seen ->
+                            seen.domain.equals(domain)
+                                    && seen.arguments.equals(call.arguments)
+                                    && (classified || !seen.output.equals(repetition.output)));
+            if (!classified) {
+                if (repetitions.size() == WINDOW_SIZE) {
+                    repetitions.removeFirst();
+                }
+                repetitions.addLast(repetition);
+            }
+            Set<String> live = new HashSet<>();
+            int count = 0;
+            for (Repetition seen : repetitions) {
+                live.add(seen.signature());
+                if (seen.equals(repetition)) {
+                    count++;
+                }
+            }
+            repetitionsSinceReminder.keySet().retainAll(live);
+            if (pending != null && pending.kind == null && !live.contains(pending.signature)) {
+                pending = null;
+            }
+            observeFailure(event, call);
+            if (classified) {
+                return;
+            }
+            int threshold =
+                    Boolean.TRUE.equals(
+                                    booleanValue(
+                                            event.getMetadata(),
+                                            ToolErrorMetadata.METADATA_RETRIABLE))
+                            ? RETRIABLE_FAILURE_THRESHOLD
+                            : FAILURE_THRESHOLD;
+            Integer sinceReminder =
+                    repetitionsSinceReminder.computeIfPresent(
+                            repetition.signature(),
+                            (signature, seen) -> Math.min(SECOND_INTERVENTION_INTERVAL, seen + 1));
+            if (count >= threshold
+                    && (sinceReminder == null || sinceReminder >= SECOND_INTERVENTION_INTERVAL)
+                    && pending == null
+                    && interventions < MAX_INTERVENTIONS) {
+                pending = new PendingReminder(domain, null, null, count, repetition.signature());
+            }
+        }
+
+        void observeFailure(ToolResultEndEvent event, CallObservation call) {
             String domain =
                     event.getToolCallName() == null || event.getToolCallName().isBlank()
                             ? DEFAULT_DOMAIN
@@ -225,11 +350,33 @@ public class RepeatedFailureGuard implements HarnessRuntimeMiddleware {
             Map<String, Object> metadata = event.getMetadata();
 
             if (event.getState() == ToolResultState.SUCCESS) {
-                // The same tool works now: earlier failures for it are no longer evidence of a
-                // loop.
-                window.removeIf(failure -> failure.domain.equals(domain));
-                String prefix = domain + '|';
-                lastInterventionCounts.keySet().removeIf(signature -> signature.startsWith(prefix));
+                // Success on an unrelated command/path is not recovery of this failure.
+                String scope = stringValue(metadata, ToolErrorMetadata.METADATA_ERROR_SCOPE);
+                Set<String> removed = new HashSet<>();
+                window.removeIf(
+                        failure -> {
+                            boolean recovered =
+                                    failure.domain.equals(domain)
+                                            && ((call != null
+                                                            && call.arguments != null
+                                                            && failure.arguments != null)
+                                                    ? call.arguments.equals(failure.arguments)
+                                                    : java.util.Objects.equals(
+                                                            scope, failure.scope));
+                            if (recovered) {
+                                removed.add(failure.signature());
+                            }
+                            return recovered;
+                        });
+                for (Failure failure : window) {
+                    removed.remove(failure.signature());
+                }
+                failuresSinceReminder.keySet().removeAll(removed);
+                if (pending != null
+                        && pending.kind != null
+                        && removed.contains(pending.signature)) {
+                    pending = null;
+                }
                 return;
             }
             if (event.getState() != ToolResultState.ERROR
@@ -249,7 +396,8 @@ public class RepeatedFailureGuard implements HarnessRuntimeMiddleware {
                     Boolean.TRUE.equals(
                             booleanValue(metadata, ToolErrorMetadata.METADATA_RETRIABLE));
 
-            Failure failure = new Failure(domain, kind, scope);
+            Failure failure =
+                    new Failure(domain, kind, scope, call == null ? null : call.arguments);
             String signature = failure.signature();
             if (window.size() == WINDOW_SIZE) {
                 window.removeFirst();
@@ -258,7 +406,10 @@ public class RepeatedFailureGuard implements HarnessRuntimeMiddleware {
                 for (Failure seen : window) {
                     live.add(seen.signature());
                 }
-                lastInterventionCounts.keySet().retainAll(live);
+                failuresSinceReminder.keySet().retainAll(live);
+                if (pending != null && pending.kind != null && !live.contains(pending.signature)) {
+                    pending = null;
+                }
             }
             window.addLast(failure);
 
@@ -270,14 +421,17 @@ public class RepeatedFailureGuard implements HarnessRuntimeMiddleware {
             }
 
             int threshold = retriable ? RETRIABLE_FAILURE_THRESHOLD : FAILURE_THRESHOLD;
-            Integer last = lastInterventionCounts.get(signature);
-            int expected = last == null ? threshold : last + SECOND_INTERVENTION_INTERVAL;
-            if (count < expected || interventions >= MAX_INTERVENTIONS) {
+            Integer sinceReminder =
+                    failuresSinceReminder.computeIfPresent(
+                            signature,
+                            (key, seen) -> Math.min(SECOND_INTERVENTION_INTERVAL, seen + 1));
+            if (count < threshold
+                    || (sinceReminder != null && sinceReminder < SECOND_INTERVENTION_INTERVAL)
+                    || pending != null
+                    || interventions >= MAX_INTERVENTIONS) {
                 return;
             }
-            interventions++;
-            lastInterventionCounts.put(signature, count);
-            pending = new PendingReminder(domain, kind, scope, count);
+            pending = new PendingReminder(domain, kind, scope, count, signature);
             log.debug(
                     "RepeatedFailureGuard: {} consecutive '{}' failures on {} (scope={})",
                     count,
@@ -289,17 +443,111 @@ public class RepeatedFailureGuard implements HarnessRuntimeMiddleware {
         Msg takeReminder() {
             PendingReminder reminder = pending;
             pending = null;
-            return reminder == null ? null : reminder.toMessage();
+            if (reminder == null) {
+                return null;
+            }
+            int count =
+                    reminder.kind == null
+                            ? (int)
+                                    repetitions.stream()
+                                            .filter(
+                                                    seen ->
+                                                            seen.signature()
+                                                                    .equals(reminder.signature))
+                                            .count()
+                            : (int)
+                                    window.stream()
+                                            .filter(
+                                                    seen ->
+                                                            seen.signature()
+                                                                    .equals(reminder.signature))
+                                            .count();
+            if (count < reminder.count) {
+                return null;
+            }
+            interventions++;
+            Map<String, Integer> progress =
+                    reminder.kind == null ? repetitionsSinceReminder : failuresSinceReminder;
+            // Count only occurrences after this actual injection, even if many results arrived
+            // in the same acting batch before the reminder was consumed.
+            progress.put(reminder.signature, 0);
+            return new PendingReminder(
+                            reminder.domain,
+                            reminder.kind,
+                            reminder.scope,
+                            count,
+                            reminder.signature)
+                    .toMessage();
         }
     }
 
-    private record Failure(String domain, String kind, String scope) {
+    /** Only hashes survive an acting batch; raw arguments/results are never retained. */
+    private static final class CallObservation {
+        private final String arguments;
+        private final MessageDigest output = digest();
+        private boolean valid = true;
+
+        CallObservation(ToolUseBlock call) {
+            MessageDigest input = digest();
+            arguments =
+                    hashJson(call.getInput(), input)
+                            ? HexFormat.of().formatHex(input.digest())
+                            : null;
+        }
+
+        void text(String text) {
+            if (text == null) {
+                return;
+            }
+            // UTF-16 code units make hashing independent of text-delta chunk boundaries,
+            // including a surrogate pair split across two deltas.
+            for (int i = 0; i < text.length(); i++) {
+                char c = text.charAt(i);
+                output.update((byte) (c >>> 8));
+                output.update((byte) c);
+            }
+        }
+
+        void data(Object data) {
+            output.update((byte) 0xff);
+            valid &= hashJson(data, output);
+            output.update((byte) 0xff);
+        }
+    }
+
+    private static MessageDigest digest() {
+        try {
+            return MessageDigest.getInstance("SHA-256");
+        } catch (NoSuchAlgorithmException impossible) {
+            throw new IllegalStateException(impossible);
+        }
+    }
+
+    private static boolean hashJson(Object value, MessageDigest digest) {
+        try {
+            JSON.writeValue(new DigestOutputStream(OutputStream.nullOutputStream(), digest), value);
+            return true;
+        } catch (IOException | RuntimeException unsupported) {
+            // Observation must never fail a tool call; skip unsupported values rather than
+            // retaining them or deriving a potentially misleading fingerprint.
+            return false;
+        }
+    }
+
+    private record Repetition(String domain, String arguments, String output) {
+        String signature() {
+            return domain + '|' + arguments + '|' + output;
+        }
+    }
+
+    private record Failure(String domain, String kind, String scope, String arguments) {
         String signature() {
             return scope == null ? domain + '|' + kind : domain + '|' + kind + '|' + scope;
         }
     }
 
-    private record PendingReminder(String domain, String kind, String scope, int count) {
+    private record PendingReminder(
+            String domain, String kind, String scope, int count, String signature) {
         private static final String PROVENANCE =
                 "Automated reminder from AgentScope. This is context, not a user message or"
                         + " approval.";
@@ -319,16 +567,24 @@ public class RepeatedFailureGuard implements HarnessRuntimeMiddleware {
 
     static String renderText(String domain, String kind, String scope, int count) {
         String text =
-                "Tool '"
-                        + domain
-                        + "' has failed "
-                        + count
-                        + " times with the same error ("
-                        + kind
-                        + (scope == null ? "" : ", scope: " + scope)
-                        + "). "
-                        + "Repeating the identical call is unlikely to succeed. "
-                        + guidance(kind);
+                kind == null
+                        ? "Tool '"
+                                + domain
+                                + "' returned the same result for identical arguments "
+                                + count
+                                + " times. This does not imply failure. Check whether another"
+                                + " identical call will add evidence; inspect the result or change"
+                                + " the approach if not."
+                        : "Tool '"
+                                + domain
+                                + "' has failed "
+                                + count
+                                + " times with the same error ("
+                                + kind
+                                + (scope == null ? "" : ", scope: " + scope)
+                                + "). "
+                                + "Repeating the identical call is unlikely to succeed. "
+                                + guidance(kind);
         // The -1 keeps the provenance sentence, the joining newline, and the reminder together
         // under MAX_REMINDER_CHARS.
         int budget = MAX_REMINDER_CHARS - PendingReminder.PROVENANCE.length() - 1;
@@ -344,6 +600,10 @@ public class RepeatedFailureGuard implements HarnessRuntimeMiddleware {
             case "not_found", "permission_denied" ->
                     "Verify that the path or identifier exists and is inside the allowed"
                             + " workspace, or choose another one before trying again.";
+            case "command_failed" ->
+                    "Inspect the exit code and diagnostic output, including any truncated output"
+                            + " reference, then correct the command or its prerequisites before"
+                            + " retrying.";
             case "invalid_argument" ->
                     "Re-read the tool schema and correct the offending argument instead of"
                             + " resending it unchanged.";

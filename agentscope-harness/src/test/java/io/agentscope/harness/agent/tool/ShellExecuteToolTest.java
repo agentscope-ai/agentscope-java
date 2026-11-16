@@ -19,6 +19,7 @@ import static io.agentscope.harness.agent.tool.ToolResultAssertions.assertErrorK
 import static io.agentscope.harness.agent.tool.ToolResultAssertions.assertNoErrorMetadata;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
@@ -40,8 +41,13 @@ import io.agentscope.harness.agent.filesystem.sandbox.AbstractSandboxFilesystem;
 import java.nio.file.Path;
 import java.util.Map;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 
 /** Unit tests for {@link ShellExecuteTool}. */
 class ShellExecuteToolTest {
@@ -215,6 +221,156 @@ class ShellExecuteToolTest {
         assertEquals(ToolResultState.ERROR, result.getState());
         assertEquals(ToolExecutionDetails.Outcome.UNKNOWN, result.getExecutionDetails().outcome());
         assertErrorKind(result, ToolErrorKind.INTERNAL_ERROR, "test");
+    }
+
+    @Test
+    void truncatedExternalOutputDoesNotInventRecoveryPathOrTail() {
+        AbstractSandboxFilesystem external = mock(AbstractSandboxFilesystem.class);
+        when(external.execute(RT, "test", 30))
+                .thenReturn(new ExecuteResponse("only the head survived", 2, true));
+
+        ToolResultBlock result = new ShellExecuteTool(external).execute(RT, "test", null, null);
+
+        String output = textOf(result);
+        assertTrue(output.contains("omitted content is not included here"));
+        assertTrue(output.contains("missing content is unavailable"));
+        assertFalse(output.contains("read_file"));
+        assertFalse(output.contains("large_tool_results"));
+        assertFalse(output.contains("saved to"));
+        assertFalse(output.contains("tail"));
+        assertErrorKind(result, ToolErrorKind.COMMAND_FAILED, "test");
+        verify(external).execute(RT, "test", 30);
+    }
+
+    @Test
+    void localSavedOutputReferenceCanBeReadWithFileTool(@TempDir Path tempDir) {
+        LocalFilesystemWithShell local =
+                new LocalFilesystemWithShell(tempDir, false, 30, 16, null, false);
+        ShellExecuteTool localTool = new ShellExecuteTool(local);
+        ToolResultBlock result =
+                localTool.execute(RT, "echo diagnostic-output-with-a-long-tail", null, null);
+        String output = textOf(result);
+        var reference =
+                java.util.regex.Pattern.compile("Use `read_file` with path `([^`]+)`")
+                        .matcher(output);
+        assertTrue(reference.find(), output);
+
+        ToolResultBlock read =
+                new FilesystemTool(local).readFile(RT, reference.group(1), null, null);
+
+        assertEquals(ToolResultState.SUCCESS, result.getState());
+        assertNoErrorMetadata(result);
+        assertTrue(result.getExecutionDetails().outputTruncated());
+        assertTrue(textOf(read).contains("diagnostic-output-with-a-long-tail"));
+        assertFalse(textOf(read).contains("bytes omitted"));
+    }
+
+    @Test
+    void exitZeroWithTracebackIsStillSuccess() {
+        sandbox.response =
+                new ExecuteResponse(
+                        "Traceback (most recent call last):\nValueError: demonstration", 0, false);
+
+        ToolResultBlock result = tool.execute(RT, "python example.py", null, null);
+
+        assertEquals(ToolResultState.SUCCESS, result.getState());
+        assertEquals(
+                ToolExecutionDetails.Outcome.SUCCEEDED, result.getExecutionDetails().outcome());
+        assertNoErrorMetadata(result);
+        assertTrue(textOf(result).contains("Traceback"));
+    }
+
+    @Test
+    void executeResponseThreeAndFourArgumentConstructorsRemainCompatible() {
+        ExecuteResponse legacy = new ExecuteResponse("same", 0, false);
+        ExecuteResponse explicit = new ExecuteResponse("same", 0, false, false);
+        assertEquals(legacy, explicit);
+        assertTrue(legacy.isSuccess());
+        assertFalse(legacy.timedOut());
+
+        sandbox.response = new ExecuteResponse("partial", 0, false, true);
+        ToolResultBlock timedOut = tool.execute(RT, "python script.py", null, null);
+        assertEquals(ToolResultState.ERROR, timedOut.getState());
+        assertTrue(textOf(timedOut).contains("Timed out: true"));
+        assertErrorKind(timedOut, ToolErrorKind.TIMEOUT, "python");
+    }
+
+    @ParameterizedTest
+    @MethodSource("executableScopes")
+    void failureScopeRecognizesSimplePrefixesWithoutIncludingArguments(
+            String command, String scope) {
+        assertEquals(scope, ShellExecuteTool.executableScope(command));
+        sandbox.response = new ExecuteResponse("failed", 1, false);
+        ToolResultBlock result = tool.execute(RT, command, null, null);
+        assertErrorKind(result, ToolErrorKind.COMMAND_FAILED, scope);
+    }
+
+    static Stream<Arguments> executableScopes() {
+        return Stream.of(
+                Arguments.of("git status --token secret", "git"),
+                Arguments.of("/usr/bin/git status", "git"),
+                Arguments.of(
+                        "\"/opt/tools with spaces/my executable\" --token secret", "my executable"),
+                Arguments.of("'C:\\Program Files\\Git\\bin\\git.exe' status", "git.exe"),
+                Arguments.of("\"C:\\Program Files\\Python\\python.exe\" script.py", "python.exe"),
+                Arguments.of("/opt/my\\ tools/git status", "git"),
+                Arguments.of("cd 'project dir' && git diff", "git"),
+                Arguments.of("cd project; python -m pytest", "python"),
+                Arguments.of("cd /d \"C:\\work dir\" && git status", "git"),
+                Arguments.of("cd -- project && cd nested; command -p git diff", "git"),
+                Arguments.of("cd 'a; b && c' && git status", "git"),
+                Arguments.of("cd 'a'\\''b' && git status", "git"),
+                Arguments.of("VAR=x MODE='secret value' /usr/bin/python -V", "python"),
+                Arguments.of("env KEY=value python script.py", "python"),
+                Arguments.of("env -u HOME -i -- TOKEN='top secret' git status", "git"),
+                Arguments.of("/usr/bin/env --unset=HOME -uPATH VAR=x command -- git status", "git"),
+                Arguments.of("command -p -- /bin/git diff", "git"),
+                Arguments.of("exec -- /bin/python -V", "python"),
+                Arguments.of("exec -a 'do not leak me' -c /bin/python -V", "python"),
+                Arguments.of("env -i command -p exec -- /usr/bin/git status", "git"),
+                Arguments.of("cd", "cd"));
+    }
+
+    @Test
+    void envOptionsAfterAssignmentsDoNotExposeArgumentsInFailureMetadata() {
+        sandbox.response = new ExecuteResponse("failed", 127, false);
+        ToolResultBlock result = tool.execute(RT, "env X=1 -u HOME secret", null, null);
+        assertErrorKind(result, ToolErrorKind.COMMAND_FAILED, null);
+        assertFalse(result.getMetadata().containsValue("secret"));
+    }
+
+    @ParameterizedTest
+    @MethodSource("ambiguousCommands")
+    void failureScopeIsNullForAmbiguousOrUnsupportedSyntax(String command) {
+        assertNull(ShellExecuteTool.executableScope(command), command);
+    }
+
+    static Stream<Arguments> ambiguousCommands() {
+        return Stream.of(
+                Arguments.of((String) null),
+                Arguments.of(""),
+                Arguments.of("  "),
+                Arguments.of("VAR=secret"),
+                Arguments.of("\"VAR=secret\" git"),
+                Arguments.of("env VAR=secret"),
+                Arguments.of("env X=1 -u HOME secret"),
+                Arguments.of("env -u"),
+                Arguments.of("env -u HOME"),
+                Arguments.of("env --unknown secret git"),
+                Arguments.of("env -S 'git status'"),
+                Arguments.of("command -v git"),
+                Arguments.of("exec -a"),
+                Arguments.of("cd dir &&"),
+                Arguments.of("cd one two && git"),
+                Arguments.of("cd -X && git"),
+                Arguments.of("cd dir || git"),
+                Arguments.of("git status && python script.py"),
+                Arguments.of("git status | tee output.txt"),
+                Arguments.of("if true; then git; fi"),
+                Arguments.of("$(executable) --token secret"),
+                Arguments.of("$EXECUTABLE --token secret"),
+                Arguments.of("%EXECUTABLE% --token secret"),
+                Arguments.of("'unterminated executable"));
     }
 
     private static final class RecordingSandbox extends LocalFilesystemWithShell {

@@ -496,6 +496,10 @@ All file tools call through the `AbstractFilesystem` interface, passing the curr
 | Shared store | No | Shell not provided |
 | Sandbox | Yes | Inside the sandbox container |
 
+Local shell output exceeding `maxOutputBytes` retains a UTF-8-safe head and tail, with an explicit omitted-byte marker. The byte budget applies to retained output, not the omission and recovery notices; output is still fully captured in memory. The complete captured output is saved through the local filesystem's existing path policy and namespace, under the tool-result eviction directory, and a `read_file` reference is returned only after a successful write. Saving failures are reported without changing the command's exit code or rerunning it. Timeout results retain available output and label it partial.
+
+For other execution backends, already-truncated content cannot be reconstructed without a backend-provided reference; the tool does not invent one. Exit 0 remains successful even when output contains business-error text. Failure scope identifies the executable behind simple `cd`, environment-assignment and launcher prefixes, without arguments; ambiguous shell syntax has no scope. This best-effort classification is not a shell parser or a permission boundary.
+
 ### tools.json / MCP servers
 
 `tools.json` is read once from the workspace at `build()` time (through `WorkspaceManager`, supporting two-layer reads), registering MCP servers and applying allow/deny filters. **Behavior is the same across all three modes** — configuration is read at build time, unaffected by the runtime filesystem mode.

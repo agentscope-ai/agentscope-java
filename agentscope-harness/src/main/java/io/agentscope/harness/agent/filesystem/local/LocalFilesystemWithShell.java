@@ -17,8 +17,10 @@ package io.agentscope.harness.agent.filesystem.local;
 
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.harness.agent.filesystem.model.ExecuteResponse;
+import io.agentscope.harness.agent.filesystem.model.WriteResult;
 import io.agentscope.harness.agent.filesystem.remote.store.NamespaceFactory;
 import io.agentscope.harness.agent.filesystem.sandbox.AbstractSandboxFilesystem;
+import io.agentscope.harness.agent.memory.compaction.ToolResultEvictionConfig;
 import io.agentscope.harness.agent.workspace.LocalFsMode;
 import io.agentscope.harness.agent.workspace.PathPolicy;
 import java.io.ByteArrayOutputStream;
@@ -132,7 +134,7 @@ public class LocalFilesystemWithShell extends LocalFilesystem implements Abstrac
      * @param rootDir working directory for both filesystem and shell operations
      * @param virtualMode enable virtual path mode for filesystem operations
      * @param timeout default maximum time in seconds for shell command execution
-     * @param maxOutputBytes maximum number of bytes to capture from command output
+     * @param maxOutputBytes maximum UTF-8 bytes retained from output, excluding notices
      * @param env environment variables for shell commands ({@code null} for empty)
      * @param inheritEnv whether to inherit the parent process's environment variables
      */
@@ -173,7 +175,7 @@ public class LocalFilesystemWithShell extends LocalFilesystem implements Abstrac
      * @param rootDir working directory for both filesystem and shell operations
      * @param virtualMode enable virtual path mode for filesystem operations
      * @param timeout default maximum time in seconds for shell command execution
-     * @param maxOutputBytes maximum number of bytes to capture from command output
+     * @param maxOutputBytes maximum UTF-8 bytes retained from output, excluding notices
      * @param env environment variables for shell commands ({@code null} for empty)
      * @param inheritEnv whether to inherit the parent process's environment variables
      * @param namespaceFactory optional namespace factory for path scoping ({@code null} for none)
@@ -204,7 +206,7 @@ public class LocalFilesystemWithShell extends LocalFilesystem implements Abstrac
      * @param rootDir working directory for filesystem operations (read/write/edit/glob/...)
      * @param virtualMode enable virtual path mode for filesystem operations
      * @param timeout default maximum time in seconds for shell command execution
-     * @param maxOutputBytes maximum number of bytes to capture from command output
+     * @param maxOutputBytes maximum UTF-8 bytes retained from output, excluding notices
      * @param env environment variables for shell commands ({@code null} for empty)
      * @param inheritEnv whether to inherit the parent process's environment variables
      * @param namespaceFactory optional namespace factory for path scoping ({@code null} for none)
@@ -241,7 +243,7 @@ public class LocalFilesystemWithShell extends LocalFilesystem implements Abstrac
      * @param mode path-resolution policy ({@code null} treated as {@link LocalFsMode#UNRESTRICTED})
      * @param pathPolicy allow-list for {@link LocalFsMode#ROOTED}; ignored otherwise
      * @param timeout default shell timeout (seconds, must be positive)
-     * @param maxOutputBytes byte cap for captured shell output
+     * @param maxOutputBytes maximum UTF-8 bytes retained from output, excluding notices
      * @param env environment variables for shell commands ({@code null} for empty)
      * @param inheritEnv whether to inherit the parent process environment
      * @param namespaceFactory optional per-user/session namespace factory
@@ -366,24 +368,6 @@ public class LocalFilesystemWithShell extends LocalFilesystem implements Abstrac
             String stdout = stdoutBuf.toString(outputCharset);
             String stderr = stderrBuf.toString(outputCharset);
 
-            if (!finished) {
-                String msg;
-                if (timeoutSeconds != null) {
-                    msg =
-                            "Error: Command timed out after "
-                                    + effectiveTimeout
-                                    + " seconds (custom timeout). The command may be stuck or"
-                                    + " require more time.";
-                } else {
-                    msg =
-                            "Error: Command timed out after "
-                                    + effectiveTimeout
-                                    + " seconds. For long-running commands, re-run using the"
-                                    + " timeout parameter.";
-                }
-                return new ExecuteResponse(msg, 124, false, true);
-            }
-
             StringBuilder output = new StringBuilder();
             if (stdout != null && !stdout.isEmpty()) {
                 output.append(stdout);
@@ -398,24 +382,32 @@ public class LocalFilesystemWithShell extends LocalFilesystem implements Abstrac
                 }
             }
 
-            String outputStr = output.isEmpty() ? "<no output>" : output.toString();
-
-            boolean truncated = false;
-            if (outputStr.length() > maxOutputBytes) {
+            String completeOutput = output.isEmpty() ? "<no output>" : output.toString();
+            byte[] outputBytes = completeOutput.getBytes(StandardCharsets.UTF_8);
+            boolean truncated = outputBytes.length > Math.max(0, maxOutputBytes);
+            String outputStr = completeOutput;
+            if (truncated) {
                 outputStr =
-                        outputStr.substring(0, maxOutputBytes)
-                                + "\n\n... Output truncated at "
-                                + maxOutputBytes
-                                + " bytes.";
-                truncated = true;
+                        previewOutput(outputBytes, Math.max(0, maxOutputBytes))
+                                + "\n\n"
+                                + saveOutput(runtimeContext, completeOutput, !finished);
             }
 
-            int exitCode = proc.exitValue();
+            int exitCode = finished ? proc.exitValue() : 124;
+            if (!finished) {
+                outputStr =
+                        "Error: Command timed out after "
+                                + effectiveTimeout
+                                + " seconds"
+                                + (timeoutSeconds != null ? " (custom timeout)" : "")
+                                + ". Only partial output was captured before timeout:\n\n"
+                                + outputStr;
+            }
             if (exitCode != 0) {
                 outputStr = outputStr.stripTrailing() + "\n\nExit code: " + exitCode;
             }
 
-            return new ExecuteResponse(outputStr, exitCode, truncated);
+            return new ExecuteResponse(outputStr, exitCode, truncated, !finished);
 
         } catch (IOException | InterruptedException e) {
             if (e instanceof InterruptedException) {
@@ -430,6 +422,57 @@ public class LocalFilesystemWithShell extends LocalFilesystem implements Abstrac
                     1,
                     false);
         }
+    }
+
+    /** The byte budget covers retained output; omission and recovery notices are additional. */
+    static String previewOutput(byte[] output, int byteBudget) {
+        byteBudget = Math.max(0, byteBudget);
+        if (output.length <= byteBudget) {
+            return new String(output, StandardCharsets.UTF_8);
+        }
+        int headEnd = byteBudget / 2;
+        int tailStart = output.length - (byteBudget - headEnd);
+        // Do not split a UTF-8 code point at either end of the omitted region.
+        while (headEnd > 0 && (output[headEnd] & 0xc0) == 0x80) {
+            headEnd--;
+        }
+        while (tailStart < output.length && (output[tailStart] & 0xc0) == 0x80) {
+            tailStart++;
+        }
+        return new String(output, 0, headEnd, StandardCharsets.UTF_8)
+                + "\n\n... "
+                + (tailStart - headEnd)
+                + " UTF-8 bytes omitted ...\n\n"
+                + new String(output, tailStart, output.length - tailStart, StandardCharsets.UTF_8);
+    }
+
+    private String saveOutput(RuntimeContext rc, String completeOutput, boolean partial) {
+        String path =
+                ToolResultEvictionConfig.DEFAULT_EVICTION_PATH
+                        + "/execute/"
+                        + UUID.randomUUID()
+                        + ".txt";
+        try {
+            WriteResult result =
+                    write(
+                            rc,
+                            path,
+                            partial
+                                    ? "Only partial output was captured before timeout:\n\n"
+                                            + completeOutput
+                                    : completeOutput);
+            if (result.isSuccess() && result.path() != null && !result.path().isBlank()) {
+                return (partial ? "Captured partial output" : "Full output")
+                        + " saved. Use `read_file` with path `"
+                        + result.path()
+                        + "` to read it.";
+            }
+            log.warn("Failed to save shell output to {}: {}", path, result.error());
+        } catch (RuntimeException e) {
+            // Path-policy denial or storage failure must not change the command's outcome.
+            log.warn("Failed to save shell output to {}: {}", path, e.getMessage());
+        }
+        return "Full output unavailable: the captured output could not be saved.";
     }
 
     private Path resolveExecuteCwd(RuntimeContext rc) {
