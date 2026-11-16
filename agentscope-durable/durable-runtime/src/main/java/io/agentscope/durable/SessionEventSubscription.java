@@ -22,8 +22,6 @@ import io.agentscope.durable.DurableTypes.PublicEvent;
 import io.agentscope.durable.DurableTypes.Snapshot;
 import java.time.Duration;
 import java.util.Objects;
-import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
@@ -60,8 +58,7 @@ public final class SessionEventSubscription implements AutoCloseable {
     private long retryAfter;
     private ScheduledFuture<?> scheduled;
     private final ConcurrentLinkedQueue<LiveEvent> live = new ConcurrentLinkedQueue<>();
-    private final Set<String> completedMessages = ConcurrentHashMap.newKeySet();
-    private final Set<String> completedToolCalls = ConcurrentHashMap.newKeySet();
+    private final CompletedPreviews completed = new CompletedPreviews();
     private AutoCloseable liveSubscription;
 
     SessionEventSubscription(
@@ -152,7 +149,10 @@ public final class SessionEventSubscription implements AutoCloseable {
                                 session,
                                 filter,
                                 initialCursor,
-                                snapshots,
+                                snapshot -> {
+                                    snapshots.accept(snapshot);
+                                    if (liveEvents != null) completed.reset(snapshot);
+                                },
                                 this::durable,
                                 this::changed);
                 if (closed) {
@@ -191,10 +191,7 @@ public final class SessionEventSubscription implements AutoCloseable {
     private int drainLive() {
         int delivered = 0;
         for (LiveEvent event; (event = live.poll()) != null; ) {
-            String messageId = event.data().path("messageId").asText(null);
-            if (messageId != null && completedMessages.contains(messageId)) continue;
-            String toolCallId = event.data().path("toolCallId").asText(null);
-            if (toolCallId != null && completedToolCalls.contains(toolCallId)) continue;
+            if (completed.contains(event)) continue;
             liveEvents.accept(event);
             delivered++;
         }
@@ -202,10 +199,7 @@ public final class SessionEventSubscription implements AutoCloseable {
     }
 
     private void durable(PublicEvent event) {
-        if ("message.completed".equals(event.type()))
-            completedMessages.add(event.data().path("messageId").asText());
-        if ("tool.call.updated".equals(event.type()))
-            completedToolCalls.add(event.data().path("callId").asText());
+        completed.accept(event);
         events.accept(event);
     }
 

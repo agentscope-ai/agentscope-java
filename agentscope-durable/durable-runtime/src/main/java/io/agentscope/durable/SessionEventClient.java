@@ -167,7 +167,8 @@ public final class SessionEventClient implements AutoCloseable {
             if (Objects.equals(cursor, replayHighWatermark)) replayCaughtUp = true;
         }
         cursor = page.cursor();
-        if (Objects.equals(cursor, replayHighWatermark)) replayCaughtUp = true;
+        if (Objects.equals(cursor, replayHighWatermark)
+                || Objects.equals(cursor, page.highWatermark())) replayCaughtUp = true;
         return page.events().size();
     }
 
@@ -177,9 +178,10 @@ public final class SessionEventClient implements AutoCloseable {
         if (closed.get()) return;
         snapshots.accept(snapshot);
         cursor = snapshot.cursor();
-        replayHighWatermark = snapshot.cursor();
-        replayBoundaryCaptured = true;
-        replayCaughtUp = true;
+        // Events may commit while the consumer is replacing its projection.
+        // Re-establish the replay boundary before releasing queued previews.
+        replayBoundaryCaptured = false;
+        replayCaughtUp = false;
     }
 
     boolean replayCaughtUp() {

@@ -92,6 +92,55 @@ class SessionStreamEventTest {
         }
     }
 
+    @Test
+    void resetSupersedesOnlyCompletedMessagesAndMatchingToolCalls() {
+        var completed = new CompletedPreviews();
+        var snapshot = mock(DurableTypes.Snapshot.class);
+        when(snapshot.projection())
+                .thenReturn(
+                        DurableJson.value(
+                                Map.of(
+                                        "messages",
+                                                Map.of(
+                                                        "done",
+                                                                Map.of(
+                                                                        "complete",
+                                                                        true,
+                                                                        "messageId",
+                                                                        "done"),
+                                                        "partial",
+                                                                Map.of(
+                                                                        "complete",
+                                                                        false,
+                                                                        "messageId",
+                                                                        "partial")),
+                                        "tools",
+                                                Map.of(
+                                                        EventProjection.toolId(
+                                                                "main", "turn-1", "call"),
+                                                        Map.of(
+                                                                "data",
+                                                                Map.of("status", "RUNNING"))))));
+        completed.reset(snapshot);
+        assertTrue(completed.contains(live("message.delta", Map.of("messageId", "done"))));
+        assertFalse(completed.contains(live("message.delta", Map.of("messageId", "partial"))));
+        var preview = live("tool.arguments.delta", Map.of("toolCallId", "call"));
+        assertTrue(completed.contains(preview));
+        assertFalse(
+                completed.contains(
+                        new LiveEvent(
+                                "1",
+                                "next",
+                                session,
+                                "main",
+                                "turn-2",
+                                null,
+                                null,
+                                2,
+                                preview.type(),
+                                preview.data())));
+    }
+
     private LiveEvent live(String type, Map<String, ?> data) {
         return new LiveEvent(
                 "1",

@@ -22,8 +22,6 @@ import io.agentscope.durable.DurableTypes.PublicEvent;
 import io.agentscope.durable.DurableTypes.Snapshot;
 import java.time.Duration;
 import java.util.Objects;
-import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
@@ -59,8 +57,7 @@ public final class SessionEventStream implements AutoCloseable {
     private final EventFilter filter;
     private final EventPage firstPage;
     private final ConcurrentLinkedQueue<LiveEvent> live = new ConcurrentLinkedQueue<>();
-    private final Set<String> completedMessages = ConcurrentHashMap.newKeySet();
-    private final Set<String> completedToolCalls = ConcurrentHashMap.newKeySet();
+    private final CompletedPreviews completed = new CompletedPreviews();
     private final AutoCloseable liveSubscription;
     private final AtomicBoolean started = new AtomicBoolean();
     private final AtomicBoolean closed = new AtomicBoolean();
@@ -183,9 +180,9 @@ public final class SessionEventStream implements AutoCloseable {
             if (closed.get()) return;
             while (!closed.get()) {
                 int delivered = current.poll();
+                if (reset.get()) return;
                 replayCaughtUp = replayCaughtUp || current.replayCaughtUp();
                 if (replayCaughtUp) delivered += drainLive(sink);
-                if (reset.get()) return;
                 if (filter.threadId() != null) sink.cursor(current.cursor());
                 if (expired(until)) return;
                 if (delivered == 0) {
@@ -206,20 +203,14 @@ public final class SessionEventStream implements AutoCloseable {
     }
 
     private void durable(Sink sink, PublicEvent event) {
-        if ("message.completed".equals(event.type()))
-            completedMessages.add(event.data().path("messageId").asText());
-        if ("tool.call.updated".equals(event.type()))
-            completedToolCalls.add(event.data().path("callId").asText());
+        completed.accept(event);
         sink.accept(event);
     }
 
     private int drainLive(Sink sink) {
         int delivered = 0;
         for (LiveEvent event; (event = live.poll()) != null; ) {
-            String messageId = event.data().path("messageId").asText(null);
-            if (messageId != null && completedMessages.contains(messageId)) continue;
-            String toolCallId = event.data().path("toolCallId").asText(null);
-            if (toolCallId != null && completedToolCalls.contains(toolCallId)) continue;
+            if (completed.contains(event)) continue;
             sink.live(event);
             delivered++;
         }
