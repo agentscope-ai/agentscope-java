@@ -110,7 +110,7 @@ public class Probe {
 
     static void model() throws Exception {
         var server = HttpServer.create(new InetSocketAddress(8080), 0);
-        var generated = java.util.concurrent.ConcurrentHashMap.<String>newKeySet();
+        var statusByKey = new java.util.concurrent.ConcurrentHashMap<String, Integer>();
         server.createContext(
                 "/",
                 exchange -> {
@@ -121,7 +121,10 @@ public class Probe {
                             exchange.sendResponseHeaders(400, -1);
                             return;
                         }
-                        if (generated.add(key)) System.out.println("INFERENCE " + turn);
+                        int status = statusByKey.computeIfAbsent(key, ignored -> {
+                            System.out.println("INFERENCE " + turn);
+                            return Files.exists(Path.of("/tmp/fail")) ? 500 : 200;
+                        });
                         System.out.println("RECEIVED " + turn);
                         while (Files.exists(Path.of("/tmp/block"))) {
                             try {
@@ -130,8 +133,8 @@ public class Probe {
                                 return;
                             }
                         }
-                        if (Files.exists(Path.of("/tmp/fail"))) {
-                            exchange.sendResponseHeaders(500, -1);
+                        if (status != 200) {
+                            exchange.sendResponseHeaders(status, -1);
                             return;
                         }
                         var bytes =
