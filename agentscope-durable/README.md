@@ -325,6 +325,11 @@ the hosts at the same database. Each host needs matching definition/state versio
 and access to the required tools and workspace resources. Close each host and its
 Backend at application shutdown; the application owns the supplied pool.
 
+Schema initialization also creates the binary-collation indexes used for prefix pagination.
+For an existing database, run the initializer with the provisioning identity to install
+`durable_parts_prefix` and `durable_records_prefix`. Ordinary runtime startup uses
+the existing schema.
+
 PostgreSQL record transactions use a 30-second idle-in-transaction timeout when
 the database setting is disabled. An existing positive timeout takes precedence.
 This lets PostgreSQL release record locks after a disconnected host stops sending SQL.

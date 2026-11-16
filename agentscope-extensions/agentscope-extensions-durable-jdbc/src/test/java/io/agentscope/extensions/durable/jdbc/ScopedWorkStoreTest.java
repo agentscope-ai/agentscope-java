@@ -86,6 +86,30 @@ class ScopedWorkStoreTest {
     }
 
     @Test
+    void prefixBoundsCoverSupplementarySuffixesAndCarryPastMaximalScalars() {
+        String max = Character.toString(Character.MAX_CODE_POINT);
+        String prefix = "literal_%:" + max;
+        store.transaction(
+                "unicode",
+                tx -> {
+                    for (var key :
+                            List.of(
+                                    prefix,
+                                    prefix + max,
+                                    "literal_%;",
+                                    "a\uD7FF",
+                                    "a\uE000",
+                                    max,
+                                    max + "x")) tx.put(key, DurableJson.value(1));
+                    assertEquals(List.of(prefix, prefix + max), tx.keys(prefix, null, 10));
+                    assertEquals(List.of(prefix + max), tx.keys(prefix, prefix, 1));
+                    assertEquals(List.of("a\uD7FF"), tx.keys("a\uD7FF", null, 10));
+                    assertEquals(List.of(max, max + "x"), tx.keys(max, null, 10));
+                    return null;
+                });
+    }
+
+    @Test
     void immutableChunkHitsAvoidDatabaseTransactionsAndNeverExposeCachedBytes() throws Exception {
         var borrows = new java.util.concurrent.atomic.AtomicInteger();
         try (var counted =
