@@ -2037,14 +2037,31 @@ class AgentScopeAdapterTest {
         }
         var reopened = new TransactionalSessionBackend(JdbcRecordStore.sqlite(file));
         var model = new ScriptedModel(false);
+        var reads = new CopyOnWriteArrayList<Long>();
+        var observed =
+                (SessionBackend)
+                        java.lang.reflect.Proxy.newProxyInstance(
+                                SessionBackend.class.getClassLoader(),
+                                new Class<?>[] {SessionBackend.class},
+                                (proxy, method, args) -> {
+                                    if ("journal".equals(method.getName()))
+                                        reads.add((Long) args[1]);
+                                    try {
+                                        return method.invoke(reopened, args);
+                                    } catch (java.lang.reflect.InvocationTargetException error) {
+                                        throw error.getCause();
+                                    }
+                                });
         try (var runtime =
-                runtime(reopened, adapter(model, PermissionMode.BYPASS, Map.of()), null)) {
+                runtime(observed, adapter(model, PermissionMode.BYPASS, Map.of()), null)) {
             var turn = runtime.getSession(key).submit("two", "continue");
             runtime.tick(new ThreadKey(key, "main"));
             assertNull(runtime.lastFailure(new ThreadKey(key, "main")));
             assertEquals(
                     TurnStatus.SUCCEEDED,
                     reopened.turn(new ThreadKey(key, "main"), turn.turnId()).status());
+            assertFalse(reads.isEmpty());
+            assertTrue(reads.stream().allMatch(after -> after > 0), reads.toString());
             assertTrue(
                     model.inputs.get(0).stream()
                             .anyMatch(m -> m.getTextContent().contains("remember this")));

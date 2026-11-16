@@ -53,7 +53,7 @@ public record JournalProjection(
         var verifications = new ArrayList<io.agentscope.core.state.TaskVerification>();
         var extensions = new ArrayList<JournalEvent>();
         long upper = log.head().seq();
-        for (var event : log.scanMetadata(0, upper)) {
+        for (var event : log.scanMetadata(log.recoveryCursor(), upper)) {
             JournalEventTypes.validate(event);
             observer.accept(event);
             var data = event.data();

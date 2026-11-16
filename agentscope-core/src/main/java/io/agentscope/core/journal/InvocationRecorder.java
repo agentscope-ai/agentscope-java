@@ -143,7 +143,12 @@ public final class InvocationRecorder {
                 executionPosition = initial.executionPosition();
                 previousPosition = executionPosition;
             }
-            if (previousState != null) previousMessages = messageJson(initial.restore());
+            if (previousState != null) {
+                var restored = initial.restore();
+                previousMessages = messageJson(restored);
+                if (log.recoveryCursor() > 0)
+                    restored.getContext().forEach(message -> recordedMessages.add(message.getId()));
+            }
         } catch (RuntimeException e) {
             log.release(writer);
             throw e;

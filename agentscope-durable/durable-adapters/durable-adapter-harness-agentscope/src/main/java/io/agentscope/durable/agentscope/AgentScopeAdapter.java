@@ -289,7 +289,7 @@ public final class AgentScopeAdapter implements HarnessAdapter {
         String turn = context.lease().turnId();
         String key = "native-reconciliation:" + DurableJson.hash(List.of(turn, requestId)) + ":";
         String reason = key + DurableJson.hash(outcomes) + ":" + evidenceRef;
-        for (var event : log.scanMetadata(0, log.head().seq())) {
+        for (var event : log.scanMetadata(log.recoveryCursor(), log.head().seq())) {
             if (!turn.equals(event.turnId()) || !"recovery/applied".equals(event.type())) continue;
             if (event.data().get("reason") instanceof String stored && stored.startsWith(key)) {
                 if (stored.equals(reason)) return;
@@ -499,7 +499,7 @@ public final class AgentScopeAdapter implements HarnessAdapter {
         String runId = null;
         RunOutcome outcome = null;
         Msg output = null;
-        for (var event : log.scanMetadata(0, log.head().seq())) {
+        for (var event : log.scanMetadata(log.recoveryCursor(), log.head().seq())) {
             if ("state/restored".equals(event.type())) {
                 runId = null;
                 outcome = null;
@@ -525,7 +525,7 @@ public final class AgentScopeAdapter implements HarnessAdapter {
 
     private static boolean hasInitialInput(ThreadJournal log, String turnId) {
         boolean received = false;
-        for (var event : log.scanMetadata(0, log.head().seq())) {
+        for (var event : log.scanMetadata(log.recoveryCursor(), log.head().seq())) {
             if ("state/restored".equals(event.type())) received = false;
             if ("input/received".equals(event.type()) && turnId.equals(event.turnId()))
                 received = true;
@@ -561,7 +561,7 @@ public final class AgentScopeAdapter implements HarnessAdapter {
                     new Commit(
                             "native-finished:" + invocation.runId(),
                             frame.turn().revision(),
-                            frame.checkpoint(),
+                            log.settledCheckpoint(frame.checkpoint()),
                             List.of(),
                             List.of(),
                             List.of(),

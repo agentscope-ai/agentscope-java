@@ -68,6 +68,7 @@ final class BackendThreadJournal implements ThreadJournal {
     private String owner;
     private final Map<String, ModelCapture> captures = new LinkedHashMap<>();
     private ObjectNode cached;
+    private final long recoveryCursor;
     private AgentScopeMessageEvents messages = new AgentScopeMessageEvents();
     private AgentScopeToolEvents toolEvents = new AgentScopeToolEvents();
 
@@ -97,7 +98,8 @@ final class BackendThreadJournal implements ThreadJournal {
         cached.putArray("events");
         cached.putObject("receipts");
         cached.put("lastCommit", checkpoint.path("lastCommit").asText(null));
-        long position = 0;
+        recoveryCursor = checkpoint.path("recoveryCursor").asLong();
+        long position = recoveryCursor;
         while (true) {
             var page = context.journal(position, 1000);
             for (var entry : page) {
@@ -156,6 +158,24 @@ final class BackendThreadJournal implements ThreadJournal {
     }
 
     @Override
+    public long recoveryCursor() {
+        return recoveryCursor;
+    }
+
+    /** Publish the last complete native state only in the commit settling the Turn. */
+    JsonNode settledCheckpoint(JsonNode current) {
+        var checkpoint = (ObjectNode) current.deepCopy();
+        var events = cached.path("events");
+        for (int i = events.size() - 1; i >= 0; i--) {
+            if ("state/checkpoint".equals(events.get(i).path("type").asText())) {
+                checkpoint.put("recoveryCursor", recoveryCursor + i);
+                break;
+            }
+        }
+        return checkpoint;
+    }
+
+    @Override
     public synchronized Head head() {
         return head(checkpoint());
     }
@@ -163,7 +183,7 @@ final class BackendThreadJournal implements ThreadJournal {
     private Head head(ObjectNode state) {
         return new Head(
                 FORMAT_VERSION,
-                state.path("events").size(),
+                recoveryCursor + state.path("events").size(),
                 context.lease().epoch(),
                 owner,
                 context.lease().expiresAt(),
@@ -240,7 +260,7 @@ final class BackendThreadJournal implements ThreadJournal {
             return DurableJson.convert(previous.path("head"), Head.class);
         }
         check(writer);
-        if (state.path("events").size() != expected)
+        if (recoveryCursor + state.path("events").size() != expected)
             throw new DurableException(DurableException.Code.CONFLICT, "Native sequence changed");
         var tools = new ArrayList<ToolCall>();
         var publicEvents = new ArrayList<EventInput>();
@@ -410,6 +430,8 @@ final class BackendThreadJournal implements ThreadJournal {
                                         AgentScopeCheckpointCodec.STATE_VERSION,
                                         "position",
                                         seq,
+                                        "recoveryCursor",
+                                        recoveryCursor,
                                         "lastCommit",
                                         batchId)),
                         tools,
@@ -536,9 +558,15 @@ final class BackendThreadJournal implements ThreadJournal {
     @Override
     public synchronized List<JournalEvent> readAfter(long after, int limit) {
         if (after < 0 || limit < 1) throw new IllegalArgumentException("Invalid native range");
-        var events = checkpoint().path("events");
+        if (after < recoveryCursor)
+            return context
+                    .journal(after, (int) Math.min(Math.min(limit, 1000), recoveryCursor - after))
+                    .stream()
+                    .map(entry -> DurableJson.convert(entry, JournalEvent.class))
+                    .toList();
+        var events = cached.path("events");
         var result = new ArrayList<JournalEvent>();
-        for (long i = after; i < events.size() && result.size() < limit; i++)
+        for (long i = after - recoveryCursor; i < events.size() && result.size() < limit; i++)
             result.add(DurableJson.convert(events.get((int) i), JournalEvent.class));
         return List.copyOf(result);
     }

@@ -765,6 +765,14 @@ a stopped Run is not necessarily a terminal Turn.
 
 ## Recovery limits
 
+Direct executor progress is fenced by the observing Brain's lease. A stale observation cannot replace the new owner's operation handle. A confirmed terminal result for the same execution may still arrive late.
+
+When unfinished runs repeatedly lose ownership beyond the persisted recovery policy's retry limit (three retries before a policy is recorded), the replacement host settles the failure. Completing an execution step or releasing the lease normally resets consecutive losses.
+
+For an uncertain native tool, an authorized host independently verifies the outcomes, claims the original Turn, constructs a `HarnessContext` with that lease, and calls `AgentScopeAdapter.reconcileNativeTools(context, requestId, evidenceRef, outcomes)`. Supply terminal outcomes for all unresolved native call IDs and release the lease afterwards. Use a reference to an access-controlled audit record; omit sensitive payloads. Identical requests can be retried on the same Turn. Reconciliation repairs native state and preserves prior cancellation or exhausted recovery decisions.
+
+When a Turn completes normally, its terminal commit records the location of the most recent native state snapshot. The next invocation recovers from that snapshot and subsequent journal entries. Explicit historical reads retain the complete prefix. A single long unfinished Turn still replays entries since the previous snapshot.
+
 Threads pin Harness and native-state versions. Restarts need matching factories,
 tool bindings and execution environments. A shared backend does not permit switching
 native kernels. The supplied implementation is Java; other language integrations require
