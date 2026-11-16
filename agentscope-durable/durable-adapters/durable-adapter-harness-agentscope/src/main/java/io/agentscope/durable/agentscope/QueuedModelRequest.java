@@ -21,7 +21,9 @@ import io.agentscope.core.message.Msg;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.ToolSchema;
+import io.agentscope.durable.DurableException;
 import io.agentscope.durable.DurableJson;
+import io.agentscope.durable.DurableTurn;
 import io.agentscope.durable.DurableTypes.Signal;
 import io.agentscope.durable.DurableTypes.ThreadKey;
 import java.util.LinkedHashMap;
@@ -71,6 +73,25 @@ public record QueuedModelRequest(
     @FunctionalInterface
     public interface Publisher {
         void publish(QueuedModelRequest request);
+    }
+
+    /**
+     * Persist a reply before acknowledging its MQ delivery. Returns false for a late reply
+     * whose Turn has already completed or has accepted cancellation.
+     */
+    public static boolean accept(DurableTurn turn, Signal signal) {
+        validateReply(signal);
+        var status = turn.status();
+        if (status.status().terminal() || status.cancellationRequested()) return false;
+        try {
+            turn.signal(signal.id(), signal.key(), signal.value());
+            return true;
+        } catch (DurableException error) {
+            if (error.code() != DurableException.Code.CONFLICT) throw error;
+            status = turn.status();
+            if (status.status().terminal() || status.cancellationRequested()) return false;
+            throw error;
+        }
     }
 
     static String key(String callId, long sequence) {

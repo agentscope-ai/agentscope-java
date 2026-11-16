@@ -85,6 +85,8 @@ final class AgentScopeExecutionHost implements AgentExecutionHost, ModelInvocati
 
     private int pendingIteration;
     private long replyDeadline;
+    private long replyProgress = -1;
+    private long replyIdleMillis;
     private WaitCondition waitingForModel;
 
     WaitCondition waitingForModel() {
@@ -181,6 +183,7 @@ final class AgentScopeExecutionHost implements AgentExecutionHost, ModelInvocati
         this.log = log;
         this.publisher = publisher;
         this.replyTimeout = replyTimeout;
+        this.replyIdleMillis = replyTimeout.toMillis();
         for (var event : log.scan(0, log.head().seq())) {
             if ("state/checkpoint".equals(event.type())) replayAfter = event.seq();
             if (!durable.lease().turnId().equals(event.turnId())) continue;
@@ -193,8 +196,12 @@ final class AgentScopeExecutionHost implements AgentExecutionHost, ModelInvocati
                 queuedFallback = Boolean.TRUE.equals(data.get("fallback"));
                 replyDeadline = 0;
             } else if (isQueued(data.get("modelCallId"))) {
-                if (DurableEventSchemas.MODEL_ACCEPTED.equals(event.type()))
+                if (DurableEventSchemas.MODEL_ACCEPTED.equals(event.type())) {
                     replyDeadline = ((Number) data.get("replyDeadline")).longValue();
+                    replyIdleMillis =
+                            ((Number) data.getOrDefault("idleMillis", replyIdleMillis)).longValue();
+                    replyProgress = ((Number) data.getOrDefault("sequence", -1L)).longValue();
+                }
                 if ("model/end".equals(event.type()) && "completed".equals(data.get("status")))
                     pendingRequest = null;
             }
@@ -439,6 +446,7 @@ final class AgentScopeExecutionHost implements AgentExecutionHost, ModelInvocati
                             queuedFallback));
             pendingIteration = iteration;
             replyDeadline = 0;
+            replyProgress = -1;
         }
         if (iteration != pendingIteration || !model.equals(pendingRequest.model()))
             throw new DurableException(
@@ -486,10 +494,19 @@ final class AgentScopeExecutionHost implements AgentExecutionHost, ModelInvocati
                                         throw new DurableException(
                                                 DurableException.Code.INCOMPATIBLE,
                                                 "Model publisher missing");
-                                    publisher.publish(pendingRequest);
+                                    try {
+                                        publisher.publish(pendingRequest);
+                                    } catch (DurableException error) {
+                                        throw error;
+                                    } catch (RuntimeException error) {
+                                        throw new DurableException(
+                                                DurableException.Code.UNAVAILABLE,
+                                                "Model publish acceptance unknown for call "
+                                                        + callId,
+                                                error);
+                                    }
                                     replyDeadline =
-                                            Math.addExact(
-                                                    durable.frame().now(), replyTimeout.toMillis());
+                                            Math.addExact(durable.frame().now(), replyIdleMillis);
                                     var recorder = InvocationRecorder.from(context);
                                     recorder.append(
                                             DurableEventSchemas.MODEL_ACCEPTED,
@@ -497,7 +514,9 @@ final class AgentScopeExecutionHost implements AgentExecutionHost, ModelInvocati
                                                     "modelCallId",
                                                     callId,
                                                     "replyDeadline",
-                                                    replyDeadline),
+                                                    replyDeadline,
+                                                    "idleMillis",
+                                                    replyIdleMillis),
                                             true);
                                     recorder.flushNow();
                                     waitingForModel =
@@ -519,6 +538,7 @@ final class AgentScopeExecutionHost implements AgentExecutionHost, ModelInvocati
         if (!isQueued(callId)) return model.stream(messages, tools, options);
         var seq = new AtomicLong();
         var buffered = new HashMap<String, Signal>();
+        var emptyPolls = new AtomicLong();
         return Mono.defer(
                         () -> {
                             String key = QueuedModelRequest.key(callId, seq.get());
@@ -531,10 +551,45 @@ final class AgentScopeExecutionHost implements AgentExecutionHost, ModelInvocati
                                 if (!buffered.containsKey(key))
                                     checkReplyDeadline(frame.now(), seq.get());
                             }
-                            return Mono.justOrEmpty(buffered.remove(key));
+                            Signal signal = buffered.remove(key);
+                            if (signal != null) {
+                                emptyPolls.set(0);
+                                if (seq.get() > replyProgress) {
+                                    replyProgress = seq.get();
+                                    replyDeadline =
+                                            Math.addExact(durable.frame().now(), replyIdleMillis);
+                                    var recorder = InvocationRecorder.from(context);
+                                    recorder.append(
+                                            DurableEventSchemas.MODEL_ACCEPTED,
+                                            Map.of(
+                                                    "modelCallId",
+                                                    callId,
+                                                    "replyDeadline",
+                                                    replyDeadline,
+                                                    "sequence",
+                                                    replyProgress,
+                                                    "idleMillis",
+                                                    replyIdleMillis),
+                                            true);
+                                    recorder.flushNow();
+                                }
+                            }
+                            return Mono.justOrEmpty(signal);
                         })
                 .subscribeOn(Schedulers.boundedElastic())
-                .repeatWhenEmpty(empty -> empty.delayElements(Duration.ofMillis(100)))
+                .repeatWhenEmpty(
+                        empty ->
+                                empty.concatMap(
+                                        ignored ->
+                                                Mono.delay(
+                                                        Duration.ofMillis(
+                                                                Math.min(
+                                                                        500,
+                                                                        25L
+                                                                                << Math.min(
+                                                                                        4,
+                                                                                        emptyPolls
+                                                                                                .getAndIncrement()))))))
                 .doOnNext(QueuedModelRequest::validateReply)
                 .doOnNext(s -> seq.incrementAndGet())
                 .repeat()

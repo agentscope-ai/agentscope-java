@@ -124,7 +124,8 @@ a terminal error. Acknowledge each broker delivery after the signal is persisted
 the same frame uses the same signal ID and payload. The first frame wakes a compatible
 host, which displays ordered deltas and advances the ReAct loop after the terminal frame.
 
-By default, the adapter waits up to five minutes from broker acceptance for missing frames.
+By default, the adapter uses a five-minute idle timeout, initially measured from broker acceptance.
+Each newly consumed ordered frame renews the persisted deadline. Replaying frames after a Runtime replacement does not renew it.
 Set a different budget with `withQueuedModel(publisher, Duration.ofMinutes(15))`. The deadline
 is persisted across Runtime replacements. At the deadline, a missing frame fails the Turn with
 the call ID and expected sequence. A replacement can still process replies already available.
@@ -1031,3 +1032,5 @@ tasks in a reused Thread. Cancellation before admission stores a tombstone; a la
 The transaction rejects cross-Session targets, the parent Thread itself and Thread dependency cycles formed
 by unfinished delegations. `turn.delegated`, `tool.delegated` and `tool.delegation.cancel_requested` are common
 public events; they do not replace the actual child result or its application by the parent.
+
+Publisher RuntimeExceptions represent unknown broker acceptance and use the bounded host recovery policy with the same call ID. Throw a DurableException with an explicit code for definite rejection. Reply consumers can use QueuedModelRequest.accept to persist replies and safely acknowledge late deliveries to completed or cancelling Turns. Duplicate provider billing after uncertain provider acceptance remains possible.
