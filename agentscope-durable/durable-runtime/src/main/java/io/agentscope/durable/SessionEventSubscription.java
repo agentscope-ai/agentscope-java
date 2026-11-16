@@ -144,14 +144,7 @@ public final class SessionEventSubscription implements AutoCloseable {
             if (reader == null) {
                 reader =
                         new SessionEventClient(
-                                session,
-                                filter,
-                                initialCursor,
-                                snapshot -> {
-                                    snapshots.accept(snapshot);
-                                },
-                                this::durable,
-                                this::changed);
+                                session, filter, initialCursor, snapshots, events, this::changed);
                 if (closed) {
                     reader.close();
                     return;
@@ -163,7 +156,7 @@ public final class SessionEventSubscription implements AutoCloseable {
             }
             if (closed) return;
             if (reader.poll() > 0) delay = 0;
-            if (reader.replayCaughtUp() && drainLive() > 0) delay = 0;
+            if (reader.replayCaughtUp() && live.drain(session, liveEvents) > 0) delay = 0;
             lastFailure = null;
         } catch (RuntimeException error) {
             failed = true;
@@ -183,14 +176,6 @@ public final class SessionEventSubscription implements AutoCloseable {
                 }
             }
         }
-    }
-
-    private int drainLive() {
-        return live.drain(session, liveEvents);
-    }
-
-    private void durable(PublicEvent event) {
-        events.accept(event);
     }
 
     /** Last successfully acknowledged cursor; persist event/snapshot cursors inside callbacks. */

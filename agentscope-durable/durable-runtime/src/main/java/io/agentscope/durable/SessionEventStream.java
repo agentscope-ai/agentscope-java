@@ -157,10 +157,10 @@ public final class SessionEventStream implements AutoCloseable {
         try {
             for (var event : firstPage.events()) {
                 if (closed.get()) return;
-                durable(sink, event);
+                sink.accept(event);
             }
             boolean replayCaughtUp = Objects.equals(firstPage.cursor(), firstPage.highWatermark());
-            if (replayCaughtUp) drainLive(sink);
+            if (replayCaughtUp) live.drain(session, sink::live);
             if (filter.threadId() != null) sink.cursor(firstPage.cursor());
             if (closed.get() || expired(until)) return;
             var reset = new AtomicBoolean();
@@ -173,14 +173,14 @@ public final class SessionEventStream implements AutoCloseable {
                                 reset.set(true);
                                 sink.reset(snapshot);
                             },
-                            event -> durable(sink, event));
+                            sink);
             reader = current;
             if (closed.get()) return;
             while (!closed.get()) {
                 int delivered = current.poll();
                 if (reset.get()) return;
                 replayCaughtUp = current.replayCaughtUp();
-                if (replayCaughtUp) delivered += drainLive(sink);
+                if (replayCaughtUp) delivered += live.drain(session, sink::live);
                 if (filter.threadId() != null) sink.cursor(current.cursor());
                 if (expired(until)) return;
                 if (delivered == 0) {
@@ -198,14 +198,6 @@ public final class SessionEventStream implements AutoCloseable {
             close(liveSubscription);
             closed.set(true);
         }
-    }
-
-    private void durable(Sink sink, PublicEvent event) {
-        sink.accept(event);
-    }
-
-    private int drainLive(Sink sink) {
-        return live.drain(session, sink::live);
     }
 
     private static boolean expired(long until) {

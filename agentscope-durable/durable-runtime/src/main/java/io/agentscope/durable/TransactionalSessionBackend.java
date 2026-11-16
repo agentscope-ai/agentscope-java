@@ -2306,9 +2306,15 @@ public final class TransactionalSessionBackend implements SessionBackend {
 
     @Override
     public List<LiveEvent> pendingPreviews(SessionKey key, List<LiveEvent> batch) {
-        return change(
-                key,
-                (s, now) -> PreviewBuffer.pending(batch, s.messages::get, s.projectedTools::get));
+        return store.transaction(
+                key.storageKey(),
+                tx -> {
+                    var state = load(tx);
+                    if (!key.equals(state.session.key()))
+                        throw error(DurableException.Code.CONFLICT, "Session key mismatch");
+                    return PreviewBuffer.pending(
+                            batch, state.messages::get, state.projectedTools::get);
+                });
     }
 
     @Override
