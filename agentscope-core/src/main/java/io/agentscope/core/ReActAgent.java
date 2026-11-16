@@ -75,6 +75,7 @@ import io.agentscope.core.journal.InvocationRecorder;
 import io.agentscope.core.journal.JournalException;
 import io.agentscope.core.journal.JournalExportSink;
 import io.agentscope.core.journal.JournalSchedulers;
+import io.agentscope.core.journal.ModelInvocation;
 import io.agentscope.core.journal.RecordedModels;
 import io.agentscope.core.journal.ThreadJournal;
 import io.agentscope.core.journal.ThreadJournalStore;
@@ -5626,6 +5627,10 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         if (fallbackModel == null) {
             return RecordedModels.wrap(callModel, callContext, purpose.name());
         }
+        var invocation = callContext == null ? null : callContext.get(ModelInvocation.class);
+        if (invocation != null && invocation.resumingFallback(purpose.name())) {
+            return RecordedModels.wrap(fallbackModel, callContext, purpose.name());
+        }
         FailoverListener failoverListener = modelConfig.failoverListener();
 
         AtomicReference<Model> activeModel = new AtomicReference<>(callModel);
@@ -5646,7 +5651,11 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                         (signal, flux) -> {
                             if (signal.isOnError()) {
                                 Throwable error = signal.getThrowable();
-                                if (JournalException.causedBy(error)) return flux;
+                                if (error instanceof AgentExecutionHost.Paused
+                                        || JournalException.causedBy(error)
+                                        || (invocation != null
+                                                && !invocation.beginFallback(
+                                                        purpose.name(), error))) return flux;
                                 InvocationRecorder recorder = InvocationRecorder.from(callContext);
                                 if (recorder != null)
                                     recorder.append(

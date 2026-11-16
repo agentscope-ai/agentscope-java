@@ -37,6 +37,7 @@ import io.agentscope.durable.DurableJson;
 import io.agentscope.durable.DurableTypes.Signal;
 import io.agentscope.durable.DurableTypes.TurnStatus;
 import io.agentscope.durable.DurableTypes.TurnView;
+import io.agentscope.durable.DurableTypes.WaitCondition;
 import io.agentscope.durable.HarnessContext;
 import io.agentscope.durable.codec.agentscope.DurableEventSchemas;
 import java.time.Clock;
@@ -72,12 +73,21 @@ final class AgentScopeExecutionHost implements AgentExecutionHost, ModelInvocati
     private final HarnessContext durable;
     private final BackendThreadJournal log;
     private final QueuedModelRequest.Publisher publisher;
+    private final Duration replyTimeout;
     private QueuedModelRequest pendingRequest;
-    private int pendingIteration;
-    private boolean accepted;
-    private String waitingForModel;
+    private boolean queuedFallback;
 
-    String waitingForModel() {
+    private static final class RemoteModelFailure extends IllegalStateException {
+        RemoteModelFailure(String message) {
+            super(message);
+        }
+    }
+
+    private int pendingIteration;
+    private long replyDeadline;
+    private WaitCondition waitingForModel;
+
+    WaitCondition waitingForModel() {
         return waitingForModel;
     }
 
@@ -97,7 +107,10 @@ final class AgentScopeExecutionHost implements AgentExecutionHost, ModelInvocati
                             checkControl();
                             if (boundary == Boundary.REASONING) {
                                 context = runtime;
-                                if (pendingRequest == null) applyInputs(runtime, state);
+                                if (pendingRequest == null) {
+                                    queuedFallback = false;
+                                    applyInputs(runtime, state);
+                                }
                             }
                         })
                 .subscribeOn(Schedulers.boundedElastic());
@@ -162,10 +175,12 @@ final class AgentScopeExecutionHost implements AgentExecutionHost, ModelInvocati
     AgentScopeExecutionHost(
             HarnessContext durable,
             BackendThreadJournal log,
-            QueuedModelRequest.Publisher publisher) {
+            QueuedModelRequest.Publisher publisher,
+            Duration replyTimeout) {
         this.durable = durable;
         this.log = log;
         this.publisher = publisher;
+        this.replyTimeout = replyTimeout;
         for (var event : log.scan(0, log.head().seq())) {
             if ("state/checkpoint".equals(event.type())) replayAfter = event.seq();
             if (!durable.lease().turnId().equals(event.turnId())) continue;
@@ -175,9 +190,11 @@ final class AgentScopeExecutionHost implements AgentExecutionHost, ModelInvocati
                         DurableJson.convert(
                                 DurableJson.value(data.get("request")), QueuedModelRequest.class);
                 pendingIteration = ((Number) data.get("iteration")).intValue();
-                accepted = false;
+                queuedFallback = Boolean.TRUE.equals(data.get("fallback"));
+                replyDeadline = 0;
             } else if (isQueued(data.get("modelCallId"))) {
-                if (DurableEventSchemas.MODEL_ACCEPTED.equals(event.type())) accepted = true;
+                if (DurableEventSchemas.MODEL_ACCEPTED.equals(event.type()))
+                    replyDeadline = ((Number) data.get("replyDeadline")).longValue();
                 if ("model/end".equals(event.type()) && "completed".equals(data.get("status")))
                     pendingRequest = null;
             }
@@ -413,18 +430,28 @@ final class AgentScopeExecutionHost implements AgentExecutionHost, ModelInvocati
                     context.getAgentState(),
                     "queued_model",
                     DurableEventSchemas.QUEUED_MODEL,
-                    Map.of("request", pendingRequest, "iteration", iteration));
+                    Map.of(
+                            "request",
+                            pendingRequest,
+                            "iteration",
+                            iteration,
+                            "fallback",
+                            queuedFallback));
             pendingIteration = iteration;
-            accepted = false;
+            replyDeadline = 0;
         }
         if (iteration != pendingIteration || !model.equals(pendingRequest.model()))
             throw new DurableException(
                     DurableException.Code.CONFLICT,
                     "Recovered reasoning position changed for call " + pendingRequest.callId());
         String first = QueuedModelRequest.key(pendingRequest.callId(), 0);
-        if (accepted && durable.frame().signals().stream().noneMatch(s -> s.key().equals(first))) {
-            waitingForModel = first;
-            throw new AgentExecutionHost.Paused();
+        if (replyDeadline > 0) {
+            var frame = durable.frame();
+            if (frame.signals().stream().noneMatch(s -> s.key().equals(first))) {
+                checkReplyDeadline(frame.now(), 0);
+                waitingForModel = new WaitCondition(first, replyDeadline);
+                throw new AgentExecutionHost.Paused();
+            }
         }
         return pendingRequest.callId();
     }
@@ -434,9 +461,24 @@ final class AgentScopeExecutionHost implements AgentExecutionHost, ModelInvocati
     }
 
     @Override
+    public boolean resumingFallback(String purpose) {
+        return "REASONING".equals(purpose) && pendingRequest != null && queuedFallback;
+    }
+
+    @Override
+    public boolean beginFallback(String purpose, Throwable cause) {
+        if (!"REASONING".equals(purpose) || publisher == null && pendingRequest == null)
+            return true;
+        if (pendingRequest != null && !(cause instanceof RemoteModelFailure)) return false;
+        pendingRequest = null;
+        queuedFallback = true;
+        return true;
+    }
+
+    @Override
     public Mono<Void> admit(String callId, Mono<Void> admission) {
         if (!isQueued(callId)) return admission;
-        if (accepted) return Mono.empty();
+        if (replyDeadline > 0) return Mono.empty();
         return admission.then(
                 Mono.<Void>fromRunnable(
                                 () -> {
@@ -445,14 +487,23 @@ final class AgentScopeExecutionHost implements AgentExecutionHost, ModelInvocati
                                                 DurableException.Code.INCOMPATIBLE,
                                                 "Model publisher missing");
                                     publisher.publish(pendingRequest);
+                                    replyDeadline =
+                                            Math.addExact(
+                                                    durable.frame().now(), replyTimeout.toMillis());
                                     var recorder = InvocationRecorder.from(context);
                                     recorder.append(
                                             DurableEventSchemas.MODEL_ACCEPTED,
-                                            Map.of("modelCallId", callId),
+                                            Map.of(
+                                                    "modelCallId",
+                                                    callId,
+                                                    "replyDeadline",
+                                                    replyDeadline),
                                             true);
                                     recorder.flushNow();
-                                    accepted = true;
-                                    waitingForModel = QueuedModelRequest.key(callId, 0);
+                                    waitingForModel =
+                                            new WaitCondition(
+                                                    QueuedModelRequest.key(callId, 0),
+                                                    replyDeadline);
                                     throw new AgentExecutionHost.Paused();
                                 })
                         .subscribeOn(Schedulers.boundedElastic()));
@@ -477,11 +528,14 @@ final class AgentScopeExecutionHost implements AgentExecutionHost, ModelInvocati
                                 buffered.clear();
                                 for (var signal : frame.signals())
                                     buffered.put(signal.key(), signal);
+                                if (!buffered.containsKey(key))
+                                    checkReplyDeadline(frame.now(), seq.get());
                             }
                             return Mono.justOrEmpty(buffered.remove(key));
                         })
                 .subscribeOn(Schedulers.boundedElastic())
                 .repeatWhenEmpty(empty -> empty.delayElements(Duration.ofMillis(100)))
+                .doOnNext(QueuedModelRequest::validateReply)
                 .doOnNext(s -> seq.incrementAndGet())
                 .repeat()
                 .takeUntil(s -> s.value().path("last").asBoolean() || s.value().has("error"))
@@ -490,7 +544,7 @@ final class AgentScopeExecutionHost implements AgentExecutionHost, ModelInvocati
                             var data = s.value();
                             if (data.has("error"))
                                 sink.error(
-                                        new IllegalStateException(
+                                        new RemoteModelFailure(
                                                 "Remote model call "
                                                         + callId
                                                         + " failed: "
@@ -501,6 +555,16 @@ final class AgentScopeExecutionHost implements AgentExecutionHost, ModelInvocati
                                                 DurableJson.convert(
                                                         data.get("response"), Map.class)));
                         });
+    }
+
+    private void checkReplyDeadline(long now, long sequence) {
+        if (now >= replyDeadline)
+            throw new DurableException(
+                    DurableException.Code.INVALID,
+                    "Model reply deadline exceeded for call "
+                            + pendingRequest.callId()
+                            + " at sequence "
+                            + sequence);
     }
 
     static String requestHash(

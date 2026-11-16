@@ -94,4 +94,28 @@ public record QueuedModelRequest(
         String key = key(callId, sequence);
         return new Signal(key, key, DurableJson.value(java.util.Map.of("error", error)));
     }
+
+    /** Check the broker consumer's wire payload before advancing to the next sequence. */
+    static void validateReply(Signal signal) {
+        var data = signal.value();
+        var response = data.path("response");
+        if (data.has("error")) {
+            if (data.path("error").isTextual()
+                    && !data.path("error").asText().isBlank()
+                    && !data.has("response")
+                    && !data.has("last")) return;
+        } else if (data.path("last").isBoolean()) {
+            if (data.path("last").booleanValue() && !data.hasNonNull("response")) return;
+            boolean hasResponseField =
+                    response.has("id")
+                            || response.has("content")
+                            || response.has("usage")
+                            || response.has("metadata")
+                            || response.has("finishReason");
+            if (hasResponseField
+                    && (!response.hasNonNull("content") || response.path("content").isArray()))
+                return;
+        }
+        throw new IllegalArgumentException("Invalid model reply frame " + signal.key());
+    }
 }

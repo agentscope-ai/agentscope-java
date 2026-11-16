@@ -124,6 +124,18 @@ a terminal error. Acknowledge each broker delivery after the signal is persisted
 the same frame uses the same signal ID and payload. The first frame wakes a compatible
 host, which displays ordered deltas and advances the ReAct loop after the terminal frame.
 
+By default, the adapter waits up to five minutes from broker acceptance for missing frames.
+Set a different budget with `withQueuedModel(publisher, Duration.ofMinutes(15))`. The deadline
+is persisted across Runtime replacements. At the deadline, a missing frame fails the Turn with
+the call ID and expected sequence. A replacement can still process replies already available.
+If a collector dies after publishing a partial reply, its replacement replays the persisted
+chunks with the same message ID and attempt and a higher presentation revision. Clients replace
+the previous partial text when that revision starts.
+Malformed reply frames fail the Turn before later chunks can trigger tools.
+With a configured fallback model, a provider failure before the first response can dispatch the
+fallback as a separate call. A replacement host resumes that call. Suspending the host, an invalid
+frame, or a failure after the first response does not trigger another model dispatch.
+
 ## Reconnect and control tasks
 
 ### Reopen an existing task

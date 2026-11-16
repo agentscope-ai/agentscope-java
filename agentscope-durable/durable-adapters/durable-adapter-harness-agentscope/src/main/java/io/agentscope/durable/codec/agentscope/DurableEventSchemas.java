@@ -37,6 +37,7 @@ public final class DurableEventSchemas {
                             if (!(data.get("request") instanceof Map<?, ?> request)
                                     || !(request.get("callId") instanceof String id)
                                     || id.isBlank()
+                                    || !(data.get("fallback") instanceof Boolean)
                                     || !(data.get("iteration") instanceof Number iteration)
                                     || iteration.intValue() < 0)
                                 throw new IllegalArgumentException("Invalid queued model request");
@@ -45,7 +46,13 @@ public final class DurableEventSchemas {
         registry.register(
                 MODEL_ACCEPTED,
                 new JournalEventCodecRegistry.Codec(
-                        data -> text(data, "modelCallId"), (state, data) -> {}));
+                        data -> {
+                            text(data, "modelCallId");
+                            if (!(data.get("replyDeadline") instanceof Number deadline)
+                                    || deadline.longValue() <= 0)
+                                throw new IllegalArgumentException("Invalid model reply deadline");
+                        },
+                        (state, data) -> {}));
         registry.register(
                 START,
                 new JournalEventCodecRegistry.Codec(
