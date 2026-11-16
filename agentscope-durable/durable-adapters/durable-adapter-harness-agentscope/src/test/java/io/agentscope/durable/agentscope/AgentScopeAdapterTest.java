@@ -231,6 +231,46 @@ class AgentScopeAdapterTest {
     }
 
     @Test
+    void verifiedNativeToolRepairSurvivesReopenAndRejectsChangedEvidence() {
+        var adapter = adapter(new ScriptedModel(false), PermissionMode.BYPASS, Map.of());
+        try (var backend = LocalBackend.open(directory.resolve("repair"));
+                var runtime = runtime(backend, adapter, null)) {
+            var turn = runtime.createSession(key, "agent").submit("request", "hello");
+            var lease =
+                    backend.claim(new ThreadKey(key, "main"), "repair", Duration.ofMinutes(1))
+                            .orElseThrow();
+            var context = new HarnessContext(backend, lease, new AtomicBoolean());
+            var log = new BackendThreadJournal(context, Map.of());
+            log.append(
+                    turn.turnId(),
+                    List.of(
+                            Map.entry(
+                                    "state/checkpoint",
+                                    Map.of(
+                                            "stateJson",
+                                            io.agentscope.core.state.AgentState.builder()
+                                                    .build()
+                                                    .toJson(),
+                                            "projectorVersion",
+                                            1)),
+                            Map.entry("tool/dispatch", Map.of("toolCallId", "local-1"))));
+            var outcomes =
+                    Map.of(
+                            "local-1",
+                            ToolResultBlock.text("verified")
+                                    .withIdAndName("local-1", "local")
+                                    .withState(ToolResultState.SUCCESS));
+            adapter.reconcileNativeTools(context, "repair-1", "audit/123", outcomes);
+            long position = new BackendThreadJournal(context, Map.of()).head().seq();
+            adapter.reconcileNativeTools(context, "repair-1", "audit/123", outcomes);
+            assertEquals(position, new BackendThreadJournal(context, Map.of()).head().seq());
+            assertThrows(
+                    DurableException.class,
+                    () -> adapter.reconcileNativeTools(context, "repair-1", "other", outcomes));
+        }
+    }
+
+    @Test
     void adapterOwnsTheInvocationJournalConfiguration() {
         var adapter =
                 AgentScopeAdapter.forReAct(

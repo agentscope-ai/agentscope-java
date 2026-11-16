@@ -260,6 +260,55 @@ public final class AgentScopeAdapter implements HarnessAdapter {
                 List.of("text", "image", "audio", "video"));
     }
 
+    /** Operator-only repair under a claimed Turn lease. The host verifies the external evidence. */
+    public void reconcileNativeTools(
+            HarnessContext context,
+            String requestId,
+            String evidenceRef,
+            Map<String, ToolResultBlock> verified) {
+        DurableJson.text(requestId, "requestId");
+        DurableJson.text(evidenceRef, "evidenceRef");
+        var outcomes = Map.copyOf(verified);
+        if (outcomes.isEmpty()
+                || outcomes.values().stream()
+                        .anyMatch(
+                                result ->
+                                        result.getState() == null
+                                                || result.getState() == ToolResultState.RUNNING
+                                                || result.isSuspended()
+                                                || result.getExecutionDetails() != null
+                                                        && "UNKNOWN"
+                                                                .equals(
+                                                                        result.getExecutionDetails()
+                                                                                .outcome()
+                                                                                .name()))) {
+            throw new DurableException(
+                    DurableException.Code.INVALID, "Verified terminal outcomes required");
+        }
+        var log = new BackendThreadJournal(context, executors, bindings);
+        String turn = context.lease().turnId();
+        String key = "native-reconciliation:" + DurableJson.hash(List.of(turn, requestId)) + ":";
+        String reason = key + DurableJson.hash(outcomes) + ":" + evidenceRef;
+        for (var event : log.scanMetadata(0, log.head().seq())) {
+            if (!turn.equals(event.turnId()) || !"recovery/applied".equals(event.type())) continue;
+            if (event.data().get("reason") instanceof String stored && stored.startsWith(key)) {
+                if (stored.equals(reason)) return;
+                throw new DurableException(
+                        DurableException.Code.CONFLICT, "Reconciliation request changed");
+            }
+        }
+        var projection = JournalProjection.read(log);
+        if (!turn.equals(projection.positionTurnId())
+                || !projection.uncertainToolCalls().equals(outcomes.keySet())
+                || context.frame().tools().stream()
+                        .anyMatch(tool -> outcomes.containsKey(tool.request().call().callId()))) {
+            throw new DurableException(
+                    DurableException.Code.CONFLICT,
+                    "Outcomes must match this Turn's unresolved native calls");
+        }
+        io.agentscope.core.journal.ThreadRecovery.reconcile(log, outcomes, reason);
+    }
+
     @Override
     public void execute(HarnessContext context) {
         if (pauseIfRequested(context)) return;
