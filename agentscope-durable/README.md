@@ -475,6 +475,26 @@ terminal events, displayed answers and subscriber cursors. The runner removes it
 volumes and network on exit. Set `ROCKETMQ_IMAGE` to use a locally available RocketMQ 5 image
 with the broker proxy and `mqadmin` tools.
 
+The paired-consumer comparison starts separate NameServer, Broker, Proxy and consumer JVMs,
+runs eight queues with the same consumer group, and varies only the broker direct-memory limit.
+It checks ordinary delivery, repeated receive deadlines during a Proxy pause, and redelivery
+to the surviving consumer after killing its peer before ACK.
+
+```sh
+python3 agentscope-durable/scripts/docker-regression/compare_consumers.py
+```
+
+For a single-Thread PostgreSQL test database, the read-only profiler attributes
+`durable_parts.payload` bytes to native checkpoints, other journal entries and their
+shared immutable chunks. Each shared chunk is counted once. The milestone is the
+number of distinct Turns encountered in journal order. Take the measurement after
+the last measured Turn finishes. Checkpoint-history rows, events, PostgreSQL indexes
+and TOAST statistics can be measured separately.
+
+```sh
+python3 agentscope-durable/scripts/docker-regression/profile_journal.py CONTAINER DATABASE USER 100 1000
+```
+
 Normal checking covers build, formatting and tests. Isolation checking builds source
 dependencies in a separate Maven cache and audits dependency trees.
 Validate broker delivery, provider query/cancel
