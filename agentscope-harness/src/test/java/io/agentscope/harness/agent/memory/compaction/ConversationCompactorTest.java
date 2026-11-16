@@ -23,6 +23,8 @@ import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import io.agentscope.core.agent.RuntimeContext;
@@ -31,6 +33,7 @@ import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.ThinkingBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ChatResponse;
@@ -421,6 +424,63 @@ class ConversationCompactorTest {
                         < TokenCounterUtil.calculateToken(input));
     }
 
+    /** Reasoning is ignored while complete summary text replaces history only once. */
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void compactIfNeeded_acceptsThinkingWithCompleteSummary(boolean separateChunks) {
+        Model model = mock(Model.class);
+        ThinkingBlock thinking = ThinkingBlock.builder().thinking("internal reasoning").build();
+        TextBlock summary = TextBlock.builder().text("VALID_THINKING_SUMMARY").build();
+        Flux<ChatResponse> responses =
+                separateChunks
+                        ? Flux.just(
+                                ChatResponse.builder().content(List.of(thinking)).build(),
+                                ChatResponse.builder().content(List.of(summary)).build(),
+                                ChatResponse.builder().finishReason("stop").build())
+                        : Flux.just(
+                                ChatResponse.builder()
+                                        .content(List.of(thinking, summary))
+                                        .finishReason("stop")
+                                        .build());
+        when(model.stream(anyList(), any(), any())).thenReturn(responses);
+        ConversationCompactor compactor =
+                new ConversationCompactor(model, new MemoryFlushManager(null, null));
+        List<Msg> input = compactableMessages();
+        CompactionConfig config =
+                CompactionConfig.builder()
+                        .triggerTokens(TokenCounterUtil.calculateToken(input))
+                        .triggerMessages(0)
+                        .keepMessages(2)
+                        .keepTokens(0)
+                        .flushBeforeCompact(false)
+                        .offloadBeforeCompact(false)
+                        .prune(null)
+                        .truncateArgs(null)
+                        .build();
+
+        List<Msg> compacted =
+                compactor
+                        .compactIfNeeded(
+                                RuntimeContext.builder().build(), input, config, "agent", "s")
+                        .block()
+                        .orElseThrow();
+
+        assertEquals(ConversationCompactor.SUMMARY_MSG_NAME, compacted.get(0).getName());
+        assertTrue(text(compacted.get(0)).contains("VALID_THINKING_SUMMARY"));
+        assertFalse(text(compacted.get(0)).contains("internal reasoning"));
+        assertEquals(input.subList(2, 4), compacted.subList(1, compacted.size()));
+        assertTrue(
+                TokenCounterUtil.calculateToken(compacted)
+                        < TokenCounterUtil.calculateToken(input));
+        assertTrue(
+                compactor
+                        .compactIfNeeded(
+                                RuntimeContext.builder().build(), compacted, config, "agent", "s")
+                        .block()
+                        .isEmpty());
+        verify(model, times(1)).stream(anyList(), any(), any());
+    }
+
     /**
      * Verifies that an oversized-but-valid summary keeps only the lightweight reductions instead
      * of replacing history.
@@ -477,6 +537,7 @@ class ConversationCompactorTest {
                 "failed",
                 "synchronous",
                 "empty",
+                "thinking-only",
                 "blank",
                 "length",
                 "tool-call",
@@ -496,6 +557,16 @@ class ConversationCompactorTest {
                     case "failed", "synchronous" ->
                             Flux.error(new IllegalStateException("summary unavailable"));
                     case "empty" -> Flux.empty();
+                    case "thinking-only" ->
+                            Flux.just(
+                                    ChatResponse.builder()
+                                            .content(
+                                                    List.of(
+                                                            ThinkingBlock.builder()
+                                                                    .thinking("reasoning")
+                                                                    .build()))
+                                            .finishReason("stop")
+                                            .build());
                     case "blank" ->
                             Flux.just(
                                     ChatResponse.builder()
