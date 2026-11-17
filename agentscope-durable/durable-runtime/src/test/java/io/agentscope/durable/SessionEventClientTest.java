@@ -128,6 +128,27 @@ class SessionEventClientTest {
         }
     }
 
+    @Test
+    void resetWaitsForFreshReplayBeforeDeliveringPreviews() {
+        var backend = mock(SessionBackend.class);
+        when(backend.wakeups()).thenReturn(Wakeups.none());
+        var snapshot = mock(DurableTypes.Snapshot.class);
+        when(snapshot.cursor()).thenReturn("1");
+        when(backend.snapshot(session)).thenReturn(snapshot);
+        when(backend.events(eq(session), any(), eq(100)))
+                .thenReturn(
+                        new EventPage(List.of(event("2")), "2", "3"),
+                        new EventPage(List.of(event("4")), "4", "4"));
+        try (var reader = new SessionEventClient(backend, session, null, s -> {}, e -> {})) {
+            reader.resynchronize();
+            assertFalse(reader.replayCaughtUp());
+            reader.poll();
+            assertFalse(reader.replayCaughtUp());
+            reader.poll();
+            assertTrue(reader.replayCaughtUp());
+        }
+    }
+
     private PublicEvent event(String cursor) {
         return new PublicEvent(
                 "1",

@@ -445,3 +445,10 @@ operations are not promised exactly-once execution.
 - [Public interaction contract](protocol/public-interaction-contract.en.md): lifecycle,
   controls, messages and events.
 - [Protocol reference](protocol/README.md): schema, transport boundaries and conformance fixtures.
+
+### Subscriber recovery regression
+
+Run `agentscope-durable/scripts/subscriber-regression/run.sh` with Docker, Maven and a JDK.
+The regression uses PostgreSQL and separate subscriber processes to exercise a disconnect
+between displaying an answer and saving its cursor. It prunes the history, commits a new Turn
+during snapshot recovery and checks slow, filtered and healthy observers for stale previews.
