@@ -66,6 +66,29 @@ final class FileRecordStore implements RecordStore {
     public <T> T transaction(String scope, Function<Transaction, T> action) {
         ensureOpen();
         var path = root.resolve(DurableJson.digest(scope) + ".json");
+        return locked(
+                path,
+                () -> {
+                    var state =
+                            Files.exists(path)
+                                    ? read(path)
+                                    : DurableJson.value(
+                                            Map.of(
+                                                    "scope", scope, "parts", Map.of(), "queues",
+                                                    Map.of()));
+                    var tx = new Tx((ObjectNode) state);
+                    T result = action.apply(tx);
+                    if (tx.changed) publish(path, state);
+                    return result;
+                });
+    }
+
+    @FunctionalInterface
+    private interface LockedOperation<T> {
+        T run() throws IOException;
+    }
+
+    private <T> T locked(Path path, LockedOperation<T> operation) {
         synchronized (locks[Math.floorMod(path.hashCode(), locks.length)]) {
             try (var channel =
                             FileChannel.open(
@@ -73,17 +96,7 @@ final class FileRecordStore implements RecordStore {
                                     StandardOpenOption.CREATE,
                                     StandardOpenOption.WRITE);
                     var lock = channel.lock()) {
-                var state =
-                        Files.exists(path)
-                                ? read(path)
-                                : DurableJson.value(
-                                        Map.of(
-                                                "scope", scope, "parts", Map.of(), "queues",
-                                                Map.of()));
-                var tx = new Tx((ObjectNode) state);
-                T result = action.apply(tx);
-                if (tx.changed) publish(path, state);
-                return result;
+                return operation.run();
             } catch (IOException failure) {
                 throw unavailable(failure);
             }
@@ -176,14 +189,7 @@ final class FileRecordStore implements RecordStore {
         try (var files = Files.list(root)) {
             return query.apply(
                     files.filter(p -> p.getFileName().toString().endsWith(".json"))
-                            .map(
-                                    p -> {
-                                        try {
-                                            return read(p);
-                                        } catch (IOException e) {
-                                            throw unavailable(e);
-                                        }
-                                    }));
+                            .map(path -> locked(path, () -> read(path))));
         } catch (IOException e) {
             throw unavailable(e);
         }

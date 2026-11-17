@@ -90,16 +90,29 @@ public final class FileObjectStore implements ObjectStore {
     // Windows cannot open the parent directory as a Java FileChannel. Publish in the
     // same directory with write-through and without permission to replace an existing object.
     static void moveWindows(Path temporary, Path destination, boolean replace) throws IOException {
-        if (Kernel32.INSTANCE.MoveFileEx(
-                temporary.toString(),
-                destination.toString(),
+        var flags =
                 new DWORD(
                         WinBase.MOVEFILE_WRITE_THROUGH
-                                | (replace ? WinBase.MOVEFILE_REPLACE_EXISTING : 0)))) return;
-        int error = Native.getLastError();
-        if (error == WinError.ERROR_ALREADY_EXISTS || error == WinError.ERROR_FILE_EXISTS)
-            throw new FileAlreadyExistsException(destination.toString());
-        throw new IOException("MoveFileEx failed with Windows error " + error);
+                                | (replace ? WinBase.MOVEFILE_REPLACE_EXISTING : 0));
+        // Windows can deny replacement briefly while another filesystem reader releases its handle.
+        for (int attempt = 0; ; attempt++) {
+            if (Kernel32.INSTANCE.MoveFileEx(temporary.toString(), destination.toString(), flags))
+                return;
+            int error = Native.getLastError();
+            if (error == WinError.ERROR_ALREADY_EXISTS || error == WinError.ERROR_FILE_EXISTS)
+                throw new FileAlreadyExistsException(destination.toString());
+            if (!replace
+                    || attempt >= 8
+                    || (error != WinError.ERROR_ACCESS_DENIED
+                            && error != WinError.ERROR_SHARING_VIOLATION))
+                throw new IOException("MoveFileEx failed with Windows error " + error);
+            try {
+                Thread.sleep(Math.min(100, 5L << attempt));
+            } catch (InterruptedException interrupted) {
+                Thread.currentThread().interrupt();
+                throw new IOException("Interrupted while publishing local record", interrupted);
+            }
+        }
     }
 
     public byte[] read(Reference ref) {
