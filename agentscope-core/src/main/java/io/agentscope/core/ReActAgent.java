@@ -1887,6 +1887,15 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                         e -> {
                                             if (e instanceof AgentExecutionHost.Paused)
                                                 return Mono.error(e);
+                                            // A gate-raised failure (consultation error,
+                                            // tripped fuse, failed retry re-entry) fails the
+                                            // call: the fallback re-runs the model, which
+                                            // would silently overturn the gate's verdict.
+                                            if (e
+                                                    instanceof
+                                                    FinalAnswerGateEngine.GateError gateError) {
+                                                return Mono.error(gateError.getCause());
+                                            }
                                             log.warn(
                                                     "Native structured output failed ({}) — falling"
                                                             + " back to synthetic tool path",
@@ -1937,7 +1946,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                             .flatMap(
                                     result -> {
                                         Msg out =
-                                                wrapNativeStructuredResult(
+                                                wrapStructuredResult(
                                                         result,
                                                         scope.nativeResponseFormat.getJsonSchema());
                                         return saveStateToSession(scope).thenReturn(out);
@@ -2000,28 +2009,13 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                                 && scope.soResultMsg != null
                                                 && result.getGenerateReason()
                                                         == GenerateReason.ACTING_STOP_REQUESTED) {
-                                            ChatUsage aggregatedUsage =
-                                                    collectAggregatedUsage(scope.state);
-                                            ThinkingBlock aggregatedThinking =
-                                                    collectLastThinking(scope.state);
-                                            compressStructuredOutputContext(scope.state);
-                                            Msg extracted =
-                                                    extractStructuredResult(scope.soResultMsg);
-                                            if (extracted != null) {
-                                                out =
-                                                        mergeCollectedMetadata(
-                                                                extracted,
-                                                                aggregatedUsage,
-                                                                aggregatedThinking);
-                                            }
                                             // The completed structured answer passes the
                                             // final-answer gate before delivery: this is a
                                             // completion exit, not an interrupt-like stop —
                                             // memory write and any certified projection land
                                             // inside the gate. A veto re-enters reasoning,
                                             // so the session is saved only after the gate.
-                                            return scope.finalAnswerGateEngine
-                                                    .gate(out, 0, FinishReason.FINAL_ANSWER)
+                                            return certifyFallbackCompletion(scope, jsonSchema)
                                                     .flatMap(
                                                             gated ->
                                                                     saveStateToSession(scope)
@@ -2037,16 +2031,84 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                 });
     }
 
-    private Msg wrapNativeStructuredResult(Msg result, JsonSchema schema) {
+    /**
+     * Certifies the fallback structured-output completion, recursively across gate
+     * retries. Extracts the structured result from the completed {@code
+     * generate_response} call, resets the completion markers (a vetoed round
+     * re-enters reasoning and must be forced to call the tool again — {@code
+     * soCompleted} gates the forcing at finish, so a retry can never settle for a
+     * plain-text round as the structured result), and consults the gate with the
+     * exit's JSON contract enforced on whatever is accepted: the accept transform
+     * re-parses, validates, and stamps the payload, so a replacement breaking the
+     * schema fails closed instead of shipping as the typed result.
+     *
+     * <p>A gate retry re-enters reasoning inside the gate itself, so a retry round
+     * that re-completes {@code generate_response} surfaces as the gate's own return
+     * value (its acting-stop terminal) — such a terminal is certified again by these
+     * same rules rather than returned raw. Bounded by the gate's retry fuse.
+     *
+     * @param scope the call's execution carrying the completed structured markers
+     * @param jsonSchema the structured-output schema of this call
+     * @return the certified (possibly replaced) structured result
+     */
+    private Mono<Msg> certifyFallbackCompletion(
+            CallExecution scope, Map<String, Object> jsonSchema) {
+        ChatUsage aggregatedUsage = collectAggregatedUsage(scope.state);
+        ThinkingBlock aggregatedThinking = collectLastThinking(scope.state);
+        compressStructuredOutputContext(scope.state);
+        Msg extracted = extractStructuredResult(scope.soResultMsg);
+        Msg out = mergeCollectedMetadata(extracted, aggregatedUsage, aggregatedThinking);
+        scope.soCompleted = false;
+        scope.soResultMsg = null;
+        JsonSchema exitSchema =
+                JsonSchema.builder().name(STRUCTURED_OUTPUT_TOOL_NAME).schema(jsonSchema).build();
+        return scope.finalAnswerGateEngine
+                .gate(
+                        out,
+                        scope.lastSessionIteration,
+                        FinishReason.FINAL_ANSWER,
+                        accepted ->
+                                Mono.fromCallable(() -> wrapStructuredResult(accepted, exitSchema)),
+                        null)
+                .flatMap(
+                        gated -> {
+                            if (scope.soCompleted
+                                    && scope.soResultMsg != null
+                                    && gated.getGenerateReason()
+                                            == GenerateReason.ACTING_STOP_REQUESTED) {
+                                // The retry round re-completed generate_response: its
+                                // terminal returns through the gate, so certify it by the
+                                // same rules instead of returning it raw.
+                                return certifyFallbackCompletion(scope, jsonSchema);
+                            }
+                            return Mono.just(gated);
+                        });
+    }
+
+    /**
+     * Holds the structured-output contract at a final-answer exit: whatever the gate
+     * accepts — the model's own candidate or a gate replacement — is parsed as JSON,
+     * validated against the exit's schema, and stamped with the {@code
+     * STRUCTURED_OUTPUT} metadata. Used by both the native exit (model text) and the
+     * fallback completion exit ({@code generate_response} extraction); a failure
+     * fails the round/exit instead of returning a message that breaks the caller's
+     * typed contract.
+     *
+     * @param result the accepted message whose text must be the structured payload
+     * @param schema the exit's schema
+     * @return the same message re-stamped with parsed {@code STRUCTURED_OUTPUT}
+     *     metadata
+     */
+    private Msg wrapStructuredResult(Msg result, JsonSchema schema) {
         if (result == null) {
             return null;
         }
         String text = result.getTextContent();
         if (text == null || text.isBlank()) {
-            throw new IllegalArgumentException("Native structured output is empty");
+            throw new IllegalArgumentException("Structured output is empty");
         }
         if (schema == null || schema.getSchema() == null) {
-            throw new IllegalArgumentException("Native structured output schema is required");
+            throw new IllegalArgumentException("Structured output schema is required");
         }
 
         JsonNode payload;
@@ -2054,14 +2116,14 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             payload = JsonUtils.getJsonCodec().fromJson(text, JsonNode.class);
         } catch (Exception e) {
             throw new IllegalArgumentException(
-                    "Native structured output is not valid JSON: " + e.getMessage(), e);
+                    "Structured output is not valid JSON: " + e.getMessage(), e);
         }
 
         if (validateStructuredOutput) {
             String validationError = ToolValidator.validateJsonOutput(payload, schema.getSchema());
             if (validationError != null) {
                 throw new IllegalArgumentException(
-                        "Native structured output failed schema validation: " + validationError);
+                        "Structured output failed schema validation: " + validationError);
             }
         }
 
@@ -2691,12 +2753,22 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                 // Validate and publish from the caller's original messages so the
                 // ExternalExecutionResultEvent carries the real external results;
                 // only what lands in context is placeholder-shaped on a short-circuit.
+                // Under a gate, a returnDirect-resume result event is candidate
+                // content: it is withheld here and published past the verdict by
+                // finalizeReturnDirect — a rejection or replacement never ships the
+                // raw results.
+                boolean deferResultEvent = returnDirectResume && finalAnswerGateEngine.active();
                 validateAndAddToolResults(
                         msgs,
                         returnDirectResume ? placeholderToolResultMsgs(msgs) : msgs,
-                        pendingIds);
+                        pendingIds,
+                        !deferResultEvent);
                 if (returnDirectResume) {
-                    return finalizeReturnDirect(0, externalPairs, externalReplyId);
+                    return finalizeReturnDirect(
+                            lastSessionIteration,
+                            externalPairs,
+                            externalReplyId,
+                            deferResultEvent ? providedResults : null);
                 }
                 return !MessageUtils.pendingToolUseIds(state.contextMutable()).isEmpty()
                         ? resumeAgent()
@@ -3069,15 +3141,22 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
          * <p>Validation and the published {@link ExternalExecutionResultEvent} always reflect
          * {@code msgs} as the caller supplied them; {@code msgsToPersist} is what lands in
          * context and may differ only on a returnDirect short-circuit, where the tool results
-         * are replaced with placeholder-shaped copies.
+         * are replaced with placeholder-shaped copies. The pending reply id is resolved and
+         * cleared either way; with {@code publishResultEvent} false the result event itself
+         * is withheld (the gate defers it past its verdict on a returnDirect resume).
          *
          * @param msgs The input messages to validate and publish
          * @param msgsToPersist The messages to add to context (may be placeholder-substituted)
          * @param pendingIds The set of pending tool use IDs
+         * @param publishResultEvent whether the {@link ExternalExecutionResultEvent} may be
+         *     published now; {@code false} defers it to the caller
          * @throws IllegalStateException if validation fails
          */
         private void validateAndAddToolResults(
-                List<Msg> msgs, List<Msg> msgsToPersist, Set<String> pendingIds) {
+                List<Msg> msgs,
+                List<Msg> msgsToPersist,
+                Set<String> pendingIds,
+                boolean publishResultEvent) {
             if (msgs == null || msgs.isEmpty()) {
                 return;
             }
@@ -3131,7 +3210,9 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             String replyId =
                     resolvePendingRequestReplyId(Msg.METADATA_EXTERNAL_EXECUTION_REQUEST_REPLY_ID);
             if (!replyId.isEmpty()) {
-                publishEvent(new ExternalExecutionResultEvent(replyId, results));
+                if (publishResultEvent) {
+                    publishEvent(new ExternalExecutionResultEvent(replyId, results));
+                }
                 clearPendingRequestReplyId(Msg.METADATA_EXTERNAL_EXECUTION_REQUEST_REPLY_ID);
             }
             state.contextMutable().addAll(msgsToPersist);
@@ -3495,7 +3576,9 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                     // failure fails this round before anything ships and the
                                     // caller's fallback re-run goes through the gate too; a
                                     // gate replacement that breaks the exit's JSON contract
-                                    // fails closed instead of silently restarting.
+                                    // fails closed instead of silently restarting. Gate-raised
+                                    // failures are marked so the caller's fallback rethrows
+                                    // them instead of re-running the model.
                                     if (nativeResponseFormat != null) {
                                         return finalAnswerGateEngine.gate(
                                                 eventMsg,
@@ -3504,11 +3587,12 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                                 accepted ->
                                                         Mono.fromCallable(
                                                                 () ->
-                                                                        wrapNativeStructuredResult(
+                                                                        wrapStructuredResult(
                                                                                 accepted,
                                                                                 nativeResponseFormat
                                                                                         .getJsonSchema())),
-                                                null);
+                                                null,
+                                                true);
                                     }
                                     return finalAnswerGateEngine.gate(
                                             eventMsg, iter, FinishReason.FINAL_ANSWER);
@@ -4337,6 +4421,20 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                 }
             }
 
+            // Certified delivery: a batch whose every executable call targets a
+            // returnDirect-declared tool can short-circuit into the final answer, so its
+            // tool outputs are candidate content — withhold the content events while a
+            // gate is active (lifecycle events still stream; the accept landing projects
+            // the certified text after the verdict). Decided by declaration upfront:
+            // success is known only after execution, and a returnDirect batch that
+            // fails and feeds the model simply does so without streamed content (the
+            // result itself still reaches the model, memory, and the journal audit).
+            boolean withholdCandidateContent =
+                    finalAnswerGateEngine.active()
+                            && ungranted.isEmpty()
+                            && deniedIds.isEmpty()
+                            && approved.stream().allMatch(this::isReturnDirectDeclaration);
+
             Flux<AgentEvent> deniedEvents =
                     ungrantedEvents(ungranted, replyId)
                             .concatWith(
@@ -4388,7 +4486,10 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                                 // start instead of batch admission.
                                                 ToolResultCallback callback =
                                                         new ToolResultCallback(
-                                                                replyId, sink, parentCtx);
+                                                                replyId,
+                                                                sink,
+                                                                parentCtx,
+                                                                withholdCandidateContent);
                                                 Disposable toolCallsDisposable =
                                                         executeToolCalls(approved, callback)
                                                                 .contextWrite(
@@ -4703,6 +4804,14 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             private final FluxSink<AgentEvent> sink;
             private final reactor.util.context.ContextView parentContext;
 
+            /**
+             * Whether this batch's content events are withheld pre-verdict: the gate is
+             * active and every executable call targets a returnDirect-declared tool, so the
+             * outputs are final-answer candidates. Lifecycle events still stream; the
+             * certified text projects after the verdict.
+             */
+            private final boolean withholdContent;
+
             /** Results resolved before batch settlement, by call id. */
             private final ConcurrentHashMap<String, ToolResultBlock> combineResolvedResults =
                     new ConcurrentHashMap<>();
@@ -4713,10 +4822,12 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             private ToolResultCallback(
                     String replyId,
                     FluxSink<AgentEvent> sink,
-                    reactor.util.context.ContextView parentContext) {
+                    reactor.util.context.ContextView parentContext,
+                    boolean withholdContent) {
                 this.replyId = replyId;
                 this.sink = sink;
                 this.parentContext = parentContext;
+                this.withholdContent = withholdContent;
             }
 
             private void emit(AgentEvent event) {
@@ -4733,7 +4844,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
 
             @Override
             public void onProgress(ToolUseBlock call, ToolResultBlock progress) {
-                if (progress.getOutput() != null) {
+                if (!withholdContent && progress.getOutput() != null) {
                     for (ContentBlock block : progress.getOutput()) {
                         emit(
                                 new ToolProgressEvent(replyId, call.getId(), call.getName(), block)
@@ -4753,7 +4864,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                 if (combineResolvedResults.putIfAbsent(call.getId(), result) != null) return;
                 if (result.isSuspended()) return;
                 Map<String, Object> metadata = result.getMetadata();
-                if (result.getOutput() != null) {
+                if (!withholdContent && result.getOutput() != null) {
                     for (ContentBlock block : result.getOutput()) {
                         AgentEvent event =
                                 block instanceof TextBlock text
@@ -5111,11 +5222,20 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
          * DENIED / ERROR / INTERRUPTED results must never be presented as the final answer.
          */
         private boolean isReturnDirectToolCall(Map.Entry<ToolUseBlock, ToolResultBlock> entry) {
-            AgentTool tool = toolkit.getTool(entry.getKey().getName());
-            if (tool == null || !tool.isReturnDirect()) {
-                return false;
-            }
-            return determineToolResultState(entry.getValue()) == ToolResultState.SUCCESS;
+            return isReturnDirectDeclaration(entry.getKey())
+                    && determineToolResultState(entry.getValue()) == ToolResultState.SUCCESS;
+        }
+
+        /**
+         * Whether {@code call} targets a locally registered tool declared {@code
+         * returnDirect} — the declaration alone, regardless of the outcome. This is the
+         * upfront form of {@link #isReturnDirectToolCall}: batches decided by it may
+         * short-circuit, so under a gate their outputs are withheld as candidate content
+         * before execution reveals success.
+         */
+        private boolean isReturnDirectDeclaration(ToolUseBlock call) {
+            AgentTool tool = toolkit.getTool(call.getName());
+            return tool != null && tool.isReturnDirect();
         }
 
         /** Builds the placeholder tool_result, replacing only the output while keeping id/name/state. */
@@ -5140,6 +5260,15 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         }
 
         /**
+         * Same as {@link #finalizeReturnDirect(int, List, String, List)} without deferred
+         * external results.
+         */
+        private Mono<Msg> finalizeReturnDirect(
+                int iter, List<Map.Entry<ToolUseBlock, ToolResultBlock>> pairs, String replyId) {
+            return finalizeReturnDirect(iter, pairs, replyId, null);
+        }
+
+        /**
          * Finalize a returnDirect turn: synthesize the closing assistant message, consult
          * the final-answer gate, persist the accepted (possibly replaced) message, and
          * project its certified text events after the verdict.
@@ -5153,19 +5282,38 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
          * placeholder tool_results already persisted in the pairing slots are not affected
          * by the gate.
          *
+         * <p>{@code deferredExternalResults} carries the raw external results of a gated
+         * returnDirect resume, whose {@link ExternalExecutionResultEvent} was withheld
+         * pre-verdict: it ships here, before the certified projection, only when the tool
+         * result itself is accepted — a replacement or retry supersedes it (the journal
+         * audit keeps the original).
+         *
          * @param iter the acting iteration; a retry re-enters reasoning at {@code iter + 1}
          * @param pairs the succeeded returnDirect tool call/result pairs
          * @param replyId reply id correlating the projected closing text events
+         * @param deferredExternalResults withheld external results to publish on accept of
+         *     the tool result itself, or {@code null}
          * @return the accepted (possibly replaced) closing message
          */
         private Mono<Msg> finalizeReturnDirect(
-                int iter, List<Map.Entry<ToolUseBlock, ToolResultBlock>> pairs, String replyId) {
+                int iter,
+                List<Map.Entry<ToolUseBlock, ToolResultBlock>> pairs,
+                String replyId,
+                List<ToolResultBlock> deferredExternalResults) {
             Msg result = buildReturnDirectResultMsg(pairs);
             return finalAnswerGateEngine.gate(
                     result,
                     iter,
                     FinishReason.RETURN_DIRECT,
                     accepted -> {
+                        if (deferredExternalResults != null && accepted == result) {
+                            // The withheld result event ships with the verdict: the raw
+                            // results correlate with the accepted candidate; a replacement
+                            // or retry supersedes them.
+                            publishEvent(
+                                    new ExternalExecutionResultEvent(
+                                            replyId, deferredExternalResults));
+                        }
                         if (accepted != result) {
                             return Mono.just(asReturnDirectClose(accepted));
                         }

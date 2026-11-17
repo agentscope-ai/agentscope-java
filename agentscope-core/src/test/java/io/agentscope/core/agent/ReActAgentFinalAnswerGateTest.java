@@ -26,6 +26,7 @@ import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.event.AgentResultEvent;
 import io.agentscope.core.event.CustomEvent;
 import io.agentscope.core.event.ExceedMaxItersEvent;
+import io.agentscope.core.event.ExternalExecutionResultEvent;
 import io.agentscope.core.event.ModelCallEndEvent;
 import io.agentscope.core.event.TextBlockDeltaEvent;
 import io.agentscope.core.event.TextBlockEndEvent;
@@ -33,6 +34,9 @@ import io.agentscope.core.event.TextBlockStartEvent;
 import io.agentscope.core.event.ThinkingBlockDeltaEvent;
 import io.agentscope.core.event.ThinkingBlockEndEvent;
 import io.agentscope.core.event.ThinkingBlockStartEvent;
+import io.agentscope.core.event.ToolResultEndEvent;
+import io.agentscope.core.event.ToolResultStartEvent;
+import io.agentscope.core.event.ToolResultTextDeltaEvent;
 import io.agentscope.core.hook.Hook;
 import io.agentscope.core.hook.HookEvent;
 import io.agentscope.core.hook.PostReasoningEvent;
@@ -40,6 +44,7 @@ import io.agentscope.core.hook.PostSummaryEvent;
 import io.agentscope.core.journal.InMemoryThreadJournalStore;
 import io.agentscope.core.message.AssistantMessage;
 import io.agentscope.core.message.GenerateReason;
+import io.agentscope.core.message.MessageMetadataKeys;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
@@ -253,6 +258,29 @@ class ReActAgentFinalAnswerGateTest {
         }
     }
 
+    /** returnDirect tool whose execution suspends, deferring the result to the caller. */
+    private static final class SuspendingTool extends ToolBase {
+        SuspendingTool(String name) {
+            super(
+                    ToolBase.builder()
+                            .name(name)
+                            .description(name)
+                            .inputSchema(schemaFor())
+                            .returnDirect(true));
+        }
+
+        @Override
+        public Mono<PermissionDecision> checkPermissions(
+                Map<String, Object> toolInput, PermissionContextState context) {
+            return Mono.just(PermissionDecision.passthrough(getName()));
+        }
+
+        @Override
+        public Mono<ToolResultBlock> callAsync(ToolCallParam param) {
+            return Mono.just(ToolResultBlock.suspended(param.getToolUseBlock()));
+        }
+    }
+
     private static Map<String, Object> schemaFor() {
         Map<String, Object> schema = new HashMap<>();
         schema.put("type", "object");
@@ -308,6 +336,20 @@ class ReActAgentFinalAnswerGateTest {
                 .build();
     }
 
+    /** Resume payload carrying externally produced tool results, mirroring the HITL pattern. */
+    private static Msg externalResultMsg(ToolResultBlock... results) {
+        return Msg.builder().role(MsgRole.TOOL).content(List.of(results)).build();
+    }
+
+    private static ToolResultBlock successResult(String id, String name, String text) {
+        return ToolResultBlock.builder()
+                .id(id)
+                .name(name)
+                .output(TextBlock.builder().text(text).build())
+                .state(ToolResultState.SUCCESS)
+                .build();
+    }
+
     private static RuntimeContext rc(String userId, String sessionId) {
         return RuntimeContext.builder().userId(userId).sessionId(sessionId).build();
     }
@@ -323,6 +365,13 @@ class ReActAgentFinalAnswerGateTest {
         return events.stream()
                 .filter(e -> e instanceof ThinkingBlockDeltaEvent)
                 .map(e -> ((ThinkingBlockDeltaEvent) e).getDelta())
+                .toList();
+    }
+
+    private static List<String> toolResultDeltas(List<AgentEvent> events) {
+        return events.stream()
+                .filter(e -> e instanceof ToolResultTextDeltaEvent)
+                .map(e -> ((ToolResultTextDeltaEvent) e).getDelta())
                 .toList();
     }
 
@@ -1091,6 +1140,146 @@ class ReActAgentFinalAnswerGateTest {
         assertEquals(List.of("tool-output"), textDeltas(events));
     }
 
+    @Test
+    @DisplayName("a rejected returnDirect batch never streams its raw tool output")
+    void returnDirectToolContentWithheldUntilVerdict() {
+        ScriptedModel model =
+                new ScriptedModel(
+                        List.of(
+                                () -> Flux.just(toolUseResponse("t1", "direct")),
+                                () -> Flux.just(textResponse("regenerated"))));
+        GateRecorder gate =
+                new GateRecorder(
+                        input ->
+                                "tool-output".equals(input.candidate().getTextContent())
+                                        ? FinalAnswerDecision.retry(reminder("rewrite please"))
+                                        : FinalAnswerDecision.accept());
+        ReActAgent agent =
+                baseBuilder(model)
+                        .toolkit(toolkitWith(new LocalTool("direct", true)))
+                        .middleware(gate)
+                        .build();
+
+        List<AgentEvent> events =
+                agent.streamEvents(List.of(new UserMessage("hi"))).collectList().block(TIMEOUT);
+
+        assertNotNull(events);
+        assertTrue(
+                toolResultDeltas(events).stream().noneMatch("tool-output"::equals),
+                "the raw tool output must never reach the public stream");
+        assertTrue(
+                events.stream().anyMatch(e -> e instanceof ToolResultStartEvent),
+                "the tool lifecycle still streams");
+        assertTrue(
+                events.stream().anyMatch(e -> e instanceof ToolResultEndEvent),
+                "the tool lifecycle still streams");
+        assertEquals(
+                List.of("regenerated"),
+                textDeltas(events),
+                "only the retry round's certified text ships");
+    }
+
+    @Test
+    @DisplayName(
+            "an accepted returnDirect batch delivers its content only via the certified projection")
+    void returnDirectToolContentDeliveredByProjectionOnAccept() {
+        ScriptedModel model =
+                new ScriptedModel(List.of(() -> Flux.just(toolUseResponse("t1", "direct"))));
+        GateRecorder gate = new GateRecorder(input -> FinalAnswerDecision.accept());
+        ReActAgent agent =
+                baseBuilder(model)
+                        .toolkit(toolkitWith(new LocalTool("direct", true)))
+                        .middleware(gate)
+                        .build();
+
+        List<AgentEvent> events =
+                agent.streamEvents(List.of(new UserMessage("hi"))).collectList().block(TIMEOUT);
+
+        assertNotNull(events);
+        assertTrue(toolResultDeltas(events).isEmpty(), "no live tool content under a gate");
+        assertEquals(
+                List.of("tool-output"), textDeltas(events), "the verdict projection carries it");
+    }
+
+    // ==== External returnDirect resume under a gate ====
+
+    @Test
+    @DisplayName("external returnDirect resume: the raw result event ships only past the verdict")
+    void externalReturnDirectResultEventWaitsForTheVerdict() {
+        ScriptedModel model =
+                new ScriptedModel(List.of(() -> Flux.just(toolUseResponse("tc1", "ext"))));
+        GateRecorder gate = new GateRecorder(input -> FinalAnswerDecision.accept());
+        ReActAgent agent =
+                baseBuilder(model)
+                        .toolkit(toolkitWith(new SuspendingTool("ext")))
+                        .middleware(gate)
+                        .build();
+
+        Msg suspended = agent.call(List.of(new UserMessage("hi"))).block(TIMEOUT);
+        assertNotNull(suspended);
+        assertEquals(GenerateReason.TOOL_SUSPENDED, suspended.getGenerateReason());
+
+        List<AgentEvent> events =
+                agent.streamEvents(
+                                List.of(
+                                        externalResultMsg(
+                                                successResult("tc1", "ext", "raw-ext-result"))))
+                        .collectList()
+                        .block(TIMEOUT);
+
+        assertNotNull(events);
+        int resultIdx = indexOf(events, ExternalExecutionResultEvent.class);
+        int textIdx = indexOf(events, TextBlockDeltaEvent.class);
+        assertTrue(resultIdx >= 0, "the accepted result event ships past the verdict");
+        assertTrue(
+                textIdx >= 0 && resultIdx < textIdx,
+                "the result event precedes the certified projection");
+    }
+
+    @Test
+    @DisplayName(
+            "external returnDirect resume: a rejected candidate never ships the raw result event")
+    void externalReturnDirectRejectNeverShipsRawResultEvent() {
+        ScriptedModel model =
+                new ScriptedModel(
+                        List.of(
+                                () -> Flux.just(toolUseResponse("tc1", "ext")),
+                                () -> Flux.just(textResponse("regenerated"))));
+        GateRecorder gate =
+                new GateRecorder(
+                        input ->
+                                "raw-ext-result".equals(input.candidate().getTextContent())
+                                        ? FinalAnswerDecision.retry(reminder("rewrite please"))
+                                        : FinalAnswerDecision.accept());
+        ReActAgent agent =
+                baseBuilder(model)
+                        .toolkit(toolkitWith(new SuspendingTool("ext")))
+                        .middleware(gate)
+                        .build();
+
+        Msg suspended = agent.call(List.of(new UserMessage("hi"))).block(TIMEOUT);
+        assertNotNull(suspended);
+        assertEquals(GenerateReason.TOOL_SUSPENDED, suspended.getGenerateReason());
+
+        List<AgentEvent> events =
+                agent.streamEvents(
+                                List.of(
+                                        externalResultMsg(
+                                                successResult("tc1", "ext", "raw-ext-result"))))
+                        .collectList()
+                        .block(TIMEOUT);
+
+        assertNotNull(events);
+        assertEquals(
+                -1,
+                indexOf(events, ExternalExecutionResultEvent.class),
+                "a rejected candidate's raw results never reach the public stream");
+        assertEquals(
+                List.of("regenerated"),
+                textDeltas(events),
+                "the retry round's certified text ships instead");
+    }
+
     // ==== Usage accumulation ====
 
     @Test
@@ -1539,7 +1728,8 @@ class ReActAgentFinalAnswerGateTest {
     // ==== Regression anchors for the audit-fix waves ====
 
     @Test
-    @DisplayName("fallback structured-output completion passes the gate (tool-success path)")
+    @DisplayName(
+            "fallback structured-output completion passes the gate; a retry re-forces the tool")
     void fallbackStructuredCompletionPassesTheGate() {
         ScriptedModel model =
                 new ScriptedModel(
@@ -1553,7 +1743,15 @@ class ReActAgentFinalAnswerGateTest {
                                                                 Map.of(
                                                                         "location", "Paris",
                                                                         "temperature", "21C")))),
-                                () -> Flux.just(textResponse("fixed answer"))));
+                                () ->
+                                        Flux.just(
+                                                soToolResponse(
+                                                        "so2",
+                                                        Map.of(
+                                                                "response",
+                                                                Map.of(
+                                                                        "location", "Rome",
+                                                                        "temperature", "25C"))))));
         GateRecorder gate =
                 new GateRecorder(
                         input ->
@@ -1566,22 +1764,101 @@ class ReActAgentFinalAnswerGateTest {
                 agent.call(List.of(new UserMessage("hi")), WeatherResponse.class).block(TIMEOUT);
 
         assertNotNull(result);
-        assertEquals(
-                "fixed answer",
-                result.getTextContent(),
-                "consultations="
-                        + gate.inputs.stream()
-                                .map(
-                                        i ->
-                                                i.retryCount()
-                                                        + ":"
-                                                        + i.candidate().getTextContent()
-                                                        + ":"
-                                                        + i.finishReason())
-                                .toList());
+        Map<?, ?> structured =
+                (Map<?, ?>) result.getMetadata().get(MessageMetadataKeys.STRUCTURED_OUTPUT);
+        assertNotNull(structured, "the typed contract must survive a gate retry");
+        assertEquals("Rome", structured.get("location"));
+        assertEquals("25C", structured.get("temperature"));
         assertEquals(2, gate.inputs.size(), "completion + retry-round consultations");
         assertEquals(List.of(0, 1), gate.retryCounts(), "the completion path consulted the gate");
         assertEquals(FinishReason.FINAL_ANSWER, gate.finishReasons().get(0));
+    }
+
+    @Test
+    @DisplayName(
+            "fallback structured output: a replacement breaking the JSON contract fails closed")
+    void fallbackStructuredInvalidReplacementFailsClosed() {
+        ScriptedModel model =
+                new ScriptedModel(
+                        List.of(
+                                () ->
+                                        Flux.just(
+                                                soToolResponse(
+                                                        "so1",
+                                                        Map.of(
+                                                                "response",
+                                                                Map.of(
+                                                                        "location", "Paris",
+                                                                        "temperature", "21C"))))));
+        GateRecorder gate =
+                new GateRecorder(
+                        input -> FinalAnswerDecision.accept(assistantText("sanitized text")));
+        ReActAgent agent = baseBuilder(model).middleware(gate).build();
+
+        IllegalArgumentException error =
+                assertThrows(
+                        IllegalArgumentException.class,
+                        () ->
+                                agent.call(List.of(new UserMessage("hi")), WeatherResponse.class)
+                                        .block(TIMEOUT),
+                        "a plain-text replacement must not ship as the typed result");
+        assertTrue(
+                error.getMessage().contains("not valid JSON"),
+                "the failure explains the broken contract: " + error.getMessage());
+        assertEquals(1, model.callCount(), "no extra model round for a failed replacement");
+    }
+
+    @Test
+    @DisplayName(
+            "native structured output: a gate error fails the call without the fallback re-run")
+    void nativeGateErrorFailsCallWithoutFallback() {
+        NativeScriptedModel model =
+                new NativeScriptedModel(
+                        List.of(
+                                () ->
+                                        Flux.just(
+                                                textResponse(
+                                                        "{\"location\":\"Paris\",\"temperature\":"
+                                                                + "\"21C\"}"))));
+        GateRecorder gate =
+                new GateRecorder(
+                        input -> {
+                            throw new IllegalStateException("checker down");
+                        });
+        ReActAgent agent = baseBuilder(model).middleware(gate).build();
+
+        IllegalStateException error =
+                assertThrows(
+                        IllegalStateException.class,
+                        () ->
+                                agent.call(List.of(new UserMessage("hi")), WeatherResponse.class)
+                                        .block(TIMEOUT));
+        assertEquals("checker down", error.getMessage());
+        assertEquals(
+                1,
+                model.callCount(),
+                "a gate verdict must never trigger the synthetic-tool fallback re-run");
+    }
+
+    @Test
+    @DisplayName("the fuse fails closed only after every gate of the tripping round was consulted")
+    void fuseConsultsEveryGateOnTheTrippingRound() {
+        GeneratorModel model = new GeneratorModel(messages -> Flux.just(textResponse("draft")));
+        GateRecorder head = new GateRecorder(input -> FinalAnswerDecision.retry(reminder("head")));
+        GateRecorder tail = new GateRecorder(input -> FinalAnswerDecision.retry(reminder("tail")));
+        head.withOrder(2);
+        ReActAgent agent = baseBuilder(model).middleware(head).middleware(tail).build();
+
+        IllegalStateException error =
+                assertThrows(
+                        IllegalStateException.class,
+                        () -> agent.call(List.of(new UserMessage("hi"))).block(TIMEOUT));
+        assertTrue(error.getMessage().contains("retry limit"), error.getMessage());
+        assertEquals(11, head.inputs.size(), "every round consults the head gate");
+        assertEquals(
+                11,
+                tail.inputs.size(),
+                "the tripping round still consults the tail gate — vetoes never short-circuit");
     }
 
     @Test
@@ -2072,6 +2349,10 @@ class ReActAgentFinalAnswerGateTest {
         @Override
         public boolean supportsNativeStructuredOutput() {
             return true;
+        }
+
+        int callCount() {
+            return idx.get();
         }
     }
 

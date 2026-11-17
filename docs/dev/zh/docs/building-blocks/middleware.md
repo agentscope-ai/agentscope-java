@@ -8,7 +8,7 @@ en_link: /dev/en/docs/building-blocks/middleware
 
 Agent middleware 是在不修改 agent 或 model 代码的前提下，向 agent 执行流程中的关键位置注入自定义逻辑（日志、追踪、输入改写、访问控制等）的机制。
 
-AgentScope Java 中，可以在 7 个位置上设置 hook，覆盖了从外层 reply 流程一路下沉到底层模型 API 调用的全链路：
+AgentScope Java 中，可以在 8 个位置上设置 hook，覆盖完整调用生命周期：流水线前的状态绑定、从外层 reply 流程一路下沉到底层模型 API 调用、最终答案边界、以及结果产生后的完成通知：
 
 | 位置 | 类型 | 说明 |
 |------|------|------|
@@ -18,25 +18,31 @@ AgentScope Java 中，可以在 7 个位置上设置 hook，覆盖了从外层 r
 | `onModelCall` | Onion | 包裹一次底层 `ChatModel` API 调用，最贴近模型 |
 | `onSystemPrompt` | Transformer | 在每次组装 system prompt 时触发；多个 middleware 串行接力，每一个把上一个的输出再做一次变换 |
 | `onAgentStateReady` | Notification | 每次调用触发一次：本次调用的 `AgentState` 就绪时——早于输入进入流水线（pre-call 钩子、记忆、推理） |
+| `onFinalAnswer` | Gate | 任何内容交付前的最终答案终审；只要有 middleware 参与该点，agent 即切换到认证交付模式（见[最终答案门禁](#最终答案门禁onfinalanswer)一节） |
 | `onAgentFinish` | 等待完成的通知 | 在调用结果产生后、原生 checkpoint 与 writer 释放前返回 `Mono<Void>`；保留当前调用上下文。 |
 
-三种类型的差别：
+四种类型的差别：
 
 - **Onion**（洋葱式）—— middleware 包裹下一层 handler，可以在 `next.apply(input)` 前后插入逻辑、观察中间事件流。
 - **Transformer**（变换式）—— middleware 之间串成流水线，前一个的输出作为后一个的输入，不存在「内层」概念。
 - **Notification**（通知式）—— 单向同步通知，没有 `next` 委托；多个 middleware 在固定的生命周期点位按序执行。
+- **Gate**（门禁式）—— 按链序依次问询、对交付持有终审权。与其他类型不同，它是模式切换型扩展点：只要有 middleware 参与，实时答案内容就会被截留，直到链给出裁决。
 
-下图展示这些 hook 在 agent 生命周期中的嵌套关系。`onSystemPrompt` 嵌入在 `onReasoning` 内部，因为它在 reasoning 步骤组装 system prompt 时被触发；`onAgentStateReady` 在本次调用的 `AgentState` 绑定到 `RuntimeContext` 之后、输入进入流水线之前触发：
+下图展示这些 hook 在 agent 生命周期中的嵌套关系。`onSystemPrompt` 嵌入在 `onReasoning` 内部，因为它在 reasoning 步骤组装 system prompt 时被触发；`onAgentStateReady` 在本次调用的 `AgentState` 绑定到 `RuntimeContext` 之后、输入进入流水线之前触发；`onAgentFinish` 只在成功结果之后、journal 收尾边界执行：
 
 ```text
 onAgent/
 ├── onAgentStateReady（call 级 AgentState 就绪，输入尚未进入流水线）
-└── ReAct loop（每一轮）/
-    ├── onReasoning/
-    │   ├── onSystemPrompt（组装 system prompt）
-    │   └── onModelCall（模型 API 调用）
-    └── onActing（每次工具调用）
+├── ReAct loop（每一轮）/
+│   ├── onReasoning/
+│   │   ├── onSystemPrompt（组装 system prompt）
+│   │   └── onModelCall（模型 API 调用）
+│   └── onActing（每次工具调用）
+├── onFinalAnswer（最终答案出口：正常结束 / maxIters 摘要 / returnDirect 直出）
+└── onAgentFinish（成功调用收尾，早于 journal checkpoint / writer 释放）
 ```
+
+`onFinalAnswer` 是这些 hook 中唯一的模式切换型扩展点——其激活语义与它开启的认证交付模式见下文[最终答案门禁](#最终答案门禁onfinalanswer)一节。
 
 
 <Note>
@@ -48,7 +54,7 @@ onAgent/
 
 ## 装备 Middleware
 
-AgentScope 把一组 hook 装在一个 `MiddlewareBase` 实现里 —— 同一个 middleware 类可以同时实现 7 个位置中任意子集的 hook（未实现的 Onion / Transformer 位置默认 `next.apply(input)`；通知式位置默认不做任何事）。把实例传给 builder 的 `middlewares(...)` 即可装备：
+AgentScope 把一组 hook 装在一个 `MiddlewareBase` 实现里 —— 同一个 middleware 类可以同时实现 8 个位置中任意子集的 hook（未实现的 Onion / Transformer 位置默认 `next.apply(input)`；通知式位置默认空操作 / 立即完成；门禁式位置默认接受候选）。把实例传给 builder 的 `middlewares(...)` 即可装备：
 
 ```java
 import io.agentscope.core.ReActAgent;
@@ -241,6 +247,8 @@ ReActAgent agent =
 
 由于只有在未观察到工具调用时才能确定当前轮次是最终轮次，该 middleware 会将每轮文本缓冲到模型调用结束。
 
+与[最终答案门禁](#最终答案门禁onfinalanswer)的分工：该 middleware 服务于「无门禁、只要干净流」的 agent。注册任意门禁后它即冗余但无害——门禁守卫本就截留每一轮的实时文本、只发布认证内容，逐轮缓冲因此不再起作用。
+
 ## 自定义 Middleware
 
 实现 `MiddlewareBase` 接口（位于 `io.agentscope.core.middleware`），只重写需要的 hook 即可，其它的不用管。
@@ -314,6 +322,8 @@ public class FullObservabilityMiddleware implements MiddlewareBase {
 | `onModelCall` | `ModelCallInput` | `messages`, `tools`, `options`, `model: Model` |
 | `onSystemPrompt` | `String` | 当前 prompt |
 | `onAgentStateReady` | —（直接参数） | `state: AgentState`, `inputMessages: List<Msg>` |
+| `onFinalAnswer` | `FinalAnswerInput` | `candidate: Msg`, `retryCount: int`, `cumulativeUsage: ChatUsage`, `finishReason: FinishReason` |
+| `onAgentFinish` | —（直接参数） | `result: Msg`（返回 `Mono<Void>` 完成信号） |
 
 需要替换流入下一层的字段时，构造一个新的 input record 后再调用 `next.apply(...)`。
 
@@ -352,6 +362,72 @@ public class SessionBootstrapMiddleware implements MiddlewareBase {
 ```
 
 实现必须非阻塞：通知在本次调用的订阅线程上同步执行（流式场景可能是 Reactor 事件循环线程）。触发以每次生命周期执行（订阅）为单位——冷流重订阅会再次触发。抛出的异常原样使本次调用失败，其后的 middleware 不再执行。未覆写该 hook 的 middleware 只是执行默认空调用；固定的开销仅为每次调用一次输入列表浅拷贝，它同时使调用方列表隔离无条件成立。与其他扩展点一样，参与与否由 `activePoints()` 声明：未声明 `ExtensionPoint.ON_AGENT_STATE_READY` 的 middleware 即使覆写了该 hook 也不会被通知。生命周期窗口：通知在本次调用通过准入并完成中断注册之后、追踪包裹与错误事件链就位之前执行——通知期间发出的中断会被兑现，而抛出的异常直接到达调用方，不经过 ErrorEvent 钩子或追踪 span。
+
+### 最终答案门禁（`onFinalAnswer`）
+
+合规审查、PII 脱敏、格式校验、兜底改写——都想在最终答案**交付之前**过目。`onFinalAnswer` 就是这道关卡：每当一个输出即将成为本次调用的最终答案，门禁 middleware 会被先行问询，并对「交付什么」持有终审权。
+
+三个出口都会过门禁——正常结束、maxIters 之后的强制摘要、以及 returnDirect 直出——通过 `input.finishReason()` 区分（`FINAL_ANSWER` / `MAX_ITERATIONS` / `RETURN_DIRECT`）。中断类出口（HITL 挂起、acting 停止）从不过门禁。returnDirect 候选既可由入参的 finish reason 识别，也可由候选消息自身的 `TOOL_RETURN_DIRECT` 生成原因识别——信任自己工具代码的门可以按出口直接放行。
+
+决定权完全在你：
+
+- `FinalAnswerDecision.accept()` —— 候选成立，原样交付；
+- `FinalAnswerDecision.accept(replacement)` —— 交付给定的消息：replacement 会前喂给后续门禁，若本轮被接受，则作为链产出写入记忆并交付；
+- `FinalAnswerDecision.retry(msgs)` —— 候选不成立：模型的原稿加上你的反馈进入上下文，推理重跑。门禁空完成按纯 accept 计。
+
+```java
+public class ComplianceGate implements MiddlewareBase {
+
+    @Override
+    public Mono<FinalAnswerDecision> onFinalAnswer(RuntimeContext ctx, FinalAnswerInput input) {
+        // 已耗尽的摘要再试很少收敛——换成兜底内容。
+        if (input.finishReason() == FinishReason.MAX_ITERATIONS) {
+            return Mono.just(FinalAnswerDecision.accept(fallbackMessage()));
+        }
+        // 工具直出通常来自你自己的工具代码——按出口跳过。
+        if (input.finishReason() == FinishReason.RETURN_DIRECT) {
+            return Mono.just(FinalAnswerDecision.accept());
+        }
+        return Mono.fromCallable(() -> checker.check(textOf(input.candidate())))
+                .subscribeOn(Schedulers.boundedElastic())
+                .map(result -> result.passed()
+                        ? FinalAnswerDecision.accept()
+                        : input.retryCount() >= 3
+                                ? FinalAnswerDecision.accept(fallbackMessage())  // 自管预算
+                                : FinalAnswerDecision.retry(reminder(result.issues())));
+    }
+}
+```
+
+#### 激活与认证交付
+
+`ON_FINAL_ANSWER` 是模式切换型扩展点：只要有任意 middleware 参与该点，agent 即切换为**认证交付**。参与从不空洞——自动检测只点亮事实上实现了 `onFinalAnswer` 的类，唯一另一条路是显式声明；门就是覆写该钩子的普通 `MiddlewareBase`，参与遵循与其他扩展点相同的 `activePoints()` 契约。该钩子不接收 agent，无状态门因此是纯函数，其实例可安全服务任意多个 agent 与并发调用；跨轮状态应放在 `RuntimeContext` attributes，绝不在门禁字段里。
+
+认证交付下，公共事件流的行为如下：
+
+- 每一轮的实时 `TextBlock*` / `ThinkingBlock*` 事件被截留——丢弃而非缓冲，取消/出错时无物可泄漏。实时流式是有意牺牲的；用无内容的 `final_answer.reviewing` 自定义事件驱动「审查中…」占位 UI。
+- returnDirect 绑定批次的**工具结果内容**同样被截留——这些输出就是最终答案候选。工具生命周期事件（`ToolResultStart` / `ToolResultEnd`）照常流出，不能短路的批次内容也照常流出。外部 returnDirect 恢复的 `ExternalExecutionResultEvent` 同样只在裁决后发布。
+- 裁决后，认证消息（链产出——思考在前、文本在后）一次性投影；被否决的候选绝不进入公共流——只进入记忆供自我纠正、以及调用日志审计。
+- `ModelCallEndEvent` 仍实时发出（仅用量），可能早于认证内容——文本拼装请依赖 `TextBlockEnd` / `AgentResultEvent`，不要依赖 `ModelCallEnd`。
+- 无门禁的 agent 逐字节不变：实时 token 流保留，不出现门禁事件。
+
+`final_answer.retry` 遥测事件只携带 `retryCount` 与 `finishReason`，绝不携带候选文本。`CUSTOM` 通道始终绕过守卫，因此按约定只承载叙事性进度——绝不承载答案内容。
+
+#### 与结构化输出的交互
+
+`call(msgs, MyClass.class)` 的出口同样过门禁，且出口的 JSON 契约始终在裁决后成立：门禁错误使整个结构化调用失败（绝不静默 fallback 重跑模型）；被接受的内容——模型自己的 payload 或门的 replacement——都会被重新按 schema 校验（破坏契约的 replacement 使调用失败）；重试轮必须重新产出结构化答案，普通文本轮绝不可能作为类型化结果收场。
+
+#### 链式语义
+
+多个门禁叠加时，按 `order()` 顺序（大者在前；同序按注册顺序）依次问询：
+
+- **工作稿前喂。** 每个门收到当前工作稿：链首见模型原稿，后续门见其前驱的 replacement。
+- **否决从不短路。** 每个门都会被咨询——包括触发保险丝的那一轮——本轮全部反馈按链序收集；一轮多个否决只计一次重试。重试写入的是模型**原稿**加合并反馈，并忽略 `maxIters` 重入推理。
+- **死轮整体作废。** 被否决轮上后位门接受的 replacement 只前喂评审、轮末丢弃。
+- **两种合法排序——不可兼得。** 头部变换 + 尾部否决：否决门认证的正是要交付的内容（最适合合规签发）。头部否决 + 尾部变换：否决门评审的是模型原话（纠错回路最干净；此时变换必须是确定性拼装，而非语义改写）。两者并存需要无收敛保证的复审循环；框架不提供。
+- **失败闭合。** 门禁错误使整个调用失败——绝不静默放行。框架保险丝每次调用最多兑现 10 次重试（不可配置）：第 11 次否决以错误终止调用、零交付。优雅耗尽兜底来自门禁通过 `input.retryCount()` 自管预算。
+
+纯观察用途（日志、指标、审计）不应实现该钩子——事件流与调用日志已经服务它们，当门用的代价是白白牺牲实时流式。若只需要压制中间轮文本而不需要裁决，请在无门 agent 上注册 [`FinalAnswerFilterMiddleware`](#finalanswerfiltermiddleware)。`input.retryCount()` 报告本次调用已兑现的重试次数（跨调用重置；同一 agent 上的并行调用各自独立计数），`input.cumulativeUsage()` 汇总每次尝试的 token 用量。
 
 ### 读取 RuntimeContext
 
@@ -423,11 +499,18 @@ middlewares = [mw1, mw2]
 // originalPrompt → mw1.onSystemPrompt() → mw2.onSystemPrompt() → final
 ```
 
-通知式 hook（`onAgentStateReady`）每次调用按 `order()` 顺序执行一遍——数值大者先执行，与洋葱链的进入方向一致：
+通知式 hook（`onAgentStateReady`、`onAgentFinish`）每次调用按 `order()` 顺序执行一遍——数值大者先执行，与洋葱链的进入方向一致：
 
 ```
 middlewares = [mw1(order=2), mw2(order=1)]
-// onAgentStateReady：mw1 → mw2
+// onAgentStateReady / onAgentFinish：mw1 → mw2
+```
+
+门禁 middleware（参与 `ON_FINAL_ANSWER` 者）在每个最终答案出口按同样的 `order()` 顺序依次问询；链式规则（工作稿前喂、否决不短路、反馈合并）见[门禁一节](#最终答案门禁onfinalanswer)：
+
+```
+middlewares = [mw1(order=2), mw2(order=1)]
+// onFinalAnswer：mw1 → mw2 → 本轮裁决
 ```
 
 一次 reply 中各 hook 的整体执行顺序遵循 agent 生命周期：
@@ -435,11 +518,13 @@ middlewares = [mw1(order=2), mw2(order=1)]
 ```
 onAgent
   ├── onAgentStateReady（状态绑定到 RuntimeContext，早于输入进入流水线）
-  └── 每一轮 ReAct：
-        ├── onReasoning
-        │     ├── prepare model input → onSystemPrompt
-        │     └── onModelCall
-        └── onActing（本轮每个工具调用一次）
+  ├── 每一轮 ReAct：
+  │     ├── onReasoning
+  │     │     ├── prepare model input → onSystemPrompt
+  │     │     └── onModelCall
+  │     └── onActing（本轮每个工具调用一次）
+  ├── onFinalAnswer（每个最终答案出口：正常结束 / maxIters 摘要 / returnDirect）
+  └── onAgentFinish（成功调用收尾，早于 journal checkpoint / writer 释放）
 ```
 
 ### 扩展点参与声明（`activePoints()`）
@@ -455,8 +540,8 @@ onAgent
 
 关键语义：
 
-- **默认全量激活。** 未覆写 `activePoints()` 的 middleware 保持与现状完全一致的行为，包括未来版本新增的扩展点。
-- **覆写即接管。** 一旦覆写，激活集合就是返回的集合本身；忘记声明的扩展点即使覆写了方法也不会生效。
+- **默认按钩子事实推导。** 未覆写 `activePoints()`（返回 `null`）的 middleware，其参与集由框架按类推导、每类只算一次——依据是该类**实际实现**了哪些钩子方法：只覆写 `onReasoning` 的 middleware 就只在 `ON_REASONING` 参与，未来版本新增的扩展点同理不会卷入。未声明的 middleware 由此保持兼容，又不会被静默卷入会改变全局行为的新扩展点。
+- **覆写即接管。** 一旦返回具体集合，激活集合就是返回的集合本身；忘记声明的扩展点即使覆写了方法也不会生效。
 - **空集合合法。** `EnumSet.noneOf(ExtensionPoint.class)` 让 middleware 在所有扩展点失活，同时保留注册——可用作运行开关。
 - **构造期固化。** agent 构建时读取一次声明；之后修改返回的集合对已构建的 agent 无效。
 - **与 `order()` 正交。** 声明只回答"是否参与"，不回答"什么顺序"——各点参与者保持既有 `order()` 语义。
@@ -476,7 +561,7 @@ MiddlewareBase timingOnly =
         };
 ```
 
-**推荐实践：** 为你实现的每个 middleware 准确定义 `activePoints()`。精确声明让框架能整体跳过未参与者——某扩展点无任何参与者时不建任何包装层（零包装、不组装 pipeline），链更短，构建期的有效执行计划也更清晰。不声明则保持完全兼容的默认行为（全量激活），因此任何时候补充声明都不会破坏行为，只会收窄参与范围。
+**推荐实践：** 为你实现的每个 middleware 准确定义 `activePoints()`。精确声明让框架能整体跳过未参与者——某扩展点无任何参与者时不建任何包装层（零包装、不组装 pipeline），链更短，构建期的有效执行计划也更清晰。不声明则回落到结构性自动检测（恰好是该类实现的那些钩子），因此任何时候补充声明都只会把参与范围收窄到你真正意图的集合。
 
 继承内置 middleware 时同样适用：内置类声明的正是其挂接的扩展点，子类若覆写了新的 hook（例如给 `TaskReminderMiddleware` 增加 `onModelCall`），必须相应扩展继承到的 `activePoints()`——否则新增的 hook 会被静默跳过。
 

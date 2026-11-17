@@ -93,15 +93,16 @@ public interface MiddlewareBase {
      * grouping mechanism stays unchanged. A middleware participates at a new
      * point only when it declares the point or implements the new hook.
      *
-     * <p>{@link #ON_FINAL_ANSWER} is the first side-effect point — activating
+     * <p>{@link #ON_FINAL_ANSWER} is the first mode-switching point — activating
      * it changes the whole agent's delivery behavior (live answer content is
      * withheld until the gate chain certifies it). This is safe exactly
      * because participation is never vacuous: the auto-detected path lights
      * up only for classes that factually implement {@link #onFinalAnswer}
      * (writing the hook is writing gate logic), and the only other path is an
      * explicit declaration — both are statements of intent. A future
-     * side-effect point must preserve this property: participation must not
-     * be reachable without either the fact or the declaration.
+     * point with the same agent-wide effect must preserve this property:
+     * participation must not be reachable without either the fact or the
+     * declaration.
      *
      * <p>Each constant names the hook method it pairs with; auto-detection of
      * undeclared ({@code null}) middlewares resolves participation from these
@@ -313,10 +314,13 @@ public interface MiddlewareBase {
      * stateless gate can serve any number of agents and concurrent calls.
      * Cross-round state belongs in {@link RuntimeContext} attributes.
      *
-     * <p>This is a <b>side-effect point</b>: the moment any middleware
+     * <p>This is a <b>mode-switching point</b>: the moment any middleware
      * participates here, the agent switches to certified delivery — live text
      * and thinking of every round are withheld from the public stream, and
-     * only the chain-certified content is projected after the verdict.
+     * only the chain-certified content is projected after the verdict. The
+     * tool-result content of a returnDirect-bound batch is withheld too (its
+     * outputs are the final-answer candidate); tool lifecycle events still
+     * stream, and so does the content of batches that cannot short-circuit.
      * Participation is resolved by the {@link #activePoints()} contract and
      * is never vacuous (see {@link ExtensionPoint#ON_FINAL_ANSWER}).
      * Purely observational uses (logging, metrics) should not implement this

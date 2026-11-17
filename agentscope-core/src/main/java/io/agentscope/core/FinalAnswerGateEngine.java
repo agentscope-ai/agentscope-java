@@ -131,8 +131,12 @@ final class FinalAnswerGateEngine {
     /**
      * Returns whether any middleware participates at {@code ON_FINAL_ANSWER} for this
      * call — read from the engine's own chain reference, never cached.
+     *
+     * <p>Package-private: the agent's acting phase reads it to decide whether a
+     * returnDirect-bound tool batch must withhold its content events (the batch's
+     * outputs are final-answer candidates under certified delivery).
      */
-    private boolean active() {
+    boolean active() {
         return !gates.isEmpty();
     }
 
@@ -184,9 +188,10 @@ final class FinalAnswerGateEngine {
      * round. Vetoes never short-circuit: every gate is consulted and all feedback
      * of the round is collected in chain order, so one round with multiple vetoes
      * counts as a single retry. A gate completing empty counts as a plain accept.
-     * The fuse is checked per veto: once {@link #RETRY_LIMIT} retries are already
-     * honored, the next veto fails the call closed (the rejected draft still
-     * reaches the audit trail).
+     * The fuse is checked only after the whole chain has been consulted: once
+     * {@link #RETRY_LIMIT} retries are already honored, a vetoed round fails the
+     * call closed (every gate still consulted; the rejected draft still reaches
+     * the audit trail).
      *
      * @param candidate the final-answer candidate to consult about
      * @param finishReason which exit produced the candidate
@@ -223,6 +228,18 @@ final class FinalAnswerGateEngine {
             FinishReason finishReason) {
         if (index >= gates.size()) {
             if (vetoed) {
+                // The fuse is checked only after the whole chain has been consulted —
+                // vetoes never short-circuit, so the failing round still collected
+                // every gate's feedback first.
+                if (retryCount >= RETRY_LIMIT) {
+                    log.warn("Final-answer retry limit ({}) reached; failing closed", RETRY_LIMIT);
+                    observeRejected(original);
+                    return Mono.error(
+                            new IllegalStateException(
+                                    "Final-answer retry limit ("
+                                            + RETRY_LIMIT
+                                            + ") exceeded; failing closed"));
+                }
                 return Mono.just(FinalAnswerDecision.retry(List.copyOf(feedback)));
             }
             return Mono.just(
@@ -245,19 +262,6 @@ final class FinalAnswerGateEngine {
                 .flatMap(
                         decision -> {
                             if (decision.isRetry()) {
-                                if (retryCount >= RETRY_LIMIT) {
-                                    log.warn(
-                                            "Final-answer retry limit ({}) reached; failing"
-                                                    + " closed",
-                                            RETRY_LIMIT);
-                                    observeRejected(original);
-                                    return Mono.error(
-                                            new IllegalStateException(
-                                                    "Final-answer retry limit ("
-                                                            + RETRY_LIMIT
-                                                            + ") exceeded; failing"
-                                                            + " closed"));
-                                }
                                 feedback.addAll(decision.retryMessages());
                                 return consult(
                                         index + 1, working, true, feedback, original, finishReason);
@@ -294,17 +298,8 @@ final class FinalAnswerGateEngine {
      * to the accepted message before it is memorized, projected, and returned — and
      * a {@code replyId} correlating the certified projection (the returnDirect exit
      * passes its own; {@code null} means the current round's model-call reply id).
-     * The transform runs after the verdict, before the memory write: the returnDirect
-     * exit stamps its close contract onto the message, the summary exit runs its
-     * PostSummary hook and re-stamps the exit's {@code GenerateReason}; the
-     * transformed message — not the raw accepted one — is what the session keeps,
-     * the public stream is projected, and the caller receives.
-     *
-     * <p>Gate-raised failures (consultation and retry re-entry) at the {@code
-     * MAX_ITERATIONS} exit are marked as gate errors so {@code handleSummaryError}
-     * rethrows them instead of degrading the call into an error summary — the other
-     * exits have no such fallback to escape. Transform failures are never marked:
-     * they keep their exit's own error semantics.
+     * Gate errors are marked per the exit's default policy ({@link
+     * #marksGateErrors}).
      *
      * @param candidate the final-answer candidate
      * @param iter the reasoning iteration the candidate came from
@@ -320,6 +315,50 @@ final class FinalAnswerGateEngine {
             FinishReason finishReason,
             Function<Msg, Mono<Msg>> acceptTransform,
             String replyId) {
+        return gate(
+                candidate,
+                iter,
+                finishReason,
+                acceptTransform,
+                replyId,
+                marksGateErrors(finishReason));
+    }
+
+    /**
+     * Same as {@link #gate(Msg, int, FinishReason, Function, String)}, with the
+     * gate-error marking decided by the caller instead of the exit's default
+     * policy. The transform runs after the verdict, before the memory write: the
+     * returnDirect exit stamps its close contract onto the message, the summary
+     * exit runs its PostSummary hook and re-stamps the exit's {@code
+     * GenerateReason}; the transformed message — not the raw accepted one — is
+     * what the session keeps, the public stream is projected, and the caller
+     * receives.
+     *
+     * <p>Gate-raised failures (consultation and retry re-entry) are marked as
+     * gate errors where a downstream fallback would otherwise consume them: the
+     * {@code MAX_ITERATIONS} exit marks by default so {@code handleSummaryError}
+     * rethrows instead of degrading the call into an error summary, and the
+     * native structured-output exit marks explicitly so its synthetic-tool
+     * fallback rethrows instead of re-running the model. Transform failures are
+     * never marked: they keep their exit's own error semantics.
+     *
+     * @param candidate the final-answer candidate
+     * @param iter the reasoning iteration the candidate came from
+     * @param finishReason which exit produced the candidate
+     * @param acceptTransform async transform of the accepted message; emits
+     *     exactly one message
+     * @param replyId reply id correlating the certified projection, or {@code null}
+     * @param markGateErrors whether gate-raised failures are wrapped as {@link
+     *     GateError} for the exit's error consumers
+     * @return the accepted (transformed, possibly replaced) message
+     */
+    Mono<Msg> gate(
+            Msg candidate,
+            int iter,
+            FinishReason finishReason,
+            Function<Msg, Mono<Msg>> acceptTransform,
+            String replyId,
+            boolean markGateErrors) {
         // Verdict boundary: an interrupt issued while a gate deliberated is honored here,
         // before any verdict is applied or anything ships.
         return markedForExit(
@@ -327,13 +366,13 @@ final class FinalAnswerGateEngine {
                                 .flatMap(
                                         decision ->
                                                 execution.checkInterrupted().thenReturn(decision)),
-                        finishReason)
+                        markGateErrors)
                 .flatMap(
                         decision -> {
                             if (decision.isRetry()) {
                                 return markedForExit(
                                         applyRetry(candidate, decision, iter, finishReason),
-                                        finishReason);
+                                        markGateErrors);
                             }
                             Msg accepted =
                                     decision.replacement() != null
@@ -342,10 +381,11 @@ final class FinalAnswerGateEngine {
                             return acceptTransform
                                     .apply(accepted)
                                     .flatMap(
-                                            // The landing is gate-owned: at the summary exit
-                                            // its failures are marked so they never degrade
-                                            // into an error summary. Transform failures stay
-                                            // unmarked and keep the exit's own semantics.
+                                            // The landing is gate-owned: where the exit
+                                            // requires it, its failures are marked so no
+                                            // fallback consumes them. Transform failures
+                                            // stay unmarked and keep the exit's own
+                                            // semantics.
                                             result ->
                                                     markedForExit(
                                                             Mono.fromCallable(
@@ -354,7 +394,7 @@ final class FinalAnswerGateEngine {
                                                                                     result,
                                                                                     finishReason,
                                                                                     replyId)),
-                                                            finishReason));
+                                                            markGateErrors));
                         });
     }
 
@@ -388,21 +428,21 @@ final class FinalAnswerGateEngine {
     }
 
     /**
-     * Returns whether gate-raised errors at this exit must be marked as {@link
-     * GateError}: the {@code MAX_ITERATIONS} exit is the only one whose errors a
-     * fallback ({@code handleSummaryError}) would otherwise consume into an error
-     * summary; the other exits have no such handler, so their errors keep
-     * propagating unwrapped.
+     * Returns whether gate-raised errors at this exit are marked as {@link
+     * GateError} by default: the {@code MAX_ITERATIONS} exit is the only one
+     * whose errors a fallback ({@code handleSummaryError}) would otherwise
+     * consume into an error summary; the other exits have no such handler, so
+     * their errors keep propagating unwrapped. The native structured-output
+     * exit overrides this explicitly — its fallback must not re-run the model
+     * past a gate verdict.
      */
     private static boolean marksGateErrors(FinishReason finishReason) {
         return finishReason == FinishReason.MAX_ITERATIONS;
     }
 
     /** Marks a gate-owned stage's errors when the exit requires it. */
-    private static <T> Mono<T> markedForExit(Mono<T> stage, FinishReason finishReason) {
-        return marksGateErrors(finishReason)
-                ? stage.onErrorMap(FinalAnswerGateEngine::markGateError)
-                : stage;
+    private static <T> Mono<T> markedForExit(Mono<T> stage, boolean markGateErrors) {
+        return markGateErrors ? stage.onErrorMap(FinalAnswerGateEngine::markGateError) : stage;
     }
 
     /**
