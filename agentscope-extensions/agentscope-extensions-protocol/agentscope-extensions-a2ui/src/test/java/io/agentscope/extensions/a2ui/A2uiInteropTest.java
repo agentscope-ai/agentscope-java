@@ -480,6 +480,96 @@ class A2uiInteropTest {
                                         Map.of("@path", "/email")))));
     }
 
+    @Test
+    void pruningNarrowsTheGuideAndTheAcceptedSubmissionsTogether() throws Exception {
+        A2uiCatalog pruned = CATALOG.retainComponents(List.of("Card", "Column", "Text"));
+
+        assertEquals(
+                List.of("Text", "Column", "Card"),
+                List.copyOf(pruned.componentNames()),
+                "the catalog's own order survives, not the allowlist's");
+        assertEquals(CATALOG.catalogId(), pruned.catalogId());
+        assertEquals(A2uiCatalog.BASIC_CATALOG_ID, pruned.catalogIdOf("Text"));
+        assertNull(pruned.catalogIdOf("TextField"));
+        assertEquals(CATALOG.functionNames(), pruned.functionNames(), "functions are not pruned");
+        String guide = pruned.guideText();
+        assertTrue(guide.contains("### Text"));
+        assertTrue(!guide.contains("### TextField"), guide);
+        assertTrue(!guide.contains("### DateTimeInput"), guide);
+
+        String rejection =
+                submit(
+                        pruned,
+                        List.of(
+                                Map.of(
+                                        "id",
+                                        "root",
+                                        "component",
+                                        "TextField",
+                                        "label",
+                                        "Email",
+                                        "value",
+                                        Map.of("@path", "/email"))));
+        assertTrue(rejection.startsWith("Error"), rejection);
+        assertTrue(rejection.contains("TextField"), rejection);
+
+        String envelope =
+                present(
+                        pruned,
+                        Map.of(
+                                "id",
+                                "root",
+                                "component",
+                                "Card",
+                                "child",
+                                Map.of("id", "t", "component", "Text", "text", "Hi")));
+        assertEquals(
+                List.of(),
+                pruned.schemas().messages().validate(MAPPER.readTree(envelope)).stream()
+                        .map(Object::toString)
+                        .toList(),
+                "the merged document's anyComponent union must be pruned too");
+    }
+
+    @Test
+    void pruningKeepsEverythingByDefaultAndFailsFastOnAnUnknownName() {
+        assertEquals(CATALOG, CATALOG.retainComponents(null));
+        assertEquals(CATALOG, CATALOG.retainComponents(List.of()));
+        assertEquals(CATALOG, CATALOG.retainComponents(List.of("  ", "")));
+        assertEquals(
+                CATALOG,
+                CATALOG.retainComponents(List.copyOf(CATALOG.componentNames())),
+                "an allowlist naming everything is not a narrowing");
+
+        IllegalArgumentException e =
+                assertThrows(
+                        IllegalArgumentException.class,
+                        () -> CATALOG.retainComponents(List.of("Text", "NoSuchComponent")));
+        assertTrue(e.getMessage().contains("NoSuchComponent"), e.getMessage());
+        assertTrue(e.getMessage().contains("TextField"), "must list what is available");
+    }
+
+    @Test
+    void theConfigAllowlistNormalizesNamesAndDefaultsToTheWholeCatalog() {
+        A2uiConfig config =
+                A2uiConfig.builder().catalogComponents("Card", " Column ", "Text", "").build();
+        assertEquals(List.of("Card", "Column", "Text"), List.copyOf(config.catalogComponents()));
+        assertEquals(
+                List.of("Text", "Column", "Card"),
+                List.copyOf(CATALOG.retainComponents(config.catalogComponents()).componentNames()));
+
+        assertNull(A2uiConfig.defaults().catalogComponents());
+        assertNull(A2uiConfig.builder().catalogComponents().build().catalogComponents());
+        assertNull(A2uiConfig.builder().catalogComponents("  ").build().catalogComponents());
+        assertEquals(
+                CATALOG.componentNames(),
+                A2uiCatalog.load(
+                                A2uiConfig.defaults().catalogResource(),
+                                A2uiConfig.defaults().catalogId())
+                        .retainComponents(A2uiConfig.defaults().catalogComponents())
+                        .componentNames());
+    }
+
     private static int countOf(String text, String needle) {
         int n = 0;
         int i = 0;

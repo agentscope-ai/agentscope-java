@@ -17,6 +17,9 @@ package io.agentscope.extensions.a2ui;
 
 import io.agentscope.extensions.a2ui.catalog.A2uiCatalog;
 import java.time.Duration;
+import java.util.Collections;
+import java.util.LinkedHashSet;
+import java.util.Set;
 
 /**
  * Configuration for the A2UI capability. Passed to the {@link A2uiMiddleware} constructor
@@ -34,6 +37,7 @@ public final class A2uiConfig {
     private final Duration renderTimeout;
     private final boolean catalogInPrompt;
     private final String appendPreference;
+    private final Set<String> catalogComponents;
 
     private A2uiConfig(Builder builder) {
         this.catalogId = builder.catalogId;
@@ -45,6 +49,7 @@ public final class A2uiConfig {
         this.renderTimeout = builder.renderTimeout;
         this.catalogInPrompt = builder.catalogInPrompt;
         this.appendPreference = builder.appendPreference;
+        this.catalogComponents = builder.catalogComponents;
     }
 
     public static A2uiConfig defaults() {
@@ -66,6 +71,15 @@ public final class A2uiConfig {
     /** Catalog document source: classpath path, {@code http(s)} URL or local file path. */
     public String catalogResource() {
         return catalogResource;
+    }
+
+    /**
+     * Component names the catalog is narrowed to, or {@code null} for the whole catalog. Applied
+     * through {@link A2uiCatalog#retainComponents(java.util.Collection)}, so the guide the render
+     * sub-agent reads and the names a submission may use shrink together.
+     */
+    public Set<String> catalogComponents() {
+        return catalogComponents;
     }
 
     /**
@@ -140,6 +154,7 @@ public final class A2uiConfig {
         private Duration renderTimeout = Duration.ofSeconds(90);
         private boolean catalogInPrompt = true;
         private String appendPreference = null;
+        private Set<String> catalogComponents = null;
 
         private Builder() {}
 
@@ -150,6 +165,31 @@ public final class A2uiConfig {
 
         public Builder catalogResource(String catalogResource) {
             this.catalogResource = catalogResource;
+            return this;
+        }
+
+        /**
+         * Narrows the catalog to these component names — an allowlist for an agent whose interfaces
+         * never need the rest, which keeps both the guide and the accepted submissions smaller.
+         * No arguments, {@code null} or all-blank keeps the whole catalog (the default, so existing
+         * wiring is unchanged). A name the catalog does not declare fails at wiring time.
+         *
+         * <p>Keep the layout components ({@code Row}, {@code Column}, {@code Card}, {@code List},
+         * {@code Text}) in any allowlist: without them the remaining components cannot be composed
+         * into a surface at all.
+         */
+        public Builder catalogComponents(String... names) {
+            if (names == null || names.length == 0) {
+                this.catalogComponents = null;
+                return this;
+            }
+            Set<String> kept = new LinkedHashSet<>();
+            for (String name : names) {
+                if (name != null && !name.isBlank()) {
+                    kept.add(name.trim());
+                }
+            }
+            this.catalogComponents = kept.isEmpty() ? null : Collections.unmodifiableSet(kept);
             return this;
         }
 

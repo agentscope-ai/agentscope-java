@@ -121,7 +121,9 @@ public final class A2uiMiddleware implements MiddlewareBase, ToolInstallingMiddl
      */
     public A2uiMiddleware(A2uiConfig config, Model renderModel) {
         this.config = config != null ? config : A2uiConfig.defaults();
-        this.catalog = A2uiCatalog.load(this.config.catalogResource(), this.config.catalogId());
+        this.catalog =
+                A2uiCatalog.load(this.config.catalogResource(), this.config.catalogId())
+                        .retainComponents(this.config.catalogComponents());
         this.renderModel.set(renderModel);
     }
 
