@@ -40,6 +40,20 @@ GeminiChatModel model = GeminiChatModel.builder()
     .build();
 ```
 
+## Thinking
+
+Gemini 会将 `includeThoughts` 映射为思考摘要输出开关，将 `reasoningEffort` 映射为模型思考等级，
+将 `thinkingBudget` 映射为思考 token 预算：
+
+```java
+GenerateOptions.builder()
+    .includeThoughts(true)
+    .reasoningEffort("high")
+    .build();
+```
+
+不支持的取值和组合由 Gemini API 拒绝。
+
 ## 服务端工具
 
 Gemini 内置工具由模型服务商执行，不会通过 AgentScope 本地 Toolkit 执行。使用显式 model
