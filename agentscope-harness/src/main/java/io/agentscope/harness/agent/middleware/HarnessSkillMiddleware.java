@@ -68,9 +68,9 @@ import reactor.core.publisher.Mono;
  *       resolved {@code filesRoot}).
  *   <li>Bind the catalog to the current {@link RuntimeContext} through {@link SkillRuntime}, which
  *       also (idempotently) registers {@code load_skill_through_path} on the runtime toolkit.
- *   <li>Render the {@code <available_skills>} prompt block and register it as a tail runtime
- *       material ({@code WorkspaceContextMaterials}) instead of appending it to the system
- *       prompt, keeping the system head byte-stable across steps.
+ *   <li>Render the {@code <available_skills>} prompt block and register it as a runtime material
+ *       ({@code WorkspaceContextMaterials}) rendered before the conversation, instead of
+ *       appending it to the system prompt, keeping the system head byte-stable across steps.
  * </ol>
  *
  * <p><b>Toolkit note:</b> construction registers the load tool as ungrouped before {@link
@@ -360,9 +360,10 @@ public class HarnessSkillMiddleware implements HarnessRuntimeMiddleware {
     }
 
     /**
-     * Ships the rendered {@code <available_skills>} block as a tail runtime material instead of
-     * appending it to the system prompt: the catalog changes while a session runs (skills are
-     * installed or removed), and head bytes must stay stable for prefix caching. Registering a
+     * Ships the rendered {@code <available_skills>} block as a runtime material rendered before
+     * the conversation instead of appending it to the system prompt: the catalog changes while a
+     * session runs (skills are installed or removed), and the system head must stay byte-stable
+     * (the request-layout cache contract lives in {@code HarnessContextBuilder}). Registering a
      * blank item keeps the sourceId deterministic when nothing is visible. The catalog is
      * required so skill discovery remains available when conversation history is compacted.
      */

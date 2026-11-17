@@ -274,7 +274,7 @@ agent.promoteSkill("notes-taker", "alice")                   // manually promote
 
 ## How the agent reads and runs skills
 
-When the agent reasons, it sees an `<available_skills>` block in the system prompt listing every skill currently in scope:
+When the agent reasons, it sees an `<available_skills>` block listing every skill currently in scope. The block is a per-call harness context message rendered before the conversation, so unchanged content stays inside the provider's cacheable request prefix and a changed catalog costs a single cache invalidation:
 
 ```xml
 <available_skills>

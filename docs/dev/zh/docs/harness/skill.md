@@ -274,7 +274,7 @@ agent.promoteSkill("notes-taker", "alice")                   // 手动晋升一�
 
 ## Agent 是怎么读取和执行 skill 的
 
-每轮推理时，agent 会在 system prompt 里看到一个 `<available_skills>` 块，列出当前可见的所有 skill：
+每轮推理时，agent 会看到一个 `<available_skills>` 块，列出当前可见的所有 skill。该块作为按 call 的 harness context 消息渲染在对话之前：内容不变时始终位于 provider 可缓存前缀之内，目录变化时只付出一次缓存失效：
 
 ```xml
 <available_skills>

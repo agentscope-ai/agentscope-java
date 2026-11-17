@@ -51,6 +51,31 @@ import reactor.core.scheduler.Schedulers;
 public final class HarnessContextBuilder implements ModelRequestPreparer {
     private static final String ORIGINAL_SYSTEM_INPUTS =
             "agentscope.context.original_system_inputs";
+
+    /** Synthetic reminder kinds written and re-parsed by this compiler. */
+    private static final String KIND_COMPILED_SYSTEM = "compiled_system";
+
+    private static final String KIND_HARNESS_INSTRUCTIONS = "harness_instructions";
+
+    private static final String KIND_RUNTIME_MATERIALS = "runtime_materials";
+
+    private static final String KIND_WORKSPACE_MATERIALS = "workspace_materials";
+
+    /** Reminder kinds stripped and re-added by {@code withMaterials} on every request. */
+    private static final Set<String> STRIPPED_KINDS =
+            Set.of(KIND_WORKSPACE_MATERIALS, KIND_HARNESS_INSTRUCTIONS, KIND_RUNTIME_MATERIALS);
+
+    /** Layout groups in {@code layout}, in output order. */
+    private static final int GROUP_SYSTEM_HEAD = 0;
+
+    private static final int GROUP_RUNTIME_HEAD = 1;
+
+    private static final int GROUP_CONVERSATION = 2;
+
+    private static final int GROUP_VOLATILE = 3;
+
+    private static final int GROUP_REFERENCE = 4;
+
     private static final Logger log = LoggerFactory.getLogger(HarnessContextBuilder.class);
     private final ContextPolicy policy;
     private final CompactionMiddleware compaction;
@@ -423,8 +448,8 @@ public final class HarnessContextBuilder implements ModelRequestPreparer {
         List<Msg> expanded = new ArrayList<>();
         for (Msg msg : input.messages()) {
             if (synthetic(msg)
-                    && "compiled_system"
-                            .equals(msg.getMetadata().get(Msg.METADATA_REMINDER_KIND))) {
+                    && KIND_COMPILED_SYSTEM.equals(
+                            msg.getMetadata().get(Msg.METADATA_REMINDER_KIND))) {
                 Object originals = msg.getMetadata().get(ORIGINAL_SYSTEM_INPUTS);
                 if (!(originals instanceof List<?> sources))
                     throw new IllegalArgumentException(
@@ -442,16 +467,12 @@ public final class HarnessContextBuilder implements ModelRequestPreparer {
                                 .filter(
                                         msg ->
                                                 !(synthetic(msg)
-                                                        && Set.of(
-                                                                        "workspace_materials",
-                                                                        "harness_instructions",
-                                                                        "runtime_materials")
-                                                                .contains(
-                                                                        String.valueOf(
-                                                                                msg.getMetadata()
-                                                                                        .get(
-                                                                                                Msg
-                                                                                                        .METADATA_REMINDER_KIND)))))
+                                                        && STRIPPED_KINDS.contains(
+                                                                String.valueOf(
+                                                                        msg.getMetadata()
+                                                                                .get(
+                                                                                        Msg
+                                                                                                .METADATA_REMINDER_KIND)))))
                                 .toList());
         for (ContextItem.Placement placement : ContextItem.Placement.values()) {
             String text =
@@ -461,10 +482,10 @@ public final class HarnessContextBuilder implements ModelRequestPreparer {
             boolean system = placement == ContextItem.Placement.SYSTEM;
             String kind =
                     system
-                            ? "harness_instructions"
+                            ? KIND_HARNESS_INSTRUCTIONS
                             : placement == ContextItem.Placement.RUNTIME
-                                    ? "runtime_materials"
-                                    : "workspace_materials";
+                                    ? KIND_RUNTIME_MATERIALS
+                                    : KIND_WORKSPACE_MATERIALS;
             messages.add(
                     Msg.builder()
                             .id("harness:" + kind)
@@ -491,14 +512,20 @@ public final class HarnessContextBuilder implements ModelRequestPreparer {
         return layout(copy(input, List.copyOf(messages)), canonical);
     }
 
-    /** Stable layout independent of compaction: System, conversation, state, reference material. */
+    /**
+     * Stable layout independent of compaction: system, stable runtime state (session facts and
+     * the skill catalog), conversation, volatile state, reference material. The runtime block
+     * precedes the conversation so its bytes sit inside the provider's cacheable request prefix:
+     * unchanged content is a prefix-cache hit every request, and a content change costs a single
+     * invalidation instead of re-processing the block at the tail of every request.
+     */
     private static ModelCallInput layout(ModelCallInput input, List<Msg> canonical) {
         List<Msg> ordered = new ArrayList<>();
         List<Msg> systems =
                 input.messages().stream().filter(msg -> msg.getRole() == MsgRole.SYSTEM).toList();
         if (systems.size() == 1
-                && "compiled_system"
-                        .equals(systems.get(0).getMetadata().get(Msg.METADATA_REMINDER_KIND))) {
+                && KIND_COMPILED_SYSTEM.equals(
+                        systems.get(0).getMetadata().get(Msg.METADATA_REMINDER_KIND))) {
             ordered.add(systems.get(0));
         } else if (!systems.isEmpty()) {
             List<String> content = new ArrayList<>();
@@ -508,13 +535,12 @@ public final class HarnessContextBuilder implements ModelRequestPreparer {
                 // the whole content.
                 String text = msg.getTextContent();
                 if (!text.isEmpty()) content.add(text);
-                if (!"harness_instructions"
-                        .equals(msg.getMetadata().get(Msg.METADATA_REMINDER_KIND)))
-                    originals.add(msg);
+                if (!KIND_HARNESS_INSTRUCTIONS.equals(
+                        msg.getMetadata().get(Msg.METADATA_REMINDER_KIND))) originals.add(msg);
             }
             Map<String, Object> metadata = new LinkedHashMap<>(systems.get(0).getMetadata());
             metadata.put(Msg.METADATA_SYNTHETIC, true);
-            metadata.put(Msg.METADATA_REMINDER_KIND, "compiled_system");
+            metadata.put(Msg.METADATA_REMINDER_KIND, KIND_COMPILED_SYSTEM);
             metadata.put(ORIGINAL_SYSTEM_INPUTS, List.copyOf(originals));
             ordered.add(
                     Msg.builder()
@@ -525,25 +551,35 @@ public final class HarnessContextBuilder implements ModelRequestPreparer {
                             .metadata(metadata)
                             .build());
         }
-        for (int group = 1; group < 4; group++) {
+        for (int group = GROUP_RUNTIME_HEAD; group <= GROUP_REFERENCE; group++) {
             for (Msg msg : input.messages()) {
-                int position =
-                        msg.getRole() == MsgRole.SYSTEM
-                                ? 0
-                                : !msg.isRequestProjection(canonical)
-                                        ? 1
-                                        : "workspace_materials"
-                                                        .equals(
-                                                                msg.getMetadata()
-                                                                        .get(
-                                                                                Msg
-                                                                                        .METADATA_REMINDER_KIND))
-                                                ? 3
-                                                : 2;
-                if (position == group) ordered.add(msg);
+                if (positionOf(msg, canonical) == group) ordered.add(msg);
             }
         }
         return copy(input, List.copyOf(ordered));
+    }
+
+    /**
+     * Group order after the system head. The stable runtime block ({@code runtime_materials})
+     * comes before the conversation for prefix caching; volatile projections (todo/plan state)
+     * stay after it, and reference material stays last.
+     */
+    private static int positionOf(Msg msg, List<Msg> canonical) {
+        if (msg.getRole() == MsgRole.SYSTEM) {
+            return GROUP_SYSTEM_HEAD;
+        }
+        if (!msg.isRequestProjection(canonical)) {
+            return GROUP_CONVERSATION;
+        }
+        Object kind = msg.getMetadata().get(Msg.METADATA_REMINDER_KIND);
+        if (!(kind instanceof String reminderKind)) {
+            return GROUP_VOLATILE;
+        }
+        return switch (reminderKind) {
+            case KIND_RUNTIME_MATERIALS -> GROUP_RUNTIME_HEAD;
+            case KIND_WORKSPACE_MATERIALS -> GROUP_REFERENCE;
+            default -> GROUP_VOLATILE;
+        };
     }
 
     private ModelCallInput project(ModelCallInput input, ProjectionSnapshot state) {

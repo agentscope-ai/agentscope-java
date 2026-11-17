@@ -549,9 +549,10 @@ public class WorkspaceContextMiddleware implements HarnessRuntimeMiddleware {
     }
 
     /**
-     * Per-call volatile facts for the tail runtime channel: the session id and the resolved date.
-     * Both change independently of the agent's identity and instructions (a long session crosses
-     * midnight), so they must not sit in the byte-stable system head.
+     * Per-call volatile facts for the runtime channel (rendered before the conversation): the
+     * session id and the resolved date. Both change independently of the agent's identity and
+     * instructions (a long session crosses midnight), so they must not sit in the byte-stable
+     * system head.
      */
     private String buildSessionStateSection(RuntimeContext rc) {
         String today = LocalDate.now().format(DateTimeFormatter.ofPattern("EEEE MMM d, yyyy"));
