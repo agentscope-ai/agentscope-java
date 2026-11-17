@@ -15,7 +15,7 @@ import xml.etree.ElementTree as ET
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parents[2]
 PROJECT = "durable-" + uuid.uuid4().hex[:10]
-MQ = os.getenv("ROCKETMQ_IMAGE", "apache/rocketmq:5.5.1")
+MQ = os.getenv("ROCKETMQ_IMAGE", "apache/rocketmq:5.5.0")
 JRE = "eclipse-temurin:21-jre"
 CP = "classes:pg.jar:BOOT-INF/classes:BOOT-INF/lib/*"
 PACKAGE = "io.agentscope.durable.examples.brainhands.echo."

@@ -482,7 +482,8 @@ The runner builds the current checkout and creates a private Docker network with
 RocketMQ, independent Brain and Hands JVMs, and a counting model endpoint.
 It disconnects receivers before ACK and kills the model requester and checkpoint writer. The tool recovery cases query a committed effect or reconcile an opaque effect against external evidence. The checks compare broker message IDs, provider executions, committed effects,
 terminal events and committed answers. The runner removes its containers,
-volumes and network on exit. Set `ROCKETMQ_IMAGE` to use a locally available RocketMQ 5 image
+volumes and network on exit. The default image is `apache/rocketmq:5.5.0`. Set
+`ROCKETMQ_IMAGE` to use a different RocketMQ 5 image
 with the broker proxy and `mqadmin` tools.
 
 The paired-consumer comparison starts separate NameServer, Broker, Proxy and consumer JVMs,
