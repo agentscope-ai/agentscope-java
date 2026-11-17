@@ -38,7 +38,6 @@ import io.agentscope.core.model.ToolSchema;
 import io.agentscope.core.skill.AgentSkill;
 import io.agentscope.core.skill.DynamicSkillMiddleware;
 import io.agentscope.core.skill.SkillBox;
-import io.agentscope.core.skill.repository.AgentSkillRepository;
 import io.agentscope.core.skill.repository.AgentSkillRepositoryInfo;
 import io.agentscope.core.state.AgentState;
 import io.agentscope.core.state.ToolContextState;
@@ -200,12 +199,30 @@ class CapabilityGrantIntegrationTest {
         }
     }
 
-    /** Minimal in-memory skill repository stub. */
-    private static final class StubRepo implements AgentSkillRepository {
+    /**
+     * Minimal in-memory skill repository stub. Context-scoped so the middleware enumerates it
+     * per request (plain repositories are never enumerated without an explicit selection).
+     */
+    private static final class StubRepo
+            implements io.agentscope.core.skill.repository.RuntimeContextSkillRepository {
         private final List<AgentSkill> skills;
 
         StubRepo(List<AgentSkill> skills) {
             this.skills = skills;
+        }
+
+        /** Serving primitive: a null version answers by name; any version answers null. */
+        @Override
+        public AgentSkill getSkill(String name, String version) {
+            if (name == null || version != null) {
+                return null;
+            }
+            for (AgentSkill skill : skills) {
+                if (skill != null && name.equals(skill.getName())) {
+                    return skill;
+                }
+            }
+            return null;
         }
 
         @Override
@@ -220,6 +237,11 @@ class CapabilityGrantIntegrationTest {
 
         @Override
         public List<AgentSkill> getAllSkills() {
+            return skills;
+        }
+
+        @Override
+        public List<AgentSkill> getAllSkills(io.agentscope.core.agent.RuntimeContext context) {
             return skills;
         }
 
@@ -479,6 +501,51 @@ class CapabilityGrantIntegrationTest {
         assertNotNull(agent.call(userMsg("hi"), ctx).block(Duration.ofSeconds(10)));
         String seen = modelInputText(model);
         assertTrue(seen.contains("granted-one") && seen.contains("secret-one"));
+    }
+
+    @Test
+    @DisplayName(
+            "probe: a static-skillBox sub-agent inheriting DENY_ALL leaks no skill via prompt"
+                    + " or schema")
+    void staticSkillBoxSubAgentInheritsDenyAllWithoutLeakage() {
+        Toolkit childToolkit = new Toolkit();
+        SkillBox skillBox = new SkillBox(childToolkit);
+        skillBox.registerSkill(skill("secret-one"));
+        skillBox.registerSkillLoadTool();
+        MockModel childModel = new MockModel("child done");
+        ReActAgent child =
+                ReActAgent.builder()
+                        .name("child")
+                        .model(childModel)
+                        .toolkit(childToolkit)
+                        .skillBox(skillBox)
+                        .build();
+        SubAgentTool subAgentTool =
+                new SubAgentTool(
+                        (SubAgentProvider<ReActAgent>) () -> child, SubAgentConfig.defaults());
+
+        // The parent carries DENY_ALL; the child has no resolver of its own, so its call
+        // funnel reuses the inherited surface instead of re-resolving.
+        RuntimeContext parentRc = rc(CapabilitySurface.DENY_ALL);
+        callDirect(subAgentTool, Map.of("message", "do it"), parentRc);
+        assertTrue(
+                childModel.getCallCount() >= 1,
+                "liveness: the sub-agent's model must actually have been called");
+
+        // Channel 1: the child's model input (system prompt included) mentions no skill.
+        String childInput = modelInputText(childModel);
+        assertFalse(
+                childInput.contains("secret-one"),
+                "no skill name may reach the sub-agent's prompt");
+        assertFalse(childInput.contains("<available_skills>"), "no skills block under DENY_ALL");
+        // Channel 2: the loader schema is present (emptiness guard) yet carries no enum —
+        // nothing is granted, so nothing is enumerable.
+        assertFalse(
+                loadToolSkillIdProperty(childModel).isEmpty(),
+                "the loader schema itself must still be delivered (system capability)");
+        assertFalse(
+                loadToolSkillIdProperty(childModel).containsKey("enum"),
+                "the loader schema must not enumerate any skill under the inherited DENY_ALL");
     }
 
     /** Concatenates every text block the model received, across rounds (system included). */
@@ -991,11 +1058,16 @@ class CapabilityGrantIntegrationTest {
                         .skillContent("# market")
                         .source("market")
                         .build();
-        // Standard merge semantics: same name keeps the later entry, so the catalog holds
-        // exactly the market copy whose skillId is "alpha_market" (no coexistence).
+        // Standard merge semantics: same name across two repositories keeps the later
+        // (higher-priority) repo's entry, so the catalog holds exactly the market copy
+        // whose skillId is "alpha_market" (no coexistence). Two repositories, not two
+        // entries in one: the version contract's serving primitive is name-addressed, so
+        // the documented later-wins merge is a cross-repository rule.
         DynamicSkillMiddleware mw =
                 new DynamicSkillMiddleware(
-                        List.of(new StubRepo(List.of(alphaCustom, alphaMarket))));
+                        List.of(
+                                new StubRepo(List.of(alphaCustom)),
+                                new StubRepo(List.of(alphaMarket))));
 
         // The grant vocabulary is the name: one entry grants the merged (winning) copy.
         String prompt =

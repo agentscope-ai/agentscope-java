@@ -129,6 +129,24 @@ public class SkillFilter {
         return mode == Mode.OVERLAY_ENABLE || mode == Mode.OVERLAY_DISABLE;
     }
 
+    /**
+     * The names this filter was declared with — raw construction data, reported without
+     * allow/deny interpretation: whitelist entries, blacklist entries, and overlay
+     * entries alike; {@link #all()} and {@link #none()} declare none. A merged filter
+     * ({@link #overlay}) unions the base's and the overlay's declared names.
+     *
+     * <p>What the names <i>mean</i> is scenario logic and belongs to the caller: compose
+     * them with {@link #isAllowed(String)} to obtain, for example, the bounded selection
+     * a caller may pull without enumerating anything (a whitelist yields its names; a
+     * blacklist's declared names are denied and drop out; unbounded filters declare
+     * nothing).
+     *
+     * @return the declared names (never null, unmodifiable)
+     */
+    public Set<String> declaredNames() {
+        return skillNames;
+    }
+
     // ==================== Merge ====================
 
     /**
@@ -166,6 +184,19 @@ public class SkillFilter {
             @Override
             public boolean isOverlay() {
                 return false;
+            }
+
+            @Override
+            public Set<String> declaredNames() {
+                // Raw data composition: everything either side declared, interpretation
+                // left to the caller's isAllowed pass.
+                Set<String> overlayDeclared = overlay.declaredNames();
+                if (overlayDeclared.isEmpty()) {
+                    return base.declaredNames();
+                }
+                Set<String> union = new HashSet<>(base.declaredNames());
+                union.addAll(overlayDeclared);
+                return Set.copyOf(union);
             }
         };
     }

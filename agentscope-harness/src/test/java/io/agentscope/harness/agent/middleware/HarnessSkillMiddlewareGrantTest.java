@@ -26,17 +26,22 @@ import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.skill.AgentSkill;
-import io.agentscope.core.skill.repository.AgentSkillRepository;
 import io.agentscope.core.skill.repository.AgentSkillRepositoryInfo;
 import io.agentscope.core.tool.AgentTool;
 import io.agentscope.core.tool.ToolCallParam;
 import io.agentscope.core.tool.ToolRequestConfig;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.harness.agent.context.WorkspaceContextMaterials;
+import io.agentscope.harness.agent.skill.runtime.MarketplaceStager;
+import io.agentscope.harness.agent.skill.runtime.ShellPathPolicy;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 /**
  * Grant-layer coverage of the harness skill chain: prompt visibility, per-call catalog,
@@ -48,12 +53,33 @@ import org.junit.jupiter.api.Test;
 @DisplayName("Harness skill chain grant coverage")
 class HarnessSkillMiddlewareGrantTest {
 
-    /** In-memory repository stub serving a fixed skill list. */
-    private static final class StubRepo implements AgentSkillRepository {
+    @TempDir Path tempDir;
+
+    /**
+     * In-memory repository stub serving a fixed skill list. Context-scoped so the harness
+     * middleware enumerates it per request (plain repositories are never enumerated
+     * without an explicit selection).
+     */
+    private static final class StubRepo
+            implements io.agentscope.core.skill.repository.RuntimeContextSkillRepository {
         private final List<AgentSkill> skills;
 
         StubRepo(List<AgentSkill> skills) {
             this.skills = skills;
+        }
+
+        /** Serving primitive: a null version answers by name; any version answers null. */
+        @Override
+        public AgentSkill getSkill(String name, String version) {
+            if (name == null || version != null) {
+                return null;
+            }
+            for (AgentSkill skill : skills) {
+                if (skill != null && name.equals(skill.getName())) {
+                    return skill;
+                }
+            }
+            return null;
         }
 
         @Override
@@ -68,6 +94,11 @@ class HarnessSkillMiddlewareGrantTest {
 
         @Override
         public List<AgentSkill> getAllSkills() {
+            return skills;
+        }
+
+        @Override
+        public List<AgentSkill> getAllSkills(io.agentscope.core.agent.RuntimeContext context) {
             return skills;
         }
 
@@ -340,5 +371,77 @@ class HarnessSkillMiddlewareGrantTest {
         assertTrue(
                 load(sourcedMw, sourcedCtx, sourced.getSkillId()).contains("Source: repo1"),
                 "an explicit source is reported");
+    }
+
+    // ==================== grant × mirror cache residue ====================
+
+    @Test
+    @DisplayName(
+            "an un-granted name that once hit the cache keeps its host files but projects and"
+                    + " loads nowhere")
+    void ungrantedNameKeepsHostCacheButProjectsAndLoadsNowhere() throws IOException {
+        // Descriptor skills whose origin trees stand in for the (host-side, shared) mirror
+        // cache: version-stamped materialized directories. The first call grants both names
+        // and stages both; the second call narrows to alpha.
+        Path alphaOrigin = writeOriginTree("alpha", "tok-alpha-1", "echo alpha");
+        Path betaOrigin = writeOriginTree("beta", "tok-beta-1", "echo beta");
+        AgentSkill alpha = descriptorOf("alpha", alphaOrigin, "tok-alpha-1");
+        AgentSkill beta = descriptorOf("beta", betaOrigin, "tok-beta-1");
+        HarnessSkillMiddleware mw =
+                new HarnessSkillMiddleware(
+                        List.of(new StubRepo(List.of(alpha, beta))),
+                        new Toolkit(),
+                        null,
+                        null,
+                        new MarketplaceStager(tempDir),
+                        ShellPathPolicy.noShell());
+
+        RuntimeContext wide =
+                rc(new CapabilitySurface(java.util.Set.of("alpha", "beta"), null, null));
+        RuntimeContext narrow = rc(ALPHA_ONLY);
+        assertEquals(2, mw.prestageForProjection(wide).size(), "the wide call stages both");
+        mw.onSystemPrompt(null, narrow, "base").block();
+
+        // The host cache survives on both layers: the repository's origin trees and the
+        // staged workspace copy of the denied name (shared caches are never deleted).
+        assertTrue(
+                Files.isRegularFile(betaOrigin.resolve("SKILL.md")),
+                "the repository's materialized version directory stays (mirror cache)");
+        assertTrue(
+                Files.isRegularFile(
+                        tempDir.resolve(".skills-cache/u1/stub/beta").resolve("SKILL.md")),
+                "the staged workspace copy stays (shared cache, grace-window GC)");
+
+        // This call's projection roots exclude the denied name…
+        List<String> roots = mw.prestageForProjection(narrow);
+        assertEquals(List.of(".skills-cache/u1/stub/alpha"), roots);
+
+        // …and its load is refused with the not-found wording — the residue is unreachable.
+        assertEquals(
+                "Error: Skill not found: 'beta_custom'. Check the available skills list.",
+                load(mw, narrow, "beta_custom"));
+        assertTrue(
+                load(mw, narrow, "alpha_custom").contains("Successfully loaded skill"),
+                "the granted name still loads");
+    }
+
+    /** Writes {@code <tempDir>/origins/<name>/SKILL.md} + {@code run.sh}; returns the dir. */
+    private Path writeOriginTree(String name, String token, String script) throws IOException {
+        Path dir = Files.createDirectories(tempDir.resolve("origins").resolve(name));
+        Files.writeString(
+                dir.resolve("SKILL.md"),
+                "---\nname: " + name + "\ndescription: d\nversion: " + token + "\n---\nbody\n");
+        Files.writeString(dir.resolve("run.sh"), "#!/bin/sh\n" + script + "\n");
+        return dir;
+    }
+
+    /** A descriptor-form skill: no body, the given origin dir and version token. */
+    private static AgentSkill descriptorOf(String name, Path originDir, String token) {
+        return AgentSkill.builder()
+                .name(name)
+                .description("Skill " + name)
+                .originDir(originDir)
+                .version(token)
+                .build();
     }
 }
