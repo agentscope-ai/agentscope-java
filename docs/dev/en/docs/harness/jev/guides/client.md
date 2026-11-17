@@ -55,6 +55,16 @@ The default endpoint is `https://api.typesafe.ai`, model `jev-latest`, and per-r
 
 The client posts to `/v1/systemone` and retries HTTP 429, 529 and 5xx with configured backoff. Nonretryable errors, exhausted retries and invalid responses throw `JevException`. Validation covers the question set, answer types, distributions and score grades. Never invent success for a missing answer.
 
+To talk to a compatible gateway or inner provider, set a custom endpoint path; it replaces `/v1/systemone` and is appended to the base URL. If the base URL ends with `/v1` and the path starts with `/v1/`, the version prefix is not repeated:
+
+```java
+var client = JevClient.builder()
+    .apiKey(System.getenv("TYPESAFE_API_KEY"))
+    .baseUrl("https://inner.example.com")
+    .endpointPath("/v1/decisions")
+    .build();
+```
+
 An HTTP timeout differs from the total budget for a logical decision. [JevExecution](/dev/en/docs/harness/jev/guides/harness-runtime), the Judge or the component bounds batches, retries and backoff together. Cancellation stops the local subscription; transport behavior determines whether the remote request is interrupted.
 
 ## Spring Boot configuration
@@ -78,7 +88,7 @@ agentscope:
       initial-backoff: 500ms
 ```
 
-Customize the builder with a `JevClientBuilderCustomizer` bean. The starter configures the client; register each Harness capability and select its mode explicitly.
+Customize the builder with a `JevClientBuilderCustomizer` bean. Set `endpoint-path` to a custom path such as `/v1/decisions` to replace the default `/v1/systemone`. The starter configures the client; register each Harness capability and select its mode explicitly.
 
 ## Compare a text model on the same questions
 

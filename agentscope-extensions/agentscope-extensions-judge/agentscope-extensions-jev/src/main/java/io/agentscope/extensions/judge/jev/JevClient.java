@@ -64,6 +64,7 @@ public final class JevClient {
 
     private final String apiKey;
     private final String baseUrl;
+    private final String endpointPath;
     private final String model;
     private final HttpTransport transport;
     private final JevRetryPolicy retryPolicy;
@@ -72,6 +73,7 @@ public final class JevClient {
     private JevClient(Builder builder, HttpTransport transport) {
         this.apiKey = builder.apiKey;
         this.baseUrl = normalizeBaseUrl(builder.baseUrl);
+        this.endpointPath = normalizeEndpointPath(builder.endpointPath);
         this.model = builder.model;
         this.transport = transport;
         this.retryPolicy = builder.retryPolicy;
@@ -173,6 +175,15 @@ public final class JevClient {
     }
 
     private String systemOneUrl() {
+        if (endpointPath != null) {
+            if (baseUrl.endsWith(endpointPath)) {
+                return baseUrl;
+            }
+            if (baseUrl.endsWith("/v1") && endpointPath.startsWith("/v1/")) {
+                return baseUrl + endpointPath.substring("/v1".length());
+            }
+            return baseUrl + endpointPath;
+        }
         if (baseUrl.endsWith(SYSTEM_ONE_ENDPOINT)) {
             return baseUrl;
         }
@@ -466,9 +477,21 @@ public final class JevClient {
         return normalized;
     }
 
+    private static String normalizeEndpointPath(String value) {
+        if (value == null) {
+            return null;
+        }
+        String normalized = value.trim();
+        if (normalized.isEmpty()) {
+            throw new IllegalArgumentException("endpointPath must not be blank");
+        }
+        return normalized.startsWith("/") ? normalized : "/" + normalized;
+    }
+
     public static final class Builder {
         private String apiKey = defaultApiKey();
         private String baseUrl = DEFAULT_BASE_URL;
+        private String endpointPath;
         private String model = DEFAULT_MODEL;
         private HttpTransport transport;
         private JevRetryPolicy retryPolicy = JevRetryPolicy.defaults();
@@ -483,6 +506,18 @@ public final class JevClient {
 
         public Builder baseUrl(String baseUrl) {
             this.baseUrl = baseUrl;
+            return this;
+        }
+
+        /**
+         * Sets a custom endpoint path, replacing the default {@code /v1/systemone}. The path is
+         * appended to {@link #baseUrl(String) baseUrl} and may be given with or without a
+         * leading slash, e.g. {@code "/v1/decisions"}.
+         *
+         * @param endpointPath the endpoint path, or {@code null} for the default
+         */
+        public Builder endpointPath(String endpointPath) {
+            this.endpointPath = endpointPath;
             return this;
         }
 
