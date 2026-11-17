@@ -34,8 +34,27 @@ public class CommandExecutor {
     private static final Logger log = LoggerFactory.getLogger(CommandExecutor.class);
     private static final ObjectMapper MAPPER = new ObjectMapper();
     private static final Duration DEFAULT_TIMEOUT = Duration.ofSeconds(60);
+
+    /**
+     * Fixed waiting allowance for legacy runtimes, standing in for the cleanup budget modern
+     * runtimes advertise. The transport allowance ({@code perAttemptTimeout}) is added on top,
+     * mirroring the modern exchange budget.
+     */
     private static final Duration LEGACY_EXCHANGE_MARGIN = Duration.ofSeconds(30);
+
     private static final int CAPABILITY_MAX_ATTEMPTS = 3;
+
+    /**
+     * Floor for the capability probe's budgets. The probe is the gate for every command, and
+     * the configured per-attempt transport timeout is tuned for command exchanges; on a loaded
+     * host a healthy runtime's loopback probe can transiently exceed sub-second budgets
+     * (observed on a windows CI runner under -T1C, #4058: the first attempt hit its 199ms
+     * header timeout and the same 200ms figure, doubling as the shared exchange deadline,
+     * skipped the remaining retries), hard-failing commands whose runtime was fine. The floor
+     * also lets the intended retry attempts actually run. It only widens the probe's failure
+     * deadline; command exchanges keep the configured budget.
+     */
+    private static final Duration CAPABILITY_PROBE_MIN_ATTEMPT_TIMEOUT = Duration.ofSeconds(2);
 
     private final SandboxConnector connector;
 
@@ -70,7 +89,10 @@ public class CommandExecutor {
         Duration requestTimeout = executionRequestTimeout(effectiveTimeout);
         boolean legacy = requestTimeout == null;
         if (legacy) {
-            requestTimeout = effectiveTimeout.plus(LEGACY_EXCHANGE_MARGIN);
+            requestTimeout =
+                    effectiveTimeout
+                            .plus(LEGACY_EXCHANGE_MARGIN)
+                            .plus(connector.getPerAttemptTimeout());
         }
         boolean submissionAttempted = false;
         try {
@@ -140,6 +162,10 @@ public class CommandExecutor {
 
     private Duration executionRequestTimeout(Duration timeout) {
         try {
+            Duration probeBudget = connector.getPerAttemptTimeout();
+            if (probeBudget.compareTo(CAPABILITY_PROBE_MIN_ATTEMPT_TIMEOUT) < 0) {
+                probeBudget = CAPABILITY_PROBE_MIN_ATTEMPT_TIMEOUT;
+            }
             HttpResponse<String> response =
                     connector.sendRequest(
                             "GET",
@@ -147,7 +173,8 @@ public class CommandExecutor {
                             null,
                             "application/json",
                             CAPABILITY_MAX_ATTEMPTS,
-                            connector.getPerAttemptTimeout());
+                            probeBudget,
+                            probeBudget);
             if (response.statusCode() == 404) {
                 log.warn(
                         "[sandbox-client] Runtime capabilities returned 404; using legacy execution"

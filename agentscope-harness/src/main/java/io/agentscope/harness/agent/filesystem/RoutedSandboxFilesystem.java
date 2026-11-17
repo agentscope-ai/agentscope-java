@@ -16,7 +16,7 @@
 package io.agentscope.harness.agent.filesystem;
 
 import io.agentscope.core.agent.RuntimeContext;
-import io.agentscope.core.session.AtomicSessionStorage;
+import io.agentscope.core.journal.AtomicJournalStorage;
 import io.agentscope.harness.agent.filesystem.model.EditResult;
 import io.agentscope.harness.agent.filesystem.model.ExecuteResponse;
 import io.agentscope.harness.agent.filesystem.model.FileDownloadResponse;
@@ -75,8 +75,8 @@ public final class RoutedSandboxFilesystem implements AbstractSandboxFilesystem 
     }
 
     @Override
-    public AtomicSessionStorage sessionStorage(RuntimeContext runtimeContext) {
-        return composite.sessionStorage(runtimeContext);
+    public AtomicJournalStorage journalStorage(RuntimeContext runtimeContext) {
+        return composite.journalStorage(runtimeContext);
     }
 
     @Override

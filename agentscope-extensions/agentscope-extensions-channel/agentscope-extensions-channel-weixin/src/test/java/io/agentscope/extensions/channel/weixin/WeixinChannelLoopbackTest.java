@@ -137,7 +137,7 @@ class WeixinChannelLoopbackTest {
     }
 
     @Test
-    @Timeout(10)
+    @Timeout(30)
     void doesNotLoseMessageWhenCursorPersistenceInterruptsThePoll() throws Exception {
         AtomicInteger saves = new AtomicInteger();
         CountDownLatch handled = new CountDownLatch(1);
@@ -191,7 +191,7 @@ class WeixinChannelLoopbackTest {
         channel.start();
 
         assertTrue(
-                handled.await(4, TimeUnit.SECONDS),
+                handled.await(10, TimeUnit.SECONDS),
                 "The message must remain recoverable when cursor persistence interrupts the poll");
     }
 

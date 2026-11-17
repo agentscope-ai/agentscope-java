@@ -89,6 +89,16 @@ class SkillUtilTest {
             assertTrue(e.getMessage().contains("^[a-z0-9][a-z0-9-]*$"));
             assertDoesNotThrow(() -> SkillUtil.requireValidSkillName("good-name"));
         }
+
+        @Test
+        @DisplayName("parseSkillName: bare names pass through; ids split at the first underscore")
+        void testParseSkillName() {
+            // A bare name (no separator) passes through unchanged.
+            assertEquals("alpha", SkillUtil.parseSkillName("alpha"));
+            // A full id splits at the first separator; the source may contain underscores.
+            assertEquals("alpha", SkillUtil.parseSkillName("alpha_custom"));
+            assertEquals("alpha", SkillUtil.parseSkillName("alpha_my_repo_v2"));
+        }
     }
 
     @Nested

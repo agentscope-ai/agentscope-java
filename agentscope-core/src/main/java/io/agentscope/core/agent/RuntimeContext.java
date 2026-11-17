@@ -26,7 +26,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 
 /**
- * Per-call metadata for an agent run: session-scoped fields plus a thread-safe attribute bag and
+ * Per-call metadata for an agent run: Session/Thread/Turn identity, a thread-safe attribute bag and
  * an optional {@link ToolExecutionContext} (tool-POJO / DI layer).
  *
  * <p>Attributes are not persisted. Hooks and tools may read and update the same instance for the
@@ -34,31 +34,21 @@ import java.util.concurrent.ConcurrentMap;
  */
 public class RuntimeContext {
 
+    public static final String PRIMARY_THREAD_ID = "main";
+
     private static final String TYPED_DEFAULT_KEY = "";
 
     private final String sessionId;
     private final String userId;
+    private final String threadId;
+    private final String turnId;
 
     /**
-     * Per-call correlation id: explicit via {@link Builder#runId(String)} (uniqueness is the
-     * caller's) or auto-generated; copied by {@link Builder#from} so derived contexts (subagent
-     * chains) stay correlated. Never {@code null}.
+     * Optional host-supplied invocation identity. An unbound request context has no Run yet;
+     * the execution entry allocates one and binds it to the invocation's context. Hosts supplying
+     * an identity must use a fresh value for each invocation.
      */
     private final String runId;
-
-    /**
-     * Per-call model selection: a model id resolvable through {@code ModelRegistry#resolve}. When
-     * set (non-{@code null}), the agent resolves it for every model call of this run instead of
-     * its build-time default; blank or unresolvable ids fail the call rather than silently
-     * falling back to the default model. Not an attribute, so not projected to tools. Distinct
-     * from {@code GenerateOptions#getModelName()}-style request fields, which providers treat as
-     * routing hints: this field selects which {@code Model} instance handles the call.
-     *
-     * <p>Copied by {@link Builder#from} so the agent's internal per-run derivations keep it.
-     * Subagent spawning paths clear it explicitly: a subagent's model is a build-time contract,
-     * not overridable by the caller's runtime selection.
-     */
-    private final String modelId;
 
     /**
      * Call-scoped {@link AgentState} for the active {@code (userId, sessionId)} slot. Set once at
@@ -89,10 +79,13 @@ public class RuntimeContext {
     private RuntimeContext(Builder builder) {
         this.sessionId = builder.sessionId;
         this.userId = builder.userId;
-        // Generated here (not cached on the builder) so reusing one Builder yields distinct ids.
-        this.runId =
-                builder.runId == null || builder.runId.isBlank() ? generateRunId() : builder.runId;
-        this.modelId = builder.modelId;
+        this.threadId = builder.threadId == null ? PRIMARY_THREAD_ID : builder.threadId;
+        this.turnId = builder.turnId;
+        if (threadId.isBlank() || (turnId != null && turnId.isBlank()))
+            throw new IllegalArgumentException("Thread and turn identities must not be blank");
+        this.runId = builder.runId;
+        if (runId != null && runId.isBlank())
+            throw new IllegalArgumentException("Run identity must not be blank");
         this.stringAttributes = new ConcurrentHashMap<>();
         this.typedAttributes = new ConcurrentHashMap<>();
         this.toolExecutionContext = builder.toolExecutionContext;
@@ -119,7 +112,7 @@ public class RuntimeContext {
     }
 
     /**
-     * Shallow, mutable empty context (null session fields, empty attribute maps, no tool context).
+     * Shallow, mutable context with the primary Thread, no Session/Turn/Run, and no tool context.
      */
     public static RuntimeContext empty() {
         return new Builder().build();
@@ -133,10 +126,19 @@ public class RuntimeContext {
         return userId;
     }
 
+    /** Continuing Agent context within the business Session; never a Java thread identity. */
+    public String getThreadId() {
+        return threadId;
+    }
+
+    /** Optional host-supplied logical task identity; direct calls leave this null. */
+    public String getTurnId() {
+        return turnId;
+    }
+
     /**
-     * Returns the stable per-call correlation id for logs, events, and tracing — including
-     * subagent chains derived from this context — aligned with {@link AgentRun#runId()} for
-     * handles created via {@code prepareRun}/{@code prepareCall}. Never {@code null}.
+     * Returns the invocation identity for logs and events. Null before execution unless a host
+     * supplied it. Inside the Agent invocation it matches {@link AgentRun#runId()}.
      */
     public String getRunId() {
         return runId;
@@ -145,14 +147,6 @@ public class RuntimeContext {
     /** Generates a fresh opaque runId (32-char hex); the single source for default ids. */
     public static String generateRunId() {
         return UUID.randomUUID().toString().replace("-", "");
-    }
-
-    /**
-     * Returns the per-call model id, or {@code null} when the call uses the agent's default
-     * model. See {@link Builder#modelId(String)} for resolution and inheritance semantics.
-     */
-    public String getModelId() {
-        return modelId;
     }
 
     /**
@@ -399,8 +393,9 @@ public class RuntimeContext {
     public static class Builder {
         private String sessionId;
         private String userId;
+        private String threadId;
+        private String turnId;
         private String runId;
-        private String modelId;
         private Map<String, Object> stringExtras;
         private final Map<Class<?>, Map<String, Object>> typedValues = new HashMap<>();
         private ToolExecutionContext toolExecutionContext;
@@ -417,26 +412,25 @@ public class RuntimeContext {
             return this;
         }
 
-        /**
-         * Sets an explicit per-call correlation id (e.g. an orchestration trace id); uniqueness
-         * is the caller's. Overrides a value copied by {@link #from(RuntimeContext)}. Unset or
-         * blank generates one at {@code build()} time.
-         */
-        public Builder runId(String runId) {
-            this.runId = runId;
+        /** Selects a continuing context. Null selects the primary Thread. */
+        public Builder threadId(String threadId) {
+            this.threadId = threadId;
+            return this;
+        }
+
+        /** Pins a logical task across invocations. Null clears an inherited task identity. */
+        public Builder turnId(String turnId) {
+            this.turnId = turnId;
             return this;
         }
 
         /**
-         * Selects the model for this call by id, resolved through {@code ModelRegistry#resolve}. A
-         * non-{@code null} id that is blank or unresolvable fails the call
-         * (IllegalArgumentException surfaced as an error event) instead of silently falling back
-         * to the agent's default model; {@code null} (the default) uses the agent's default
-         * model. Copied by {@link #from(RuntimeContext)}; subagent spawning clears it explicitly
-         * so subagents keep their build-time model contract.
+         * Sets an explicit invocation identity; uniqueness is the caller's. This is not a trace or
+         * task identity. Overrides a value copied by {@link #from(RuntimeContext)}. Unset or null
+         * lets the execution entry allocate a new identity for each invocation.
          */
-        public Builder modelId(String modelId) {
-            this.modelId = modelId;
+        public Builder runId(String runId) {
+            this.runId = runId;
             return this;
         }
 
@@ -482,10 +476,11 @@ public class RuntimeContext {
             }
             this.sessionId = source.sessionId;
             this.userId = source.userId;
-            // Derived contexts intentionally share the source's runId (agent_spawn chains); a
-            // later runId(x) overrides it.
+            this.threadId = source.threadId;
+            this.turnId = source.turnId;
+            // Derivation within an invocation preserves identity. New invocations explicitly
+            // replace runId; independent child tasks also replace Thread/Turn identity.
             this.runId = source.runId;
-            this.modelId = source.modelId;
             this.agentState = source.agentState;
             this.toolExecutionContext = source.toolExecutionContext;
             this.toolRequestConfig = source.toolRequestConfig;
