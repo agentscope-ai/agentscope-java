@@ -5803,7 +5803,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
 
     @Override
     protected Mono<Void> doObserve(Msg msg) {
-        if (msg != null && journalEnabled()) {
+        if (msg != null) {
             return Mono.<Void>fromRunnable(
                             () ->
                                     updateAgentState(
@@ -5811,9 +5811,6 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                             "message_observed",
                                             state -> state.contextMutable().add(msg)))
                     .subscribeOn(ModelSchedulers.requests());
-        }
-        if (msg != null) {
-            getAgentState().contextMutable().add(msg);
         }
         return Mono.empty();
     }

@@ -580,6 +580,27 @@ class ReActAgentPerSessionStateTest {
     }
 
     @Test
+    @DisplayName("observe() messages survive the next persisted call (#4234)")
+    void observedMessageSurvivesNextPersistedCall(@TempDir Path directory) {
+        String note = "The draft is ready";
+        Msg observed =
+                Msg.builder().role(MsgRole.ASSISTANT).name("teammate").textContent(note).build();
+        try (ReActAgent agent = agent(new JsonFileAgentStateStore(directory))) {
+            agent.call(List.of(userMsg("Start the task"))).block(Duration.ofSeconds(5));
+            agent.observe(observed).block(Duration.ofSeconds(5));
+            assertTrue(
+                    agent.getAgentState(null, agent.getDefaultSessionId()).getContext().stream()
+                            .anyMatch(message -> note.equals(message.getTextContent())));
+
+            agent.call(List.of(userMsg("Use the report"))).block(Duration.ofSeconds(5));
+            assertTrue(
+                    agent.getAgentState(null, agent.getDefaultSessionId()).getContext().stream()
+                            .anyMatch(message -> note.equals(message.getTextContent())),
+                    "Observed message must remain after the next call");
+        }
+    }
+
+    @Test
     @DisplayName("shutdown retry clears and uses the current non-default session state")
     void shutdownRetryUsesCurrentSessionState() {
         ReActAgent agent =
