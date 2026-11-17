@@ -115,8 +115,8 @@ jobs:
         run: |
           # Backend and Core code is also exercised by adapter and extension tests.
           # Rebuild each source module's report with all reactor execution data.
-          mvn -B -N jacoco:merge@merge-reactor-coverage
-          JACOCO_VERSION=$(mvn -B -q -N -Dstyle.color=never help:evaluate -Dexpression=jacoco.version -DforceStdout)
+          mvn -B -pl :agentscope-parent jacoco:merge@merge-reactor-coverage
+          JACOCO_VERSION=$(mvn -B -q -pl :agentscope-parent -Dstyle.color=never help:evaluate -Dexpression=jacoco.version -DforceStdout)
           mvn -B -T1C "org.jacoco:jacoco-maven-plugin:${JACOCO_VERSION}:report" "-Djacoco.dataFile=$GITHUB_WORKSPACE/target/jacoco-merged.exec"
 
       - name: Upload coverage reports to Codecov
