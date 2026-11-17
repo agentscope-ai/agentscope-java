@@ -23,10 +23,13 @@ import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.core.message.GenerateReason;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.ToolResultBlock;
@@ -37,6 +40,7 @@ import io.agentscope.core.tool.Toolkit;
 import io.agentscope.harness.agent.middleware.SubagentEntry;
 import io.agentscope.harness.agent.subagent.DefaultAgentManager;
 import io.agentscope.harness.agent.subagent.SubagentDeclaration;
+import io.agentscope.harness.agent.subagent.protocol.RemoteConfirmDecision;
 import io.agentscope.harness.agent.subagent.task.BackgroundTask;
 import io.agentscope.harness.agent.subagent.task.RemoteSubagentTransport;
 import io.agentscope.harness.agent.subagent.task.TaskRepository;
@@ -50,6 +54,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
+import org.mockito.ArgumentCaptor;
 import reactor.core.publisher.Mono;
 
 class AgentSpawnToolResultStateTest {
@@ -137,6 +142,88 @@ class AgentSpawnToolResultStateTest {
                                 ToolResultState.SUCCESS)
                         .endsWith(reply));
         assertText(tool.agentList(), ToolResultState.SUCCESS);
+    }
+
+    @Test
+    void localPermissionAskingReplyPreservesPendingToolCall() {
+        ToolUseBlock pending =
+                ToolUseBlock.builder()
+                        .id("call-1")
+                        .name("bash")
+                        .input(Map.of("command", "rm -rf /tmp/demo"))
+                        .state(io.agentscope.core.message.ToolCallState.ASKING)
+                        .build();
+        when(agent.call(anyList()))
+                .thenReturn(
+                        Mono.just(
+                                Msg.builder()
+                                        .role(MsgRole.ASSISTANT)
+                                        .content(List.of(pending))
+                                        .generateReason(GenerateReason.PERMISSION_ASKING)
+                                        .build()));
+
+        ToolResultBlock result =
+                localTool(true)
+                        .agentSpawn(context, null, "worker", "run", "worker", 1, null)
+                        .block();
+
+        String text = assertText(result, ToolResultState.SUCCESS);
+        assertTrue(text.contains("status: awaiting_confirm"));
+        assertTrue(text.contains("pending_confirms:"));
+        assertTrue(text.contains("call-1"));
+        assertTrue(text.contains("bash"));
+        assertTrue(text.contains("rm -rf /tmp/demo"));
+        assertTrue(!text.contains("status: ok"));
+    }
+
+    @Test
+    void localConfirmationResumesChildWithConfirmResultMetadata() {
+        ToolUseBlock pending =
+                ToolUseBlock.builder()
+                        .id("call-1")
+                        .name("bash")
+                        .input(Map.of("command", "echo safe"))
+                        .state(io.agentscope.core.message.ToolCallState.ASKING)
+                        .build();
+        Msg asking =
+                Msg.builder()
+                        .role(MsgRole.ASSISTANT)
+                        .content(List.of(pending))
+                        .generateReason(GenerateReason.PERMISSION_ASKING)
+                        .build();
+        when(agent.call(anyList()))
+                .thenReturn(
+                        Mono.just(asking),
+                        Mono.just(
+                                Msg.builder()
+                                        .role(MsgRole.ASSISTANT)
+                                        .textContent("continued")
+                                        .build()));
+
+        AgentSpawnTool tool = localTool(true);
+        ToolResultBlock spawned =
+                tool.agentSpawn(context, null, "worker", "run", "worker", 1, null).block();
+        String agentKey = key(spawned);
+
+        ToolResultBlock resumed =
+                tool.agentConfirm(
+                                context,
+                                null,
+                                agentKey,
+                                null,
+                                List.of(new RemoteConfirmDecision("call-1", true)),
+                                1)
+                        .block();
+
+        assertTrue(assertText(resumed, ToolResultState.SUCCESS).endsWith("continued"));
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<List<Msg>> calls = ArgumentCaptor.forClass(List.class);
+        verify(agent, times(2)).call(calls.capture());
+        Msg resumedInput = calls.getAllValues().get(1).get(0);
+        assertTrue(resumedInput.getMetadata().containsKey(Msg.METADATA_CONFIRM_RESULTS));
+        assertEquals(
+                1, ((List<?>) resumedInput.getMetadata().get(Msg.METADATA_CONFIRM_RESULTS)).size());
     }
 
     @Test

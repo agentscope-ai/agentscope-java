@@ -24,6 +24,7 @@ import io.agentscope.core.agent.EventSource;
 import io.agentscope.core.agent.ExecutionIdentity;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.agent.StreamOptions;
+import io.agentscope.core.event.ConfirmResult;
 import io.agentscope.core.journal.InvocationRecorder;
 import io.agentscope.core.journal.JournalExportSink;
 import io.agentscope.core.journal.ModelInvocation;
@@ -187,14 +188,30 @@ public final class DefaultAgentManager {
 
     public Mono<Msg> invokeAgent(
             Agent agent, String sessionId, String userId, String prompt, RuntimeContext parentRc) {
+        return invokeAgent(agent, sessionId, userId, prompt, parentRc, List.of());
+    }
+
+    /**
+     * Invokes an agent with an optional permission-HITL confirmation payload.
+     *
+     * <p>The confirmation payload is carried in the user message metadata because
+     * {@link io.agentscope.core.ReActAgent} resumes an ASKING turn through
+     * {@link Msg#METADATA_CONFIRM_RESULTS}.
+     */
+    public Mono<Msg> invokeAgent(
+            Agent agent,
+            String sessionId,
+            String userId,
+            String prompt,
+            RuntimeContext parentRc,
+            List<ConfirmResult> confirmResults) {
         RuntimeContext ctx = childContext(sessionId, userId, parentRc);
+        Msg input = userMessage(prompt, confirmResults);
         Supplier<Mono<Msg>> local =
                 () -> {
-                    if (agent instanceof ReActAgent react)
-                        return react.call(List.of(userMessage(prompt)), ctx);
-                    if (agent instanceof HarnessAgent harness)
-                        return harness.call(userMessage(prompt), ctx);
-                    return agent.call(List.of(userMessage(prompt)));
+                    if (agent instanceof ReActAgent react) return react.call(List.of(input), ctx);
+                    if (agent instanceof HarnessAgent harness) return harness.call(input, ctx);
+                    return agent.call(List.of(input));
                 };
         SubagentExecution execution =
                 parentRc == null ? null : parentRc.get(SubagentExecution.class);
@@ -238,15 +255,36 @@ public final class DefaultAgentManager {
             EventSource source,
             StreamOptions options,
             RuntimeContext parentRc) {
+        return invokeAgentStream(
+                agent, sessionId, userId, prompt, source, options, parentRc, List.of());
+    }
+
+    /**
+     * Streams an agent with an optional permission-HITL confirmation payload.
+     *
+     * <p>This overload keeps the deprecated event-bus path consistent with the direct invocation
+     * path: a local child resumed after {@code PERMISSION_ASKING} must receive the same
+     * {@link Msg#METADATA_CONFIRM_RESULTS} metadata regardless of how its events are forwarded.
+     */
+    public Flux<Event> invokeAgentStream(
+            Agent agent,
+            String sessionId,
+            String userId,
+            String prompt,
+            EventSource source,
+            StreamOptions options,
+            RuntimeContext parentRc,
+            List<ConfirmResult> confirmResults) {
         Flux<Event> childFlux;
         StreamOptions effective = options != null ? options : StreamOptions.defaults();
         RuntimeContext ctx = childContext(sessionId, userId, parentRc);
         if (agent instanceof ReActAgent react) {
-            childFlux = react.stream(List.of(userMessage(prompt)), effective, ctx);
+            childFlux = react.stream(List.of(userMessage(prompt, confirmResults)), effective, ctx);
         } else if (agent instanceof HarnessAgent harness) {
-            childFlux = harness.stream(List.of(userMessage(prompt)), effective, ctx);
+            childFlux =
+                    harness.stream(List.of(userMessage(prompt, confirmResults)), effective, ctx);
         } else {
-            childFlux = agent.stream(List.of(userMessage(prompt)), effective);
+            childFlux = agent.stream(List.of(userMessage(prompt, confirmResults)), effective);
         }
         return childFlux.map(event -> event.withSource(source));
     }
@@ -300,5 +338,16 @@ public final class DefaultAgentManager {
 
     private static Msg userMessage(String prompt) {
         return Msg.builder().role(MsgRole.USER).textContent(prompt).build();
+    }
+
+    private static Msg userMessage(String prompt, List<ConfirmResult> confirmResults) {
+        if (confirmResults == null || confirmResults.isEmpty()) {
+            return userMessage(prompt);
+        }
+        return Msg.builder()
+                .role(MsgRole.USER)
+                .textContent(prompt)
+                .metadata(Map.of(Msg.METADATA_CONFIRM_RESULTS, List.copyOf(confirmResults)))
+                .build();
     }
 }
