@@ -17,6 +17,9 @@ package io.agentscope.harness.agent.memory.compaction;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
+import io.agentscope.core.message.Base64Source;
+import io.agentscope.core.message.HintBlock;
+import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.ThinkingBlock;
@@ -25,6 +28,56 @@ import java.util.List;
 import org.junit.jupiter.api.Test;
 
 class TokenCounterUtilTest {
+
+    @Test
+    void calculateToken_chargesMediaBlocksTheSameFixedWeightAsMain() {
+        Msg message =
+                Msg.builder()
+                        .role(MsgRole.USER)
+                        .content(
+                                ImageBlock.builder()
+                                        .source(new Base64Source("image/png", "AA=="))
+                                        .build())
+                        .build();
+
+        // 5 message overhead + 2 for the USER role + 2048 for the image.
+        assertEquals(2055, TokenCounterUtil.calculateToken(List.of(message)));
+    }
+
+    @Test
+    void calculateToken_chargesMediaBlocksInsideToolResults() {
+        Msg message =
+                Msg.builder()
+                        .role(MsgRole.TOOL)
+                        .content(
+                                ToolResultBlock.builder()
+                                        .id("call-1")
+                                        .name("search")
+                                        .output(
+                                                ImageBlock.builder()
+                                                        .source(
+                                                                new Base64Source(
+                                                                        "image/png", "AA=="))
+                                                        .build())
+                                        .build())
+                        .build();
+
+        // 5 message overhead + 2 for the TOOL role + 8 tool-result overhead
+        // + 3 for the id + 3 for the name + 2048 for the image.
+        assertEquals(2069, TokenCounterUtil.calculateToken(List.of(message)));
+    }
+
+    @Test
+    void calculateToken_countsHintBlocksAsTextNotMedia() {
+        Msg message =
+                Msg.builder()
+                        .role(MsgRole.ASSISTANT)
+                        .content(new HintBlock("hint-1", "x".repeat(1_000)))
+                        .build();
+
+        // 5 message overhead + 4 for the ASSISTANT role + 400 for the hint text.
+        assertEquals(409, TokenCounterUtil.calculateToken(List.of(message)));
+    }
 
     @Test
     void calculateToken_countsThinkingContent() {
