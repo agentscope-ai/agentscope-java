@@ -231,6 +231,46 @@ class AgentScopeAdapterTest {
     }
 
     @Test
+    void growingConversationSharesHistoricalJournalPayloads() throws Exception {
+        var database = directory.resolve("history.db");
+        var adapter = adapter(new ScriptedModel(false), PermissionMode.BYPASS, Map.of());
+        try (var backend =
+                        new io.agentscope.durable.TransactionalSessionBackend(
+                                io.agentscope.extensions.durable.jdbc.JdbcRecordStore.sqlite(
+                                        database));
+                var runtime = runtime(backend, adapter, null);
+                var connection = java.sql.DriverManager.getConnection("jdbc:sqlite:" + database);
+                var measure =
+                        connection.prepareStatement(
+                                "SELECT SUM(length(payload)) FROM durable_parts")) {
+            var session = runtime.createSession(key, "agent");
+            var random = new java.util.Random(57);
+            long firstHalf = 0;
+            for (int i = 1; i <= 24; i++) {
+                byte[] bytes = new byte[1536];
+                random.nextBytes(bytes);
+                var turn =
+                        session.submit(
+                                "input-" + i, java.util.Base64.getEncoder().encodeToString(bytes));
+                runtime.tick(new ThreadKey(key, "main"));
+                assertEquals(TurnStatus.SUCCEEDED, turn.status().status());
+                if (i == 12 || i == 24) {
+                    try (var result = measure.executeQuery()) {
+                        assertTrue(result.next());
+                        long size = result.getLong(1);
+                        System.out.println("durable_parts payload at turn " + i + " = " + size);
+                        if (i == 12) firstHalf = size;
+                        else
+                            assertTrue(
+                                    size < 3 * firstHalf,
+                                    "History amplification: " + size + " / " + firstHalf);
+                    }
+                }
+            }
+        }
+    }
+
+    @Test
     void adapterOwnsTheInvocationJournalConfiguration() {
         var adapter =
                 AgentScopeAdapter.forReAct(
