@@ -137,6 +137,27 @@ final class AguiResumeCoordinator {
     }
 
     /**
+     * Returns whether the thread currently has an active run.
+     *
+     * @param threadId The AG-UI thread ID
+     * @return true when a run is in flight for this thread
+     */
+    boolean hasActiveRun(String threadId) {
+        return activeRunsByThread.containsKey(threadId);
+    }
+
+    /**
+     * Returns whether the thread has interrupts that no resume has resolved yet.
+     *
+     * @param threadId The AG-UI thread ID
+     * @return true when the thread is waiting for a client resume
+     */
+    boolean hasUnresolvedInterrupts(String threadId) {
+        Map<String, AguiEvent.Interrupt> pending = pendingInterruptsByThread.get(threadId);
+        return pending != null && !pending.isEmpty();
+    }
+
+    /**
      * Add known originating interrupts to the runtime context for resume conversion.
      *
      * @param input The run input containing resume entries

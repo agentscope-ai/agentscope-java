@@ -226,6 +226,30 @@ public class AguiRequestProcessor {
     }
 
     /**
+     * Returns whether the thread can start a new run now.
+     *
+     * <p>A thread is idle when it has no active run and no unresolved interrupt. Queued messages
+     * may only be claimed while the thread is idle.
+     *
+     * @param threadId The AG-UI thread id
+     * @return true when the thread can start a new run
+     */
+    public boolean isThreadIdle(String threadId) {
+        return !resumeCoordinator.hasActiveRun(threadId)
+                && !resumeCoordinator.hasUnresolvedInterrupts(threadId);
+    }
+
+    /**
+     * Returns whether the thread is waiting for a client to resolve interrupts.
+     *
+     * @param threadId The AG-UI thread id
+     * @return true when the thread has unresolved interrupts
+     */
+    public boolean isAwaitingConfirmation(String threadId) {
+        return resumeCoordinator.hasUnresolvedInterrupts(threadId);
+    }
+
+    /**
      * Builds the {@link RuntimeContext} for a request, merging the two user-id sources.
      *
      * <p>Priority: {@link AguiRuntimeContextResolver} (deployer decision) &gt; {@code
