@@ -3,7 +3,9 @@ title: Overview
 zh_link: /dev/zh/integration/rag/overview
 ---
 
-`io.agentscope.core.rag.Knowledge` is AgentScope's interface for plugging in an external knowledge base. The Agent uses it during inference to retrieve documents that are then handed to the model. The `agentscope-extensions-*` repository ships several implementations:
+For new applications, start with [RAG integration and migration](/dev/en/integration/rag/migration). It explains retrieval before the agent call and application-owned retrieval tools, without depending on deprecated RAG Builder methods.
+
+`io.agentscope.core.rag.Knowledge` is the legacy compatibility interface for plugging in an external knowledge base. Existing integrations remain functional on current `main`, but the interface and Builder wiring are deprecated for removal. The `agentscope-extensions-*` modules provide the following adapters:
 
 | Extension | Type | Best for |
 | --- | --- | --- |
@@ -13,23 +15,25 @@ zh_link: /dev/zh/integration/rag/overview
 | [HayStack](/dev/en/integration/rag/haystack) | Self-hosted HayStack RAG | Existing HayStack pipelines |
 | [RAGFlow](/dev/en/integration/rag/ragflow) | RAGFlow service | Complex documents needing OCR / knowledge graphs |
 
-## Same wiring everywhere
+## Legacy Builder wiring
+
+This example is for existing applications using the compatibility layer, not the recommended starting point for new code.
 
 ```java
 ReActAgent agent = ReActAgent.builder()
     .name("Assistant")
     .model(model)
     .knowledge(knowledge)        // any Knowledge implementation
-    .ragMode(RAGMode.AGENTIC)    // or STATIC, NONE
+    .ragMode(RAGMode.AGENTIC)    // or GENERIC, NONE
     .build();
 ```
 
-You can also expose retrieval as a tool that the Agent calls explicitly:
+Existing applications can also register the legacy retrieval tool explicitly. `KnowledgeRetrievalTools` is itself deprecated; new tools can wrap the application's retrieval service directly, as shown in the migration guide.
 
 ```java
 KnowledgeRetrievalTools tools = new KnowledgeRetrievalTools(knowledge);
 Toolkit toolkit = new Toolkit();
-toolkit.registerObject(tools);
+toolkit.registerTool(tools);
 ```
 
 ## Choosing one
