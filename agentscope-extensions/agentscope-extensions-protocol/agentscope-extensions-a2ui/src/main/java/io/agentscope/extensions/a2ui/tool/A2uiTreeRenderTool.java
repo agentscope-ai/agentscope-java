@@ -65,9 +65,11 @@ public class A2uiTreeRenderTool implements AgentTool {
 
     @Override
     public String getDescription() {
-        return "Submit the A2UI component tree as {id, component, props} objects per the"
-                + " component catalog. Fix reported validation errors and resubmit until it is"
-                + " accepted; a successful call delivers the UI to the user.";
+        return "Submit the A2UI surface as a flat `components` list of {id, component, ...props}"
+                + " objects per the component catalog, plus an optional `dataModel` the components"
+                + " bind to. Children are referenced by id and one entry must have id \"root\"."
+                + " Fix reported validation errors and resubmit until it is accepted; a successful"
+                + " call delivers the UI to the user.";
     }
 
     @Override

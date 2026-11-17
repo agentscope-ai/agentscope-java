@@ -35,10 +35,14 @@ final class A2uiComponentSchema {
     /**
      * {@code components} keeps an explicit array type on purpose: with an untyped property the
      * provider hands us the value as a JSON <em>string</em>, and every submission then fails the
-     * catalog check (observed in production right after this was loosened). Nested trees are
-     * tolerated where they cost nothing — {@code children} is an ordinary item property and {@code
-     * id} is optional, because {@link io.agentscope.extensions.a2ui.envelope.A2uiTreeNormalizer}
-     * generates missing ids.
+     * catalog check (observed in production right after this was loosened). The same applies to each
+     * {@code oneOf} branch below.
+     *
+     * <p>The declared shape is the official one — properties beside {@code component}, children as
+     * id references — while remaining tolerant where {@link
+     * io.agentscope.extensions.a2ui.envelope.A2uiTreeNormalizer} can repair the submission: a {@code
+     * props} object, inline child objects and missing ids all still pass, because undeclared
+     * properties are allowed and only the emitted envelope has to be strict.
      */
     static Map<String, Object> componentsSchema() {
         Map<String, Object> item =
@@ -52,29 +56,53 @@ final class A2uiComponentSchema {
                                         "type",
                                         "string",
                                         "description",
-                                        "Unique id within this submission; generated when"
-                                                + " omitted."),
+                                        "Unique id within this submission; the root component"
+                                                + " must use id \"root\". Generated when omitted."),
                                 "component",
                                 Map.of(
                                         "type",
                                         "string",
                                         "description",
-                                        "Component name from the" + " catalog."),
-                                "props",
+                                        "Component name from the catalog."),
+                                "child",
                                 Map.of(
                                         "type",
-                                        "object",
+                                        "string",
                                         "description",
-                                        "Component properties per catalog entry. Props written"
-                                                + " directly beside `component` are collected the"
-                                                + " same way."),
+                                        "Id of the single child component (Card, Button,"
+                                                + " Modal)."),
                                 "children",
                                 Map.of(
-                                        "type",
-                                        "array",
                                         "description",
-                                        "Nested child components; the tree is flattened before"
-                                                + " validation.")),
+                                        "Ids of the child components in order, or a template"
+                                                + " object generating them from a data-model"
+                                                + " list.",
+                                        "oneOf",
+                                        List.of(
+                                                Map.of("type", "array"),
+                                                Map.of(
+                                                        "type",
+                                                        "object",
+                                                        "properties",
+                                                        Map.of(
+                                                                "path",
+                                                                Map.of(
+                                                                        "type",
+                                                                        "string",
+                                                                        "description",
+                                                                        "JSON Pointer to the list"
+                                                                                + " in the data"
+                                                                                + " model."),
+                                                                "componentId",
+                                                                Map.of(
+                                                                        "type",
+                                                                        "string",
+                                                                        "description",
+                                                                        "Id of the component"
+                                                                                + " used as the"
+                                                                                + " template.")),
+                                                        "required",
+                                                        List.of("path", "componentId"))))),
                         "required",
                         List.of("component"));
         return Map.of(
@@ -87,11 +115,20 @@ final class A2uiComponentSchema {
                                 "type",
                                 "array",
                                 "description",
-                                "The A2UI tree as a list of {component, props} objects per the"
-                                        + " component catalog; `children` nests sub-components and"
-                                        + " is flattened here.",
+                                "The surface as a flat list of {id, component, ...props} objects"
+                                        + " per the component catalog. Properties sit directly"
+                                        + " beside `component`; children are referenced by id, and"
+                                        + " one entry must have id \"root\".",
                                 "items",
-                                item)),
+                                item),
+                        "dataModel",
+                        Map.of(
+                                "type",
+                                "object",
+                                "description",
+                                "Optional initial data model the components bind to via"
+                                        + " {\"@path\": \"/key\"}. Omit it when every value is"
+                                        + " literal.")),
                 "required",
                 List.of("components"));
     }
@@ -105,7 +142,10 @@ final class A2uiComponentSchema {
                                     A2uiRenderer.componentsOf(
                                             input == null ? null : input.get("components"));
                             return ToolResultBlock.text(
-                                    renderer.renderEnvelope(param.getRuntimeContext(), components));
+                                    renderer.renderEnvelope(
+                                            param.getRuntimeContext(),
+                                            components,
+                                            dataModelOf(input)));
                         })
                 .onErrorResume(
                         Exception.class,
@@ -116,5 +156,11 @@ final class A2uiComponentSchema {
                             }
                             return Mono.just(ToolResultBlock.error(failurePrefix + e.getMessage()));
                         });
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> dataModelOf(Map<String, Object> input) {
+        Object value = input == null ? null : input.get("dataModel");
+        return value instanceof Map<?, ?> map ? (Map<String, Object>) map : null;
     }
 }

@@ -41,6 +41,8 @@ import io.agentscope.extensions.a2ui.tool.A2uiRenderTool;
 import io.agentscope.extensions.a2ui.tool.A2uiTreeRenderTool;
 import io.agentscope.extensions.a2ui.tool.AskUserQuestionTool;
 import java.time.Duration;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -53,7 +55,7 @@ import reactor.core.publisher.Flux;
 class A2uiPipelineTest {
 
     private static final A2uiCatalog CATALOG =
-            A2uiCatalog.load("a2ui/basic-catalog.json", "agentscope.io:a2ui/basic");
+            A2uiCatalog.load(A2uiCatalog.BASIC_CATALOG_RESOURCE, null);
 
     private static A2uiRenderer renderer(A2uiConfig config) {
         return new A2uiRenderer(
@@ -71,7 +73,6 @@ class A2uiPipelineTest {
                 () -> renderModel);
     }
 
-    /** Replays one scripted {@link ChatResponse} per model call; empty text when exhausted. */
     /** Stream that never emits: exercises the render wall-clock budget. */
     private static final class NeverModel extends ChatModelBase {
         @Override
@@ -86,6 +87,7 @@ class A2uiPipelineTest {
         }
     }
 
+    /** Replays one scripted {@link ChatResponse} per model call; empty text when exhausted. */
     private static final class ScriptedModel extends ChatModelBase {
         private final List<ChatResponse> script;
         private final AtomicInteger idx = new AtomicInteger();
@@ -132,9 +134,18 @@ class A2uiPipelineTest {
                 .build();
     }
 
+    /** One v1.0 component: properties sit inline beside {@code component}, never under props. */
     private static Map<String, Object> comp(
             String id, String component, Map<String, Object> props) {
-        return Map.of("id", id, "component", component, "props", props);
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("id", id);
+        out.put("component", component);
+        out.putAll(props);
+        return out;
+    }
+
+    private static List<Map<String, Object>> textSurface(String text) {
+        return List.of(comp("root", "Text", Map.of("text", text)));
     }
 
     private static String textOf(ToolResultBlock block) {
@@ -146,14 +157,38 @@ class A2uiPipelineTest {
 
     @Test
     void builtInCatalogLoadsAllComponentsAndGuideText() {
-        assertTrue(CATALOG.componentNames().contains("Heading"));
-        assertTrue(CATALOG.componentNames().contains("FileDrop"));
-        assertEquals(22, CATALOG.componentNames().size());
+        assertTrue(CATALOG.componentNames().contains("Text"));
+        assertTrue(CATALOG.componentNames().contains("ChoicePicker"));
+        assertEquals(18, CATALOG.componentNames().size());
+        assertEquals(14, CATALOG.functionNames().size());
         String guide = CATALOG.guideText();
-        assertTrue(guide.contains("### Heading"));
-        assertTrue(guide.contains("agentscope.io:a2ui/basic"));
+        assertTrue(guide.contains("### Text"));
+        assertTrue(guide.contains(CATALOG.catalogId()));
+        assertTrue(guide.contains("id: \"root\""), "the guide must state the root rule");
         // Channel-agnostic: the prompt/tool description names the submit tool, the guide does not.
         assertFalse(guide.contains("a2ui_"));
+    }
+
+    /**
+     * 回归护栏：官方 catalog 的属性类型几乎都是 common_types 里的 $ref 联合。裸 {@code #/$defs/…} 指针一度
+     * 被解析到 catalog 文档上，Card.child 标成 any；联合又一律标成 "string | binding"，于是 Slider.value
+     * 看起来该传字符串、Button.action 看起来不是对象，shape 行还在结构结束前就被截断。
+     */
+    @Test
+    void guideLabelsProtocolTypesAndKeepsWholeShapes() {
+        String guide = CATALOG.guideText();
+        assertTrue(guide.contains("`child` (string, required)"), "Child resolves to ComponentId");
+        assertTrue(guide.contains("`action` ({event} | {functionCall}, required)"));
+        assertTrue(guide.contains("`children` (string[] | {componentId, path}, required)"));
+        assertTrue(guide.contains("`value` (number | binding | call, required)"));
+        assertTrue(guide.contains("`value` (boolean | binding | call, required)"));
+        assertTrue(guide.contains("`value` (string[] | binding | call, required)"));
+        assertFalse(guide.contains("(string | binding)"), "a dynamic union is not a plain string");
+        assertFalse(guide.contains("(any)"), "every referenced type resolves");
+        assertFalse(guide.contains("\"$ref\""), "shapes are resolved, not left as pointers");
+        assertTrue(
+                guide.contains("\"required\":[\"functionCall\"]"),
+                "the action shape must survive the clip limit whole");
     }
 
     @Test
@@ -168,8 +203,34 @@ class A2uiPipelineTest {
         assertTrue(
                 A2uiEnvelopeValidator.validate(
                                 List.of(
-                                        comp("c1", "Heading", Map.of("text", "Hi", "level", 2)),
-                                        comp("c2", "Text", Map.of("text", "body"))),
+                                        comp(
+                                                "root",
+                                                "Column",
+                                                Map.of("children", List.of("h1", "t1"))),
+                                        comp("h1", "Text", Map.of("text", "## Hi")),
+                                        comp("t1", "Text", Map.of("text", "body"))),
+                                CATALOG,
+                                50)
+                        .isEmpty());
+    }
+
+    @Test
+    void validatorAcceptsDataBindingsAndListTemplates() {
+        assertTrue(
+                A2uiEnvelopeValidator.validate(
+                                List.of(
+                                        comp(
+                                                "root",
+                                                "List",
+                                                Map.of(
+                                                        "children",
+                                                        Map.of(
+                                                                "path", "/items",
+                                                                "componentId", "tpl"))),
+                                        comp(
+                                                "tpl",
+                                                "Text",
+                                                Map.of("text", Map.of("@path", "/label")))),
                                 CATALOG,
                                 50)
                         .isEmpty());
@@ -179,8 +240,8 @@ class A2uiPipelineTest {
     void validatorRejectsUnknownComponent() {
         List<String> errors =
                 A2uiEnvelopeValidator.validate(
-                        List.of(comp("c1", "Spaceship", Map.of())), CATALOG, 50);
-        assertEquals(1, errors.size());
+                        List.of(comp("root", "Spaceship", Map.of())), CATALOG, 50);
+        assertEquals(1, errors.size(), errors.toString());
         assertTrue(errors.get(0).contains("unknown component \"Spaceship\""));
     }
 
@@ -188,8 +249,10 @@ class A2uiPipelineTest {
     void validatorRejectsMissingRequiredProps() {
         List<String> errors =
                 A2uiEnvelopeValidator.validate(
-                        List.of(comp("c1", "Select", Map.of("name", "q"))), CATALOG, 50);
-        assertTrue(errors.stream().anyMatch(e -> e.contains("missing required prop \"options\"")));
+                        List.of(comp("root", "ChoicePicker", Map.of("label", "q"))), CATALOG, 50);
+        assertTrue(
+                errors.stream().anyMatch(e -> e.contains("required property 'options' not found")),
+                errors.toString());
     }
 
     @Test
@@ -197,12 +260,47 @@ class A2uiPipelineTest {
         List<String> errors =
                 A2uiEnvelopeValidator.validate(
                         List.of(
-                                comp("c1", "Heading", Map.of("text", 42)),
-                                comp("c2", "Alert", Map.of("text", "t", "kind", "purple"))),
+                                comp("root", "Column", Map.of("children", List.of("t1", "t2"))),
+                                comp("t1", "Text", Map.of("text", 42)),
+                                comp("t2", "Text", Map.of("text", "t", "variant", "purple"))),
                         CATALOG,
                         50);
-        assertTrue(errors.stream().anyMatch(e -> e.contains("should be string")));
-        assertTrue(errors.stream().anyMatch(e -> e.contains("must be one of")));
+        assertTrue(errors.stream().anyMatch(e -> e.contains("at /text")), errors.toString());
+        assertTrue(errors.stream().anyMatch(e -> e.contains("enumeration")), errors.toString());
+    }
+
+    /** A declared prop that fails its own check must not also be reported as unevaluated. */
+    @Test
+    void validatorReportsTheSpecificFailureNotTheClosedSchemaCascade() {
+        List<String> errors =
+                A2uiEnvelopeValidator.validate(
+                        List.of(comp("root", "Text", Map.of("text", "t", "variant", "purple"))),
+                        CATALOG,
+                        50);
+        assertEquals(1, errors.size(), errors.toString());
+        assertTrue(errors.get(0).contains("enumeration"), errors.get(0));
+    }
+
+    /** One mistyped prop must not arrive as every union branch's complaint about it. */
+    @Test
+    void validatorCollapsesUnionBranchNoiseIntoOneLine() {
+        List<String> errors =
+                A2uiEnvelopeValidator.validate(
+                        List.of(comp("root", "Text", Map.of("text", 42))), CATALOG, 50);
+        assertEquals(1, errors.size(), errors.toString());
+        assertTrue(errors.get(0).contains("string expected"), errors.get(0));
+    }
+
+    @Test
+    void validatorRejectsAPropertyTheCatalogDoesNotDeclare() {
+        List<String> errors =
+                A2uiEnvelopeValidator.validate(
+                        List.of(comp("root", "Column", Map.of("children", List.of(), "gap", 8))),
+                        CATALOG,
+                        50);
+        assertTrue(
+                errors.stream().anyMatch(e -> e.contains("'gap' is not evaluated")),
+                errors.toString());
     }
 
     @Test
@@ -212,8 +310,8 @@ class A2uiPipelineTest {
         List<String> errors =
                 A2uiEnvelopeValidator.validate(
                         List.of(
-                                comp("dup", "Text", Map.of("text", "a")),
-                                comp("dup", "Text", Map.of("text", "b"))),
+                                comp("root", "Text", Map.of("text", "a")),
+                                comp("root", "Text", Map.of("text", "b"))),
                         CATALOG,
                         50);
         assertTrue(errors.stream().anyMatch(e -> e.contains("duplicate component id")));
@@ -223,30 +321,122 @@ class A2uiPipelineTest {
     void validatorEnforcesMaxComponents() {
         List<Map<String, Object>> many =
                 java.util.stream.IntStream.range(0, 5)
-                        .mapToObj(i -> comp("c" + i, "Text", Map.of("text", "x")))
+                        .mapToObj(
+                                i ->
+                                        i == 0
+                                                ? comp(
+                                                        "root",
+                                                        "Column",
+                                                        Map.of(
+                                                                "children",
+                                                                List.of("c1", "c2", "c3", "c4")))
+                                                : comp("c" + i, "Text", Map.of("text", "x")))
                         .toList();
-        assertFalse(
-                A2uiEnvelopeValidator.validate(many, CATALOG, 3).stream()
-                        .noneMatch(e -> e.contains("at most 3")));
+        List<String> errors = A2uiEnvelopeValidator.validate(many, CATALOG, 3);
+        assertTrue(errors.stream().anyMatch(e -> e.contains("at most 3")), errors.toString());
+        assertTrue(
+                errors.stream().anyMatch(e -> e.contains("List template")),
+                "the budget error must point at the way out, not just the ceiling");
+    }
+
+    /** Graph rules the JSON Schemas cannot express; a strict renderer rejects the same shapes. */
+    @Test
+    void validatorRejectsMissingRootDanglingReferenceAndOrphan() {
+        List<String> missingRoot =
+                A2uiEnvelopeValidator.validate(
+                        List.of(comp("c1", "Text", Map.of("text", "a"))), CATALOG, 50);
+        assertTrue(
+                missingRoot.stream().anyMatch(e -> e.contains("no component has id \"root\"")),
+                missingRoot.toString());
+
+        List<String> dangling =
+                A2uiEnvelopeValidator.validate(
+                        List.of(comp("root", "Card", Map.of("child", "ghost"))), CATALOG, 50);
+        assertTrue(
+                dangling.stream().anyMatch(e -> e.contains("references \"ghost\"")),
+                dangling.toString());
+
+        List<String> orphan =
+                A2uiEnvelopeValidator.validate(
+                        List.of(
+                                comp("root", "Text", Map.of("text", "a")),
+                                comp("stray", "Text", Map.of("text", "b"))),
+                        CATALOG,
+                        50);
+        assertTrue(
+                orphan.stream().anyMatch(e -> e.contains("unreachable from \"root\"")),
+                orphan.toString());
+    }
+
+    @Test
+    void validatorFollowsReferencesNestedInsideProps() {
+        List<String> errors =
+                A2uiEnvelopeValidator.validate(
+                        List.of(
+                                comp(
+                                        "root",
+                                        "Tabs",
+                                        Map.of(
+                                                "tabs",
+                                                List.of(
+                                                        Map.of(
+                                                                "label", "One",
+                                                                "child", "panel"))))),
+                        CATALOG,
+                        50);
+        assertTrue(
+                errors.stream().anyMatch(e -> e.contains("references \"panel\"")),
+                "tabs[].child is an id reference too: " + errors);
+    }
+
+    @Test
+    void validatorCapsTheReportedProblems() {
+        List<Object> children = new ArrayList<>();
+        List<Map<String, Object>> many = new ArrayList<>();
+        many.add(comp("root", "Column", Map.of("children", children)));
+        for (int i = 1; i <= 24; i++) {
+            children.add("c" + i);
+            many.add(comp("c" + i, "Text", Map.of("text", "x", "bogus" + i, 1)));
+        }
+        List<String> errors = A2uiEnvelopeValidator.validate(many, CATALOG, 50);
+        assertEquals(21, errors.size(), errors.toString());
+        assertTrue(errors.get(20).contains("further problems omitted"), errors.get(20));
     }
 
     @Test
     void firstRenderCreatesSurfaceAndLaterRendersUpdateIt() {
         RuntimeContext rc = RuntimeContext.builder().sessionId("session-a").build();
         A2uiRenderer renderer = renderer(A2uiConfig.defaults());
-        String first =
-                renderer.renderEnvelope(rc, List.of(comp("c1", "Text", Map.of("text", "a"))));
-        String second =
-                renderer.renderEnvelope(rc, List.of(comp("c1", "Text", Map.of("text", "b"))));
+        String first = renderer.renderEnvelope(rc, textSurface("a"));
+        String second = renderer.renderEnvelope(rc, textSurface("b"));
 
-        assertTrue(first.contains("\"protocolVersion\":\"1.0\""));
-        assertTrue(first.contains("\"messageType\":\"createSurface\""));
-        assertTrue(first.contains("\"catalogId\":\"agentscope.io:a2ui/basic\""));
-        assertTrue(second.contains("\"messageType\":\"updateComponents\""));
+        assertTrue(first.contains("\"version\":\"1.0\""), first);
+        assertTrue(first.contains("\"createSurface\":{"), first);
+        assertTrue(first.contains("\"catalogId\":\"" + CATALOG.catalogId() + "\""), first);
+        assertTrue(second.contains("\"updateComponents\":{"), second);
 
         String surfaceId = first.replaceAll(".*\"surfaceId\":\"(s-[0-9a-f]+)\".*", "$1");
         assertTrue(surfaceId.matches("s-[0-9a-f]{8}"), surfaceId);
         assertTrue(second.contains(surfaceId), "same surface reused within the run");
+    }
+
+    @Test
+    void dataModelRidesInCreateSurfaceAndInItsOwnUpdateMessage() {
+        RuntimeContext rc = RuntimeContext.builder().sessionId("session-dm").build();
+        A2uiRenderer renderer = renderer(A2uiConfig.defaults());
+        List<Map<String, Object>> components =
+                List.of(comp("root", "Text", Map.of("text", Map.of("@path", "/greeting"))));
+
+        String first = renderer.renderEnvelope(rc, components, Map.of("greeting", "Hi"));
+        String second = renderer.renderEnvelope(rc, components, Map.of("greeting", "Hello"));
+
+        assertTrue(first.contains("\"dataModel\":{\"greeting\":\"Hi\"}"), first);
+        assertFalse(first.contains("updateDataModel"), first);
+        assertTrue(second.contains("\"updateComponents\":{"), second);
+        assertTrue(
+                second.contains("\"updateDataModel\":{\"surfaceId\":"),
+                "updateComponents carries no data model of its own: " + second);
+        assertTrue(second.contains("\"value\":{\"greeting\":\"Hello\"}"), second);
     }
 
     @Test
@@ -264,7 +454,7 @@ class A2uiPipelineTest {
                                         .input(
                                                 Map.of(
                                                         "components",
-                                                        List.of(comp("c1", "Nope", Map.of()))))
+                                                        List.of(comp("root", "Nope", Map.of()))))
                                         .build())
                         .block();
         assertEquals(ToolResultState.ERROR, invalid.getState());
@@ -275,21 +465,12 @@ class A2uiPipelineTest {
                 tool.callAsync(
                                 ToolCallParam.builder()
                                         .runtimeContext(rc)
-                                        .input(
-                                                Map.of(
-                                                        "components",
-                                                        List.of(
-                                                                comp(
-                                                                        "c1",
-                                                                        "Heading",
-                                                                        Map.of(
-                                                                                "text", "Hi",
-                                                                                "level", 2)))))
+                                        .input(Map.of("components", textSurface("Hi")))
                                         .build())
                         .block();
         assertEquals(ToolResultState.RUNNING, valid.getState());
         assertEquals(textOf(valid), sink.get());
-        assertTrue(sink.get().contains("\"messageType\":\"createSurface\""));
+        assertTrue(sink.get().contains("\"createSurface\":{"));
     }
 
     @Test
@@ -300,15 +481,7 @@ class A2uiPipelineTest {
                                 toolUse(
                                         "t1",
                                         "a2ui_present",
-                                        Map.of(
-                                                "components",
-                                                List.of(
-                                                        comp(
-                                                                "c1",
-                                                                "Heading",
-                                                                Map.of(
-                                                                        "text", "Hi", "level",
-                                                                        2))))),
+                                        Map.of("components", textSurface("## Hi"))),
                                 textResponse("done")));
         A2uiRenderTool tool = new A2uiRenderTool(renderer(A2uiConfig.defaults(), child));
         ToolResultBlock result =
@@ -320,7 +493,7 @@ class A2uiPipelineTest {
                                         .build())
                         .block();
         assertEquals(ToolResultState.RUNNING, result.getState(), textOf(result));
-        assertTrue(textOf(result).contains("\"messageType\":\"createSurface\""));
+        assertTrue(textOf(result).contains("\"createSurface\":{"));
         assertEquals(2, child.calls.get());
         assertEquals(List.of("a2ui_present"), child.toolNames);
     }
@@ -333,15 +506,7 @@ class A2uiPipelineTest {
                                 toolUse(
                                         "t1",
                                         "a2ui_present",
-                                        Map.of(
-                                                "components",
-                                                List.of(
-                                                        comp(
-                                                                "c1",
-                                                                "Heading",
-                                                                Map.of(
-                                                                        "text", "Hi", "level",
-                                                                        2))))),
+                                        Map.of("components", textSurface("## Hi"))),
                                 textResponse("done")));
         A2uiRenderTool tool = new A2uiRenderTool(renderer(A2uiConfig.defaults(), child));
         RuntimeContext rc = RuntimeContext.builder().sessionId("run-once").build();
@@ -364,8 +529,8 @@ class A2uiPipelineTest {
                                                 .build())
                                 .block());
 
-        assertTrue(first.contains("\"messageType\":\"createSurface\""), first);
-        assertTrue(second.contains("\"messageType\":\"createSurface\""), second);
+        assertTrue(first.contains("\"createSurface\":{"), first);
+        assertTrue(second.contains("\"createSurface\":{"), second);
         assertTrue(second.contains("force=true"), second);
         assertEquals(
                 second.replaceAll(".*\"surfaceId\":\"(s-[0-9a-f]+)\".*", "$1"),
@@ -381,26 +546,12 @@ class A2uiPipelineTest {
                                 toolUse(
                                         "t1",
                                         "a2ui_present",
-                                        Map.of(
-                                                "components",
-                                                List.of(
-                                                        comp(
-                                                                "c1",
-                                                                "Heading",
-                                                                Map.of(
-                                                                        "text", "Hi", "level",
-                                                                        2))))),
+                                        Map.of("components", textSurface("## Hi"))),
                                 textResponse("done"),
                                 toolUse(
                                         "t2",
                                         "a2ui_present",
-                                        Map.of(
-                                                "components",
-                                                List.of(
-                                                        comp(
-                                                                "c1",
-                                                                "Text",
-                                                                Map.of("text", "again"))))),
+                                        Map.of("components", textSurface("again"))),
                                 textResponse("done")));
         A2uiRenderTool tool = new A2uiRenderTool(renderer(A2uiConfig.defaults(), child));
         RuntimeContext rc = RuntimeContext.builder().sessionId("run-forced").build();
@@ -427,7 +578,7 @@ class A2uiPipelineTest {
                                 .block());
 
         assertEquals(4, child.calls.get(), "force=true must render again");
-        assertTrue(forced.contains("\"messageType\":\"updateComponents\""), forced);
+        assertTrue(forced.contains("\"updateComponents\":{"), forced);
     }
 
     @Test
@@ -437,17 +588,13 @@ class A2uiPipelineTest {
         A2uiRenderer renderer = renderer(A2uiConfig.defaults(), new ScriptedModel(List.of()));
 
         String first =
-                renderer.renderEnvelope(
-                        RuntimeContext.builder(rc).build(),
-                        List.of(comp("c1", "Text", Map.of("text", "a"))));
+                renderer.renderEnvelope(RuntimeContext.builder(rc).build(), textSurface("a"));
         String second =
-                renderer.renderEnvelope(
-                        RuntimeContext.builder(rc).build(),
-                        List.of(comp("c1", "Text", Map.of("text", "b"))));
+                renderer.renderEnvelope(RuntimeContext.builder(rc).build(), textSurface("b"));
 
-        assertTrue(first.contains("\"messageType\":\"createSurface\""), first);
+        assertTrue(first.contains("\"createSurface\":{"), first);
         assertTrue(
-                second.contains("\"messageType\":\"updateComponents\""),
+                second.contains("\"updateComponents\":{"),
                 "the framework hands each tool call a derived copy of the context; the run's"
                         + " surface must survive it");
     }
@@ -462,13 +609,11 @@ class A2uiPipelineTest {
                                         "a2ui_present",
                                         Map.of(
                                                 "components",
-                                                List.of(comp("c1", "Nope", Map.of())))),
+                                                List.of(comp("root", "Nope", Map.of())))),
                                 toolUse(
                                         "t2",
                                         "a2ui_present",
-                                        Map.of(
-                                                "components",
-                                                List.of(comp("c1", "Text", Map.of("text", "ok"))))),
+                                        Map.of("components", textSurface("ok"))),
                                 textResponse("done")));
         A2uiRenderTool tool = new A2uiRenderTool(renderer(A2uiConfig.defaults(), child));
         ToolResultBlock result =
@@ -480,7 +625,7 @@ class A2uiPipelineTest {
                                         .build())
                         .block();
         assertEquals(ToolResultState.RUNNING, result.getState(), textOf(result));
-        assertTrue(textOf(result).contains("\"messageType\":\"createSurface\""));
+        assertTrue(textOf(result).contains("\"createSurface\":{"));
         assertEquals(3, child.calls.get());
     }
 
@@ -539,7 +684,7 @@ class A2uiPipelineTest {
                         A2uiConfig.defaults(), CATALOG, new ScriptedModel(List.of()), null);
         String prompt = manager.renderPrompt();
         assertTrue(prompt.contains("# A2UI Component Catalog"));
-        assertTrue(prompt.contains("### Heading"));
+        assertTrue(prompt.contains("### Text"));
         assertTrue(prompt.contains("`a2ui_present`"));
         assertFalse(prompt.contains("a2ui_catalog"));
     }
@@ -630,10 +775,11 @@ class A2uiPipelineTest {
         ToolSuspendException suspend =
                 assertThrows(ToolSuspendException.class, () -> tool.callAsync(param).block());
         String envelope = suspend.getReason();
-        assertTrue(envelope.contains("\"messageType\":\"createSurface\""));
-        assertTrue(envelope.contains("\"component\":\"Select\""));
-        assertTrue(envelope.contains("\"name\":\"q1\""));
-        assertTrue(envelope.contains("\"action\":\"submit\""));
+        assertTrue(envelope.contains("\"createSurface\":{"), envelope);
+        assertTrue(envelope.contains("\"component\":\"ChoicePicker\""), envelope);
+        assertTrue(envelope.contains("\"@path\":\"/answers/q1\""), envelope);
+        assertTrue(envelope.contains("\"name\":\"submit\""), envelope);
+        assertTrue(envelope.contains("\"dataModel\":{\"answers\":{\"q1\":[]}}"), envelope);
     }
 
     @Test
@@ -687,13 +833,82 @@ class A2uiPipelineTest {
         ToolSuspendException suspend =
                 assertThrows(ToolSuspendException.class, () -> tool.callAsync(param).block());
         String envelope = suspend.getReason();
-        assertTrue(envelope.contains("\"component\":\"Heading\""), envelope);
-        assertTrue(envelope.contains("Order details"), envelope);
-        assertTrue(envelope.contains("\"component\":\"TextArea\""), envelope);
-        assertTrue(envelope.contains("\"component\":\"Checkbox\""), envelope);
-        assertTrue(envelope.contains("\"component\":\"RadioGroup\""), envelope);
+        // The basic catalog has no heading component; its Text renders simple Markdown.
+        assertTrue(envelope.contains("\"text\":\"## Order details\""), envelope);
+        assertTrue(envelope.contains("\"variant\":\"caption\""), envelope);
+        assertTrue(envelope.contains("\"component\":\"TextField\""), envelope);
+        assertTrue(envelope.contains("\"variant\":\"longText\""), envelope);
+        assertTrue(envelope.contains("\"component\":\"CheckBox\""), envelope);
+        assertTrue(envelope.contains("\"variant\":\"mutuallyExclusive\""), envelope);
         assertTrue(envelope.contains("\"placeholder\":\"Street\""), envelope);
         assertTrue(envelope.contains("\"text\":\"Confirm\""), envelope);
+        assertTrue(envelope.contains("\"cutlery\":false"), envelope);
+        assertTrue(envelope.contains("\"note\":\"\""), envelope);
+    }
+
+    @Test
+    void askUserQuestionBindsRequiredChecksAndMultiSelectAnswers() {
+        AskUserQuestionTool tool = new AskUserQuestionTool(renderer(A2uiConfig.defaults()), true);
+        ToolCallParam param =
+                ToolCallParam.builder()
+                        .runtimeContext(RuntimeContext.builder().sessionId("form-checks").build())
+                        .input(
+                                Map.of(
+                                        "questions",
+                                        List.of(
+                                                Map.of(
+                                                        "id", "name",
+                                                        "question", "Name",
+                                                        "type", "text",
+                                                        "required", true),
+                                                Map.of(
+                                                        "id", "email",
+                                                        "question", "Email",
+                                                        "type", "text",
+                                                        "required", true),
+                                                Map.of(
+                                                        "id", "tags",
+                                                        "question", "Tags",
+                                                        "type", "multi_select",
+                                                        "options", List.of("a", "b")))))
+                        .build();
+
+        ToolSuspendException suspend =
+                assertThrows(ToolSuspendException.class, () -> tool.callAsync(param).block());
+        String envelope = suspend.getReason();
+        assertTrue(envelope.contains("\"@call\":\"required\""), envelope);
+        assertTrue(envelope.contains("\"message\":\"请填写「Name」\""), envelope);
+        assertTrue(envelope.contains("\"@call\":\"and\""), envelope);
+        assertTrue(envelope.contains("\"answers\":{\"@path\":\"/answers\"}"), envelope);
+        assertTrue(envelope.contains("\"multiSelect\":[\"tags\"]"), envelope);
+        assertTrue(envelope.contains("\"tags\":[]"), envelope);
+        assertTrue(envelope.contains("\"variant\":\"multipleSelection\""), envelope);
+    }
+
+    /** {@code and} needs at least two values, so one required question is its own condition. */
+    @Test
+    void askUserQuestionWithOneRequiredFieldSkipsTheAndCall() {
+        AskUserQuestionTool tool = new AskUserQuestionTool(renderer(A2uiConfig.defaults()), true);
+        ToolCallParam param =
+                ToolCallParam.builder()
+                        .runtimeContext(RuntimeContext.builder().sessionId("form-one").build())
+                        .input(
+                                Map.of(
+                                        "questions",
+                                        List.of(
+                                                Map.of(
+                                                        "id", "name",
+                                                        "question", "Name",
+                                                        "type", "text",
+                                                        "required", true))))
+                        .build();
+
+        ToolSuspendException suspend =
+                assertThrows(ToolSuspendException.class, () -> tool.callAsync(param).block());
+        String envelope = suspend.getReason();
+        assertTrue(envelope.contains("\"@call\":\"required\""), envelope);
+        assertFalse(envelope.contains("\"@call\":\"and\""), envelope);
+        assertFalse(envelope.contains("multiSelect"), envelope);
     }
 
     @Test

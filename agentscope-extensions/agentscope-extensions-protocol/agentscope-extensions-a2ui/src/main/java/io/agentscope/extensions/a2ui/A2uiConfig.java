@@ -15,6 +15,7 @@
  */
 package io.agentscope.extensions.a2ui;
 
+import io.agentscope.extensions.a2ui.catalog.A2uiCatalog;
 import java.time.Duration;
 
 /**
@@ -54,12 +55,15 @@ public final class A2uiConfig {
         return new Builder();
     }
 
-    /** Identifier declared inside every envelope (e.g. {@code agentscope.io:a2ui/basic}). */
+    /**
+     * Overrides the catalog document's own {@code catalogId}; {@code null} keeps the declared one
+     * (the vendored basic catalog declares its canonical A2UI URI).
+     */
     public String catalogId() {
         return catalogId;
     }
 
-    /** Classpath resource path of the component catalog JSON. */
+    /** Catalog document source: classpath path, {@code http(s)} URL or local file path. */
     public String catalogResource() {
         return catalogResource;
     }
@@ -127,8 +131,8 @@ public final class A2uiConfig {
 
     public static final class Builder {
 
-        private String catalogId = "agentscope.io:a2ui/basic";
-        private String catalogResource = "a2ui/basic-catalog.json";
+        private String catalogId = null;
+        private String catalogResource = A2uiCatalog.BASIC_CATALOG_RESOURCE;
         private int maxComponents = 50;
         private boolean surfacePersistEnabled = true;
         private String renderPrompt = null;

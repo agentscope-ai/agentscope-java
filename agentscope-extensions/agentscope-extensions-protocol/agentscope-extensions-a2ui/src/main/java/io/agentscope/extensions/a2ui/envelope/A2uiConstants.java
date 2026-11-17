@@ -29,6 +29,23 @@ public final class A2uiConstants {
 
     public static final String MESSAGE_TYPE_CREATE_SURFACE = "createSurface";
     public static final String MESSAGE_TYPE_UPDATE_COMPONENTS = "updateComponents";
+    public static final String MESSAGE_TYPE_UPDATE_DATA_MODEL = "updateDataModel";
+
+    /** The v1.0 agent-to-renderer operations, in schema order. */
+    public static final java.util.List<String> OPERATIONS =
+            java.util.List.of(
+                    MESSAGE_TYPE_CREATE_SURFACE,
+                    MESSAGE_TYPE_UPDATE_COMPONENTS,
+                    MESSAGE_TYPE_UPDATE_DATA_MODEL,
+                    "deleteSurface",
+                    "callRendererFunction",
+                    "agentFunctionResponse");
+
+    /**
+     * Vendor-extension key carrying an advisory note for the model. The protocol reserves the
+     * {@code a2ui_} prefix and requires extension keys to be Unicode identifiers.
+     */
+    public static final String EXTENSION_NOTE = "agentscopeNote";
 
     /** The hosting agent's single UI entry (natural-language intent in, envelope out). */
     public static final String TOOL_RENDER = "a2ui_render";

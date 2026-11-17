@@ -162,11 +162,14 @@ class A2uiMiddlewareTest {
     @Test
     void reasoningSeesProseWhereTheModelNeverNeedsTheEnvelope() {
         String envelope =
-                "{\"protocolVersion\":\"1.0\",\"messageType\":\"updateComponents\","
-                        + "\"surfaceId\":\"s-abcd1234\",\"catalogId\":\"c\",\"components\":["
-                        + "{\"id\":\"h1\",\"component\":\"Heading\",\"props\":{\"text\":\"Hi\"}},"
-                        + "{\"id\":\"t1\",\"component\":\"Text\",\"props\":{\"text\":\"body\"}}],"
-                        + "\"note\":\"Already delivered; stop.\"}";
+                """
+                {"messages":[{"version":"1.0","updateComponents":{"surfaceId":"s-abcd1234",\
+                "components":[\
+                {"id":"root","component":"Column","children":["h1","t1"],\
+                "metadata":{"extensions":{"agentscopeNote":"Already delivered; stop."}}},\
+                {"id":"h1","component":"Text","text":"## Hi"},\
+                {"id":"t1","component":"Text","text":"body"}]}}]}\
+                """;
         Msg ui = toolResultMsg("a2ui_render", envelope);
         Msg failure = toolResultMsg("a2ui_render", "Error: A2UI render failed: boom");
         Msg ask = toolResultMsg("ask_user_question", envelope);
@@ -188,15 +191,15 @@ class A2uiMiddlewareTest {
                         })
                 .blockLast();
 
-        assertTrue(resultText(ui).contains("protocolVersion"), "history keeps the envelope");
+        assertTrue(resultText(ui).contains("updateComponents"), "history keeps the envelope");
         String shownUi = resultText(seen.get().messages().get(1));
-        assertFalse(shownUi.contains("protocolVersion"), shownUi);
+        assertFalse(shownUi.contains("updateComponents"), shownUi);
         assertTrue(shownUi.contains("s-abcd1234"), shownUi);
-        assertTrue(shownUi.contains("Heading"), shownUi);
+        assertTrue(shownUi.contains("Text"), shownUi);
         assertTrue(shownUi.contains("Already delivered; stop."), shownUi);
         assertEquals("Error: A2UI render failed: boom", resultText(seen.get().messages().get(2)));
         assertTrue(
-                resultText(seen.get().messages().get(3)).contains("protocolVersion"),
+                resultText(seen.get().messages().get(3)).contains("updateComponents"),
                 "only the render tool's result is the UI envelope");
         assertEquals("show the report", seen.get().messages().get(0).getTextContent());
     }

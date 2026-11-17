@@ -19,7 +19,6 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.model.Model;
 import io.agentscope.extensions.a2ui.catalog.A2uiCatalog;
-import io.agentscope.extensions.a2ui.envelope.A2uiConstants;
 import io.agentscope.extensions.a2ui.envelope.A2uiEnvelope;
 import io.agentscope.extensions.a2ui.envelope.A2uiEnvelopeUtils;
 import io.agentscope.extensions.a2ui.envelope.A2uiEnvelopeValidator;
@@ -27,6 +26,8 @@ import io.agentscope.extensions.a2ui.envelope.A2uiTreeNormalizer;
 import io.agentscope.extensions.a2ui.envelope.A2uiValidationException;
 import io.agentscope.extensions.a2ui.state.A2uiRunState;
 import io.agentscope.extensions.a2ui.state.A2uiSurfaceRegistry;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Supplier;
@@ -96,18 +97,11 @@ public final class A2uiRenderer {
                 });
     }
 
-    /** @return the run's delivered envelope with an added {@code note} field, or the original */
+    /** @return the run's delivered envelope with an added advisory note, or the original */
     private static String withNote(String envelope, String note) {
         try {
-            A2uiEnvelope parsed = MAPPER.readValue(envelope, A2uiEnvelope.class);
             return A2uiEnvelopeUtils.toJson(
-                    new A2uiEnvelope(
-                            parsed.protocolVersion(),
-                            parsed.messageType(),
-                            parsed.surfaceId(),
-                            parsed.catalogId(),
-                            parsed.components(),
-                            note));
+                    MAPPER.readValue(envelope, A2uiEnvelope.class).withNote(note));
         } catch (Exception e) {
             return envelope;
         }
@@ -136,25 +130,57 @@ public final class A2uiRenderer {
     /** @return the envelope JSON to be returned as tool result text */
     public String renderEnvelope(
             RuntimeContext runtimeContext, List<Map<String, Object>> components) {
+        return renderEnvelope(runtimeContext, components, null);
+    }
+
+    /**
+     * @param dataModel initial data model the components bind to; {@code null} when every value is
+     *     literal. On a surface this run already created it travels as a separate {@code
+     *     updateDataModel} message, which is the only operation that can carry one.
+     * @return the envelope JSON to be returned as tool result text
+     */
+    public String renderEnvelope(
+            RuntimeContext runtimeContext,
+            List<Map<String, Object>> components,
+            Map<String, Object> dataModel) {
         List<String> errors =
                 A2uiEnvelopeValidator.validate(components, catalog, config.maxComponents());
         if (!errors.isEmpty()) {
-            throw new A2uiValidationException(String.join(" ", errors));
+            throw new A2uiValidationException(String.join("\n", errors));
         }
+        List<Map<String, Object>> owned = withCatalogIds(components);
         A2uiSurfaceRegistry.SurfaceRef surface = surfaceRegistry.resolveOrCreate(runtimeContext);
         A2uiEnvelope envelope =
-                new A2uiEnvelope(
-                        A2uiConstants.PROTOCOL_VERSION,
-                        surface.newlyCreated()
-                                ? A2uiConstants.MESSAGE_TYPE_CREATE_SURFACE
-                                : A2uiConstants.MESSAGE_TYPE_UPDATE_COMPONENTS,
-                        surface.surfaceId(),
-                        catalog.catalogId(),
-                        components,
-                        null);
+                surface.newlyCreated()
+                        ? A2uiEnvelope.createSurface(
+                                surface.surfaceId(), catalog.catalogId(), owned, dataModel)
+                        : A2uiEnvelope.updateComponents(surface.surfaceId(), owned, dataModel);
         String json = A2uiEnvelopeUtils.toJson(envelope);
         A2uiRunState.install(runtimeContext).delivered(surface.surfaceId(), json);
         return json;
+    }
+
+    /**
+     * Stamps the owning catalog onto components that come from a different catalog than the surface
+     * default — the protocol's per-component override, which is what lets a custom catalog's surface
+     * use basic components without copying their schemas. A {@code catalogId} the submission already
+     * carries is left alone.
+     */
+    private List<Map<String, Object>> withCatalogIds(List<Map<String, Object>> components) {
+        List<Map<String, Object>> out = new ArrayList<>(components.size());
+        for (Map<String, Object> component : components) {
+            String owner = catalog.catalogIdOf(String.valueOf(component.get("component")));
+            if (owner == null
+                    || owner.equals(catalog.catalogId())
+                    || component.containsKey("catalogId")) {
+                out.add(component);
+                continue;
+            }
+            Map<String, Object> stamped = new LinkedHashMap<>(component);
+            stamped.put("catalogId", owner);
+            out.add(stamped);
+        }
+        return out;
     }
 
     /**

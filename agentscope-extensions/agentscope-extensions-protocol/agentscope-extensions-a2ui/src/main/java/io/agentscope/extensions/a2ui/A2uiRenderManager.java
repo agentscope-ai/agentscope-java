@@ -67,7 +67,9 @@ public final class A2uiRenderManager {
 
             Workflow (strict):
             1. Design the smallest UI that fulfills the request and submit it by calling \
-            `a2ui_present` with a `components` array of {id, component, props} objects.
+            `a2ui_present` with a flat `components` array of {id, component, ...props} objects — \
+            properties beside `component`, children referenced by id, exactly one entry with id \
+            "root" — plus a `dataModel` for values the components bind to.
             2. If `a2ui_present` reports validation errors, correct the tree and resubmit.
             3. After a successful submission, stop and reply with exactly: done
 
@@ -75,8 +77,8 @@ public final class A2uiRenderManager {
             - The only accepted channel for UI is the `a2ui_present` tool — never write A2UI JSON \
             in reply text.
             - Use only the components and props listed in the component catalog.
-            - Put all content (headings, texts, options, data) directly into props; nobody sees \
-            this conversation.
+            - Put all content (headings, texts, options, data) into the component properties or \
+            the data model; nobody sees this conversation.
             - Prefer read-only components for information and form components only to collect \
             input; use Row/Column composition as the catalog describes.\
             """;
@@ -120,10 +122,11 @@ public final class A2uiRenderManager {
     private static String budgetBlock(int maxComponents) {
         return "\n\nComponent budget: a surface accepts at most "
                 + maxComponents
-                + " components. Plan before submitting — repeated detail belongs in one Table's"
-                + " rows/columns, not one component per item. If the request cannot fit, render"
-                + " the most important sections and state how many entries were omitted. Never"
-                + " resubmit the same oversized tree.\n";
+                + " components. Plan before submitting — repeated detail belongs in one List"
+                + " template (`children: {\"path\": \"/items\", \"componentId\": \"tpl\"}`), not"
+                + " one component per item. If the request cannot fit, render the most important"
+                + " sections and state how many entries were omitted. Never resubmit the same"
+                + " oversized tree.\n";
     }
 
     /** The render sub-agent's base SYSTEM prompt plus the catalog block it needs to submit. */

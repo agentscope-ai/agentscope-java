@@ -20,6 +20,7 @@ import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.stream.Collectors;
 
@@ -68,9 +69,14 @@ public final class A2uiEnvelopeUtils {
         }
         try {
             A2uiEnvelope envelope = MAPPER.readValue(text, A2uiEnvelope.class);
+            List<Map<String, Object>> messages = envelope.messages();
+            if (messages == null || messages.isEmpty()) {
+                return Optional.empty();
+            }
+            Object version = messages.get(0).get("version");
             // Other A2UI producers write the same version as "v1.0"; accept both spellings on read.
-            if (envelope.protocolVersion() == null
-                    || !A2uiConstants.PROTOCOL_VERSION_ALIASES.contains(envelope.protocolVersion())
+            if (!(version instanceof String versionText)
+                    || !A2uiConstants.PROTOCOL_VERSION_ALIASES.contains(versionText)
                     || envelope.messageType() == null) {
                 return Optional.empty();
             }

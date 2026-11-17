@@ -25,6 +25,7 @@ import io.agentscope.extensions.a2ui.envelope.A2uiConstants;
 import io.agentscope.extensions.a2ui.envelope.A2uiValidationException;
 import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -45,6 +46,13 @@ import reactor.core.publisher.Mono;
  * widget type and choices, and the optional {@code title}, {@code description} and {@code submitText}
  * frame the form around them. Only {@link #toFormComponents} knows which A2UI component a widget
  * type compiles to, so a host can swap the catalog without touching this tool's schema.
+ *
+ * <p>Answers live in the surface data model under {@code /answers/<question id>} and every input
+ * binds to its own path, so the renderer owns the values while the user types. The submit button's
+ * {@code action.event.context} carries {@code answers} bound to the whole {@code /answers} object
+ * plus {@code multiSelect}, the ids whose answer is a list: a single-choice picker still holds a
+ * one-element array in the data model, and that list is what tells the frontend to unwrap it before
+ * resuming this call with the id → answer map.
  */
 public class AskUserQuestionTool implements AgentTool {
 
@@ -53,6 +61,9 @@ public class AskUserQuestionTool implements AgentTool {
 
     /** Types whose answer comes from a list the model must therefore supply. */
     private static final Set<String> OPTION_TYPES = Set.of("select", "multi_select", "radio");
+
+    /** Data-model path holding the id → answer map the submit action sends back. */
+    private static final String ANSWERS_PATH = "/answers";
 
     private final A2uiRenderer renderer;
     private final boolean enableA2ui;
@@ -201,7 +212,8 @@ public class AskUserQuestionTool implements AgentTool {
                                     enableA2ui
                                             ? renderer.renderEnvelope(
                                                     param.getRuntimeContext(),
-                                                    toFormComponents(input, questions))
+                                                    toFormComponents(input, questions),
+                                                    formDataModel(questions))
                                             : JsonUtils.getJsonCodec()
                                                     .toJson(Map.of("questions", questions)));
                         })
@@ -265,76 +277,170 @@ public class AskUserQuestionTool implements AgentTool {
     }
 
     /**
-     * Compiles the declarative form spec into the flat component list: the optional frame fields
-     * first, then one catalogued input per question, then the submit button. Answer keys are the
-     * question ids, so the resume payload the frontend sends back maps id → answer.
+     * Compiles the declarative form spec into official v1.0 components: a Card holding a Column of
+     * the optional frame fields, one catalogued input per question, then the submit button. Every
+     * input binds to its own answer path, so the renderer holds the values while the user types.
      */
     private static List<Map<String, Object>> toFormComponents(
             Map<String, Object> input, List<Map<String, Object>> questions) {
         List<Map<String, Object>> components = new ArrayList<>();
-        addTextComponent(components, "a2ui_title", "Heading", stringOf(input.get("title")));
-        addTextComponent(components, "a2ui_desc", "Text", stringOf(input.get("description")));
+        List<Object> fields = new ArrayList<>();
+        String title = stringOf(input.get("title"));
+        if (title != null && !title.isBlank()) {
+            // The basic catalog has no heading component; its Text renders simple Markdown.
+            components.add(Map.of("id", "a2ui_title", "component", "Text", "text", "## " + title));
+            fields.add("a2ui_title");
+        }
+        String description = stringOf(input.get("description"));
+        if (description != null && !description.isBlank()) {
+            components.add(
+                    Map.of(
+                            "id",
+                            "a2ui_desc",
+                            "component",
+                            "Text",
+                            "text",
+                            description,
+                            "variant",
+                            "caption"));
+            fields.add("a2ui_desc");
+        }
+        List<Object> requiredConditions = new ArrayList<>();
+        List<Object> multiSelect = new ArrayList<>();
         for (Map<String, Object> question : questions) {
             String id = stringOf(question.get("id"));
             String type = stringOf(question.get("type"));
-            Map<String, Object> props = new java.util.LinkedHashMap<>();
-            props.put("name", id);
-            props.put("label", stringOf(question.get("question")));
-            if (Boolean.TRUE.equals(question.get("required"))) {
-                props.put("required", true);
-            }
-            String component;
+            String label = stringOf(question.get("question"));
+            String path = answerPath(id);
+            Map<String, Object> field = new LinkedHashMap<>();
+            field.put("id", "q_" + id);
+            field.put("label", label);
+            field.put("value", Map.of("@path", path));
             switch (type) {
-                case "select" -> {
-                    component = "Select";
-                    props.put("options", listOf(question.get("options")));
+                case "textarea" -> {
+                    field.put("component", "TextField");
+                    field.put("variant", "longText");
+                }
+                case "select", "radio", "confirm" -> {
+                    field.put("component", "ChoicePicker");
+                    field.put("variant", "mutuallyExclusive");
+                    field.put("displayStyle", "chips");
+                    field.put("options", optionsOf(type, question));
                 }
                 case "multi_select" -> {
-                    component = "Select";
-                    props.put("options", listOf(question.get("options")));
-                    props.put("multiple", true);
+                    field.put("component", "ChoicePicker");
+                    field.put("variant", "multipleSelection");
+                    field.put("options", optionsOf(type, question));
+                    multiSelect.add(id);
                 }
-                case "radio" -> {
-                    component = "RadioGroup";
-                    props.put("options", listOf(question.get("options")));
-                }
-                case "checkbox" -> component = "Checkbox";
-                case "textarea" -> component = "TextArea";
-                case "confirm" -> {
-                    component = "RadioGroup";
-                    props.put("options", List.of("yes", "no"));
-                }
+                case "checkbox" -> field.put("component", "CheckBox");
                 default -> {
-                    component = "TextInput";
+                    field.put("component", "TextField");
                     String placeholder = stringOf(question.get("placeholder"));
                     if (placeholder != null && !placeholder.isBlank()) {
-                        props.put("placeholder", placeholder);
+                        field.put("placeholder", placeholder);
                     }
                 }
             }
-            components.add(Map.of("id", "q_" + id, "component", component, "props", props));
+            if (Boolean.TRUE.equals(question.get("required"))) {
+                Map<String, Object> check = requiredCheck(path, label);
+                field.put("checks", List.of(check));
+                requiredConditions.add(check.get("condition"));
+            }
+            components.add(field);
+            fields.add("q_" + id);
         }
         String submitText = stringOf(input.get("submitText"));
         components.add(
                 Map.of(
                         "id",
-                        "a2ui_submit",
+                        "a2ui_submit_label",
                         "component",
-                        "Button",
-                        "props",
-                        Map.of(
-                                "text",
-                                submitText == null || submitText.isBlank() ? "Submit" : submitText,
-                                "action",
-                                "submit")));
+                        "Text",
+                        "text",
+                        submitText == null || submitText.isBlank() ? "Submit" : submitText));
+        components.add(submitButton(requiredConditions, multiSelect));
+        fields.add("a2ui_submit");
+        components.add(
+                0,
+                Map.of(
+                        "id",
+                        "form",
+                        "component",
+                        "Column",
+                        "children",
+                        fields,
+                        "align",
+                        "stretch"));
+        components.add(0, Map.of("id", "root", "component", "Card", "child", "form"));
         return components;
     }
 
-    private static void addTextComponent(
-            List<Map<String, Object>> components, String id, String component, String text) {
-        if (text != null && !text.isBlank()) {
-            components.add(Map.of("id", id, "component", component, "props", Map.of("text", text)));
+    private static Map<String, Object> submitButton(
+            List<Object> requiredConditions, List<Object> multiSelect) {
+        Map<String, Object> context = new LinkedHashMap<>();
+        context.put("answers", Map.of("@path", ANSWERS_PATH));
+        if (!multiSelect.isEmpty()) {
+            context.put("multiSelect", multiSelect);
         }
+        Map<String, Object> button = new LinkedHashMap<>();
+        button.put("id", "a2ui_submit");
+        button.put("component", "Button");
+        button.put("child", "a2ui_submit_label");
+        button.put("variant", "primary");
+        if (!requiredConditions.isEmpty()) {
+            // `and` takes at least two values, so a lone required question is its own condition.
+            Object condition =
+                    requiredConditions.size() == 1
+                            ? requiredConditions.get(0)
+                            : Map.of("@call", "and", "args", Map.of("values", requiredConditions));
+            button.put("checks", List.of(Map.of("condition", condition, "message", "请先填写必填项")));
+        }
+        button.put("action", Map.of("event", Map.of("name", "submit", "context", context)));
+        return button;
+    }
+
+    /** Initial answers, typed per widget so the renderer never binds to a missing path. */
+    private static Map<String, Object> formDataModel(List<Map<String, Object>> questions) {
+        Map<String, Object> answers = new LinkedHashMap<>();
+        for (Map<String, Object> question : questions) {
+            String type = stringOf(question.get("type"));
+            answers.put(
+                    stringOf(question.get("id")),
+                    switch (type) {
+                        case "checkbox" -> Boolean.FALSE;
+                        case "text", "textarea" -> "";
+                        default -> List.of();
+                    });
+        }
+        return Map.of("answers", answers);
+    }
+
+    private static Map<String, Object> requiredCheck(String path, String label) {
+        return Map.of(
+                "condition",
+                Map.of("@call", "required", "args", Map.of("value", Map.of("@path", path))),
+                "message",
+                "请填写「" + label + "」");
+    }
+
+    private static List<Object> optionsOf(String type, Map<String, Object> question) {
+        if ("confirm".equals(type)) {
+            // 值保持 yes/no（恢复载荷与纯文本档一致），标签用中文，与问题卡的是/否按钮对齐
+            return List.of(
+                    Map.of("label", "是", "value", "yes"), Map.of("label", "否", "value", "no"));
+        }
+        List<Object> options = new ArrayList<>();
+        for (Object value : listOf(question.get("options"))) {
+            String text = String.valueOf(value);
+            options.add(Map.of("label", text, "value", text));
+        }
+        return options;
+    }
+
+    /** JSON Pointer escaping, so a question id containing {@code /} or {@code ~} still binds. */
+    private static String answerPath(String id) {
+        return ANSWERS_PATH + "/" + id.replace("~", "~0").replace("/", "~1");
     }
 
     @SuppressWarnings("unchecked")
