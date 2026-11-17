@@ -20,16 +20,21 @@ import io.agentscope.core.agui.adapter.AguiAdapterConfig;
 import io.agentscope.core.agui.adapter.AguiAgentAdapterFactory;
 import io.agentscope.core.agui.adapter.strategy.AgentEventConverter;
 import io.agentscope.core.agui.adapter.strategy.AguiEventEnricher;
+import io.agentscope.core.agui.processor.AguiRequestProcessor;
+import io.agentscope.core.agui.queue.MessageQueueRegistry;
 import io.agentscope.core.agui.registry.AguiAgentRegistry;
 import io.agentscope.core.agui.runtime.AguiRequestBodyParser;
 import io.agentscope.core.agui.runtime.AguiRuntimeContextResolver;
 import io.agentscope.spring.boot.agui.common.AguiProperties;
+import io.agentscope.spring.boot.agui.common.DefaultAgentResolver;
 import io.agentscope.spring.boot.agui.common.ThreadSessionManager;
+import io.agentscope.spring.boot.agui.queue.AguiQueueController;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnWebApplication;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
@@ -96,39 +101,38 @@ public class AgentscopeAguiWebFluxAutoConfiguration {
      */
     @Bean
     @ConditionalOnMissingBean
-    public AguiWebFluxHandler aguiWebFluxHandler(
+    public AguiRequestProcessor aguiRequestProcessor(
             AguiAgentRegistry registry,
             ThreadSessionManager sessionManager,
             AguiProperties props,
             ObjectProvider<AgentEventConverter> eventConvertersProvider,
             ObjectProvider<AguiEventEnricher> eventEnrichersProvider,
             ObjectProvider<AguiRuntimeContextResolver> runtimeContextResolverProvider,
-            ObjectProvider<AguiAgentAdapterFactory> adapterFactoryProvider,
-            AguiRequestBodyParser requestBodyParser) {
-        AguiAdapterConfig config =
-                AguiAdapterConfig.builder()
-                        .toolMergeMode(props.getDefaultToolMergeMode())
-                        .runTimeout(props.getRunTimeout())
-                        .emitStateEvents(props.isEmitStateEvents())
-                        .emitToolCallArgs(props.isEmitToolCallArgs())
-                        .emitTokenUsage(props.isEmitTokenUsage())
-                        .enableReasoning(props.isEnableReasoning())
-                        .emitRunFinishedAfterError(props.isEmitRunFinishedAfterError())
-                        .defaultAgentId(props.getDefaultAgentId())
-                        .eventConverters(eventConvertersProvider.orderedStream().toList())
-                        .eventEnrichers(eventEnrichersProvider.orderedStream().toList())
-                        .build();
+            ObjectProvider<AguiAgentAdapterFactory> adapterFactoryProvider) {
+        return AguiRequestProcessor.builder()
+                .agentResolver(
+                        DefaultAgentResolver.builder()
+                                .registry(registry)
+                                .sessionManager(sessionManager)
+                                .serverSideMemory(props.isServerSideMemory())
+                                .build())
+                .config(adapterConfig(props, eventConvertersProvider, eventEnrichersProvider))
+                .adapterFactory(adapterFactoryProvider.getIfAvailable())
+                .runtimeContextResolver(runtimeContextResolverProvider.getIfAvailable())
+                .build();
+    }
 
+    @Bean
+    @ConditionalOnMissingBean
+    public AguiWebFluxHandler aguiWebFluxHandler(
+            AguiRequestProcessor requestProcessor,
+            AguiProperties props,
+            AguiRequestBodyParser requestBodyParser) {
         return AguiWebFluxHandler.builder()
-                .agentRegistry(registry)
-                .sessionManager(sessionManager)
-                .serverSideMemory(props.isServerSideMemory())
+                .requestProcessor(requestProcessor)
                 .agentIdHeader(props.getAgentIdHeader())
                 .interruptOnDisconnect(props.isInterruptOnDisconnect())
-                .runtimeContextResolver(runtimeContextResolverProvider.getIfAvailable())
-                .adapterFactory(adapterFactoryProvider.getIfAvailable())
                 .requestBodyParser(requestBodyParser)
-                .config(config)
                 .build();
     }
 
@@ -159,5 +163,55 @@ public class AgentscopeAguiWebFluxAutoConfiguration {
         }
 
         return routerBuilder.build();
+    }
+
+    /**
+     * Creates the message queue registry when the queue is enabled.
+     *
+     * @param props The configuration properties
+     * @return A new MessageQueueRegistry
+     */
+    @Bean
+    @ConditionalOnMissingBean
+    @ConditionalOnProperty(prefix = "agentscope.agui.queue", name = "enabled", havingValue = "true")
+    public MessageQueueRegistry messageQueueRegistry(AguiProperties props) {
+        return new MessageQueueRegistry(
+                props.getQueue().getCapacity(), props.getQueue().getIdempotencyRetention());
+    }
+
+    /**
+     * Creates the queue endpoints when the queue is enabled.
+     *
+     * @param registry The message queue registry
+     * @param requestProcessor The shared request processor
+     * @param requestBodyParser The AG-UI request body parser
+     * @return A new AguiQueueController
+     */
+    @Bean
+    @ConditionalOnMissingBean
+    @ConditionalOnProperty(prefix = "agentscope.agui.queue", name = "enabled", havingValue = "true")
+    public AguiQueueController aguiQueueController(
+            MessageQueueRegistry registry,
+            AguiRequestProcessor requestProcessor,
+            AguiRequestBodyParser requestBodyParser) {
+        return new AguiQueueController(registry, requestProcessor, requestBodyParser);
+    }
+
+    private static AguiAdapterConfig adapterConfig(
+            AguiProperties props,
+            ObjectProvider<AgentEventConverter> eventConvertersProvider,
+            ObjectProvider<AguiEventEnricher> eventEnrichersProvider) {
+        return AguiAdapterConfig.builder()
+                .toolMergeMode(props.getDefaultToolMergeMode())
+                .runTimeout(props.getRunTimeout())
+                .emitStateEvents(props.isEmitStateEvents())
+                .emitToolCallArgs(props.isEmitToolCallArgs())
+                .emitTokenUsage(props.isEmitTokenUsage())
+                .enableReasoning(props.isEnableReasoning())
+                .emitRunFinishedAfterError(props.isEmitRunFinishedAfterError())
+                .defaultAgentId(props.getDefaultAgentId())
+                .eventConverters(eventConvertersProvider.orderedStream().toList())
+                .eventEnrichers(eventEnrichersProvider.orderedStream().toList())
+                .build();
     }
 }
