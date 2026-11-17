@@ -59,6 +59,28 @@ class ConversationCompactorTest {
      */
     private static final String PAD = " earlier conversation detail".repeat(40);
 
+    /**
+     * Verifies that an image-only prefix can be compacted (issue #4227). A short text summary
+     * genuinely replaces images that cost real provider tokens, so the size gate must not reject
+     * it on an underestimate of the images.
+     */
+    @Test
+    void compactIfNeeded_acceptsTextSummaryOfImageOnlyPrefix() {
+        Fixture fixture = new Fixture();
+
+        List<Msg> compacted =
+                fixture.compact(
+                        List.of(
+                                imageMessage(),
+                                imageMessage(),
+                                message("TAIL_1"),
+                                message("TAIL_2")));
+
+        assertEquals(3, compacted.size());
+        assertEquals(ConversationCompactor.SUMMARY_MSG_NAME, compacted.get(0).getName());
+        assertEquals(List.of("TAIL_1", "TAIL_2"), texts(compacted.subList(1, compacted.size())));
+    }
+
     /** Verifies that a prior summary is summarized again but is neither flushed nor retained. */
     @Test
     void compactIfNeeded_routesPriorSummaryToSummaryInputButNotFlushOrTail() {
@@ -750,6 +772,14 @@ class ConversationCompactorTest {
         return Msg.builder()
                 .role(MsgRole.USER)
                 .content(TextBlock.builder().text(text).build())
+                .build();
+    }
+
+    /** Creates a user message that carries only an image. */
+    private static Msg imageMessage() {
+        return Msg.builder()
+                .role(MsgRole.USER)
+                .content(ImageBlock.builder().source(new Base64Source("image/png", "AA==")).build())
                 .build();
     }
 
