@@ -16,6 +16,7 @@
 
 package io.agentscope.extensions.durable.jdbc;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -32,6 +33,7 @@ import io.agentscope.durable.DurableTypes.ThreadBinding;
 import io.agentscope.durable.DurableTypes.ThreadKey;
 import io.agentscope.durable.SessionBackend;
 import io.agentscope.durable.Wakeups;
+import io.agentscope.durable.store.ObjectStore;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.sql.DriverManager;
@@ -108,6 +110,24 @@ class BackendAssemblyTest {
                     var statement = connection.createStatement()) {
                 statement.execute("DROP SCHEMA " + schema + " CASCADE");
             }
+    }
+
+    @Test
+    void immutableFilePublicationReusesAndVerifiesTheExistingDestination() throws Exception {
+        var root = directory.resolve("objects");
+        var writer = new FileObjectStore(root);
+        var reopened = new FileObjectStore(root);
+        byte[] content = {1, 2, 3};
+        String scope = ObjectStore.digest(content);
+        var ref = writer.put(scope, content);
+        assertArrayEquals(content, reopened.read(ref));
+        assertEquals(ref, reopened.put(scope, content));
+        byte[] damaged = {3, 2, 1};
+        Files.write(root.resolve(ref.key()), damaged);
+        assertEquals(
+                DurableException.Code.INVALID,
+                assertThrows(DurableException.class, () -> writer.put(scope, content)).code());
+        assertArrayEquals(damaged, Files.readAllBytes(root.resolve(ref.key())));
     }
 
     @Test
