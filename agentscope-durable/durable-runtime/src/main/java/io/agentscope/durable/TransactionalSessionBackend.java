@@ -43,7 +43,6 @@ import io.agentscope.durable.DurableTypes.Lease;
 import io.agentscope.durable.DurableTypes.Lifecycle;
 import io.agentscope.durable.DurableTypes.ModelCallPage;
 import io.agentscope.durable.DurableTypes.ModelCallView;
-import io.agentscope.durable.DurableTypes.PreviewIdentity;
 import io.agentscope.durable.DurableTypes.PublicEvent;
 import io.agentscope.durable.DurableTypes.RecoveryView;
 import io.agentscope.durable.DurableTypes.Restoration;
@@ -136,21 +135,14 @@ public final class TransactionalSessionBackend implements SessionBackend {
 
     private JsonNode storeContent(SessionKey session, JsonNode value) {
         byte[] bytes = DurableJson.value(value).toString().getBytes(StandardCharsets.UTF_8);
-        if (bytes.length > 8192)
-            return DurableJson.value(
-                    Map.of("chunked", JournalContent.put(objects, objectScope(session), bytes)));
-        return DurableJson.value(new StoredContent(DurableJson.copy(value), null));
+        return bytes.length > 16384
+                ? DurableJson.value(
+                        new StoredContent(null, objects.put(objectScope(session), bytes)))
+                : DurableJson.value(new StoredContent(DurableJson.copy(value), null));
     }
 
     private JsonNode readContent(SessionKey session, JsonNode stored) {
         if (stored == null || stored.isNull()) return DurableJson.value(null);
-        if (stored.hasNonNull("chunked")) {
-            var root = DurableJson.convert(stored.get("chunked"), JournalContent.Root.class);
-            return DurableJson.parse(
-                    new String(
-                            JournalContent.read(objects, objectScope(session), root),
-                            StandardCharsets.UTF_8));
-        }
         var value = DurableJson.convert(stored, StoredContent.class);
         return value.reference() == null
                 ? DurableJson.copy(value.inline())
@@ -2327,22 +2319,6 @@ public final class TransactionalSessionBackend implements SessionBackend {
             if (queued)
                 append(s, r, new EventInput("cancelled:" + r.id, "turn.cancelled", lifecycle(r)));
         }
-    }
-
-    @Override
-    public List<Boolean> previewEligibility(SessionKey key, List<PreviewIdentity> identities) {
-        if (identities.size() > PreviewBuffer.BATCH)
-            throw error(DurableException.Code.INVALID, "Too many preview identities");
-        return store.transaction(
-                key.storageKey(),
-                tx -> {
-                    var state = load(tx);
-                    if (!key.equals(state.session.key()))
-                        throw error(DurableException.Code.CONFLICT, "Session key mismatch");
-                    return identities.stream()
-                            .map(id -> id.pending(state.messages::get, state.projectedTools::get))
-                            .toList();
-                });
     }
 
     @Override

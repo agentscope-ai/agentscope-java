@@ -36,7 +36,6 @@ import io.agentscope.durable.DurableTypes.Interaction;
 import io.agentscope.durable.DurableTypes.Lease;
 import io.agentscope.durable.DurableTypes.ModelCallPage;
 import io.agentscope.durable.DurableTypes.ModelCallView;
-import io.agentscope.durable.DurableTypes.PreviewIdentity;
 import io.agentscope.durable.DurableTypes.RecoveryView;
 import io.agentscope.durable.DurableTypes.Restoration;
 import io.agentscope.durable.DurableTypes.RunPage;
@@ -399,11 +398,6 @@ final class NotifyingSessionBackend implements SessionBackend {
     public void cancel(ThreadKey session, String turnId, String requestId) {
         delegate.cancel(session, turnId, requestId);
         changed(session);
-    }
-
-    @Override
-    public List<Boolean> previewEligibility(SessionKey key, List<PreviewIdentity> identities) {
-        return delegate.previewEligibility(key, identities);
     }
 
     @Override

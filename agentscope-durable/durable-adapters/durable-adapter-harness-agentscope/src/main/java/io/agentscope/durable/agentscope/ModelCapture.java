@@ -38,11 +38,12 @@ import java.util.Map;
 final class ModelCapture {
     static final String OUTCOME = "durableModelOutcome";
     private static final long MAX_BYTES = 16L * 1024 * 1024;
-    final String replayHash;
-    final String providerKey;
+    private final Map<String, Object> request;
+    private final String replayHash;
     private final ReasoningContext content = new ReasoningContext("durable");
     private final List<ContentBlock> additional = new ArrayList<>();
     private final Map<String, Object> metadata = new LinkedHashMap<>();
+    final String providerKey;
     private ChatUsage usage;
     private String id;
     private String finishReason;
@@ -63,10 +64,15 @@ final class ModelCapture {
         data.put("messages", messages);
         data.put("tools", tools);
         data.put("options", options);
+        this.request = freeze(data);
         this.replayHash = replayHash;
-        if (JsonUtils.getJsonCodec().toJson(data).length() > MAX_BYTES)
+        if (JsonUtils.getJsonCodec().toJson(request).length() > MAX_BYTES)
             throw new DurableException(
                     DurableException.Code.INVALID, "Model request exceeds capture limit");
+    }
+
+    String replayHash() {
+        return replayHash;
     }
 
     synchronized void nextAttempt() {
@@ -109,6 +115,7 @@ final class ModelCapture {
 
     synchronized Map<String, Object> freeze(String status) {
         var outcome = new LinkedHashMap<String, Object>();
+        outcome.put("request", request);
         outcome.put("replayHash", replayHash);
         if (usage != null) outcome.put("usage", freeze(usage));
         if (finishReason != null) outcome.put("finishReason", finishReason);

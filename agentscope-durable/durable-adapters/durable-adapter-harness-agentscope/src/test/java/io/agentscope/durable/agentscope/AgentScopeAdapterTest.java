@@ -173,6 +173,58 @@ class AgentScopeAdapterTest {
         }
     }
 
+    @Test
+    void nativeEvidenceCheckRequiresMatchingIndependentEvidence() {
+        var original = ToolUseBlock.builder().id("call").name("charge").input(Map.of()).build();
+        var dispatch =
+                new NativeToolRecovery.Dispatch(
+                        new ThreadKey(new SessionKey("app", "session"), "thread"),
+                        "turn",
+                        "action",
+                        original,
+                        NativeToolRecovery.Replay.NEVER);
+        var check =
+                new NativeToolRecovery.ModelCheck(
+                        new ScriptedModel(false),
+                        (operation, hint) -> {
+                            throw new AssertionError(
+                                    "A prose response must not trigger evidence lookup");
+                        });
+        assertTrue(check.check(dispatch).isEmpty());
+
+        var model = org.mockito.Mockito.mock(Model.class);
+        var query =
+                ToolUseBlock.builder()
+                        .id("lookup")
+                        .name("verify_outcome")
+                        .input(Map.of("hint", "receipt"))
+                        .build();
+        doReturn(Flux.just(ChatResponse.builder().content(List.of(query)).build()))
+                .when(model)
+                .stream(any(), any(), any());
+        var wrongReceipt =
+                new NativeToolRecovery.Evidence(
+                        "receipt-1",
+                        ToolResultBlock.success("ok").withIdAndName("another-call", "charge"));
+        var lookups = new AtomicInteger();
+        check =
+                new NativeToolRecovery.ModelCheck(
+                        model,
+                        (operation, hint) -> {
+                            assertEquals(dispatch, operation);
+                            assertEquals("receipt", hint);
+                            lookups.incrementAndGet();
+                            return java.util.Optional.of(wrongReceipt);
+                        });
+        assertTrue(check.check(dispatch).isEmpty());
+        assertEquals(1, lookups.get());
+        assertThrows(
+                IllegalArgumentException.class,
+                () ->
+                        new NativeToolRecovery.Evidence(
+                                "receipt-1", ToolResultBlock.text("still running")));
+    }
+
     AgentScopeAdapter adapter(Model model, PermissionMode mode, Map<String, String> bindings) {
         return AgentScopeAdapter.forReAct(
                 binding -> {
@@ -298,46 +350,6 @@ class AgentScopeAdapterTest {
             backend.release(repairContext.lease(), Duration.ZERO);
             runtime.tick(thread);
             assertEquals(TurnStatus.SUCCEEDED, turn.status().status());
-        }
-    }
-
-    @Test
-    void growingConversationSharesHistoricalJournalPayloads() throws Exception {
-        var database = directory.resolve("history.db");
-        var adapter = adapter(new ScriptedModel(false), PermissionMode.BYPASS, Map.of());
-        try (var backend =
-                        new io.agentscope.durable.TransactionalSessionBackend(
-                                io.agentscope.extensions.durable.jdbc.JdbcRecordStore.sqlite(
-                                        database));
-                var runtime = runtime(backend, adapter, null);
-                var connection = java.sql.DriverManager.getConnection("jdbc:sqlite:" + database);
-                var measure =
-                        connection.prepareStatement(
-                                "SELECT SUM(length(payload)) FROM durable_parts")) {
-            var session = runtime.createSession(key, "agent");
-            var random = new java.util.Random(57);
-            long firstHalf = 0;
-            for (int i = 1; i <= 24; i++) {
-                byte[] bytes = new byte[1536];
-                random.nextBytes(bytes);
-                var turn =
-                        session.submit(
-                                "input-" + i, java.util.Base64.getEncoder().encodeToString(bytes));
-                runtime.tick(new ThreadKey(key, "main"));
-                assertEquals(TurnStatus.SUCCEEDED, turn.status().status());
-                if (i == 12 || i == 24) {
-                    try (var result = measure.executeQuery()) {
-                        assertTrue(result.next());
-                        long size = result.getLong(1);
-                        System.out.println("durable_parts payload at turn " + i + " = " + size);
-                        if (i == 12) firstHalf = size;
-                        else
-                            assertTrue(
-                                    size < 3 * firstHalf,
-                                    "History amplification: " + size + " / " + firstHalf);
-                    }
-                }
-            }
         }
     }
 

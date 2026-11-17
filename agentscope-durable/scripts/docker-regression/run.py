@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
-"""Run real ACK redelivery, model takeover and subscriber recovery on an isolated Docker network."""
+"""Run real ACK redelivery, model takeover and native tool recovery on an isolated Docker network."""
 
-from concurrent.futures import ThreadPoolExecutor
 import os
 from pathlib import Path
 import re
@@ -351,6 +350,50 @@ def exercise(folder):
         "create table starts(id text not null); create table effects(id text primary key)"
     )
 
+    sql(
+        "create table native_starts(scenario text, turn_id text, call_id text, receipt text)"
+    )
+    for scenario in ("safe", "never", "unknown"):
+        service = "native-" + scenario
+        start(
+            service,
+            JRE,
+            mount,
+            "java",
+            "-Xmx256m",
+            "-cp",
+            CP,
+            PACKAGE + "NativeReplayProbe",
+            scenario,
+            "first",
+        )
+        count = "select count(*) from native_starts where scenario='" + scenario + "'"
+        wait("native dispatch " + scenario, lambda: sql(count) == "1")
+        docker("kill", name(service))
+        report = client("NativeReplayProbe", scenario, "recover")
+        terminal = "PARKED" if scenario == "unknown" else "SUCCEEDED"
+        match = re.search(r"^" + terminal + r" (turn_[\w-]+)$", report, re.MULTILINE)
+        if not match:
+            raise AssertionError(report)
+        assert sql(count) == ("2" if scenario == "safe" else "1"), report
+        assert report.count("MODEL_CHECK") == (0 if scenario == "safe" else 1), report
+        answers = sql(
+            "select count(*) from durable_parts where part_key like 'event:%' and "
+            "payload::jsonb->>'type'='message.completed' and payload::jsonb#>>'{data,text}'='verified answer' and "
+            "payload::jsonb->>'turnId'='" + match[1] + "'"
+        )
+        assert answers == ("0" if scenario == "unknown" else "1")
+        print(
+            "native",
+            scenario,
+            terminal,
+            "starts",
+            sql(count),
+            "answers",
+            answers,
+            flush=True,
+        )
+
     def topics():
         result = run(
             "docker",
@@ -398,12 +441,11 @@ def exercise(folder):
             "-g",
             "regression-hands-" + suffix,
         )
-    print(client("LongHistory").strip(), flush=True)
     java("model", "model")
     java("brain-a", "brain")
     java("hands-a", "hands")
     redeliver("command", "hands")
-    old_turn = redeliver("result", "brain")
+    redeliver("result", "brain")
     gate("model", "touch", "block")
     turn = submit("model")
     wait("provider received", lambda: "RECEIVED " + turn in logs("model"))
@@ -421,43 +463,6 @@ def exercise(folder):
     assert logs("model").count("RECEIVED " + turn) == 2
     assert logs("model").count("INFERENCE " + turn) == 1
     print("model takeover: two requests, one inference", flush=True)
-    client("Subscriber", "save")
-    turn = submit("subscriber-crash")
-    done(turn)
-    client("Subscriber", "watch", turn, code=73)
-    done(submit("offline"))
-    client("Probe", "prune")
-    gate("client", "touch", "hold-reset")
-    with ThreadPoolExecutor(max_workers=1) as pool:
-        reconnect = pool.submit(client, "Subscriber", "watch", turn)
-        try:
-            wait(
-                "snapshot callback",
-                lambda: run(
-                    "docker",
-                    "exec",
-                    name("client"),
-                    "test",
-                    "-e",
-                    "/tmp/reset-reached",
-                    check=False,
-                ).returncode
-                == 0,
-            )
-            done(submit("during-reset"))
-        finally:
-            gate("client", "rm", "hold-reset")
-        reconnect.result()
-    print("subscriber restored one displayed answer from pruned cursor", flush=True)
-    report = client("Subscriber", "pressure", old_turn)
-    assert "STALE_PREVIEWS 0" in report
-    print(
-        next(line for line in report.splitlines() if line.startswith("STALE_PREVIEWS")),
-        flush=True,
-    )
-    done(re.search(r"FAST_WHILE_BLOCKED (turn_[\w-]+)", report)[1])
-    print("slow/fast: committed answer before release; stale previews=0", flush=True)
-
     active = "brain-b" if owner == "brain-a" else "brain-a"
     gate("model", "touch", "block")
     turn = submit("cancel-in-flight")
@@ -479,9 +484,13 @@ def exercise(folder):
     assert counts(turn) == "1|0|0"
     print("cancelled in-flight model: applied=1 answers=0 success=0", flush=True)
 
+    checkpoint_session_turn = turn
+
     def pointer():
         row = sql(
             "select payload::jsonb#>>'{inline,recoveryCursor}',payload::jsonb#>>'{inline,position}' from durable_parts where part_key like '%:checkpoint' and payload::jsonb#>>'{inline,recoveryCursor}' is not null"
+            " and record_key in (select record_key from durable_parts where part_key like 'turn:%'"
+            " and payload::jsonb#>>'{value,id}'='" + checkpoint_session_turn + "')"
         )
         cursor, position = map(int, row.split("|"))
         return cursor, position

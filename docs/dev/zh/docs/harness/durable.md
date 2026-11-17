@@ -879,3 +879,15 @@ var children = new DelegationExecutor(backend, request ->
 ### Hands 执行结果不确定时的恢复
 
 服务端已返回执行句柄时，接管的 Hands 会继续查询原句柄。查询返回缺失时仍保留该句柄。没有句柄时，只有提供方能对所有 Hands 按同一 executionId 去重才允许再次启动。事务型 Hands 账本默认在连续 8 次 UNKNOWN 后暂停自动恢复。RocketMQ 宿主可通过 `RocketMqWorker.Builder.unknownLimit` 设置新执行的上限，账本在接纳执行时固定该值。运维端可按原执行身份领取租约，依据外部证据核实结果。首次取消会唤醒已暂停的执行以核实取消结果，重复取消保留原有预算。
+
+### 原生工具中断后的恢复
+
+可按工具名配置恢复策略：
+
+```java
+var recovery = adapter.withNativeToolRecovery(
+        Map.of("lookup", NativeToolRecovery.Replay.SAFE, "charge", NativeToolRecovery.Replay.NEVER),
+        new NativeToolRecovery.ModelCheck(checkModel, evidenceLookup));
+```
+
+首次派发时，journal 记录策略和已获准执行的参数。对允许重复执行的工具使用 `SAFE`，接管的 Brain 可按原调用身份重新执行。未配置的工具默认使用 `NEVER`。模型可提供查询线索，应用的只读 `EvidenceLookup` 负责在独立系统中核对原操作，并返回带原工具名、调用 ID 和证据引用的终态结果。无法核实时，Turn 保持等待，可人工核实或取消。将模型自查参数设为 `null` 即可关闭自查。

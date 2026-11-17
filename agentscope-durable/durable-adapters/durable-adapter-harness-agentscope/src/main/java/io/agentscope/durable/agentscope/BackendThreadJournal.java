@@ -63,6 +63,7 @@ final class BackendThreadJournal implements ThreadJournal {
     private final HarnessContext context;
     private final Map<String, String> executors;
     private final Map<String, ToolBinding> bindings;
+    private final Map<String, NativeToolRecovery.Replay> replay;
     private final Set<String> sealed = new HashSet<>();
     private final List<String> signalsToApply = new ArrayList<>();
     private String owner;
@@ -80,6 +81,15 @@ final class BackendThreadJournal implements ThreadJournal {
             HarnessContext context,
             Map<String, String> executors,
             Map<String, ToolBinding> bindings) {
+        this(context, executors, bindings, Map.of());
+    }
+
+    BackendThreadJournal(
+            HarnessContext context,
+            Map<String, String> executors,
+            Map<String, ToolBinding> bindings,
+            Map<String, NativeToolRecovery.Replay> replay) {
+        this.replay = replay;
         this.bindings = bindings;
         DurableEventSchemas.ensureRegistered();
         this.context = context;
@@ -132,6 +142,26 @@ final class BackendThreadJournal implements ThreadJournal {
     }
 
     private JournalEvent capture(JournalEvent event) {
+        if ("tool/dispatch".equals(event.type())
+                && event.data().get("name") instanceof String name
+                && !executors.containsKey(name)) {
+            var data = new LinkedHashMap<>(event.data());
+            data.put(
+                    "replay",
+                    replay.getOrDefault(name, NativeToolRecovery.Replay.NEVER)
+                            .name()
+                            .toLowerCase(Locale.ROOT));
+            return new JournalEvent(
+                    event.schemaVersion(),
+                    event.eventId(),
+                    event.seq(),
+                    event.occurredAt(),
+                    event.type(),
+                    event.executionRunId(),
+                    event.turnId(),
+                    event.required(),
+                    JsonUtils.getJsonCodec().toJson(data));
+        }
         if ("model/request_started".equals(event.type())) {
             var capture = captures.get(String.valueOf(event.data().get("modelCallId")));
             if (capture != null) capture.nextAttempt();
@@ -142,7 +172,7 @@ final class BackendThreadJournal implements ThreadJournal {
         if (capture == null) return event;
         var data = new LinkedHashMap<String, Object>(event.data());
         if (prepared) {
-            data.put("durableRequestHash", capture.replayHash);
+            data.put("durableRequestHash", capture.replayHash());
             data.put("durableProviderKey", capture.providerKey);
         } else data.put(ModelCapture.OUTCOME, capture.freeze(String.valueOf(data.get("status"))));
         return new JournalEvent(

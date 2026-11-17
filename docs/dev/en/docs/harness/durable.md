@@ -1004,3 +1004,15 @@ public events; they do not replace the actual child result or its application by
 ### Uncertain Hands executions
 
 Hands keeps querying an admitted provider handle across worker replacement. A missing lookup retains that handle. Before a handle exists, repeated start requires provider-side idempotency across all workers. After eight consecutive UNKNOWN observations by default, the transactional Hands ledger pauses automatic recovery. RocketMQ hosts can set `RocketMqWorker.Builder.unknownLimit` for new executions. The ledger freezes the limit at admission. An operator can claim the exact execution and reconcile with external evidence. The first cancellation wakes parked work to check cancellation; duplicate cancellations preserve its budget.
+
+### Interrupted native tools
+
+Configure per-tool recovery on the AgentScope adapter:
+
+```java
+var recovery = adapter.withNativeToolRecovery(
+        Map.of("lookup", NativeToolRecovery.Replay.SAFE, "charge", NativeToolRecovery.Replay.NEVER),
+        new NativeToolRecovery.ModelCheck(checkModel, evidenceLookup));
+```
+
+The first dispatch freezes the policy and admitted arguments. Choose `SAFE` for tools that tolerate repeated execution. A replacement Brain can call them again under the original call identity. Unlisted tools default to `NEVER`. For these, a model can suggest a lookup hint. The application's read-only `EvidenceLookup` must match the original operation against an independent record and return a terminal result with the original tool name, call ID and an evidence reference. An inconclusive check parks the Turn for explicit reconciliation or cancellation. Pass `null` for the model check to use operator reconciliation only.

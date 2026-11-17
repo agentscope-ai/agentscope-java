@@ -75,8 +75,6 @@ Durable keeps three kinds of information connected: the Harness's private native
 state, durable execution facts, and public messages/events. A display snapshot can
 rebuild a UI; the native checkpoint and execution facts determine how work continues.
 Applications use the public API without interpreting private checkpoint formats.
-On a subscription reset, replace the local projection and save its cursor together.
-The SDK catches up on commits made during the reset before releasing live previews.
 The AgentScope adapter advances the native recovery cursor when it commits a
 settled Turn, including cancellation and failure settlement. A replacement Brain
 loads the last complete state checkpoint and replays the journal entries after it.
@@ -184,22 +182,29 @@ work, restores native state at supported boundaries, and continues the original
 Turn. Completed results remain available without another Agent invocation. Reading
 history alone does not start execution.
 
-Recovery reuses committed native results and tool outcomes. An interrupted model
-request whose result was never committed may need another model invocation.
-Workspace files and remote resources must also remain accessible; a saved checkpoint
-cannot reconstruct a deleted workspace or an expired external operation.
+Register per-tool policies with `AgentScopeAdapter.withNativeToolRecovery(policies, modelCheck)`.
+The first native dispatch records the policy and the admitted arguments. A replacement Brain
+uses that record even if its configuration changes. Use `NativeToolRecovery.Replay.SAFE` for
+reads or operations that tolerate duplicate execution. After a lost result the Brain runs the
+same call again. The default, `NEVER`, parks the Turn unless an optional model check can
+verify the outcome. Pass `null` to disable that check.
 
-If an interrupted native tool has no verified result, the Turn waits for explicit
-reconciliation. Scheduled Brains leave it parked. An operator can claim it and
-call `reconcileNativeTools` with a verified outcome and evidence reference.
+A `NativeToolRecovery.ModelCheck` gives the model one read-only lookup tool. The application
+looks up the original operation in an independent system, validates its identity and arguments,
+and returns a terminal tool result and evidence reference. A missing record, inconsistent result
+or model-only assertion leaves the Turn waiting. An operator can claim the Turn and call
+`reconcileNativeTools` with verified outcomes and evidence.
 Cancelling the Turn closes the native call with an unverified outcome. A repeated
 cancel request can use a new request ID.
 
 The first scheduled owner persists its recovery policy for consecutive lease
 losses. PostgreSQL hosts bound idle transactions by the shortest lease they serve
-and respect shorter database limits. Large journal entries and checkpoints share
-immutable content-defined chunks within a Session. Readers support the original
-whole-object references. Upgrade every reader before writing the chunked format.
+and respect shorter database limits.
+
+Recovery reuses committed native results and tool outcomes. An interrupted model
+request whose result was never committed may need another model invocation.
+Workspace files and remote resources must also remain accessible; a saved checkpoint
+cannot reconstruct a deleted workspace or an expired external operation.
 
 ### 2. Queue Turns, add instructions, and cancel work
 
@@ -319,19 +324,8 @@ var host = DurableRuntime.builder()
 host.start();
 ```
 
-Initialize the Backend schema during provisioning with
-`PostgresBackend.initializeSchema(dataSource)`, add the PostgreSQL driver, and point
-the hosts at the same database. Each host needs matching definition/state versions
-and access to the required tools and workspace resources. Close each host and its
-Backend at application shutdown; the application owns the supplied pool.
-
-Schema initialization also creates the binary-collation indexes used for prefix pagination.
-For an existing database, run the initializer with the provisioning identity to install
-`durable_parts_prefix` and `durable_records_prefix`. Ordinary runtime startup uses
-the existing schema.
-
-PostgreSQL record transactions use a 30-second idle-in-transaction timeout when
-the database setting is disabled. An existing positive timeout takes precedence.
+PostgreSQL bounds idle record transactions by the configured lease and any shorter
+database timeout. Without a configured bound the store defaults to 30 seconds.
 This lets PostgreSQL release record locks after a disconnected host stops sending SQL.
 
 The AgentScope adapter supplies an `Idempotency-Key` for each model generation.
@@ -340,6 +334,12 @@ with the same key. A provider that implements idempotency can return the origina
 generation. Providers that ignore the key can generate and bill twice. Completed
 journaled responses replay locally. Explicit per-request idempotency headers
 take precedence.
+
+Initialize the Backend schema during provisioning with
+`PostgresBackend.initializeSchema(dataSource)`, add the PostgreSQL driver, and point
+the hosts at the same database. Each host needs matching definition/state versions
+and access to the required tools and workspace resources. Close each host and its
+Backend at application shutdown; the application owns the supplied pool.
 
 Runtime scans durable ready work and renews ownership while executing it. Fencing
 rejects writes from an expired owner even if that process later reconnects. Optional
@@ -465,6 +465,13 @@ make -C agentscope-durable check
 make -C agentscope-durable independent
 ```
 
+Normal checking covers build, formatting and tests. Isolation checking builds source
+dependencies in a separate Maven cache and audits dependency trees.
+Validate broker delivery, provider query/cancel
+behavior and recovery under host replacement in your deployment environment.
+Unqueryable or unverifiable external effects remain `UNKNOWN`; arbitrary external
+operations are not promised exactly-once execution.
+
 Run the Docker fault regression from the repository root with Docker, Python 3, Maven and a JDK on PATH:
 
 ```sh
@@ -472,11 +479,9 @@ python3 agentscope-durable/scripts/docker-regression/run.py
 ```
 
 The runner builds the current checkout and creates a private Docker network with PostgreSQL,
-RocketMQ, independent Brain and Hands JVMs, a counting model endpoint and subscription clients.
-It disconnects receivers before ACK, kills the model requester and checkpoint writer, and
-reconnects a subscriber during pruning. A blocked subscriber competes with a healthy subscriber
-for 4,096 previews. A separate long Thread commits 2,048 message completions, prunes the log and injects delayed previews. The tool recovery cases query a committed effect or reconcile an opaque effect against external evidence. The checks compare broker message IDs, provider executions, committed effects,
-terminal events, displayed answers and subscriber cursors. The runner removes its containers,
+RocketMQ, independent Brain and Hands JVMs, and a counting model endpoint.
+It disconnects receivers before ACK and kills the model requester and checkpoint writer. The tool recovery cases query a committed effect or reconcile an opaque effect against external evidence. The checks compare broker message IDs, provider executions, committed effects,
+terminal events and committed answers. The runner removes its containers,
 volumes and network on exit. Set `ROCKETMQ_IMAGE` to use a locally available RocketMQ 5 image
 with the broker proxy and `mqadmin` tools.
 
@@ -496,27 +501,6 @@ to the surviving consumer after killing its peer before ACK.
 ```sh
 python3 agentscope-durable/scripts/docker-regression/compare_consumers.py
 ```
-
-For a single-Thread PostgreSQL test database, the read-only profiler attributes
-`durable_parts.payload` bytes to native checkpoints, other journal entries and their
-shared immutable chunks. Each shared chunk is counted once. The record-backed
-object store compresses each compressible chunk after deduplication, preserving
-its original content digest. The profiler reports the stored payload length. With `--detail-turn`, the per-type breakdown attributes a shared chunk to the first
-event that wrote it. The milestone is the
-number of distinct Turns encountered in journal order. Take the measurement after
-the last measured Turn finishes. Checkpoint-history rows, events, PostgreSQL indexes
-and TOAST statistics can be measured separately.
-
-```sh
-python3 agentscope-durable/scripts/docker-regression/profile_journal.py CONTAINER DATABASE USER 100 1000 --detail-turn 100
-```
-
-Normal checking covers build, formatting and tests. Isolation checking builds source
-dependencies in a separate Maven cache and audits dependency trees.
-Validate broker delivery, provider query/cancel
-behavior and recovery under host replacement in your deployment environment.
-Unqueryable or unverifiable external effects remain `UNKNOWN`; arbitrary external
-operations are not promised exactly-once execution.
 
 ## Usage and reference
 

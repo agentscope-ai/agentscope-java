@@ -30,12 +30,27 @@ public final class ThreadRecovery {
 
     public static void reconcile(
             ThreadJournal log, Map<String, ToolResultBlock> outcomes, String reason) {
+        reconcile(log, outcomes, reason, false);
+    }
+
+    /** Persist one independently verified outcome while other dispatches may still need evidence. */
+    public static void reconcileOne(ThreadJournal log, ToolResultBlock outcome, String reason) {
+        reconcile(log, Map.of(outcome.getId(), outcome), reason, true);
+    }
+
+    private static void reconcile(
+            ThreadJournal log,
+            Map<String, ToolResultBlock> outcomes,
+            String reason,
+            boolean partial) {
         if (reason == null || reason.isBlank())
             throw new IllegalArgumentException("A reconciliation reason is required");
         var writer = log.acquire(UUID.randomUUID().toString(), Duration.ofMinutes(2));
         try {
             var projection = JournalProjection.read(log);
-            if (!projection.uncertainToolCalls().equals(outcomes.keySet()))
+            boolean complete = projection.uncertainToolCalls().equals(outcomes.keySet());
+            if (!complete
+                    && !(partial && projection.uncertainToolCalls().containsAll(outcomes.keySet())))
                 throw new IllegalArgumentException("Supply exactly the unresolved tool outcomes");
             var state = projection.restore();
             if (state == null) throw new JournalException("No recoverable state baseline");
@@ -91,7 +106,9 @@ public final class ThreadRecovery {
                                                     "outcomes",
                                                     outcomes,
                                                     "interruptedRuns",
-                                                    projection.activeRuns())));
+                                                    complete
+                                                            ? projection.activeRuns()
+                                                            : java.util.List.of())));
             var checkpointData = new LinkedHashMap<String, Object>();
             checkpointData.put("stateJson", state.toJson());
             checkpointData.put("projectorVersion", 1);

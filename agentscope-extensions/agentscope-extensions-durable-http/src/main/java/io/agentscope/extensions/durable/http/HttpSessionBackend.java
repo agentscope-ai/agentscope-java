@@ -38,7 +38,6 @@ import io.agentscope.durable.DurableTypes.Interaction;
 import io.agentscope.durable.DurableTypes.Lease;
 import io.agentscope.durable.DurableTypes.ModelCallPage;
 import io.agentscope.durable.DurableTypes.ModelCallView;
-import io.agentscope.durable.DurableTypes.PreviewIdentity;
 import io.agentscope.durable.DurableTypes.RecoveryView;
 import io.agentscope.durable.DurableTypes.Restoration;
 import io.agentscope.durable.DurableTypes.RunPage;
@@ -452,14 +451,6 @@ public final class HttpSessionBackend implements SessionBackend {
     @Override
     public void cancel(ThreadKey session, String turnId, String requestId) {
         call("cancel", "thread", session, "turnId", turnId, "requestId", requestId);
-    }
-
-    @Override
-    public List<Boolean> previewEligibility(SessionKey key, List<PreviewIdentity> identities) {
-        return List.of(
-                as(
-                        call("previewEligibility", "session", key, "identities", identities),
-                        Boolean[].class));
     }
 
     @Override

@@ -493,37 +493,6 @@ public abstract class UserApiContract {
     }
 
     @Test
-    void previewLookupReturnsOnlyOrderedFlagsForTheRequestedIdentities() {
-        session.submit("preview-input", "hello");
-        var saved = session.snapshot().projection().required("messages").fieldNames().next();
-        var requested =
-                List.of(
-                        new io.agentscope.durable.DurableTypes.PreviewIdentity(saved, null, 0, 0),
-                        new io.agentscope.durable.DurableTypes.PreviewIdentity(
-                                null, "unknown", 0, 0));
-        var lookup =
-                new DurableProtocol.Request(
-                        DurableProtocol.VERSION,
-                        "previewEligibility",
-                        DurableJson.value(Map.of("session", key, "identities", requested)));
-        assertEquals(DurableJson.value(List.of(false, true)), api.invoke(lookup));
-        code(
-                DurableException.Code.INVALID,
-                () ->
-                        api.invoke(
-                                new DurableProtocol.Request(
-                                        DurableProtocol.VERSION,
-                                        "previewEligibility",
-                                        DurableJson.value(
-                                                Map.of(
-                                                        "session",
-                                                        key,
-                                                        "identities",
-                                                        java.util.Collections.nCopies(
-                                                                33, requested.get(0)))))));
-    }
-
-    @Test
     void languageNeutralWorkflowMatchesLocalAndHttpBindings() throws Exception {
         try (var input =
                 UserApiContract.class.getResourceAsStream(

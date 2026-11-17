@@ -28,8 +28,6 @@ import io.agentscope.durable.DurableTypes.SessionKey;
 import io.agentscope.durable.DurableTypes.SessionSpec;
 import io.agentscope.durable.DurableTypes.ThreadBinding;
 import io.agentscope.durable.TransactionalSessionBackend;
-import io.agentscope.durable.store.ObjectStore;
-import io.agentscope.durable.store.RecordObjectStore;
 import io.agentscope.durable.store.RecordStore;
 import java.nio.file.Path;
 import java.sql.DriverManager;
@@ -83,83 +81,6 @@ class ScopedWorkStoreTest {
                     var s = c.createStatement()) {
                 s.execute("DROP SCHEMA " + schema + " CASCADE");
             }
-    }
-
-    @Test
-    void prefixBoundsCoverSupplementarySuffixesAndCarryPastMaximalScalars() {
-        String max = Character.toString(Character.MAX_CODE_POINT);
-        String prefix = "literal_%:" + max;
-        store.transaction(
-                "unicode",
-                tx -> {
-                    for (var key :
-                            List.of(
-                                    prefix,
-                                    prefix + max,
-                                    "literal_%;",
-                                    "a\uD7FF",
-                                    "a\uE000",
-                                    max,
-                                    max + "x")) tx.put(key, DurableJson.value(1));
-                    assertEquals(List.of(prefix, prefix + max), tx.keys(prefix, null, 10));
-                    assertEquals(List.of(prefix + max), tx.keys(prefix, prefix, 1));
-                    assertEquals(List.of("a\uD7FF"), tx.keys("a\uD7FF", null, 10));
-                    assertEquals(List.of(max, max + "x"), tx.keys(max, null, 10));
-                    return null;
-                });
-    }
-
-    @Test
-    void coldReadsVerifyMixedCompressedAndRawChunksAndRejectTruncatedData() {
-        var objects = new RecordObjectStore(store);
-        byte[] bytes = new byte[2 * 1024 * 1024];
-        byte[] random = new byte[1024 * 1024];
-        new java.util.Random(43).nextBytes(random);
-        System.arraycopy(random, 0, bytes, random.length, random.length);
-        var ref = objects.put(ObjectStore.digest(new byte[0]), bytes);
-        org.junit.jupiter.api.Assertions.assertArrayEquals(
-                bytes, new RecordObjectStore(store).read(ref));
-        store.transaction(
-                "object:" + ref.key(),
-                tx -> {
-                    String encoded = tx.get("chunk:0").asText();
-                    assertTrue(encoded.startsWith("~"));
-                    assertFalse(tx.get("chunk:1").asText().startsWith("~"));
-                    tx.put(
-                            "chunk:0",
-                            DurableJson.value(encoded.substring(0, encoded.length() - 4)));
-                    return null;
-                });
-        assertThrows(DurableException.class, () -> new RecordObjectStore(store).read(ref));
-    }
-
-    @Test
-    void immutableChunkHitsAvoidDatabaseTransactionsAndNeverExposeCachedBytes() throws Exception {
-        var borrows = new java.util.concurrent.atomic.AtomicInteger();
-        try (var counted =
-                new JdbcRecordStore(
-                        () -> {
-                            borrows.incrementAndGet();
-                            return connections.open();
-                        },
-                        dialect,
-                        false)) {
-            var objects = new RecordObjectStore(counted);
-            byte[] value = {1, 2, 3};
-            var scope = ObjectStore.digest(new byte[0]);
-            var ref = objects.put(scope, value);
-            int afterCommit = borrows.get();
-            value[0] = 9;
-            objects.read(ref)[1] = 9;
-            assertEquals(ref, objects.put(scope, new byte[] {1, 2, 3}));
-            org.junit.jupiter.api.Assertions.assertArrayEquals(
-                    new byte[] {1, 2, 3}, objects.read(ref));
-            assertEquals(afterCommit, borrows.get());
-            var cold = new RecordObjectStore(counted);
-            org.junit.jupiter.api.Assertions.assertArrayEquals(
-                    new byte[] {1, 2, 3}, cold.read(ref));
-            assertEquals(afterCommit + 1, borrows.get());
-        }
     }
 
     @Test

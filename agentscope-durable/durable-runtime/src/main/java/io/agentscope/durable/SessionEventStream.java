@@ -22,6 +22,9 @@ import io.agentscope.durable.DurableTypes.PublicEvent;
 import io.agentscope.durable.DurableTypes.Snapshot;
 import java.time.Duration;
 import java.util.Objects;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
 
@@ -55,7 +58,9 @@ public final class SessionEventStream implements AutoCloseable {
     private final DurableSession session;
     private final EventFilter filter;
     private final EventPage firstPage;
-    private final PreviewBuffer live = new PreviewBuffer();
+    private final ConcurrentLinkedQueue<LiveEvent> live = new ConcurrentLinkedQueue<>();
+    private final Set<String> completedMessages = ConcurrentHashMap.newKeySet();
+    private final Set<String> completedToolCalls = ConcurrentHashMap.newKeySet();
     private final AutoCloseable liveSubscription;
     private final AtomicBoolean started = new AtomicBoolean();
     private final AtomicBoolean closed = new AtomicBoolean();
@@ -77,8 +82,8 @@ public final class SessionEventStream implements AutoCloseable {
                                 .subscribe(
                                         event -> {
                                             if (!closed.get()
-                                                    && filter.matches(session.key(), event)
-                                                    && options.accepts(event)) live.offer(event);
+                                                    && filter.matches(event)
+                                                    && options.accepts(event)) live.add(event);
                                         });
             } catch (RuntimeException error) {
                 logLiveFailure(error);
@@ -157,10 +162,10 @@ public final class SessionEventStream implements AutoCloseable {
         try {
             for (var event : firstPage.events()) {
                 if (closed.get()) return;
-                sink.accept(event);
+                durable(sink, event);
             }
             boolean replayCaughtUp = Objects.equals(firstPage.cursor(), firstPage.highWatermark());
-            if (replayCaughtUp) live.drain(session, sink::live);
+            if (replayCaughtUp) drainLive(sink);
             if (filter.threadId() != null) sink.cursor(firstPage.cursor());
             if (closed.get() || expired(until)) return;
             var reset = new AtomicBoolean();
@@ -173,14 +178,14 @@ public final class SessionEventStream implements AutoCloseable {
                                 reset.set(true);
                                 sink.reset(snapshot);
                             },
-                            sink);
+                            event -> durable(sink, event));
             reader = current;
             if (closed.get()) return;
             while (!closed.get()) {
                 int delivered = current.poll();
+                replayCaughtUp = replayCaughtUp || current.replayCaughtUp();
+                if (replayCaughtUp) delivered += drainLive(sink);
                 if (reset.get()) return;
-                replayCaughtUp = current.replayCaughtUp();
-                if (replayCaughtUp) delivered += live.drain(session, sink::live);
                 if (filter.threadId() != null) sink.cursor(current.cursor());
                 if (expired(until)) return;
                 if (delivered == 0) {
@@ -198,6 +203,27 @@ public final class SessionEventStream implements AutoCloseable {
             close(liveSubscription);
             closed.set(true);
         }
+    }
+
+    private void durable(Sink sink, PublicEvent event) {
+        if ("message.completed".equals(event.type()))
+            completedMessages.add(event.data().path("messageId").asText());
+        if ("tool.call.updated".equals(event.type()))
+            completedToolCalls.add(event.data().path("callId").asText());
+        sink.accept(event);
+    }
+
+    private int drainLive(Sink sink) {
+        int delivered = 0;
+        for (LiveEvent event; (event = live.poll()) != null; ) {
+            String messageId = event.data().path("messageId").asText(null);
+            if (messageId != null && completedMessages.contains(messageId)) continue;
+            String toolCallId = event.data().path("toolCallId").asText(null);
+            if (toolCallId != null && completedToolCalls.contains(toolCallId)) continue;
+            sink.live(event);
+            delivered++;
+        }
+        return delivered;
     }
 
     private static boolean expired(long until) {

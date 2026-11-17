@@ -29,7 +29,6 @@ import io.agentscope.durable.DurableTypes.ThreadPage;
 import io.agentscope.durable.DurableTypes.TurnPage;
 import io.agentscope.durable.DurableTypes.TurnView;
 import java.time.Duration;
-import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.CompletionStage;
 import java.util.function.Consumer;
@@ -50,10 +49,6 @@ public final class DurableSession {
 
     Wakeups wakeups() {
         return runtime.wakeups();
-    }
-
-    List<LiveEvent> pendingPreviews(List<LiveEvent> batch) {
-        return runtime.pendingPreviews(this, batch);
     }
 
     LiveEvents liveEvents() {

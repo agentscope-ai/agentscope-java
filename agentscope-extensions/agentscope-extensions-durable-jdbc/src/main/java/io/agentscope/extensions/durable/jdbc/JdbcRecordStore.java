@@ -114,14 +114,6 @@ public final class JdbcRecordStore implements RecordStore {
                 statement.executeUpdate(
                         "CREATE INDEX IF NOT EXISTS durable_work_ready ON"
                                 + " durable_work(queue,ready_at,record_key,work_id)");
-                if (dialect == Dialect.POSTGRESQL) {
-                    statement.executeUpdate(
-                            "CREATE INDEX IF NOT EXISTS durable_parts_prefix ON durable_parts"
-                                    + " (record_key, part_key COLLATE \"C\")");
-                    statement.executeUpdate(
-                            "CREATE INDEX IF NOT EXISTS durable_records_prefix ON durable_records"
-                                    + " (record_key COLLATE \"C\") WHERE payload IS NOT NULL");
-                }
             }
         } catch (SQLException e) {
             throw unavailable(e);
@@ -238,7 +230,7 @@ public final class JdbcRecordStore implements RecordStore {
         }
     }
 
-    private final class Parts implements Transaction {
+    private static final class Parts implements Transaction {
         private final Connection connection;
         private final String scope;
         private final long now;
@@ -301,13 +293,15 @@ public final class JdbcRecordStore implements RecordStore {
 
         public List<String> keys(String prefix, String after, int limit) {
             checkLimit(limit);
-            String upper = prefixEnd(prefix);
             try (var s =
                     connection.prepareStatement(
-                            "SELECT part_key FROM durable_parts WHERE record_key=? AND "
-                                    + prefixPage("part_key", upper))) {
+                            "SELECT part_key FROM durable_parts WHERE record_key=? AND part_key>=?"
+                                    + " AND part_key<? AND part_key>? ORDER BY part_key LIMIT ?")) {
                 s.setString(1, scope);
-                bindPage(s, 2, prefix, upper, after, limit);
+                s.setString(2, prefix);
+                s.setString(3, prefix + "\uffff");
+                s.setString(4, after == null ? "" : after);
+                s.setInt(5, limit);
                 try (var rs = s.executeQuery()) {
                     var keys = new ArrayList<String>();
                     while (rs.next()) keys.add(rs.getString(1));
@@ -384,57 +378,20 @@ public final class JdbcRecordStore implements RecordStore {
             throw new IllegalArgumentException("Invalid " + name);
     }
 
-    private static String prefixEnd(String prefix) {
-        // UTF-8 byte order agrees with scalar-value order. Carry past maximal suffixes
-        // and skip surrogates to keep the exclusive upper bound a valid database string.
-        for (int end = prefix.length(); end > 0; ) {
-            int cp = prefix.codePointBefore(end);
-            end -= Character.charCount(cp);
-            if (cp < Character.MAX_CODE_POINT) {
-                int next = cp == Character.MIN_SURROGATE - 1 ? Character.MAX_SURROGATE + 1 : cp + 1;
-                return prefix.substring(0, end) + Character.toString(next);
-            }
-        }
-        return null;
-    }
-
-    private String prefixPage(String column, String upper) {
-        String key = dialect == Dialect.POSTGRESQL ? column + " COLLATE \"C\"" : column;
-        return key
-                + ">=?"
-                + (upper == null ? "" : " AND " + key + "<?")
-                + " AND "
-                + key
-                + ">? ORDER BY "
-                + key
-                + " LIMIT ?";
-    }
-
-    private static void bindPage(
-            java.sql.PreparedStatement statement,
-            int index,
-            String prefix,
-            String upper,
-            String after,
-            int limit)
-            throws SQLException {
-        statement.setString(index++, prefix);
-        if (upper != null) statement.setString(index++, upper);
-        statement.setString(index++, after == null ? "" : after);
-        statement.setInt(index, limit);
-    }
-
     @Override
     public List<String> keys(String prefix, String after, int limit) {
         if (limit < 1 || limit > 1000) throw new IllegalArgumentException("Limit must be 1..1000");
-        String upper = prefixEnd(prefix);
+        // Lexical bounds avoid LIKE wildcard interpretation in namespaces.
         try (Connection c = connect();
                 var s =
                         c.prepareStatement(
                                 "SELECT record_key FROM durable_records WHERE payload IS NOT NULL"
-                                        + " AND "
-                                        + prefixPage("record_key", upper))) {
-            bindPage(s, 1, prefix, upper, after, limit);
+                                    + " AND record_key>=? AND record_key<? AND record_key>? ORDER"
+                                    + " BY record_key LIMIT ?")) {
+            s.setString(1, prefix);
+            s.setString(2, prefix + "\uffff");
+            s.setString(3, after == null ? "" : after);
+            s.setInt(4, limit);
             try (var rs = s.executeQuery()) {
                 List<String> result = new ArrayList<>();
                 while (rs.next()) result.add(rs.getString(1));
