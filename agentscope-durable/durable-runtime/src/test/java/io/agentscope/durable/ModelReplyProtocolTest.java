@@ -17,6 +17,10 @@
 package io.agentscope.durable;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.durable.DurableTypes.Signal;
 import io.agentscope.durable.DurableTypes.WaitCondition;
@@ -49,6 +53,96 @@ class ModelReplyProtocolTest {
         assertEquals(
                 applicationWait,
                 ModelReplyProtocol.waiting(List.of(applicationSignal), applicationWait));
+    }
+
+    @Test
+    void onlyCurrentGenerationCanReplyAndSeal() {
+        var signals = List.of(begin("old", 1), begin("current", 2));
+        assertFalse(ModelReplyProtocol.accepts(signals, operation("old", "reply")));
+        var error =
+                assertThrows(
+                        DurableException.class,
+                        () -> ModelReplyProtocol.accepts(signals, operation("old", "seal")));
+        assertEquals(DurableException.Code.UNAVAILABLE, error.code());
+        assertTrue(ModelReplyProtocol.accepts(signals, operation("current", "reply")));
+        assertTrue(ModelReplyProtocol.accepts(signals, operation("current", "seal")));
+        assertTrue(ModelReplyProtocol.accepts(signals, operation("replacement", "begin")));
+    }
+
+    @Test
+    void sealedGenerationRejectsRepliesAndTakeovers() {
+        var signals = List.of(begin("winner", 1), operation("winner", "seal"));
+        assertTrue(ModelReplyProtocol.sealed(signals, "call"));
+        assertFalse(ModelReplyProtocol.sealed(signals, "another-call"));
+        assertFalse(ModelReplyProtocol.accepts(signals, operation("winner", "reply")));
+        assertFalse(ModelReplyProtocol.accepts(signals, operation("new", "begin")));
+    }
+
+    @Test
+    void foreignSignalsCannotChangeModelGeneration() {
+        var foreign = new Signal("foreign", "x.app", operation("foreign", "begin").value());
+        var otherCall =
+                new Signal(
+                        "other",
+                        "x.model:other:0",
+                        DurableJson.value(
+                                Map.of(
+                                        "modelOperation",
+                                        "begin",
+                                        "modelCallId",
+                                        "other",
+                                        "workerAttempt",
+                                        "other",
+                                        "workerEpoch",
+                                        999)));
+        assertEquals("0", ModelReplyProtocol.active(List.of(foreign, otherCall), "call"));
+        assertTrue(ModelReplyProtocol.accepts(List.of(), foreign));
+        assertTrue(
+                ModelReplyProtocol.accepts(
+                        List.of(),
+                        new Signal(
+                                "raw", "x.model:call:0", DurableJson.value(Map.of("last", true)))));
+        assertNull(ModelReplyProtocol.waiting(List.of(), null));
+        assertEquals(
+                new WaitCondition("x.model:call:0", 10),
+                ModelReplyProtocol.waiting(
+                        List.of(begin("0", 1)), new WaitCondition("x.model:call:0", 10)));
+    }
+
+    @Test
+    void invalidFencingIdentityIsRejected() {
+        var blank =
+                new Signal(
+                        "bad",
+                        "x.model:call:0",
+                        DurableJson.value(
+                                Map.of(
+                                        "modelOperation",
+                                        "begin",
+                                        "modelCallId",
+                                        "call",
+                                        "workerAttempt",
+                                        " ")));
+        assertEquals(
+                DurableException.Code.INVALID,
+                assertThrows(
+                                DurableException.class,
+                                () -> ModelReplyProtocol.accepts(List.of(), blank))
+                        .code());
+    }
+
+    private static Signal operation(String attempt, String operation) {
+        return new Signal(
+                attempt + operation,
+                "x.model:call:" + operation,
+                DurableJson.value(
+                        Map.of(
+                                "modelOperation",
+                                operation,
+                                "modelCallId",
+                                "call",
+                                "workerAttempt",
+                                attempt)));
     }
 
     private static Signal begin(String attempt, long epoch) {

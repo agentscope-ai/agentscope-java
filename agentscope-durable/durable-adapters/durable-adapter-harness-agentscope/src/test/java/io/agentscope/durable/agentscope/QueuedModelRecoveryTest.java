@@ -90,6 +90,16 @@ class QueuedModelRecoveryTest {
             LiveEvents live,
             Duration timeout,
             Toolkit toolkit) {
+        return runtime(db, publisher, live, timeout, toolkit, null);
+    }
+
+    private static DurableRuntime runtime(
+            Path db,
+            QueuedModelRequest.Publisher publisher,
+            LiveEvents live,
+            Duration timeout,
+            Toolkit toolkit,
+            io.agentscope.durable.Wakeups hints) {
         var adapter =
                 AgentScopeAdapter.forReAct(
                                 binding ->
@@ -101,8 +111,11 @@ class QueuedModelRecoveryTest {
                                                                 false)),
                                 Map.of())
                         .withQueuedModel(publisher, timeout);
+        io.agentscope.durable.SessionBackend backend =
+                new TransactionalSessionBackend(JdbcRecordStore.sqlite(db));
+        if (hints != null) backend = backend.withWakeups(hints);
         return DurableRuntime.builder()
-                .backend(new TransactionalSessionBackend(JdbcRecordStore.sqlite(db)))
+                .backend(backend)
                 .harness("agent", "v1", adapter)
                 .liveEvents(live)
                 .leaseDuration(Duration.ofSeconds(6))
@@ -537,6 +550,50 @@ class QueuedModelRecoveryTest {
                                     call, "replacement", 0, text("recovered"), true)));
             rt.tick(THREAD);
             assertEquals(TurnStatus.SUCCEEDED, turn.status().status(), turn.status()::toString);
+        }
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"subscribe", "close", "success"})
+    @Timeout(20)
+    void wakeupTransportFailuresPreserveSuccessfulReply(String mode) throws Exception {
+        var subscriptions = new java.util.concurrent.atomic.AtomicInteger();
+        var closes = new java.util.concurrent.atomic.AtomicInteger();
+        var hints =
+                new io.agentscope.durable.Wakeups() {
+                    public void publish(SessionKey session) {}
+
+                    public AutoCloseable subscribe(
+                            java.util.function.Consumer<SessionKey> listener) {
+                        subscriptions.incrementAndGet();
+                        if (mode.equals("subscribe"))
+                            throw new IllegalStateException("notification unavailable");
+                        listener.accept(new SessionKey("other", "session"));
+                        listener.accept(KEY);
+                        return () -> {
+                            closes.incrementAndGet();
+                            if (mode.equals("close"))
+                                throw new IllegalStateException("unsubscribe unavailable");
+                        };
+                    }
+                };
+        var sent = new AtomicReference<QueuedModelRequest>();
+        try (var rt =
+                runtime(
+                        directory.resolve(mode + ".db"),
+                        sent::set,
+                        LiveEvents.none(),
+                        Duration.ofSeconds(5),
+                        new Toolkit(),
+                        hints)) {
+            var turn = rt.createSession(KEY, "agent").submit("notification", "hello");
+            rt.tick(THREAD);
+            var reply = QueuedModelRequest.reply(sent.get().callId(), 0, text("done"), true);
+            turn.signal(reply.id(), reply.key(), reply.value());
+            rt.tick(THREAD);
+            assertEquals(TurnStatus.SUCCEEDED, turn.status().status(), turn.status()::toString);
+            assertEquals(1, subscriptions.get());
+            assertEquals(mode.equals("subscribe") ? 0 : 1, closes.get());
         }
     }
 

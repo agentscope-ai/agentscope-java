@@ -22,6 +22,8 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.test.MockModel;
 import io.agentscope.core.agent.test.TestUtils;
+import io.agentscope.core.journal.InMemoryThreadJournalStore;
+import io.agentscope.core.journal.ModelInvocation;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.GenerateOptions;
@@ -30,12 +32,156 @@ import io.agentscope.core.model.ToolSchema;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.UUID;
+import java.util.function.Function;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 import reactor.core.publisher.Flux;
 
 class ReActAgentFailoverBoundaryTest {
+
+    private static class DelegatingInvocation implements ModelInvocation {
+        @Override
+        public Flux<ChatResponse> stream(
+                String model,
+                String purpose,
+                List<Msg> messages,
+                List<ToolSchema> tools,
+                GenerateOptions options,
+                Function<String, Flux<ChatResponse>> next) {
+            return next.apply(UUID.randomUUID().toString());
+        }
+    }
+
+    @Test
+    void recoveredFallbackBypassesPrimaryAndFailureListener() {
+        var primary = new MockModel("primary");
+        var fallback = new MockModel("fallback");
+        var failures = new ArrayList<Throwable>();
+        var invocation =
+                new DelegatingInvocation() {
+                    @Override
+                    public boolean resumingFallback(String purpose) {
+                        assertEquals("REASONING", purpose);
+                        return true;
+                    }
+                };
+        try (var agent =
+                ReActAgent.builder()
+                        .name("recovered-fallback")
+                        .model(primary)
+                        .fallbackModel(fallback)
+                        .threadJournalStore(new InMemoryThreadJournalStore())
+                        .failoverListener((model, error) -> failures.add(error))
+                        .build()) {
+            var response =
+                    agent.call(
+                                    List.of(TestUtils.createUserMessage("user", "hello")),
+                                    RuntimeContext.builder()
+                                            .put(ModelInvocation.class, invocation)
+                                            .build())
+                            .block(Duration.ofSeconds(5));
+            assertEquals("fallback", TestUtils.extractTextContent(response));
+            assertEquals(0, primary.getCallCount());
+            assertEquals(1, fallback.getCallCount());
+            assertEquals(List.of(), failures);
+        }
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void hostFailurePolicyControlsFallback(boolean allowFallback) {
+        var failure = new IllegalStateException("reply protocol failure");
+        var primary =
+                new MockModel("unused") {
+                    @Override
+                    public Flux<ChatResponse> stream(
+                            List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
+                        return Flux.error(failure);
+                    }
+                };
+        ModelInvocation invocation =
+                allowFallback
+                        ? new DelegatingInvocation()
+                        : new DelegatingInvocation() {
+                            @Override
+                            public boolean beginFallback(String purpose, Throwable cause) {
+                                assertEquals("REASONING", purpose);
+                                assertSame(failure, cause);
+                                return false;
+                            }
+                        };
+        var fallback = new MockModel("fallback");
+        var failures = new ArrayList<Throwable>();
+        try (var agent =
+                ReActAgent.builder()
+                        .name("host-failure-policy")
+                        .model(primary)
+                        .fallbackModel(fallback)
+                        .threadJournalStore(new InMemoryThreadJournalStore())
+                        .failoverListener((model, error) -> failures.add(error))
+                        .build()) {
+            var response =
+                    agent.call(
+                            List.of(TestUtils.createUserMessage("user", "hello")),
+                            RuntimeContext.builder()
+                                    .put(ModelInvocation.class, invocation)
+                                    .build());
+            if (allowFallback) {
+                assertEquals(
+                        "fallback",
+                        TestUtils.extractTextContent(response.block(Duration.ofSeconds(5))));
+                assertEquals(1, fallback.getCallCount());
+                assertEquals(List.of(failure), failures);
+            } else {
+                assertSame(
+                        failure,
+                        assertThrows(
+                                IllegalStateException.class,
+                                () -> response.block(Duration.ofSeconds(5))));
+                assertEquals(0, fallback.getCallCount());
+                assertEquals(List.of(), failures);
+            }
+        }
+    }
+
+    @Test
+    void hostPausePreservesPendingCallWithoutSelectingFallback() {
+        var paused = new AgentExecutionHost.Paused();
+        var primary =
+                new MockModel("unused") {
+                    @Override
+                    public Flux<ChatResponse> stream(
+                            List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
+                        return Flux.error(paused);
+                    }
+                };
+        var fallback = new MockModel("fallback");
+        var failures = new ArrayList<Throwable>();
+        try (var agent =
+                ReActAgent.builder()
+                        .name("host-pause")
+                        .model(primary)
+                        .fallbackModel(fallback)
+                        .threadJournalStore(new InMemoryThreadJournalStore())
+                        .failoverListener((model, error) -> failures.add(error))
+                        .build()) {
+            var response =
+                    agent.call(
+                                    List.of(TestUtils.createUserMessage("user", "hello")),
+                                    RuntimeContext.builder()
+                                            .put(ModelInvocation.class, new DelegatingInvocation())
+                                            .build())
+                            .block(Duration.ofSeconds(5));
+            assertEquals(
+                    io.agentscope.core.message.GenerateReason.HOST_PAUSED,
+                    response.getGenerateReason());
+            assertEquals("", response.getTextContent());
+            assertEquals(0, fallback.getCallCount());
+            assertEquals(List.of(), failures);
+        }
+    }
 
     @ParameterizedTest
     @ValueSource(booleans = {false, true})
