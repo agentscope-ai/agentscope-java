@@ -15,7 +15,7 @@ mvn -B -T1 -pl agentscope-examples/agents/agentscope-chat -am package -DskipTest
 java -jar agentscope-examples/agents/agentscope-chat/target/agentscope-chat.jar
 ```
 
-Open [http://127.0.0.1:8087](http://127.0.0.1:8087). The example binds only to localhost. The default data directory is `~/.agentscope/session-chat`: `durable/durable.db` holds state/events and `durable/objects/` holds objects. Preserve the entire directory across restarts. The demo UI uses Chinese labels.
+Open [http://127.0.0.1:8087](http://127.0.0.1:8087). The example binds only to localhost. The default data directory is `~/.agentscope/session-chat`: `durable/records/` holds state/events and `durable/objects/` holds objects. Preserve the entire directory across restarts. The demo UI uses Chinese labels.
 
 ```bash
 CHAT_WORKSPACE=/absolute/path/to/chat-workspace CHAT_PORT=8088 \

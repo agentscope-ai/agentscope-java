@@ -19,7 +19,7 @@ You add Durable to an existing Java application, register an Agent factory, and
 choose a persistent Backend. The application keeps its model, prompts, tools,
 permissions, and workspace configuration. Durable supplies task admission,
 scheduling, recovery coordination, tool-result handoff, and replayable public events.
-Local integration can run in one JVM with SQLite; shared storage and independent
+Local integration defaults to files in one directory; shared storage and independent
 tool Workers are available when the application needs multiple hosts.
 
 This is a development source API. The repository includes an AgentScope Java
@@ -395,14 +395,14 @@ Infrastructure extensions all live in [`../agentscope-extensions`](../agentscope
 
 | Extension directory | Use |
 | --- | --- |
-| [durable-jdbc](../agentscope-extensions/agentscope-extensions-durable-jdbc) | SQLite and PostgreSQL backends |
+| [durable-jdbc](../agentscope-extensions/agentscope-extensions-durable-jdbc) | File, SQLite and PostgreSQL backends |
 | [durable-http](../agentscope-extensions/agentscope-extensions-durable-http) | Public/internal HTTP clients, handlers and SSE |
 | [durable-sandbox](../agentscope-extensions/agentscope-extensions-durable-sandbox) | Sandbox bindings, detached operations, output and cleanup |
 | [durable-rocketmq](../agentscope-extensions/agentscope-extensions-durable-rocketmq) | Queued Brain–Hands execution and optional wakeups |
 | [durable-objects](../agentscope-extensions/agentscope-extensions-durable-objects) | S3/MinIO and OSS object stores |
 | [durable-mcp](../agentscope-extensions/agentscope-extensions-durable-mcp) | MCP connections and explicit recovery extensions |
 
-SQLite needs no database service. PostgreSQL requires a service and an explicit dependency
+New `LocalBackend.open(directory)` stores use local files. Existing SQLite directories reopen in place. Select SQLite explicitly with `LocalBackend.sqlite(directory)`. The file backend rewrites one scope per commit and scans scope files for ready work. Use SQLite for larger single-host workloads. PostgreSQL requires a service and an explicit dependency
 on the optional `org.postgresql:postgresql` driver. Applications own models, pools,
 credentials, resource authorization and host lifecycle.
 

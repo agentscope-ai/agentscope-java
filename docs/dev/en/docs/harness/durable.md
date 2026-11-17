@@ -62,7 +62,7 @@ runtime (excluding test dependencies). There is no separate codec artifact.
 
 Use `io.agentscope:agentscope-durable-adapter-harness-agentscope` and
 `io.agentscope:agentscope-extensions-durable-jdbc` at the same version as Core/Harness.
-SQLite is the default local persistent backend. PostgreSQL provides shared storage
+Local storage defaults to files. Select SQLite with `LocalBackend.sqlite(directory)`. PostgreSQL provides shared storage
 for multiple compatible hosts. Neither requires a Worker or message queue.
 
 ```java
@@ -523,7 +523,7 @@ cross-process notification gaps.
 Applications select a complete backend. Storage-provider SPIs are only needed for
 custom integrations.
 
-`LocalBackend.open(directory)` creates `directory/durable.db`, initializes SQLite
+`LocalBackend.open(directory)` writes atomic per-scope snapshots under `records/`, uses `objects/` for immutable content
 and wires process-local change notifications. Reopen the same directory to recover
 the original sessions. No database server or broker is required.
 
@@ -790,7 +790,7 @@ Register multiple definition versions under one Harness name or use `resolver` t
 
 Partitioned records commit lease checks, incremental native journal, checkpoints, tool intents and input receipts in one Session transaction. `CommitPolicy` lets hosts enforce policy against records in that transaction. Do not make external service calls inside this callback.
 
-`LocalBackend` assembles SQLite, filesystem objects and local notifications. PostgreSQL accepts an `ObjectStore`. The `agentscope-extensions-durable-objects` extension supplies S3/MinIO and OSS stores with immutable session-scoped digest references and verified reads. SDK dependencies are optional; applications select the SDK and own its client lifecycle. Large checkpoints, journal entries and private resources use object references. HTTP provides bounded binary object IO; MQ endpoints can share an object store for large messages. Private bodies do not enter public events.
+`LocalBackend` assembles file or SQLite records, filesystem objects and local notifications. PostgreSQL accepts an `ObjectStore`. The `agentscope-extensions-durable-objects` extension supplies S3/MinIO and OSS stores with immutable session-scoped digest references and verified reads. SDK dependencies are optional; applications select the SDK and own its client lifecycle. Large checkpoints, journal entries and private resources use object references. HTTP provides bounded binary object IO; MQ endpoints can share an object store for large messages. Private bodies do not enter public events.
 
 `binding.workspace()` implements Harness `BaseStore` using versioned Backend GET/SEARCH/PUT/CAS/DELETE calls, so Brain needs no database credentials. Wire `new RemoteFilesystem(binding.workspace(), List.of("workspace"))` into Harness. This store is already session-scoped; use stable relative namespaces. External shared files and Sandbox data belong to their mounts and are not automatically part of private checkpoints.
 

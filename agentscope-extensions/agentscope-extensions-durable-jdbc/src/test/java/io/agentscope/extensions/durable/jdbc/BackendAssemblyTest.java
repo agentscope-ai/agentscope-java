@@ -113,6 +113,27 @@ class BackendAssemblyTest {
     }
 
     @Test
+    void sqliteSelectionSurvivesReopenAndCannotShadowFileRecords() {
+        var sqlite = directory.resolve("explicit-sqlite");
+        try (var first = LocalBackend.sqlite(sqlite)) {
+            first.create(
+                    new SessionSpec(
+                            session,
+                            new ThreadBinding("fixture", "v1", "1"),
+                            DurableJson.value(null)));
+        }
+        try (var reopened = LocalBackend.open(sqlite)) {
+            assertTrue(reopened.snapshot(session).turns().isEmpty());
+            assertFalse(Files.exists(sqlite.resolve("records")));
+        }
+        var files = directory.resolve("only-files");
+        try (var local = LocalBackend.open(files)) {
+            assertThrows(IllegalArgumentException.class, () -> LocalBackend.sqlite(files));
+            assertFalse(Files.exists(files.resolve("durable.db")));
+        }
+    }
+
+    @Test
     void immutableFilePublicationReusesAndVerifiesTheExistingDestination() throws Exception {
         var root = directory.resolve("objects");
         var writer = new FileObjectStore(root);
@@ -153,7 +174,7 @@ class BackendAssemblyTest {
                     backend.submit(
                             new ThreadKey(session, "main"), "request", DurableJson.value("hello")));
             if (dataSource == null)
-                assertTrue(Files.isRegularFile(directory.resolve("nested/data/durable.db")));
+                assertTrue(Files.isDirectory(directory.resolve("nested/data/records")));
         }
     }
 

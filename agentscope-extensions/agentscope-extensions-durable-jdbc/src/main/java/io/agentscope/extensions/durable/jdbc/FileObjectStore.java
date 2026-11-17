@@ -59,7 +59,7 @@ public final class FileObjectStore implements ObjectStore {
             }
             try {
                 if (Platform.isWindows()) {
-                    publishWindows(temporary, destination);
+                    moveWindows(temporary, destination, false);
                 } else {
                     Files.createLink(destination, temporary);
                 }
@@ -89,11 +89,13 @@ public final class FileObjectStore implements ObjectStore {
 
     // Windows cannot open the parent directory as a Java FileChannel. Publish in the
     // same directory with write-through and without permission to replace an existing object.
-    private static void publishWindows(Path temporary, Path destination) throws IOException {
+    static void moveWindows(Path temporary, Path destination, boolean replace) throws IOException {
         if (Kernel32.INSTANCE.MoveFileEx(
                 temporary.toString(),
                 destination.toString(),
-                new DWORD(WinBase.MOVEFILE_WRITE_THROUGH))) return;
+                new DWORD(
+                        WinBase.MOVEFILE_WRITE_THROUGH
+                                | (replace ? WinBase.MOVEFILE_REPLACE_EXISTING : 0)))) return;
         int error = Native.getLastError();
         if (error == WinError.ERROR_ALREADY_EXISTS || error == WinError.ERROR_FILE_EXISTS)
             throw new FileAlreadyExistsException(destination.toString());

@@ -15,7 +15,7 @@ mvn -B -T1 -pl agentscope-examples/agents/agentscope-chat -am package -DskipTest
 java -jar agentscope-examples/agents/agentscope-chat/target/agentscope-chat.jar
 ```
 
-打开 [http://127.0.0.1:8087](http://127.0.0.1:8087)。示例只监听本机。默认数据目录为 `~/.agentscope/session-chat`，其中 `durable/durable.db` 保存状态与事件，`durable/objects/` 保存对象。重启时保留整个数据目录。
+打开 [http://127.0.0.1:8087](http://127.0.0.1:8087)。示例只监听本机。默认数据目录为 `~/.agentscope/session-chat`，其中 `durable/records/` 保存状态与事件，`durable/objects/` 保存对象。重启时保留整个数据目录。
 
 ```bash
 CHAT_WORKSPACE=/absolute/path/to/chat-workspace CHAT_PORT=8088 \
