@@ -46,8 +46,11 @@ public final class A2uiRenderer {
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
     private static final String ALREADY_DELIVERED_NOTE =
-            "This turn already delivered its UI surface; end the turn now. Call again with"
-                    + " force=true only if the user explicitly asked for a different UI.";
+            "NO-OP: this call rendered nothing new. This turn already delivered its UI surface and"
+                    + " it is still on the user's screen. Do NOT call a2ui_render again — every"
+                    + " further call returns this same result and changes nothing on screen. Answer"
+                    + " in text and end the turn now. Pass force=true only if the user explicitly"
+                    + " asked for a different UI.";
 
     private final A2uiConfig config;
     private final A2uiCatalog catalog;

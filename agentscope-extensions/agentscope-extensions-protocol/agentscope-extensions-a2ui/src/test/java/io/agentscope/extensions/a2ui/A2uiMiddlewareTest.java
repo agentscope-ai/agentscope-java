@@ -196,7 +196,9 @@ class A2uiMiddlewareTest {
         assertFalse(shownUi.contains("updateComponents"), shownUi);
         assertTrue(shownUi.contains("s-abcd1234"), shownUi);
         assertTrue(shownUi.contains("Text"), shownUi);
-        assertTrue(shownUi.contains("Already delivered; stop."), shownUi);
+        assertTrue(shownUi.startsWith("Already delivered; stop."), shownUi);
+        assertFalse(shownUi.contains("Displayed a new"), shownUi);
+        assertFalse(shownUi.contains("Updated the A2UI surface"), shownUi);
         assertEquals("Error: A2UI render failed: boom", resultText(seen.get().messages().get(2)));
         assertTrue(
                 resultText(seen.get().messages().get(3)).contains("updateComponents"),

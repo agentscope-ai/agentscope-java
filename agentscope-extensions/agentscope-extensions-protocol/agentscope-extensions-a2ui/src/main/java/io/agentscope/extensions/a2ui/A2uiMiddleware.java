@@ -250,7 +250,13 @@ public final class A2uiMiddleware implements MiddlewareBase, ToolInstallingMiddl
                         .limit(12)
                         .collect(Collectors.joining(", "));
         StringBuilder sb = new StringBuilder();
-        if (A2uiConstants.MESSAGE_TYPE_CREATE_SURFACE.equals(envelope.messageType())) {
+        String note = envelope.note();
+        boolean noop = note != null && !note.isBlank();
+        // The advisory note leads: appended after "Displayed a new surface" it reads as a footnote
+        // and models keep re-issuing the call.
+        if (noop) {
+            sb.append(note).append(" Unchanged surface ");
+        } else if (A2uiConstants.MESSAGE_TYPE_CREATE_SURFACE.equals(envelope.messageType())) {
             sb.append("Displayed a new A2UI surface ");
         } else {
             sb.append("Updated the A2UI surface ");
@@ -262,9 +268,6 @@ public final class A2uiMiddleware implements MiddlewareBase, ToolInstallingMiddl
                 .append(names)
                 .append("). It is on the user's screen: do not restate it, and reuse the same")
                 .append(" surface for later changes to this UI.");
-        if (envelope.note() != null && !envelope.note().isBlank()) {
-            sb.append(' ').append(envelope.note());
-        }
         return sb.toString();
     }
 }

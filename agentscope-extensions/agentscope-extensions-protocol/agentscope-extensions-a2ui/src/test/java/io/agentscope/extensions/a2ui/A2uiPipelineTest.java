@@ -532,6 +532,8 @@ class A2uiPipelineTest {
         assertTrue(first.contains("\"createSurface\":{"), first);
         assertTrue(second.contains("\"createSurface\":{"), second);
         assertTrue(second.contains("force=true"), second);
+        assertTrue(second.contains("NO-OP"), second);
+        assertTrue(second.contains("Do NOT call a2ui_render again"), second);
         assertEquals(
                 second.replaceAll(".*\"surfaceId\":\"(s-[0-9a-f]+)\".*", "$1"),
                 first.replaceAll(".*\"surfaceId\":\"(s-[0-9a-f]+)\".*", "$1"));
