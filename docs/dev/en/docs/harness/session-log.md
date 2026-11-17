@@ -46,7 +46,7 @@ var events = journal.readAfter(0, 100);
 
 Reads neither claim a writer nor repair state or invoke a model. Harness also supplies `threadTranscript(ctx)` and `inspectThread(ctx)`. Native queries and storage SPIs are blocking; WebFlux applications must schedule them on suitable blocking workers rather than network event loops.
 
-`ThreadHistory.Transcript` contains complete messages and `asOfSeq`, not a public UI snapshot with task controls, partial text and tool progress. Durable applications restore the UI through Session/Thread/Turn `snapshot()`, `history()` and event APIs instead of inferring Turn state from native logs. See the runnable [recoverable chat example](/v2/en/blogs/best-practices/session-chat).
+`ThreadHistory.Transcript` contains complete messages and `asOfSeq`, not a public UI snapshot with task controls, partial text and tool progress. Durable applications restore the UI through Session/Thread/Turn `snapshot()`, `history()` and event APIs instead of inferring Turn state from native logs. See the runnable [recoverable chat example](/dev/en/blogs/best-practices/session-chat).
 
 ## Event envelope and reads
 

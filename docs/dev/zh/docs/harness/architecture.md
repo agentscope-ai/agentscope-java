@@ -71,7 +71,7 @@ en_link: /dev/en/docs/harness/architecture
 ## 相关文档
 
 - [会话操作、事件与恢复](/dev/zh/docs/harness/session-log) — 后台任务、排队、交互和续做
-- [可恢复聊天示例](/v2/zh/blogs/best-practices/session-chat) — 从提交任务到前端断线续传的完整应用
+- [可恢复聊天示例](/dev/zh/blogs/best-practices/session-chat) — 从提交任务到前端断线续传的完整应用
 - [工作区](/dev/zh/docs/harness/workspace) — 目录结构、指令与参考材料的来源、`tools.json`
 - [上下文与 AgentState](/dev/zh/docs/building-blocks/context) — `AgentState`、`RuntimeContext`、`AgentStateStore` 持久化、多用户隔离
 - [记忆](/dev/zh/docs/harness/memory) — 两层记忆
