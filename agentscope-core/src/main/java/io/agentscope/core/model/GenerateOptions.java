@@ -46,6 +46,8 @@ public class GenerateOptions {
     private final Double presencePenalty;
     private final Integer thinkingBudget;
     private final String reasoningEffort;
+    private final Boolean includeThoughts;
+    private final String thinkingLevel;
     private final ExecutionConfig executionConfig;
     private final ToolChoice toolChoice;
     private final Integer topK;
@@ -76,6 +78,8 @@ public class GenerateOptions {
         this.presencePenalty = builder.presencePenalty;
         this.thinkingBudget = builder.thinkingBudget;
         this.reasoningEffort = builder.reasoningEffort;
+        this.includeThoughts = builder.includeThoughts;
+        this.thinkingLevel = builder.thinkingLevel;
         this.executionConfig = builder.executionConfig;
         this.toolChoice = builder.toolChoice;
         this.topK = builder.topK;
@@ -243,6 +247,32 @@ public class GenerateOptions {
      */
     public Integer getThinkingBudget() {
         return thinkingBudget;
+    }
+
+    /**
+     * Gets whether thoughts should be included in the model response.
+     *
+     * <p>Tri-state option for providers that support a thinking mode (e.g., Gemini). When null,
+     * the option is omitted from the request and the model default applies. When true, thinking
+     * is enabled; when false, thinking is explicitly disabled.
+     *
+     * @return true to include thoughts, false to disable them, or null if not set
+     */
+    public Boolean getIncludeThoughts() {
+        return includeThoughts;
+    }
+
+    /**
+     * Gets the thinking level (reasoning depth) for models that support it.
+     *
+     * <p>This parameter is specific to models with level-based thinking control (e.g., Gemini 3
+     * and later). Providers define their own accepted values; the Gemini integration accepts
+     * "low", "medium", and "high".
+     *
+     * @return the thinking level, or null if not set
+     */
+    public String getThinkingLevel() {
+        return thinkingLevel;
     }
 
     /**
@@ -473,6 +503,12 @@ public class GenerateOptions {
                 primary.reasoningEffort != null
                         ? primary.reasoningEffort
                         : fallback.reasoningEffort);
+        builder.includeThoughts(
+                primary.includeThoughts != null
+                        ? primary.includeThoughts
+                        : fallback.includeThoughts);
+        builder.thinkingLevel(
+                primary.thinkingLevel != null ? primary.thinkingLevel : fallback.thinkingLevel);
         builder.executionConfig(
                 ExecutionConfig.mergeConfigs(primary.executionConfig, fallback.executionConfig));
         builder.toolChoice(primary.toolChoice != null ? primary.toolChoice : fallback.toolChoice);
@@ -532,6 +568,8 @@ public class GenerateOptions {
         private Double presencePenalty;
         private Integer thinkingBudget;
         private String reasoningEffort;
+        private Boolean includeThoughts;
+        private String thinkingLevel;
         private ExecutionConfig executionConfig;
         private ToolChoice toolChoice;
         private Integer topK;
@@ -697,6 +735,36 @@ public class GenerateOptions {
          */
         public Builder thinkingBudget(Integer thinkingBudget) {
             this.thinkingBudget = thinkingBudget;
+            return this;
+        }
+
+        /**
+         * Sets whether thoughts should be included in the model response.
+         *
+         * <p>Tri-state option for providers that support a thinking mode (e.g., Gemini). When
+         * null, the option is omitted from the request and the model default applies. When true,
+         * thinking is enabled; when false, thinking is explicitly disabled.
+         *
+         * @param includeThoughts true to include thoughts, false to disable them, null to omit
+         * @return this builder
+         */
+        public Builder includeThoughts(Boolean includeThoughts) {
+            this.includeThoughts = includeThoughts;
+            return this;
+        }
+
+        /**
+         * Sets the thinking level (reasoning depth) for models that support it.
+         *
+         * <p>This parameter is specific to models with level-based thinking control (e.g.,
+         * Gemini 3 and later). Providers define their own accepted values; the Gemini formatter
+         * accepts "low", "medium", and "high".
+         *
+         * @param thinkingLevel the thinking level, or null to omit
+         * @return this builder
+         */
+        public Builder thinkingLevel(String thinkingLevel) {
+            this.thinkingLevel = thinkingLevel;
             return this;
         }
 

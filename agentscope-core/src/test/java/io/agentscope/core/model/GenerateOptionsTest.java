@@ -474,4 +474,43 @@ class GenerateOptionsTest {
         assertNotNull(options);
         assertNull(options.getEndpointPath());
     }
+
+    @Test
+    @DisplayName("Should build and read thinking include/level options")
+    void testThinkingOptionsBuilder() {
+        GenerateOptions options =
+                GenerateOptions.builder().includeThoughts(true).thinkingLevel("low").build();
+
+        assertNotNull(options);
+        assertEquals(Boolean.TRUE, options.getIncludeThoughts());
+        assertEquals("low", options.getThinkingLevel());
+    }
+
+    @Test
+    @DisplayName("Should default thinking include/level options to null")
+    void testThinkingOptionsDefaultNull() {
+        GenerateOptions options = GenerateOptions.builder().build();
+
+        assertNull(options.getIncludeThoughts());
+        assertNull(options.getThinkingLevel());
+    }
+
+    @Test
+    @DisplayName("Should merge thinking options with primary precedence and fallback inheritance")
+    void testMergeThinkingOptions() {
+        GenerateOptions primary =
+                GenerateOptions.builder().includeThoughts(true).thinkingLevel("high").build();
+        GenerateOptions fallback =
+                GenerateOptions.builder().includeThoughts(false).thinkingLevel("low").build();
+
+        GenerateOptions merged = GenerateOptions.mergeOptions(primary, fallback);
+        assertEquals(Boolean.TRUE, merged.getIncludeThoughts());
+        assertEquals("high", merged.getThinkingLevel());
+
+        GenerateOptions partial = GenerateOptions.builder().thinkingBudget(2048).build();
+        GenerateOptions inherited = GenerateOptions.mergeOptions(partial, fallback);
+        assertEquals(Boolean.FALSE, inherited.getIncludeThoughts());
+        assertEquals("low", inherited.getThinkingLevel());
+        assertEquals(2048, inherited.getThinkingBudget());
+    }
 }

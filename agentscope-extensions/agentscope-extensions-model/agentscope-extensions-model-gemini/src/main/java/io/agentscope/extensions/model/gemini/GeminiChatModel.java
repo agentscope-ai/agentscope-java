@@ -24,6 +24,7 @@ import com.google.genai.types.GenerateContentConfig;
 import com.google.genai.types.GenerateContentResponse;
 import com.google.genai.types.HttpOptions;
 import com.google.genai.types.ProxyOptions;
+import com.google.genai.types.ThinkingConfig;
 import io.agentscope.core.formatter.Formatter;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.model.ChatModelBase;
@@ -40,7 +41,9 @@ import io.agentscope.extensions.model.gemini.formatter.GeminiToolsHelper;
 import io.agentscope.extensions.model.gemini.tool.GeminiServerTool;
 import java.time.Instant;
 import java.util.List;
+import java.util.Locale;
 import java.util.Objects;
+import java.util.Set;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Flux;
@@ -67,6 +70,22 @@ import reactor.core.publisher.Flux;
 public class GeminiChatModel extends ChatModelBase {
 
     private static final Logger log = LoggerFactory.getLogger(GeminiChatModel.class);
+
+    /**
+     * Models that use level-based thinking control ({@code thinkingLevel}) instead of the
+     * budget-era shape. Mirrors agentscope-python {@code _is_gemini_4}.
+     */
+    private static final Set<String> GEMINI_4_MODELS = Set.of("gemini-4-argon", "gemini-4-carbon");
+
+    /**
+     * Thinking levels accepted by the Gemini API for Gemini 4 models, mirroring
+     * agentscope-python's validated set. The documented enum is wider; widening later is
+     * additive and non-breaking.
+     */
+    private static final Set<String> SUPPORTED_THINKING_LEVELS = Set.of("LOW", "MEDIUM", "HIGH");
+
+    /** Default thinking budget (tokens) when thinking is enabled without an explicit budget. */
+    private static final int DEFAULT_THINKING_BUDGET = 1024;
 
     private final String apiKey;
     private final String modelName;
@@ -296,7 +315,100 @@ public class GeminiChatModel extends ChatModelBase {
         }
 
         formatter.applyOptions(configBuilder, options, defaultOptions);
+        applyThinkingConfig(configBuilder, GenerateOptions.mergeOptions(options, defaultOptions));
         return GeminiToolsHelper.mergeServerTools(configBuilder.build(), serverTools);
+    }
+
+    /**
+     * Applies the model-name-aware thinking configuration to the request.
+     *
+     * <p>Budget-era models use {@code includeThoughts + thinkingBudget}; Gemini 4 models use
+     * {@code includeThoughts + thinkingLevel} and reject {@code thinkingBudget}. Invalid
+     * combinations fail fast with an {@link IllegalArgumentException} (surfaced as a
+     * {@link ModelException} by the request path) instead of an opaque remote error.
+     *
+     * <p>Mapping (mirrors agentscope-python PR #3523 / #3675):
+     * <ul>
+     *   <li>No thinking option set: omit {@code thinkingConfig} (model default applies).</li>
+     *   <li>Budget-era enable: {@code includeThoughts=true, thinkingBudget=&lt;budget or 1024&gt;}.</li>
+     *   <li>Budget-era disable: {@code includeThoughts=false, thinkingBudget=0}.</li>
+     *   <li>Gemini 4 enable: {@code includeThoughts=true, thinkingLevel=&lt;level&gt;} (no budget).</li>
+     *   <li>Gemini 4 disable: {@code includeThoughts=false} (no budget, no level).</li>
+     * </ul>
+     */
+    private void applyThinkingConfig(
+            GenerateContentConfig.Builder configBuilder, GenerateOptions options) {
+        Integer thinkingBudget = options.getThinkingBudget();
+        Boolean includeThoughts = options.getIncludeThoughts();
+        String thinkingLevel = options.getThinkingLevel();
+
+        if (thinkingBudget == null && includeThoughts == null && thinkingLevel == null) {
+            return;
+        }
+
+        if (GEMINI_4_MODELS.contains(modelName)) {
+            if (thinkingBudget != null) {
+                throw new IllegalArgumentException(
+                        "thinkingBudget is not supported by Gemini 4 model '"
+                                + modelName
+                                + "'; use thinkingLevel instead");
+            }
+            if (Boolean.FALSE.equals(includeThoughts)) {
+                if (thinkingLevel != null) {
+                    throw new IllegalArgumentException(
+                            "thinkingLevel cannot be combined with includeThoughts=false on '"
+                                    + modelName
+                                    + "'");
+                }
+                configBuilder.thinkingConfig(
+                        ThinkingConfig.builder().includeThoughts(false).build());
+                return;
+            }
+            if (thinkingLevel == null) {
+                throw new IllegalArgumentException(
+                        "Gemini 4 model '"
+                                + modelName
+                                + "' requires thinkingLevel to enable thinking");
+            }
+            configBuilder.thinkingConfig(
+                    ThinkingConfig.builder()
+                            .includeThoughts(true)
+                            .thinkingLevel(validateThinkingLevel(thinkingLevel))
+                            .build());
+            return;
+        }
+
+        if (thinkingLevel != null) {
+            throw new IllegalArgumentException(
+                    "thinkingLevel is not supported by model '"
+                            + modelName
+                            + "'; it is recommended for Gemini 3 or later models");
+        }
+        boolean enable =
+                includeThoughts != null
+                        ? includeThoughts
+                        : thinkingBudget != null && thinkingBudget > 0;
+        ThinkingConfig.Builder builder = ThinkingConfig.builder().includeThoughts(enable);
+        if (enable) {
+            builder.thinkingBudget(
+                    thinkingBudget != null && thinkingBudget > 0
+                            ? thinkingBudget
+                            : DEFAULT_THINKING_BUDGET);
+        } else {
+            builder.thinkingBudget(0);
+        }
+        configBuilder.thinkingConfig(builder.build());
+    }
+
+    private static String validateThinkingLevel(String thinkingLevel) {
+        String normalized = thinkingLevel.trim().toUpperCase(Locale.ROOT);
+        if (!SUPPORTED_THINKING_LEVELS.contains(normalized)) {
+            throw new IllegalArgumentException(
+                    "Unsupported thinkingLevel '"
+                            + thinkingLevel
+                            + "'; accepted values: LOW, MEDIUM, HIGH");
+        }
+        return normalized;
     }
 
     /**
