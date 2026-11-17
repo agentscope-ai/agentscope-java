@@ -55,7 +55,7 @@ The default endpoint is `https://api.typesafe.ai`, model `jev-latest`, and per-r
 
 The client posts to `/v1/systemone` and retries HTTP 429, 529 and 5xx with configured backoff. Nonretryable errors, exhausted retries and invalid responses throw `JevException`. Validation covers the question set, answer types, distributions and score grades. Never invent success for a missing answer.
 
-To talk to a compatible gateway or inner provider, set a custom endpoint path; it replaces `/v1/systemone` and is appended to the base URL:
+To talk to a compatible gateway or inner provider, set a custom endpoint path; it replaces `/v1/systemone` and is appended to the base URL. If the base URL ends with `/v1` and the path starts with `/v1/`, the version prefix is not repeated:
 
 ```java
 var client = JevClient.builder()

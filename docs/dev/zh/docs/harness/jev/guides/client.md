@@ -55,7 +55,7 @@ System.out.println("记录支持回答的概率：" + answer.noul());
 
 客户端向 `/v1/systemone` 发请求，对 HTTP 429、529 和 5xx 按策略退避重试；非重试错误、重试耗尽和响应校验失败抛出 `JevException`。它检查题目集合、答案类型、概率分布和 Score 等级。应用不应从缺失答案中补造成功结果。
 
-对接兼容网关或内部服务时，可设置自定义端点路径替换 `/v1/systemone`，路径会拼接在 base URL 之后：
+对接兼容网关或内部服务时，可设置自定义端点路径替换 `/v1/systemone`，路径会拼接在 base URL 之后。若 base URL 以 `/v1` 结尾且路径以 `/v1/` 开头，则不会重复版本前缀：
 
 ```java
 var client = JevClient.builder()

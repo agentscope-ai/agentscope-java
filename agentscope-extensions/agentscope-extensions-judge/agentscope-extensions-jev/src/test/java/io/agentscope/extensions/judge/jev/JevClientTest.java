@@ -159,6 +159,25 @@ class JevClientTest {
     }
 
     @Test
+    void doesNotDuplicateVersionPrefixInCustomEndpointPath() {
+        when(transport.execute(any(HttpRequest.class))).thenReturn(response(200, successBody()));
+
+        JevClient client =
+                JevClient.builder()
+                        .apiKey("test-key")
+                        .baseUrl("http://typesafe.test/v1")
+                        .endpointPath("/v1/decisions")
+                        .transport(transport)
+                        .retryPolicy(new JevRetryPolicy(0, Duration.ofMillis(1)))
+                        .build();
+        client.systemOneBlocking(request());
+
+        ArgumentCaptor<HttpRequest> captor = ArgumentCaptor.forClass(HttpRequest.class);
+        verify(transport).execute(captor.capture());
+        assertEquals("http://typesafe.test/v1/decisions", captor.getValue().getUrl());
+    }
+
+    @Test
     void doesNotDuplicateCustomEndpointPathAlreadyInBaseUrl() {
         when(transport.execute(any(HttpRequest.class))).thenReturn(response(200, successBody()));
 

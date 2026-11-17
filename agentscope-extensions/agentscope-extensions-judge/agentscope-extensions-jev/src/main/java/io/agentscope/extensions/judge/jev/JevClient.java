@@ -176,7 +176,13 @@ public final class JevClient {
 
     private String systemOneUrl() {
         if (endpointPath != null) {
-            return baseUrl.endsWith(endpointPath) ? baseUrl : baseUrl + endpointPath;
+            if (baseUrl.endsWith(endpointPath)) {
+                return baseUrl;
+            }
+            if (baseUrl.endsWith("/v1") && endpointPath.startsWith("/v1/")) {
+                return baseUrl + endpointPath.substring("/v1".length());
+            }
+            return baseUrl + endpointPath;
         }
         if (baseUrl.endsWith(SYSTEM_ONE_ENDPOINT)) {
             return baseUrl;
