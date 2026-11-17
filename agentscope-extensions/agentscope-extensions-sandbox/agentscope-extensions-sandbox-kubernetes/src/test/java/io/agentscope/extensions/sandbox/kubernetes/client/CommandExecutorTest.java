@@ -148,6 +148,8 @@ class CommandExecutorTest {
         assertEquals("echo legacy", payload.get().path("command").asText());
         assertFalse(payload.get().has("timeout_seconds"));
         assertEquals(1, executions.get());
+        // 404 is not retryable, so the legacy fallback must not repeat the capability probe.
+        assertEquals(1, capabilityRequests.get());
     }
 
     @Test

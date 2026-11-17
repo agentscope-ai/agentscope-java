@@ -244,7 +244,7 @@ agent-sandbox 后端不通过 `kubectl exec` 进容器，而是访问运行时�
 
 `execute` 工具默认 30 秒，直接调用 SDK `commands().run(command)` 默认 60 秒，在运行时支持时都会显式发送生效时长。此时每次命令 POST 的 HTTP 等待预算为 **执行时长 + 运行时清理预算 + 连接器 `perAttemptTimeout`**，并发调用互不修改预算。命令 POST 之前的能力预检另用连接器 `perAttemptTimeout` 预算，上述公式不包含预检。各层 gateway/router 的请求与空闲时限须覆盖最大支持预算，或明确关闭相应限制；路由仍固定 180 秒时，300 秒命令仍无法通过该路由完成。
 
-能力接口返回 404 时，SDK 记录警告并使用旧请求 `{"command":"..."}`，HTTP 等待时间为请求超时加 30 秒。该期限仅约束客户端等待，不能保证远端命令终止；404 也可能来自路由错误。其他能力检查错误或无效响应会拒绝执行。只有实际实现超时控制后才能声明支持。提交命令后的 HTTP 错误、等待超时或无效响应表示 **执行结果未知**（Harness 退出码 `null` / outcome `UNKNOWN`）；命令 POST 不自动重试或跟随重定向，重试前应检查命令状态。工作区建目录失败后不能继续初始化、恢复或上传。
+能力接口返回 404 时，SDK 记录警告并使用旧请求 `{"command":"..."}`，HTTP 等待时间为请求超时加 30 秒，再加连接器 `perAttemptTimeout`（与现代预算中的传输余量一致）。该期限仅约束客户端等待，不能保证远端命令终止；404 也可能来自路由错误。其他能力检查错误或无效响应会拒绝执行。只有实际实现超时控制后才能声明支持。提交命令后的 HTTP 错误、等待超时或无效响应表示 **执行结果未知**（Harness 退出码 `null` / outcome `UNKNOWN`）；命令 POST 不自动重试或跟随重定向，重试前应检查命令状态。工作区建目录失败后不能继续初始化、恢复或上传。
 
 **文件 API 根目录必须与工作区根一致**（推荐都用 `/workspace`）。Harness 通过 `/upload` / `/download` 传输两类内容：工作区快照 tar 包（临时文件放在根目录下的 `.agentscope-tmp/`），以及 `write_file` / 文件下载涉及的单文件字节（路径在根目录之下时；Linux 对单个命令行参数有约 128 KiB 上限，走文件 API 的原生传输不受此限制）。根目录通过 `KubernetesSandboxClientOptions.fileApiBaseDir` 配置（默认 `/workspace`）；置空则退回 base64-over-exec 传输。
 

@@ -34,7 +34,14 @@ public class CommandExecutor {
     private static final Logger log = LoggerFactory.getLogger(CommandExecutor.class);
     private static final ObjectMapper MAPPER = new ObjectMapper();
     private static final Duration DEFAULT_TIMEOUT = Duration.ofSeconds(60);
+
+    /**
+     * Fixed waiting allowance for legacy runtimes, standing in for the cleanup budget modern
+     * runtimes advertise. The transport allowance ({@code perAttemptTimeout}) is added on top,
+     * mirroring the modern exchange budget.
+     */
     private static final Duration LEGACY_EXCHANGE_MARGIN = Duration.ofSeconds(30);
+
     private static final int CAPABILITY_MAX_ATTEMPTS = 3;
 
     /**
@@ -82,7 +89,10 @@ public class CommandExecutor {
         Duration requestTimeout = executionRequestTimeout(effectiveTimeout);
         boolean legacy = requestTimeout == null;
         if (legacy) {
-            requestTimeout = effectiveTimeout.plus(LEGACY_EXCHANGE_MARGIN);
+            requestTimeout =
+                    effectiveTimeout
+                            .plus(LEGACY_EXCHANGE_MARGIN)
+                            .plus(connector.getPerAttemptTimeout());
         }
         boolean submissionAttempted = false;
         try {
