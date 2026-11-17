@@ -135,14 +135,21 @@ public final class TransactionalSessionBackend implements SessionBackend {
 
     private JsonNode storeContent(SessionKey session, JsonNode value) {
         byte[] bytes = DurableJson.value(value).toString().getBytes(StandardCharsets.UTF_8);
-        return bytes.length > 16384
-                ? DurableJson.value(
-                        new StoredContent(null, objects.put(objectScope(session), bytes)))
-                : DurableJson.value(new StoredContent(DurableJson.copy(value), null));
+        if (bytes.length > 8192)
+            return DurableJson.value(
+                    Map.of("chunked", JournalContent.put(objects, objectScope(session), bytes)));
+        return DurableJson.value(new StoredContent(DurableJson.copy(value), null));
     }
 
     private JsonNode readContent(SessionKey session, JsonNode stored) {
         if (stored == null || stored.isNull()) return DurableJson.value(null);
+        if (stored.hasNonNull("chunked")) {
+            var root = DurableJson.convert(stored.get("chunked"), JournalContent.Root.class);
+            return DurableJson.parse(
+                    new String(
+                            JournalContent.read(objects, objectScope(session), root),
+                            StandardCharsets.UTF_8));
+        }
         var value = DurableJson.convert(stored, StoredContent.class);
         return value.reference() == null
                 ? DurableJson.copy(value.inline())

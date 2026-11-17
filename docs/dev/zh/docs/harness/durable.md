@@ -52,7 +52,7 @@ worker 仅依赖 runtime（以上不含测试依赖）。不再有独立的 code
 使用与 Core/Harness 同版本的
 `io.agentscope:agentscope-durable-adapter-harness-agentscope` 和
 `io.agentscope:agentscope-extensions-durable-jdbc`。
-SQLite 是默认本地持久后端；PostgreSQL 为多个兼容宿主提供共享存储。
+本地默认使用纯文件，使用 `LocalBackend.sqlite(directory)` 可选 SQLite；PostgreSQL 为多个兼容宿主提供共享存储。
 两种方式都不要求部署 Worker 或消息队列。
 
 ```java
@@ -465,7 +465,7 @@ SSE 继续读取 SessionBackend 的公共事件。MQ 执行不要求同时配置
 
 应用选择一套完整 Backend，自定义集成才需要了解底层存储 SPI。
 
-`LocalBackend.open(directory)` 创建 `directory/durable.db`，完成 SQLite 初始化和进程内
+`LocalBackend.open(directory)` 在 `records/` 下按 scope 原子保存记录，在 `objects/` 下保存不可变内容，并完成进程内
 通知装配。重启时打开同一目录即可恢复原 Session，无需数据库服务或消息队列。
 
 生产 PostgreSQL 接入已有 DataSource：
@@ -702,7 +702,7 @@ Agent 工厂返回全新的 `ReActAgent.Builder` 或 `HarnessAgent.Builder`；ad
 
 状态采用分段事务记录：租约、原生日志增量、检查点、工具意图和输入回执在同一 Session 事务中提交。`CommitPolicy` 是事务内的宿主授权扩展；平台可基于同一事务中的策略记录拒绝提交。不要在该回调内调用外部服务。
 
-`LocalBackend` 同时装配 SQLite、文件对象存储和本地通知。生产环境可向 PostgreSQL Backend 提供 `ObjectStore`。`agentscope-extensions-durable-objects` 提供 S3/MinIO 与 OSS，采用不可变、按会话隔离的摘要引用并在读取时校验。SDK 依赖为 optional，应用显式选择所用 SDK；客户端由宿主管理。大检查点、原生日志和私有资源自动转为对象引用。HTTP 支持有界二进制对象读写；MQ 的大消息可配置两侧共享的对象存储，原始内容不进入公共事件。
+`LocalBackend` 装配纯文件或 SQLite 记录存储、文件对象存储和本地通知。生产环境可向 PostgreSQL Backend 提供 `ObjectStore`。`agentscope-extensions-durable-objects` 提供 S3/MinIO 与 OSS，采用不可变、按会话隔离的摘要引用并在读取时校验。SDK 依赖为 optional，应用显式选择所用 SDK；客户端由宿主管理。大检查点、原生日志和私有资源自动转为对象引用。HTTP 支持有界二进制对象读写；MQ 的大消息可配置两侧共享的对象存储，原始内容不进入公共事件。
 
 `binding.workspace()` 实现 Harness `BaseStore`，通过 Backend 执行带版本的 GET/SEARCH/PUT/CAS/DELETE；Brain 不需要数据库凭据。可使用 `new RemoteFilesystem(binding.workspace(), List.of("workspace"))` 接入 Harness。该存储已按 Session 隔离，内部命名空间使用稳定相对名称。外部共享文件或 Sandbox 内容由相应挂载负责，不自动成为私有检查点的一部分。
 
