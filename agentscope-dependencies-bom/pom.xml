@@ -60,7 +60,7 @@
     </developers>
 
     <properties>
-        <revision>2026.11.06-3-kst</revision>
+        <revision>2026.11.17-1-kst</revision>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
         <java.version>17</java.version>
