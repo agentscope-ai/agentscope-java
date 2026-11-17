@@ -476,41 +476,48 @@ class GenerateOptionsTest {
     }
 
     @Test
-    @DisplayName("Should build and read thinking include/level options")
+    @DisplayName("Should build and read thinking include options")
     void testThinkingOptionsBuilder() {
-        GenerateOptions options =
-                GenerateOptions.builder().includeThoughts(true).thinkingLevel("low").build();
+        GenerateOptions options = GenerateOptions.builder().includeThoughts(true).build();
 
         assertNotNull(options);
         assertEquals(Boolean.TRUE, options.getIncludeThoughts());
-        assertEquals("low", options.getThinkingLevel());
     }
 
     @Test
-    @DisplayName("Should default thinking include/level options to null")
+    @DisplayName("Should default thinking include options to null")
     void testThinkingOptionsDefaultNull() {
         GenerateOptions options = GenerateOptions.builder().build();
 
         assertNull(options.getIncludeThoughts());
-        assertNull(options.getThinkingLevel());
     }
 
     @Test
-    @DisplayName("Should merge thinking options with primary precedence and fallback inheritance")
-    void testMergeThinkingOptions() {
-        GenerateOptions primary =
-                GenerateOptions.builder().includeThoughts(true).thinkingLevel("high").build();
-        GenerateOptions fallback =
-                GenerateOptions.builder().includeThoughts(false).thinkingLevel("low").build();
+    @DisplayName("Should merge includeThoughts with primary precedence and fallback inheritance")
+    void testMergeIncludeThoughts() {
+        GenerateOptions primary = GenerateOptions.builder().includeThoughts(true).build();
+        GenerateOptions fallback = GenerateOptions.builder().includeThoughts(false).build();
 
         GenerateOptions merged = GenerateOptions.mergeOptions(primary, fallback);
         assertEquals(Boolean.TRUE, merged.getIncludeThoughts());
-        assertEquals("high", merged.getThinkingLevel());
 
         GenerateOptions partial = GenerateOptions.builder().thinkingBudget(2048).build();
         GenerateOptions inherited = GenerateOptions.mergeOptions(partial, fallback);
         assertEquals(Boolean.FALSE, inherited.getIncludeThoughts());
-        assertEquals("low", inherited.getThinkingLevel());
         assertEquals(2048, inherited.getThinkingBudget());
+    }
+
+    @Test
+    @DisplayName("Should merge reasoningEffort with primary precedence and fallback inheritance")
+    void testMergeReasoningEffort() {
+        GenerateOptions primary = GenerateOptions.builder().reasoningEffort("high").build();
+        GenerateOptions fallback = GenerateOptions.builder().reasoningEffort("low").build();
+
+        GenerateOptions merged = GenerateOptions.mergeOptions(primary, fallback);
+        assertEquals("high", merged.getReasoningEffort());
+
+        GenerateOptions partial = GenerateOptions.builder().build();
+        GenerateOptions inherited = GenerateOptions.mergeOptions(partial, fallback);
+        assertEquals("low", inherited.getReasoningEffort());
     }
 }

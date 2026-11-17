@@ -116,9 +116,6 @@ public class GeminiChatFormatter
                 options,
                 defaultOptions,
                 configBuilder::presencePenalty);
-
-        // Thinking configuration is model-name-dependent (budget-era vs Gemini 4 shapes) and is
-        // applied by GeminiChatModel#buildGenerateContentConfig, which knows the model name.
     }
 
     /**

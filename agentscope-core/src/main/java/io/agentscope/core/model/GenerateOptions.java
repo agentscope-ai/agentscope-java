@@ -47,7 +47,6 @@ public class GenerateOptions {
     private final Integer thinkingBudget;
     private final String reasoningEffort;
     private final Boolean includeThoughts;
-    private final String thinkingLevel;
     private final ExecutionConfig executionConfig;
     private final ToolChoice toolChoice;
     private final Integer topK;
@@ -79,7 +78,6 @@ public class GenerateOptions {
         this.thinkingBudget = builder.thinkingBudget;
         this.reasoningEffort = builder.reasoningEffort;
         this.includeThoughts = builder.includeThoughts;
-        this.thinkingLevel = builder.thinkingLevel;
         this.executionConfig = builder.executionConfig;
         this.toolChoice = builder.toolChoice;
         this.topK = builder.topK;
@@ -260,19 +258,6 @@ public class GenerateOptions {
      */
     public Boolean getIncludeThoughts() {
         return includeThoughts;
-    }
-
-    /**
-     * Gets the thinking level (reasoning depth) for models that support it.
-     *
-     * <p>This parameter is specific to models with level-based thinking control (e.g., Gemini 3
-     * and later). Providers define their own accepted values; the Gemini integration accepts
-     * "low", "medium", and "high".
-     *
-     * @return the thinking level, or null if not set
-     */
-    public String getThinkingLevel() {
-        return thinkingLevel;
     }
 
     /**
@@ -507,8 +492,6 @@ public class GenerateOptions {
                 primary.includeThoughts != null
                         ? primary.includeThoughts
                         : fallback.includeThoughts);
-        builder.thinkingLevel(
-                primary.thinkingLevel != null ? primary.thinkingLevel : fallback.thinkingLevel);
         builder.executionConfig(
                 ExecutionConfig.mergeConfigs(primary.executionConfig, fallback.executionConfig));
         builder.toolChoice(primary.toolChoice != null ? primary.toolChoice : fallback.toolChoice);
@@ -569,7 +552,6 @@ public class GenerateOptions {
         private Integer thinkingBudget;
         private String reasoningEffort;
         private Boolean includeThoughts;
-        private String thinkingLevel;
         private ExecutionConfig executionConfig;
         private ToolChoice toolChoice;
         private Integer topK;
@@ -750,21 +732,6 @@ public class GenerateOptions {
          */
         public Builder includeThoughts(Boolean includeThoughts) {
             this.includeThoughts = includeThoughts;
-            return this;
-        }
-
-        /**
-         * Sets the thinking level (reasoning depth) for models that support it.
-         *
-         * <p>This parameter is specific to models with level-based thinking control (e.g.,
-         * Gemini 3 and later). Providers define their own accepted values; the Gemini formatter
-         * accepts "low", "medium", and "high".
-         *
-         * @param thinkingLevel the thinking level, or null to omit
-         * @return this builder
-         */
-        public Builder thinkingLevel(String thinkingLevel) {
-            this.thinkingLevel = thinkingLevel;
             return this;
         }
 
