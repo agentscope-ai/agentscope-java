@@ -347,6 +347,38 @@ AG-UI 前端可以在 `RunAgentInput.tools` 中传入工具 schema。adapter 将
 
 前端不需要在 `resume[]` 中回传 `metadata`；只需要发送 `interruptId`、`status` 和 `payload`。通过 Spring `AguiRequestProcessor` 入口时，AgentScope Java 会在服务端记录最近一次 `RUN_FINISHED.outcome.interrupts[]`，校验下一次 `resume[]` 是否覆盖所有 open interrupts，并把原始 interrupt 传给 adapter 做恢复转换。
 
+## 忙碌会话的消息排队
+
+默认情况下,一个会话同一时刻只允许一件事在跑。当用户在回答过程中又发一条消息,或者会话还在等待 HITL 确认时,新的请求会以 `AGUI_INTERRUPT_CONTRACT_ERROR` 被拒绝。可选的排队功能让服务端先把这类消息收下:
+
+```yaml
+agentscope:
+  agui:
+    queue:
+      enabled: true               # 默认 false
+      capacity: 16                # 每个会话最多排队条数
+      idempotency-retention: 64   # 用于去重的消息编号保留个数
+```
+
+该功能默认关闭。关闭时下列接口不会被注册,发消息接口的行为与之前完全一致。
+
+| 方法 | 路径 | 用途 |
+|---|---|---|
+| `POST` | `{prefix}/queue/{threadId}` | 收下一条消息;返回 `messageId`、排队 `position` 和 `status` |
+| `GET` | `{prefix}/queue/{threadId}` | 查看队列快照,以及 `active`、`awaitingConfirmation` 两个状态 |
+| `DELETE` | `{prefix}/queue/{threadId}/{messageId}` | 撤回排队中的消息(`204`;不存在 `404`;已被领走 `409`) |
+| `POST` | `{prefix}/queue/{threadId}/claim` | 会话空闲时领走最早的一条;返回原始请求体供重放 |
+
+队列不会自己开跑。客户端领到消息后,把返回的 `input` 照常发给原来的发消息接口,因此流式输出、中断和断线处理都不变。`{prefix}` 取自 `agentscope.agui.path-prefix`(默认 `/agui`)。
+
+去重使用最后一条 user 消息的 `id`。相同编号、相同内容重复提交会返回原来的受理结果;相同编号但内容不同会以 `409` 拒绝。撤回会忘记该编号,之后可以重新提交。
+
+注意事项:
+
+- 队列保存在进程内存中。进程重启会丢失排队消息和去重账本。
+- 领走即从队列移除。客户端领走后若在重放前崩溃,该条会丢失。这是有意为之:长任务不能被重复领取并执行两次。
+- `capacity` 限制每个会话的队列长度,队列满时返回 `429`。
+
 ## 示例项目
 
 完整示例见 [agentscope-examples/documentation](https://github.com/agentscope-ai/agentscope-java/tree/main/agentscope-examples/documentation)：

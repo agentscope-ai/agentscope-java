@@ -348,6 +348,38 @@ For permission confirmations, `payload.approved` must be the boolean `true` to a
 
 The front end does not need to echo `metadata` in `resume[]`; it only sends `interruptId`, `status`, and `payload`. Through the Spring `AguiRequestProcessor` entry point, AgentScope Java records the latest `RUN_FINISHED.outcome.interrupts[]` server-side, validates that the next `resume[]` covers all open interrupts, and passes the originating interrupts into the adapter for conversion.
 
+## Message Queue For Busy Threads
+
+By default a thread runs one agent turn at a time. When a client sends another message while the thread is busy, or while the thread is still waiting for a HITL confirmation, the run is rejected with `AGUI_INTERRUPT_CONTRACT_ERROR`. The optional message queue accepts those messages on the server instead:
+
+```yaml
+agentscope:
+  agui:
+    queue:
+      enabled: true               # default false
+      capacity: 16                # queued messages per thread
+      idempotency-retention: 64   # message ids remembered for deduplication
+```
+
+The queue is disabled by default. While it is disabled the endpoints below are not registered and the run endpoint behaves exactly as before.
+
+| Method | Path | Purpose |
+|---|---|---|
+| `POST` | `{prefix}/queue/{threadId}` | Accept a message; returns `messageId`, queue `position` and `status` |
+| `GET` | `{prefix}/queue/{threadId}` | Snapshot of queued items plus the `active` and `awaitingConfirmation` flags |
+| `DELETE` | `{prefix}/queue/{threadId}/{messageId}` | Withdraw a queued message (`204`; `404` when unknown; `409` when already claimed) |
+| `POST` | `{prefix}/queue/{threadId}/claim` | Claim the oldest message while the thread is idle; returns the original request body to replay |
+
+The queue never starts a run by itself. A client claims a message and replays the returned `input` on the regular run endpoint, so streaming, interrupts and disconnect handling stay unchanged. `{prefix}` is `agentscope.agui.path-prefix` (default `/agui`).
+
+Deduplication uses the `id` of the trailing user message. Re-submitting the same id with identical content returns the original acceptance; the same id with different content is rejected with `409`. Withdrawing a message forgets its id, so it can be submitted again.
+
+Notes:
+
+- Queues live in process memory. A restart drops queued messages and the deduplication ledger.
+- Claiming removes the message from the queue. If a client crashes after claiming but before replaying it, the message is lost. This is intentional: a long run must never be claimed and executed twice.
+- `capacity` bounds each thread; a full queue returns `429`.
+
 ## Example Project
 
 See the complete example at [agentscope-examples/documentation](https://github.com/agentscope-ai/agentscope-java/tree/main/agentscope-examples/documentation):
