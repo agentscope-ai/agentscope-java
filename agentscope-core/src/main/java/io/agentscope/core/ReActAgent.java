@@ -5812,6 +5812,25 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                             state -> state.contextMutable().add(msg)))
                     .subscribeOn(ModelSchedulers.requests());
         }
+        if (msg != null && stateStore != null) {
+            return Mono.<Void>fromRunnable(
+                            () -> {
+                                RuntimeContext context = stateContext((RuntimeContext) null);
+                                ThreadKey key = threadKey(context);
+                                AgentState observedState = getAgentState(context);
+                                int loadedContextSize = observedState.getContext().size();
+                                observedState.contextMutable().add(msg);
+                                persistAgentStateCas(
+                                        key,
+                                        context.getUserId(),
+                                        key.sessionId(),
+                                        observedState,
+                                        slotVersions.getOrDefault(
+                                                key.storagePath(), AgentStateStore.UNVERSIONED),
+                                        loadedContextSize);
+                            })
+                    .subscribeOn(ModelSchedulers.requests());
+        }
         if (msg != null) {
             getAgentState().contextMutable().add(msg);
         }
