@@ -237,6 +237,8 @@ public class HayStackClient {
                                     "HayStack API error: status={}, body={}",
                                     response.code(),
                                     responseBody);
+                            throw new HayStackApiException(
+                                    "HayStack API error: HTTP " + response.code(), response.code());
                         }
 
                         HayStackResponse hayStackResponse =

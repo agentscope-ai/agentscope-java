@@ -103,4 +103,4 @@ agent.call(msg, RuntimeContext.builder().sessionId("bob-1").userId("bob").build(
 - [Tool](/v1/en/docs/harness/tool) — `session_search` / `session_list` / `session_history` parameters
 - [Memory](/v1/en/docs/harness/memory) — how memory flush interacts with compaction and feeds `memory_search`
 - [Filesystem](/v1/en/docs/harness/filesystem) — `userIdRef` + `NamespaceFactory` multi-tenant path isolation
-- [Session log](/v2/en/docs/harness/session-log) — journal internals: backends, physical layout, custom stores and exports
+- [Workspace session logs](/v2/en/docs/harness/workspace#session-logs-these-are-workspace-files) — persisted conversation and subagent log layout

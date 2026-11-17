@@ -688,8 +688,9 @@ public class SubagentsMiddleware implements HarnessRuntimeMiddleware {
      * catalog and the async task summary. Returns {@code null} when both parts are empty.
      *
      * <p>Role and metadata mirror {@link #buildDeliveryReminder}: the harness layout places this
-     * message after the conversation (same zone as {@code runtime_materials} and {@code
-     * plan_state}), and compaction keeps this request-only projection out of the durable summary.
+     * message after the conversation (same zone as {@code plan_state}; the stable {@code
+     * runtime_materials} block renders before the conversation), and compaction keeps this
+     * request-only projection out of the durable summary.
      */
     static Msg buildSubagentStateMsg(List<SubagentEntry> entries, String taskSummary) {
         String catalog = renderSubagentCatalog(entries);

@@ -18,6 +18,8 @@ package io.agentscope.harness.agent.context;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
@@ -212,6 +214,113 @@ class HarnessContextBuilderTest {
                                 ModelRequestPreparer.Purpose.REASONING)
                         .block();
         assertEquals(1, other.messages().size());
+    }
+
+    @Test
+    void runtimeMaterialsPrecedeConversationAndStayByteStableAcrossCalls() {
+        var state = AgentState.builder().build();
+        var rc = RuntimeContext.builder().agentState(state).build();
+        rc.put(
+                WorkspaceContextMaterials.class,
+                new WorkspaceContextMaterials(
+                        List.of(
+                                ContextItem.instruction(
+                                        "environment", "harness:environment", "env facts"),
+                                ContextItem.runtimeState(
+                                        "skills", "harness:skills", true, "skill catalog"),
+                                ContextItem.runtimeState(
+                                        "session_state",
+                                        "harness:session-state",
+                                        false,
+                                        "facts"))));
+        new TodoTools().write(List.of(new TodoItem("task", "pending", null)), state);
+        Msg firstTurn = Msg.builder().role(MsgRole.USER).textContent("first turn").build();
+        state.contextMutable().add(firstTurn);
+        var builder = new HarnessContextBuilder(ContextPolicy.defaults(), null, null);
+        var first =
+                builder.prepare(
+                                mock(Agent.class),
+                                rc,
+                                new ModelCallInput(
+                                        List.of(firstTurn), List.of(), null, model(4096)),
+                                "c1",
+                                ModelRequestPreparer.Purpose.REASONING)
+                        .block();
+        // Prefix-cache contract: the compiled system head and the stable runtime block sit
+        // before the conversation...
+        assertEquals(MsgRole.SYSTEM, first.messages().get(0).getRole());
+        assertTrue(first.messages().get(0).getTextContent().contains("env facts"));
+        assertEquals("harness:runtime_materials", first.messages().get(1).getId());
+        assertTrue(first.messages().get(1).getTextContent().contains("skill catalog"));
+        assertSame(firstTurn, first.messages().get(2));
+        // ...while the volatile todo reminder stays after it
+        assertEquals("harness:todo_state", first.messages().get(3).getId());
+
+        Msg reply = Msg.builder().role(MsgRole.ASSISTANT).textContent("working").build();
+        Msg secondTurn = Msg.builder().role(MsgRole.USER).textContent("second turn").build();
+        state.contextMutable().add(reply);
+        state.contextMutable().add(secondTurn);
+        var second =
+                builder.prepare(
+                                mock(Agent.class),
+                                rc,
+                                new ModelCallInput(
+                                        List.of(firstTurn, reply, secondTurn),
+                                        List.of(),
+                                        null,
+                                        model(4096)),
+                                "c2",
+                                ModelRequestPreparer.Purpose.REASONING)
+                        .block();
+        assertSame(firstTurn, second.messages().get(2));
+        assertSame(reply, second.messages().get(3));
+        assertSame(secondTurn, second.messages().get(4));
+        assertEquals("harness:todo_state", second.messages().get(5).getId());
+        // Unchanged materials render byte-identical head content, so the prefix through the
+        // runtime block stays a cache hit as the conversation grows instead of being
+        // re-processed per request. Compared by content: Msg equality also covers the per-build
+        // timestamp, which is not part of the rendered request bytes.
+        assertEquals(
+                first.messages().get(0).getTextContent(),
+                second.messages().get(0).getTextContent());
+        assertEquals("harness:runtime_materials", second.messages().get(1).getId());
+        assertEquals(
+                first.messages().get(1).getTextContent(),
+                second.messages().get(1).getTextContent());
+
+        // A changed catalog costs a single invalidation from the runtime block onward: the
+        // system head above it keeps its bytes and the conversation keeps its identity.
+        rc.put(
+                WorkspaceContextMaterials.class,
+                new WorkspaceContextMaterials(
+                        List.of(
+                                ContextItem.instruction(
+                                        "environment", "harness:environment", "env facts"),
+                                ContextItem.runtimeState(
+                                        "skills", "harness:skills", true, "updated catalog"),
+                                ContextItem.runtimeState(
+                                        "session_state",
+                                        "harness:session-state",
+                                        false,
+                                        "facts"))));
+        var third =
+                builder.prepare(
+                                mock(Agent.class),
+                                rc,
+                                new ModelCallInput(
+                                        List.of(firstTurn, reply, secondTurn),
+                                        List.of(),
+                                        null,
+                                        model(4096)),
+                                "c3",
+                                ModelRequestPreparer.Purpose.REASONING)
+                        .block();
+        assertEquals(
+                first.messages().get(0).getTextContent(), third.messages().get(0).getTextContent());
+        assertTrue(third.messages().get(1).getTextContent().contains("updated catalog"));
+        assertNotEquals(
+                first.messages().get(1).getTextContent(), third.messages().get(1).getTextContent());
+        assertSame(firstTurn, third.messages().get(2));
     }
 
     @Test

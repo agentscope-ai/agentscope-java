@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+<modelVersion>4.0.0</modelVersion>
+<parent><groupId>io.agentscope</groupId><artifactId>agentscope-extensions</artifactId><version>${revision}</version></parent>
+<artifactId>agentscope-extensions-durable-rocketmq</artifactId>
+<properties><rocketmq-client-java.version>5.2.2</rocketmq-client-java.version></properties>
+<dependencies>
+<dependency><groupId>io.agentscope</groupId><artifactId>agentscope-durable-runtime</artifactId><version>${revision}</version></dependency>
+<dependency><groupId>io.agentscope</groupId><artifactId>agentscope-durable-worker</artifactId><version>${revision}</version></dependency>
+<dependency><groupId>io.agentscope</groupId><artifactId>agentscope-extensions-durable-jdbc</artifactId><version>${revision}</version><scope>test</scope></dependency>
+<dependency><groupId>io.agentscope</groupId><artifactId>agentscope-durable-adapter-harness-agentscope</artifactId><version>${revision}</version><scope>test</scope></dependency>
+<dependency><groupId>org.apache.rocketmq</groupId><artifactId>rocketmq-client-java</artifactId><version>${rocketmq-client-java.version}</version></dependency>
+<dependency><groupId>org.postgresql</groupId><artifactId>postgresql</artifactId><scope>test</scope></dependency>
+</dependencies>
+<profiles>
+<profile>
+<id>skip-durable-windows-tests</id>
+<activation><property><name>skipDurableWindowsTests</name><value>true</value></property></activation>
+<properties><skipTests>true</skipTests></properties>
+</profile>
+</profiles>
+</project>

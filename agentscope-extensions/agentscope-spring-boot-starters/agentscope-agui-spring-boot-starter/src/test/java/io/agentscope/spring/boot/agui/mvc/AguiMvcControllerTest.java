@@ -19,6 +19,8 @@ import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
@@ -49,6 +51,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.locks.LockSupport;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import reactor.core.publisher.Flux;
@@ -56,6 +59,69 @@ import reactor.core.publisher.SignalType;
 import reactor.core.publisher.Sinks;
 
 class AguiMvcControllerTest {
+
+    // Every wait in this class parks on the controller's internal executor delivering
+    // SSE signals, which settles in milliseconds unloaded. On CI runners under -T1C
+    // parallel builds that executor can be starved for many seconds — the former 5s
+    // latch deadline was hit twice on ubuntu (#4112, #4143) while sibling tests in
+    // this class ran 5-9s under the same load. 30s only widens the failure deadline;
+    // the happy path still returns as soon as the signal arrives.
+    private static final long ASYNC_AWAIT_SECONDS = 30;
+
+    @Test
+    void customProcessorHandlesRequestsWithoutRegistry() throws Exception {
+        AguiRequestProcessor processor = mock(AguiRequestProcessor.class);
+        CountDownLatch completed = new CountDownLatch(1);
+        when(processor.process(any(AguiRuntimeContextRequest.class)))
+                .thenReturn(
+                        new AguiRequestProcessor.ProcessResult(
+                                mock(Agent.class),
+                                Flux.<AguiEvent>empty().doFinally(signal -> completed.countDown()),
+                                RuntimeContext.empty()));
+        AguiMvcController controller =
+                AguiMvcController.builder().requestProcessor(processor).build();
+        ExecutorService executor =
+                (ExecutorService) ReflectionTestUtils.getField(controller, "executorService");
+        RunAgentInput input = input("custom-run");
+        try {
+            SseEmitter emitter = controller.handleWithAgentId(input, "header-agent", "path-agent");
+
+            assertTrue(completed.await(ASYNC_AWAIT_SECONDS, TimeUnit.SECONDS));
+            assertTrue((Boolean) ReflectionTestUtils.getField(emitter, "complete"));
+            ArgumentCaptor<AguiRuntimeContextRequest> request =
+                    ArgumentCaptor.forClass(AguiRuntimeContextRequest.class);
+            verify(processor).process(request.capture());
+            assertSame(input, request.getValue().getInput());
+            assertEquals("header-agent", request.getValue().getHeaderAgentId());
+            assertEquals("path-agent", request.getValue().getPathAgentId());
+        } finally {
+            executor.shutdownNow();
+        }
+    }
+
+    @Test
+    void customProcessorTakesPrecedenceOverDefaultProcessorConfiguration() {
+        AguiRequestProcessor processor = mock(AguiRequestProcessor.class);
+        AguiMvcController controller =
+                AguiMvcController.builder()
+                        .agentRegistry(new AguiAgentRegistry())
+                        .requestProcessor(processor)
+                        .build();
+        try {
+            assertSame(processor, ReflectionTestUtils.getField(controller, "processor"));
+        } finally {
+            ((ExecutorService) ReflectionTestUtils.getField(controller, "executorService"))
+                    .shutdownNow();
+        }
+    }
+
+    @Test
+    void registryIsStillRequiredWithoutCustomProcessor() {
+        assertThrows(IllegalStateException.class, () -> AguiMvcController.builder().build());
+        assertThrows(
+                IllegalStateException.class,
+                () -> AguiMvcController.builder().requestProcessor(null).build());
+    }
 
     @Test
     void eventEncodingFailureFailsEmitterInsteadOfCompletingSuccessfully() throws Exception {
@@ -68,7 +134,7 @@ class AguiMvcControllerTest {
         try {
             SseEmitter emitter = fixture.controller.handle(input("run-1"), null);
 
-            assertTrue(fixture.firstRunTerminated.await(5, TimeUnit.SECONDS));
+            assertTrue(fixture.firstRunTerminated.await(ASYNC_AWAIT_SECONDS, TimeUnit.SECONDS));
             assertNotNull(awaitEmitterFailure(emitter));
         } finally {
             fixture.executor.shutdownNow();
@@ -82,7 +148,7 @@ class AguiMvcControllerTest {
         try {
             SseEmitter emitter = fixture.controller.handle(input("run-1"), null);
 
-            assertTrue(fixture.firstRunTerminated.await(5, TimeUnit.SECONDS));
+            assertTrue(fixture.firstRunTerminated.await(ASYNC_AWAIT_SECONDS, TimeUnit.SECONDS));
             assertTrue((Boolean) ReflectionTestUtils.getField(emitter, "complete"));
             assertEquals(1, fixture.runCount.get());
         } finally {
@@ -97,7 +163,7 @@ class AguiMvcControllerTest {
         try {
             SseEmitter emitter = fixture.controller.handle(input("run-1"), null);
 
-            assertTrue(fixture.firstRunTerminated.await(5, TimeUnit.SECONDS));
+            assertTrue(fixture.firstRunTerminated.await(ASYNC_AWAIT_SECONDS, TimeUnit.SECONDS));
             assertTrue((Boolean) ReflectionTestUtils.getField(emitter, "complete"));
             assertEquals(1, fixture.runCount.get());
         } finally {
@@ -110,10 +176,10 @@ class AguiMvcControllerTest {
         ControllerFixture fixture = fixture(true);
         try {
             SseEmitter emitter = fixture.controller.handle(input("run-1"), null);
-            assertTrue(fixture.firstRunSubscribed.await(5, TimeUnit.SECONDS));
+            assertTrue(fixture.firstRunSubscribed.await(ASYNC_AWAIT_SECONDS, TimeUnit.SECONDS));
 
             invokeError(emitter);
-            assertTrue(fixture.firstRunTerminated.await(5, TimeUnit.SECONDS));
+            assertTrue(fixture.firstRunTerminated.await(ASYNC_AWAIT_SECONDS, TimeUnit.SECONDS));
 
             awaitSecondRunAccepted(fixture);
 
@@ -129,7 +195,7 @@ class AguiMvcControllerTest {
         ControllerFixture fixture = fixture(false);
         try {
             SseEmitter emitter = fixture.controller.handle(input("run-1"), null);
-            assertTrue(fixture.firstRunSubscribed.await(5, TimeUnit.SECONDS));
+            assertTrue(fixture.firstRunSubscribed.await(ASYNC_AWAIT_SECONDS, TimeUnit.SECONDS));
 
             invokeError(emitter);
 
@@ -166,7 +232,7 @@ class AguiMvcControllerTest {
                                 .doOnCancel(() -> termination.set(SignalType.CANCEL)));
         try {
             SseEmitter emitter = fixture.controller.handle(input("run-1"), null);
-            assertTrue(fixture.firstRunSubscribed.await(5, TimeUnit.SECONDS));
+            assertTrue(fixture.firstRunSubscribed.await(ASYNC_AWAIT_SECONDS, TimeUnit.SECONDS));
 
             invokeError(emitter);
             emitter.complete();
@@ -178,7 +244,7 @@ class AguiMvcControllerTest {
                     events.tryEmitNext(new AguiEvent.RunFinished("thread-1", "run-1")));
             assertEquals(Sinks.EmitResult.OK, events.tryEmitComplete());
 
-            assertTrue(fixture.firstRunTerminated.await(5, TimeUnit.SECONDS));
+            assertTrue(fixture.firstRunTerminated.await(ASYNC_AWAIT_SECONDS, TimeUnit.SECONDS));
             assertEquals(2, consumedEvents.get());
             assertEquals(SignalType.ON_COMPLETE, termination.get());
             verify(fixture.agent, never()).interrupt(any(RuntimeContext.class));
@@ -198,14 +264,14 @@ class AguiMvcControllerTest {
                 fixture(true, events.asFlux().doOnCancel(() -> termination.set(SignalType.CANCEL)));
         try {
             SseEmitter emitter = fixture.controller.handle(input("run-1"), null);
-            assertTrue(fixture.firstRunSubscribed.await(5, TimeUnit.SECONDS));
+            assertTrue(fixture.firstRunSubscribed.await(ASYNC_AWAIT_SECONDS, TimeUnit.SECONDS));
 
             emitter.complete();
             assertEquals(
                     Sinks.EmitResult.OK,
                     events.tryEmitNext(new AguiEvent.RunStarted("thread-1", "run-1")));
 
-            assertTrue(fixture.firstRunTerminated.await(5, TimeUnit.SECONDS));
+            assertTrue(fixture.firstRunTerminated.await(ASYNC_AWAIT_SECONDS, TimeUnit.SECONDS));
             assertEquals(SignalType.CANCEL, termination.get());
             verify(fixture.agent).interrupt(any(RuntimeContext.class));
             awaitSecondRunAccepted(fixture);
@@ -222,7 +288,7 @@ class AguiMvcControllerTest {
         try {
             SseEmitter emitter = fixture.controller.handle(input("run-1"), null);
 
-            assertTrue(fixture.firstRunTerminated.await(5, TimeUnit.SECONDS));
+            assertTrue(fixture.firstRunTerminated.await(ASYNC_AWAIT_SECONDS, TimeUnit.SECONDS));
             assertTrue((Boolean) ReflectionTestUtils.getField(emitter, "complete"));
             assertNull(ReflectionTestUtils.getField(emitter, "failure"));
             assertEquals(1, fixture.runCount.get());
@@ -257,11 +323,11 @@ class AguiMvcControllerTest {
         ControllerFixture fixture = fixture(true);
         try {
             SseEmitter emitter = fixture.controller.handle(input("run-1"), null);
-            assertTrue(fixture.firstRunSubscribed.await(5, TimeUnit.SECONDS));
+            assertTrue(fixture.firstRunSubscribed.await(ASYNC_AWAIT_SECONDS, TimeUnit.SECONDS));
 
             Object timeoutCallback = ReflectionTestUtils.getField(emitter, "timeoutCallback");
             ReflectionTestUtils.invokeMethod(timeoutCallback, "run");
-            assertTrue(fixture.firstRunTerminated.await(5, TimeUnit.SECONDS));
+            assertTrue(fixture.firstRunTerminated.await(ASYNC_AWAIT_SECONDS, TimeUnit.SECONDS));
 
             awaitSecondRunAccepted(fixture);
 
@@ -319,7 +385,7 @@ class AguiMvcControllerTest {
     }
 
     private static Object awaitEmitterFailure(SseEmitter emitter) {
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(ASYNC_AWAIT_SECONDS);
         Object failure = ReflectionTestUtils.getField(emitter, "failure");
         while (failure == null && System.nanoTime() < deadline) {
             LockSupport.parkNanos(TimeUnit.MILLISECONDS.toNanos(5));
@@ -338,7 +404,7 @@ class AguiMvcControllerTest {
      * deterministically for the thread to actually become free instead of racing it.
      */
     private static void awaitSecondRunAccepted(ControllerFixture fixture) {
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(ASYNC_AWAIT_SECONDS);
         while (fixture.runCount.get() < 2 && System.nanoTime() < deadline) {
             fixture.processor
                     .process(AguiRuntimeContextRequest.builder().input(input("run-2")).build())

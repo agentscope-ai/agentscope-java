@@ -29,13 +29,13 @@ import org.junit.jupiter.api.io.TempDir;
 
 /**
  * Prefix-cache contract for the environment block: stable deployment facts stay in the SYSTEM
- * head, while per-call volatile facts (session id, resolved date) ride the tail runtime channel
- * so the head does not shift when they change.
+ * head, while per-call volatile facts (session id, resolved date) ride the runtime channel
+ * (rendered before the conversation) so the head does not shift when they change.
  */
 class WorkspaceEnvironmentPlacementTest {
 
     @Test
-    void sessionFactsRideTailRuntimeState_headKeepsStableEnvironment(@TempDir Path workspace)
+    void sessionFactsRideRuntimeChannel_headKeepsStableEnvironment(@TempDir Path workspace)
             throws Exception {
         try (WorkspaceManager wm = new WorkspaceManager(workspace)) {
             WorkspaceContextMiddleware mw = new WorkspaceContextMiddleware(wm);

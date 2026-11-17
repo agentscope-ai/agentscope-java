@@ -144,13 +144,13 @@ public class RemoteFilesystem implements AbstractFilesystem {
     }
 
     @Override
-    public io.agentscope.core.session.AtomicSessionStorage sessionStorage(RuntimeContext rc) {
-        return new io.agentscope.harness.agent.session.StoreSessionStorage(store, getNamespace(rc));
+    public io.agentscope.core.journal.AtomicJournalStorage journalStorage(RuntimeContext rc) {
+        return new io.agentscope.harness.agent.journal.StoreJournalStorage(store, getNamespace(rc));
     }
 
     /** Whether this backend supports compare-and-swap file updates across nodes. */
     public boolean supportsAtomicUpdates() {
-        return store.supportsAtomicSessionStorage();
+        return store.supportsAtomicJournalStorage();
     }
 
     /**
@@ -217,6 +217,16 @@ public class RemoteFilesystem implements AbstractFilesystem {
                                         .withoutPadding()
                                         .encodeToString(segment.getBytes(StandardCharsets.UTF_8)))
                 .collect(java.util.stream.Collectors.joining("."));
+    }
+
+    /**
+     * Returns the effective storage namespace for this call as an immutable snapshot.
+     *
+     * @param rc call identity; null is treated as an empty context
+     * @return the namespace used for remote file operations
+     */
+    public List<String> storageNamespace(RuntimeContext rc) {
+        return List.copyOf(getNamespace(rc != null ? rc : RuntimeContext.empty()));
     }
 
     private List<String> getNamespace(RuntimeContext rc) {
@@ -341,11 +351,7 @@ public class RemoteFilesystem implements AbstractFilesystem {
         // CAS create-if-absent: atomic under concurrent writers across nodes.
         boolean written = store.putIfVersion(ns, filePath, fileDataToStoreValue(fileData), 0L);
         if (!written) {
-            return WriteResult.fail(
-                    "Cannot write to "
-                            + filePath
-                            + " because it already exists. Read and then make an edit,"
-                            + " or write to a new path.");
+            return WriteResult.alreadyExists(filePath);
         }
         return WriteResult.ok(filePath);
     }

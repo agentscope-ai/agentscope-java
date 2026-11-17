@@ -26,6 +26,7 @@ import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.AgentRun;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.event.AgentEvent;
+import io.agentscope.core.journal.InMemoryThreadJournalStore;
 import io.agentscope.core.message.GenerateReason;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
@@ -35,7 +36,6 @@ import io.agentscope.core.model.ChatModelBase;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.ToolSchema;
-import io.agentscope.core.session.InMemorySessionLogStore;
 import io.agentscope.core.state.AgentState;
 import io.agentscope.core.util.JsonUtils;
 import io.agentscope.harness.agent.memory.compaction.CompactionConfig;
@@ -75,7 +75,7 @@ class CompactionMiddlewareTest {
         var state = AgentState.builder().context(original).build();
         var ctx = RuntimeContext.builder().agentState(state).build();
         var agent = agent();
-        when(agent.sessionLogEnabled()).thenReturn(true);
+        when(agent.journalEnabled()).thenReturn(true);
         when(agent.getModel()).thenReturn(new SuccessfulSummaryModel());
         var recovery = new CompactionMiddleware(null, new SuccessfulSummaryModel(), fixedConfig());
         var calls = new AtomicInteger();
@@ -193,7 +193,7 @@ class CompactionMiddlewareTest {
                 ReActAgent.builder()
                         .name("notification-recovery")
                         .model(execution)
-                        .sessionLogStore(new InMemorySessionLogStore())
+                        .threadJournalStore(new InMemoryThreadJournalStore())
                         .middleware(recovery.overflowRecovery())
                         .build();
         var ctx = context("user", "notice-overflow");
@@ -234,7 +234,7 @@ class CompactionMiddlewareTest {
                 ReActAgent.builder()
                         .name("overflow-test")
                         .model(model)
-                        .sessionLogStore(new InMemorySessionLogStore())
+                        .threadJournalStore(new InMemoryThreadJournalStore())
                         .middleware(recovery.overflowRecovery())
                         .build();
         var ctx = context("user", "overflow-session");
@@ -245,7 +245,7 @@ class CompactionMiddlewareTest {
         assertEquals("answer", run.stream().blockLast(Duration.ofSeconds(10)).getTextContent());
         assertEquals(AgentRun.Status.COMPLETED, run.status());
         assertEquals(2, calls.get());
-        var facts = agent.sessionLog(ctx).readAfter(0, 1000);
+        var facts = agent.threadJournal(ctx).readAfter(0, 1000);
         assertEquals(1, facts.stream().filter(e -> e.type().equals("run/start")).count());
         assertEquals(1, facts.stream().filter(e -> e.type().equals("run/end")).count());
         assertTrue(facts.stream().allMatch(e -> run.runId().equals(e.executionRunId())));
@@ -550,7 +550,7 @@ class CompactionMiddlewareTest {
 
     /**
      * Without a dedicated config model, the per-call model of the executing agent (its {@code
-     * RuntimeContext} modelId) drives compaction; the build-time field model must not serve it.
+     * RuntimeContext}) drives compaction; the build-time field model must not serve it.
      */
     @Test
     void perCallModelDrivesCompactionWhenNoDedicatedModel() {
@@ -595,7 +595,7 @@ class CompactionMiddlewareTest {
         when(agent.getModel(any(RuntimeContext.class))).thenReturn(perCall);
         when(agent.getModel()).thenReturn(defaultModel);
         // No dedicated compaction model: the field is null, so compaction resolves the
-        // agent's per-call (RuntimeContext modelId) model instead of its default.
+        // agent's per-call (context-pinned) model instead of its default.
         CompactionMiddleware middleware = new CompactionMiddleware(null, null, fixedConfig());
 
         List<Msg> downstream = new ArrayList<>();

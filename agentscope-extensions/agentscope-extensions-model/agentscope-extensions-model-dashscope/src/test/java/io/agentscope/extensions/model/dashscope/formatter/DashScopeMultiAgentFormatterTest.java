@@ -17,6 +17,7 @@ package io.agentscope.extensions.model.dashscope.formatter;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -28,6 +29,7 @@ import io.agentscope.core.message.Base64Source;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.DocumentBlock;
 import io.agentscope.core.message.FileIdSource;
+import io.agentscope.core.message.HintBlock;
 import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
@@ -40,6 +42,7 @@ import io.agentscope.core.message.VideoBlock;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.extensions.model.dashscope.dto.DashScopeChoice;
+import io.agentscope.extensions.model.dashscope.dto.DashScopeContentPart;
 import io.agentscope.extensions.model.dashscope.dto.DashScopeFunction;
 import io.agentscope.extensions.model.dashscope.dto.DashScopeMessage;
 import io.agentscope.extensions.model.dashscope.dto.DashScopeOutput;
@@ -119,7 +122,39 @@ class DashScopeMultiAgentFormatterTest {
     }
 
     @Test
-    void testDocumentBlockRejectsNonFileIdSource() {
+    void testMergedHistoryReferencesDocument() {
+        Msg msg =
+                Msg.builder()
+                        .role(MsgRole.USER)
+                        .name("Alice")
+                        .content(
+                                List.of(
+                                        TextBlock.builder().text("Summarise this").build(),
+                                        DocumentBlock.builder()
+                                                .source(
+                                                        FileIdSource.builder()
+                                                                .provider("dashscope")
+                                                                .fileId("file-abc")
+                                                                .build())
+                                                .name("report.pdf")
+                                                .build()))
+                        .build();
+
+        List<DashScopeMessage> result = formatter.format(List.of(msg));
+
+        // The file reaches the model through the leading system message, not through the
+        // transcript line; assert both so a dropped system message cannot pass.
+        assertEquals("system", result.get(0).getRole());
+        assertEquals("fileid://file-abc", result.get(0).getContentAsString());
+        String history = result.get(result.size() - 1).getContentAsString();
+        assertTrue(
+                history.contains(
+                        "Alice: [document: report.pdf, provider file id: file-abc (dashscope)]"),
+                history);
+    }
+
+    @Test
+    void testDocumentUrlBecomesDocUrlPartOnMergedHistory() {
         Msg msg =
                 Msg.builder()
                         .role(MsgRole.USER)
@@ -132,14 +167,56 @@ class DashScopeMultiAgentFormatterTest {
                                                         URLSource.builder()
                                                                 .url("https://example.com/a.pdf")
                                                                 .build())
+                                                .name("a.pdf")
+                                                .build()))
+                        .build();
+
+        List<DashScopeMessage> result = formatter.format(List.of(msg));
+
+        // No system message is injected for URL documents; the merged user message carries the
+        // doc_url part itself so the model can actually read the file.
+        assertEquals(1, result.size());
+        assertEquals("user", result.get(0).getRole());
+        Object content = result.get(0).getContent();
+        assertInstanceOf(List.class, content);
+        List<DashScopeContentPart> parts =
+                ((List<?>) content)
+                        .stream()
+                                .map(
+                                        part -> {
+                                            assertInstanceOf(DashScopeContentPart.class, part);
+                                            return (DashScopeContentPart) part;
+                                        })
+                                .toList();
+        assertEquals(2, parts.size());
+        assertTrue(parts.get(0).getText().contains("Alice: Summarise this"));
+        assertEquals("doc_url", parts.get(1).getType());
+        assertEquals(List.of("https://example.com/a.pdf"), parts.get(1).getDocUrl());
+    }
+
+    @Test
+    void testDocumentUrlOnMultimodalEndpointIsRejected() {
+        Msg msg =
+                Msg.builder()
+                        .role(MsgRole.USER)
+                        .name("Alice")
+                        .content(
+                                List.of(
+                                        TextBlock.builder().text("Summarise this").build(),
+                                        DocumentBlock.builder()
+                                                .source(
+                                                        URLSource.builder()
+                                                                .url("https://example.com/a.pdf")
+                                                                .build())
+                                                .name("a.pdf")
                                                 .build()))
                         .build();
 
         IllegalArgumentException ex =
-                assertThrows(IllegalArgumentException.class, () -> formatter.format(List.of(msg)));
-
-        assertTrue(ex.getMessage().contains("file id"), ex.getMessage());
-        assertTrue(ex.getMessage().contains("URLSource"), ex.getMessage());
+                assertThrows(
+                        IllegalArgumentException.class,
+                        () -> formatter.formatMultiModal(List.of(msg)));
+        assertTrue(ex.getMessage().contains("multimodal endpoint"), ex.getMessage());
     }
 
     @Test
@@ -958,6 +1035,61 @@ class DashScopeMultiAgentFormatterTest {
         // Second is tool result
         assertEquals("tool", result.get(1).getRole());
         assertEquals("call_123", result.get(1).getToolCallId());
+    }
+
+    @Test
+    void testToolSequencePreservesDocumentReferencesAndHints() {
+        DocumentBlock document =
+                DocumentBlock.builder()
+                        .source(new FileIdSource("dashscope", "file-123"))
+                        .name("report.pdf")
+                        .build();
+        Msg assistant =
+                Msg.builder()
+                        .role(MsgRole.ASSISTANT)
+                        .content(
+                                TextBlock.builder().text("").build(),
+                                new HintBlock("hint-1", "Use the attachment"),
+                                document,
+                                ToolResultBlock.builder()
+                                        .id("call_122")
+                                        .name("lookup")
+                                        .output(TextBlock.builder().text("Previous result").build())
+                                        .build(),
+                                ToolUseBlock.builder()
+                                        .id("call_123")
+                                        .name("search")
+                                        .input(Map.of())
+                                        .build())
+                        .build();
+        Msg tool = Msg.builder().role(MsgRole.TOOL).content(document).build();
+
+        List<DashScopeMessage> textResult = formatter.format(List.of(assistant, tool));
+        List<DashScopeMessage> multimodalResult =
+                formatter.formatMultiModal(List.of(assistant, tool));
+        assertEquals(
+                "\nUse the attachment\n"
+                        + "Previous result\n"
+                        + "[document: report.pdf, provider file id: file-123 (dashscope)]",
+                textResult.get(0).getContentAsString());
+        assertEquals(
+                List.of(
+                        "",
+                        "Use the attachment",
+                        "[document: report.pdf, provider file id: file-123 (dashscope)]",
+                        "Previous result"),
+                multimodalResult.get(0).getContentAsList().stream()
+                        .map(DashScopeContentPart::getText)
+                        .toList());
+        for (List<DashScopeMessage> result : List.of(textResult, multimodalResult)) {
+            assertEquals(2, result.size());
+            assertEquals("assistant", result.get(0).getRole());
+            assertEquals("call_123", result.get(0).getToolCalls().get(0).getId());
+            assertEquals("tool", result.get(1).getRole());
+            assertEquals(
+                    "[document: report.pdf, provider file id: file-123 (dashscope)]",
+                    result.get(1).getContentAsString());
+        }
     }
 
     @Test

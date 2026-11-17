@@ -16,7 +16,11 @@
 package io.agentscope.harness.agent.memory.compaction;
 
 import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.core.formatter.DocumentReferenceRenderer;
+import io.agentscope.core.journal.InvocationRecorder;
+import io.agentscope.core.journal.JournalException;
 import io.agentscope.core.message.ContentBlock;
+import io.agentscope.core.message.DocumentBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
@@ -26,8 +30,6 @@ import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.FinishReasons;
 import io.agentscope.core.model.Model;
-import io.agentscope.core.session.SessionLogException;
-import io.agentscope.core.session.SessionRecorder;
 import io.agentscope.core.util.ExceptionUtils;
 import io.agentscope.core.util.JsonUtils;
 import io.agentscope.harness.agent.context.ContextModelCalls;
@@ -129,7 +131,7 @@ public class ConversationCompactor {
             CompactionConfig config,
             String agentId,
             String sessionId) {
-        var recorder = SessionRecorder.from(rc);
+        var recorder = InvocationRecorder.from(rc);
         int beforeMsgCount = conversationMessages == null ? 0 : conversationMessages.size();
         long beforeTokenCount = tokenCounter.applyAsLong(conversationMessages);
         boolean triggered =
@@ -156,7 +158,7 @@ public class ConversationCompactor {
                                         beforeTokenCount,
                                         execution.afterMessages(conversationMessages))),
                 (execution, error) ->
-                        SessionLogException.causedBy(error)
+                        JournalException.causedBy(error)
                                 ? Mono.empty()
                                 : recorder.record(
                                         "compaction/end",
@@ -303,7 +305,7 @@ public class ConversationCompactor {
                                 .onErrorResume(
                                         e -> {
                                             if ((ExceptionUtils.containsInterruptedException(e)
-                                                    || SessionLogException.causedBy(e))) {
+                                                    || JournalException.causedBy(e))) {
                                                 return Mono.error(e);
                                             }
                                             log.warn(
@@ -316,12 +318,14 @@ public class ConversationCompactor {
         // Native logging already preserves all pre-compaction messages. Reference the logical
         // history API; never write another full transcript or expose private journal paths.
         String historyReference =
-                SessionRecorder.from(rc) == null
+                InvocationRecorder.from(rc) == null
                         ? null
-                        : "session_history(agentId="
+                        : "thread_history(agentId="
                                 + JsonUtils.getJsonCodec().toJson(agentId)
                                 + ", sessionId="
                                 + JsonUtils.getJsonCodec().toJson(sessionId)
+                                + ", threadId="
+                                + JsonUtils.getJsonCodec().toJson(rc.getThreadId())
                                 + ")";
 
         // Step 4: LLM summarization of prior summaries plus the newly compacted prefix. Only a
@@ -578,7 +582,9 @@ public class ConversationCompactor {
      * Formats a list of messages as a human-readable text block for the summarization LLM.
      *
      * <p>Tool calls retain their names and argument previews; tool results retain their names,
-     * error state, and head+tail previews. Omitted content is marked explicitly.
+     * error state, and head+tail previews. Documents retain a reference (name, MIME type, and
+     * where the bytes live) so a compacted conversation still records that a file was part of it.
+     * Omitted content is marked explicitly.
      */
     static String formatMessagesForSummary(List<Msg> messages) {
         return messages.stream()
@@ -619,6 +625,11 @@ public class ConversationCompactor {
                 }
                 sb.append("] ");
                 sb.append(buildPrunePreview(extractToolResultText(tr), SUMMARY_PREVIEW_CHARS));
+                for (DocumentBlock doc : extractToolResultDocuments(tr)) {
+                    sb.append(" ").append(DocumentReferenceRenderer.render(doc));
+                }
+            } else if (block instanceof DocumentBlock doc) {
+                sb.append(DocumentReferenceRenderer.render(doc));
             }
         }
         return sb.toString().strip();
@@ -646,10 +657,24 @@ public class ConversationCompactor {
     private static String extractToolResultText(ToolResultBlock tr) {
         if (tr.getOutput() == null) return "";
         return tr.getOutput().stream()
-                .filter(b -> b instanceof TextBlock)
+                .filter(TextBlock.class::isInstance)
                 .map(b -> ((TextBlock) b).getText())
                 .filter(t -> t != null && !t.isBlank())
                 .collect(Collectors.joining(" "));
+    }
+
+    /**
+     * Collects the documents of a tool result.
+     *
+     * <p>They are rendered outside the preview budget on purpose: a long result would otherwise
+     * truncate the reference away and the attachment would disappear from the summary again.
+     */
+    private static List<DocumentBlock> extractToolResultDocuments(ToolResultBlock tr) {
+        if (tr.getOutput() == null) return List.of();
+        return tr.getOutput().stream()
+                .filter(DocumentBlock.class::isInstance)
+                .map(DocumentBlock.class::cast)
+                .toList();
     }
 
     // -------------------------------------------------------------------------
