@@ -22,8 +22,9 @@ import java.time.Duration;
 import java.util.Objects;
 
 /**
- * Unified configuration for the long-term memory pipeline (flush + consolidation +
- * maintenance). Pair with {@link CompactionConfig} for the in-context summarization pipeline.
+ * Configuration for workspace-memory recall guidance and the long-term memory pipeline
+ * (flush + consolidation + maintenance). Pair with {@link CompactionConfig} for the
+ * in-context summarization pipeline.
  *
  * <p>The harness has three LLM-driven memory operations, each with its own prompt and
  * triggering rules:
@@ -145,6 +146,7 @@ public final class MemoryConfig {
     }
 
     private final Model model;
+    private final String recallInstructions;
     private final String flushPrompt;
     private final String consolidationPrompt;
     private final int consolidationMaxTokens;
@@ -154,6 +156,7 @@ public final class MemoryConfig {
 
     private MemoryConfig(Builder b) {
         this.model = b.model;
+        this.recallInstructions = b.recallInstructions;
         this.flushPrompt = b.flushPrompt;
         this.consolidationPrompt = b.consolidationPrompt;
         this.consolidationMaxTokens = b.consolidationMaxTokens;
@@ -168,6 +171,15 @@ public final class MemoryConfig {
      */
     public Model model() {
         return model;
+    }
+
+    /**
+     * Answering-model instructions for workspace-memory recall. {@code null} keeps the
+     * default guidance; blank text omits only the Memory Recall section. This does not
+     * change memory tools, reference loading or background maintenance.
+     */
+    public String recallInstructions() {
+        return recallInstructions;
     }
 
     /**
@@ -222,6 +234,7 @@ public final class MemoryConfig {
     public static final class Builder {
 
         private Model model = null;
+        private String recallInstructions = null;
         private String flushPrompt = null;
         private String consolidationPrompt = null;
         private int consolidationMaxTokens = DEFAULT_CONSOLIDATION_MAX_TOKENS;
@@ -236,6 +249,21 @@ public final class MemoryConfig {
          */
         public Builder model(Model model) {
             this.model = model;
+            return this;
+        }
+
+        /**
+         * Replaces the body of the Memory Recall section in the answering model's
+         * workspace guidance. Text is not formatted or interpolated. {@code null}
+         * restores the historical guidance; blank text omits the section while retaining
+         * tools and other memory capabilities. Disabled memory tools suppress this
+         * section even when an override is supplied.
+         *
+         * <p>This is guidance, not an enforced retrieval policy or a guarantee of fewer
+         * model calls. It does not configure the extraction/consolidation model.
+         */
+        public Builder recallInstructions(String recallInstructions) {
+            this.recallInstructions = recallInstructions;
             return this;
         }
 

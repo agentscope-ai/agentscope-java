@@ -110,9 +110,27 @@ CompactionConfig.builder()
 
 ## 定制 Memory pipeline：`MemoryConfig`
 
-`MemoryConfig` 集中管理 flush / consolidation 两条路径的 prompt、节流、保留时长，以及 per-call flush 的触发策略。所有字段都有默认值，不调 `.memory(...)` 时与历史行为完全一致。
+`MemoryConfig` 集中管理工作区记忆的召回提示、flush / consolidation 两条路径的 prompt、节流、保留时长，以及 per-call flush 的触发策略。所有字段都有默认值，不调 `.memory(...)` 时与历史行为完全一致。
 
 Per-call flush 与后台 consolidation 使用两套独立的节流窗口。两者第一次符合条件的 `call()` 都会立即放行；最小间隔只限制后续运行，不表示首次运行前需要等待。
+
+### 单独配置召回提示，保留记忆工具
+
+启用记忆工具时，Harness 默认提示回答模型先搜索记忆，再回答关于以往工作、决策、日期、人物或偏好的问题。如果应用已在当前请求中提供必要事实，可以通过 `recallInstructions` 仅替换 Memory Recall 段落的正文：
+
+```java
+MemoryConfig memory = MemoryConfig.builder()
+    .recallInstructions("""
+        当前上下文足够时直接使用。只有回答依赖以往交互中、且当前缺失的事实时，
+        才搜索工作区记忆。
+        """)
+    .build();
+// 通过 HarnessAgent.builder().memory(memory) 传入配置。
+```
+
+`null` 恢复原有提示；空字符串或纯空白字符串省略 Memory Recall 段落。非空白文本不做占位符替换，请仅提供正文，不包含标题。关闭记忆工具后，即使配置了自定义提示，该段落也不会出现。
+
+该选项不改变记忆工具、`MEMORY.md` 参考材料的加载、持久化提示、flush 或后台 consolidation；这些能力仍由原有配置控制。它不会自动检索、强制模型如何选工具，也不保证减少模型调用或 token 用量。应用如需预检索，仍需自行获取并提供相关上下文。
 
 ### 例 1：节流 per-call flush，省 token
 
@@ -206,6 +224,7 @@ HarnessAgent.builder()
 |------|------|------|
 | `model` | `null`（使用 agent 主模型） | flush / consolidation 使用的独立模型；支持 `Model` 实例或 `"provider:model"` 字符串 |
 | `flushPrompt` | `null`（使用 `DEFAULT_FLUSH_PROMPT`） | 路径 1 的 SYSTEM prompt |
+| `recallInstructions` | `null`（保留原提示） | 回答模型的 Memory Recall 正文；空白仅省略该段落 |
 | `consolidationPrompt` | `null`（使用 `DEFAULT_CONSOLIDATION_PROMPT`） | 路径 2 的 prompt 模板（必须含两个 `%d`） |
 | `consolidationMaxTokens` | `4_000` | `MEMORY.md` token 上限 |
 | `consolidationMinGap` | `30 min` | 后台维护运行间隔；第一次符合条件的 call 立即放行 |
