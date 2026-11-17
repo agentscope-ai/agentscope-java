@@ -256,6 +256,8 @@ Compaction changes the conversation list, not the independently stored task, pla
 
 The estimator cannot exactly predict every provider's token accounting. When native session logging is active and the provider reports a recognized context overflow, enabled compaction can force a smaller conversation and retry that reasoning request once within the same execution. Recovery requires reducible history; it is not a guarantee that an oversized request will succeed. If compaction is disabled or recovery cannot reduce the input, the error propagates.
 
+In snapshot mode (`journalEnabled(false)`), Harness saves the compacted context and retries the call once. Calls made with a structured output class or `JsonNode` schema retain that output format during recovery, so a successful response remains available through `Msg.getStructuredData(...)`.
+
 <span id="letting-the-agent-inspect-its-own-history" />
 
 ## Continue the loop and retain the right state
