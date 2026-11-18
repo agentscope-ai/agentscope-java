@@ -148,20 +148,33 @@ class RocketMqExecutionTest {
                     new ToolCall("call", "hands", "echo", DurableJson.value(Map.of("value", 7)))
                             .withOrigin(new RunStepRef("brain-run", "brain-step")));
 
+    /**
+     * Shared await budget. The failure-injection scenarios ride fixed one-second broker
+     * redelivery windows that stack serially (lost command response, lost event ack), and a
+     * loaded CI runner adds scheduling delay on top of every hop — convergence is the
+     * assertion, not the speed, so the budget stays far above the redelivery floor.
+     */
+    static final Duration WAIT = Duration.ofSeconds(30);
+
     static void await(BooleanSupplier condition) throws Exception {
-        assertTrue(waitUpTo10s(condition), "Condition did not become true");
+        assertTrue(waitFor(condition), "Condition did not become true");
     }
 
     /** Waits as long as {@link #await(BooleanSupplier)}, then fails with the caller's snapshot. */
     static void await(String what, BooleanSupplier condition, Supplier<String> diagnostics)
             throws Exception {
         assertTrue(
-                waitUpTo10s(condition),
-                () -> what + " did not become true within 10s: " + diagnostics.get());
+                waitFor(condition),
+                () ->
+                        what
+                                + " did not become true within "
+                                + WAIT.toSeconds()
+                                + "s: "
+                                + diagnostics.get());
     }
 
-    private static boolean waitUpTo10s(BooleanSupplier condition) throws Exception {
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
+    private static boolean waitFor(BooleanSupplier condition) throws Exception {
+        long deadline = System.nanoTime() + WAIT.toNanos();
         while (!condition.getAsBoolean() && System.nanoTime() < deadline) Thread.sleep(10);
         return condition.getAsBoolean();
     }

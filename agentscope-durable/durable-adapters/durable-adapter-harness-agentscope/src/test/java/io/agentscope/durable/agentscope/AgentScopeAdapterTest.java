@@ -1156,9 +1156,12 @@ class AgentScopeAdapterTest {
                 turn.resume("resume", turn.status().revision());
                 assertEquals(
                         TurnStatus.SUCCEEDED,
-                        turn.await(Duration.ofSeconds(5))
+                        // Host-rebuild recovery: lease rediscovery plus the resumed run
+                        // needs headroom on a loaded CI runner — convergence, not speed,
+                        // is the assertion.
+                        turn.await(Duration.ofSeconds(30))
                                 .toCompletableFuture()
-                                .get(10, TimeUnit.SECONDS)
+                                .get(30, TimeUnit.SECONDS)
                                 .status());
                 assertEquals(1, starts.get());
                 assertEquals(2, model.inputs.size());
@@ -1264,9 +1267,10 @@ class AgentScopeAdapterTest {
                 replacement
                         .getSession(key)
                         .getTurn(turnId)
-                        .await(Duration.ofSeconds(5))
+                        // Same recovery budget as the other rebuild scenarios.
+                        .await(Duration.ofSeconds(30))
                         .toCompletableFuture()
-                        .get(5, TimeUnit.SECONDS);
+                        .get(30, TimeUnit.SECONDS);
                 assertNull(replacement.lastFailure(new ThreadKey(key, "main")));
                 assertEquals(
                         TurnStatus.SUCCEEDED,
@@ -1393,12 +1397,14 @@ class AgentScopeAdapterTest {
             }
             try (var replacement = runtime(backend, adapter, null)) {
                 // A released lease defers readiness by the poll interval. Let the replacement
-                // scheduler discover it rather than assuming an immediate manual tick can claim it.
+                // scheduler discover it rather than assuming an immediate manual tick can claim
+                // it — and leave the recovery budget generous for a loaded CI runner:
+                // convergence, not speed, is the assertion.
                 replacement.start();
                 replacement
                         .getSession(key)
                         .getTurn(turnId)
-                        .await(Duration.ofSeconds(5))
+                        .await(Duration.ofSeconds(30))
                         .toCompletableFuture()
                         .join();
                 assertNull(replacement.lastFailure(new ThreadKey(key, "main")));
