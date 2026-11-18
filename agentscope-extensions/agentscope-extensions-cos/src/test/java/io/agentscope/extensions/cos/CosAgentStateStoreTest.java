@@ -157,6 +157,23 @@ class CosAgentStateStoreTest {
     }
 
     @Test
+    void listSessionIds_keepsIdsContainingSlashes() {
+        // Harness sandbox slots pack the isolation key into the session id
+        // (SessionSandboxStateStore.slotSessionId), so stored ids legitimately contain '/'.
+        COSObjectSummary nested = new COSObjectSummary();
+        nested.setKey("test/state/__anon__/sandbox/user/agent-a/slot-1/_sandbox_state.json");
+        COSObjectSummary plain = new COSObjectSummary();
+        plain.setKey("test/state/__anon__/sess-a/agent_state.json");
+
+        ObjectListing result = mock(ObjectListing.class);
+        when(result.getObjectSummaries()).thenReturn(List.of(nested, plain));
+        when(result.isTruncated()).thenReturn(false);
+        when(mockCos.listObjects(any(ListObjectsRequest.class))).thenReturn(result);
+
+        assertEquals(Set.of("sandbox/user/agent-a/slot-1", "sess-a"), store.listSessionIds(null));
+    }
+
+    @Test
     void saveList_state_writesListAndHash() {
         String listKey = "test/state/alice/s1/agent_state.list.json";
         String hashKey = "test/state/alice/s1/agent_state.list.hash";

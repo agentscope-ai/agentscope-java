@@ -219,7 +219,10 @@ public class CosAgentStateStore implements AgentStateStore {
             Set<String> sessionIds = new HashSet<>();
             for (String key : keys) {
                 String remainder = key.substring(userPrefix.length());
-                int slash = remainder.indexOf('/');
+                // Stored session ids may themselves contain '/' (harness sandbox slots pack their
+                // isolation key into the id), so cut at the last slash: only what follows it is
+                // the state file name.
+                int slash = remainder.lastIndexOf('/');
                 if (slash > 0) {
                     sessionIds.add(remainder.substring(0, slash));
                 }
