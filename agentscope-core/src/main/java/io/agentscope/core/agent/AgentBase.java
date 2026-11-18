@@ -663,7 +663,7 @@ public abstract class AgentBase implements Agent {
     protected Mono<Msg> doCall(List<Msg> msgs, JsonNode outputSchema) {
         return Mono.error(
                 new UnsupportedOperationException(
-                        "Structured output not supported by " + outputSchema.asText()));
+                        "Structured output not supported by " + getClass().getSimpleName()));
     }
 
     public static void addSystemHook(Hook hook) {
