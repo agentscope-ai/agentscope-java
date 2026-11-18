@@ -46,7 +46,7 @@ var events = journal.readAfter(0, 100);
 
 读取不认领 writer，不修复状态，也不启动模型。Harness 也提供 `threadTranscript(ctx)` 和 `inspectThread(ctx)`。原生查询与存储 SPI 是阻塞接口，WebFlux 应将它们调度到适当的阻塞工作线程，不占用网络事件线程。
 
-`ThreadHistory.Transcript` 包含完整消息和 `asOfSeq`，不是包含任务控制、流式片段和工具进度的公共页面快照。Durable 应用通过 Session/Thread/Turn 的 `snapshot()`、`history()` 和事件接口恢复页面；不要由业务层解析原生日志来推断 Turn 状态。可运行示例见[可恢复聊天](/v2/zh/blogs/best-practices/session-chat)。
+`ThreadHistory.Transcript` 包含完整消息和 `asOfSeq`，不是包含任务控制、流式片段和工具进度的公共页面快照。Durable 应用通过 Session/Thread/Turn 的 `snapshot()`、`history()` 和事件接口恢复页面；不要由业务层解析原生日志来推断 Turn 状态。可运行示例见[可恢复聊天](/dev/zh/blogs/best-practices/session-chat)。
 
 ## 事件结构与读取
 
