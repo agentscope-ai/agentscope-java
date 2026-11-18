@@ -24,6 +24,9 @@ import java.util.Objects;
  *
  * <p>Tool calls are used in assistant messages to indicate that the agent
  * wants to invoke a tool. They contain an ID, type, and function details.
+ *
+ * <p>Per AG-UI, a nested {@code ToolCall} does not carry {@code subagentRunId};
+ * it inherits attribution from the containing {@link AguiMessage}.
  */
 public class AguiToolCall {
 
