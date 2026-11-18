@@ -8,6 +8,8 @@ zh_link: /v2/zh/docs/building-blocks/tool
 
 Tools are how an agent acts on the world — running business operations, calling APIs, reading and writing data. Each tool exposes itself to the LLM as a JSON Schema, and the agent invokes it through a unified interface.
 
+The default `JacksonJsonCodec` reads exactly one JSON value. Trailing whitespace is accepted; an extra value or other trailing content raises `JsonException`. This also lets tool-call argument validation fall back to the structured input when raw arguments contain trailing garbage.
+
 AgentScope organizes tool-related building blocks under three concepts:
 
 - **Tool** — any object implementing the `AgentTool` contract (typically by extending `ToolBase`) or any plain class whose methods are annotated with `@Tool`. Java refers to the latter as *reflective function tools* — `Toolkit#registerTool(Object)` registers them by reflection automatically.
@@ -117,7 +119,7 @@ Common `@Tool` attributes:
 | `name` | `String` | Tool name (defaults to the method name) |
 | `description` | `String` | Description shown to the agent |
 | `readOnly` | `boolean` | Whether the tool is read-only (default `false`) |
-| `concurrencySafe` | `boolean` | Whether the tool is safe for concurrent calls (default `true`) |
+| `concurrencySafe` | `boolean` | Whether the tool is safe for concurrent calls (default `false`) |
 | `stateInjected` | `boolean` | Inject `AgentState` as an extra parameter (default `false`) |
 | `dangerousFiles` / `dangerousDirectories` | `String[]` | Append custom dangerous paths |
 | `converter` | `Class<? extends ToolResultConverter>` | Custom conversion of return values into `ToolResultBlock` |
@@ -268,27 +270,12 @@ Inside a `@Tool` method, any parameter **without `@ToolParam`** is treated as fr
 
 | Parameter type | Source |
 |----------------|--------|
-| `ToolEmitter` | Streaming emitter and tool call context (no-op when none configured) |
+| `ToolEmitter` | Streaming emitter (no-op when none configured) |
 | `Agent` | The current agent instance |
 | `AgentState` | The per-session state for the current call (via `RuntimeContext.getAgentState()`) |
 | `RuntimeContext` | The current per-call context |
 | `ToolExecutionContext` | `runtimeContext.asToolExecutionContext()` (compatibility shim, deprecated) |
 | Any other user POJO type | `runtimeContext.get(ParamType.class)` — i.e. an object the caller registered via `RuntimeContext.builder().put(ParamType.class, value)` |
-
-An injected `ToolEmitter` exposes the current tool call ID, which can be used to correlate progress with frontend state or another shared store:
-
-```java
-@Tool(name = "run_task", description = "Run a long-running task")
-public String runTask(ToolEmitter emitter) {
-    String toolCallId = emitter.getToolCallId();
-    if (toolCallId != null) {
-        progressByToolCall.put(toolCallId, "running");
-    }
-    return "done";
-}
-```
-
-`getToolCallId()` returns `null` when the emitter has no tool call context, such as a no-op or custom emitter.
 
 "User POJO" means: no `@ToolParam`, not primitive, not `ContentBlock` / `Msg`, not under `java.*` / `javax.*`. Every other parameter (those with `@ToolParam`, or that fall outside the above types) is read from the LLM-supplied JSON by name.
 
@@ -402,10 +389,11 @@ import io.agentscope.core.tool.mcp.McpClientBuilder;
 import io.agentscope.core.tool.mcp.McpClientWrapper;
 
 McpClientWrapper filesystem =
-        McpClientBuilder.create("filesystem")
-                .stdioTransport("mcp-server-filesystem", "--root", "/my/project")
-                .buildAsync()
-                .block();
+        McpClientBuilder.stdio()
+                .name("filesystem")
+                .command("mcp-server-filesystem")
+                .args("--root", "/my/project")
+                .build();
 
 Toolkit toolkit = new Toolkit();
 toolkit.registerMcpClient(filesystem).block();
@@ -422,11 +410,11 @@ import io.agentscope.core.tool.mcp.McpClientBuilder;
 import io.agentscope.core.tool.mcp.McpClientWrapper;
 
 McpClientWrapper weather =
-        McpClientBuilder.create("weather")
-                .streamableHttpTransport("https://api.weather.com/mcp")
+        McpClientBuilder.streamableHttp()
+                .name("weather")
+                .url("https://api.weather.com/mcp")
                 .header("Authorization", "Bearer xxx")
-                .buildAsync()
-                .block();
+                .build();
 
 Toolkit toolkit = new Toolkit();
 toolkit.registerMcpClient(weather).block();
@@ -442,10 +430,10 @@ import io.agentscope.core.tool.mcp.McpClientBuilder;
 import io.agentscope.core.tool.mcp.McpClientWrapper;
 
 McpClientWrapper search =
-        McpClientBuilder.create("search")
-                .sseTransport("https://api.search.com/mcp/sse")
-                .buildAsync()
-                .block();
+        McpClientBuilder.sse()
+                .name("search")
+                .url("https://api.search.com/mcp/sse")
+                .build();
 
 Toolkit toolkit = new Toolkit();
 toolkit.registerMcpClient(search).block();
@@ -629,24 +617,22 @@ Toolkit toolkit = new Toolkit();
 toolkit.registerTool(new BasicTools());
 
 ToolGroup database =
-        ToolGroup.builder()
-                .name("database")
-                .description("Tools for database operations.")
-                .scope(ToolGroupScope.SESSION)
-                .active(false)
-                .build();
+        new ToolGroup(
+                "database",
+                "Tools for database operations.",
+                ToolGroupScope.SESSION,
+                /* active = */ false);
 database.addTool("db_query");
 database.addTool("db_migrate");
 toolkit.registerTool(new DatabaseTools());
 toolkit.registerToolGroup(database);
 
 ToolGroup deployment =
-        ToolGroup.builder()
-                .name("deployment")
-                .description("Tools for deploying services.")
-                .scope(ToolGroupScope.SESSION)
-                .active(false)
-                .build();
+        new ToolGroup(
+                "deployment",
+                "Tools for deploying services.",
+                ToolGroupScope.SESSION,
+                /* active = */ false);
 deployment.addTool("deploy");
 deployment.addTool("rollback");
 toolkit.registerTool(new DeploymentTools());
@@ -660,7 +646,7 @@ ReActAgent agent =
                 .build();
 ```
 
-`ToolGroup` is built with `ToolGroup.builder()`: a name, a description, a scope (`ToolGroupScope`), and an initial active flag. The reserved name `"basic"` is auto-populated by `Toolkit#registerTool(Object)` and is always active.
+`ToolGroup` takes a name, a description, a scope (`ToolGroupScope`), and an initial active flag. The reserved name `"basic"` is auto-populated by `Toolkit#registerTool(Object)` and is always active.
 
 ### Using the meta tool
 
@@ -744,7 +730,7 @@ changes, persisted discoveries are exposed eagerly so they remain usable.
 Ordinary function calling accumulates discovered schemas in `tools`.
 
 A credential-free, runnable example is
-[`ToolSearchExample`](https://github.com/agentscope-ai/agentscope-java/blob/main/agentscope-examples/documentation/src/main/java/io/agentscope/examples/documentation2/tool/ToolSearchExample.java).
+[`ToolSearchExample`](https://github.com/agentscope-ai/agentscope-java/blob/6ff7590af75f35cadb263947a9b33b03c856ae6d/agentscope-examples/documentation/src/main/java/io/agentscope/examples/documentation2/tool/ToolSearchExample.java).
 ## Tool call interceptors
 
 `ToolCallInterceptor` is a Toolkit-layer, per-invocation hook over tool arguments. It runs after JSON-schema validation and preset-argument merging, and before the session dispatch record and real execution — so it sees the exact arguments the tool would receive, plus the caller identity, and decides what actually executes.

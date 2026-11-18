@@ -61,31 +61,6 @@ Role constraints are enforced at construction: `USER` only allows text/data/docu
 </Note>
 
 
-### Media source handling
-
-`URLSource` can reference a local path, a `file:` URI, or a remote HTTP(S) URL.
-Set `mimeType` for extension-less locations such as signed download endpoints; DashScope image
-conversion and Gemini media conversion honor this hint. Query strings and fragments are excluded
-from extension inference.
-
-Converters may forward a remote URL or load its bytes into the request, depending on the provider.
-Gemini URL sources and the `MediaUtils` byte/base64 readers enforce a 50MB read limit, including
-responses without a `Content-Length` header. This limit does not apply to media fetched directly
-by a provider from a forwarded URL.
-
-`URLSource` does not restrict file access to a workspace or enforce a destination allowlist.
-Local content may be sent to the model provider. Applications that accept untrusted references
-must authorize local paths and network destinations, including redirect targets, before conversion.
-MIME hints and extension checks are routing metadata; they do not verify the actual file format.
-
-The shared HTTP(S) reader follows at most five same-protocol redirects. This cap is not a
-destination allowlist, and the reader has no per-hop authorization callback. Checking only the
-initial URL is insufficient: enforce restrictions on every connection through an outbound network
-policy, or fetch approved content in application code and pass it as a `Base64Source`.
-
-For migration details on the download methods and supported schemes, see the
-[media source migration notes](/v2/en/docs/others/release-notes#media-source-migration).
-
 ### Creating a message
 
 The role-pinned subclasses (`io.agentscope.core.message.UserMessage` / `AssistantMessage` / `SystemMessage` / `ToolResultMessage`) provide convenient constructors. When `content` is a plain string, it is wrapped in a `TextBlock` automatically.
@@ -338,7 +313,7 @@ Events are grouped below; unless noted otherwise, every event also carries `getR
     |--------|------|-------------|
     | `getReplyId()` | `String` | Reply message ID |
     | `getToolCallId()` | `String` | The matching tool call ID |
-    | `getState()` | `ToolResultState` | Final state: `SUCCESS`, `ERROR`, `INTERRUPTED`, `DENIED`, `RUNNING`, `SUSPENDED` |
+    | `getState()` | `ToolResultState` | Final state: `SUCCESS`, `ERROR`, `INTERRUPTED`, `DENIED`, `RUNNING` |
 
 </Accordion>
 
@@ -363,7 +338,7 @@ Events are grouped below; unless noted otherwise, every event also carries `getR
     | `getReplyId()` | `String` | Reply message ID |
     | `getToolCalls()` | `List<ToolUseBlock>` | Tool calls awaiting confirmation |
 
-    **RequireExternalExecutionEvent** — agent pauses for external execution. A suspended call produces no `ToolResult*` events: the tool has not executed, and the real result is supplied by the caller and surfaced through `ExternalExecutionResultEvent`.
+    **RequireExternalExecutionEvent** — agent pauses for external execution.
 
     | Method | Type | Description |
     |--------|------|-------------|
@@ -446,7 +421,7 @@ agent.streamEvents(userMsg)
 
 <Tip>
 
-For live output within the current request, adapt AgentEvent to SSE. `streamEvents()` starts execution and has no durable cursor; do not execute the request again to catch up after a disconnect. Harness also saves logs for direct calls by default. See [Session operations, events and recovery](/v2/en/docs/harness/session-log) for reading history and introducing `AgentSession` when you need background tasks. Hosted frontends use [Agent API snapshot plus SSE](/v2/en/service/session-event-log).
+This decoupling makes deployments flexible: the backend pushes the event stream over SSE, and the frontend reconstructs the message client-side. Even if the connection drops, replaying events from any checkpoint restores the message state precisely.
 
 </Tip>
 
@@ -505,9 +480,3 @@ How messages are stored and persisted
 
 
 </CardGroup>
-
-## Relationship to durable SessionEvent
-
-AgentEvent is a typed live event; SessionEvent is an immutable durable fact, not a one-to-one copy. Standard execution exposes agentId/sessionId/turnId/runId through event.getExecution(). runId matches native executionRunId. Forwarded children keep their own identity. Live event IDs, native seq and public SSE cursors remain independent; receiving a live event is not a commit acknowledgment.
-
-A logical turn may span multiple executions. AgentEndEvent only ends the current invocation. See [Session operations, events and recovery](/v2/en/docs/harness/session-log).

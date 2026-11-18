@@ -474,4 +474,50 @@ class GenerateOptionsTest {
         assertNotNull(options);
         assertNull(options.getEndpointPath());
     }
+
+    @Test
+    @DisplayName("Should build and read thinking include options")
+    void testThinkingOptionsBuilder() {
+        GenerateOptions options = GenerateOptions.builder().includeThoughts(true).build();
+
+        assertNotNull(options);
+        assertEquals(Boolean.TRUE, options.getIncludeThoughts());
+    }
+
+    @Test
+    @DisplayName("Should default thinking include options to null")
+    void testThinkingOptionsDefaultNull() {
+        GenerateOptions options = GenerateOptions.builder().build();
+
+        assertNull(options.getIncludeThoughts());
+    }
+
+    @Test
+    @DisplayName("Should merge includeThoughts with primary precedence and fallback inheritance")
+    void testMergeIncludeThoughts() {
+        GenerateOptions primary = GenerateOptions.builder().includeThoughts(true).build();
+        GenerateOptions fallback = GenerateOptions.builder().includeThoughts(false).build();
+
+        GenerateOptions merged = GenerateOptions.mergeOptions(primary, fallback);
+        assertEquals(Boolean.TRUE, merged.getIncludeThoughts());
+
+        GenerateOptions partial = GenerateOptions.builder().thinkingBudget(2048).build();
+        GenerateOptions inherited = GenerateOptions.mergeOptions(partial, fallback);
+        assertEquals(Boolean.FALSE, inherited.getIncludeThoughts());
+        assertEquals(2048, inherited.getThinkingBudget());
+    }
+
+    @Test
+    @DisplayName("Should merge reasoningEffort with primary precedence and fallback inheritance")
+    void testMergeReasoningEffort() {
+        GenerateOptions primary = GenerateOptions.builder().reasoningEffort("high").build();
+        GenerateOptions fallback = GenerateOptions.builder().reasoningEffort("low").build();
+
+        GenerateOptions merged = GenerateOptions.mergeOptions(primary, fallback);
+        assertEquals("high", merged.getReasoningEffort());
+
+        GenerateOptions partial = GenerateOptions.builder().build();
+        GenerateOptions inherited = GenerateOptions.mergeOptions(partial, fallback);
+        assertEquals("low", inherited.getReasoningEffort());
+    }
 }

@@ -38,14 +38,24 @@ import reactor.core.publisher.Flux;
 final class DemoChatModel implements Model {
     private final Duration slowDelay;
     private final Duration toolDelay;
+    private final String taskPrompt;
 
     DemoChatModel() {
         this(Duration.ofMillis(100), Duration.ofSeconds(2));
     }
 
     DemoChatModel(Duration slowDelay, Duration toolDelay) {
+        this(slowDelay, toolDelay, null);
+    }
+
+    private DemoChatModel(Duration slowDelay, Duration toolDelay, String taskPrompt) {
         this.slowDelay = slowDelay;
         this.toolDelay = toolDelay;
+        this.taskPrompt = taskPrompt;
+    }
+
+    DemoChatModel forTask(String prompt) {
+        return new DemoChatModel(slowDelay, toolDelay, prompt);
     }
 
     Duration toolDelay() {
@@ -64,16 +74,16 @@ final class DemoChatModel implements Model {
         String prompt = users.isEmpty() ? "Hello" : messages.get(taskStart).getTextContent();
         if (prompt.startsWith("/slow"))
             return workflow(messages.subList(taskStart, messages.size()));
-        Msg last = messages.get(messages.size() - 1);
+        var results =
+                messages.subList(taskStart, messages.size()).stream()
+                        .flatMap(
+                                message -> message.getContentBlocks(ToolResultBlock.class).stream())
+                        .toList();
         String reply;
-        if (!last.getContentBlocks(ToolResultBlock.class).isEmpty()) {
+        if (!results.isEmpty()) {
             reply =
                     "收到你的补充："
-                            + last
-                                    .getContentBlocks(ToolResultBlock.class)
-                                    .get(0)
-                                    .getOutput()
-                                    .stream()
+                            + results.get(results.size() - 1).getOutput().stream()
                                     .filter(TextBlock.class::isInstance)
                                     .map(TextBlock.class::cast)
                                     .map(TextBlock::getText)
@@ -139,7 +149,7 @@ final class DemoChatModel implements Model {
 
     private boolean isTaskInput(Msg message) {
         return message.getRole() == MsgRole.USER
-                && !message.getMetadata().containsKey("chat_input_kind");
+                && (taskPrompt == null || message.getTextContent().equals(taskPrompt));
     }
 
     private Flux<ChatResponse> calls(String response, List<String> topics, String name) {

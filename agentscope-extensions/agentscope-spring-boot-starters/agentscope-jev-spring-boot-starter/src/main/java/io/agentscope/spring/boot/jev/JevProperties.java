@@ -33,6 +33,9 @@ public class JevProperties {
     /** TypeSafe System One base URL. */
     private String baseUrl = JevClient.DEFAULT_BASE_URL;
 
+    /** Custom endpoint path; defaults to /v1/systemone when unset. */
+    private String endpointPath;
+
     /** Jev model name. */
     private String model = JevClient.DEFAULT_MODEL;
 
@@ -64,6 +67,14 @@ public class JevProperties {
 
     public void setBaseUrl(String baseUrl) {
         this.baseUrl = baseUrl;
+    }
+
+    public String getEndpointPath() {
+        return endpointPath;
+    }
+
+    public void setEndpointPath(String endpointPath) {
+        this.endpointPath = endpointPath;
     }
 
     public String getModel() {
