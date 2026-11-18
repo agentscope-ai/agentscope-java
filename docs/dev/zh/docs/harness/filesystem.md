@@ -177,6 +177,7 @@ HarnessAgent agent = HarnessAgent.builder()
 | `serverPort(int)` | 运行时 HTTP API 端口 | `8888` |
 | `kubernetesClient(KubernetesClient)` | 自定义 fabric8 客户端 | 自动加载 kubeconfig |
 | `snapshotSpec(SandboxSnapshotSpec)` | 快照策略（与 PVC 的取舍见沙箱文档） | `NoopSnapshotSpec` |
+| `shutdownAfterSeconds(Long)` | 新建 SandboxClaim 的存活秒数，必须为正数；`null` 继承客户端默认值。resume 不续期。 | `null`（默认不写 lifecycle） |
 
 `apiUrl` / `gateway*` 都不配时，默认用 `kubectl port-forward` 方式建立本地隧道（适合开发环境）。运行时镜像必须满足[运行时镜像约束](/dev/zh/docs/harness/sandbox#运行时镜像约束)；**工作区持久化依赖模板里的 PVC 配置**，详见[沙箱 - Kubernetes 后端的状态保存](/dev/zh/docs/harness/sandbox#kubernetes-后端的状态保存pvc-是第一层)。
 
