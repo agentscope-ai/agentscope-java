@@ -67,6 +67,7 @@ public class SandboxConnector {
     private final Duration requestTimeout;
     private final Duration perAttemptTimeout;
     private final HttpClient httpClient;
+    private final HttpClient commandHttpClient;
     private final Supplier<String> podIpSupplier;
 
     private volatile String baseURL;
@@ -98,6 +99,11 @@ public class SandboxConnector {
         this.podIpSupplier = podIpSupplier;
         this.strategy =
                 createStrategy(connectionConfig, k8sHelper, sandboxId, namespace, podIpSupplier);
+        this.commandHttpClient =
+                HttpClient.newBuilder()
+                        .connectTimeout(Duration.ofSeconds(30))
+                        .followRedirects(HttpClient.Redirect.NEVER)
+                        .build();
         this.httpClient =
                 HttpClient.newBuilder()
                         .connectTimeout(Duration.ofSeconds(30))
@@ -124,6 +130,11 @@ public class SandboxConnector {
         this.requestTimeout = Duration.ofSeconds(180);
         this.perAttemptTimeout = Duration.ofSeconds(60);
         this.podIpSupplier = null;
+        this.commandHttpClient =
+                HttpClient.newBuilder()
+                        .connectTimeout(Duration.ofSeconds(30))
+                        .followRedirects(HttpClient.Redirect.NEVER)
+                        .build();
         this.httpClient =
                 HttpClient.newBuilder()
                         .connectTimeout(Duration.ofSeconds(30))
@@ -203,6 +214,11 @@ public class SandboxConnector {
         return sendRequest(method, endpoint, body, contentType, maxRetries, null);
     }
 
+    /** Returns the configured per-attempt transport timeout. */
+    public Duration getPerAttemptTimeout() {
+        return perAttemptTimeout;
+    }
+
     /**
      * Sends an HTTP request with retry logic and an exchange deadline shared by HTTP
      * attempts, backoff, and the full response body read.
@@ -225,13 +241,42 @@ public class SandboxConnector {
             int maxRetries,
             Duration exchangeTimeout)
             throws IOException, InterruptedException {
+        return sendRequest(method, endpoint, body, contentType, maxRetries, exchangeTimeout, null);
+    }
+
+    /**
+     * Sends a request with an explicit response-header timeout and a shared exchange deadline.
+     * Long-running commands may wait for headers until their command budget expires.
+     *
+     * @param method HTTP method
+     * @param endpoint path relative to base URL
+     * @param body request body, or null for GET
+     * @param contentType content type header
+     * @param maxRetries max attempts (0 = default)
+     * @param exchangeTimeout HTTP exchange budget; null uses the connector default
+     * @param attemptTimeout response-header timeout; null uses the connector default
+     * @return HTTP response
+     */
+    public HttpResponse<String> sendRequest(
+            String method,
+            String endpoint,
+            HttpRequest.BodyPublisher body,
+            String contentType,
+            int maxRetries,
+            Duration exchangeTimeout,
+            Duration attemptTimeout)
+            throws IOException, InterruptedException {
         long deadlineNanos = deadline(exchangeTimeout);
         ensureConnected();
         int limit = maxRetries > 0 ? maxRetries : MAX_ATTEMPTS;
         IOException lastException = null;
 
         for (int attempt = 0; attempt < limit; attempt++) {
-            HttpRequest.Builder reqBuilder = buildRequest(endpoint, contentType, perAttemptTimeout);
+            HttpRequest.Builder reqBuilder =
+                    buildRequest(
+                            endpoint,
+                            contentType,
+                            attemptTimeout != null ? attemptTimeout : perAttemptTimeout);
             if (body == null) {
                 reqBuilder.GET();
             } else {
@@ -239,8 +284,13 @@ public class SandboxConnector {
             }
 
             try {
+                HttpClient client =
+                        "POST".equalsIgnoreCase(method) && "execute".equals(endpoint)
+                                ? commandHttpClient
+                                : httpClient;
                 HttpResponse<String> resp =
                         sendAwait(
+                                client,
                                 reqBuilder.build(),
                                 HttpResponse.BodyHandlers.ofString(),
                                 remainingBudget(deadlineNanos, endpoint));
@@ -328,6 +378,7 @@ public class SandboxConnector {
             reqBuilder.method(method, body);
         }
         return sendAwait(
+                httpClient,
                 reqBuilder.build(),
                 HttpResponse.BodyHandlers.ofByteArray(),
                 remainingBudget(deadlineNanos, endpoint));
@@ -360,9 +411,12 @@ public class SandboxConnector {
      * which closes the stalled exchange, and an {@link HttpTimeoutException} is thrown.
      */
     private <T> HttpResponse<T> sendAwait(
-            HttpRequest request, HttpResponse.BodyHandler<T> bodyHandler, Duration budget)
+            HttpClient client,
+            HttpRequest request,
+            HttpResponse.BodyHandler<T> bodyHandler,
+            Duration budget)
             throws IOException, InterruptedException {
-        CompletableFuture<HttpResponse<T>> future = httpClient.sendAsync(request, bodyHandler);
+        CompletableFuture<HttpResponse<T>> future = client.sendAsync(request, bodyHandler);
         try {
             return future.get(budget.toMillis(), TimeUnit.MILLISECONDS);
         } catch (ExecutionException e) {

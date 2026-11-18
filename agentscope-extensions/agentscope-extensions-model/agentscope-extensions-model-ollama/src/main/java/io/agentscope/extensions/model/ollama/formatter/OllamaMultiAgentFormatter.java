@@ -16,7 +16,9 @@
 package io.agentscope.extensions.model.ollama.formatter;
 
 import io.agentscope.core.formatter.AbstractBaseFormatter;
+import io.agentscope.core.formatter.DocumentReferenceRenderer;
 import io.agentscope.core.message.ContentBlock;
+import io.agentscope.core.message.DocumentBlock;
 import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
@@ -415,6 +417,12 @@ public class OllamaMultiAgentFormatter
                                 textualOutput.append(((TextBlock) outputBlock).getText());
                             } else if (outputBlock instanceof ImageBlock) {
                                 multimodalOutputs.add(outputBlock);
+                            } else if (outputBlock instanceof DocumentBlock documentBlock) {
+                                if (textualOutput.length() > 0) {
+                                    textualOutput.append("\n");
+                                }
+                                textualOutput.append(
+                                        DocumentReferenceRenderer.render(documentBlock));
                             }
                         }
 
@@ -460,14 +468,17 @@ public class OllamaMultiAgentFormatter
     public String convertToolResultToString(List<ContentBlock> blocks) {
         StringBuilder sb = new StringBuilder();
         for (ContentBlock block : blocks) {
-            if (block instanceof TextBlock) {
-                sb.append(((TextBlock) block).getText());
-            } else if (block instanceof ToolResultBlock) {
+            if (block instanceof TextBlock textBlock) {
+                sb.append(textBlock.getText());
+            } else if (block instanceof DocumentBlock documentBlock) {
+                sb.append(DocumentReferenceRenderer.render(documentBlock));
+            } else if (block instanceof ToolResultBlock toolResultBlock) {
                 // Extract text from the output blocks of ToolResultBlock
-                List<ContentBlock> outputBlocks = ((ToolResultBlock) block).getOutput();
-                for (ContentBlock outputBlock : outputBlocks) {
-                    if (outputBlock instanceof TextBlock) {
-                        sb.append(((TextBlock) outputBlock).getText());
+                for (ContentBlock outputBlock : toolResultBlock.getOutput()) {
+                    if (outputBlock instanceof TextBlock outputText) {
+                        sb.append(outputText.getText());
+                    } else if (outputBlock instanceof DocumentBlock outputDocument) {
+                        sb.append(DocumentReferenceRenderer.render(outputDocument));
                     }
                 }
             }

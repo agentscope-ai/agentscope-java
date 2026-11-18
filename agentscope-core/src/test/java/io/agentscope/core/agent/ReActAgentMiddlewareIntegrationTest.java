@@ -53,8 +53,10 @@ import io.agentscope.core.tool.ToolCallParam;
 import io.agentscope.core.tool.Toolkit;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.EnumSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Function;
@@ -187,6 +189,16 @@ class ReActAgentMiddlewareIntegrationTest {
         }
 
         @Override
+        public Set<ExtensionPoint> activePoints() {
+            return EnumSet.of(
+                    ExtensionPoint.ON_AGENT,
+                    ExtensionPoint.ON_REASONING,
+                    ExtensionPoint.ON_MODEL_CALL,
+                    ExtensionPoint.ON_ACTING,
+                    ExtensionPoint.ON_SYSTEM_PROMPT);
+        }
+
+        @Override
         public Flux<AgentEvent> onAgent(
                 Agent agent,
                 RuntimeContext ctx,
@@ -295,6 +307,11 @@ class ReActAgentMiddlewareIntegrationTest {
         MiddlewareBase hintMiddleware =
                 new MiddlewareBase() {
                     @Override
+                    public Set<ExtensionPoint> activePoints() {
+                        return EnumSet.of(ExtensionPoint.ON_REASONING);
+                    }
+
+                    @Override
                     public Flux<AgentEvent> onReasoning(
                             Agent agent,
                             RuntimeContext ctx,
@@ -366,6 +383,11 @@ class ReActAgentMiddlewareIntegrationTest {
         MiddlewareBase droppingMiddleware =
                 new MiddlewareBase() {
                     @Override
+                    public Set<ExtensionPoint> activePoints() {
+                        return EnumSet.of(ExtensionPoint.ON_MODEL_CALL);
+                    }
+
+                    @Override
                     public Flux<AgentEvent> onModelCall(
                             Agent agent,
                             RuntimeContext ctx,
@@ -388,6 +410,11 @@ class ReActAgentMiddlewareIntegrationTest {
     void modelCallMiddlewareCanReplaceTextDeltaWithNull() {
         MiddlewareBase nullingMiddleware =
                 new MiddlewareBase() {
+                    @Override
+                    public Set<ExtensionPoint> activePoints() {
+                        return EnumSet.of(ExtensionPoint.ON_MODEL_CALL);
+                    }
+
                     @Override
                     public Flux<AgentEvent> onModelCall(
                             Agent agent,
@@ -425,6 +452,11 @@ class ReActAgentMiddlewareIntegrationTest {
     void transformedTextIsUsedForPartialMessageWhenModelCallIsInterrupted() {
         MiddlewareBase replacingMiddleware =
                 new MiddlewareBase() {
+                    @Override
+                    public Set<ExtensionPoint> activePoints() {
+                        return EnumSet.of(ExtensionPoint.ON_MODEL_CALL);
+                    }
+
                     @Override
                     public Flux<AgentEvent> onModelCall(
                             Agent agent,
@@ -477,6 +509,11 @@ class ReActAgentMiddlewareIntegrationTest {
                 new java.util.concurrent.atomic.AtomicBoolean(false);
         MiddlewareBase faulty =
                 new MiddlewareBase() {
+                    @Override
+                    public Set<ExtensionPoint> activePoints() {
+                        return EnumSet.of(ExtensionPoint.ON_AGENT);
+                    }
+
                     @Override
                     public Flux<AgentEvent> onAgent(
                             Agent agent,

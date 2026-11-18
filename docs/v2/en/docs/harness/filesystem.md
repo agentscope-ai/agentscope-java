@@ -104,7 +104,7 @@ This mode **does not provide shell** — on purpose: for shell, use mode 2 (sand
 | Implementation | Description |
 |---------------|-------------|
 | `RedisStore` | Jedis-based, for low-latency high-concurrency | `agentscope-extensions-redis` |
-| `JdbcStore` | JDBC-based, for MySQL / PostgreSQL / H2 / SQLite | `agentscope-extensions-jdbc` |
+| `JdbcStore` | JDBC-based, for MySQL / PostgreSQL / H2 | `agentscope-extensions-mysql` |
 | `InMemoryStore` | In-memory, for testing | `agentscope-harness` |
 
 ---
@@ -137,7 +137,7 @@ HarnessAgent agent = HarnessAgent.builder()
 | Method | Description | Default |
 |--------|-------------|---------|
 | `image(String)` | Docker image | required |
-| `isolationScope(IsolationScope)` | Isolation dimension | `USER` |
+| `isolationScope(IsolationScope)` | Isolation dimension | `SESSION` |
 | `memorySizeBytes(Long)` | Container memory limit | Docker default |
 | `cpuCount(Long)` | CPU limit | Docker default |
 | `network(String)` | Docker network | Docker default |
@@ -271,7 +271,7 @@ HarnessAgent agent = HarnessAgent.builder()
 
 | Method | Description | Default |
 |--------|-------------|---------|
-| `isolationScope(IsolationScope)` | Isolation dimension | store-specific (defaults to `USER`) |
+| `isolationScope(IsolationScope)` | Isolation dimension | store-specific (usually `SESSION`) |
 | `snapshotSpec(SandboxSnapshotSpec)` | Snapshot strategy | `NoopSnapshotSpec` |
 | `executionGuard(SandboxExecutionGuard)` | Concurrency serialization guard for AGENT/GLOBAL scopes | none |
 | `workspaceProjectionEnabled(boolean)` | Project static assets from host to sandbox | `true` |
@@ -366,6 +366,9 @@ HarnessAgent agent = HarnessAgent.builder()
 | `addRoot(Path)` | Extra host directory the agent may access | none |
 | `additionalRoots(Collection)` | Batch-set extra directories | none |
 | `projectWritable(boolean)` | Route non-workspace writes to the project directory instead of workspace | `false` |
+| `namespaceBoundary(Boolean)` | Override the namespace boundary (absolute paths confined to the caller's own namespace under the workspace root, [isolation scopes](#isolationscope--bucketing-across-users-and-replicas)); `true`/`false` force, omit for the default | on for `ROOTED` |
+
+> **Upgrading — absolute paths under the workspace root:** the namespace boundary is on by default for `ROOTED` workspaces, so an absolute key such as `<workspace>/skills/tool.md` no longer reaches shared content at the workspace root (previously any session could address another session's directory that way). Shared content stays reachable through workspace-relative paths, which the overlay resolves against the read-only project layer; on a vetted single-tenant workspace that needs the old behaviour, pass `.namespaceBoundary(false)`.
 
 #### Path resolution policy (`LocalFsMode`)
 
@@ -518,7 +521,9 @@ The four-layer priority is unchanged (low → high): `projectGlobalSkillsDir` �
 
 All file tools call through the `AbstractFilesystem` interface, passing the current `RuntimeContext` on every operation. The filesystem implementation decides the actual read/write location. Agent code is completely unaware of the mode.
 
-`read_file` bounds each response to 16,000 Unicode code points by default, even when `limit` is omitted or a single line is very long. Set the optional `max_chars` to request a different page size (hard maximum: 32,000). `offset` and `limit` still select lines; `char_offset` selects a character page **within that same line selection**, starting at zero. When truncated, the result supplies the next `char_offset`: keep the same path, `offset`, and `limit` to continue. Unicode surrogate pairs are never split. Read a stable file when assembling multiple pages; offsets do not identify an immutable snapshot.
+`read_file` bounds each response to 16,000 Unicode code points by default, even when `limit` is omitted or a single line is very long. Set the optional `max_chars` to request a different page size, clamped to the application-configured maximum (32,000 by default). `offset` and `limit` still select lines; `char_offset` selects a character page **within that same line selection**, starting at zero. When truncated, the result supplies the next `char_offset`: keep the same path, `offset`, and `limit` to continue. Unicode surrogate pairs are never split. Read a stable file when assembling multiple pages; offsets do not identify an immutable snapshot.
+
+Configure the maximum with `HarnessAgent.Builder.readFileMaxChars(int)`. For example, `.readFileMaxChars(64_000)` permits a tool call to request up to 64,000 code points. The configured maximum must be at least 16,000; smaller values cause `IllegalArgumentException`. Automatically constructed general-purpose and declared subagents inherit the setting. Raising the maximum does not change the 16,000-code-point page size when `max_chars` is omitted. Direct users of `FilesystemTool` can pass the maximum to its `(filesystem, pathNormalizer, readFileMaxChars)` constructor; existing constructors retain the default maximum.
 
 This also bounds reads of offloaded tool artifacts. These limits apply to tool output for all filesystem backends; they do not bound the backend's allocation or I/O when producing the selected content. Binary content is paged as its encoded text and must be reassembled before decoding.
 
@@ -529,16 +534,6 @@ This also bounds reads of offloaded tool artifacts. These limits apply to tool o
 | Sandbox | All file operations forwarded into the sandbox container |
 
 `edit_file` requires a non-empty `oldString` and a non-null `newString`; pass `""` as `newString` to delete the matched text. Replacement normalizes CRLF and lone-CR line endings to LF before matching and writes the edited content with LF line endings, consistently across filesystem modes.
-
-#### Moving files across backends
-
-When the source and destination resolve to different backends, `CompositeFilesystem.move(...)` downloads the original bytes, uploads them with `UploadMode.CREATE_NEW`, and deletes the source only after the upload succeeds. `LocalFilesystem` and `RemoteFilesystem` support this transfer for binary files as well as empty and whitespace-only text. The destination uses its backend's create-only semantics; the original `uploadFiles(...)` overload retains its overwrite behavior.
-
-Backends must support raw-byte downloads and create-only uploads for the source content to participate in cross-backend moves. The default `CREATE_NEW` implementation accepts valid UTF-8 bytes through the backend's existing `write(...)` method; other byte sequences require an override. Creation and layer semantics depend on that backend. If a required capability is unavailable, the move fails without deleting the source. This includes sources such as the service's `MemoryStoreFilesystem`, which does not support downloads. `RemoteFilesystem` also requires its `BaseStore` to support conditional creation (`putIfVersion` with version `0`).
-
-Protection against concurrent writers depends on the backend's atomic creation support. `LocalFilesystem` uses the filesystem's `CREATE_NEW` operation; `RemoteFilesystem` depends on the atomicity of the store's conditional write. For `OverlayFilesystem`, create-only checks the writable upper layer: creating an upper-layer file can shadow a lower-layer file without modifying the lower-layer original.
-
-A cross-backend move is not atomic. If the destination has been written but deleting the source fails, the result reports that the copy succeeded and source deletion failed; the destination is retained. Check the result before retrying, since both copies may now exist. Moves within the same backend continue to use that backend's own `move(...)` implementation.
 
 ### Shell execution (execute)
 
@@ -558,7 +553,9 @@ Under shared-store mode, `tools.json` also follows the "remote upper, local temp
 
 ## Two-layer reading in the workspace
 
-Key files like `AGENTS.md`, `MEMORY.md`, `KNOWLEDGE.md` have a "two-layer fallback" on reads: look in your configured filesystem first, fall back to local disk if not found. This is useful for **"template files" in mode 1 (shared store)**: the first replica's local has the template `AGENTS.md` so it works immediately; later replicas read the up-to-date version from the shared store.
+Key files like `AGENTS.md`, `KNOWLEDGE.md` have a "two-layer fallback" on reads: look in your configured filesystem first, fall back to local disk if not found. This is useful for **"template files" in mode 1 (shared store)**: the first replica's local has the template `AGENTS.md` so it works immediately; later replicas read the up-to-date version from the shared store.
+
+Per-identity runtime data (`MEMORY.md`, `memory/*.md`, task records) falls back **inside the caller's namespace**, never the workspace root. See [Workspace](/v2/en/docs/harness/workspace#two-layer-reads-filesystem-first--local-fallback) for the rule.
 
 Writes always go through the configured filesystem store.
 

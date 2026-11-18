@@ -23,12 +23,12 @@ import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.event.AgentEvent;
+import io.agentscope.core.journal.JournalException;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.middleware.ModelCallInput;
 import io.agentscope.core.middleware.ReasoningInput;
 import io.agentscope.core.model.Model;
-import io.agentscope.core.session.SessionLogException;
 import io.agentscope.core.state.AgentState;
 import io.agentscope.core.util.ExceptionUtils;
 import io.agentscope.core.util.JsonException;
@@ -107,8 +107,7 @@ public class CompactionMiddleware implements HarnessRuntimeMiddleware {
             RuntimeContext ctx,
             ReasoningInput input,
             Function<ReasoningInput, Flux<AgentEvent>> next) {
-        Model executionModel = agent instanceof ReActAgent react ? react.getModel() : model;
-        if (executionModel == null) executionModel = model;
+        Model executionModel = effectiveModel(agent, ctx);
         int window = executionModel.getContextWindowSize();
         int budget =
                 window > 0
@@ -129,16 +128,39 @@ public class CompactionMiddleware implements HarnessRuntimeMiddleware {
                                                 prepared.options())));
     }
 
+    /**
+     * Resolves the model that will actually process this conversation, so the trigger budget is
+     * derived from the effective model's context window: a dedicated {@link
+     * CompactionConfig#getModel()} when configured, else the executing {@link ReActAgent}'s
+     * per-call model (the {@link RuntimeContext} model id when set, else the build-time
+     * instance or string reference — {@link ReActAgent#getModel(RuntimeContext)} handles both).
+     * Wiring guarantees one of the two exists.
+     */
+    private Model effectiveModel(Agent agent, RuntimeContext ctx) {
+        if (model != null) {
+            return model;
+        }
+        if (agent instanceof ReActAgent react) {
+            return react.getModel(ctx);
+        }
+        return null;
+    }
+
     /** Retry provider context overflow inside the same execution, before its recorder is closed. */
     public HarnessRuntimeMiddleware overflowRecovery() {
         return new HarnessRuntimeMiddleware() {
+            @Override
+            public Set<ExtensionPoint> activePoints() {
+                return EnumSet.of(ExtensionPoint.ON_REASONING);
+            }
+
             @Override
             public Flux<AgentEvent> onReasoning(
                     Agent agent,
                     RuntimeContext ctx,
                     ReasoningInput input,
                     Function<ReasoningInput, Flux<AgentEvent>> next) {
-                if (!(agent instanceof ReActAgent react) || !react.sessionLogEnabled())
+                if (!(agent instanceof ReActAgent react) || !react.journalEnabled())
                     return next.apply(input);
                 AgentState initialState = RuntimeContext.resolveAgentState(ctx, agent);
                 List<Msg> initialHistory =
@@ -147,7 +169,7 @@ public class CompactionMiddleware implements HarnessRuntimeMiddleware {
                         .onErrorResume(
                                 error -> {
                                     if (ExceptionUtils.containsInterruptedException(error)
-                                            || SessionLogException.causedBy(error)
+                                            || JournalException.causedBy(error)
                                             || !isContextOverflowError(error))
                                         return Flux.error(error);
                                     AgentState state = RuntimeContext.resolveAgentState(ctx, agent);
@@ -187,7 +209,10 @@ public class CompactionMiddleware implements HarnessRuntimeMiddleware {
                                                             retryMessages,
                                                             input.tools(),
                                                             input.options(),
-                                                            react.getModel()),
+                                                            // Per-call resolution (ctx-aware) so a
+                                                            // string-reference agent works here
+                                                            // too.
+                                                            react.getModel(ctx)),
                                                     CompactionConfig.FALLBACK_TRIGGER_TOKENS,
                                                     before)
                                             .flatMapMany(
@@ -315,10 +340,20 @@ public class CompactionMiddleware implements HarnessRuntimeMiddleware {
                             config.withEffective(
                                     Math.max(1, trigger),
                                     Math.min(keep, Math.max(0, conversationBudget / 2)));
+                    // Dedicated compaction model when configured; otherwise the executing
+                    // agent's per-call model (context pin or identity resolution, else its
+                    // default), so the summary follows the model serving the conversation.
+                    Model compactModel = model;
+                    if (compactModel == null && agent instanceof ReActAgent react) {
+                        compactModel = react.getModel(rc);
+                    }
+                    if (compactModel == null) {
+                        compactModel = input.model();
+                    }
                     ConversationCompactor compactor =
                             new ConversationCompactor(
-                                    model,
-                                    new MemoryFlushManager(workspaceManager, model),
+                                    compactModel,
+                                    new MemoryFlushManager(workspaceManager, compactModel),
                                     tokenCounter,
                                     toolResultTokenCounter);
                     // Copies may retain message IDs. Only an unchanged view can become durable;
@@ -334,7 +369,7 @@ public class CompactionMiddleware implements HarnessRuntimeMiddleware {
                             .onErrorResume(
                                     error -> {
                                         if (ExceptionUtils.containsInterruptedException(error)
-                                                || SessionLogException.causedBy(error))
+                                                || JournalException.causedBy(error))
                                             return Mono.error(error);
                                         log.warn(
                                                 "Compaction failed; final request budget validation"

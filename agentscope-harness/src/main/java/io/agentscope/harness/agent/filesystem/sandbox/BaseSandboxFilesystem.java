@@ -46,13 +46,18 @@ import org.slf4j.LoggerFactory;
  * <p>This class provides default implementations for all {@link AbstractFilesystem} methods by
  * delegating
  * to shell commands via {@link #execute}. File listing, grep, and glob use standard Unix
- * commands. Read uses server-side commands for paginated access. Write delegates content
- * transfer to {@link #uploadFiles}. Edit runs a static inline Python script inside the sandbox,
- * with {@code old}/{@code new} passed base64-encoded on the command line (that alphabet has no
- * shell metacharacters, so user content cannot break out of its argument) and the target file
- * itself never leaving the sandbox; it falls back to download via {@link #downloadFiles}, Java
- * replacement via {@link FilesystemUtils#stringReplacement(String, String, String, boolean)},
+ * commands. Read uses server-side commands for paginated access. Non-empty writes delegate
+ * content transfer to {@link #uploadFiles}. Edit runs a static inline Python script inside the
+ * sandbox, with {@code old}/{@code new} passed base64-encoded on the command line (that alphabet
+ * has no shell metacharacters, so user content cannot break out of its argument) and the target
+ * file itself never leaving the sandbox; it falls back to download via {@link #downloadFiles},
+ * Java replacement via {@link FilesystemUtils#stringReplacement(String, String, String, boolean)},
  * and re-upload via {@link #uploadFiles} when {@code python3} is unavailable.
+ * Exclusive writes require {@link #execute} to run a POSIX-compatible shell whose {@code set -C}
+ * prevents overwriting an existing file. Empty files use that exclusive placeholder directly;
+ * non-empty writes require {@link #uploadFiles} to replace it. A backend without the exclusive
+ * create guarantee must not back an atomic
+ * {@link io.agentscope.harness.agent.bus.WorkspaceMessageBus}.
  *
  * <p>Subclasses must implement:
  * <ul>
@@ -210,22 +215,31 @@ public abstract class BaseSandboxFilesystem implements AbstractSandboxFilesystem
         // contain double-quoted command substitution before the container shell sees them
         // (upstream #3850), while an unquoted substitution would word-split parents that
         // contain spaces. Compute the parent in Java and pass it as a single-quoted literal.
+        String parent = quotedParentDir(filePath);
+        String mkdirPrefix = parent != null ? "mkdir -p " + parent + " 2>&1 || exit 1; " : "";
         String checkCmd =
-                "if [ -e "
+                mkdirPrefix
+                        + "if (set -C; : > "
                         + escapedPath
-                        + " ]; then echo 'EXISTS'; exit 1; fi"
-                        + parentDirMkdir(filePath);
+                        + ") 2>/dev/null; then exit 0; fi; if [ -e "
+                        + escapedPath
+                        + " ] || [ -L "
+                        + escapedPath
+                        + " ]; then echo 'EXISTS'; else echo 'CREATE_FAILED'; fi; exit 1";
 
         ExecuteResponse checkResult = execute(runtimeContext, checkCmd, null);
-        if (checkResult.exitCode() != null && checkResult.exitCode() != 0) {
-            if (checkResult.output() != null && checkResult.output().contains("EXISTS")) {
-                return WriteResult.fail(
-                        "Cannot write to "
-                                + filePath
-                                + " because it already exists. Read and then make an"
-                                + " edit, or write to a new path.");
+        Integer exitCode = checkResult.exitCode();
+        if (exitCode == null || exitCode != 0) {
+            if (exitCode != null
+                    && checkResult.output() != null
+                    && checkResult.output().strip().equals("EXISTS")) {
+                return WriteResult.alreadyExists(filePath);
             }
-            return WriteResult.fail("Failed to write file '" + filePath + "'");
+            return WriteResult.fail(executeFailureMessage(checkResult, "writing", filePath));
+        }
+
+        if (content.isEmpty()) {
+            return WriteResult.ok(filePath);
         }
 
         List<FileUploadResponse> responses =
@@ -235,7 +249,12 @@ public abstract class BaseSandboxFilesystem implements AbstractSandboxFilesystem
         if (responses.isEmpty() || !responses.get(0).isSuccess()) {
             String err =
                     responses.isEmpty() ? "upload returned no response" : responses.get(0).error();
-            return WriteResult.fail("Failed to write file '" + filePath + "': " + err);
+            WriteResult cleanup = delete(runtimeContext, filePath);
+            String error = "Failed to write file '" + filePath + "': " + err;
+            if (!cleanup.isSuccess()) {
+                error += "; failed to remove placeholder: " + cleanup.error();
+            }
+            return WriteResult.fail(error);
         }
 
         return WriteResult.ok(filePath);
@@ -328,11 +347,6 @@ public abstract class BaseSandboxFilesystem implements AbstractSandboxFilesystem
             """;
 
     private static final String EDIT_HEREDOC_DELIMITER = "__AGENTSCOPE_EDIT_PY__";
-
-    // Pre-encoded script for the single-line command form (no heredoc, no newlines in the
-    // shell command string). The base64 alphabet contains no shell metacharacters.
-    private static final String EDIT_SCRIPT_B64 =
-            Base64.getEncoder().encodeToString(EDIT_SCRIPT.getBytes(StandardCharsets.UTF_8));
 
     private static final String EDIT_RESULT_MARKER = "__RESULT__";
 
@@ -446,15 +460,9 @@ public abstract class BaseSandboxFilesystem implements AbstractSandboxFilesystem
         if (isPythonMissing(execResult)) {
             return editViaTransfer(runtimeContext, filePath, oldString, newString, replaceAll);
         }
-        // No __RESULT__ marker: the native command may have failed before Python started
-        // (e.g. heredoc mangled by the transport layer, shell syntax error). Fall back to
-        // the transfer path, which uses the filesystem REST API and is independent of shell.
-        log.warn(
-                "[sandbox-fs] native edit returned no result marker (exit={}), falling back"
-                        + " to transfer: {}",
-                execResult.exitCode(),
-                output.length() > 200 ? output.substring(0, 200) + "..." : output);
-        return editViaTransfer(runtimeContext, filePath, oldString, newString, replaceAll);
+        // No __RESULT__ line and python3 did run: an execution-layer failure (timeout, transport,
+        // interpreter crash). Same convention as ls/read/grep/glob.
+        return EditResult.fail(executeFailureMessage(execResult, "editing", filePath));
     }
 
     /**
@@ -471,19 +479,20 @@ public abstract class BaseSandboxFilesystem implements AbstractSandboxFilesystem
 
     private static String nativeEditCommand(
             String filePath, String oldString, String newString, boolean replaceAll) {
-        // Single-line command: the script travels as base64 inside a double-quoted Python -c
-        // argument, avoiding heredoc and multi-line shell syntax entirely. This makes the
-        // command robust against transport layers that mangle newlines or split arguments.
-        return "python3 -c \"exec(__import__('base64').b64decode(b'"
-                + EDIT_SCRIPT_B64
-                + "').decode())\" "
+        return "python3 - "
                 + FilesystemUtils.shellQuote(filePath)
                 + " "
                 + FilesystemUtils.shellQuote(encodeBase64(oldString))
                 + " "
                 + FilesystemUtils.shellQuote(encodeBase64(newString))
                 + " "
-                + (replaceAll ? "true" : "false");
+                + (replaceAll ? "true" : "false")
+                + " <<'"
+                + EDIT_HEREDOC_DELIMITER
+                + "'\n"
+                + EDIT_SCRIPT
+                + EDIT_HEREDOC_DELIMITER
+                + "\n__ec=$?; exit $__ec";
     }
 
     private static String encodeBase64(String value) {
@@ -775,19 +784,6 @@ public abstract class BaseSandboxFilesystem implements AbstractSandboxFilesystem
                         ? result.output()
                         : "exit code " + result.exitCode();
         return "Error " + operation + " '" + target + "': " + detail;
-    }
-
-    /**
-     * Builds the {@code mkdir -p} segment for the parent directory of {@code filePath}, or an
-     * empty string when the file sits at the filesystem root or in the current directory and
-     * needs no parent creation.
-     */
-    private static String parentDirMkdir(String filePath) {
-        String parent = quotedParentDir(filePath);
-        if (parent == null) {
-            return "";
-        }
-        return "; mkdir -p " + parent + " 2>&1";
     }
 
     /**

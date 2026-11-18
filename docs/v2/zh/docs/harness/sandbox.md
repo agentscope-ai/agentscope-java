@@ -66,6 +66,8 @@ agent.call(msg, RuntimeContext.builder()
 - 没快照 → 按 `WorkspaceSpec` 全量初始化（冷启动）
 - 快照读取或恢复失败 → 本次 `call()` 报错，可重试；不会静默丢弃快照状态
 
+恢复时已经打开的快照归档流，即使工作区初始化失败也会关闭。
+
 快照存到哪里取决于你配的 `snapshotSpec`：
 
 | 选项 | 适合 |
@@ -74,7 +76,7 @@ agent.call(msg, RuntimeContext.builder()
 | `LocalSnapshotSpec` | 宿主本地文件（单机长期运行） |
 | `OssSnapshotSpec` | OSS / S3 兼容存储（多副本） |
 | `RedisSnapshotSpec` | Redis（低延迟、小工作区） |
-| `JdbcSnapshotSpec` | JDBC BLOB（已有关系型数据库） |
+| `JdbcSnapshotSpec` | MySQL / JDBC BLOB（已有关系型数据库） |
 
 ```java
 .filesystem(new DockerFilesystemSpec()
@@ -189,6 +191,14 @@ SandboxContext callCtx = SandboxContext.builder()
 
 所有后端实现同一组接口，agent 代码、工具集、`AGENTS.md` 都不用变。
 
+### 工作区根目录
+
+系统提示词中的沙箱目录说明和文件工具的路径归一化使用当前调用绑定的沙箱工作区根目录。恢复旧会话时保留已保存的目录，不改用 Agent 的新配置。根目录内的绝对路径会转换为工作区相对路径，其他路径继续受现有文件系统策略约束。
+
+E2B 默认根目录是 `/home/user`，可通过 `new E2bFilesystemSpec().workspaceRoot("/home/user/project")` 修改，也可以提供设置了根目录的 `WorkspaceSpec`。如果显式提供两者，根目录必须一致（忽略末尾斜杠），否则构建沙箱上下文时报错。有效工作区配置通过复制生成，不修改调用者提供的对象，并保留其中的 entries 和 environment。恢复根目录字段不一致的旧 E2B 状态时，以已保存的实际执行目录为准，只对齐 manifest，不移动文件。Docker 默认目录仍为 `/workspace`。
+
+如果提供 `WorkspaceSpec` 只是为了配置 entries 或 environment，没有调用 `setRoot(...)`，其默认的 `/workspace` 不算显式配置，会沿用 E2B 的执行根目录。但是，主动调用 `setRoot("/workspace")` 属于显式选择，会与另一个不同的显式 `workspaceRoot(...)` 配置产生冲突。
+
 ## 运行时镜像约束
 
 沙箱镜像（Docker 的 `image`、Kubernetes agent-sandbox 的运行时镜像等）由你指定，但**不是任意镜像都能用**。Harness 的文件工具（`read_file` / `write_file` / `edit_file` / `grep_files` / `glob_files` / `list_files`）和快照机制全部通过在沙箱内执行 POSIX shell 命令实现，镜像必须满足下面的契约，否则工具会以难以排查的方式失败。
@@ -224,10 +234,17 @@ agent-sandbox 后端不通过 `kubectl exec` 进容器，而是访问运行时�
 
 | 端点 | 语义 |
 |------|------|
-| `POST /execute`（body `{"command": "..."}`） | **必须以 POSIX shell 语义解释 command**（等价 `sh -c`），返回 `{"stdout", "stderr", "exit_code"}`。Harness 发出的命令包含 `cd ... && (...)`、管道等 shell 结构 |
+| `GET /capabilities` | 返回 `{"execute":{"timeout_seconds":true,"max_timeout_seconds":900,"cleanup_timeout_seconds":6}}`。执行上限为正整数秒，清理预算为非负整数秒。返回 404 时使用旧执行协议；其他错误或无效能力声明会拒绝执行 |
+| `POST /execute`（body `{"command": "...", "timeout_seconds": 30}`） | **必须以 POSIX shell 语义解释 command**（等价 `sh -c`），返回 `{"stdout", "stderr", "exit_code"}`。Harness 发出的命令包含 `cd ... && (...)`、管道等 shell 结构 |
 | `POST /upload`（multipart，`filename` 为相对路径） | 写文件到文件 API 根目录下 |
 | `GET /download/{path}` | 按相对路径下载文件字节 |
 | `GET /list/{path}`、`GET /exists/{path}` | 目录列表 / 存在性检查 |
+
+`timeout_seconds` 是正整数秒，期限覆盖排队、进程创建与执行和 stdout/stderr 排空。无效或不支持的值必须在进程启动前拒绝。到期后终止命令进程组，在声明的 `cleanup_timeout_seconds` 内完成清理，以退出码 `124` 返回此前收集到的输出。父 shell 退出后被子进程继承的输出管道也受同一期限约束；取消时同样清理进程组。自行创建新 session 的脱离进程不在进程组终止保证内。
+
+`execute` 工具默认 30 秒，直接调用 SDK `commands().run(command)` 默认 60 秒，在运行时支持时都会显式发送生效时长。此时每次命令 POST 的 HTTP 等待预算为 **执行时长 + 运行时清理预算 + 连接器 `perAttemptTimeout`**，并发调用互不修改预算。命令 POST 之前的能力预检另用连接器 `perAttemptTimeout` 预算，上述公式不包含预检。各层 gateway/router 的请求与空闲时限须覆盖最大支持预算，或明确关闭相应限制；路由仍固定 180 秒时，300 秒命令仍无法通过该路由完成。
+
+能力接口返回 404 时，SDK 记录警告并使用旧请求 `{"command":"..."}`，HTTP 等待时间为请求超时加 30 秒，再加连接器 `perAttemptTimeout`（与现代预算中的传输余量一致）。该期限仅约束客户端等待，不能保证远端命令终止；404 也可能来自路由错误。其他能力检查错误或无效响应会拒绝执行。只有实际实现超时控制后才能声明支持。提交命令后的 HTTP 错误、等待超时或无效响应表示 **执行结果未知**（Harness 退出码 `null` / outcome `UNKNOWN`）；命令 POST 不自动重试或跟随重定向，重试前应检查命令状态。工作区建目录失败后不能继续初始化、恢复或上传。
 
 **文件 API 根目录必须与工作区根一致**（推荐都用 `/workspace`）。Harness 通过 `/upload` / `/download` 传输两类内容：工作区快照 tar 包（临时文件放在根目录下的 `.agentscope-tmp/`），以及 `write_file` / 文件下载涉及的单文件字节（路径在根目录之下时；Linux 对单个命令行参数有约 128 KiB 上限，走文件 API 的原生传输不受此限制）。根目录通过 `KubernetesSandboxClientOptions.fileApiBaseDir` 配置（默认 `/workspace`）；置空则退回 base64-over-exec 传输。
 
@@ -241,7 +258,9 @@ agent-sandbox 后端不通过 `kubectl exec` 进容器，而是访问运行时�
 
 ## Kubernetes HTTP 交换超时
 
-Kubernetes 沙箱请求同时限制响应头和完整响应体的等待时间。即使服务端发送响应头后停止发送响应体，调用方也能超时返回。命令请求使用传入的超时时间加上 30 秒传输余量（默认 60 + 30 秒）；已有的请求超时可能更早触发。命令交换超时抛出 `SandboxTimeoutException`，Harness 将其映射为 `SandboxException.ExecTimeoutException`。
+Kubernetes 沙箱请求同时限制响应头和完整响应体的等待时间。即使服务端发送响应头后停止发送响应体，调用方也能超时返回。命令请求使用上文说明的执行时长、运行时清理预算与连接器 `perAttemptTimeout` 之和。命令交换超时表示执行结果未知；只有有效的运行时响应才能确认退出码。
+
+运行时返回 `timed_out: true` 表示进程已被执行时限终止，同时保留部分输出。HTTP 交换超时表示执行结果未知；仅凭退出码 124 不能确认运行时超时。
 
 文件上传和下载默认使用 10 分钟交换预算；目录列表和存在性检查默认使用 60 秒。接受 `Duration` 的客户端方法使用传入值作为交换预算，重试和退避共享这份预算。
 
@@ -293,6 +312,15 @@ spec:
 另外提醒：`SandboxState`（身份指针）这层永远绕不开——多副本部署时要配分布式 `AgentStateStore`，否则别的副本拿不到 claimName，PVC 里的数据再完整也 resume 不回来。
 
 ## 工作区怎么映射进沙箱
+
+使用 Kubernetes 共享 PVC 时，在创建 Claim 时传入由认证身份派生的固定目录：
+
+```java
+.claimEnv(List.of(new SandboxClaimSpec.EnvVar(
+    "WORKSPACE_SUBPATH", "users/1001/2001", "python-runtime")))
+```
+
+`KubernetesFilesystemSpec.claimEnv` 将条目透传到 `SandboxClaim.spec.env`。集群模板须允许 env 注入，并通过 `subPathExpr: $(WORKSPACE_SUBPATH)` 将外部 PVC 的子目录挂到 `/workspace`，存储权限在集群侧配置。agent-sandbox v0.5.4 对带 env 的 Claim 跳过预热实例；新沙箱可在保留的 PVC 上续用同一目录。单次调用的 env 为 `null` 时沿用客户端默认值，空列表清除默认值。
 
 宿主侧 `workspace/` 下的关键文件（`AGENTS.md`、`skills/`、`subagents/`、`knowledge/`）在每次沙箱启动时同步进去；按内容哈希增量，不变就跳过传输。
 

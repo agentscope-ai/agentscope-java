@@ -26,6 +26,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 import java.lang.reflect.Field;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Set;
@@ -51,6 +52,7 @@ import org.a2aproject.sdk.spec.TaskState;
 import org.a2aproject.sdk.spec.TaskStatus;
 import org.a2aproject.sdk.spec.TextPart;
 import org.a2aproject.sdk.spec.UnsupportedOperationError;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -67,6 +69,19 @@ import org.junit.jupiter.api.Test;
  */
 @DisplayName("AgentScopeA2aRequestHandler Tests")
 class AgentScopeA2aRequestHandlerTest {
+
+    private final List<AgentScopeA2aRequestHandler> handlers = new ArrayList<>();
+
+    /** Registers a handler so that it is closed after the test, whatever the outcome. */
+    private AgentScopeA2aRequestHandler track(AgentScopeA2aRequestHandler handler) {
+        handlers.add(handler);
+        return handler;
+    }
+
+    @AfterEach
+    void closeHandlers() {
+        handlers.forEach(AgentScopeA2aRequestHandler::close);
+    }
 
     private static DefaultRequestHandler delegateOf(AgentScopeA2aRequestHandler handler)
             throws Exception {
@@ -534,6 +549,45 @@ class AgentScopeA2aRequestHandlerTest {
             assertEquals(
                     "io.agentscope.core.a2a.server.request.AgentScopeA2aRequestHandler$AgentScopeTaskStateProvider",
                     taskStateProvider.getClass().getName());
+        }
+    }
+
+    @Nested
+    @DisplayName("Timeout Tests")
+    class TimeoutTests {
+
+        @Test
+        @DisplayName("Should wait 60s for the agent and 10s for consumption by default")
+        void testDefaultTimeouts() throws Exception {
+            AgentScopeA2aRequestHandler handler =
+                    track(
+                            AgentScopeA2aRequestHandler.builder()
+                                    .agentExecutor(mock(AgentExecutor.class))
+                                    .build());
+
+            assertEquals(60, timeout(handler, "agentCompletionTimeoutSeconds"));
+            assertEquals(10, timeout(handler, "consumptionCompletionTimeoutSeconds"));
+        }
+
+        @Test
+        @DisplayName("Should apply configured timeouts")
+        void testConfiguredTimeouts() throws Exception {
+            AgentScopeA2aRequestHandler handler =
+                    track(
+                            AgentScopeA2aRequestHandler.builder()
+                                    .agentExecutor(mock(AgentExecutor.class))
+                                    .agentCompletionTimeoutSeconds(120)
+                                    .consumptionCompletionTimeoutSeconds(30)
+                                    .build());
+
+            assertEquals(120, timeout(handler, "agentCompletionTimeoutSeconds"));
+            assertEquals(30, timeout(handler, "consumptionCompletionTimeoutSeconds"));
+        }
+
+        private Object timeout(AgentScopeA2aRequestHandler handler, String name) throws Exception {
+            Field field = DefaultRequestHandler.class.getDeclaredField(name);
+            field.setAccessible(true);
+            return field.get(delegateOf(handler));
         }
     }
 }

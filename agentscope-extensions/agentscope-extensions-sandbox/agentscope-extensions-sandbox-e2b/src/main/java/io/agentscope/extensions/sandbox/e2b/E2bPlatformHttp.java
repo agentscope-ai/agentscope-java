@@ -110,6 +110,21 @@ final class E2bPlatformHttp {
                 opt.getMaxRetries(), () -> postJson(url, body, /* apiKey */ true));
     }
 
+    JsonNode getSandbox(String sandboxId) throws IOException {
+        Request request =
+                new Request.Builder()
+                        .url(trimSlash(opt.getApiBaseUrl()) + "/sandboxes/" + sandboxId)
+                        .addHeader("X-API-Key", requireApiKey())
+                        .get()
+                        .build();
+        try (Response response = http.newCall(request).execute()) {
+            if (!response.isSuccessful()) {
+                throw new E2bSandboxApiException(response.code(), "Sandbox lookup failed");
+            }
+            return json.readTree(Objects.requireNonNull(response.body()).string());
+        }
+    }
+
     JsonNode connectSandbox(String sandboxId, int timeoutSeconds) throws IOException {
         ObjectNode body = json.createObjectNode();
         body.put("timeout", timeoutSeconds);

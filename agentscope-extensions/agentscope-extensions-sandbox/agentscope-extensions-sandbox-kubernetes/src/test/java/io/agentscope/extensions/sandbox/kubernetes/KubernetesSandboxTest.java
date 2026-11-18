@@ -30,14 +30,18 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import io.agentscope.core.message.ToolExecutionDetails;
+import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.extensions.sandbox.kubernetes.client.CommandExecutor;
 import io.agentscope.extensions.sandbox.kubernetes.client.Filesystem;
 import io.agentscope.extensions.sandbox.kubernetes.client.Sandbox;
-import io.agentscope.extensions.sandbox.kubernetes.client.exceptions.SandboxTimeoutException;
+import io.agentscope.extensions.sandbox.kubernetes.client.exceptions.SandboxRequestException;
 import io.agentscope.extensions.sandbox.kubernetes.client.model.ExecutionResult;
+import io.agentscope.harness.agent.filesystem.sandbox.SandboxBackedFilesystem;
 import io.agentscope.harness.agent.sandbox.ExecResult;
 import io.agentscope.harness.agent.sandbox.SandboxErrorCode;
 import io.agentscope.harness.agent.sandbox.SandboxException;
+import io.agentscope.harness.agent.tool.ShellExecuteTool;
 import java.io.ByteArrayInputStream;
 import java.io.InputStream;
 import java.time.Duration;
@@ -87,6 +91,52 @@ class KubernetesSandboxTest {
         assertEquals("cd '/workspace' && (\necho hi\n)", cmd.getValue());
     }
 
+    @Test
+    void httpWaitFailureReachesToolAsUnknownRatherThanProcessTimeout() {
+        when(commands.run(anyString(), any(Duration.class)))
+                .thenThrow(
+                        new SandboxRequestException(
+                                "Execution outcome unknown; inspect state before retrying",
+                                null,
+                                new java.net.http.HttpTimeoutException("wait expired"),
+                                true));
+        SandboxBackedFilesystem filesystem = new SandboxBackedFilesystem();
+        filesystem.setSandbox(sandbox);
+        ToolResultBlock result =
+                new ShellExecuteTool(filesystem).execute(null, "side-effect", null, 300);
+        assertEquals(ToolExecutionDetails.Outcome.UNKNOWN, result.getExecutionDetails().outcome());
+        assertEquals(null, result.getExecutionDetails().exitCode());
+        verify(commands).run(anyString(), eq(Duration.ofSeconds(300)));
+    }
+
+    @Test
+    void confirmedRuntimeTimeoutPreservesPartialOutputAndExitCode() {
+        when(commands.run(anyString(), any(Duration.class)))
+                .thenReturn(
+                        new ExecutionResult(
+                                "before", "Command timed out after 2 seconds", 124, true));
+        SandboxException.ExecException error =
+                assertThrows(
+                        SandboxException.ExecException.class,
+                        () -> sandbox.doExec(null, "echo before; sleep 10", 2));
+        assertEquals(124, error.getExitCode());
+        assertEquals("before", error.getStdout());
+        assertTrue(error.isTimedOut());
+    }
+
+    @Test
+    void exitCode124AloneDoesNotConfirmRuntimeTimeout() {
+        when(commands.run(anyString(), any(Duration.class)))
+                .thenReturn(new ExecutionResult("before", "process exited", 124));
+
+        SandboxException.ExecException error =
+                assertThrows(
+                        SandboxException.ExecException.class,
+                        () -> sandbox.doExec(null, "exit 124", 2));
+
+        assertFalse(error.isTimedOut());
+    }
+
     @ParameterizedTest
     @ValueSource(
             strings = {"cat <<'EOF'\nhello\nEOF", "echo hi\n# comment", "echo hi \\", "echo hi"})
@@ -105,18 +155,6 @@ class KubernetesSandboxTest {
         assertTrue(wrapped.endsWith("\n)"));
         String lastPayloadLine = command.substring(command.lastIndexOf('\n') + 1);
         assertFalse(wrapped.contains(lastPayloadLine + ")"));
-    }
-
-    @Test
-    void doExecMapsExchangeTimeoutToHarnessExecTimeout() throws Exception {
-        when(commands.run(anyString(), any(Duration.class)))
-                .thenThrow(new SandboxTimeoutException("Command exchange timed out", null));
-
-        SandboxException.ExecTimeoutException timeout =
-                assertThrows(
-                        SandboxException.ExecTimeoutException.class,
-                        () -> sandbox.doExec(null, "sleep 300", 30));
-        assertEquals("Command timed out after 30s", timeout.getMessage());
     }
 
     @Test
@@ -305,5 +343,33 @@ class KubernetesSandboxTest {
 
         assertArrayEquals(tar, archive.readAllBytes());
         verify(commands).run(contains("| base64"));
+    }
+
+    @Test
+    void setupRejectsConfirmedMkdirTimeout() {
+        when(commands.run(anyString())).thenReturn(new ExecutionResult("", "timed out", 124));
+        SandboxException.SandboxRuntimeException error =
+                assertThrows(
+                        SandboxException.SandboxRuntimeException.class, sandbox::doSetupWorkspace);
+        assertTrue(error.getMessage().contains("exit=124"));
+    }
+
+    @Test
+    void hydrateDoesNotTransferArchiveAfterMkdirTimeout() {
+        when(commands.run(anyString())).thenReturn(new ExecutionResult("", "timed out", 124));
+        assertThrows(
+                SandboxException.SandboxRuntimeException.class,
+                () -> sandbox.doHydrateWorkspace(new ByteArrayInputStream(new byte[0])));
+        verify(files, never()).write(anyString(), any(byte[].class));
+        verify(commands).run("mkdir -p '/workspace'");
+    }
+
+    @Test
+    void uploadDoesNotWriteAfterMkdirTimeout() {
+        when(commands.run(anyString())).thenReturn(new ExecutionResult("", "timed out", 124));
+        assertThrows(
+                SandboxException.SandboxRuntimeException.class,
+                () -> sandbox.uploadFile("/workspace/nested/file", new byte[0]));
+        verify(files, never()).write(anyString(), any(byte[].class));
     }
 }

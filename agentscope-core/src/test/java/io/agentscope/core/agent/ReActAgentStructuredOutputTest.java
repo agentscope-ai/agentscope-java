@@ -40,6 +40,7 @@ import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.ChatUsage;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.Model;
+import io.agentscope.core.model.ModelRegistry;
 import io.agentscope.core.model.ToolChoice;
 import io.agentscope.core.model.ToolSchema;
 import io.agentscope.core.tool.Tool;
@@ -612,6 +613,48 @@ class ReActAgentStructuredOutputTest {
         assertEquals(
                 "generate_response",
                 ((ToolChoice.Specific) mockModel.getLastOptions().getToolChoice()).toolName());
+    }
+
+    /** Same forced-retry flow, but the agent holds a lazy string reference instead of the instance. */
+    @Test
+    @DisplayName("Forces generate_response via tool_choice when the model is a string reference")
+    void testStructuredOutputForcesToolChoiceWithModelRef() {
+        Map<String, Object> toolInput = weatherToolInput();
+        AtomicInteger calls = new AtomicInteger();
+
+        MockModel mockModel =
+                new MockModel(
+                        msgs -> {
+                            int n = calls.getAndIncrement();
+                            if (n < 2) {
+                                return List.of(textResponse("msg_" + n, "Plain text answer."));
+                            }
+                            return List.of(structuredToolResponse("msg_" + n, toolInput));
+                        });
+
+        ModelRegistry.register("so:ref-model", mockModel);
+        try {
+            ReActAgent agent =
+                    ReActAgent.builder()
+                            .name("weather-agent")
+                            .sysPrompt("You are a weather assistant")
+                            .model("so:ref-model")
+                            .toolkit(new Toolkit())
+                            .build();
+
+            Msg responseMsg = agent.call(weatherInput(), WeatherResponse.class).block();
+
+            assertNotNull(responseMsg);
+            WeatherResponse result = responseMsg.getStructuredData(WeatherResponse.class);
+            assertNotNull(result);
+            assertEquals("San Francisco", result.location);
+            assertEquals(3, mockModel.getCallCount());
+            assertTrue(
+                    mockModel.getLastOptions().getToolChoice() instanceof ToolChoice.Specific,
+                    "Expected a ToolChoice.Specific on the forced round");
+        } finally {
+            ModelRegistry.reset();
+        }
     }
 
     /** Gives up after 3 forced retries when the model never calls {@code generate_response}. */

@@ -66,11 +66,12 @@ import java.util.Objects;
 public class CompositeFilesystem implements AbstractFilesystem {
 
     @Override
-    public io.agentscope.core.session.AtomicSessionStorage sessionStorage(RuntimeContext rc) {
-        return routeForPath("agents/").backend().sessionStorage(rc);
+    public io.agentscope.core.journal.AtomicJournalStorage journalStorage(RuntimeContext rc) {
+        return journalBackend.journalStorage(rc);
     }
 
     private final AbstractFilesystem defaultBackend;
+    private final AbstractFilesystem journalBackend;
     private final List<RouteEntry> sortedRoutes;
 
     /**
@@ -82,6 +83,22 @@ public class CompositeFilesystem implements AbstractFilesystem {
      */
     public CompositeFilesystem(
             AbstractFilesystem defaultBackend, Map<String, AbstractFilesystem> routes) {
+        this(defaultBackend, routes, null);
+    }
+
+    /**
+     * Creates a composite filesystem with an explicit backend for native thread journals.
+     * File operations continue to use the prefix routes independently of this backend.
+     *
+     * @param defaultBackend backend for paths that do not match a route
+     * @param routes path prefixes and their backends
+     * @param journalBackend backend for journal storage, or {@code null} to preserve the
+     *     legacy selection using the {@code agents/} route and default backend
+     */
+    public CompositeFilesystem(
+            AbstractFilesystem defaultBackend,
+            Map<String, AbstractFilesystem> routes,
+            AbstractFilesystem journalBackend) {
         if (defaultBackend == null) {
             throw new IllegalArgumentException("defaultBackend must not be null");
         }
@@ -95,6 +112,8 @@ public class CompositeFilesystem implements AbstractFilesystem {
         }
         entries.sort(Comparator.comparingInt((RouteEntry e) -> e.prefix().length()).reversed());
         this.sortedRoutes = List.copyOf(entries);
+        this.journalBackend =
+                journalBackend != null ? journalBackend : routeForPath("agents/").backend();
     }
 
     // ==================== Routing ====================

@@ -103,7 +103,7 @@ HarnessAgent agent = HarnessAgent.builder()
 | 实现 | 说明 |
 |------|------|
 | `RedisStore` | 基于 Jedis，适合低延迟高并发 | `agentscope-extensions-redis` |
-| `JdbcStore` | 基于 JDBC，适合 MySQL / PostgreSQL / H2 / SQLite | `agentscope-extensions-jdbc` |
+| `JdbcStore` | 基于 JDBC，适合 MySQL / PostgreSQL / H2 | `agentscope-extensions-mysql` |
 | `InMemoryStore` | 内存实现，适合测试 | `agentscope-harness` |
 
 ---
@@ -136,7 +136,7 @@ HarnessAgent agent = HarnessAgent.builder()
 | 方法 | 说明 | 默认值 |
 |------|------|-------|
 | `image(String)` | Docker 镜像 | 必填 |
-| `isolationScope(IsolationScope)` | 隔离维度 | `USER` |
+| `isolationScope(IsolationScope)` | 隔离维度 | `SESSION` |
 | `memorySizeBytes(Long)` | 容器内存限制 | Docker 默认 |
 | `cpuCount(Long)` | CPU 限制 | Docker 默认 |
 | `network(String)` | Docker network | Docker 默认 |
@@ -265,7 +265,7 @@ HarnessAgent agent = HarnessAgent.builder()
 
 | 方法 | 说明 | 默认值 |
 |------|------|-------|
-| `isolationScope(IsolationScope)` | 隔离维度 | 后端默认（默认 `USER`） |
+| `isolationScope(IsolationScope)` | 隔离维度 | 后端默认（通常 `SESSION`） |
 | `snapshotSpec(SandboxSnapshotSpec)` | 快照策略 | `NoopSnapshotSpec` |
 | `executionGuard(SandboxExecutionGuard)` | AGENT/GLOBAL scope 下的并发串行化守卫 | 无 |
 | `workspaceProjectionEnabled(boolean)` | 是否从宿主投影静态资产到沙箱 | `true` |
@@ -360,6 +360,9 @@ HarnessAgent agent = HarnessAgent.builder()
 | `addRoot(Path)` | 额外允许访问的宿主目录 | 无 |
 | `additionalRoots(Collection)` | 批量设置额外目录 | 无 |
 | `projectWritable(boolean)` | 文件工具写项目文件时直接落到项目目录，而非 workspace | `false` |
+| `namespaceBoundary(Boolean)` | 覆盖命名空间边界开关（绝对路径只能落到 workspace 下调用者自己的命名空间内，参见[隔离维度](#isolationscope--多用户与多副本怎么分桶)）；传 `true`/`false` 强制开关，不传则取默认 | `ROOTED` 时开启 |
+
+> **升级提示 — workspace 根目录下的绝对路径：** `ROOTED` workspace 默认启用命名空间边界后，形如 `<workspace>/skills/tool.md` 的绝对路径无法再触及 workspace 根目录下的共享内容（此前任一会话都可以借绝对路径访问其他会话的目录）。共享内容仍然可以通过 workspace 相对路径访问（overlay 会将其解析到只读的项目层）；经过安全评估的单租户 workspace 如需保留旧行为，传 `.namespaceBoundary(false)` 即可。
 
 #### 路径解析策略（`LocalFsMode`）
 
@@ -512,7 +515,9 @@ workspace/
 
 所有文件工具都通过 `AbstractFilesystem` 接口调用，每次操作传入当前 `RuntimeContext`，由文件系统后端决定实际读写位置。agent 代码完全感知不到模式差异。
 
-`read_file` 默认每次最多返回 16,000 个 Unicode 码点，即使省略 `limit` 或单行内容很长也受此限制。可选参数 `max_chars` 可调整每页大小，硬上限为 32,000。`offset` 和 `limit` 仍按行选择内容；`char_offset` 从零开始，在**同一行范围返回的文本内**按字符分页。发生截断时，结果会给出下一页的 `char_offset`，继续读取时保持 path、`offset` 和 `limit` 不变。分页不会拆开 Unicode 代理对。拼接多页时应保持文件不变，偏移量不代表不可变快照。
+`read_file` 默认每次最多返回 16,000 个 Unicode 码点，即使省略 `limit` 或单行内容很长也受此限制。可选参数 `max_chars` 可调整每页大小，请求值不会超过应用配置的上限（默认 32,000）。`offset` 和 `limit` 仍按行选择内容；`char_offset` 从零开始，在**同一行范围返回的文本内**按字符分页。发生截断时，结果会给出下一页的 `char_offset`，继续读取时保持 path、`offset` 和 `limit` 不变。分页不会拆开 Unicode 代理对。拼接多页时应保持文件不变，偏移量不代表不可变快照。
+
+通过 `HarnessAgent.Builder.readFileMaxChars(int)` 配置上限。例如，`.readFileMaxChars(64_000)` 允许工具调用请求最多 64,000 个码点。配置值不得小于 16,000，更小的值会抛出 `IllegalArgumentException`。自动创建的通用子 Agent 和声明式子 Agent 均继承此配置。提高上限后，省略 `max_chars` 时的默认读取量仍为 16,000。直接使用 `FilesystemTool` 时，可通过 `(filesystem, pathNormalizer, readFileMaxChars)` 构造器传入上限；现有构造器继续使用默认上限。
 
 转存后的工具结果文件也受此限制。这是适用于所有文件系统后端的工具输出上限，不限制后端读取所选内容时的内存分配和 I/O。二进制文件按编码后的文本分页，需拼接完整内容后再解码。
 
@@ -523,16 +528,6 @@ workspace/
 | 沙箱 | 所有文件操作转发到沙箱容器内 |
 
 `edit_file` 的 `oldString` 不能为空，`newString` 不能为 `null`；要删除匹配文本，请将 `newString` 设为空字符串 `""`。替换前会把 CRLF 和单独的 CR 行尾统一为 LF，所有文件系统模式下的匹配与写回语义一致，写回内容使用 LF 行尾。
-
-#### 跨后端移动文件
-
-源和目标被路由到不同后端时，`CompositeFilesystem.move(...)` 先下载原始字节，再以 `UploadMode.CREATE_NEW` 上传，上传成功后才删除源文件。`LocalFilesystem` 和 `RemoteFilesystem` 支持按此方式移动二进制文件、空文件和纯空白文本。目标写入遵循具体后端的仅创建语义；原有 `uploadFiles(...)` 重载仍保留覆盖写入行为。
-
-后端需要支持原始字节下载，以及对源内容的仅创建上传，才能参与跨后端移动。默认 `CREATE_NEW` 实现会将合法 UTF-8 字节交给后端原有的 `write(...)` 方法，其他字节序列需要后端重写该接口；创建和分层语义由具体后端决定。缺少所需能力时，移动失败并保留源文件。例如，服务侧的 `MemoryStoreFilesystem` 不支持下载，因此不能作为跨后端移动的源。`RemoteFilesystem` 还要求底层 `BaseStore` 支持条件创建（`putIfVersion` 的版本参数为 `0`）。
-
-并发写入时，不覆盖目标的保证取决于后端是否支持原子创建。`LocalFilesystem` 使用文件系统的 `CREATE_NEW` 操作；`RemoteFilesystem` 依赖底层存储条件写入的原子性。`OverlayFilesystem` 的仅创建操作检查可写的上层：新建上层文件可以遮蔽同路径的下层文件，但不会修改下层原件。
-
-跨后端移动不是原子操作。如果目标已经写入，但源文件删除失败，结果会说明复制成功、源删除失败，并保留目标文件。重试前请检查结果，此时可能同时存在两份文件。同一后端内的移动仍调用该后端自己的 `move(...)` 实现。
 
 ### Shell 执行（execute）
 
@@ -552,7 +547,9 @@ workspace/
 
 ## 工作区里的两层读取
 
-`AGENTS.md`、`MEMORY.md`、`KNOWLEDGE.md` 等关键文件在读取时有"两层兜底"：先看你配的文件系统后端，没有再退回本地磁盘。这对**模式 1（共享存储）下的"模板文件"** 很有用：第一个副本启动时本地有 `AGENTS.md` 模板，立刻可用；后续副本会从共享存储读出最新版本。
+`AGENTS.md`、`KNOWLEDGE.md` 等关键文件在读取时有"两层兜底"：先看你配的文件系统后端，没有再退回本地磁盘。这对**模式 1（共享存储）下的"模板文件"** 很有用：第一个副本启动时本地有 `AGENTS.md` 模板，立刻可用；后续副本会从共享存储读出最新版本。
+
+按身份的运行时数据（`MEMORY.md`、`memory/*.md`、task records）兜底落在 **caller 命名空间内**，不会回退到 workspace 根。规则见 [workspace](/v2/zh/docs/harness/workspace#两层读架构filesystem-first--本地兜底)。
 
 写入永远走配置的文件系统后端。
 

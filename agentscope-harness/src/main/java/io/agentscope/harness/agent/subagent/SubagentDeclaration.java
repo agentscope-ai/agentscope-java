@@ -496,7 +496,8 @@ public final class SubagentDeclaration {
 
         /**
          * Optional model override resolved via {@link io.agentscope.core.model.ModelRegistry}.
-         * Falls back to the parent model when blank or unresolvable.
+         * Falls back to the parent model when blank or unresolvable. Legacy eager semantics:
+         * resolved once when the subagent agent is built, not per call.
          */
         public Builder model(String model) {
             this.model = model;

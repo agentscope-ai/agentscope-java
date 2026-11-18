@@ -34,10 +34,13 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.attribute.PosixFilePermission;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.stream.Collectors;
+import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledOnOs;
@@ -68,6 +71,77 @@ class BaseSandboxFilesystemTest {
 
     @Nested
     class CannedResponseTests {
+
+        @Test
+        void writeClaimsPathExclusivelyBeforeUpload() {
+            SuccessfulWriteFilesystem filesystem = new SuccessfulWriteFilesystem();
+
+            WriteResult result = filesystem.write(RT, "/workspace/claim", "owner");
+
+            assertTrue(result.isSuccess());
+            assertEquals("owner", filesystem.uploadedContent);
+        }
+
+        @Test
+        void writeFailsWhenExclusiveClaimAlreadyExists() {
+            FixedResponseFilesystem filesystem =
+                    new FixedResponseFilesystem(new ExecuteResponse("EXISTS", 1, false));
+
+            WriteResult result = filesystem.write(RT, "/workspace/claim", "owner");
+
+            assertFalse(result.isSuccess());
+            assertTrue(result.error().contains("already exists"));
+        }
+
+        @Test
+        void writeDoesNotTreatCommandErrorPathContainingExistsAsCollision() {
+            FixedResponseFilesystem filesystem =
+                    new FixedResponseFilesystem(
+                            new ExecuteResponse(
+                                    "mkdir: cannot create directory '/tmp/EXISTS-parent':"
+                                            + " Permission denied",
+                                    1,
+                                    false));
+
+            WriteResult result = filesystem.write(RT, "/tmp/EXISTS-parent/claim", "owner");
+
+            assertFalse(result.isSuccess());
+            assertFalse(result.error().contains("already exists"));
+        }
+
+        @Test
+        void writePreservesCreateFailureDiagnostic() {
+            FixedResponseFilesystem filesystem =
+                    new FixedResponseFilesystem(
+                            new ExecuteResponse("CREATE_FAILED: permission denied", 1, false));
+
+            WriteResult result = filesystem.write(RT, "/workspace/claim", "owner");
+
+            assertFalse(result.isSuccess());
+            assertTrue(result.error().contains("permission denied"));
+        }
+
+        @Test
+        void emptyWriteDoesNotAssumeUnknownCreateOutcomeSucceeded() {
+            FixedResponseFilesystem filesystem =
+                    new FixedResponseFilesystem(new ExecuteResponse("unknown state", null, false));
+
+            WriteResult result = filesystem.write(RT, "/workspace/claim", "");
+
+            assertFalse(result.isSuccess());
+            assertFalse(result.isAlreadyExists());
+        }
+
+        @Test
+        void writeReportsPlaceholderCleanupFailureAlongsideUploadFailure() {
+            FailedUploadCleanupFilesystem filesystem = new FailedUploadCleanupFilesystem();
+
+            WriteResult result = filesystem.write(RT, "/workspace/claim", "owner");
+
+            assertFalse(result.isSuccess());
+            assertTrue(result.error().contains("upload denied"));
+            assertTrue(result.error().contains("cleanup denied"));
+        }
 
         @Test
         void glob_recursivePattern_stripsDoubleStarPrefixBeforeFindName() {
@@ -285,53 +359,61 @@ class BaseSandboxFilesystemTest {
             assertEquals(1, result.occurrences());
             // no staging directory and no file transfer at all
             assertTrue(fs.uploadedFiles.isEmpty());
-            assertTrue(fs.lastCommand.contains("python3 -c "));
+            assertTrue(fs.lastCommand.contains("python3 - "));
             assertTrue(fs.lastCommand.contains("'/workspace/f.txt'"));
             assertTrue(fs.lastCommand.contains("'" + base64("World") + "'"));
             assertTrue(fs.lastCommand.contains("'" + base64("Java") + "'"));
+            assertTrue(fs.lastCommand.contains("__AGENTSCOPE_EDIT_PY__"));
+            // python's exit status must reach Java (else 127 never surfaces as a fallback)
+            assertTrue(
+                    fs.lastCommand.contains("exit $__ec"),
+                    "exit code passthrough required: " + fs.lastCommand);
         }
 
-        // ==================== Command format: base64-encoded script avoids heredoc
-        // ====================
+        // ==================== Bug reproduction: edit program collapsed into one line
+        // (#2571) ====================
 
         @Test
-        void edit_commandIsSingleLine_noHeredoc() {
+        void edit_generatedPythonProgram_isSeparatedByRealLineFeeds() {
             FakeSandboxFilesystem filesystem = new FakeSandboxFilesystem();
 
             filesystem.edit(RT, "/workspace/file.txt", "old", "new", false);
 
             String cmd = filesystem.lastCommand;
             assertTrue(
-                    cmd.startsWith("python3 -c "),
-                    "edit should use python3 -c with base64-encoded script");
-            assertFalse(cmd.contains("<<"), "command must not use heredoc syntax");
-            // The script travels as base64 inside the -c argument; the command string itself
-            // must be a single line so transport layers that mangle newlines cannot break it.
-            assertFalse(cmd.contains("\n"), "command must be a single line (no embedded newlines)");
+                    cmd.startsWith("python3 - "),
+                    "edit should drive the replacement through a python3 program");
+            // The regression was a program collapsed onto one line, so the invariant is that
+            // statements are separated by real line feeds. A backslash-n may still appear inside
+            // the program's own string literals (the CRLF normalizer), which is harmless.
+            assertTrue(
+                    cmd.contains("import base64, os, sys, json, uuid\ntarget"),
+                    "the python program must be separated by real line feeds");
+            assertTrue(
+                    cmd.contains("\ncount = text.count(old)"),
+                    "every statement must be on its own line, not joined by an escape");
         }
 
         @Test
-        void edit_executeFailure_shouldFallBackToTransfer() {
+        void edit_executeFailure_shouldFailWithCause() {
             EditResult result =
                     new FixedResponseFilesystem(sandboxRequestFailed())
                             .edit(RT, "/workspace/file.txt", "old", "new", false);
 
-            assertFalse(result.isSuccess(), "edit should fail when transfer also fails");
-            assertTrue(
-                    result.error().contains("Could not read file"),
-                    "error should come from the transfer fallback, not the execute layer");
+            assertFalse(result.isSuccess(), "edit should fail when the command never ran");
+            assertTrue(result.error().contains("status=504"), "error should carry the cause");
         }
 
         @Test
-        void edit_executeFailure_nullOutput_shouldFallBackToTransfer() {
+        void edit_executeFailure_nullOutput_shouldFailWithExitCodeFallback() {
             EditResult result =
                     new FixedResponseFilesystem(new ExecuteResponse(null, -1, false))
                             .edit(RT, "/workspace/file.txt", "old", "new", false);
 
-            assertFalse(result.isSuccess(), "edit should fail when transfer also fails");
+            assertFalse(result.isSuccess(), "edit should fail when the command never ran");
             assertTrue(
-                    result.error().contains("Could not read file"),
-                    "error should come from the transfer fallback, not the execute layer");
+                    result.error().contains("exit code -1"),
+                    "error should fall back to the exit code when no diagnostic output exists");
         }
 
         @Test
@@ -978,8 +1060,10 @@ class BaseSandboxFilesystemTest {
         }
 
         @Test
-        void edit_pathContainingDelimiterString_stillWorks() throws IOException {
-            // The old heredoc delimiter appearing in a path must not break the command.
+        void edit_pathContainingHeredocDelimiter_doesNotTruncateCommand() throws IOException {
+            // A newline inside the single-quoted target argument stays part of the argument: it
+            // does not terminate the command line, and the heredoc body is only read afterwards.
+            // So a path whose own line equals the delimiter cannot close the heredoc early.
             Path dir = Files.createDirectory(tmpDir.resolve("dir__AGENTSCOPE_EDIT_PY__"));
             Path file = dir.resolve("f.txt");
             Files.writeString(file, "Hello World");
@@ -993,7 +1077,7 @@ class BaseSandboxFilesystemTest {
             assertEquals("Hello Java", Files.readString(file));
         }
 
-        // ==================== shell quoting edges — the file path is the last piece of
+        // ==================== heredoc quoting edges — the file path is the last piece of
         // user input that still passes through shell quoting ====================
 
         @Test
@@ -1211,6 +1295,66 @@ class BaseSandboxFilesystemTest {
         }
     }
 
+    @Nested
+    @EnabledOnOs({OS.LINUX, OS.MAC})
+    class LocalShellWriteIntegrationTests {
+
+        @TempDir Path tmpDir;
+
+        @Test
+        void writeUploadsOverExclusivePlaceholderAndRejectsSecondWrite() throws IOException {
+            LocalShellSandboxFilesystem fs = new LocalShellSandboxFilesystem();
+            Path path = tmpDir.resolve("nested/claim.txt");
+
+            WriteResult first = fs.write(RT, path.toString(), "first");
+            WriteResult second = fs.write(RT, path.toString(), "second");
+
+            assertTrue(first.isSuccess());
+            assertFalse(second.isSuccess());
+            assertEquals("first", Files.readString(path));
+        }
+
+        @Test
+        void emptyWriteKeepsExclusivePlaceholderWithoutUploading() throws IOException {
+            LocalShellSandboxFilesystem fs = new LocalShellSandboxFilesystem(true);
+            Path path = tmpDir.resolve("claim.marker");
+
+            WriteResult first = fs.write(RT, path.toString(), "");
+
+            assertTrue(first.isSuccess());
+            assertTrue(Files.exists(path));
+            assertEquals(0L, Files.size(path));
+            assertTrue(fs.write(RT, path.toString(), "").isAlreadyExists());
+        }
+
+        @Test
+        void writeFailureForNonWritableDirectoryIsNotReportedAsAlreadyExists() throws IOException {
+            LocalShellSandboxFilesystem fs = new LocalShellSandboxFilesystem();
+            Path directory = Files.createDirectory(tmpDir.resolve("read-only"));
+            Files.setPosixFilePermissions(
+                    directory,
+                    Set.of(PosixFilePermission.OWNER_READ, PosixFilePermission.OWNER_EXECUTE));
+            Assumptions.assumeFalse(
+                    Files.isWritable(directory),
+                    "POSIX permissions are not enforced for this user");
+
+            try {
+                WriteResult result =
+                        fs.write(RT, directory.resolve("new-file").toString(), "content");
+
+                assertFalse(result.isSuccess());
+                assertFalse(result.error().contains("already exists"));
+            } finally {
+                Files.setPosixFilePermissions(
+                        directory,
+                        Set.of(
+                                PosixFilePermission.OWNER_READ,
+                                PosixFilePermission.OWNER_WRITE,
+                                PosixFilePermission.OWNER_EXECUTE));
+            }
+        }
+    }
+
     // ================================================================
     // Test helpers
     // ================================================================
@@ -1324,6 +1468,64 @@ class BaseSandboxFilesystemTest {
         }
     }
 
+    private static final class SuccessfulWriteFilesystem extends BaseSandboxFilesystem {
+
+        private String uploadedContent;
+
+        @Override
+        public String id() {
+            return "successful-write";
+        }
+
+        @Override
+        public ExecuteResponse execute(
+                RuntimeContext runtimeContext, String command, Integer timeoutSeconds) {
+            return new ExecuteResponse("", 0, false);
+        }
+
+        @Override
+        public List<FileUploadResponse> uploadFiles(
+                RuntimeContext runtimeContext, List<Map.Entry<String, byte[]>> files) {
+            Map.Entry<String, byte[]> file = files.get(0);
+            uploadedContent = new String(file.getValue(), StandardCharsets.UTF_8);
+            return List.of(FileUploadResponse.success(file.getKey()));
+        }
+
+        @Override
+        public List<FileDownloadResponse> downloadFiles(
+                RuntimeContext runtimeContext, List<String> paths) {
+            return List.of();
+        }
+    }
+
+    private static final class FailedUploadCleanupFilesystem extends BaseSandboxFilesystem {
+
+        @Override
+        public String id() {
+            return "failed-upload-cleanup";
+        }
+
+        @Override
+        public ExecuteResponse execute(
+                RuntimeContext runtimeContext, String command, Integer timeoutSeconds) {
+            return command.startsWith("mkdir -p ")
+                    ? new ExecuteResponse("", 0, false)
+                    : new ExecuteResponse("cleanup denied", 1, false);
+        }
+
+        @Override
+        public List<FileUploadResponse> uploadFiles(
+                RuntimeContext runtimeContext, List<Map.Entry<String, byte[]>> files) {
+            return List.of(FileUploadResponse.fail(files.get(0).getKey(), "upload denied"));
+        }
+
+        @Override
+        public List<FileDownloadResponse> downloadFiles(
+                RuntimeContext runtimeContext, List<String> paths) {
+            return List.of();
+        }
+    }
+
     /**
      * execute() always returns the fixed response, standing in for any execution-layer outcome
      * (successful or failing) without a live sandbox.
@@ -1362,6 +1564,16 @@ class BaseSandboxFilesystemTest {
 
     private static final class LocalShellSandboxFilesystem extends BaseSandboxFilesystem {
 
+        private final boolean failUploads;
+
+        private LocalShellSandboxFilesystem() {
+            this(false);
+        }
+
+        private LocalShellSandboxFilesystem(boolean failUploads) {
+            this.failUploads = failUploads;
+        }
+
         @Override
         public String id() {
             return "local-shell";
@@ -1385,6 +1597,9 @@ class BaseSandboxFilesystemTest {
         @Override
         public List<FileUploadResponse> uploadFiles(
                 RuntimeContext runtimeContext, List<Map.Entry<String, byte[]>> files) {
+            if (failUploads) {
+                return List.of(FileUploadResponse.fail(files.get(0).getKey(), "unexpected upload"));
+            }
             List<FileUploadResponse> results = new ArrayList<>();
             for (Map.Entry<String, byte[]> entry : files) {
                 try {

@@ -16,6 +16,7 @@
 package io.agentscope.harness.agent.middleware;
 
 import io.agentscope.core.agent.Agent;
+import io.agentscope.core.agent.CapabilitySurface;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.skill.AgentSkill;
 import io.agentscope.core.skill.SkillFilter;
@@ -250,26 +251,56 @@ public class HarnessSkillMiddleware implements HarnessRuntimeMiddleware {
      * Pre-stages marketplace skill resources to {@code .skills-cache/} on the host workspace.
      * Intended to be called <em>before</em> sandbox start so that workspace projection picks up
      * the staged content in the same call. Safe to call multiple times — staging is idempotent
-     * (content-hash guarded).
+     * (content-hash guarded). Delegates to {@link #prestageForProjection} and discards the
+     * returned projection roots.
      *
      * @param ctx the per-call runtime context
      */
     public void prestageMarketplaceSkills(RuntimeContext ctx) {
+        prestageForProjection(ctx);
+    }
+
+    /**
+     * Pre-stages exactly like {@link #prestageMarketplaceSkills} and additionally returns this
+     * call's {@code .skills-cache} projection roots: one explicit {@code
+     * .skills-cache/<scope>/<ns>/<skill>} subtree per staged skill.
+     *
+     * <p>The returned list is authoritative for the whole cache subtree in workspace projection:
+     * directories staged by earlier calls (e.g. under a since-shrunken grant) stay on disk — the
+     * shared cache is swept only by the grace-window orphan GC, never deleted mid-flight — but
+     * are no longer projected into this call's sandbox. An empty list means nothing of the cache
+     * may project for this call.
+     *
+     * @param ctx the per-call runtime context
+     * @return the per-call cache projection roots; {@code null} when this middleware has no
+     *     stager (nothing it manages lives on disk, so projection stays configured as-is)
+     */
+    public List<String> prestageForProjection(RuntimeContext ctx) {
         if (stager == null) {
-            return;
+            return null;
         }
         if (ctx == null) {
             ctx = RuntimeContext.empty();
         }
         Map<String, RepoBound> merged = skillsForCall(ctx);
         if (merged.isEmpty()) {
-            return;
+            return List.of();
         }
         List<RepoBound> visible = applyVisibility(merged.values(), ctx);
-        List<RepoBound> enabled = applySkillFilter(visible, effectiveFilter(ctx));
-        if (!enabled.isEmpty()) {
-            stager.stage(enabled, sourceNamespaces, scopeKeyFor(ctx));
+        List<RepoBound> enabled =
+                applyCapabilityFilter(applySkillFilter(visible, effectiveFilter(ctx)), ctx);
+        if (enabled.isEmpty()) {
+            return List.of();
         }
+        Map<String, StageResult> staged = stager.stage(enabled, sourceNamespaces, scopeKeyFor(ctx));
+        List<String> roots = new ArrayList<>(staged.size());
+        for (StageResult result : staged.values()) {
+            if (result instanceof StageResult.Cached cached) {
+                roots.add(MarketplaceStager.projectionRoot(cached));
+            }
+        }
+        Collections.sort(roots);
+        return roots;
     }
 
     @Override
@@ -288,7 +319,8 @@ public class HarnessSkillMiddleware implements HarnessRuntimeMiddleware {
         }
 
         List<RepoBound> visible = applyVisibility(merged.values(), ctx);
-        List<RepoBound> enabled = applySkillFilter(visible, effectiveFilter(ctx));
+        List<RepoBound> enabled =
+                applyCapabilityFilter(applySkillFilter(visible, effectiveFilter(ctx)), ctx);
         if (enabled.isEmpty()) {
             runtime.install(SkillCatalog.empty(), ctx, agentToolkit);
             registerSkillsMaterial(ctx, "");
@@ -370,6 +402,27 @@ public class HarnessSkillMiddleware implements HarnessRuntimeMiddleware {
         return builderFilter.overlay(ctx != null ? ctx.get(SkillFilter.class) : null);
     }
 
+    /**
+     * Grant-layer skill visibility. Runs after the subclass hooks so an override cannot drop
+     * authorization filtering; the returned list feeds the prompt, the per-call catalog (the
+     * load tool's authorization boundary) and marketplace staging.
+     *
+     * <p>A missing surface means this pass never entered an agent {@code call()} (whose funnel
+     * always writes one): treat it as unrestricted — direct middleware use is trusted assembler
+     * code, the same stance as the core execution gates.
+     *
+     * @param input the skills remaining after the visibility and skill filters
+     * @param ctx the per-call runtime context carrying the grant set
+     * @return the granted subset; the input unchanged when no surface is present
+     */
+    private List<RepoBound> applyCapabilityFilter(List<RepoBound> input, RuntimeContext ctx) {
+        CapabilitySurface surface = ctx != null ? ctx.get(CapabilitySurface.class) : null;
+        if (surface == null || input.isEmpty()) {
+            return input;
+        }
+        return input.stream().filter(bound -> surface.allowsSkill(bound.skill())).toList();
+    }
+
     private List<RepoBound> applySkillFilter(
             java.util.Collection<RepoBound> input, SkillFilter filter) {
         if (input.isEmpty()) {
@@ -391,7 +444,7 @@ public class HarnessSkillMiddleware implements HarnessRuntimeMiddleware {
      * subsequent steps (lazy resources, marketplace stage) can act on it.
      */
     private LinkedHashMap<String, RepoBound> mergeRepositories(RuntimeContext ctx) {
-        LinkedHashMap<String, RepoBound> merged = new LinkedHashMap<>();
+        LinkedHashMap<String, RepoBound> merged = new LinkedHashMap<>(); // keyed by skill name
         for (AgentSkillRepository repo : repositories) {
             List<AgentSkill> skills;
             try {

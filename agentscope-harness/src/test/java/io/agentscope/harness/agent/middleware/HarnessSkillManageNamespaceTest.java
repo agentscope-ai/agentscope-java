@@ -24,13 +24,13 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.core.journal.InMemoryThreadJournalStore;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.Model;
-import io.agentscope.core.session.InMemorySessionLogStore;
 import io.agentscope.core.tool.AgentTool;
 import io.agentscope.core.tool.ToolCallParam;
 import io.agentscope.harness.agent.HarnessAgent;
@@ -64,7 +64,7 @@ class HarnessSkillManageNamespaceTest {
         try (HarnessAgent agent =
                 HarnessAgent.builder()
                         .name("assistant")
-                        .sessionLogStore(new InMemorySessionLogStore())
+                        .threadJournalStore(new InMemoryThreadJournalStore())
                         .model(neverRespondingModel())
                         .workspace(workspace)
                         .enableSkillManageTool(SkillManageConfig.defaults())
@@ -163,7 +163,7 @@ class HarnessSkillManageNamespaceTest {
         try (HarnessAgent agent =
                 HarnessAgent.builder()
                         .name("assistant")
-                        .sessionLogStore(new InMemorySessionLogStore())
+                        .threadJournalStore(new InMemoryThreadJournalStore())
                         .model(neverRespondingModel())
                         .workspace(workspace)
                         .enableSkillManageTool(SkillManageConfig.defaults())

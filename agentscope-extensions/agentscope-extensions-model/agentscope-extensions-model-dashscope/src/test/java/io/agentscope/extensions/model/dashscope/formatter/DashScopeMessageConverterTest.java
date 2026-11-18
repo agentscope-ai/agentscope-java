@@ -22,6 +22,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.message.AudioBlock;
 import io.agentscope.core.message.ContentBlock;
+import io.agentscope.core.message.DocumentBlock;
+import io.agentscope.core.message.FileIdSource;
 import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
@@ -207,6 +209,85 @@ class DashScopeMessageConverterTest {
         assertEquals("fetch_data", dsMsg.getName());
         assertTrue(dsMsg.isMultimodal());
         assertEquals("Data retrieved", dsMsg.getContentAsList().get(0).getText());
+    }
+
+    @Test
+    void testConvertUserMessageMultimodalKeepsDocumentReference() {
+        DocumentBlock document =
+                DocumentBlock.builder()
+                        .source(
+                                FileIdSource.builder()
+                                        .provider("dashscope")
+                                        .fileId("file-abc")
+                                        .build())
+                        .name("report.pdf")
+                        .build();
+        Msg msg =
+                Msg.builder()
+                        .role(MsgRole.USER)
+                        .content(
+                                List.of(
+                                        ImageBlock.builder()
+                                                .source(
+                                                        URLSource.builder()
+                                                                .url("https://example.com/a.png")
+                                                                .build())
+                                                .build(),
+                                        document))
+                        .build();
+
+        DashScopeMessage dsMsg = converter.convertToMessage(msg, true);
+
+        assertTrue(
+                dsMsg.getContentAsList().stream()
+                        .anyMatch(
+                                part ->
+                                        part.getText() != null
+                                                && part.getText()
+                                                        .contains(
+                                                                "[document: report.pdf, provider"
+                                                                        + " file id: file-abc"
+                                                                        + " (dashscope)]")),
+                String.valueOf(dsMsg.getContentAsList()));
+    }
+
+    @Test
+    void testConvertToolResultWithMediaKeepsDocumentReference() {
+        ToolResultBlock toolResult =
+                ToolResultBlock.builder()
+                        .id("tool_call_1")
+                        .name("fetch_data")
+                        .output(
+                                List.of(
+                                        TextBlock.builder().text("Data retrieved").build(),
+                                        ImageBlock.builder()
+                                                .source(
+                                                        URLSource.builder()
+                                                                .url("https://example.com/a.png")
+                                                                .build())
+                                                .build(),
+                                        DocumentBlock.builder()
+                                                .source(
+                                                        FileIdSource.builder()
+                                                                .provider("dashscope")
+                                                                .fileId("file-abc")
+                                                                .build())
+                                                .name("report.pdf")
+                                                .build()))
+                        .build();
+
+        Msg msg = Msg.builder().role(MsgRole.TOOL).content(List.of(toolResult)).build();
+
+        DashScopeMessage dsMsg = converter.convertToMessage(msg, true);
+
+        assertTrue(
+                dsMsg.getContentAsList().stream()
+                        .anyMatch(
+                                part ->
+                                        part.getText() != null
+                                                && part.getText()
+                                                        .contains("[document: report.pdf")),
+                String.valueOf(dsMsg.getContentAsList()));
     }
 
     @Test
