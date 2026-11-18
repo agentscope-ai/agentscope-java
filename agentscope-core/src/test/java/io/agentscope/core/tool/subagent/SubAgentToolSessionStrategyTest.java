@@ -41,6 +41,8 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.ArgumentCaptor;
 
 /** Tests the opt-in {@link SubAgentSessionStrategy#PER_PARENT_SESSION} child-session strategy. */
@@ -67,11 +69,15 @@ class SubAgentToolSessionStrategyTest {
         assertTrue(properties.containsKey("message"));
     }
 
-    @Test
-    void perParentSessionContinuesChildHistoryAcrossDelegationsInSameParentSession() {
+    /** Runs both the streaming ({@code forwardEvents}) and non-streaming execution paths. */
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void perParentSessionContinuesChildHistoryAcrossDelegationsInSameParentSession(
+            boolean forwardEvents) {
         List<MockModel> models = new ArrayList<>();
         InMemoryAgentStateStore stateStore = spy(new InMemoryAgentStateStore());
-        SubAgentTool tool = new SubAgentTool(childProvider(models), perParentConfig(stateStore));
+        SubAgentTool tool =
+                new SubAgentTool(childProvider(models), perParentConfig(stateStore, forwardEvents));
 
         tool.callAsync(param("Remember this", null, parent("merchant", "parent-one")))
                 .block(Duration.ofSeconds(10));
@@ -150,27 +156,47 @@ class SubAgentToolSessionStrategyTest {
     }
 
     @Test
-    void perParentSessionFallsBackToANewSessionWhenTheCallerHasNoSession() {
+    void perParentSessionFailsWhenTheCallerHasNoSession() {
         List<MockModel> models = new ArrayList<>();
         SubAgentTool tool =
                 new SubAgentTool(
                         childProvider(models), perParentConfig(new InMemoryAgentStateStore()));
 
-        ToolResultBlock result =
+        ToolResultBlock blank =
+                tool.callAsync(
+                                param(
+                                        "hello",
+                                        null,
+                                        RuntimeContext.builder()
+                                                .userId("u")
+                                                .sessionId(" ")
+                                                .build()))
+                        .block(Duration.ofSeconds(10));
+        ToolResultBlock missing =
                 tool.callAsync(param("hello", null, RuntimeContext.builder().userId("u").build()))
                         .block(Duration.ofSeconds(10));
+        ToolResultBlock noContext =
+                tool.callAsync(param("hello", null, null)).block(Duration.ofSeconds(10));
 
-        String output = text(result);
-        assertTrue(output.contains("OK"), output);
-        assertTrue(output.startsWith("session_id: "), output);
-        assertFalse(output.startsWith("session_id: null"), output);
+        for (ToolResultBlock result : List.of(blank, missing, noContext)) {
+            String output = text(result);
+            assertTrue(output.contains("PER_PARENT_SESSION"), output);
+            assertFalse(output.startsWith("session_id: "), output);
+        }
+        // Only the sample agent from the constructor: no delegation silently ran.
+        assertEquals(1, models.size());
     }
 
     private static SubAgentConfig perParentConfig(InMemoryAgentStateStore stateStore) {
+        return perParentConfig(stateStore, false);
+    }
+
+    private static SubAgentConfig perParentConfig(
+            InMemoryAgentStateStore stateStore, boolean forwardEvents) {
         SubAgentConfig.Builder builder =
                 SubAgentConfig.builder()
                         .toolName(TOOL_NAME)
-                        .forwardEvents(false)
+                        .forwardEvents(forwardEvents)
                         .sessionStrategy(SubAgentSessionStrategy.PER_PARENT_SESSION);
         if (stateStore != null) {
             builder.stateStore(stateStore);

@@ -42,9 +42,16 @@ public enum SubAgentSessionStrategy {
      * overwrite the caller's state even when both share a state store, and two sub-agent tools
      * under the same caller session keep separate histories.
      *
-     * <p>If the caller's runtime context carries no session id, the delegation starts a new child
-     * session with a random id, as an omitted {@code session_id} would under {@link
-     * #MODEL_CONTROLLED}.
+     * <p>If the caller's runtime context carries no session id, the delegation fails with an error
+     * result instead of silently starting a fresh child session, since that would lose the
+     * continuity this strategy is chosen for.
+     *
+     * <p>Concurrency: every delegation from one caller session targets the same child session,
+     * and the child state is loaded before and saved after each delegation without locking. Run at
+     * most one delegation per tool and caller session at a time. Two concurrent delegations (for
+     * example parallel tool calls in one reasoning step) both start from the same stored history,
+     * and the later save overwrites the earlier one's turns. Under {@link #MODEL_CONTROLLED} such
+     * calls usually get separate random sessions, so this exposure is specific to this strategy.
      */
     PER_PARENT_SESSION
 }

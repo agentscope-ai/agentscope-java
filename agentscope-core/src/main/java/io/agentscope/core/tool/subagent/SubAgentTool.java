@@ -147,6 +147,23 @@ public class SubAgentTool implements AgentTool {
                         Map<String, Object> input = param.getInput();
                         RuntimeContext parentContext = param.getRuntimeContext();
 
+                        if (config.getSessionStrategy()
+                                        == SubAgentSessionStrategy.PER_PARENT_SESSION
+                                && parentSessionId(parentContext) == null) {
+                            // Fail loudly: silently starting a fresh child session would lose
+                            // exactly the continuity this strategy was opted into for.
+                            logger.warn(
+                                    "Sub-agent tool '{}' uses PER_PARENT_SESSION but the caller's"
+                                            + " runtime context carries no session id",
+                                    name);
+                            return Mono.just(
+                                    ToolResultBlock.error(
+                                            "Sub-agent session strategy PER_PARENT_SESSION"
+                                                    + " requires the caller's runtime context to"
+                                                    + " carry a session id, but none was"
+                                                    + " provided"));
+                        }
+
                         // Get or create session ID
                         String sessionId = resolveChildSessionId(input, parentContext);
                         boolean isNewSession = sessionId == null;
@@ -229,19 +246,28 @@ public class SubAgentTool implements AgentTool {
      *
      * <p>Under {@link SubAgentSessionStrategy#PER_PARENT_SESSION} the id is derived from the
      * caller's session id and this tool's name, and any model-supplied {@code session_id} is
-     * ignored. Otherwise the model-supplied value is used as is.
+     * ignored. The caller is expected to have checked that a parent session id is present.
+     * Otherwise the model-supplied value is used as is.
      *
      * @return the child session id, or {@code null} to start a new session
      */
     private String resolveChildSessionId(Map<String, Object> input, RuntimeContext parentContext) {
         if (config.getSessionStrategy() == SubAgentSessionStrategy.PER_PARENT_SESSION) {
-            String parentSessionId = parentContext == null ? null : parentContext.getSessionId();
-            if (parentSessionId != null && !parentSessionId.isBlank()) {
-                return parentSessionId + ":" + name;
+            if (input.get(PARAM_SESSION_ID) != null) {
+                logger.debug(
+                        "Ignoring model-supplied session_id for sub-agent tool '{}' under"
+                                + " PER_PARENT_SESSION",
+                        name);
             }
-            return null;
+            return parentSessionId(parentContext) + ":" + name;
         }
         return (String) input.get(PARAM_SESSION_ID);
+    }
+
+    /** Returns the caller's session id, or {@code null} when it is absent or blank. */
+    private static String parentSessionId(RuntimeContext parentContext) {
+        String sessionId = parentContext == null ? null : parentContext.getSessionId();
+        return sessionId == null || sessionId.isBlank() ? null : sessionId;
     }
 
     /**
