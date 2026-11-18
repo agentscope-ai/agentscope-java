@@ -1238,6 +1238,19 @@ class AguiEventTest {
         }
 
         @Test
+        void testCancelledOutcome() throws Exception {
+            AguiEvent.RunFinished event =
+                    new AguiEvent.RunFinished(
+                            "t1", "r1", null, new AguiEvent.RunFinishedCancelledOutcome());
+
+            assertTrue(event.outcome() instanceof AguiEvent.RunFinishedCancelledOutcome);
+            assertTrue(
+                    JsonUtils.getJsonCodec()
+                            .toJson(event)
+                            .contains("\"outcome\":{\"type\":\"cancelled\"}"));
+        }
+
+        @Test
         void testRunFinishedWithSuccessOutcome() {
             AguiEvent.RunFinished event =
                     new AguiEvent.RunFinished(

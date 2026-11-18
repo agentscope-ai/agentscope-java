@@ -742,14 +742,19 @@ public final class TransactionalSessionBackend implements SessionBackend {
                 key,
                 (s, n) -> {
                     requireTurn(s, turnId);
-                    return s.interactions.values().stream()
-                            .filter(
-                                    v ->
-                                            turnId.equals(v.path("turnId").asText())
-                                                    && "pending".equals(v.path("status").asText()))
-                            .map(v -> DurableJson.convert(v, Interaction.class))
-                            .toList();
+                    return pendingInteractions(s, turnId);
                 });
+    }
+
+    /** Pending interactions of one Turn, in projection order, for waiting transitions. */
+    private static List<Interaction> pendingInteractions(State s, String turnId) {
+        return s.interactions.values().stream()
+                .filter(
+                        v ->
+                                turnId.equals(v.path("turnId").asText())
+                                        && "pending".equals(v.path("status").asText()))
+                .map(v -> DurableJson.convert(v, Interaction.class))
+                .toList();
     }
 
     @Override
@@ -1490,13 +1495,20 @@ public final class TransactionalSessionBackend implements SessionBackend {
                         invocations(s, r).abandon(now, false);
                         r.owner = null;
                         r.expiresAt = 0;
+                        var data = (ObjectNode) lifecycle(r);
+                        if (next == TurnStatus.WAITING)
+                            data.set(
+                                    "interactions",
+                                    DurableJson.value(pendingInteractions(s, r.id)));
                         append(
                                 s,
                                 r,
                                 new EventInput(
                                         "state:" + r.id + ":" + r.revision,
                                         "turn." + next.name().toLowerCase(Locale.ROOT),
-                                        lifecycle(r)));
+                                        data,
+                                        r.lastRunId,
+                                        null));
                     }
                     CommitReceipt receipt =
                             new CommitReceipt(

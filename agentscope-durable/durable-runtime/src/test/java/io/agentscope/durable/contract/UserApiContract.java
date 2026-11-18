@@ -746,6 +746,14 @@ public abstract class UserApiContract {
                         new EventInput("tool", "interaction.requested", automatic)),
                 List.of());
         assertEquals(2, turn.pendingInteractions().size());
+        var waitingEvent =
+                turn.listEvents(null, 20).events().stream()
+                        .filter(event -> "turn.waiting".equals(event.type()))
+                        .findFirst()
+                        .orElseThrow();
+        var pendingIds = waitingEvent.data().path("interactions").findValuesAsText("id");
+        assertEquals(2, pendingIds.size());
+        assertTrue(pendingIds.containsAll(List.of("approval", "tool")));
         code(
                 DurableException.Code.INVALID,
                 () -> turn.respond("bad", "approval", DurableJson.value("yes")));
@@ -769,6 +777,79 @@ public abstract class UserApiContract {
         assertEquals(
                 "approval",
                 session.history(null, 10).items().get(1).path("interactionId").asText());
+    }
+
+    @Test
+    void waitingEventCarriesPendingInteractionsForTheActiveRun() {
+        var turn = session.submit("wait", "wait input");
+        var lease = claim();
+        var run = backend.prepareRun(lease, "native-wait");
+        var frame = backend.frame(lease);
+        backend.commit(
+                lease,
+                new Commit(
+                        "waiting-started",
+                        frame.turn().revision(),
+                        frame.checkpoint(),
+                        List.of(),
+                        List.of(),
+                        List.of(),
+                        List.of(),
+                        TurnStatus.RUNNING,
+                        null,
+                        null,
+                        null,
+                        null,
+                        new RunChange(run.runId(), RunStatus.RUNNING, null, null),
+                        List.of()));
+        String requestId = "native-wait";
+        String interactionId = DurableJson.hash(List.of(turn.turnId(), requestId));
+        var current = backend.frame(lease);
+        backend.commit(
+                lease,
+                new Commit(
+                        "waiting-parked",
+                        current.turn().revision(),
+                        current.checkpoint(),
+                        List.of(),
+                        List.of(),
+                        List.of(),
+                        List.of(
+                                new EventInput(
+                                        "wait:" + interactionId,
+                                        "interaction.requested",
+                                        DurableJson.value(
+                                                Map.of(
+                                                        "id",
+                                                        interactionId,
+                                                        "requestId",
+                                                        requestId,
+                                                        "turnId",
+                                                        turn.turnId(),
+                                                        "key",
+                                                        "interaction:" + requestId,
+                                                        "kind",
+                                                        "confirmation",
+                                                        "status",
+                                                        "pending",
+                                                        "automatic",
+                                                        false)))),
+                        TurnStatus.WAITING,
+                        new WaitCondition("interaction:" + requestId, 0),
+                        null,
+                        null,
+                        null,
+                        null,
+                        List.of()));
+
+        var waiting =
+                turn.listEvents(null, 50).events().stream()
+                        .filter(event -> "turn.waiting".equals(event.type()))
+                        .findFirst()
+                        .orElseThrow();
+        assertEquals(run.runId(), waiting.runId());
+        assertEquals(1, waiting.data().path("interactions").size());
+        assertEquals(interactionId, waiting.data().path("interactions").get(0).path("id").asText());
     }
 
     @Test

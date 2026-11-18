@@ -1058,6 +1058,12 @@
                       "type": "null"
                     }
                   ]
+                },
+                "interactions": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/$defs/interaction"
+                  }
                 }
               }
             }
@@ -2157,6 +2163,12 @@
                       "type": "null"
                     }
                   ]
+                },
+                "interactions": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/$defs/interaction"
+                  }
                 }
               }
             }
