@@ -85,4 +85,4 @@ en_link: /dev/en/docs/harness/architecture
 
 ## 模型输入的统一构建
 
-Harness 在最终模型调用边界统一组织 System、对话、任务状态和参考材料；动态业务信息通过 contextSource 接入。配置、默认行为和限制见 [上下文管理](/dev/zh/docs/harness/context)。
+Harness 在最终模型调用前统一组织 System 指令、技能目录、对话、临时状态和参考材料。动态业务信息通过 `contextSource` 接入。配置、默认行为和限制见[上下文管理](/dev/zh/docs/harness/context)。
