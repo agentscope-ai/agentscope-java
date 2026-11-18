@@ -40,6 +40,30 @@ AnthropicChatModel model = AnthropicChatModel.builder()
     .build();
 ```
 
+## 扩展思考
+
+`GenerateOptions.thinkingBudget` 与 `GenerateOptions.includeThoughts` 会映射到 Anthropic 的
+thinking 配置：
+
+| 选项 | 请求 |
+| --- | --- |
+| `includeThoughts(false)` | 禁用 thinking（优先于 budget） |
+| `thinkingBudget(n)` | 启用 thinking，`budget_tokens = n` |
+| `includeThoughts(true)` 且未设 budget | 启用 thinking，使用 API 最小 budget（1024） |
+| 均未设置 | 不发送 thinking 字段（模型默认） |
+
+```java
+GenerateOptions options = GenerateOptions.builder()
+    .thinkingBudget(8192)
+    .build();
+```
+
+约束由 Anthropic API 校验，框架不做本地钳制：扩展思考要求模型支持 thinking；启用时
+`temperature` 必须为 1；`budget_tokens` 至少 1024 且小于 `maxTokens`。`reasoningEffort`
+暂不映射到 Anthropic，可用 `additionalBodyParams` 传递 provider 专属参数；待 Anthropic SDK
+提供类型化 effort 支持后再跟进。`additionalBodyParams("thinking", ...)` 会覆盖类型化映射，
+例如发送 adaptive thinking 配置。
+
 ## 服务端工具
 
 Anthropic 内置工具由 Anthropic 在模型服务端执行，不会进入 AgentScope 本地 Toolkit。使用 SDK
