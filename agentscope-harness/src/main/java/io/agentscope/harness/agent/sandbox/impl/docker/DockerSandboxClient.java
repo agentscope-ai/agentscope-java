@@ -86,6 +86,7 @@ public class DockerSandboxClient implements SandboxClient<DockerSandboxClientOpt
             state.setExposedPorts(options.getExposedPorts());
             state.setNetwork(options.getNetwork());
             state.setAdditionalRunArgs(options.getAdditionalRunArgs());
+            state.setOutputTruncateBytes(options.getOutputTruncateBytes());
         }
 
         if (snapshotSpec != null) {
