@@ -158,6 +158,7 @@ public class InMemoryStore implements VDBStoreBase {
                         Document docWithScore = new Document(doc.getMetadata());
                         docWithScore.setEmbedding(doc.getEmbedding());
                         docWithScore.setScore(similarity);
+                        docWithScore.setVectorName(doc.getVectorName());
                         results.add(docWithScore);
                     }
 
@@ -168,6 +169,11 @@ public class InMemoryStore implements VDBStoreBase {
                                             Document::getScore,
                                             Comparator.nullsLast(Comparator.reverseOrder())))
                             .limit(limit)
+                            .map(
+                                    result -> {
+                                        result.setEmbedding(result.getEmbedding().clone());
+                                        return result;
+                                    })
                             .toList();
                 });
     }

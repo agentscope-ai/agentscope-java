@@ -338,6 +338,36 @@ class InMemoryStoreTest {
                             // First result should be doc-1 (identical, similarity = 1.0)
                             assertEquals(doc1.getId(), results.get(0).getId());
                             assertEquals(1.0, results.get(0).getScore(), 1e-9);
+                            assertEquals("test-vector", results.get(0).getVectorName());
+                        })
+                .verifyComplete();
+    }
+
+    @Test
+    @DisplayName("Should keep later search rankings independent of returned embeddings")
+    void testSearchResultEmbeddingDoesNotAffectLaterSearches() {
+        Document best = createDocument("doc-1", "Best match", new double[] {1.0, 0.0, 0.0});
+        Document other = createDocument("doc-2", "Other match", new double[] {0.5, 0.5, 0.0});
+        store.add(List.of(best, other)).block();
+
+        SearchDocumentDto query =
+                SearchDocumentDto.builder()
+                        .queryEmbedding(new double[] {1.0, 0.0, 0.0})
+                        .limit(1)
+                        .build();
+        List<Document> initialResults = store.search(query).block();
+        assertNotNull(initialResults);
+        assertEquals(1, initialResults.size());
+        Document first = initialResults.get(0);
+        assertEquals(best.getId(), first.getId());
+        first.getEmbedding()[0] = -1.0;
+
+        StepVerifier.create(store.search(query))
+                .assertNext(
+                        results -> {
+                            assertEquals(1, results.size());
+                            assertEquals(best.getId(), results.get(0).getId());
+                            assertEquals(1.0, results.get(0).getScore(), 1e-9);
                         })
                 .verifyComplete();
     }
