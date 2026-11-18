@@ -33,7 +33,7 @@ java -cp "agentscope-examples/jev/target/classes:$(cat /tmp/jev-examples-cp.txt)
 | 阶段路由 | JevPhaseRoutingExample / JevPhaseRoutingBenchmark |
 | 浏览器 | JevBrowserExample / JevBrowserLocalExample / JevBrowserBenchmark |
 
-退款防护的数据、方法和结果集中在 `benchmarks/tool-guard`；其他基准固定输入位于 `src/test/resources/jev`。各程序的参数和真实调用方式见 [JEV 文档](../../docs/v2/zh/jev/index.md)。
+退款防护的数据、方法和结果集中在 `benchmarks/tool-guard`；其他基准固定输入位于 `src/test/resources/jev`。各程序的参数和真实调用方式见 [JEV 文档](../../docs/dev/zh/docs/harness/jev/index.md)。
 
 ## 验证
 

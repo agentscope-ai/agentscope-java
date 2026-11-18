@@ -18,7 +18,7 @@ package io.agentscope.extensions.jdbc.store;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import io.agentscope.core.session.SessionKey;
+import io.agentscope.core.agent.ThreadKey;
 import io.agentscope.extensions.jdbc.H2TestSupport;
 import io.agentscope.extensions.jdbc.dialect.AbstractJdbcDialect;
 import java.util.List;
@@ -31,11 +31,9 @@ import org.junit.jupiter.api.Test;
 /**
  * Bounds the length of every key the session journal writes through the store, not just one shape.
  *
- * <p>The journal writes three kinds of key below a session's storage path: {@code writer-seals/}
- * at the root, and both {@code commits/} and {@code writer-seals/} below {@code inbox/}. Only the
- * {@code inbox/commits/} shape was covered when the column was widened, and the other two sit one
- * and six characters further over the old 255-character limit respectively. A bound that covers
- * them all is what keeps the next path change from reintroducing the failure.
+ * <p>The journal writes both {@code commits/} and {@code writer-seals/} below a Thread's storage
+ * path. A bound that covers every shape is what keeps the next path change from reintroducing the
+ * old 255-character column failure.
  */
 @DisplayName("JdbcStore journal key lengths")
 class JdbcStoreJournalKeyLengthTest {
@@ -61,14 +59,13 @@ class JdbcStoreJournalKeyLengthTest {
     @DisplayName("every journal key shape fits the widened item_key")
     void everyJournalKeyShapeIsStored() {
         String root =
-                new SessionKey("namespace:default:default", AGENT_ID, "sess_f684e5366474")
+                new ThreadKey("namespace:default:default", AGENT_ID, "sess_f684e5366474", "main")
                         .storagePath();
 
         List<String> keys =
                 List.of(
                         root + "/writer-seals/" + DIGEST + ".json",
-                        root + "/inbox/commits/" + DIGEST + ".json",
-                        root + "/inbox/writer-seals/" + DIGEST + ".json");
+                        root + "/commits/" + DIGEST + ".json");
 
         for (String key : keys) {
             assertTrue(
@@ -79,12 +76,12 @@ class JdbcStoreJournalKeyLengthTest {
     }
 
     @Test
-    @DisplayName("the inbox commit key that failed on the quickstart exceeds 255 characters")
-    void inboxCommitKeyExceedsTheOldWidth() {
-        // Measured on PostgreSQL 17: a storage path of 172 characters, plus "/inbox/commits/",
-        // the 64-character digest and ".json", is 256 -- one over the old column.
-        SessionKey key = keyWithStoragePathAtLeast(172);
-        String full = key.storagePath() + "/inbox/commits/" + DIGEST + ".json";
+    @DisplayName("a production-shaped commit key exceeds 255 characters")
+    void commitKeyExceedsTheOldWidth() {
+        // A storage path of 179 characters, plus "/commits/", the 64-character digest and
+        // ".json", is 256 -- one over the old column.
+        ThreadKey key = keyWithStoragePathAtLeast(179);
+        String full = key.storagePath() + "/commits/" + DIGEST + ".json";
 
         assertTrue(
                 full.length() > 255,
@@ -94,12 +91,12 @@ class JdbcStoreJournalKeyLengthTest {
     }
 
     /** Ids long enough that the storage path reaches {@code target}, like a managed session's. */
-    private static SessionKey keyWithStoragePathAtLeast(int target) {
+    private static ThreadKey keyWithStoragePathAtLeast(int target) {
         String sessionId = "sess_f684e5366474";
-        SessionKey key = new SessionKey("namespace:default:default", AGENT_ID, sessionId);
+        ThreadKey key = new ThreadKey("namespace:default:default", AGENT_ID, sessionId, "main");
         while (key.storagePath().length() < target) {
             sessionId = sessionId + "0";
-            key = new SessionKey("namespace:default:default", AGENT_ID, sessionId);
+            key = new ThreadKey("namespace:default:default", AGENT_ID, sessionId, "main");
         }
         return key;
     }
@@ -108,8 +105,8 @@ class JdbcStoreJournalKeyLengthTest {
     @DisplayName("ids at their maximum length still fit the widened item_key")
     void maximumLengthIdsFit() {
         String widest = "x".repeat(255);
-        String root = new SessionKey(widest, widest, widest).storagePath();
-        String longest = root + "/inbox/writer-seals/" + DIGEST + ".json";
+        String root = new ThreadKey(widest, widest, widest, widest).storagePath();
+        String longest = root + "/writer-seals/" + DIGEST + ".json";
 
         assertTrue(
                 longest.length() <= ITEM_KEY_WIDTH,

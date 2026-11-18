@@ -91,15 +91,19 @@ class OssAgentStateStoreTest {
     @Test
     void getSingleState_returnsValue_whenExists() {
         String key = "test/state/alice/s1/agent_state.json";
+        AgentState expected =
+                AgentState.builder().userId("alice").sessionId("s1").threadId("research").build();
         when(mockOss.doesObjectExist("test-bucket", key)).thenReturn(true);
         OSSObject obj = new OSSObject();
         obj.setObjectContent(
-                new ByteArrayInputStream(
-                        "{\"sessionId\":\"s1\"}".getBytes(StandardCharsets.UTF_8)));
+                new ByteArrayInputStream(expected.toJson().getBytes(StandardCharsets.UTF_8)));
         when(mockOss.getObject("test-bucket", key)).thenReturn(obj);
 
         Optional<AgentState> result = store.get("alice", "s1", "agent_state", AgentState.class);
         assertTrue(result.isPresent());
+        assertEquals("alice", result.get().getUserId());
+        assertEquals("s1", result.get().getSessionId());
+        assertEquals("research", result.get().getThreadId());
     }
 
     @Test

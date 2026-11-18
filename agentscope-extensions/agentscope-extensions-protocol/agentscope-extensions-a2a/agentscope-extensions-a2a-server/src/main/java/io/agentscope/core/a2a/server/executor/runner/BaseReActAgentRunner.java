@@ -20,9 +20,12 @@ import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.message.Msg;
+import java.time.Duration;
 import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import reactor.core.publisher.Flux;
 
 /**
@@ -52,21 +55,48 @@ public abstract class BaseReActAgentRunner implements AgentRunner {
     @Override
     public Flux<AgentEvent> streamEvents(List<Msg> requestMessages, AgentRequestOptions options) {
         String taskId = options.getTaskId();
-        if (agentCache.containsKey(taskId)) {
+        RunningTask previous = agentCache.get(taskId);
+        if (null != previous && !previous.awaitRelease(Duration.ofSeconds(2))) {
             throw new IllegalStateException("Agent already exists for taskId: " + taskId);
         }
         ReActAgent agent = buildReActAgent();
+        if (agent.getStateStore() == null && carriesConfirmResults(requestMessages)) {
+            // Without a state store the agent cannot restore the paused run and would handle
+            // the confirmation as the start of a new conversation.
+            return Flux.error(
+                    new IllegalStateException(
+                            "The request confirms tool calls of a paused run, but the agent has"
+                                    + " no AgentStateStore to restore that run from. Configure"
+                                    + " stateStore(...) on the agent."));
+        }
         RunningTask task = new RunningTask(agent, buildRuntimeContext(options));
         if (agentCache.putIfAbsent(taskId, task) != null) {
             throw new IllegalStateException("Agent already exists for taskId: " + taskId);
         }
         try {
-            return agent.streamEvents(requestMessages, task.context())
-                    .doFinally(signal -> agentCache.remove(taskId, task));
+            return agent.streamEvents(requestMessages, task.context)
+                    .doFinally(
+                            signal -> {
+                                agentCache.remove(taskId, task);
+                                task.release();
+                            });
         } catch (RuntimeException | Error e) {
             agentCache.remove(taskId, task);
+            task.release();
             throw e;
         }
+    }
+
+    private static boolean carriesConfirmResults(List<Msg> messages) {
+        return messages != null
+                && messages.stream()
+                        .anyMatch(
+                                msg ->
+                                        msg.getMetadata() != null
+                                                && msg.getMetadata()
+                                                                .get(Msg.METADATA_CONFIRM_RESULTS)
+                                                        instanceof List<?> results
+                                                && !results.isEmpty());
     }
 
     /**
@@ -91,12 +121,36 @@ public abstract class BaseReActAgentRunner implements AgentRunner {
         if (null != task) {
             // Interrupt the session the task runs in; the no-arg interrupt() targets the default
             // session, which may belong to another caller of a shared agent.
-            task.agent().interrupt(task.context());
+            task.agent.interrupt(task.context);
+            task.release();
         }
     }
 
     /** The agent running a task and the context it was started with. */
-    private record RunningTask(ReActAgent agent, RuntimeContext context) {}
+    private static final class RunningTask {
+
+        private final ReActAgent agent;
+        private final RuntimeContext context;
+        private final CountDownLatch released = new CountDownLatch(1);
+
+        private RunningTask(ReActAgent agent, RuntimeContext context) {
+            this.agent = agent;
+            this.context = context;
+        }
+
+        private void release() {
+            released.countDown();
+        }
+
+        private boolean awaitRelease(Duration timeout) {
+            try {
+                return released.await(timeout.toMillis(), TimeUnit.MILLISECONDS);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return false;
+            }
+        }
+    }
 
     /**
      * Build {@link ReActAgent} to run new request.

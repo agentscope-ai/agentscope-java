@@ -1,0 +1,62 @@
+/*
+ * Copyright 2024-2026 the original author or authors.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package io.agentscope.core.journal;
+
+import java.util.Collections;
+import java.util.LinkedHashMap;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
+
+/** Outstanding typed requests at a committed prefix; callers cannot invent tool outcomes. */
+public final class ThreadInteractions {
+    private ThreadInteractions() {}
+
+    /**
+     * Resolve committed external requests with their original Run/Step correlation. Direct calls
+     * need no Turn; callers must not infer execution continuity from an absent host correlation.
+     */
+    public static Map<String, JournalEvent> continuationRequests(
+            ThreadJournal log, Set<String> requestIds) {
+        if (requestIds.isEmpty())
+            throw new IllegalArgumentException("Tool result IDs are required");
+        var requests = pending(log);
+        var selected = new LinkedHashMap<String, JournalEvent>();
+        JournalEvent first = null;
+        for (String id : requestIds) {
+            JournalEvent request = requests.get(id);
+            if (request == null || !"external_execution".equals(request.data().get("kind")))
+                throw new IllegalArgumentException("No pending external execution request: " + id);
+            if (first != null && !Objects.equals(first.turnId(), request.turnId()))
+                throw new IllegalArgumentException("Tool results belong to different turns");
+            first = request;
+            selected.put(id, request);
+        }
+        return Collections.unmodifiableMap(selected);
+    }
+
+    public static Map<String, JournalEvent> pending(ThreadJournal log) {
+        long upper = log.head().seq();
+        var result = new LinkedHashMap<String, JournalEvent>();
+        for (var event : log.scanMetadata(0, upper)) {
+            if (event.type().equals("interaction/requested"))
+                result.put(String.valueOf(event.data().get("requestId")), event);
+            if (event.type().equals("interaction/resolved"))
+                result.remove(String.valueOf(event.data().get("requestId")));
+        }
+        return Collections.unmodifiableMap(result);
+    }
+}

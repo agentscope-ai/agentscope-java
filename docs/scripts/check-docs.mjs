@@ -6,6 +6,7 @@ import { createProcessor } from '@mdx-js/mdx';
 import remarkGfm from 'remark-gfm';
 import matter from 'gray-matter';
 import GithubSlugger from 'github-slugger';
+import ignore from 'ignore';
 
 function walk(node, visit) {
   visit(node);
@@ -84,8 +85,15 @@ export function checkSite(docs) {
   const config = JSON.parse(fs.readFileSync(path.join(docs, 'docs.json'), 'utf8'));
   const errors = [];
   const pages = new Map();
+  const ignoreFile = path.join(docs, '.mintignore');
+  const patterns = fs.existsSync(ignoreFile) ? fs.readFileSync(ignoreFile, 'utf8').split(/\r?\n/).map((line) => line.trim()) : [];
+  const excluded = ignore().add(patterns);
   const routes = navigationPages(config.navigation);
-  for (const file of ['v1', 'v2'].flatMap((version) => pageFiles(path.join(docs, version)))) {
+  const versionDirectories = fs.readdirSync(docs, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory() && /^(?:dev|v\d+(?:\.\d+)*)$/.test(entry.name))
+    .map((entry) => path.join(docs, entry.name));
+  for (const file of versionDirectories.flatMap(pageFiles)) {
+    if (excluded.ignores(path.relative(docs, file).split(path.sep).join('/'))) continue;
     const route = '/' + path.relative(docs, file).replace(/\.mdx?$/, '').split(path.sep).join('/');
     try {
       if (pages.has(route)) errors.push(`Duplicate page route: ${route}`);
@@ -98,7 +106,7 @@ export function checkSite(docs) {
   for (const route of published) if (!pages.has(route)) errors.push(`Missing navigation page: ${route}`);
   for (const route of pages.keys()) if (!published.has(route)) errors.push(`Page missing from navigation: ${route}`);
   for (const [route, page] of pages) {
-    const match = route.match(/^\/(v[12])\/(en|zh)(\/.*)$/);
+    const match = route.match(/^\/(dev|v\d+(?:\.\d+)*)\/(en|zh)(\/.*)$/);
     if (!match) continue;
     const [, version, language, suffix] = match;
     const counterpartLanguage = language === 'en' ? 'zh' : 'en';
@@ -163,11 +171,21 @@ export function checkSite(docs) {
       return;
     }
     const file = path.resolve(docs, '.' + target);
+    const relative = path.relative(path.resolve(docs), file).split(path.sep).join('/');
+    if (relative && !relative.startsWith('../') && excluded.ignores(relative)) {
+      errors.push(`${from}: local target excluded by .mintignore ${link}`);
+      return;
+    }
     if (!file.startsWith(path.resolve(docs) + path.sep) || !fs.existsSync(file) || !fs.statSync(file).isFile()) {
       errors.push(`${from}: missing local target ${link}`);
     }
   }
-  for (const [route, page] of pages) for (const link of page.links) checkLink(route, link);
+  for (const [route, page] of pages) for (const link of page.links) {
+    checkLink(route, link);
+    if (/^\/v\d/.test(route) && /^https:\/\/(?:github\.com\/agentscope-ai\/agentscope-java\/(?:blob|tree)|raw\.githubusercontent\.com\/agentscope-ai\/agentscope-java)\/(?:main|master|HEAD|Mintlify|dev)(?:\/|$)/i.test(link)) {
+      errors.push(`${route}: historical source link must use a release tag or commit ${link}`);
+    }
+  }
   for (const [source] of redirects) {
     if (!source.includes('*')) checkLink(source, source);
   }
