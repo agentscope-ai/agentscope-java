@@ -39,6 +39,26 @@ OllamaChatModel model = OllamaChatModel.builder()
     .build();
 ```
 
+## 思考（Thinking）
+
+对于支持思考的模型，`GenerateOptions` 会映射到 Ollama 的 `think` 参数：
+
+| 选项 | 请求 |
+| --- | --- |
+| `reasoningEffort("low" / "medium" / "high")` | `think` 设为对应级别（去除首尾空白、大小写不敏感；优先于 budget） |
+| `thinkingBudget(n)` 且 `n > 0` | 启用 `think` |
+| 均未设置 | 不发送 `think` |
+
+```java
+GenerateOptions options = GenerateOptions.builder()
+    .reasoningEffort("high")
+    .build();
+```
+
+级别适用于支持它的模型（如 gpt-oss）；开关式模型使用 `thinkingBudget`。不支持的 effort
+取值会快速失败并抛出 `IllegalArgumentException`。`additionalBodyParams("think", ...)`
+会覆盖该映射。
+
 ## Spring Boot
 
 Spring Boot 应用可以使用 Ollama starter：
