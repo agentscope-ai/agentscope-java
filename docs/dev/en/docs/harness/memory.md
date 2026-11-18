@@ -201,11 +201,37 @@ HarnessAgent.builder()
 
 `model(String)` resolves via `ModelRegistry.resolve()`; you can also pass a `Model` instance. When not set, falls back to the agent's primary model.
 
+### Example 7: narrow or omit the Memory Recall guidance
+
+By default the workspace system prompt tells the model to run `memory_search` before answering questions about prior work, decisions, dates, people, or preferences. That instruction is broader than some applications want, and it can trigger an avoidable tool round trip on a first-turn question whose constraints are already in the prompt. `recallInstructions` changes only that guidance: memory tools, `MEMORY.md` injection, and flush/consolidation stay exactly as configured.
+
+```java
+// Omit the Memory Recall section; memory_search/memory_get/memory_save stay available.
+HarnessAgent.builder()
+    .memory(MemoryConfig.builder().recallInstructions("").build())
+    .build();
+
+// Or replace it with a narrower policy. The text becomes the section body.
+HarnessAgent.builder()
+    .memory(MemoryConfig.builder()
+        .recallInstructions("""
+            Use the MEMORY.md material already provided. Run memory_search only when the
+            request depends on facts from past sessions that are not in the current context.
+            """)
+        .build())
+    .build();
+```
+
+- `null` (the default) keeps the built-in guidance; blank text omits the section; nonblank text replaces the section body under the existing `## Memory Recall` heading without appending the old policy.
+- `.disableMemoryTools()` still suppresses recall guidance, including an override, because it removes the tools the guidance would call.
+- This is guidance, not an enforced retrieval policy: it does not guarantee one model call per turn, and it does not configure the extraction/consolidation model.
+
 ### `MemoryConfig` field reference
 
 | Field | Default | Purpose |
 |------|------|------|
 | `model` | `null` (uses the agent's primary model) | Dedicated model for flush / consolidation; accepts a `Model` instance or a `"provider:model"` string |
+| `recallInstructions` | `null` (uses the built-in Memory Recall guidance) | Replaces the answering model's Memory Recall guidance; blank text omits the section. Does not change tools or memory injection |
 | `flushPrompt` | `null` (uses `DEFAULT_FLUSH_PROMPT`) | SYSTEM prompt for path 1 |
 | `consolidationPrompt` | `null` (uses `DEFAULT_CONSOLIDATION_PROMPT`) | Template for path 2 (must contain two `%d`) |
 | `consolidationMaxTokens` | `4_000` | Token cap for `MEMORY.md` |
@@ -283,7 +309,7 @@ HarnessAgent.builder()
 
 Together these also skip memory material in `HARNESS_CONTEXT` (`MEMORY.md`) injection while keeping Domain Knowledge / AGENTS / knowledge context.
 
-`disableMemoryHooks()` is the nuclear option for background memory work; if you only want to throttle, use `.memory(MemoryConfig.builder().flushTrigger(...).build())` instead.
+`disableMemoryHooks()` is the nuclear option for background memory work; if you only want to throttle, use `.memory(MemoryConfig.builder().flushTrigger(...).build())` instead. To remove only the recall guidance while keeping the tools and `MEMORY.md`, use `.memory(MemoryConfig.builder().recallInstructions("").build())`.
 
 ## Related Pages
 

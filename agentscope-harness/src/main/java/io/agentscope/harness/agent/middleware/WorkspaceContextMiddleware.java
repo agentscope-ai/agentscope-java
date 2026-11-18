@@ -55,7 +55,8 @@ import reactor.core.scheduler.Schedulers;
  * <p>Memory-related guidance and reference material loading are gated by the same
  * builder flags as Harness memory tools/hooks ({@code disableMemoryTools} /
  * {@code disableMemoryHooks}) so the model is not instructed to use capabilities that are
- * turned off.
+ * turned off. The Memory Recall guidance can additionally be replaced or omitted through
+ * {@link #setMemoryRecallInstructions(String)} without changing tool availability.
  */
 public class WorkspaceContextMiddleware implements HarnessRuntimeMiddleware {
 
@@ -135,6 +136,7 @@ public class WorkspaceContextMiddleware implements HarnessRuntimeMiddleware {
     private final boolean disableMemoryHooks;
     private List<String> additionalContextFiles = List.of();
     private boolean artifactDeliveryEnabled = false;
+    private String memoryRecallInstructions;
 
     public WorkspaceContextMiddleware(WorkspaceManager workspaceManager) {
         this(workspaceManager, "HarnessAgent", null, DEFAULT_MAX_CONTEXT_TOKENS, false, false);
@@ -175,6 +177,16 @@ public class WorkspaceContextMiddleware implements HarnessRuntimeMiddleware {
 
     public void setAdditionalContextFiles(List<String> files) {
         this.additionalContextFiles = files != null ? files : List.of();
+    }
+
+    /**
+     * Replaces the body of the Memory Recall section in the workspace system prompt under the
+     * existing {@code ## Memory Recall} heading. {@code null} restores the default guidance;
+     * blank text omits the section. Disabled memory tools still suppress recall guidance
+     * regardless of this value.
+     */
+    public void setMemoryRecallInstructions(String instructions) {
+        this.memoryRecallInstructions = instructions;
     }
 
     /**
@@ -323,7 +335,11 @@ public class WorkspaceContextMiddleware implements HarnessRuntimeMiddleware {
             }
         }
         if (!disableMemoryTools) {
-            sb.append(MEMORY_RECALL_GUIDANCE.strip()).append("\n\n");
+            if (memoryRecallInstructions == null) {
+                sb.append(MEMORY_RECALL_GUIDANCE.strip()).append("\n\n");
+            } else if (!memoryRecallInstructions.isBlank()) {
+                sb.append("## Memory Recall\n").append(memoryRecallInstructions).append("\n\n");
+            }
         }
         String persistence = buildMemoryPersistenceGuidance();
         if (!persistence.isBlank()) {

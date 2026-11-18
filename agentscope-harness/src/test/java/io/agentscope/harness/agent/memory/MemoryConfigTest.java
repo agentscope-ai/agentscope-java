@@ -30,6 +30,9 @@ class MemoryConfigTest {
     void defaults_matchHistoricalBehaviour() {
         MemoryConfig cfg = MemoryConfig.defaults();
 
+        assertNull(
+                cfg.recallInstructions(),
+                "recallInstructions default = null (use the harness recall guidance)");
         assertNull(cfg.flushPrompt(), "flushPrompt default = null (use DEFAULT_FLUSH_PROMPT)");
         assertNull(
                 cfg.consolidationPrompt(),
@@ -74,6 +77,7 @@ class MemoryConfigTest {
     void builder_overridesAreCarried() {
         MemoryConfig cfg =
                 MemoryConfig.builder()
+                        .recallInstructions("custom recall")
                         .flushPrompt("custom flush")
                         .consolidationMaxTokens(1234)
                         .consolidationMinGap(Duration.ofMinutes(15))
@@ -81,12 +85,27 @@ class MemoryConfigTest {
                         .flushTrigger(MemoryConfig.FlushTrigger.throttled(Duration.ofMinutes(10)))
                         .build();
 
+        assertEquals("custom recall", cfg.recallInstructions());
         assertEquals("custom flush", cfg.flushPrompt());
         assertEquals(1234, cfg.consolidationMaxTokens());
         assertEquals(Duration.ofMinutes(15), cfg.consolidationMinGap());
         assertEquals(30, cfg.dailyFileRetentionDays());
         assertEquals(MemoryConfig.FlushMode.THROTTLED, cfg.flushTrigger().mode());
         assertEquals(Duration.ofMinutes(10), cfg.flushTrigger().minGap());
+    }
+
+    @Test
+    void recallInstructions_nullKeepsDefaultAndBlankDisablesTheSection() {
+        assertNull(MemoryConfig.builder().recallInstructions(null).build().recallInstructions());
+        assertEquals(
+                "  \n\t",
+                MemoryConfig.builder().recallInstructions("  \n\t").build().recallInstructions());
+        assertEquals(
+                "## Memory Recall\nsearch only when needed",
+                MemoryConfig.builder()
+                        .recallInstructions("## Memory Recall\nsearch only when needed")
+                        .build()
+                        .recallInstructions());
     }
 
     @Test

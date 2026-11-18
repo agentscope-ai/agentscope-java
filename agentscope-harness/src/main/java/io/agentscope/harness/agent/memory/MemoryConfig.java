@@ -22,8 +22,9 @@ import java.time.Duration;
 import java.util.Objects;
 
 /**
- * Unified configuration for the long-term memory pipeline (flush + consolidation +
- * maintenance). Pair with {@link CompactionConfig} for the in-context summarization pipeline.
+ * Configuration for the workspace-memory recall guidance and the long-term memory pipeline
+ * (flush + consolidation + maintenance). Pair with {@link CompactionConfig} for the
+ * in-context summarization pipeline.
  *
  * <p>The harness has three LLM-driven memory operations, each with its own prompt and
  * triggering rules:
@@ -145,6 +146,7 @@ public final class MemoryConfig {
     }
 
     private final Model model;
+    private final String recallInstructions;
     private final String flushPrompt;
     private final String consolidationPrompt;
     private final int consolidationMaxTokens;
@@ -154,6 +156,7 @@ public final class MemoryConfig {
 
     private MemoryConfig(Builder b) {
         this.model = b.model;
+        this.recallInstructions = b.recallInstructions;
         this.flushPrompt = b.flushPrompt;
         this.consolidationPrompt = b.consolidationPrompt;
         this.consolidationMaxTokens = b.consolidationMaxTokens;
@@ -168,6 +171,20 @@ public final class MemoryConfig {
      */
     public Model model() {
         return model;
+    }
+
+    /**
+     * Guidance the answering model sees for workspace-memory recall. {@code null} keeps the
+     * harness default; blank text omits the Memory Recall section; nonblank text replaces the
+     * section body under the existing {@code ## Memory Recall} heading.
+     *
+     * <p>This only changes the answering-model instruction. It does not enable, disable or
+     * reconfigure memory tools, {@code MEMORY.md} injection, or background flush and
+     * consolidation. When memory tools are disabled, recall guidance is omitted regardless of
+     * this value so the model is not instructed to use an unavailable capability.
+     */
+    public String recallInstructions() {
+        return recallInstructions;
     }
 
     /**
@@ -222,6 +239,7 @@ public final class MemoryConfig {
     public static final class Builder {
 
         private Model model = null;
+        private String recallInstructions = null;
         private String flushPrompt = null;
         private String consolidationPrompt = null;
         private int consolidationMaxTokens = DEFAULT_CONSOLIDATION_MAX_TOKENS;
@@ -236,6 +254,26 @@ public final class MemoryConfig {
          */
         public Builder model(Model model) {
             this.model = model;
+            return this;
+        }
+
+        /**
+         * Sets the guidance the answering model sees for workspace-memory recall.
+         *
+         * <p>{@code null} keeps the harness default guidance. Blank text omits only the
+         * Memory Recall section, which is useful when memory tools and {@code MEMORY.md}
+         * injection should stay enabled but the default "search before answering questions
+         * about dates or preferences" instruction encourages unnecessary tool calls. Nonblank
+         * text replaces the body under the existing {@code ## Memory Recall} heading; it is
+         * not formatted or interpolated, and the default policy is not appended.
+         *
+         * <p>This is guidance, not an enforced retrieval policy, and it does not guarantee a
+         * number of model calls. It does not change memory tools, {@code MEMORY.md} injection,
+         * or flush/consolidation. Disabled memory tools suppress recall guidance even when an
+         * override is supplied.
+         */
+        public Builder recallInstructions(String recallInstructions) {
+            this.recallInstructions = recallInstructions;
             return this;
         }
 
