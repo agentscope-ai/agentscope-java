@@ -790,7 +790,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
     @Deprecated(since = "2.2.0")
     @Override
     public Mono<Msg> call(List<Msg> msgs) {
-        return wrappedCall(msgs, RuntimeContext.empty(), eff -> delegate.call(msgs, eff));
+        return wrappedCall(msgs, RuntimeContext.empty(), (input, eff) -> delegate.call(input, eff));
     }
 
     /**
@@ -800,7 +800,9 @@ public class HarnessAgent implements Agent, AutoCloseable {
     @Override
     public Mono<Msg> call(List<Msg> msgs, Class<?> structuredModel) {
         return wrappedCall(
-                msgs, RuntimeContext.empty(), eff -> delegate.call(msgs, structuredModel, eff));
+                msgs,
+                RuntimeContext.empty(),
+                (input, eff) -> delegate.call(input, structuredModel, eff));
     }
 
     /**
@@ -809,7 +811,8 @@ public class HarnessAgent implements Agent, AutoCloseable {
     @Deprecated(since = "2.2.0")
     @Override
     public Mono<Msg> call(List<Msg> msgs, JsonNode schema) {
-        return wrappedCall(msgs, RuntimeContext.empty(), eff -> delegate.call(msgs, schema, eff));
+        return wrappedCall(
+                msgs, RuntimeContext.empty(), (input, eff) -> delegate.call(input, schema, eff));
     }
 
     public Mono<Msg> call(Msg msg, RuntimeContext ctx) {
@@ -830,19 +833,20 @@ public class HarnessAgent implements Agent, AutoCloseable {
     public Mono<Msg> call(List<Msg> msgs, RuntimeContext ctx) {
         RuntimeContext effective =
                 ensureSessionDefaults(ctx != null ? ctx : RuntimeContext.empty());
-        return wrappedCall(msgs, effective, eff -> delegate.call(msgs, eff));
+        return wrappedCall(msgs, effective, (input, eff) -> delegate.call(input, eff));
     }
 
     public Mono<Msg> call(List<Msg> msgs, Class<?> structuredModel, RuntimeContext ctx) {
         RuntimeContext effective =
                 ensureSessionDefaults(ctx != null ? ctx : RuntimeContext.empty());
-        return wrappedCall(msgs, effective, eff -> delegate.call(msgs, structuredModel, eff));
+        return wrappedCall(
+                msgs, effective, (input, eff) -> delegate.call(input, structuredModel, eff));
     }
 
     public Mono<Msg> call(List<Msg> msgs, JsonNode schema, RuntimeContext ctx) {
         RuntimeContext effective =
                 ensureSessionDefaults(ctx != null ? ctx : RuntimeContext.empty());
-        return wrappedCall(msgs, effective, eff -> delegate.call(msgs, schema, eff));
+        return wrappedCall(msgs, effective, (input, eff) -> delegate.call(input, schema, eff));
     }
 
     /**
@@ -1037,7 +1041,9 @@ public class HarnessAgent implements Agent, AutoCloseable {
     // ==================== Call/stream wrappers ====================
 
     private Mono<Msg> wrappedCall(
-            List<Msg> msgs, RuntimeContext effective, Function<RuntimeContext, Mono<Msg>> inner) {
+            List<Msg> msgs,
+            RuntimeContext effective,
+            BiFunction<List<Msg>, RuntimeContext, Mono<Msg>> inner) {
         Mono<Msg> base =
                 Mono.using(
                         () -> {
@@ -1047,7 +1053,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
                             }
                             return eff;
                         },
-                        eff -> inner.apply(eff),
+                        eff -> inner.apply(msgs, eff),
                         eff -> {
                             if (sandboxLifecycleMw != null) {
                                 sandboxLifecycleMw.releaseForCall(eff);
@@ -1057,7 +1063,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
             return base.onErrorResume(
                     e -> {
                         if (CompactionMiddleware.isContextOverflowError(e)) {
-                            return recoverFromOverflow(msgs, effective);
+                            return recoverFromOverflow(msgs, effective, inner);
                         }
                         return Mono.error(e);
                     });
@@ -1189,12 +1195,15 @@ public class HarnessAgent implements Agent, AutoCloseable {
         return b.build();
     }
 
-    private Mono<Msg> recoverFromOverflow(List<Msg> msgs, RuntimeContext effective) {
+    private Mono<Msg> recoverFromOverflow(
+            List<Msg> msgs,
+            RuntimeContext effective,
+            BiFunction<List<Msg>, RuntimeContext, Mono<Msg>> inner) {
         if (compactionHook != null) {
             log.warn(
                     "Context overflow detected, triggering emergency compaction via"
                             + " CompactionMiddleware");
-            return forceCompactAndRetry(msgs, effective);
+            return forceCompactAndRetry(msgs, effective, inner);
         }
         return Mono.error(
                 new RuntimeException(
@@ -1210,7 +1219,10 @@ public class HarnessAgent implements Agent, AutoCloseable {
      * the input is already in the context the retry continues from it with an empty input instead
      * of appending the input a second time.
      */
-    private Mono<Msg> forceCompactAndRetry(List<Msg> msgs, RuntimeContext effective) {
+    private Mono<Msg> forceCompactAndRetry(
+            List<Msg> msgs,
+            RuntimeContext effective,
+            BiFunction<List<Msg>, RuntimeContext, Mono<Msg>> inner) {
         RuntimeContext ctx = effective != null ? effective : RuntimeContext.empty();
         AgentState state = RuntimeContext.resolveAgentState(effective, delegate);
         List<Msg> allMsgs = state.contextMutable();
@@ -1264,7 +1276,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
                                     .then(
                                             Mono.defer(
                                                     () ->
-                                                            delegate.call(
+                                                            inner.apply(
                                                                     retryInput,
                                                                     prepareCapabilitySurface(
                                                                             ctx))));
