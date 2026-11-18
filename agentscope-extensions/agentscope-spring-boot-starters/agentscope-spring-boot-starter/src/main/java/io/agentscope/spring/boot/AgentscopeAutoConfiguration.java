@@ -18,10 +18,16 @@ package io.agentscope.spring.boot;
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.memory.InMemoryMemory;
 import io.agentscope.core.memory.Memory;
+import io.agentscope.core.middleware.MiddlewareBase;
 import io.agentscope.core.model.Model;
+import io.agentscope.core.permission.PermissionContextState;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.spring.boot.properties.AgentProperties;
 import io.agentscope.spring.boot.properties.AgentscopeProperties;
+import java.util.List;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.config.ConfigurableBeanFactory;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
@@ -31,6 +37,8 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Scope;
+import org.springframework.core.Ordered;
+import org.springframework.core.annotation.Order;
 
 /**
  * Spring Boot auto-configuration that exposes default Memory, Toolkit and ReActAgent beans for
@@ -51,11 +59,34 @@ import org.springframework.context.annotation.Scope;
  *     sys-prompt: "You are a helpful AI assistant."
  *     max-iters: 10
  * }</pre>
+ *
+ * <p>In addition to the core beans, this configuration provides the following
+ * conveniences when {@code agentscope.agent.enabled=true}:
+ *
+ * <ul>
+ *   <li><b>Middleware auto-assembly</b> — every {@link MiddlewareBase} bean
+ *       is auto-injected into the agent builder via an
+ *       {@link AgentBuilderCustomizer}, ordered by
+ *       {@link org.springframework.core.annotation.Order @Order}. Opt out with
+ *       {@code agentscope.agent.auto-assemble-middleware=false}.</li>
+ *   <li><b>PermissionContextState auto-injection</b> — if exactly one
+ *       {@link PermissionContextState} bean exists in the context, it is
+ *       auto-applied to the agent builder. No-op when absent; a warning is
+ *       logged when ambiguous (two or more beans).</li>
+ * </ul>
+ *
+ * <p>Both conveniences are implemented as {@link AgentBuilderCustomizer} beans ordered with
+ * {@link Ordered#HIGHEST_PRECEDENCE}, so a user-defined {@code AgentBuilderCustomizer}
+ * <b>without an explicit {@code @Order}</b> (and therefore defaulting to
+ * {@link Ordered#LOWEST_PRECEDENCE}) runs afterwards and can override them. A user customizer
+ * that sets its own small {@code @Order} can run earlier instead.
  */
 @AutoConfiguration
 @EnableConfigurationProperties(AgentscopeProperties.class)
 @ConditionalOnClass(ReActAgent.class)
 public class AgentscopeAutoConfiguration {
+
+    private static final Logger logger = LoggerFactory.getLogger(AgentscopeAutoConfiguration.class);
 
     /**
      * Default Memory implementation backed by InMemoryMemory.
@@ -105,14 +136,109 @@ public class AgentscopeAutoConfiguration {
     @ConditionalOnBean(Model.class)
     @ConditionalOnProperty(prefix = "agentscope.agent", name = "enabled", havingValue = "true")
     public ReActAgent agentscopeReActAgent(
-            Model model, Memory memory, Toolkit toolkit, AgentscopeProperties properties) {
+            Model model,
+            Memory memory,
+            Toolkit toolkit,
+            AgentscopeProperties properties,
+            ObjectProvider<AgentBuilderCustomizer> customizers) {
         AgentProperties config = properties.getAgent();
-        return ReActAgent.builder()
-                .name(config.getName())
-                .sysPrompt(config.getSysPrompt())
-                .model(model)
-                .toolkit(toolkit)
-                .maxIters(config.getMaxIters())
-                .build();
+        ReActAgent.Builder builder =
+                ReActAgent.builder()
+                        .name(config.getName())
+                        .sysPrompt(config.getSysPrompt())
+                        .model(model)
+                        .toolkit(toolkit)
+                        .maxIters(config.getMaxIters());
+        customizers.orderedStream().forEach(c -> c.customize(builder));
+        return builder.build();
+    }
+
+    // ------------------------------------------------------------------
+    // Middleware auto-assembly
+    // ------------------------------------------------------------------
+
+    /**
+     * Auto-injects all {@link MiddlewareBase} beans into the agent builder,
+     * ordered by {@link org.springframework.core.annotation.Order @Order}.
+     *
+     * <p>Ordered at {@link Ordered#HIGHEST_PRECEDENCE}{@code + 10} — before the permission and
+     * hook customizers, and before any user-defined {@link AgentBuilderCustomizer}.
+     *
+     * <p><b>Sharing contract:</b> a {@code MiddlewareBase} bean is a singleton, and every agent
+     * built from this auto-configuration receives the same instance. Middleware must therefore be
+     * stateless / thread-safe — keep per-request state in {@code RuntimeContext}, never in
+     * instance fields.
+     *
+     * <p>Disable with {@code agentscope.agent.auto-assemble-middleware=false} when middleware is
+     * wired manually, to avoid attaching the same middleware twice. To replace just the assembly
+     * logic, shadow the {@code middlewareAutoCustomizer} bean by name.
+     */
+    @Bean
+    @Order(Ordered.HIGHEST_PRECEDENCE + 10)
+    @ConditionalOnProperty(prefix = "agentscope.agent", name = "enabled", havingValue = "true")
+    @ConditionalOnProperty(
+            prefix = "agentscope.agent",
+            name = "auto-assemble-middleware",
+            havingValue = "true",
+            matchIfMissing = true)
+    @ConditionalOnMissingBean(name = "middlewareAutoCustomizer")
+    public AgentBuilderCustomizer middlewareAutoCustomizer(
+            ObjectProvider<MiddlewareBase> middlewares) {
+        return builder -> {
+            List<MiddlewareBase> beans = middlewares.orderedStream().toList();
+            if (!beans.isEmpty()) {
+                if (logger.isDebugEnabled()) {
+                    logger.debug(
+                            "Auto-assembled {} MiddlewareBase bean class(es): {}",
+                            beans.size(),
+                            beans.stream().map(b -> b.getClass().getSimpleName()).toList());
+                }
+                beans.forEach(builder::middleware);
+            }
+        };
+    }
+
+    // ------------------------------------------------------------------
+    // PermissionContextState auto-injection
+    // ------------------------------------------------------------------
+
+    /**
+     * If exactly one {@link PermissionContextState} bean exists in the context,
+     * auto-applies it to the agent builder. No-op when no
+     * {@code PermissionContextState} bean is present.
+     *
+     * <p>When more than one {@code PermissionContextState} bean is present the context is
+     * ambiguous, so nothing is injected and a warning is logged — the permission engine decides
+     * allow/approve/deny, so silently picking one would be a security-relevant choice.
+     *
+     * <p>Ordered at {@link Ordered#HIGHEST_PRECEDENCE}{@code + 20} — after middleware assembly
+     * but still before the hook customizer and any user-defined {@link AgentBuilderCustomizer}.
+     *
+     * <p>Backs off when a bean named {@code permissionContextAutoCustomizer} already exists
+     * ({@code @ConditionalOnMissingBean(name = ...)}), so supplying one disables or replaces this
+     * auto-injection.
+     */
+    @Bean
+    @Order(Ordered.HIGHEST_PRECEDENCE + 20)
+    @ConditionalOnProperty(prefix = "agentscope.agent", name = "enabled", havingValue = "true")
+    @ConditionalOnMissingBean(name = "permissionContextAutoCustomizer")
+    public AgentBuilderCustomizer permissionContextAutoCustomizer(
+            ObjectProvider<PermissionContextState> permissionContext) {
+        return builder -> {
+            List<PermissionContextState> contexts = permissionContext.orderedStream().toList();
+            if (contexts.size() == 1) {
+                builder.permissionContext(contexts.get(0));
+            } else if (contexts.size() > 1) {
+                logger.warn(
+                        "Found {} PermissionContextState beans; refusing to auto-inject an"
+                                + " ambiguous permission context. Declare exactly one bean, or"
+                                + " apply it via a user-defined AgentBuilderCustomizer.",
+                        contexts.size());
+            } else {
+                logger.debug(
+                        "No PermissionContextState bean present;"
+                                + " skipping permission context auto-injection");
+            }
+        };
     }
 }
