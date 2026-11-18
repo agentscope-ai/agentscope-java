@@ -23,6 +23,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.tool.ToolBase;
 import io.agentscope.core.tool.ToolCallParam;
+import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.DisplayName;
@@ -104,6 +105,87 @@ class PermissionEngineTest {
 
     private static PermissionContextState contextWithMode(PermissionMode mode) {
         return PermissionContextState.builder().mode(mode).build();
+    }
+
+    private static PermissionContextState contextWithWorkingDir(PermissionMode mode, String path) {
+        return PermissionContextState.builder()
+                .mode(mode)
+                .addWorkingDirectory(path, new AdditionalWorkingDirectory(path, "userSettings"))
+                .build();
+    }
+
+    // ==================== ACCEPT_EDITS working-directory consumption (#2870) ====================
+
+    @Test
+    void acceptEdits_autoAllowsEditInsideWorkingDirectory() {
+        Path wd = Path.of("/workspace").toAbsolutePath().normalize();
+        PermissionEngine engine =
+                new PermissionEngine(
+                        contextWithWorkingDir(PermissionMode.ACCEPT_EDITS, wd.toString()));
+        FakePermissionTool tool = new FakePermissionTool("write_file", false);
+
+        PermissionDecision decision =
+                engine.checkPermission(tool, Map.of("path", wd.resolve("notes.md").toString()))
+                        .block();
+
+        assertEquals(PermissionBehavior.ALLOW, decision.getBehavior());
+    }
+
+    @Test
+    void acceptEdits_relativePathInsideWorkingDirectory_autoAllows() {
+        Path wd = Path.of("/workspace").toAbsolutePath().normalize();
+        PermissionEngine engine =
+                new PermissionEngine(
+                        contextWithWorkingDir(PermissionMode.ACCEPT_EDITS, wd.toString()));
+        FakePermissionTool tool = new FakePermissionTool("edit_file", false);
+
+        PermissionDecision decision =
+                engine.checkPermission(tool, Map.of("path", "notes/idea.md")).block();
+
+        assertEquals(PermissionBehavior.ALLOW, decision.getBehavior());
+    }
+
+    @Test
+    void acceptEdits_editOutsideWorkingDirectory_stillAsks() {
+        Path wd = Path.of("/workspace").toAbsolutePath().normalize();
+        PermissionEngine engine =
+                new PermissionEngine(
+                        contextWithWorkingDir(PermissionMode.ACCEPT_EDITS, wd.toString()));
+        FakePermissionTool tool = new FakePermissionTool("write_file", false);
+
+        PermissionDecision decision =
+                engine.checkPermission(tool, Map.of("path", "/etc/passwd")).block();
+
+        assertEquals(PermissionBehavior.ASK, decision.getBehavior());
+    }
+
+    @Test
+    void acceptEdits_traversalOutOfWorkingDirectory_stillAsks() {
+        Path wd = Path.of("/workspace").toAbsolutePath().normalize();
+        PermissionEngine engine =
+                new PermissionEngine(
+                        contextWithWorkingDir(PermissionMode.ACCEPT_EDITS, wd.toString()));
+        FakePermissionTool tool = new FakePermissionTool("write_file", false);
+
+        PermissionDecision decision =
+                engine.checkPermission(tool, Map.of("path", wd.resolve("../escape.md").toString()))
+                        .block();
+
+        assertEquals(PermissionBehavior.ASK, decision.getBehavior());
+    }
+
+    @Test
+    void acceptEdits_readOnlyInsideWorkingDirectory_stillAutoAllows() {
+        Path wd = Path.of("/workspace").toAbsolutePath().normalize();
+        PermissionEngine engine =
+                new PermissionEngine(
+                        contextWithWorkingDir(PermissionMode.ACCEPT_EDITS, wd.toString()));
+        FakePermissionTool tool = new FakePermissionTool("read_file", true);
+
+        PermissionDecision decision =
+                engine.checkPermission(tool, Map.of("path", wd.resolve("a.md").toString())).block();
+
+        assertEquals(PermissionBehavior.ALLOW, decision.getBehavior());
     }
 
     private static PermissionRule rule(String tool, String content, PermissionBehavior behavior) {
