@@ -81,6 +81,8 @@ var events = journal.readAfter(0, 100);
 
 Harness 默认使用 `WorkspaceThreadJournalStore`，跟随 Workspace Filesystem 的作用域。POSIX 本地实现使用 `.agentscope-runtime/` 中的原子文件提交；Windows 使用该目录中的 `journal.sqlite3`。远程实现复用 BaseStore 保留分区。不要手工修改内部文件或键。
 
+使用 `RemoteFilesystemSpec` 时，原生 Thread 日志写入远程 `sessions` 后端，并遵循配置的隔离范围。自行装配 `CompositeFilesystem` 时，可通过构造器的第三个参数显式指定日志后端，文件路径路由仍独立工作。已有的本地 journal 不会自动迁移。
+
 可以通过 `.threadJournalStore(store)` 指定实现。自定义后端实现 `ThreadJournalStore`；已有原子存储可实现 `AtomicJournalStorage` 并复用 `AtomicThreadJournal`。必须保持 CAS、writer fencing、提交顺序、幂等批次和导出游标。Filesystem 通过 `journalStorage(context)` 提供此能力，普通文件读写不足以实现原子日志。
 
 `ThreadJournalStore.list(ctx)` 只列出调用者当前存储作用域内的 Thread；SESSION 隔离不意味着可以枚举其他 Session。内存实现只适用于进程内使用。共享持久存储本身不提供后台认领与自动恢复，需要这些能力时装配 Durable Backend。
