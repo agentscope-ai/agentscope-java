@@ -34,6 +34,7 @@ import io.agentscope.core.message.URLSource;
 import io.agentscope.core.middleware.ModelCallInput;
 import io.agentscope.core.middleware.ModelRequestPreparer.Purpose;
 import io.agentscope.core.model.ChatResponse;
+import io.agentscope.core.model.ChatUsage;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.Model;
 import io.agentscope.core.model.ToolSchema;
@@ -370,6 +371,26 @@ class HarnessContextBudgetTest {
         assertTrue(manifests.get(0).estimatedInputTokens() <= 999);
     }
 
+    @Test
+    void reportedUsageTriggersCompactionThatEstimationWouldMiss() {
+        // Both texts are tiny, so the estimator sees a conversation far below the cap, while the
+        // provider reported a prompt well past it. Compaction must follow the measured charge.
+        List<Msg> history = List.of(message("go"), measuredReply("done", 5_000, 500));
+
+        prepare(builder(1_000, ContextTokenEstimator.approximate(), 0), input(history));
+
+        assertEquals(1, summaryCalls.get());
+    }
+
+    @Test
+    void withoutReportedUsageTheSameConversationStaysUncompacted() {
+        List<Msg> history = List.of(message("go"), message("done"));
+
+        prepare(builder(1_000, ContextTokenEstimator.approximate(), 0), input(history));
+
+        assertEquals(0, summaryCalls.get());
+    }
+
     private HarnessContextBuilder builder(
             int cap, ContextTokenEstimator estimator, int keepTokens) {
         CompactionConfig config =
@@ -423,6 +444,19 @@ class HarnessContextBudgetTest {
 
     private static Msg message(String text) {
         return Msg.builder().role(MsgRole.USER).textContent(text).build();
+    }
+
+    /** A reply that carries what the provider reported for the request that produced it. */
+    private static Msg measuredReply(String text, int inputTokens, int outputTokens) {
+        return Msg.builder()
+                .role(MsgRole.ASSISTANT)
+                .textContent(text)
+                .usage(
+                        ChatUsage.builder()
+                                .inputTokens(inputTokens)
+                                .outputTokens(outputTokens)
+                                .build())
+                .build();
     }
 
     private static Msg image() {
