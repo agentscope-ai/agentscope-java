@@ -66,13 +66,35 @@ public interface VDBStoreBase {
     Mono<List<Document>> search(SearchDocumentDto searchDocumentDto);
 
     /**
-     * Deletes a document from the store (optional).
+     * Deletes a single stored chunk by its id.
      *
-     * <p>Default implementation throws UnsupportedOperationException. Vector stores
-     * that support deletion should override this method.
+     * <p>{@code id} is the chunk's {@link Document#getId()}, the key the chunk was stored under
+     * by {@link #add(List)}. Other chunks of the same source document are not affected; use
+     * {@link #deleteByDocId(String)} to remove a whole document.
      *
-     * @param id the document ID (UUID string) to delete
-     * @return a Mono that emits true if the deletion was successful, false otherwise
+     * @param id the chunk id ({@link Document#getId()}) to delete
+     * @return a Mono that emits {@code true} if a chunk with this id existed and was removed, or
+     *     {@code false} if the store held no such chunk
      */
     Mono<Boolean> delete(String id);
+
+    /**
+     * Deletes every chunk of one source document.
+     *
+     * <p>Removes all stored chunks whose {@link
+     * io.agentscope.core.rag.model.DocumentMetadata#getDocId()} equals {@code docId}, i.e. all
+     * chunks produced from the same source by a reader.
+     *
+     * <p>The default implementation emits {@link UnsupportedOperationException}; stores that
+     * can delete by document should override it.
+     *
+     * @param docId the source document id ({@code DocumentMetadata#getDocId()})
+     * @return a Mono that emits {@code true} if at least one chunk was removed, or {@code false}
+     *     if the store held no chunk of this document
+     */
+    default Mono<Boolean> deleteByDocId(String docId) {
+        return Mono.error(
+                new UnsupportedOperationException(
+                        getClass().getSimpleName() + " does not support deleteByDocId"));
+    }
 }

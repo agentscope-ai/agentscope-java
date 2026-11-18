@@ -22,6 +22,8 @@ import co.elastic.clients.elasticsearch._types.mapping.KeywordProperty;
 import co.elastic.clients.elasticsearch._types.mapping.Property;
 import co.elastic.clients.elasticsearch._types.mapping.TextProperty;
 import co.elastic.clients.elasticsearch._types.mapping.TypeMapping;
+import co.elastic.clients.elasticsearch._types.query_dsl.Query;
+import co.elastic.clients.elasticsearch._types.query_dsl.TermQuery;
 import co.elastic.clients.elasticsearch.core.BulkRequest;
 import co.elastic.clients.elasticsearch.core.BulkResponse;
 import co.elastic.clients.elasticsearch.core.SearchRequest;
@@ -43,6 +45,7 @@ import io.agentscope.core.rag.model.Document;
 import io.agentscope.core.rag.model.DocumentMetadata;
 import io.agentscope.core.rag.store.dto.SearchDocumentDto;
 import io.agentscope.core.util.JsonUtils;
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -300,6 +303,42 @@ public class ElasticsearchStore implements VDBStoreBase, AutoCloseable {
                         e ->
                                 new VectorStoreException(
                                         "Failed to delete document from Elasticsearch", e));
+    }
+
+    /**
+     * Deletes every chunk of a source document from the Elasticsearch index.
+     *
+     * <p>Delete-by-query only sees searchable documents, so the index is refreshed first; chunks
+     * added moments earlier would otherwise survive the delete.
+     *
+     * @param docId the source document id ({@code DocumentMetadata#getDocId()})
+     * @return a Mono containing true if at least one chunk was deleted
+     */
+    @Override
+    public Mono<Boolean> deleteByDocId(String docId) {
+        if (docId == null || docId.trim().isEmpty()) {
+            return Mono.error(new IllegalArgumentException("Doc ID cannot be null or empty"));
+        }
+
+        return Mono.fromCallable(
+                        () -> {
+                            ensureNotClosed();
+                            return deleteChunksOfDoc(docId);
+                        })
+                .subscribeOn(Schedulers.boundedElastic())
+                .onErrorMap(
+                        e ->
+                                new VectorStoreException(
+                                        "Failed to delete document from Elasticsearch", e));
+    }
+
+    private boolean deleteChunksOfDoc(String docId) throws IOException {
+        client.indices().refresh(r -> r.index(indexName));
+        Query sameDoc = TermQuery.of(t -> t.field(FIELD_DOC_ID).value(docId))._toQuery();
+        Long deleted =
+                client.deleteByQuery(d -> d.index(indexName).query(sameDoc).refresh(true))
+                        .deleted();
+        return deleted != null && deleted > 0;
     }
 
     @Override
