@@ -21,12 +21,15 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.skill.AgentSkill;
 import io.agentscope.core.state.State;
 import io.agentscope.extensions.jdbc.JdbcDistributedStore;
 import io.agentscope.extensions.jdbc.dialect.AbstractJdbcDialect;
 import io.agentscope.extensions.jdbc.skill.JdbcAgentSkillRepository;
+import io.agentscope.extensions.jdbc.store.JdbcStore;
 import io.agentscope.harness.agent.IsolationScope;
+import io.agentscope.harness.agent.filesystem.remote.RemoteFilesystem;
 import io.agentscope.harness.agent.filesystem.remote.store.StoreItem;
 import io.agentscope.harness.agent.sandbox.SandboxIsolationKey;
 import io.agentscope.harness.agent.sandbox.SandboxLease;
@@ -65,6 +68,33 @@ class PostgresIntegrationTest {
             new PostgreSQLContainer<>("postgres:16").withDatabaseName("agentscope");
 
     record TestState(String value) implements State {}
+
+    @Test
+    @DisplayName("09: existence checks do not decode values")
+    void existenceChecksDoNotDecodeValues() throws Exception {
+        DataSource ds = createDataSource();
+        var dialect = AbstractJdbcDialect.from(ds).storeTableName("existence_checks").build();
+        var store = JdbcStore.builder(ds).dialect(dialect).build();
+        List<String> ns = List.of("exists%_!");
+        store.put(ns, "/dir/file.txt", Map.of());
+        store.put(ns, "/literal%_!/file.txt", Map.of());
+        store.put(List.of("exists%_!", "child"), "/nested/file.txt", Map.of());
+        store.put(List.of("existsXX"), "/foreign/file.txt", Map.of());
+        try (Connection connection = ds.getConnection();
+                Statement statement = connection.createStatement()) {
+            statement.executeUpdate("UPDATE existence_checks SET value_json = 'not-json'");
+        }
+
+        assertTrue(store.containsKey(ns, "/dir/file.txt"));
+        assertFalse(store.containsKey(ns, "/nested/file.txt"));
+        assertTrue(store.hasKeyPrefix(ns, "/nested/"));
+        assertTrue(store.hasKeyPrefix(ns, "/literal%_!/"));
+        assertFalse(store.hasKeyPrefix(ns, "/DIR/"));
+        assertFalse(store.hasKeyPrefix(ns, "/foreign/"));
+        RemoteFilesystem filesystem = new RemoteFilesystem(store, ns);
+        assertTrue(filesystem.exists(RuntimeContext.empty(), "/dir"));
+        assertFalse(filesystem.exists(RuntimeContext.empty(), "/missing"));
+    }
 
     @Test
     @DisplayName("01: AbstractJdbcDialect.from detects PostgreSQL")
