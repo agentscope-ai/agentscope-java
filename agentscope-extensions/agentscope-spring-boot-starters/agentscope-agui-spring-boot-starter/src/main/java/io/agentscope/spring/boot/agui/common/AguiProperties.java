@@ -41,6 +41,10 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  *     emit-token-usage: false
  *     emit-run-finished-after-error: false
  *     interrupt-on-disconnect: true
+ *     queue:
+ *       enabled: false
+ *       capacity: 16
+ *       idempotency-retention: 64
  * </pre>
  */
 @ConfigurationProperties(prefix = "agentscope.agui")
@@ -298,7 +302,10 @@ public class AguiProperties {
         /** Maximum number of queued messages per thread. */
         private int capacity = 16;
 
-        /** Maximum number of message identifiers kept for deduplication per thread. */
+        /**
+         * Maximum number of message identifiers kept for deduplication per thread. Must be at
+         * least {@code capacity}; a smaller value fails application startup.
+         */
         private int idempotencyRetention = 64;
 
         public boolean isEnabled() {

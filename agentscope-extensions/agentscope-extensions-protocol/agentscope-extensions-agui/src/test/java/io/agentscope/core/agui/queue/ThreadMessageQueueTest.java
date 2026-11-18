@@ -16,13 +16,21 @@
 package io.agentscope.core.agui.queue;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.agentscope.core.agui.model.AguiContext;
 import io.agentscope.core.agui.model.AguiMessage;
+import io.agentscope.core.agui.model.AguiResume;
+import io.agentscope.core.agui.model.AguiTool;
 import io.agentscope.core.agui.model.RunAgentInput;
+import io.agentscope.core.util.JsonUtils;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -34,20 +42,15 @@ import org.junit.jupiter.api.Test;
 class ThreadMessageQueueTest {
 
     @Test
-    void shouldExposeQueuedMessageFieldsAndState() {
+    void shouldExposeQueuedMessageFields() {
         RunAgentInput input = input("t1", "r1", "m1", "hi");
-        QueuedMessage message = QueuedMessage.create("m1", input, last(input), 123L);
+        QueuedMessage message = QueuedMessage.create("m1", input, 123L);
 
         assertEquals("m1", message.getMessageId());
         assertEquals("t1", message.getThreadId());
         assertEquals("r1", message.getRunId());
         assertSame(input, message.getInput());
         assertEquals(123L, message.getAcceptedAt());
-        assertEquals(QueuedMessage.State.QUEUED, message.getState());
-
-        message.markClaimed();
-
-        assertEquals(QueuedMessage.State.CLAIMED, message.getState());
     }
 
     @Test
@@ -55,24 +58,24 @@ class ThreadMessageQueueTest {
         ThreadMessageQueue queue = new ThreadMessageQueue(16, 64);
         RunAgentInput input = input("t1", "r1", "m1", "hello");
 
-        QueueAcceptance first = queue.offer("m1", input, last(input));
-        QueueAcceptance second = queue.offer("m1", input, last(input));
+        QueueAcceptance first = queue.offer("m1", input);
+        // A separate but equal body must be recognised as a retry, not as a new message.
+        QueueAcceptance second = queue.offer("m1", input("t1", "r1", "m1", "hello"));
 
         assertEquals(QueueAcceptance.Status.ACCEPTED, first.status());
         assertEquals(1, first.position());
         assertEquals(QueueAcceptance.Status.DUPLICATE, second.status());
         assertEquals(1, second.position());
+        assertEquals("QUEUED", second.state());
         assertEquals(1, queue.snapshot(false, false).items().size());
     }
 
     @Test
     void shouldRejectSameIdWithDifferentContent() {
         ThreadMessageQueue queue = new ThreadMessageQueue(16, 64);
-        RunAgentInput original = input("t1", "r1", "m1", "hello");
-        queue.offer("m1", original, last(original));
+        queue.offer("m1", input("t1", "r1", "m1", "hello"));
 
-        RunAgentInput changed = input("t1", "r2", "m1", "changed");
-        QueueAcceptance result = queue.offer("m1", changed, last(changed));
+        QueueAcceptance result = queue.offer("m1", input("t1", "r2", "m1", "changed"));
 
         assertEquals(QueueAcceptance.Status.CONFLICT, result.status());
         assertEquals(1, queue.snapshot(false, false).items().size());
@@ -81,38 +84,42 @@ class ThreadMessageQueueTest {
     @Test
     void shouldRejectWhenFullAndAcceptAfterWithdraw() {
         ThreadMessageQueue queue = new ThreadMessageQueue(2, 64);
-        queue.offer("m1", input("t1", "r1", "m1", "a"), last(input("t1", "r1", "m1", "a")));
-        queue.offer("m2", input("t1", "r2", "m2", "b"), last(input("t1", "r2", "m2", "b")));
+        queue.offer("m1", input("t1", "r1", "m1", "a"));
+        queue.offer("m2", input("t1", "r2", "m2", "b"));
 
-        QueueAcceptance full =
-                queue.offer("m3", input("t1", "r3", "m3", "c"), last(input("t1", "r3", "m3", "c")));
+        QueueAcceptance full = queue.offer("m3", input("t1", "r3", "m3", "c"));
         assertEquals(QueueAcceptance.Status.FULL, full.status());
 
         assertEquals(WithdrawStatus.WITHDRAWN, queue.withdraw("m1"));
-        QueueAcceptance retried =
-                queue.offer("m3", input("t1", "r3", "m3", "c"), last(input("t1", "r3", "m3", "c")));
+        QueueAcceptance retried = queue.offer("m3", input("t1", "r3", "m3", "c"));
         assertEquals(QueueAcceptance.Status.ACCEPTED, retried.status());
     }
 
     @Test
     void shouldForgetOldLedgerEntriesBeyondRetention() {
-        ThreadMessageQueue queue = new ThreadMessageQueue(16, 2);
-        queue.offer("m0", input("t1", "r0", "m0", "x"), last(input("t1", "r0", "m0", "x")));
-        queue.offer("m1", input("t1", "r1", "m1", "x"), last(input("t1", "r1", "m1", "x")));
-        queue.offer("m2", input("t1", "r2", "m2", "x"), last(input("t1", "r2", "m2", "x")));
-        assertEquals(WithdrawStatus.WITHDRAWN, queue.withdraw("m0"));
+        ThreadMessageQueue queue = new ThreadMessageQueue(2, 2);
+        queue.offer("m0", input("t1", "r0", "m0", "x"));
+        assertEquals("m0", queue.claim(true, 0L).orElseThrow().getMessageId());
 
-        QueueAcceptance reoffered =
-                queue.offer("m0", input("t1", "r0", "m0", "x"), last(input("t1", "r0", "m0", "x")));
+        // Two new identifiers push the claimed one out of the ledger.
+        queue.offer("m1", input("t1", "r1", "m1", "x"));
+        queue.offer("m2", input("t1", "r2", "m2", "x"));
+        assertEquals(WithdrawStatus.WITHDRAWN, queue.withdraw("m1"));
+
+        QueueAcceptance reoffered = queue.offer("m0", input("t1", "r0", "m0", "different"));
 
         assertEquals(QueueAcceptance.Status.ACCEPTED, reoffered.status());
     }
 
     @Test
+    void shouldRejectRetentionSmallerThanCapacity() {
+        assertThrows(IllegalArgumentException.class, () -> new ThreadMessageQueue(4, 2));
+    }
+
+    @Test
     void shouldWithdrawOnlyQueuedMessages() {
         ThreadMessageQueue queue = new ThreadMessageQueue(16, 64);
-        RunAgentInput input = input("t1", "r1", "m1", "a");
-        queue.offer("m1", input, last(input));
+        queue.offer("m1", input("t1", "r1", "m1", "a"));
 
         assertEquals(WithdrawStatus.WITHDRAWN, queue.withdraw("m1"));
         assertEquals(WithdrawStatus.NOT_FOUND, queue.withdraw("m1"));
@@ -120,31 +127,172 @@ class ThreadMessageQueueTest {
     }
 
     @Test
-    void shouldNotClaimWhenNotIdle() {
+    void shouldReportAlreadyClaimedOnWithdraw() {
+        ThreadMessageQueue queue = new ThreadMessageQueue(16, 64);
+        queue.offer("m1", input("t1", "r1", "m1", "a"));
+        assertEquals("m1", queue.claim(true, 0L).orElseThrow().getMessageId());
+
+        assertEquals(WithdrawStatus.ALREADY_CLAIMED, queue.withdraw("m1"));
+    }
+
+    @Test
+    void shouldReportClaimedStateForRetryAfterClaim() {
         ThreadMessageQueue queue = new ThreadMessageQueue(16, 64);
         RunAgentInput input = input("t1", "r1", "m1", "a");
-        queue.offer("m1", input, last(input));
+        queue.offer("m1", input);
+        queue.claim(true, 0L);
+
+        QueueAcceptance retry = queue.offer("m1", input);
+
+        assertEquals(QueueAcceptance.Status.DUPLICATE, retry.status());
+        assertEquals("CLAIMED", retry.state());
+        assertEquals(-1, retry.position());
+    }
+
+    @Test
+    void shouldNotClaimWhenNotIdle() {
+        ThreadMessageQueue queue = new ThreadMessageQueue(16, 64);
+        queue.offer("m1", input("t1", "r1", "m1", "a"));
 
         assertTrue(queue.claim(false).isEmpty());
         assertEquals(1, queue.snapshot(true, false).items().size());
     }
 
     @Test
-    void shouldClaimInAcceptanceOrder() {
+    void shouldGiveTheClaimedInputAFreshRunId() {
         ThreadMessageQueue queue = new ThreadMessageQueue(16, 64);
-        queue.offer("m1", input("t1", "r1", "m1", "a"), last(input("t1", "r1", "m1", "a")));
-        queue.offer("m2", input("t1", "r2", "m2", "b"), last(input("t1", "r2", "m2", "b")));
+        RunAgentInput input =
+                RunAgentInput.builder()
+                        .threadId("t1")
+                        .runId("r-original")
+                        .messages(List.of(AguiMessage.userMessage("m1", "a")))
+                        .tools(List.of(new AguiTool("search", "find things", Map.of("q", "text"))))
+                        .context(List.of(new AguiContext("docs", "selected pages")))
+                        .state(Map.of("step", 2))
+                        .forwardedProps(Map.of("agent", "helper"))
+                        .resume(List.of(new AguiResume("i1", "resolved", "ok")))
+                        .build();
+        queue.offer("m1", input);
 
-        assertEquals("m1", queue.claim(true).orElseThrow().getMessageId());
-        assertEquals(QueuedMessage.State.CLAIMED, queue.claim(true).orElseThrow().getState());
-        assertTrue(queue.claim(true).isEmpty());
+        QueuedMessage claimed = queue.claim(true, 0L).orElseThrow();
+        String replayRunId = claimed.getInput().getRunId();
+
+        // A queued body usually reuses the id of the run that was active when it was accepted,
+        // and replaying that id makes two runs share one identifier. A claim mints a fresh one
+        // and must keep every other field of the body intact, so compare the full encoded bodies
+        // after folding the fresh id back onto the original one.
+        assertNotEquals("r-original", replayRunId);
+        assertFalse(replayRunId == null || replayRunId.isBlank());
+        String original = JsonUtils.getJsonCodec().toJson(input);
+        String replayable =
+                JsonUtils.getJsonCodec()
+                        .toJson(claimed.getInput())
+                        .replace(replayRunId, "r-original");
+        assertEquals(original, replayable);
+    }
+
+    @Test
+    void shouldNotReleaseHandOffForABusyObservationOlderThanTheDelivery() {
+        ThreadMessageQueue queue = new ThreadMessageQueue(16, 64);
+        queue.offer("m1", input("t1", "r1", "m1", "a"));
+        queue.offer("m2", input("t1", "r2", "m2", "b"));
+
+        assertEquals("m1", queue.claim(true, 1_000L).orElseThrow().getMessageId());
+        // A poll that read "busy" before the delivery above must not open the next window; the
+        // same millisecond cannot prove the observation followed the delivery either.
+        assertTrue(queue.claim(false, 999L).isEmpty());
+        assertTrue(queue.claim(false, 1_000L).isEmpty());
+        assertTrue(queue.claim(true, 2_000L).isEmpty());
+        // A busy observation made strictly after the delivery reflects the replayed run.
+        assertTrue(queue.claim(false, 1_500L).isEmpty());
+        assertEquals("m2", queue.claim(true, 2_500L).orElseThrow().getMessageId());
+    }
+
+    @Test
+    void shouldKeepTheWindowClosedForAnExtremeObservationTime() {
+        ThreadMessageQueue queue = new ThreadMessageQueue(16, 64);
+        queue.offer("m1", input("t1", "r1", "m1", "a"));
+        queue.offer("m2", input("t1", "r2", "m2", "b"));
+
+        assertEquals("m1", queue.claim(true, Long.MAX_VALUE).orElseThrow().getMessageId());
+        // An extreme observation time must not overflow the window into the past and hand out
+        // the next message in the same idle period.
+        assertTrue(queue.claim(true, Long.MAX_VALUE).isEmpty());
+    }
+
+    @Test
+    void shouldDeliverAMessageOfferedAfterTheReleasedWindow() {
+        ThreadMessageQueue queue = new ThreadMessageQueue(16, 64);
+        queue.offer("m1", input("t1", "r1", "m1", "a"));
+        String replayRunId = queue.claim(true, 1_000L).orElseThrow().getInput().getRunId();
+
+        // The identity evidence released the window while nothing was queued; a message
+        // offered afterwards is claimable immediately instead of waiting out a stale window.
+        assertTrue(queue.claim(true, 2_000L, replayRunId).isEmpty());
+        queue.offer("m2", input("t1", "r2", "m2", "b"));
+        assertEquals("m2", queue.claim(true, 3_000L).orElseThrow().getMessageId());
+    }
+
+    @Test
+    void shouldOpenTheWindowWhenTheDeliveredRunsOwnReplayStarted() {
+        ThreadMessageQueue queue = new ThreadMessageQueue(16, 64);
+        queue.offer("m1", input("t1", "r1", "m1", "a"));
+        queue.offer("m2", input("t1", "r2", "m2", "b"));
+
+        String replayRunId = queue.claim(true, 1_000L).orElseThrow().getInput().getRunId();
+        // The delivered message was replayed verbatim, so the thread's last started run is the
+        // very id this delivery handed out; the next claim delivers immediately instead of
+        // waiting out the five-second window.
+        assertEquals("m2", queue.claim(true, 2_000L, replayRunId).orElseThrow().getMessageId());
+    }
+
+    @Test
+    void shouldKeepTheWindowForAnyOtherRun() {
+        ThreadMessageQueue queue = new ThreadMessageQueue(16, 64);
+        queue.offer("m1", input("t1", "r1", "m1", "a"));
+        queue.offer("m2", input("t1", "r2", "m2", "b"));
+
+        queue.claim(true, 1_000L);
+        // Another client's direct run, a resume answer, or no run at all never matches the id
+        // this delivery handed out, so only the grace period opens the next window.
+        assertTrue(queue.claim(true, 2_000L, "another-run").isEmpty());
+        assertTrue(queue.claim(true, 2_000L, null).isEmpty());
+        assertTrue(queue.claim(true, 5_999L, "another-run").isEmpty());
+        assertEquals("m2", queue.claim(true, 6_000L, "another-run").orElseThrow().getMessageId());
+    }
+
+    @Test
+    void shouldClaimInAcceptanceOrderAndHoldTheHandOff() {
+        ThreadMessageQueue queue = new ThreadMessageQueue(16, 64);
+        queue.offer("m1", input("t1", "r1", "m1", "a"));
+        queue.offer("m2", input("t1", "r2", "m2", "b"));
+
+        assertEquals("m1", queue.claim(true, 0L).orElseThrow().getMessageId());
+        // The same idle window must not hand out a second message.
+        assertTrue(queue.claim(true, 1_000L).isEmpty());
+        assertEquals("m2", queue.claim(true, 6_000L).orElseThrow().getMessageId());
+        assertTrue(queue.claim(true, 12_000L).isEmpty());
         assertEquals(0, queue.snapshot(true, false).items().size());
     }
 
     @Test
-    void shouldLetExactlyOneConcurrentClaimWin() throws Exception {
+    void shouldReleaseHandOffOnceTheThreadIsObservedBusy() {
         ThreadMessageQueue queue = new ThreadMessageQueue(16, 64);
-        queue.offer("m1", input("t1", "r1", "m1", "a"), last(input("t1", "r1", "m1", "a")));
+        queue.offer("m1", input("t1", "r1", "m1", "a"));
+        queue.offer("m2", input("t1", "r2", "m2", "b"));
+
+        assertEquals("m1", queue.claim(true, 0L).orElseThrow().getMessageId());
+        assertTrue(queue.claim(false, 1L).isEmpty());
+
+        // The claimed message started a run, so the next idle window is free again.
+        assertEquals("m2", queue.claim(true, 2L).orElseThrow().getMessageId());
+    }
+
+    @Test
+    void shouldLetExactlyOneConcurrentClaimWinWithTwoMessagesQueued() throws Exception {
+        ThreadMessageQueue queue = new ThreadMessageQueue(16, 64);
+        queue.offer("m1", input("t1", "r1", "m1", "a"));
+        queue.offer("m2", input("t1", "r2", "m2", "b"));
 
         ExecutorService pool = Executors.newFixedThreadPool(8);
         CountDownLatch start = new CountDownLatch(1);
@@ -156,7 +304,7 @@ class ThreadMessageQueueTest {
                         pool.submit(
                                 () -> {
                                     start.await();
-                                    if (queue.claim(true).isPresent()) {
+                                    if (queue.claim(true, 0L).isPresent()) {
                                         wins.incrementAndGet();
                                     }
                                     return null;
@@ -170,7 +318,9 @@ class ThreadMessageQueueTest {
             pool.shutdownNow();
         }
 
+        // Only one delivery per idle window, even though a second message is waiting.
         assertEquals(1, wins.get());
+        assertEquals(1, queue.snapshot(false, false).items().size());
     }
 
     private static RunAgentInput input(
@@ -180,9 +330,5 @@ class ThreadMessageQueueTest {
                 .runId(runId)
                 .messages(List.of(AguiMessage.userMessage(messageId, text)))
                 .build();
-    }
-
-    private static AguiMessage last(RunAgentInput input) {
-        return input.getMessages().get(input.getMessages().size() - 1);
     }
 }

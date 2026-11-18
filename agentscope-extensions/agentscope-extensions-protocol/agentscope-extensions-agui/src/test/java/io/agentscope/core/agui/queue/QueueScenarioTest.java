@@ -43,8 +43,8 @@ import org.junit.jupiter.api.Test;
  *   <li>feature disabled means no endpoints — covered by
  *       {@code AguiQueueAutoConfigurationTest#shouldNotRegisterQueueByDefault}
  *   <li>error with unresolved confirmation blocks advancement — covered by
- *       {@code AguiResumeCoordinatorStateTest#shouldReportPendingInterruptsUntilResolved} together
- *       with {@code AguiQueueControllerTest#shouldClaimOnlyWhenIdle}
+ *       {@code AguiResumeCoordinatorStateTest#shouldKeepBlockingAfterAnErroredResumeUntilResolvedAgain}
+ *       together with {@code AguiQueueControllerTest#shouldDeliverAfterTheConfirmationIsAnswered}
  * </ol>
  */
 class QueueScenarioTest {
@@ -52,16 +52,17 @@ class QueueScenarioTest {
     @Test
     void shouldNotAdvanceWhileBusyThenClaimInOrder() {
         ThreadMessageQueue queue = new ThreadMessageQueue(16, 64);
-        queue.offer("m1", input("t1", "r1", "m1", "first"), last(input("t1", "r1", "m1", "first")));
-        queue.offer(
-                "m2", input("t1", "r2", "m2", "second"), last(input("t1", "r2", "m2", "second")));
+        queue.offer("m1", input("t1", "r1", "m1", "first"));
+        queue.offer("m2", input("t1", "r2", "m2", "second"));
 
         // While the thread is busy (or awaiting confirmation) nothing may be claimed.
         assertTrue(queue.claim(false).isEmpty());
 
-        assertEquals("m1", queue.claim(true).orElseThrow().getMessageId());
-        assertEquals("m2", queue.claim(true).orElseThrow().getMessageId());
-        assertTrue(queue.claim(true).isEmpty());
+        assertEquals("m1", queue.claim(true, 0L).orElseThrow().getMessageId());
+        // New runs take time to register, so the same idle window delivers only one message.
+        assertTrue(queue.claim(true, 1_000L).isEmpty());
+        assertEquals("m2", queue.claim(true, 6_000L).orElseThrow().getMessageId());
+        assertTrue(queue.claim(true, 12_000L).isEmpty());
     }
 
     @Test
@@ -70,36 +71,37 @@ class QueueScenarioTest {
         RunAgentInput input = input("t1", "r1", "m1", "hello");
 
         for (int i = 0; i < 3; i++) {
-            QueueAcceptance acceptance = queue.offer("m1", input, last(input));
+            QueueAcceptance acceptance = queue.offer("m1", input);
             assertEquals(1, acceptance.position());
         }
         assertEquals(1, queue.snapshot(false, false).items().size());
 
-        assertEquals("m1", queue.claim(true).orElseThrow().getMessageId());
+        assertEquals("m1", queue.claim(true, 0L).orElseThrow().getMessageId());
 
         // A retry arriving after the claim must not enqueue the message again.
-        QueueAcceptance afterClaim = queue.offer("m1", input, last(input));
+        QueueAcceptance afterClaim = queue.offer("m1", input);
         assertEquals(QueueAcceptance.Status.DUPLICATE, afterClaim.status());
-        assertTrue(queue.claim(true).isEmpty());
+        assertTrue(queue.claim(true, 10_000L).isEmpty());
     }
 
     @Test
     void shouldKeepQueuedMessagesWhileClientIsAway() {
         ThreadMessageQueue queue = new ThreadMessageQueue(16, 64);
-        queue.offer("m1", input("t1", "r1", "m1", "hello"), last(input("t1", "r1", "m1", "hello")));
+        queue.offer("m1", input("t1", "r1", "m1", "hello"));
 
         // No client is attached, so no claim happens; the message stays queued.
         assertEquals(1, queue.snapshot(false, false).items().size());
 
         // After reconnect the same message can be claimed exactly once.
-        assertEquals("m1", queue.claim(true).orElseThrow().getMessageId());
-        assertTrue(queue.claim(true).isEmpty());
+        assertEquals("m1", queue.claim(true, 0L).orElseThrow().getMessageId());
+        assertTrue(queue.claim(true, 10_000L).isEmpty());
     }
 
     @Test
     void shouldLetOnlyOneOfTwoConcurrentClaimsWin() throws Exception {
         ThreadMessageQueue queue = new ThreadMessageQueue(16, 64);
-        queue.offer("m1", input("t1", "r1", "m1", "hello"), last(input("t1", "r1", "m1", "hello")));
+        queue.offer("m1", input("t1", "r1", "m1", "first"));
+        queue.offer("m2", input("t1", "r2", "m2", "second"));
 
         ExecutorService pool = Executors.newFixedThreadPool(2);
         CountDownLatch start = new CountDownLatch(1);
@@ -109,7 +111,7 @@ class QueueScenarioTest {
                     pool.submit(
                             () -> {
                                 start.await();
-                                if (queue.claim(true).isPresent()) {
+                                if (queue.claim(true, 0L).isPresent()) {
                                     wins.incrementAndGet();
                                 }
                                 return null;
@@ -118,7 +120,7 @@ class QueueScenarioTest {
                     pool.submit(
                             () -> {
                                 start.await();
-                                if (queue.claim(true).isPresent()) {
+                                if (queue.claim(true, 0L).isPresent()) {
                                     wins.incrementAndGet();
                                 }
                                 return null;
@@ -130,22 +132,22 @@ class QueueScenarioTest {
             pool.shutdownNow();
         }
 
+        // A second message is waiting, so a broken hand-off would report two winners.
         assertEquals(1, wins.get());
+        assertEquals(1, queue.snapshot(false, false).items().size());
     }
 
     @Test
     void shouldRejectWhenFullThenAcceptAfterWithdraw() {
         ThreadMessageQueue queue = new ThreadMessageQueue(1, 64);
-        queue.offer("m1", input("t1", "r1", "m1", "a"), last(input("t1", "r1", "m1", "a")));
+        queue.offer("m1", input("t1", "r1", "m1", "a"));
 
-        QueueAcceptance full =
-                queue.offer("m2", input("t1", "r2", "m2", "b"), last(input("t1", "r2", "m2", "b")));
+        QueueAcceptance full = queue.offer("m2", input("t1", "r2", "m2", "b"));
         assertEquals(QueueAcceptance.Status.FULL, full.status());
 
         assertEquals(WithdrawStatus.WITHDRAWN, queue.withdraw("m1"));
 
-        QueueAcceptance accepted =
-                queue.offer("m2", input("t1", "r2", "m2", "b"), last(input("t1", "r2", "m2", "b")));
+        QueueAcceptance accepted = queue.offer("m2", input("t1", "r2", "m2", "b"));
         assertEquals(QueueAcceptance.Status.ACCEPTED, accepted.status());
     }
 
@@ -156,9 +158,5 @@ class QueueScenarioTest {
                 .runId(runId)
                 .messages(List.of(AguiMessage.userMessage(messageId, text)))
                 .build();
-    }
-
-    private static AguiMessage last(RunAgentInput input) {
-        return input.getMessages().get(input.getMessages().size() - 1);
     }
 }

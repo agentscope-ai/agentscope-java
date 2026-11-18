@@ -46,6 +46,24 @@ final class AguiResumeCoordinator {
     private final ConcurrentMap<String, Map<String, AguiEvent.Interrupt>>
             pendingInterruptsByThread = new ConcurrentHashMap<>();
     private final ConcurrentMap<String, String> activeRunsByThread = new ConcurrentHashMap<>();
+    private final ConcurrentMap<String, String> lastRunIdByThread = new ConcurrentHashMap<>();
+    private final boolean recordLastRunId;
+
+    AguiResumeCoordinator() {
+        this(true);
+    }
+
+    /**
+     * Creates a coordinator that optionally remembers the run id each thread last started.
+     *
+     * <p>That memory backs the message-queue hand-off guard and costs one map entry per thread
+     * that ever started a run, so callers that never use the queue can disable the recording.
+     *
+     * @param recordLastRunId whether a successfully started run is remembered for its thread
+     */
+    AguiResumeCoordinator(boolean recordLastRunId) {
+        this.recordLastRunId = recordLastRunId;
+    }
 
     /**
      * Validate whether the input satisfies the currently supported AG-UI resume contract.
@@ -118,6 +136,9 @@ final class AguiResumeCoordinator {
         String previousRunId =
                 activeRunsByThread.putIfAbsent(input.getThreadId(), input.getRunId());
         if (previousRunId == null) {
+            if (recordLastRunId) {
+                lastRunIdByThread.put(input.getThreadId(), input.getRunId());
+            }
             return ResumeContractResult.proceed();
         }
         return ResumeContractResult.error(
@@ -134,6 +155,24 @@ final class AguiResumeCoordinator {
      */
     void finishRun(String threadId, String runId) {
         activeRunsByThread.remove(threadId, runId);
+    }
+
+    /**
+     * Returns the run id the thread most recently started, by identity.
+     *
+     * <p>Callers compare this against the run id a delivery handed out: equality indicates that
+     * the delivered message itself reached the run endpoint, while any other run (another
+     * client's direct request, or a resume answer) does not. The id deliberately survives {@link
+     * #finishRun(String, String)}, because a finished run is exactly when the next decision needs
+     * that evidence.
+     *
+     * @param threadId The AG-UI thread ID
+     * @return the run id of the most recently started run, or {@code null} when the thread never
+     *     started a run here or when recording is disabled - the queue then falls back to its
+     *     busy-observation and grace-period release rules
+     */
+    String lastStartedRunId(String threadId) {
+        return lastRunIdByThread.get(threadId);
     }
 
     /**

@@ -15,18 +15,19 @@
  */
 package io.agentscope.core.agui.queue;
 
-import io.agentscope.core.agui.model.AguiMessage;
 import io.agentscope.core.agui.model.RunAgentInput;
 
 /**
- * A user message accepted while the target AG-UI thread was busy.
+ * A message held by a thread queue for later delivery.
  *
- * <p>The message keeps the original {@link RunAgentInput} so that a client can claim it later and
- * re-submit the very same payload to the regular run endpoint.
+ * <p>The message keeps the {@link RunAgentInput} that a client submits to the regular run endpoint.
+ * A queued message carries the body as accepted; a claimed message carries a copy whose run id was
+ * minted for the replay. Whether a message is still waiting or was delivered is tracked by the
+ * queue ledger, so the message itself is immutable.
  */
 public final class QueuedMessage {
 
-    /** Lifecycle state of a queued message. */
+    /** Lifecycle state of a queued message, as recorded by the queue ledger. */
     public enum State {
         /** Waiting in the queue. */
         QUEUED,
@@ -38,17 +39,13 @@ public final class QueuedMessage {
     private final String threadId;
     private final String runId;
     private final RunAgentInput input;
-    private final AguiMessage lastUserMessage;
     private final long acceptedAt;
-    private volatile State state = State.QUEUED;
 
-    private QueuedMessage(
-            String messageId, RunAgentInput input, AguiMessage lastUserMessage, long acceptedAt) {
+    private QueuedMessage(String messageId, RunAgentInput input, long acceptedAt) {
         this.messageId = messageId;
         this.threadId = input.getThreadId();
         this.runId = input.getRunId();
         this.input = input;
-        this.lastUserMessage = lastUserMessage;
         this.acceptedAt = acceptedAt;
     }
 
@@ -56,23 +53,12 @@ public final class QueuedMessage {
      * Creates a queued message.
      *
      * @param messageId stable identifier used for deduplication
-     * @param input the original run input to replay on claim
-     * @param lastUserMessage the trailing user message, used as the content fingerprint
+     * @param input the run input to replay on claim
      * @param acceptedAt acceptance timestamp in epoch milliseconds
      * @return the queued message
      */
-    public static QueuedMessage create(
-            String messageId, RunAgentInput input, AguiMessage lastUserMessage, long acceptedAt) {
-        return new QueuedMessage(messageId, input, lastUserMessage, acceptedAt);
-    }
-
-    /**
-     * Marks this message as claimed.
-     *
-     * <p>Claiming removes the message from the queue, so this state is terminal.
-     */
-    public void markClaimed() {
-        this.state = State.CLAIMED;
+    public static QueuedMessage create(String messageId, RunAgentInput input, long acceptedAt) {
+        return new QueuedMessage(messageId, input, acceptedAt);
     }
 
     /**
@@ -94,7 +80,10 @@ public final class QueuedMessage {
     }
 
     /**
-     * Returns the run identifier of the original request.
+     * Returns the run identifier carried by the input.
+     *
+     * <p>A claimed message carries the fresh identifier minted for the replay, so that replaying it
+     * cannot collide with a run id the server has already seen.
      *
      * @return the run identifier
      */
@@ -103,21 +92,12 @@ public final class QueuedMessage {
     }
 
     /**
-     * Returns the original run input.
+     * Returns the run input to replay.
      *
-     * @return the original run input
+     * @return the run input
      */
     public RunAgentInput getInput() {
         return input;
-    }
-
-    /**
-     * Returns the trailing user message used as the content fingerprint.
-     *
-     * @return the trailing user message, may be {@code null}
-     */
-    public AguiMessage getLastUserMessage() {
-        return lastUserMessage;
     }
 
     /**
@@ -127,14 +107,5 @@ public final class QueuedMessage {
      */
     public long getAcceptedAt() {
         return acceptedAt;
-    }
-
-    /**
-     * Returns the current lifecycle state.
-     *
-     * @return the current state
-     */
-    public State getState() {
-        return state;
     }
 }

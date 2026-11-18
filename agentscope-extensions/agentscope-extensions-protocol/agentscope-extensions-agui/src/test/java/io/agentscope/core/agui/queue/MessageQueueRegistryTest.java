@@ -19,6 +19,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import org.junit.jupiter.api.Test;
 
@@ -39,5 +40,23 @@ class MessageQueueRegistryTest {
 
         assertThrows(IllegalArgumentException.class, () -> registry.forThread(" "));
         assertThrows(IllegalArgumentException.class, () -> registry.forThread(null));
+    }
+
+    @Test
+    void shouldNotCreateQueueOnLookup() {
+        MessageQueueRegistry registry = new MessageQueueRegistry(16, 64);
+
+        assertTrue(registry.find("t1").isEmpty());
+        assertEquals(0, registry.size());
+
+        registry.forThread("t1");
+        assertTrue(registry.find("t1").isPresent());
+        assertTrue(registry.find(" ").isEmpty());
+    }
+
+    @Test
+    void shouldValidateBoundsOnConstruction() {
+        assertThrows(IllegalArgumentException.class, () -> new MessageQueueRegistry(0, 64));
+        assertThrows(IllegalArgumentException.class, () -> new MessageQueueRegistry(16, 15));
     }
 }

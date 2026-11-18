@@ -81,7 +81,7 @@ public class AguiRequestProcessor {
                 builder.adapterFactory != null
                         ? builder.adapterFactory
                         : AguiAgentAdapterFactory.defaultFactory();
-        this.resumeCoordinator = new AguiResumeCoordinator();
+        this.resumeCoordinator = new AguiResumeCoordinator(builder.recordLastRunId);
         this.runtimeContextResolver = builder.runtimeContextResolver;
     }
 
@@ -240,6 +240,19 @@ public class AguiRequestProcessor {
     }
 
     /**
+     * Returns whether the thread currently has a run in progress.
+     *
+     * <p>Unlike {@link #isThreadIdle(String)} this stays {@code false} while the thread only waits
+     * for an interrupt to be resolved.
+     *
+     * @param threadId The AG-UI thread id
+     * @return true when a run is in progress on the thread
+     */
+    public boolean isRunActive(String threadId) {
+        return resumeCoordinator.hasActiveRun(threadId);
+    }
+
+    /**
      * Returns whether the thread is waiting for a client to resolve interrupts.
      *
      * @param threadId The AG-UI thread id
@@ -247,6 +260,23 @@ public class AguiRequestProcessor {
      */
     public boolean isAwaitingConfirmation(String threadId) {
         return resumeCoordinator.hasUnresolvedInterrupts(threadId);
+    }
+
+    /**
+     * Returns the run id the thread most recently started.
+     *
+     * <p>The queue compares this against the run id a claim handed out: equality indicates the
+     * claimed message itself was replayed, which opens the next delivery window immediately, so a
+     * client that does not poll the queue during the replay still receives the next message as
+     * soon as the replayed run has finished. Any other run does not open the window. Returns
+     * {@code null} when the thread has never started a run here.
+     *
+     * @param threadId The AG-UI thread id
+     * @return the run id of the most recently started run, or {@code null} when the thread never
+     *     started a run
+     */
+    public String lastStartedRunId(String threadId) {
+        return resumeCoordinator.lastStartedRunId(threadId);
     }
 
     /**
@@ -439,6 +469,7 @@ public class AguiRequestProcessor {
         private AguiAdapterConfig config;
         private AguiAgentAdapterFactory adapterFactory;
         private AguiRuntimeContextResolver runtimeContextResolver;
+        private boolean recordLastRunId = true;
 
         /**
          * Set the agent resolver.
@@ -482,6 +513,22 @@ public class AguiRequestProcessor {
          */
         public Builder runtimeContextResolver(AguiRuntimeContextResolver runtimeContextResolver) {
             this.runtimeContextResolver = runtimeContextResolver;
+            return this;
+        }
+
+        /**
+         * Set whether the processor remembers the run id each thread last started.
+         *
+         * <p>That memory backs the queue hand-off guard exposed by {@link
+         * #lastStartedRunId(String)} and costs one map entry per thread that ever started a
+         * run, so the Spring starters disable it when the queue is disabled. The default {@code
+         * true} keeps the guard working for processors built outside the starters.
+         *
+         * @param recordLastRunId whether a successfully started run is remembered per thread
+         * @return This builder
+         */
+        public Builder recordLastRunId(boolean recordLastRunId) {
+            this.recordLastRunId = recordLastRunId;
             return this;
         }
 

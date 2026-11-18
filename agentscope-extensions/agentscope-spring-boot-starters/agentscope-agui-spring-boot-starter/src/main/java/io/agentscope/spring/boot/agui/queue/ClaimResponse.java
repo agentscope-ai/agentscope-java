@@ -23,6 +23,6 @@ import io.agentscope.core.agui.model.RunAgentInput;
  * <p>The client replays {@link #input()} on the regular run endpoint.
  *
  * @param messageId the claimed message identifier
- * @param input the original run input to replay
+ * @param input the run input to replay, carrying a fresh run id minted at claim time
  */
 public record ClaimResponse(String messageId, RunAgentInput input) {}

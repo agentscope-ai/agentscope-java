@@ -111,6 +111,19 @@ public class AguiWebFluxHandler {
     }
 
     /**
+     * Returns the request processor that backs this handler.
+     *
+     * <p>Consumers that must observe the same run state, such as the message queue, read the
+     * processor from the handler instead of injecting their own: a handler created through the
+     * builder may own a private processor.
+     *
+     * @return the request processor
+     */
+    public AguiRequestProcessor getProcessor() {
+        return processor;
+    }
+
+    /**
      * Handle an AG-UI run request.
      *
      * <p>This method parses the request body as {@link RunAgentInput}, resolves the

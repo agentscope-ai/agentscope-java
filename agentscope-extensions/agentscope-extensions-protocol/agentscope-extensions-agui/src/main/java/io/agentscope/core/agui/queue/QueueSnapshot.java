@@ -29,9 +29,10 @@ public record QueueSnapshot(List<Item> items, boolean active, boolean awaitingCo
     /**
      * A single queued message.
      *
+     * <p>Snapshots only contain messages that are still waiting, so an item carries no state.
+     *
      * @param messageId the message identifier
      * @param position the one-based queue position
-     * @param state the current state
      */
-    public record Item(String messageId, int position, String state) {}
+    public record Item(String messageId, int position) {}
 }

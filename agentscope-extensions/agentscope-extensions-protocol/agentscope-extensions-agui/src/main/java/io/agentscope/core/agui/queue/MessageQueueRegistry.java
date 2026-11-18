@@ -15,13 +15,15 @@
  */
 package io.agentscope.core.agui.queue;
 
+import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Registry of per-thread message queues.
  *
- * <p>Queues are created lazily. The registry lives in-process only: a restart drops all queued
- * messages.
+ * <p>Queues are created on the first accepted message and never for read-only calls, so probing
+ * arbitrary thread identifiers cannot grow the registry. The registry lives in-process only: a
+ * restart drops all queued messages, and two application instances do not share queues.
  */
 public final class MessageQueueRegistry {
 
@@ -33,9 +35,18 @@ public final class MessageQueueRegistry {
      * Creates a registry.
      *
      * @param capacity maximum number of queued messages per thread
-     * @param retention maximum number of identifiers remembered per thread for deduplication
+     * @param retention maximum number of identifiers remembered per thread for deduplication;
+     *     must be at least {@code capacity} so a queued message's identifier is never evicted
+     *     before the message is claimed
      */
     public MessageQueueRegistry(int capacity, int retention) {
+        if (capacity <= 0) {
+            throw new IllegalArgumentException("capacity must be positive");
+        }
+        if (retention < capacity) {
+            throw new IllegalArgumentException(
+                    "retention must be greater than or equal to capacity");
+        }
         this.capacity = capacity;
         this.retention = retention;
     }
@@ -51,6 +62,21 @@ public final class MessageQueueRegistry {
             throw new IllegalArgumentException("threadId cannot be blank");
         }
         return queues.computeIfAbsent(threadId, id -> new ThreadMessageQueue(capacity, retention));
+    }
+
+    /**
+     * Returns the queue of a thread without creating one.
+     *
+     * <p>Read paths use this so that a status request for an unknown thread leaves no state behind.
+     *
+     * @param threadId the AG-UI thread identifier
+     * @return the existing queue, or empty when the thread never queued a message
+     */
+    public Optional<ThreadMessageQueue> find(String threadId) {
+        if (threadId == null || threadId.isBlank()) {
+            return Optional.empty();
+        }
+        return Optional.ofNullable(queues.get(threadId));
     }
 
     /**

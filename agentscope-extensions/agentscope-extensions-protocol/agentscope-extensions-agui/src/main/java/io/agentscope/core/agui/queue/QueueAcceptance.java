@@ -21,7 +21,8 @@ package io.agentscope.core.agui.queue;
  * @param status acceptance status
  * @param messageId the message identifier
  * @param position one-based queue position, or {@code -1} when the message was not queued
- * @param state the current state of the message when known
+ * @param state the message state when the message was queued ({@code QUEUED} for a new one, the
+ *     known state for a duplicate), or the rejection status when rejected
  */
 public record QueueAcceptance(Status status, String messageId, int position, String state) {
 
@@ -45,7 +46,8 @@ public record QueueAcceptance(Status status, String messageId, int position, Str
      * @return the acceptance
      */
     public static QueueAcceptance accepted(String messageId, int position) {
-        return new QueueAcceptance(Status.ACCEPTED, messageId, position, "QUEUED");
+        return new QueueAcceptance(
+                Status.ACCEPTED, messageId, position, QueuedMessage.State.QUEUED.name());
     }
 
     /**
@@ -78,14 +80,5 @@ public record QueueAcceptance(Status status, String messageId, int position, Str
      */
     public static QueueAcceptance full(String messageId) {
         return new QueueAcceptance(Status.FULL, messageId, -1, "FULL");
-    }
-
-    /**
-     * Returns whether the message is present in the queue after this call.
-     *
-     * @return {@code true} for accepted or duplicate outcomes
-     */
-    public boolean accepted() {
-        return status == Status.ACCEPTED || status == Status.DUPLICATE;
     }
 }

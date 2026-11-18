@@ -106,6 +106,19 @@ public class AguiMvcController {
     }
 
     /**
+     * Returns the request processor that backs this controller.
+     *
+     * <p>Consumers that must observe the same run state, such as the message queue, read the
+     * processor from the controller instead of injecting their own: a controller created through
+     * the builder may own a private processor.
+     *
+     * @return the request processor
+     */
+    public AguiRequestProcessor getProcessor() {
+        return processor;
+    }
+
+    /**
      * Handle an AG-UI run request.
      *
      * @param input The run agent input

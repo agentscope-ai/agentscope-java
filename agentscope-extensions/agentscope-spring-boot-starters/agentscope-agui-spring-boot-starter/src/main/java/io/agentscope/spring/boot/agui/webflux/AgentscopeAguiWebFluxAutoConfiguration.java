@@ -92,12 +92,17 @@ public class AgentscopeAguiWebFluxAutoConfiguration {
     }
 
     /**
-     * Creates the AG-UI WebFlux handler bean.
+     * Creates the AG-UI request processor bean.
+     *
+     * <p>The run handler and the message queue must observe the same run state, so the processor is
+     * exposed as a bean: the run handler is built from it, and the queue endpoint takes the
+     * processor from that handler. Applications can provide their own
+     * {@code AguiRequestProcessor} bean to replace the default one.
      *
      * @param registry The agent registry
      * @param sessionManager The thread session manager
      * @param props The configuration properties
-     * @return A new AguiWebFluxHandler
+     * @return A new AguiRequestProcessor
      */
     @Bean
     @ConditionalOnMissingBean
@@ -119,9 +124,18 @@ public class AgentscopeAguiWebFluxAutoConfiguration {
                 .config(adapterConfig(props, eventConvertersProvider, eventEnrichersProvider))
                 .adapterFactory(adapterFactoryProvider.getIfAvailable())
                 .runtimeContextResolver(runtimeContextResolverProvider.getIfAvailable())
+                .recordLastRunId(props.getQueue().isEnabled())
                 .build();
     }
 
+    /**
+     * Creates the AG-UI WebFlux handler bean.
+     *
+     * @param requestProcessor The AG-UI request processor
+     * @param props The configuration properties
+     * @param requestBodyParser The AG-UI request body parser
+     * @return A new AguiWebFluxHandler
+     */
     @Bean
     @ConditionalOnMissingBean
     public AguiWebFluxHandler aguiWebFluxHandler(
@@ -182,8 +196,12 @@ public class AgentscopeAguiWebFluxAutoConfiguration {
     /**
      * Creates the queue endpoints when the queue is enabled.
      *
+     * <p>The controller is taken from the transport bean rather than from a fresh processor bean:
+     * an application that replaces {@code AguiWebFluxHandler} with its own builder still gets a
+     * queue that observes the runs of that handler.
+     *
      * @param registry The message queue registry
-     * @param requestProcessor The shared request processor
+     * @param aguiWebFluxHandler The AG-UI WebFlux handler that executes the runs
      * @param requestBodyParser The AG-UI request body parser
      * @return A new AguiQueueController
      */
@@ -192,9 +210,10 @@ public class AgentscopeAguiWebFluxAutoConfiguration {
     @ConditionalOnProperty(prefix = "agentscope.agui.queue", name = "enabled", havingValue = "true")
     public AguiQueueController aguiQueueController(
             MessageQueueRegistry registry,
-            AguiRequestProcessor requestProcessor,
+            AguiWebFluxHandler aguiWebFluxHandler,
             AguiRequestBodyParser requestBodyParser) {
-        return new AguiQueueController(registry, requestProcessor, requestBodyParser);
+        return new AguiQueueController(
+                registry, aguiWebFluxHandler.getProcessor(), requestBodyParser);
     }
 
     private static AguiAdapterConfig adapterConfig(
