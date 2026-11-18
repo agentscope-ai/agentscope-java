@@ -82,6 +82,8 @@ Recording failures do not trigger provider retries, and committed-result replay 
 
 Harness defaults to `WorkspaceThreadJournalStore`, scoped by its Workspace Filesystem. POSIX local storage uses atomic file commits under `.agentscope-runtime/`; Windows uses `journal.sqlite3` in that directory. Remote storage uses a reserved BaseStore partition. Do not edit internal files or keys manually.
 
+With `RemoteFilesystemSpec`, native thread journals use the remote `sessions` backend and its configured isolation scope. Custom `CompositeFilesystem` assemblies can pass an explicit journal backend as the third constructor argument; file routing remains independent. Existing local journals are not migrated automatically.
+
 Override storage with `.threadJournalStore(store)`. Custom backends implement `ThreadJournalStore`; atomic storage implementations can supply `AtomicJournalStorage` and reuse `AtomicThreadJournal`. Preserve CAS, writer fencing, ordered/idempotent batches and export cursors. Filesystems expose this through `journalStorage(context)`; ordinary file reads/writes cannot implement atomic journal commits.
 
 `ThreadJournalStore.list(ctx)` discovers Threads only within the caller's storage scope; SESSION isolation does not enumerate other Sessions. In-memory stores are process-local. Shared persistence alone provides neither background claiming nor autonomous recovery; use a Durable Backend for those capabilities.
