@@ -72,6 +72,16 @@ agentBuilder.instruction(
         "Preserve public API behavior and report which checks support the proposed fix.");
 ```
 
+<Note>
+`instruction` is available in AgentScope Java 2.1 and later; the released 2.0.x line does not provide it. On 2.0.x, add the rule to `sysPrompt` together with your existing prompt:
+
+```java
+agentBuilder.sysPrompt(
+        "Investigate changes, implement fixes, and report supporting evidence. "
+                + "Preserve public API behavior and report which checks support the proposed fix.");
+```
+</Note>
+
 Workspace material is loaded once per Agent call. It includes project rules, environment guidance, and reference material such as `MEMORY.md` and knowledge files. Editing one of these files during a tool call does not automatically reload the workspace context for the next reasoning step in that same call. Read a changed file explicitly through a tool when needed; the next Agent call loads workspace material again. Mode rules and current PLAN/BUILD state refresh at model boundaries, including transitions within a call.
 
 <span id="add-dynamic-business-context" />

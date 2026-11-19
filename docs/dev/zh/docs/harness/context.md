@@ -69,6 +69,14 @@ try (HarnessAgent agent = builder.build()) {
 builder.instruction("test-policy", "修改代码后运行相关测试；无法运行时说明原因。");
 ```
 
+<Note>
+`instruction` 从 AgentScope Java 2.1 起提供，已发布的 2.0.x 版本没有该方法；在 2.0.x 中请保留原有系统提示，并将同样的规则并入 `sysPrompt`：
+
+```java
+builder.sysPrompt("修改代码后运行相关测试；无法运行时说明原因。");
+```
+</Note>
+
 这些规则进入 System。Harness 还会加入内置工作原则、环境信息，以及当前模式的行为规则。工作区中的 `MEMORY.md`、知识材料和额外上下文文件则作为**参考资料**提供，不会因为来自文件就成为 System 指令。
 
 工作区材料在一次 Agent 调用开始时加载。因此，执行期间修改 `AGENTS.md` 或 `MEMORY.md`，不会自动改变本次调用已经加载的材料；下一次调用才会重新读取。若某项业务数据需要在工具执行后立即刷新，应使用下一节的动态来源。
