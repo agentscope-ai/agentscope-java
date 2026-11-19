@@ -266,6 +266,11 @@ public final class ToolContextState {
             @JsonProperty("depth") int depth,
             @JsonProperty("reusable") boolean reusable) {
 
+        /** Pre-2.x entries had no reusable flag and retained the agent for follow-up sends. */
+        public SpawnEntry(String key, String agentId, String sessionId, String label, int depth) {
+            this(key, agentId, sessionId, label, depth, true);
+        }
+
         @JsonCreator
         public SpawnEntry(
                 @JsonProperty("key") String key,
@@ -273,13 +278,8 @@ public final class ToolContextState {
                 @JsonProperty("session_id") String sessionId,
                 @JsonProperty("label") String label,
                 @JsonProperty("depth") int depth,
-                @JsonProperty("reusable") boolean reusable) {
-            this.key = key;
-            this.agentId = agentId;
-            this.sessionId = sessionId;
-            this.label = label;
-            this.depth = depth;
-            this.reusable = reusable;
+                @JsonProperty("reusable") Boolean reusable) {
+            this(key, agentId, sessionId, label, depth, reusable == null || reusable);
         }
     }
 
