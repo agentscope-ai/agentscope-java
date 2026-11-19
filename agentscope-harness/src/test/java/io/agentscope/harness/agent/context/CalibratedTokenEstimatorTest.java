@@ -16,11 +16,14 @@
 package io.agentscope.harness.agent.context;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.core.journal.InvocationRecorder;
+import io.agentscope.core.journal.RecordedModels;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
@@ -93,6 +96,29 @@ class CalibratedTokenEstimatorTest {
         // Delegate says 600 for the candidate and said 400 for the anchored request:
         // 777 + (600 - 400) = 977.
         assertEquals(977, estimate.tokens());
+        assertEquals("biased+provider-anchor", estimate.method());
+    }
+
+    @Test
+    void reusesAnchorAcrossFreshRecordingWrappers() {
+        CalibratedTokenEstimator estimator = new CalibratedTokenEstimator(biased);
+        RuntimeContext recordingContext =
+                RuntimeContext.builder()
+                        .put(InvocationRecorder.CONTEXT_KEY, mock(InvocationRecorder.class))
+                        .build();
+        Msg first = msg("a");
+        Msg second = msg("b");
+        Model firstCallModel = RecordedModels.wrap(primary, recordingContext, "REASONING");
+        estimator.recordPreparedRequest(input(List.of(first, second), List.of(), firstCallModel));
+        estimator.calibrateFromHistory(List.of(first, second, assistantWithUsage(777)));
+
+        Model nextCallModel = RecordedModels.wrap(primary, recordingContext, "REASONING");
+        assertNotSame(firstCallModel, nextCallModel);
+        var estimate =
+                estimator.estimate(
+                        input(List.of(first, second, msg("c")), List.of(), nextCallModel));
+
+        assertEquals(877, estimate.tokens());
         assertEquals("biased+provider-anchor", estimate.method());
     }
 

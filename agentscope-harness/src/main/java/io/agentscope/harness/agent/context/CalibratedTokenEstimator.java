@@ -15,6 +15,7 @@
  */
 package io.agentscope.harness.agent.context;
 
+import io.agentscope.core.journal.RecordedModels;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.middleware.ModelCallInput;
@@ -96,7 +97,7 @@ public final class CalibratedTokenEstimator implements ContextTokenEstimator {
         Slot slot = slots.get().get(messages.get(0).getId());
         Anchor current = slot == null ? null : slot.anchor();
         if (current == null
-                || input.model() != current.model()
+                || modelIdentity(input.model()) != current.model()
                 || !startsWith(messages, current.prefix())) {
             return raw;
         }
@@ -142,7 +143,11 @@ public final class CalibratedTokenEstimator implements ContextTokenEstimator {
             return;
         }
         Anchor committed =
-                new Anchor(base.model(), base.prefix(), usage.getInputTokens(), base.rawEstimate());
+                new Anchor(
+                        modelIdentity(base.model()),
+                        base.prefix(),
+                        usage.getInputTokens(),
+                        base.rawEstimate());
         // Commit only while the verified base still holds its slot: a concurrently recorded
         // request for the same conversation keeps its own pairing chance.
         slots.updateAndGet(
@@ -223,6 +228,12 @@ public final class CalibratedTokenEstimator implements ContextTokenEstimator {
 
     private static List<String> messageHashes(List<Msg> messages) {
         return messages.stream().map(CalibratedTokenEstimator::messageHash).toList();
+    }
+
+    private static Model modelIdentity(Model model) {
+        return model instanceof RecordedModels.ManagedModel managed
+                ? managed.modelIdentity()
+                : model;
     }
 
     private static String messageHash(Msg msg) {
