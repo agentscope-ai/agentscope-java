@@ -410,7 +410,9 @@ A parked Run may still report `run.ended` first; that event is not terminal for 
 carries every pending interaction of the Turn, after closing the steps, messages and tool calls
 the Run opened. Each interrupt id is the Durable interaction id and its `toolCallId` is the
 interaction request id, so the application resumes with the id it received. A Run stopped before
-completion finishes with the AG-UI cancelled outcome instead of reporting success.
+completion finishes with the AG-UI cancelled outcome instead of reporting success. A waiting Turn
+without pending interactions, such as one waiting on a signal, has no AG-UI interrupt to deliver
+and produces no terminal frame; the host decides whether to keep or end that stream.
 
 The default `LiveEvents.local()` bus connects producers and observers only inside one Runtime
 assembly. A split Brain/API deployment must provide the same shared `LiveEvents` transport to both

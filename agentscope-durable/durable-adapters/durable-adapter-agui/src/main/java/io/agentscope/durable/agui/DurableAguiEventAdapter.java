@@ -45,6 +45,10 @@ import java.util.Set;
  * are not terminal and are not mapped on their own. Each interrupt id is the Durable interaction
  * id, and its {@code toolCallId} is the interaction request id (the tool call id), which the client
  * echoes as {@code interruptId} to resume.
+ *
+ * <p>A waiting Turn without pending interactions (for example waiting on a signal) has no AG-UI
+ * interrupt to deliver and produces no terminal frame; the host decides whether to keep or end that
+ * stream.
  */
 public final class DurableAguiEventAdapter {
     private static final Map<String, Object> CONFIRM_RESPONSE_SCHEMA =
@@ -231,7 +235,9 @@ public final class DurableAguiEventAdapter {
         String toolName = call.path("name").asText("tool");
         boolean confirmation = "confirmation".equals(kind);
         Map<String, Object> metadata = new LinkedHashMap<>();
-        metadata.put(AguiInterruptConstants.METADATA_AGENTSCOPE_INTERRUPT_KIND, kind);
+        metadata.put(
+                AguiInterruptConstants.METADATA_AGENTSCOPE_INTERRUPT_KIND,
+                confirmation ? AguiInterruptConstants.INTERRUPT_KIND_PERMISSION_CONFIRM : kind);
         metadata.put(AguiInterruptConstants.METADATA_TOOL_NAME, toolName);
         metadata.put("automatic", interaction.path("automatic").asBoolean());
         if (requestId != null) metadata.put("requestId", requestId);

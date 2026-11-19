@@ -363,7 +363,9 @@ Managed Agents 事件格式。为当前连接启用 `EventDeltaType.MESSAGE` 后
 AG-UI Run：映射为一个 `RUN_FINISHED`，其 interrupt outcome 携带该 Turn 的全部待处理
 interaction，并先关闭该 Run 已打开的 step、message 与 tool call。每个 interrupt id 是
 Durable interaction id，其 `toolCallId` 是 interaction request id，应用用收到的 id 恢复。
-未完成即停止的 Run 以 AG-UI cancelled outcome 结束，不会报告为成功。
+未完成即停止的 Run 以 AG-UI cancelled outcome 结束，不会报告为成功。没有待处理
+interaction 的等待（例如等待 signal）没有可投递的 AG-UI interrupt，因此不产生终止帧；
+由宿主决定保留还是结束该流。
 
 默认 `LiveEvents.local()` 只连接同一个 Runtime 装配内的生产者与观察者。Brain/API 分离部署
 而且需要实时预览时，两侧必须配置同一个共享 `LiveEvents` 传输。即使该传输缺失或丢事件，

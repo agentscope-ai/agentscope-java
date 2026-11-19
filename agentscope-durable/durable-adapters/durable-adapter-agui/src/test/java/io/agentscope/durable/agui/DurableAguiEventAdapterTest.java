@@ -90,6 +90,11 @@ class DurableAguiEventAdapterTest {
                 "send_email",
                 confirmation.metadata().get(AguiInterruptConstants.METADATA_TOOL_NAME));
         assertEquals(
+                AguiInterruptConstants.INTERRUPT_KIND_PERMISSION_CONFIRM,
+                confirmation
+                        .metadata()
+                        .get(AguiInterruptConstants.METADATA_AGENTSCOPE_INTERRUPT_KIND));
+        assertEquals(
                 Map.of("to", "person@example.com"),
                 confirmation.metadata().get(AguiInterruptConstants.METADATA_TOOL_INPUT));
         assertEquals(false, confirmation.metadata().get("automatic"));
@@ -99,6 +104,9 @@ class DurableAguiEventAdapterTest {
         assertEquals("call-2", external.toolCallId());
         assertEquals("Tool 'search' requires external execution", external.message());
         assertEquals(true, external.metadata().get("automatic"));
+        assertEquals(
+                "external_execution",
+                external.metadata().get(AguiInterruptConstants.METADATA_AGENTSCOPE_INTERRUPT_KIND));
     }
 
     @Test
