@@ -19,6 +19,7 @@ import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.EventSource;
 import io.agentscope.core.agent.EventType;
+import io.agentscope.core.agent.ExecutionIdentity;
 import io.agentscope.core.agent.RunOutcome;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.agent.StreamOptions;
@@ -54,6 +55,8 @@ import io.agentscope.harness.agent.subagent.protocol.RemotePendingConfirm;
 import io.agentscope.harness.agent.subagent.protocol.RemoteStreamDetail;
 import io.agentscope.harness.agent.subagent.task.AgentProtocolTransport;
 import io.agentscope.harness.agent.subagent.task.BackgroundTask;
+import io.agentscope.harness.agent.subagent.task.RemoteSessionAwaitingConfirmException;
+import io.agentscope.harness.agent.subagent.task.RemoteSessionBusyException;
 import io.agentscope.harness.agent.subagent.task.RemoteSubagentTransport;
 import io.agentscope.harness.agent.subagent.task.RemoteSubmitContext;
 import io.agentscope.harness.agent.subagent.task.RemoteTarget;
@@ -238,6 +241,13 @@ public class AgentSpawnTool implements AutoCloseable {
     private volatile SubagentGatewayBridge gatewayBridge;
     private volatile RemoteSubagentTransport remoteTransport = new AgentProtocolTransport();
 
+    /**
+     * One spawned subagent.
+     *
+     * <p>{@code sessionId} is the child's conversation, the same value for every follow-up. It is
+     * what {@code agent_send} sends to a remote child so the server keeps the conversation, which
+     * is why no per-turn task id has to be remembered here.
+     */
     private record SpawnedAgent(
             String key,
             String agentId,
@@ -417,8 +427,10 @@ public class AgentSpawnTool implements AutoCloseable {
                     Every response starts with three lines: agent_key (pass this verbatim to \
                     agent_send as agent_key), agent_id (the subagent type name), and session_id \
                     (internal; do not use as agent_key). Sync mode returns the reply below that; \
-                    async (timeout_seconds=0) adds task_id for task_output or wait_async_results; \
-                    task_id is NOT agent_key. Multiple sync tool calls in one turn run in parallel \
+                    async (timeout_seconds=0) adds task_id for task_output or wait_async_results. \
+                    task_id is not agent_key: it names this one task for task_output; agent_send \
+                    continues the child's conversation by agent_key or label. \
+                    Multiple sync tool calls in one turn run in parallel \
                     by default; pass a Toolkit with parallel=false to serialize, \
                     or use async tasks for fire-and-forget parallelism. \
                     The subagent does not inherit the parent conversation, so include every \
@@ -759,13 +771,13 @@ public class AgentSpawnTool implements AutoCloseable {
             timeoutManaged = true,
             description =
                     """
-                    Send a message to an existing subagent. Use the exact string from the \
-                    agent_key line of agent_spawn output (starts with agent:), or the label \
-                    you set at spawn. Do not pass agent_id, session_id, or task_id here. \
-                    timeout_seconds=0 returns task_id for task_output or wait_async_results. \
-                    Sends are follow-ups to a subagent that already holds the context you \
-                    gave it. Use follow-ups to steer the task or continue its work. Do not \
-                    re-send the same request reworded to bypass a permission denial.\
+                    Send a follow-up message to a subagent created by agent_spawn. Use the exact \
+                    string from the agent_key line of agent_spawn output (starts with agent:), or \
+                    the label you set at spawn. A follow-up keeps the child's conversation, \
+                    whether the child runs locally or remotely. Sends are follow-ups to a \
+                    subagent that already holds the context you gave it: they steer the task or \
+                    continue its work, and never start a new subagent. Do not re-send the same \
+                    request reworded to bypass a permission denial.\
                     """)
     public Mono<ToolResultBlock> agentSend(
             RuntimeContext runtimeContext,
@@ -1789,13 +1801,47 @@ public class AgentSpawnTool implements AutoCloseable {
     }
 
     /**
+     * Id of the agent that owns the current call, read from the {@link ExecutionIdentity} the running
+     * agent publishes into its per-call context.
+     *
+     * <p>The component is the invocation's {@code journalAgentId} — {@code name} when the agent has
+     * one, its {@code agentId} otherwise — which is the identity the framework treats as stable: it
+     * names the state directory and travels on every {@link io.agentscope.core.event.AgentEvent}.
+     * Reading {@code Agent#getAgentId()} instead would report a random UUID for the common case of an
+     * agent configured by name only.
+     *
+     * @return the caller's id, or {@code null} when the call is not bound to an execution (a host
+     *     invoking the tool directly)
+     */
+    private static String callerAgentId(RuntimeContext runtimeContext) {
+        if (runtimeContext == null) {
+            return null;
+        }
+        Object identity = runtimeContext.get(ExecutionIdentity.CONTEXT_KEY);
+        return identity instanceof ExecutionIdentity execution ? execution.agentId() : null;
+    }
+
+    /**
      * Builds submission metadata for a remote task (streaming preference, parent identity, denied
      * permission rules, caller-defined attributes).
      */
     private RemoteSubmitContext buildRemoteSubmitContext(
             RuntimeContext runtimeContext, AgentState parentState, SubagentDeclaration decl) {
+        return buildRemoteSubmitContext(runtimeContext, parentState, decl, null);
+    }
+
+    /**
+     * As {@link #buildRemoteSubmitContext(RuntimeContext, AgentState, SubagentDeclaration)}, with
+     * {@code sessionId} naming the child conversation the submission runs in.
+     */
+    private RemoteSubmitContext buildRemoteSubmitContext(
+            RuntimeContext runtimeContext,
+            AgentState parentState,
+            SubagentDeclaration decl,
+            String sessionId) {
         String userId = runtimeContext != null ? runtimeContext.getUserId() : null;
         String parentSessionId = runtimeContext != null ? runtimeContext.getSessionId() : null;
+        String parentAgentId = callerAgentId(runtimeContext);
         boolean stream = decl != null && decl.isRemoteStreaming();
         String detail =
                 stream
@@ -1803,7 +1849,9 @@ public class AgentSpawnTool implements AutoCloseable {
                         : RemoteStreamDetail.STATUS.wireValue();
         return RemoteSubmitContext.builder().userId(userId).parentSessionId(parentSessionId).stream(
                         stream)
+                .parentAgentId(parentAgentId)
                 .detail(detail)
+                .sessionId(sessionId)
                 .denyRules(collectParentDenyRules(parentState, Optional.ofNullable(decl)))
                 .attributes(collectRemoteContextAttributes(runtimeContext, decl))
                 .build();
@@ -1868,6 +1916,10 @@ public class AgentSpawnTool implements AutoCloseable {
     /**
      * Reactive entry for remote sync execution. Captures {@link AgentEventEmitter} from Reactor
      * Context before blocking on the remote task.
+     *
+     * <p>{@code sessionId} is the child's conversation. The submission carries it so the run lands
+     * in that session instead of opening a new one; {@code agentKey} is only used for logging and
+     * event tagging.
      */
     private Mono<ToolResultBlock> runRemoteSyncReactive(
             RuntimeContext runtimeContext,
@@ -1879,6 +1931,8 @@ public class AgentSpawnTool implements AutoCloseable {
             String input,
             long timeoutMs,
             boolean forceSync,
+            String sessionId,
+            String agentKey,
             Lease lease) {
         return Mono.deferContextual(
                 ctxView -> {
@@ -1896,6 +1950,8 @@ public class AgentSpawnTool implements AutoCloseable {
                                                     timeoutMs,
                                                     emitterOpt.orElse(null),
                                                     forceSync,
+                                                    sessionId,
+                                                    agentKey,
                                                     lease))
                             .doOnError(ignored -> lease.close())
                             .doFinally(
@@ -1927,10 +1983,12 @@ public class AgentSpawnTool implements AutoCloseable {
             long timeoutMs,
             AgentEventEmitter emitter,
             boolean forceSync,
+            String sessionId,
+            String agentKey,
             Lease lease) {
         String taskId = "task_" + UUID.randomUUID();
         RemoteSubmitContext submitContext =
-                buildRemoteSubmitContext(runtimeContext, parentState, decl);
+                buildRemoteSubmitContext(runtimeContext, parentState, decl, sessionId);
         TaskRunSpec spec =
                 new TaskRunSpec.RemoteTaskRunSpec(
                         decl.getUrl(), decl.getHeaders(), agentId, input, submitContext);
@@ -2028,6 +2086,37 @@ public class AgentSpawnTool implements AutoCloseable {
             TaskStatus ts = bgTask.getTaskStatus();
             if (ts == TaskStatus.FAILED) {
                 Exception err = bgTask.getError();
+                if (err instanceof RemoteSessionAwaitingConfirmException paused) {
+                    // Nothing was delivered: the session's previous turn is waiting for a
+                    // confirmation decision and will not finish on its own. Waiting with
+                    // task_output cannot help; the caller must resume or cancel that turn.
+                    StringBuilder awaiting =
+                            new StringBuilder(header).append("\nstatus: awaiting_confirm");
+                    if (paused.pendingTaskId() != null) {
+                        awaiting.append("\ntask_id: ").append(paused.pendingTaskId());
+                    }
+                    awaiting.append(
+                            "\nThe subagent is waiting for confirmation of a pending tool call, so"
+                                    + " this message was not delivered. Resume that turn with the"
+                                    + " confirmation decisions, or cancel it, then send again.");
+                    return ToolResultBlock.success(awaiting.toString());
+                }
+                if (err instanceof RemoteSessionBusyException busy) {
+                    // Nothing was delivered: the session still has a live turn. The allocated task
+                    // id does not exist remotely, so the actionable facts are the session and the
+                    // running turn — waiting on it with task_output is what unblocks the next send.
+                    StringBuilder stillRunning =
+                            new StringBuilder(header).append("\nstatus: still_running");
+                    if (busy.taskId() != null) {
+                        stillRunning.append("\ntask_id: ").append(busy.taskId());
+                    }
+                    stillRunning.append(
+                            "\nThe subagent has not finished its previous turn, so this message was"
+                                    + " not delivered. Wait for that turn with task_output("
+                                    + "task_id='<the task id returned by the previous send>') or"
+                                    + " wait_async_results(task_ids=[...]), then send again.");
+                    return ToolResultBlock.success(stillRunning.toString());
+                }
                 String msg = err != null ? err.getMessage() : "remote task failed";
                 return ToolResultBlock.text(header + "\nstatus: error\nerror: " + msg)
                         .withState(ToolResultState.ERROR);
@@ -2267,7 +2356,10 @@ public class AgentSpawnTool implements AutoCloseable {
                                                 spawned.agentId(),
                                                 capturedTask,
                                                 buildRemoteSubmitContext(
-                                                        runtimeContext, parentState, d));
+                                                        runtimeContext,
+                                                        parentState,
+                                                        d,
+                                                        spawned.sessionId()));
                             } else {
                                 spec =
                                         new TaskRunSpec.LocalTaskRunSpec(
@@ -2326,6 +2418,8 @@ public class AgentSpawnTool implements AutoCloseable {
                                     task.trim(),
                                     timeoutMs,
                                     forceSync,
+                                    spawned.sessionId(),
+                                    spawned.key(),
                                     lease);
                         }
 

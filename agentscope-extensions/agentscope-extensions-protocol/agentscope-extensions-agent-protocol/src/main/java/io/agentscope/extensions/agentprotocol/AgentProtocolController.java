@@ -73,6 +73,29 @@ public class AgentProtocolController {
             ok.put("task_id", taskId);
             ok.put("status", "pending");
             return ResponseEntity.ok(ok);
+        } catch (IllegalArgumentException e) {
+            // The caller named a session it does not own, or supplied an unusable id.
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        } catch (SessionAwaitingConfirmException e) {
+            // The session's previous turn is paused for confirmation. Report the pending task and
+            // its deadline: waiting on the session does not help, cancelling that task does.
+            Map<String, Object> conflict = new LinkedHashMap<>();
+            conflict.put("error", e.getMessage());
+            conflict.put("status", "awaiting_confirm");
+            conflict.put("session_id", e.sessionId());
+            conflict.put("pending_task_id", e.pendingTaskId());
+            if (e.expiresAt() != null) {
+                conflict.put("confirm_expires_at", e.expiresAt().toString());
+            }
+            return ResponseEntity.status(HttpStatus.CONFLICT).body(conflict);
+        } catch (SessionBusyException e) {
+            // The session has a live turn. Report which session is busy so the caller can wait for
+            // that turn instead of retrying the submission.
+            Map<String, Object> conflict = new LinkedHashMap<>();
+            conflict.put("error", e.getMessage());
+            conflict.put("status", "session_busy");
+            conflict.put("session_id", e.sessionId());
+            return ResponseEntity.status(HttpStatus.CONFLICT).body(conflict);
         } catch (IllegalStateException e) {
             return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of("error", e.getMessage()));
         }

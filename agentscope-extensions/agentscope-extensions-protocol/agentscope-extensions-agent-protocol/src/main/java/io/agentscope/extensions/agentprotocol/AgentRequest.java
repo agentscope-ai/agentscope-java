@@ -22,7 +22,12 @@ import java.util.Map;
 /**
  * Everything an {@link AgentFactory} needs to pick or build the agent for one task run.
  *
- * @param taskId task identifier, also used as the agent session id
+ * <p>{@code taskId} identifies the submission, not necessarily the agent session: several
+ * submissions of one conversation keep their own task ids while naming the same {@code
+ * context.session_id}. Use {@link #sessionId()} to route by conversation.
+ *
+ * @param taskId task identifier of this submission; the agent session is the task's own id unless
+ *     {@code context.session_id} named another session
  * @param agentId requested agent id from {@code POST /tasks}
  * @param input user input; empty on a resume run, which carries confirmation decisions instead
  * @param userId parsed from {@code context.user_id}
@@ -50,6 +55,19 @@ public record AgentRequest(
     /** Returns the raw {@code context} value for {@code key}, or {@code null} when absent. */
     public Object contextValue(String key) {
         return key == null ? null : context.get(key);
+    }
+
+    /**
+     * Session this run executes in: {@code context.session_id} when the caller named one, {@link
+     * #taskId()} otherwise.
+     *
+     * <p>Distinct from {@link #taskId()}, which names one submission. Every turn of a conversation
+     * carries a new task id but repeats this value, so it is what an {@link AgentFactory} should
+     * route on.
+     */
+    public String sessionId() {
+        String named = contextString(AgentProtocolConstants.CONTEXT_SESSION_ID_FIELD);
+        return named == null || named.isBlank() ? taskId : named.trim();
     }
 
     /** Returns the {@code context} value for {@code key} as a string, or {@code null}. */

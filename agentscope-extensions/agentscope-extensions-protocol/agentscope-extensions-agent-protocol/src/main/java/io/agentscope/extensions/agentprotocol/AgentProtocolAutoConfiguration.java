@@ -43,6 +43,14 @@ import org.springframework.context.annotation.Bean;
  * <p>All {@link RuntimeContextCustomizer} beans are applied, in {@code @Order}, to the runtime
  * context of every task run.
  *
+ * <p>{@link ProtocolTaskRunRegistry}, {@link ProtocolTaskContextStore} and {@link
+ * ProtocolSessionRegistry} default to process-local implementations. A deployment where {@code
+ * /tasks}, {@code /resume}, {@code /cancel} and the {@code /wait} poll can reach different instances
+ * declares a {@link ProtocolStores} bean instead; all three then read and write the same {@link
+ * io.agentscope.harness.agent.filesystem.remote.store.BaseStore}, and it also needs a shared {@link
+ * ProtocolTaskRepository} and {@link AgentProtocolEventBus}. Declaring one collaborator bean
+ * explicitly still wins over both.
+ *
  * <p>For concurrent task execution, register the {@link HarnessAgent} bean as
  * {@code @Scope("prototype")} so that each task obtains its own instance. Alternatively, configure
  * the singleton with {@code checkRunning(false)} if concurrent access is otherwise safe.
@@ -71,12 +79,56 @@ public class AgentProtocolAutoConfiguration {
         return new WorkspaceProtocolTaskRepository(Path.of(properties.getTaskStorePath()));
     }
 
+    /**
+     * Execution ownership and cancellation. A {@link ProtocolStores} bean switches it to a shared
+     * store; without one the registry is process-local, i.e. a single-instance deployment.
+     */
+    @Bean
+    @ConditionalOnMissingBean(ProtocolTaskRunRegistry.class)
+    public ProtocolTaskRunRegistry agentProtocolRunRegistry(
+            ObjectProvider<ProtocolStores> sharedStores) {
+        ProtocolStores shared = sharedStores.getIfAvailable();
+        return shared != null ? shared.runRegistry() : BaseStoreProtocolTaskRunRegistry.inMemory();
+    }
+
+    /**
+     * Submission metadata re-read by {@code /resume}. A {@link ProtocolStores} bean switches it to a
+     * shared store; without one the records stay in process.
+     */
+    @Bean
+    @ConditionalOnMissingBean(ProtocolTaskContextStore.class)
+    public ProtocolTaskContextStore agentProtocolContextStore(
+            ObjectProvider<ProtocolStores> sharedStores) {
+        ProtocolStores shared = sharedStores.getIfAvailable();
+        return shared != null
+                ? shared.contextStore()
+                : BaseStoreProtocolTaskContextStore.inMemory();
+    }
+
+    /**
+     * Ownership record for client-named sessions. A {@link ProtocolStores} bean switches it to a
+     * shared store, which is what a deployment where a follow-up can land on another instance
+     * needs.
+     */
+    @Bean
+    @ConditionalOnMissingBean(ProtocolSessionRegistry.class)
+    public ProtocolSessionRegistry agentProtocolSessionRegistry(
+            ObjectProvider<ProtocolStores> sharedStores) {
+        ProtocolStores shared = sharedStores.getIfAvailable();
+        return shared != null
+                ? shared.sessionRegistry()
+                : BaseStoreProtocolSessionRegistry.inMemory();
+    }
+
     @Bean
     @ConditionalOnBean({AgentFactory.class, ProtocolTaskRepository.class})
     public AgentProtocolTaskStore agentProtocolTaskStore(
             AgentFactory agentFactory,
             ProtocolTaskRepository taskRepository,
             AgentProtocolEventBus eventBus,
+            ProtocolTaskRunRegistry runRegistry,
+            ProtocolTaskContextStore contextStore,
+            ProtocolSessionRegistry sessionRegistry,
             AgentProtocolProperties properties,
             ObjectProvider<RuntimeContextCustomizer> runtimeContextCustomizers) {
         return new AgentProtocolTaskStore(
@@ -84,7 +136,10 @@ public class AgentProtocolAutoConfiguration {
                 taskRepository,
                 eventBus,
                 properties,
-                runtimeContextCustomizers.orderedStream().toList());
+                runtimeContextCustomizers.orderedStream().toList(),
+                runRegistry,
+                contextStore,
+                sessionRegistry);
     }
 
     @Bean

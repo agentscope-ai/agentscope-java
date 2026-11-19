@@ -16,6 +16,7 @@
 package io.agentscope.core.agent;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -52,6 +53,7 @@ import java.util.Set;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -78,6 +80,17 @@ class ReActAgentRuntimeContextTest {
                 RuntimeContext ctx, @ToolParam(name = "q", description = "q") String q) {
             SharedPojo p = ctx.get(SharedPojo.class);
             return ctx.getUserId() + "|" + (p != null ? p.value : "null") + "|" + q;
+        }
+    }
+
+    private static class AgentIdTools {
+        @Tool(description = "Read the invocation's journal namespace from the execution identity")
+        public String agent_id_probe(
+                RuntimeContext ctx, @ToolParam(name = "q", description = "q") String q) {
+            Object identity = ctx.get(ExecutionIdentity.CONTEXT_KEY);
+            return identity instanceof ExecutionIdentity execution
+                    ? execution.agentId()
+                    : "no-identity";
         }
     }
 
@@ -157,6 +170,54 @@ class ReActAgentRuntimeContextTest {
                         .getContext()
                         .stream()
                         .anyMatch(m -> m.hasContentBlocks(ToolResultBlock.class)));
+    }
+
+    @Test
+    @DisplayName("Tools read the running agent's id from the per-call context")
+    void toolsReadExecutingAgentId() {
+        Toolkit idToolkit = new Toolkit();
+        idToolkit.registerTool(new AgentIdTools());
+        AtomicInteger modelRound = new AtomicInteger();
+
+        MockModel model =
+                new MockModel(
+                        messages ->
+                                modelRound.getAndIncrement() == 0
+                                        ? List.of(
+                                                createToolResponse(
+                                                        "agent_id_probe", "c1", Map.of("q", "who")))
+                                        : List.of(
+                                                ChatResponse.builder()
+                                                        .content(
+                                                                List.of(
+                                                                        TextBlock.builder()
+                                                                                .text("final")
+                                                                                .build()))
+                                                        .usage(new ChatUsage(1, 1, 0))
+                                                        .build()));
+
+        ReActAgent agent =
+                ReActAgent.builder()
+                        .name("planner")
+                        .agentId("agent-planner")
+                        .sysPrompt(TestConstants.DEFAULT_SYS_PROMPT)
+                        .model(model)
+                        .toolkit(idToolkit)
+                        .build();
+
+        RuntimeContext run = RuntimeContext.builder().userId("u-1").sessionId("s-1").build();
+        Msg out =
+                agent.call(List.of(TestUtils.createUserMessage("User", "who are you")), run)
+                        .block(Duration.ofMillis(TestConstants.DEFAULT_TEST_TIMEOUT_MS));
+
+        assertNotNull(out);
+        // The identity component is the invocation's journal namespace, which prefers name; a tool
+        // delegating work therefore reports the stable readable id, not the configured one.
+        String observed = lastToolText(agent, "u-1", "s-1");
+        assertTrue(observed.contains("planner"), observed);
+        assertFalse(observed.contains("agent-planner"), observed);
+        assertNull(
+                run.get(ExecutionIdentity.CONTEXT_KEY), "the caller context must not be mutated");
     }
 
     @Test

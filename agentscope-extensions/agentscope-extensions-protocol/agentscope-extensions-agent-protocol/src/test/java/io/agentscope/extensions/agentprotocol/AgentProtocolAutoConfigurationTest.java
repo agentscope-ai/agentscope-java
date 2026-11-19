@@ -15,9 +15,14 @@
  */
 package io.agentscope.extensions.agentprotocol;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.agentscope.harness.agent.filesystem.remote.store.InMemoryStore;
 import io.agentscope.harness.agent.subagent.protocol.RemoteAgentEvent;
 import java.util.List;
 import org.junit.jupiter.api.Test;
@@ -52,6 +57,103 @@ class AgentProtocolAutoConfigurationTest {
                                 assertSame(
                                         customEventBus,
                                         context.getBean(AgentProtocolEventBus.class)));
+    }
+
+    @Test
+    void createsProcessLocalCollaboratorsByDefault() {
+        contextRunner.run(
+                context -> {
+                    assertInstanceOf(
+                            BaseStoreProtocolTaskRunRegistry.class,
+                            context.getBean(ProtocolTaskRunRegistry.class));
+                    assertInstanceOf(
+                            BaseStoreProtocolTaskContextStore.class,
+                            context.getBean(ProtocolTaskContextStore.class));
+                });
+    }
+
+    @Test
+    void protocolStoresBeanSwitchesCollaboratorsToTheSharedStore() {
+        InMemoryStore shared = new InMemoryStore();
+        ProtocolStores stores = ProtocolStores.on(shared);
+
+        contextRunner
+                .withBean(ProtocolStores.class, () -> stores)
+                .run(
+                        context -> {
+                            assertSame(
+                                    stores.runRegistry(),
+                                    context.getBean(ProtocolTaskRunRegistry.class));
+                            assertSame(
+                                    stores.contextStore(),
+                                    context.getBean(ProtocolTaskContextStore.class));
+                            context.getBean(ProtocolSessionRegistry.class)
+                                    .registerOrVerify("conv-1", "u1", "worker", "planner");
+                            assertNotNull(
+                                    shared.get(
+                                            List.of("agent-protocol", "session-registry"),
+                                            "conv-1"),
+                                    "the session must land in the configured shared store");
+                        });
+    }
+
+    @Test
+    void keepsUserCollaboratorsWhenProvided() {
+        ProtocolTaskRunRegistry customRegistry = BaseStoreProtocolTaskRunRegistry.inMemory();
+        ProtocolTaskContextStore customStore = BaseStoreProtocolTaskContextStore.inMemory();
+
+        contextRunner
+                .withBean(ProtocolTaskRunRegistry.class, () -> customRegistry)
+                .withBean(ProtocolTaskContextStore.class, () -> customStore)
+                .run(
+                        context -> {
+                            assertSame(
+                                    customRegistry, context.getBean(ProtocolTaskRunRegistry.class));
+                            assertSame(
+                                    customStore, context.getBean(ProtocolTaskContextStore.class));
+                        });
+    }
+
+    @Test
+    void callerParentIdentityIsOffByDefault() {
+        contextRunner.run(
+                context ->
+                        assertFalse(
+                                context.getBean(AgentProtocolProperties.class)
+                                        .isUseCallerParentIdentity()));
+    }
+
+    @Test
+    void bindsCallerParentIdentityFlag() {
+        contextRunner
+                .withPropertyValues("agentscope.agent-protocol.use-caller-parent-identity=true")
+                .run(
+                        context ->
+                                assertTrue(
+                                        context.getBean(AgentProtocolProperties.class)
+                                                .isUseCallerParentIdentity()));
+    }
+
+    @Test
+    void resumeLeaseWaitDefaultsToTwoSeconds() {
+        contextRunner.run(
+                context ->
+                        assertEquals(
+                                2_000L,
+                                context.getBean(AgentProtocolProperties.class)
+                                        .getResumeLeaseWaitMs()));
+    }
+
+    @Test
+    void bindsResumeLeaseWait() {
+        contextRunner
+                .withPropertyValues("agentscope.agent-protocol.resume-lease-wait-ms=750")
+                .run(
+                        context ->
+                                assertEquals(
+                                        750L,
+                                        context.getBean(AgentProtocolProperties.class)
+                                                .getResumeLeaseWaitMs()));
     }
 
     private static final class TestEventBus implements AgentProtocolEventBus {

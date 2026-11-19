@@ -30,11 +30,8 @@ import io.agentscope.core.message.MsgRole;
 import io.agentscope.harness.agent.HarnessAgent;
 import io.agentscope.harness.agent.subagent.task.TaskRecord;
 import io.agentscope.harness.agent.subagent.task.TaskStatus;
-import java.lang.management.ManagementFactory;
-import java.lang.management.ThreadInfo;
-import java.lang.reflect.Field;
 import java.nio.file.Path;
-import java.util.Map;
+import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
@@ -64,7 +61,7 @@ class AgentProtocolTaskStoreConcurrentSubmitTest {
 
     @Test
     @Timeout(30)
-    void taskLockStorageRemainsBoundedAfterUniqueTasksComplete() throws Exception {
+    void completedTasksRetainNoRunOwnershipOrSubmitContext() throws Exception {
         HarnessAgent agent = mock(HarnessAgent.class);
         when(agent.streamEvents(any(Msg.class), any(RuntimeContext.class)))
                 .thenReturn(
@@ -74,9 +71,17 @@ class AgentProtocolTaskStoreConcurrentSubmitTest {
                                                 .role(MsgRole.ASSISTANT)
                                                 .textContent("done")
                                                 .build())));
+        ProtocolTaskRunRegistry runRegistry = BaseStoreProtocolTaskRunRegistry.inMemory();
+        ProtocolTaskContextStore contextStore = BaseStoreProtocolTaskContextStore.inMemory();
         AgentProtocolTaskStore store =
                 new AgentProtocolTaskStore(
-                        AgentFactory.fixed(agent), new WorkspaceProtocolTaskRepository(tempDir));
+                        AgentFactory.fixed(agent),
+                        new WorkspaceProtocolTaskRepository(tempDir),
+                        new AgentProtocolTaskEventBus(),
+                        new AgentProtocolProperties(),
+                        List.of(),
+                        runRegistry,
+                        contextStore);
 
         int submittedTasks = 80;
         for (int i = 0; i < submittedTasks; i++) {
@@ -85,22 +90,15 @@ class AgentProtocolTaskStoreConcurrentSubmitTest {
             assertEquals("success", store.waitFor(taskId, 5_000).get("status"));
         }
 
-        assertTrue(
-                retainedTaskLockCount(store) <= AgentProtocolTaskStore.TASK_LOCK_STRIPE_COUNT,
-                "completed task IDs must not accumulate lock objects");
-    }
-
-    private static int retainedTaskLockCount(AgentProtocolTaskStore store) throws Exception {
-        Field field = AgentProtocolTaskStore.class.getDeclaredField("taskLocks");
-        field.setAccessible(true);
-        Object locks = field.get(store);
-        if (locks instanceof Map<?, ?> lockMap) {
-            return lockMap.size();
+        for (int i = 0; i < submittedTasks; i++) {
+            String taskId = "lock-bound-task-" + i;
+            assertTrue(
+                    runRegistry.find(taskId).isEmpty(),
+                    "completed task must not retain a run lease: " + taskId);
+            assertTrue(
+                    contextStore.find(taskId).isEmpty(),
+                    "completed task must not retain submit context: " + taskId);
         }
-        if (locks instanceof Object[] lockStripes) {
-            return lockStripes.length;
-        }
-        throw new AssertionError("unexpected task lock storage: " + locks.getClass());
     }
 
     private void assertConcurrentSubmissions(boolean sameTask) throws Exception {
@@ -152,13 +150,10 @@ class AgentProtocolTaskStoreConcurrentSubmitTest {
         try {
             assertTrue(firstPending.await(5, TimeUnit.SECONDS));
             second.start();
-            // On the buggy code the second submit returns while the first is parked in save.
-            // With per-task serialization it blocks at the task monitor until save is released.
-            if (sameTask) {
-                await(() -> secondDone.isDone() || blockedBy(second, first));
-            } else {
-                secondDone.get(5, TimeUnit.SECONDS);
-            }
+            // The first submit already owns the run lease, so a duplicate submit of the same task
+            // returns without dispatching; an independent task proceeds on its own lease. Neither
+            // waits for the first run's control-plane write to finish.
+            secondDone.get(5, TimeUnit.SECONDS);
             releaseFirst.countDown();
             firstDone.get(5, TimeUnit.SECONDS);
             secondDone.get(5, TimeUnit.SECONDS);
@@ -181,13 +176,6 @@ class AgentProtocolTaskStoreConcurrentSubmitTest {
         assertThrows(
                 IllegalStateException.class,
                 () -> store.submit("same-task", "worker", "retry after completion"));
-    }
-
-    private static boolean blockedBy(Thread thread, Thread owner) {
-        ThreadInfo info = ManagementFactory.getThreadMXBean().getThreadInfo(thread.getId());
-        return info != null
-                && info.getThreadState() == Thread.State.BLOCKED
-                && info.getLockOwnerId() == owner.getId();
     }
 
     private static Thread submitThread(

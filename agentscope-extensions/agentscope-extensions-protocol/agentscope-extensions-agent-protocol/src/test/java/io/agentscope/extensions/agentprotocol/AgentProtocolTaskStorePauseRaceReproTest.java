@@ -16,6 +16,8 @@
 package io.agentscope.extensions.agentprotocol;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -37,6 +39,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
@@ -56,8 +61,9 @@ class AgentProtocolTaskStorePauseRaceReproTest {
 
     @Test
     void resumeWhilePausedRunStillUnwinding() throws Exception {
-        CountDownLatch releaseExecutor = new CountDownLatch(1);
         AtomicInteger streamCalls = new AtomicInteger();
+        CountDownLatch saveLanded = new CountDownLatch(1);
+        CountDownLatch releaseSave = new CountDownLatch(1);
 
         WorkspaceProtocolTaskRepository delegate = new WorkspaceProtocolTaskRepository(tempDir);
         ProtocolTaskRepository repo =
@@ -66,10 +72,11 @@ class AgentProtocolTaskStorePauseRaceReproTest {
                     public void save(TaskRecord record) {
                         delegate.save(record);
                         if (record.isAwaitingConfirm()) {
+                            // Record is durable and visible, but this run still owns its leases:
+                            // hand control to the test before releaseRun can run.
+                            saveLanded.countDown();
                             try {
-                                // Record is durable and visible; hold the executor
-                                // between the persist and the future completing.
-                                releaseExecutor.await(10, TimeUnit.SECONDS);
+                                releaseSave.await(10, TimeUnit.SECONDS);
                             } catch (InterruptedException e) {
                                 Thread.currentThread().interrupt();
                             }
@@ -107,23 +114,33 @@ class AgentProtocolTaskStorePauseRaceReproTest {
 
         store.submit("race-1", "worker", "please run bash", Map.of());
 
-        long deadline = System.currentTimeMillis() + 5_000;
-        while (!"awaiting_confirm".equals(store.snapshot("race-1").get("status"))) {
-            if (System.currentTimeMillis() > deadline) {
-                throw new AssertionError("task never reached awaiting_confirm");
-            }
-            Thread.sleep(20);
-        }
+        // saveLanded fires right after the awaiting-confirm write and before releaseRun. At this
+        // point the record is visible but the paused run still holds both leases — exactly the
+        // window a fast client hits. Resume from another thread so the main thread can let the
+        // paused run finish unwinding; the resume must wait for that instead of failing.
+        assertTrue(saveLanded.await(5, TimeUnit.SECONDS), "pause record was never written");
+        assertEquals("awaiting_confirm", store.snapshot("race-1").get("status"));
 
+        ExecutorService resumer = Executors.newSingleThreadExecutor();
         try {
-            // The record says awaiting_confirm, so resume must be accepted even
-            // though the paused run's future is still unwinding.
-            store.resume("race-1", List.of(new RemoteConfirmDecision("tc-ask", false, "no")));
+            Future<?> resumed =
+                    resumer.submit(
+                            () ->
+                                    store.resume(
+                                            "race-1",
+                                            List.of(
+                                                    new RemoteConfirmDecision(
+                                                            "tc-ask", false, "no"))));
+            // Let releaseRun proceed; the resume above waits for the lease it frees.
+            releaseSave.countDown();
+            resumed.get(5, TimeUnit.SECONDS);
         } finally {
-            releaseExecutor.countDown();
+            // Idempotent: also unblocks the save if submit/get threw, and never leaks the thread.
+            releaseSave.countDown();
+            resumer.shutdownNow();
         }
 
-        deadline = System.currentTimeMillis() + 5_000;
+        long deadline = System.currentTimeMillis() + 5_000;
         while (!"success".equals(store.snapshot("race-1").get("status"))) {
             if (System.currentTimeMillis() > deadline) {
                 throw new AssertionError("task never completed after resume");
@@ -132,6 +149,86 @@ class AgentProtocolTaskStorePauseRaceReproTest {
         }
         assertEquals("denied and done", store.snapshot("race-1").get("result"));
         assertEquals(2, streamCalls.get());
+    }
+
+    /**
+     * The window this guards: the pause record has not landed yet and the run has not handed its
+     * leases back either. A same-session submission arriving exactly here used to slip through and
+     * start a new turn, leaving the paused one stranded behind it.
+     */
+    @Test
+    void aSubmissionArrivingWhileThePauseIsWrittenIsRejected() throws Exception {
+        CountDownLatch pauseWriteStarted = new CountDownLatch(1);
+        CountDownLatch releasePauseWrite = new CountDownLatch(1);
+        AtomicInteger streamCalls = new AtomicInteger();
+
+        WorkspaceProtocolTaskRepository delegate = new WorkspaceProtocolTaskRepository(tempDir);
+        ProtocolTaskRepository repo =
+                new ProtocolTaskRepository() {
+                    @Override
+                    public void save(TaskRecord record) {
+                        if (record.isAwaitingConfirm() && "t-1".equals(record.getTaskId())) {
+                            pauseWriteStarted.countDown();
+                            try {
+                                // Park before the write lands: leases still held, record not yet
+                                // paused.
+                                releasePauseWrite.await(10, TimeUnit.SECONDS);
+                            } catch (InterruptedException e) {
+                                Thread.currentThread().interrupt();
+                            }
+                        }
+                        delegate.save(record);
+                    }
+
+                    @Override
+                    public Optional<TaskRecord> find(String taskId) {
+                        return delegate.find(taskId);
+                    }
+                };
+
+        HarnessAgent agent = mock(HarnessAgent.class);
+        when(agent.streamEvents(any(Msg.class), any(RuntimeContext.class)))
+                .thenAnswer(
+                        inv -> {
+                            if (streamCalls.incrementAndGet() == 1) {
+                                return Flux.just(
+                                        new AgentStartEvent("sess", null, "worker"),
+                                        new AgentResultEvent(askingMsg()),
+                                        new AgentEndEvent(null));
+                            }
+                            return Flux.just(
+                                    new AgentStartEvent("sess", null, "worker"),
+                                    new AgentResultEvent(completedMsg()),
+                                    new AgentEndEvent(null));
+                        });
+
+        AgentProtocolProperties props = new AgentProtocolProperties();
+        props.setHitlEnabled(true);
+        props.setStreamingEnabled(true);
+        AgentProtocolTaskStore store =
+                new AgentProtocolTaskStore(
+                        AgentFactory.fixed(agent), repo, new AgentProtocolTaskEventBus(), props);
+
+        store.submit("t-1", "worker", "please run bash", Map.of("session_id", "conv-1"));
+        assertTrue(
+                pauseWriteStarted.await(5, TimeUnit.SECONDS), "t-1 never reached the pause write");
+
+        // The session lease is still held, so the new turn is refused rather than queued.
+        assertThrows(
+                SessionBusyException.class,
+                () -> store.submit("t-2", "worker", "carry on", Map.of("session_id", "conv-1")));
+
+        releasePauseWrite.countDown();
+        long deadline = System.currentTimeMillis() + 5_000;
+        while (!"awaiting_confirm".equals(store.snapshot("t-1").get("status"))
+                && System.currentTimeMillis() < deadline) {
+            Thread.sleep(20);
+        }
+
+        // And once the pause is visible, the next attempt is refused for the other reason.
+        assertThrows(
+                SessionAwaitingConfirmException.class,
+                () -> store.submit("t-3", "worker", "carry on", Map.of("session_id", "conv-1")));
     }
 
     private static Msg askingMsg() {

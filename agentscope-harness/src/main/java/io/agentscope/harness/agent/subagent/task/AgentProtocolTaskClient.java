@@ -117,6 +117,36 @@ public final class AgentProtocolTaskClient {
                         .POST(HttpRequest.BodyPublishers.ofString(JSON.writeValueAsString(body)));
         applyHeaders(b, headers);
         HttpResponse<String> resp = http.send(b.build(), HttpResponse.BodyHandlers.ofString());
+        if (resp.statusCode() == 409) {
+            // Nothing was started. The server distinguishes a paused turn (awaiting_confirm) from
+            // a running one (session_busy); they need different actions, so report them separately.
+            // A 409 without a status — an older server or a generic conflict — stays a busy report.
+            String busySession = context != null ? context.sessionId() : null;
+            String busyTask = null;
+            String status = null;
+            String pendingTask = null;
+            String expiresAt = null;
+            try {
+                JsonNode conflict = JSON.readTree(resp.body());
+                if (conflict.hasNonNull("session_id")) {
+                    busySession = conflict.get("session_id").asText();
+                }
+                if (conflict.hasNonNull("task_id")) {
+                    busyTask = conflict.get("task_id").asText();
+                }
+                status = conflict.path("status").asText(null);
+                pendingTask = conflict.path("pending_task_id").asText(null);
+                expiresAt = conflict.path("confirm_expires_at").asText(null);
+            } catch (IOException ignored) {
+                // A non-JSON 409 body still carries the status; the caller keeps the session it
+                // submitted and reports it as a busy turn without a task id.
+            }
+            if ("awaiting_confirm".equals(status)) {
+                throw new RemoteSessionAwaitingConfirmException(
+                        busySession, pendingTask, expiresAt, resp.body());
+            }
+            throw new RemoteSessionBusyException(busySession, busyTask, resp.body());
+        }
         if (resp.statusCode() >= 400) {
             throw new IOException(
                     "submitTask failed: HTTP " + resp.statusCode() + " body=" + resp.body());

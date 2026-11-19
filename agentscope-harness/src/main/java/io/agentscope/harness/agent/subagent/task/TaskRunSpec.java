@@ -37,6 +37,7 @@ public sealed interface TaskRunSpec {
      * remote task key end-to-end. {@code context} carries submission-time metadata (streaming
      * preference, propagated deny rules, parent identity); defaults to
      * {@link RemoteSubmitContext#empty()} for callers that predate this field.
+     *
      */
     record RemoteTaskRunSpec(
             String baseUrl,

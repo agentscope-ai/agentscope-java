@@ -17,6 +17,7 @@ package io.agentscope.extensions.agentprotocol;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -85,6 +86,33 @@ class AgentProtocolAgentFactoryTest {
         assertFalse(req.resume());
         assertEquals("acme", req.contextString("tenant"));
         assertEquals("INC-1001", req.contextValue("ticket_id"));
+    }
+
+    @Test
+    void factorySeesTheConversationSessionAcrossTurns() throws Exception {
+        AgentProtocolTaskStore store = storeWithRoutingFactory();
+
+        store.submit("t-1", "writer", "first turn", Map.of("session_id", "sub-7f3a"));
+        awaitCondition(() -> "success".equals(store.snapshot("t-1").get("status")), 30_000);
+        store.submit("t-2", "writer", "second turn", Map.of("session_id", "sub-7f3a"));
+        awaitCondition(() -> "success".equals(store.snapshot("t-2").get("status")), 30_000);
+
+        assertEquals(2, seenRequests.size());
+        AgentRequest first = seenRequests.get(0);
+        AgentRequest second = seenRequests.get(1);
+        assertEquals("sub-7f3a", first.sessionId());
+        assertEquals(
+                first.sessionId(),
+                second.sessionId(),
+                "both turns of one conversation must report the same session");
+        assertNotEquals(first.taskId(), second.taskId(), "each turn keeps its own task id");
+    }
+
+    @Test
+    void requestWithoutASessionFallsBackToItsTaskId() {
+        AgentRequest req = new AgentRequest("t-solo", "a", "in", null, null, false, Map.of());
+
+        assertEquals("t-solo", req.sessionId());
     }
 
     @Test

@@ -35,6 +35,7 @@ class RemoteSubmitContextTest {
         Map<String, Object> wire =
                 RemoteSubmitContext.builder().userId("u-1").parentSessionId("sess-parent").stream(
                                 true)
+                        .parentAgentId("planner")
                         .detail("full")
                         .attributes(attributes)
                         .build()
@@ -42,6 +43,7 @@ class RemoteSubmitContextTest {
 
         assertEquals("u-1", wire.get("user_id"));
         assertEquals("sess-parent", wire.get("parent_session_id"));
+        assertEquals("planner", wire.get("parent_agent_id"));
         assertEquals(true, wire.get("stream"));
         assertEquals("full", wire.get("detail"));
         assertEquals(attributes, wire.get("attributes"));
@@ -52,6 +54,9 @@ class RemoteSubmitContextTest {
         Map<String, Object> wire = RemoteSubmitContext.empty().toMap();
 
         assertFalse(wire.containsKey("attributes"));
+        assertFalse(wire.containsKey("parent_agent_id"));
+        assertFalse(wire.containsKey("parent_session_id"));
+        assertFalse(wire.containsKey("user_id"));
         assertTrue(RemoteSubmitContext.empty().attributes().isEmpty());
     }
 

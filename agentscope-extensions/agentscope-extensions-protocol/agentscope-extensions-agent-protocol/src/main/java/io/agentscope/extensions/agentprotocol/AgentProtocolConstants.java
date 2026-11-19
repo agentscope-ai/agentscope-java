@@ -35,9 +35,32 @@ public final class AgentProtocolConstants {
     /**
      * Field inside the submission {@code context} that carries caller-defined attributes. Keeping
      * them nested separates them from the protocol's own context fields ({@code user_id},
-     * {@code parent_session_id}, {@code stream}, {@code detail}, {@code deny_rules}).
+     * {@code parent_session_id}, {@code parent_agent_id}, {@code stream}, {@code detail},
+     * {@code deny_rules}, {@code session_id}).
      */
     public static final String CONTEXT_ATTRIBUTES_FIELD = "attributes";
+
+    /**
+     * Field inside the submission {@code context} naming the agent session the run executes in.
+     *
+     * <p>The caller owns this value: it picks one when the child conversation starts and repeats it
+     * for every follow-up, so the agent sees the stored conversation plus the new input as its next
+     * turn. Each submission still keeps its own task id, record, result and event stream — only the
+     * conversation is shared. Absent, the run opens a session named after its own {@code task_id},
+     * which keeps every submission isolated. See {@link AgentProtocolTaskStore#submit(String,
+     * String, String, Map)}.
+     */
+    public static final String CONTEXT_SESSION_ID_FIELD = "session_id";
+
+    /**
+     * Field inside the submission {@code context} naming the agent that issued the submission.
+     *
+     * <p>Descriptive only, like {@code parent_session_id}: it never decides routing or which session
+     * a run executes in. It is copied onto the task record's {@code parent_agent_id} only when {@link
+     * AgentProtocolProperties#isUseCallerParentIdentity()} is enabled; otherwise the record keeps
+     * naming the protocol control-plane namespace.
+     */
+    public static final String CONTEXT_PARENT_AGENT_ID_FIELD = "parent_agent_id";
 
     /**
      * {@link io.agentscope.core.agent.RuntimeContext} key holding the whole {@code

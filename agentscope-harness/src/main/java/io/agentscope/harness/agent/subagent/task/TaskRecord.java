@@ -24,8 +24,10 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Persistent metadata for a background subagent task, stored as JSON in the workspace under
- * {@code agents/<parentAgentId>/tasks/<parentSessionId>.json}.
+ * Persistent metadata for a background subagent task. The repository that stores a record decides
+ * its partition: the workspace repository derives it from {@code parentAgentId} / {@code
+ * parentSessionId} ({@code agents/<parentAgentId>/tasks/<parentSessionId>.json}), while other
+ * repositories may use a fixed bucket and only carry these fields for reporting.
  *
  * <p>This is the authoritative truth source for task state. In-memory {@link BackgroundTask}
  * handles are a local performance overlay; {@code TaskRecord} survives across JVM restarts and

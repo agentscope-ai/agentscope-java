@@ -23,19 +23,27 @@ import java.util.Objects;
 
 /**
  * Context sent with a remote task submission (permissions, streaming preferences, parent identity).
+ *
+ * <p>{@code sessionId} names the conversation the submission runs in. The client owns this value:
+ * it generates one per child conversation and repeats it for every follow-up, so the remote agent
+ * treats the new input as the next turn of the same session. When {@code null}, the server derives
+ * a session from the task id, which keeps every submission isolated.
  */
 public final class RemoteSubmitContext {
 
     private final String userId;
     private final String parentSessionId;
+    private final String parentAgentId;
     private final boolean stream;
     private final String detail;
     private final List<Map<String, String>> denyRules;
     private final Map<String, Object> attributes;
+    private final String sessionId;
 
     private RemoteSubmitContext(Builder builder) {
         this.userId = builder.userId;
         this.parentSessionId = builder.parentSessionId;
+        this.parentAgentId = builder.parentAgentId;
         this.stream = builder.stream;
         this.detail = builder.detail != null ? builder.detail : "status";
         this.denyRules =
@@ -46,6 +54,7 @@ public final class RemoteSubmitContext {
                 builder.attributes == null || builder.attributes.isEmpty()
                         ? Map.of()
                         : Collections.unmodifiableMap(new LinkedHashMap<>(builder.attributes));
+        this.sessionId = builder.sessionId;
     }
 
     public static Builder builder() {
@@ -62,6 +71,15 @@ public final class RemoteSubmitContext {
 
     public String parentSessionId() {
         return parentSessionId;
+    }
+
+    /**
+     * Submitting agent's own id forwarded as {@code context.parent_agent_id}, or {@code null} when
+     * the caller cannot identify itself. Descriptive only: a server that is configured to record
+     * callers copies it onto the task record, where it never selects the agent or session.
+     */
+    public String parentAgentId() {
+        return parentAgentId;
     }
 
     public boolean stream() {
@@ -84,6 +102,14 @@ public final class RemoteSubmitContext {
         return attributes;
     }
 
+    /**
+     * Conversation this submission runs in; the client generates it and repeats it on follow-ups.
+     * When {@code null}, the server derives one from the task id to keep submissions isolated.
+     */
+    public String sessionId() {
+        return sessionId;
+    }
+
     public Map<String, Object> toMap() {
         Map<String, Object> m = new LinkedHashMap<>();
         if (userId != null) {
@@ -92,8 +118,14 @@ public final class RemoteSubmitContext {
         if (parentSessionId != null) {
             m.put("parent_session_id", parentSessionId);
         }
+        if (parentAgentId != null) {
+            m.put("parent_agent_id", parentAgentId);
+        }
         m.put("stream", stream);
         m.put("detail", detail);
+        if (sessionId != null) {
+            m.put("session_id", sessionId);
+        }
         if (!denyRules.isEmpty()) {
             m.put("deny_rules", denyRules);
         }
@@ -106,10 +138,12 @@ public final class RemoteSubmitContext {
     public static final class Builder {
         private String userId;
         private String parentSessionId;
+        private String parentAgentId;
         private boolean stream = true;
         private String detail = "status";
         private List<Map<String, String>> denyRules;
         private Map<String, Object> attributes;
+        private String sessionId;
 
         public Builder userId(String userId) {
             this.userId = userId;
@@ -118,6 +152,15 @@ public final class RemoteSubmitContext {
 
         public Builder parentSessionId(String parentSessionId) {
             this.parentSessionId = parentSessionId;
+            return this;
+        }
+
+        /**
+         * Submitting agent's own id, sent as {@code context.parent_agent_id} for callers that
+         * record it. {@code null} (the default) omits the field.
+         */
+        public Builder parentAgentId(String parentAgentId) {
+            this.parentAgentId = parentAgentId;
             return this;
         }
 
@@ -142,6 +185,15 @@ public final class RemoteSubmitContext {
          */
         public Builder attributes(Map<String, Object> attributes) {
             this.attributes = attributes;
+            return this;
+        }
+
+        /**
+         * Conversation the submitted task runs in. Sent as {@code context.session_id}; {@code
+         * null} (the default) keeps the submission isolated.
+         */
+        public Builder sessionId(String sessionId) {
+            this.sessionId = sessionId;
             return this;
         }
 
