@@ -346,6 +346,7 @@ public class AgentSpawnTool implements AutoCloseable {
         private final ConcurrentHashMap<String, ManagedAgent> agentsByKey =
                 new ConcurrentHashMap<>();
         private final ConcurrentHashMap<String, String> labelToKey = new ConcurrentHashMap<>();
+        private final ConcurrentHashMap<String, Object> keyLocks = new ConcurrentHashMap<>();
         private int users;
     }
 
@@ -525,28 +526,11 @@ public class AgentSpawnTool implements AutoCloseable {
                 // Reuse existing agent if same deterministic key was already spawned.
                 ManagedAgent existing = registry.agentsByKey.get(key);
                 if (existing != null) {
-                    if (existing.isReleasing()) {
-                        return Mono.just(ToolResultBlock.error("Agent is being released: " + key));
-                    }
-                    if (!existing.spawned.reusable()) {
-                        return Mono.just(ToolResultBlock.error("Agent is not reusable: " + key));
-                    }
-                    SpawnedAgent spawned = existing.spawned;
-                    String spawnInfo = formatSpawnInfo(key, agentId, sessionId, null);
-                    if (!hasTask) {
-                        if (!propagateWithLease(
-                                existing, runtimeContext, parentState, currentUserId, declOpt)) {
-                            return Mono.just(
-                                    ToolResultBlock.error("Agent is being released: " + key));
-                        }
-                        return Mono.just(
-                                ToolResultBlock.success(spawnInfo + "\nstatus: accepted (reused)"));
-                    }
-                    return execManagedTask(
+                    return reuseManagedAgent(
                             existing,
                             runtimeContext,
                             parentState,
-                            spawnInfo,
+                            currentUserId,
                             task,
                             timeoutSeconds,
                             declOpt);
@@ -571,143 +555,202 @@ public class AgentSpawnTool implements AutoCloseable {
                 }
             }
 
-            Optional<Agent> agentOpt = manager.createAgentIfPresent(agentId, runtimeContext);
-            if (agentOpt.isEmpty()) {
-                if (lowerLabel != null) {
-                    synchronized (registry) {
-                        registry.labelToKey.remove(lowerLabel, key);
+            Object initializationLock =
+                    persist
+                            ? registry.keyLocks.computeIfAbsent(key, ignored -> new Object())
+                            : new Object();
+            synchronized (initializationLock) {
+                if (persist) {
+                    ManagedAgent existing = registry.agentsByKey.get(key);
+                    if (existing != null) {
+                        return reuseManagedAgent(
+                                existing,
+                                runtimeContext,
+                                parentState,
+                                currentUserId,
+                                task,
+                                timeoutSeconds,
+                                declOpt);
                     }
                 }
-                removeRegistryIfEmpty(runtimeContext, registry);
-                if (manager.isPrimaryOnly(agentId)) {
-                    return Mono.just(
-                            ToolResultBlock.error(
-                                    "agent_id '"
-                                            + agentId
-                                            + "' is PRIMARY-only and cannot be spawned as a"
-                                            + " subagent."));
-                }
-                log.warn("agent_spawn unknown agentId={}, known={}", agentId, manager);
-                return Mono.just(ToolResultBlock.error("Unknown agent_id: " + agentId));
-            }
-            log.debug("agent_spawn resolved: agentId={}", agentId);
-            Agent agent = agentOpt.get();
-            SpawnedAgent spawned =
-                    new SpawnedAgent(
-                            key, agentId, sessionId, canonLabel, agent, nextDepth, reusable);
-            ManagedAgent managed = new ManagedAgent(spawned);
-
-            // Fully initialize the private candidate before publishing it in the live registry.
-            // This prevents send/release from observing a half-configured child. Persistent-key
-            // races may initialize more than one candidate, but every loser is revoked and closed
-            // below before it becomes addressable.
-            String subagentId = null;
-            try {
-                if (!hostOwnsChildState(runtimeContext)) {
-                    propagatePlanMode(parentState, currentUserId, sessionId, agent);
-                    propagateParentDenyRules(parentState, currentUserId, sessionId, agent, declOpt);
-                }
-
-                SubagentGatewayBridge exposureBridge = gatewayBridge;
-                if (effectiveExpose && exposureBridge != null) {
-                    OutboundAddress replyTo =
-                            runtimeContext != null
-                                    ? runtimeContext.get("outboundAddress", OutboundAddress.class)
-                                    : null;
-                    SubagentGatewayBridge.ExposeResult er =
-                            exposureBridge.expose(agentId, sessionId, agent, replyTo);
-                    subagentId = er.subagentId();
-                }
-            } catch (RuntimeException | Error e) {
-                if (lowerLabel != null) {
-                    synchronized (registry) {
-                        registry.labelToKey.remove(lowerLabel, key);
+                Optional<Agent> agentOpt = manager.createAgentIfPresent(agentId, runtimeContext);
+                if (agentOpt.isEmpty()) {
+                    if (lowerLabel != null) {
+                        synchronized (registry) {
+                            registry.labelToKey.remove(lowerLabel, key);
+                        }
                     }
-                }
-                closeManagedAgent(managed);
-                removeRegistryIfEmpty(runtimeContext, registry);
-                return Mono.error(e);
-            }
-
-            ManagedAgent winner;
-            synchronized (registry) {
-                winner = registry.agentsByKey.putIfAbsent(key, managed);
-                if (winner == null) {
-                    persistSpawnEntry(
-                            parentState, key, agentId, sessionId, canonLabel, nextDepth, reusable);
-                }
-            }
-            if (winner != null) {
-                // Persistent concurrent spawns can race after the initial lookup. Keep the winner
-                // and
-                // promptly close the unused candidate so factory-created resources are not leaked.
-                closeManagedAgent(managed);
-                spawned = winner.spawned;
-                String spawnInfo = formatSpawnInfo(key, agentId, spawned.sessionId(), null);
-                if (task == null || task.isBlank()) {
-                    if (!propagateWithLease(
-                            winner, runtimeContext, parentState, currentUserId, declOpt)) {
-                        return Mono.just(ToolResultBlock.error("Agent is being released: " + key));
+                    removeRegistryIfEmpty(runtimeContext, registry);
+                    if (manager.isPrimaryOnly(agentId)) {
+                        return Mono.just(
+                                ToolResultBlock.error(
+                                        "agent_id '"
+                                                + agentId
+                                                + "' is PRIMARY-only and cannot be spawned as a"
+                                                + " subagent."));
                     }
-                    return Mono.just(
-                            ToolResultBlock.success(spawnInfo + "\nstatus: accepted (reused)"));
+                    log.warn("agent_spawn unknown agentId={}, known={}", agentId, manager);
+                    return Mono.just(ToolResultBlock.error("Unknown agent_id: " + agentId));
                 }
-                return execManagedTask(
-                        winner,
-                        runtimeContext,
-                        parentState,
-                        spawnInfo,
-                        task,
-                        timeoutSeconds,
-                        declOpt);
-            }
+                log.debug("agent_spawn resolved: agentId={}", agentId);
+                Agent agent = agentOpt.get();
+                ManagedAgent managed =
+                        new ManagedAgent(
+                                new SpawnedAgent(
+                                        key,
+                                        agentId,
+                                        sessionId,
+                                        canonLabel,
+                                        agent,
+                                        nextDepth,
+                                        reusable));
 
-            io.agentscope.core.journal.InvocationRecorder recorder =
-                    io.agentscope.core.journal.InvocationRecorder.from(runtimeContext);
-            if (recorder != null) {
-                recorder.recordNow(
-                        "subagent/spawned",
-                        Map.of(
-                                "childSessionId",
-                                sessionId,
-                                "childAgentId",
-                                agentId,
-                                "agentKey",
+                // Fully initialize the private candidate before publishing it in the live registry.
+                // The per-key lock also ensures a persistent identity constructs only one child
+                // while
+                // concurrent callers wait for the fully initialized winner.
+                String subagentId = null;
+                try {
+                    if (!hostOwnsChildState(runtimeContext)) {
+                        propagatePlanMode(parentState, currentUserId, sessionId, agent);
+                        propagateParentDenyRules(
+                                parentState, currentUserId, sessionId, agent, declOpt);
+                    }
+
+                    SubagentGatewayBridge exposureBridge = gatewayBridge;
+                    if (effectiveExpose && exposureBridge != null) {
+                        OutboundAddress replyTo =
+                                runtimeContext != null
+                                        ? runtimeContext.get(
+                                                "outboundAddress", OutboundAddress.class)
+                                        : null;
+                        SubagentGatewayBridge.ExposeResult er =
+                                exposureBridge.expose(agentId, sessionId, agent, replyTo);
+                        subagentId = er.subagentId();
+                    }
+                } catch (RuntimeException | Error e) {
+                    if (lowerLabel != null) {
+                        synchronized (registry) {
+                            registry.labelToKey.remove(lowerLabel, key);
+                        }
+                    }
+                    closeManagedAgent(managed);
+                    removeRegistryIfEmpty(runtimeContext, registry);
+                    return Mono.error(e);
+                }
+
+                ManagedAgent winner;
+                synchronized (registry) {
+                    winner = registry.agentsByKey.putIfAbsent(key, managed);
+                    if (winner == null) {
+                        persistSpawnEntry(
+                                parentState,
                                 key,
-                                "childLogAgentId",
-                                agent instanceof HarnessAgent child
-                                        ? child.threadKey(
-                                                        RuntimeContext.builder()
-                                                                .userId(currentUserId)
-                                                                .sessionId(sessionId)
-                                                                .build())
-                                                .agentId()
-                                        : agentId));
-            }
-
-            String spawnInfo = formatSpawnInfo(key, agentId, sessionId, subagentId);
-            if (!hasTask) {
-                return withSubagentExposedEvent(
-                        Mono.just(ToolResultBlock.success(spawnInfo + "\nstatus: accepted")),
-                        subagentId,
-                        agentId,
-                        sessionId,
-                        canonLabel);
-            }
-
-            Mono<ToolResultBlock> execution =
-                    execManagedTask(
-                            managed,
+                                agentId,
+                                sessionId,
+                                canonLabel,
+                                nextDepth,
+                                reusable);
+                    }
+                }
+                if (winner != null) {
+                    closeManagedAgent(managed);
+                    return reuseManagedAgent(
+                            winner,
                             runtimeContext,
                             parentState,
-                            spawnInfo,
+                            currentUserId,
                             task,
                             timeoutSeconds,
                             declOpt);
-            return withSubagentExposedEvent(execution, subagentId, agentId, sessionId, canonLabel);
+                }
+
+                io.agentscope.core.journal.InvocationRecorder recorder =
+                        io.agentscope.core.journal.InvocationRecorder.from(runtimeContext);
+                if (recorder != null) {
+                    recorder.recordNow(
+                            "subagent/spawned",
+                            Map.of(
+                                    "childSessionId",
+                                    sessionId,
+                                    "childAgentId",
+                                    agentId,
+                                    "agentKey",
+                                    key,
+                                    "childLogAgentId",
+                                    agent instanceof HarnessAgent child
+                                            ? child.threadKey(
+                                                            RuntimeContext.builder()
+                                                                    .userId(currentUserId)
+                                                                    .sessionId(sessionId)
+                                                                    .build())
+                                                    .agentId()
+                                            : agentId));
+                }
+
+                String spawnInfo = formatSpawnInfo(key, agentId, sessionId, subagentId);
+                if (!hasTask) {
+                    return withSubagentExposedEvent(
+                            Mono.just(ToolResultBlock.success(spawnInfo + "\nstatus: accepted")),
+                            subagentId,
+                            agentId,
+                            sessionId,
+                            canonLabel);
+                }
+
+                Mono<ToolResultBlock> execution =
+                        execManagedTask(
+                                managed,
+                                runtimeContext,
+                                parentState,
+                                spawnInfo,
+                                task,
+                                timeoutSeconds,
+                                declOpt);
+                return withSubagentExposedEvent(
+                        execution, subagentId, agentId, sessionId, canonLabel);
+            }
         } finally {
             releaseRegistry(runtimeContext, registry);
         }
+    }
+
+    private Mono<ToolResultBlock> reuseManagedAgent(
+            ManagedAgent managed,
+            RuntimeContext runtimeContext,
+            AgentState parentState,
+            String currentUserId,
+            String task,
+            Integer timeoutSeconds,
+            Optional<SubagentDeclaration> declOpt) {
+        if (managed.isReleasing()) {
+            return Mono.just(
+                    ToolResultBlock.error("Agent is being released: " + managed.spawned.key()));
+        }
+        if (!managed.spawned.reusable()) {
+            return Mono.just(
+                    ToolResultBlock.error("Agent is not reusable: " + managed.spawned.key()));
+        }
+        SpawnedAgent spawned = managed.spawned;
+        persistSpawnEntry(
+                parentState,
+                spawned.key(),
+                spawned.agentId(),
+                spawned.sessionId(),
+                spawned.label(),
+                spawned.depth(),
+                spawned.reusable());
+        String spawnInfo =
+                formatSpawnInfo(spawned.key(), spawned.agentId(), spawned.sessionId(), null);
+        if (task == null || task.isBlank()) {
+            if (!propagateWithLease(managed, runtimeContext, parentState, currentUserId, declOpt)) {
+                return Mono.just(
+                        ToolResultBlock.error("Agent is being released: " + spawned.key()));
+            }
+            return Mono.just(ToolResultBlock.success(spawnInfo + "\nstatus: accepted (reused)"));
+        }
+        return execManagedTask(
+                managed, runtimeContext, parentState, spawnInfo, task, timeoutSeconds, declOpt);
     }
 
     @Tool(
