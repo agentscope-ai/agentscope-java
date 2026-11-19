@@ -75,6 +75,9 @@ Durable keeps three kinds of information connected: the Harness's private native
 state, durable execution facts, and public messages/events. A display snapshot can
 rebuild a UI; the native checkpoint and execution facts determine how work continues.
 Applications use the public API without interpreting private checkpoint formats.
+The AgentScope adapter advances the native recovery cursor when it commits a
+settled Turn, including cancellation and failure settlement. A replacement Brain
+loads the last complete state checkpoint and replays the journal entries after it.
 
 ### Session, Thread, Turn, and Run
 
@@ -179,6 +182,25 @@ work, restores native state at supported boundaries, and continues the original
 Turn. Completed results remain available without another Agent invocation. Reading
 history alone does not start execution.
 
+Register per-tool policies with `AgentScopeAdapter.withNativeToolRecovery(policies, modelCheck)`.
+The first native dispatch records the policy and the admitted arguments. A replacement Brain
+uses that record even if its configuration changes. Use `NativeToolRecovery.Replay.SAFE` for
+reads or operations that tolerate duplicate execution. After a lost result the Brain runs the
+same call again. The default, `NEVER`, parks the Turn unless an optional model check can
+verify the outcome. Pass `null` to disable that check.
+
+A `NativeToolRecovery.ModelCheck` gives the model one read-only lookup tool. The application
+looks up the original operation in an independent system, validates its identity and arguments,
+and returns a terminal tool result and evidence reference. A missing record, inconsistent result
+or model-only assertion leaves the Turn waiting. An operator can claim the Turn and call
+`reconcileNativeTools` with verified outcomes and evidence.
+Cancelling the Turn closes the native call with an unverified outcome. A repeated
+cancel request can use a new request ID.
+
+The first scheduled owner persists its recovery policy for consecutive lease
+losses. PostgreSQL hosts bound idle transactions by the shortest lease they serve
+and respect shorter database limits.
+
 Recovery reuses committed native results and tool outcomes. An interrupted model
 request whose result was never committed may need another model invocation.
 Workspace files and remote resources must also remain accessible; a saved checkpoint
@@ -213,7 +235,8 @@ with task completion can be rejected because its state precondition no longer ho
 clients should re-read the Turn. Steer does not interrupt a model mid-token or undo
 an already dispatched tool. Active cancellation records intent and coordinates
 outstanding execution; a remote operation is only cancelled when its outcome is
-confirmed.
+confirmed. Once the backend accepts cancellation, it rejects subsequent invocation
+commits except cancellation settlement. Previously committed messages remain in history.
 
 Other controls cover context injection, withdrawal of unapplied input, interaction
 responses, and explicit pause/resume. Pause takes effect at a safe boundary; observe
@@ -300,6 +323,17 @@ var host = DurableRuntime.builder()
         .build();
 host.start();
 ```
+
+PostgreSQL bounds idle record transactions by the configured lease and any shorter
+database timeout. Without a configured bound the store defaults to 30 seconds.
+This lets PostgreSQL release record locks after a disconnected host stops sending SQL.
+
+The AgentScope adapter supplies an `Idempotency-Key` for each model generation.
+After a crash with a request in flight, recovery can send a second HTTP request
+with the same key. A provider that implements idempotency can return the original
+generation. Providers that ignore the key can generate and bill twice. Completed
+journaled responses replay locally. Explicit per-request idempotency headers
+take precedence.
 
 Initialize the Backend schema during provisioning with
 `PostgresBackend.initializeSchema(dataSource)`, add the PostgreSQL driver, and point
@@ -437,6 +471,37 @@ Validate broker delivery, provider query/cancel
 behavior and recovery under host replacement in your deployment environment.
 Unqueryable or unverifiable external effects remain `UNKNOWN`; arbitrary external
 operations are not promised exactly-once execution.
+
+Run the Docker fault regression from the repository root with Docker, Python 3, Maven and a JDK on PATH:
+
+```sh
+python3 agentscope-durable/scripts/docker-regression/run.py
+```
+
+The runner builds the current checkout and creates a private Docker network with PostgreSQL,
+RocketMQ, independent Brain and Hands JVMs, and a counting model endpoint.
+It disconnects receivers before ACK and kills the model requester and checkpoint writer. The tool recovery cases query a committed effect or reconcile an opaque effect against external evidence. The checks compare broker message IDs, provider executions, committed effects,
+terminal events and committed answers. The runner removes its containers,
+volumes and network on exit. The default image is `apache/rocketmq:5.5.0`. Set
+`ROCKETMQ_IMAGE` to use a different RocketMQ 5 image
+with the broker proxy and `mqadmin` tools.
+
+The paired-consumer comparison starts separate NameServer, Broker, Proxy and consumer JVMs,
+runs eight queues with the same consumer group, and verifies each Broker direct-memory limit
+from the running JVM before delivery.
+The normal fault suite sets the Broker JVM direct-memory limit to 1 GiB and checks the POP log
+for Netty allocation failures. In the two-Hands PostgreSQL fixture on RocketMQ 5.5.1, a
+128 MiB Broker direct-memory limit caused POP allocations to fail. The Proxy then
+timed out waiting for the Broker, and the clients reported receive deadlines. A Proxy pause
+can also produce this client error. Use the Broker POP log and Proxy response together to
+identify which path occurred.
+
+The comparison checks ordinary delivery, repeated receive deadlines during a Proxy pause, and redelivery
+to the surviving consumer after killing its peer before ACK.
+
+```sh
+python3 agentscope-durable/scripts/docker-regression/compare_consumers.py
+```
 
 ## Usage and reference
 

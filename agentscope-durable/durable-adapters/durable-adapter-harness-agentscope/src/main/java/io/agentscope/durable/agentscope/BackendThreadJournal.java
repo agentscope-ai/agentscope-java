@@ -63,11 +63,13 @@ final class BackendThreadJournal implements ThreadJournal {
     private final HarnessContext context;
     private final Map<String, String> executors;
     private final Map<String, ToolBinding> bindings;
+    private final Map<String, NativeToolRecovery.Replay> replay;
     private final Set<String> sealed = new HashSet<>();
     private final List<String> signalsToApply = new ArrayList<>();
     private String owner;
     private final Map<String, ModelCapture> captures = new LinkedHashMap<>();
     private ObjectNode cached;
+    private final long recoveryCursor;
     private AgentScopeMessageEvents messages = new AgentScopeMessageEvents();
     private AgentScopeToolEvents toolEvents = new AgentScopeToolEvents();
 
@@ -79,6 +81,15 @@ final class BackendThreadJournal implements ThreadJournal {
             HarnessContext context,
             Map<String, String> executors,
             Map<String, ToolBinding> bindings) {
+        this(context, executors, bindings, Map.of());
+    }
+
+    BackendThreadJournal(
+            HarnessContext context,
+            Map<String, String> executors,
+            Map<String, ToolBinding> bindings,
+            Map<String, NativeToolRecovery.Replay> replay) {
+        this.replay = replay;
         this.bindings = bindings;
         DurableEventSchemas.ensureRegistered();
         this.context = context;
@@ -97,7 +108,8 @@ final class BackendThreadJournal implements ThreadJournal {
         cached.putArray("events");
         cached.putObject("receipts");
         cached.put("lastCommit", checkpoint.path("lastCommit").asText(null));
-        long position = 0;
+        recoveryCursor = checkpoint.path("recoveryCursor").asLong();
+        long position = recoveryCursor;
         while (true) {
             var page = context.journal(position, 1000);
             for (var entry : page) {
@@ -121,20 +133,48 @@ final class BackendThreadJournal implements ThreadJournal {
         captures.put(id, capture);
     }
 
+    synchronized String providerKey(String id) {
+        return captures.get(id).providerKey;
+    }
+
     synchronized void modelChunk(String id, ChatResponse chunk) {
         captures.get(id).accept(chunk);
     }
 
     private JournalEvent capture(JournalEvent event) {
+        if ("tool/dispatch".equals(event.type())
+                && event.data().get("name") instanceof String name
+                && !executors.containsKey(name)) {
+            var data = new LinkedHashMap<>(event.data());
+            data.put(
+                    "replay",
+                    replay.getOrDefault(name, NativeToolRecovery.Replay.NEVER)
+                            .name()
+                            .toLowerCase(Locale.ROOT));
+            return new JournalEvent(
+                    event.schemaVersion(),
+                    event.eventId(),
+                    event.seq(),
+                    event.occurredAt(),
+                    event.type(),
+                    event.executionRunId(),
+                    event.turnId(),
+                    event.required(),
+                    JsonUtils.getJsonCodec().toJson(data));
+        }
         if ("model/request_started".equals(event.type())) {
             var capture = captures.get(String.valueOf(event.data().get("modelCallId")));
             if (capture != null) capture.nextAttempt();
         }
-        if (!"model/end".equals(event.type())) return event;
+        boolean prepared = "request/prepared".equals(event.type());
+        if (!prepared && !"model/end".equals(event.type())) return event;
         var capture = captures.get(String.valueOf(event.data().get("modelCallId")));
         if (capture == null) return event;
         var data = new LinkedHashMap<String, Object>(event.data());
-        data.put(ModelCapture.OUTCOME, capture.freeze(String.valueOf(data.get("status"))));
+        if (prepared) {
+            data.put("durableRequestHash", capture.replayHash());
+            data.put("durableProviderKey", capture.providerKey);
+        } else data.put(ModelCapture.OUTCOME, capture.freeze(String.valueOf(data.get("status"))));
         return new JournalEvent(
                 event.schemaVersion(),
                 event.eventId(),
@@ -156,6 +196,27 @@ final class BackendThreadJournal implements ThreadJournal {
     }
 
     @Override
+    public long recoveryCursor() {
+        return recoveryCursor;
+    }
+
+    /** Publish the last complete native state only in the commit settling the Turn. */
+    JsonNode settledCheckpoint(JsonNode current) {
+        var checkpoint = (ObjectNode) current.deepCopy();
+        checkpoint.put("recoveryCursor", settledCursor(cached.path("events")));
+        return checkpoint;
+    }
+
+    private long settledCursor(JsonNode events) {
+        for (int i = events.size() - 1; i >= 0; i--) {
+            if ("state/checkpoint".equals(events.get(i).path("type").asText())) {
+                return recoveryCursor + i;
+            }
+        }
+        return recoveryCursor;
+    }
+
+    @Override
     public synchronized Head head() {
         return head(checkpoint());
     }
@@ -163,7 +224,7 @@ final class BackendThreadJournal implements ThreadJournal {
     private Head head(ObjectNode state) {
         return new Head(
                 FORMAT_VERSION,
-                state.path("events").size(),
+                recoveryCursor + state.path("events").size(),
                 context.lease().epoch(),
                 owner,
                 context.lease().expiresAt(),
@@ -240,7 +301,7 @@ final class BackendThreadJournal implements ThreadJournal {
             return DurableJson.convert(previous.path("head"), Head.class);
         }
         check(writer);
-        if (state.path("events").size() != expected)
+        if (recoveryCursor + state.path("events").size() != expected)
             throw new DurableException(DurableException.Code.CONFLICT, "Native sequence changed");
         var tools = new ArrayList<ToolCall>();
         var publicEvents = new ArrayList<EventInput>();
@@ -410,6 +471,10 @@ final class BackendThreadJournal implements ThreadJournal {
                                         AgentScopeCheckpointCodec.STATE_VERSION,
                                         "position",
                                         seq,
+                                        "recoveryCursor",
+                                        turnStatus.terminal()
+                                                ? settledCursor(state.path("events"))
+                                                : recoveryCursor,
                                         "lastCommit",
                                         batchId)),
                         tools,
@@ -536,9 +601,15 @@ final class BackendThreadJournal implements ThreadJournal {
     @Override
     public synchronized List<JournalEvent> readAfter(long after, int limit) {
         if (after < 0 || limit < 1) throw new IllegalArgumentException("Invalid native range");
-        var events = checkpoint().path("events");
+        if (after < recoveryCursor)
+            return context
+                    .journal(after, (int) Math.min(Math.min(limit, 1000), recoveryCursor - after))
+                    .stream()
+                    .map(entry -> DurableJson.convert(entry, JournalEvent.class))
+                    .toList();
+        var events = cached.path("events");
         var result = new ArrayList<JournalEvent>();
-        for (long i = after; i < events.size() && result.size() < limit; i++)
+        for (long i = after - recoveryCursor; i < events.size() && result.size() < limit; i++)
             result.add(DurableJson.convert(events.get((int) i), JournalEvent.class));
         return List.copyOf(result);
     }

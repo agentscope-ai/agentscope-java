@@ -3683,6 +3683,16 @@
             },
             "thread": {
               "$ref": "#/$defs/thread"
+            },
+            "policy": {
+              "anyOf": [
+                {
+                  "type": "null"
+                },
+                {
+                  "$ref": "#/$defs/recoveryPolicy"
+                }
+              ]
             }
           }
         }
@@ -4050,6 +4060,9 @@
               "type": "string",
               "minLength": 1,
               "maxLength": 256
+            },
+            "lease": {
+              "$ref": "#/$defs/lease"
             },
             "result": {
               "$ref": "#/$defs/executionResult"

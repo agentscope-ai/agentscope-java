@@ -31,6 +31,9 @@ public interface RecordStore extends AutoCloseable {
         return new Capabilities("custom", false, false);
     }
 
+    /** Bound abandoned idle transactions by the shortest lease served by this store. */
+    default void boundIdleTransactionTime(java.time.Duration leaseDuration) {}
+
     record Record(JsonNode value, long now) {}
 
     record Update<T>(JsonNode value, T result) {}

@@ -51,7 +51,7 @@ public final class ThreadInteractions {
     public static Map<String, JournalEvent> pending(ThreadJournal log) {
         long upper = log.head().seq();
         var result = new LinkedHashMap<String, JournalEvent>();
-        for (var event : log.scanMetadata(0, upper)) {
+        for (var event : log.scanMetadata(log.recoveryCursor(), upper)) {
             if (event.type().equals("interaction/requested"))
                 result.put(String.valueOf(event.data().get("requestId")), event);
             if (event.type().equals("interaction/resolved"))

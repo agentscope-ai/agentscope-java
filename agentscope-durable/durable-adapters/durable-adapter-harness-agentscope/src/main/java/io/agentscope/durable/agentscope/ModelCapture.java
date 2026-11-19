@@ -43,6 +43,7 @@ final class ModelCapture {
     private final ReasoningContext content = new ReasoningContext("durable");
     private final List<ContentBlock> additional = new ArrayList<>();
     private final Map<String, Object> metadata = new LinkedHashMap<>();
+    final String providerKey;
     private ChatUsage usage;
     private String id;
     private String finishReason;
@@ -54,7 +55,9 @@ final class ModelCapture {
             List<Msg> messages,
             List<ToolSchema> tools,
             GenerateOptions options,
-            String replayHash) {
+            String replayHash,
+            String providerKey) {
+        this.providerKey = providerKey;
         var data = new LinkedHashMap<String, Object>();
         data.put("model", model);
         data.put("purpose", purpose);
@@ -66,6 +69,10 @@ final class ModelCapture {
         if (JsonUtils.getJsonCodec().toJson(request).length() > MAX_BYTES)
             throw new DurableException(
                     DurableException.Code.INVALID, "Model request exceeds capture limit");
+    }
+
+    String replayHash() {
+        return replayHash;
     }
 
     synchronized void nextAttempt() {

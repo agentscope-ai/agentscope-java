@@ -45,6 +45,49 @@ public class DurableBackendTest extends SessionBackendContract {
         return JdbcRecordStore.postgres(postgresUrl, properties);
     }
 
+    @org.junit.jupiter.api.Test
+    @org.junit.jupiter.api.condition.EnabledIfSystemProperty(
+            named = "durable.test.jdbcUrl",
+            matches = ".+")
+    void idleOwnerCannotHoldRecordLockBeyondShortLease() throws Exception {
+        try (var owner = openStore();
+                var successor = openStore()) {
+            owner.boundIdleTransactionTime(java.time.Duration.ofSeconds(1));
+            var locked = new java.util.concurrent.CountDownLatch(1);
+            var release = new java.util.concurrent.CountDownLatch(1);
+            var first =
+                    java.util.concurrent.CompletableFuture.runAsync(
+                            () ->
+                                    owner.transaction(
+                                            "idle",
+                                            tx -> {
+                                                locked.countDown();
+                                                try {
+                                                    release.await(
+                                                            12,
+                                                            java.util.concurrent.TimeUnit.SECONDS);
+                                                } catch (InterruptedException interrupted) {
+                                                    Thread.currentThread().interrupt();
+                                                    throw new IllegalStateException(interrupted);
+                                                }
+                                                return null;
+                                            }));
+            try {
+                org.junit.jupiter.api.Assertions.assertTrue(
+                        locked.await(5, java.util.concurrent.TimeUnit.SECONDS));
+                var second =
+                        java.util.concurrent.CompletableFuture.runAsync(
+                                () -> successor.transaction("idle", tx -> null));
+                second.get(6, java.util.concurrent.TimeUnit.SECONDS);
+            } finally {
+                release.countDown();
+            }
+            org.junit.jupiter.api.Assertions.assertThrows(
+                    java.util.concurrent.ExecutionException.class,
+                    () -> first.get(5, java.util.concurrent.TimeUnit.SECONDS));
+        }
+    }
+
     @AfterEach
     protected void cleanup() throws Exception {
         if (schema != null)

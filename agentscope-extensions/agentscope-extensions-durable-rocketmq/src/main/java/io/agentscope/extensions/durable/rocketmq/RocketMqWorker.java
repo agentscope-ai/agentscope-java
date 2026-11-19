@@ -58,7 +58,8 @@ public final class RocketMqWorker implements AutoCloseable {
         updatesTopic = topology.updates();
         authorizer = builder.authorizer;
         interval = builder.interval;
-        store = new TransactionalExecutionStore(builder.records, name);
+        builder.records.boundIdleTransactionTime(builder.lease);
+        store = new TransactionalExecutionStore(builder.records, name, builder.unknownLimit);
         ClientServiceProvider provider = builder.provider;
         Producer configuredProducer;
         SimpleConsumer configuredConsumer;
@@ -256,6 +257,7 @@ public final class RocketMqWorker implements AutoCloseable {
         private Duration lease = Duration.ofSeconds(30);
         private int parallelism = 4;
         private int recoveryParallelism = 2;
+        private int unknownLimit = TransactionalExecutionStore.DEFAULT_UNKNOWN_LIMIT;
         private Duration retryMaximum = Duration.ofSeconds(30);
         private Consumer<Throwable> errors =
                 error ->
@@ -293,6 +295,13 @@ public final class RocketMqWorker implements AutoCloseable {
         /** Persistent Hands delivery and execution records. The store remains caller-owned. */
         public Builder recordStore(RecordStore value) {
             records = Objects.requireNonNull(value);
+            return this;
+        }
+
+        /** Maximum consecutive UNKNOWN observations for newly admitted executions. */
+        public Builder unknownLimit(int value) {
+            if (value < 1) throw new IllegalArgumentException("unknownLimit must be positive");
+            unknownLimit = value;
             return this;
         }
 

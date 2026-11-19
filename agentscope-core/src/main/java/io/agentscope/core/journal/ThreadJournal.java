@@ -103,6 +103,11 @@ public interface ThreadJournal {
 
     Head head();
 
+    /** Cursor immediately before a settled state snapshot. Historical reads still start at zero. */
+    default long recoveryCursor() {
+        return 0;
+    }
+
     Writer acquire(String owner, Duration lease);
 
     /**

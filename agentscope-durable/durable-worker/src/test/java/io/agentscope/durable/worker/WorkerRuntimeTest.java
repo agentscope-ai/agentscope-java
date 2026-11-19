@@ -278,6 +278,47 @@ class WorkerRuntimeTest {
     }
 
     @Test
+    void parkedUnknownBudgetIsFrozenAndOnlyExplicitControlReopensIt() throws Exception {
+        try (var records = JdbcRecordStore.sqlite(directory.resolve("parked.db"))) {
+            var original = new TransactionalExecutionStore(records, "hands", 1);
+            original.admit(request);
+            var replacement = new TransactionalExecutionStore(records, "hands", 10);
+            var lease = Duration.ofSeconds(5);
+            var key = replacement.ready(1).get(0);
+            var work = replacement.claim(key, "worker", lease).orElseThrow();
+            replacement.begin(work);
+            replacement.update(work, ExecutionResult.unknown("provider unreachable"));
+            replacement.defer(work, lease, lease);
+            assertTrue(original.ready(1).isEmpty());
+            assertTrue(
+                    original.query(request).error().contains("external reconciliation required"));
+            assertTrue(original.claim(key, "background", lease).isEmpty());
+            var inspector = original.claim(request, "operator", lease).orElseThrow();
+            original.release(inspector, Duration.ZERO);
+            replacement.cancel(request);
+            var cancelling = original.claim(key, "worker", lease).orElseThrow();
+            original.update(cancelling, ExecutionResult.unknown("cancel unconfirmed"));
+            original.release(cancelling, Duration.ZERO);
+            replacement.cancel(request);
+            assertTrue(original.ready(true, 1).isEmpty());
+        }
+    }
+
+    @Test
+    void aLateUnknownFromStartCannotExhaustConcurrentCancellationBudget() throws Exception {
+        try (var records = JdbcRecordStore.sqlite(directory.resolve("cancel-race.db"))) {
+            var store = new TransactionalExecutionStore(records, "hands", 1);
+            store.admit(request);
+            var work = store.claim(request, "original", Duration.ofSeconds(5)).orElseThrow();
+            store.begin(work);
+            store.cancel(request);
+            store.update(work, ExecutionResult.unknown("start lost"));
+            store.release(work, Duration.ZERO);
+            assertEquals(List.of(work.key()), store.ready(true, 1));
+        }
+    }
+
+    @Test
     void deferredRecoverySurvivesReplacementAndCancellationBypassesBackoff() throws Exception {
         try (var records = JdbcRecordStore.sqlite(directory.resolve("backoff.db"))) {
             var store = new TransactionalExecutionStore(records);
@@ -543,28 +584,35 @@ class WorkerRuntimeTest {
 
     @Test
     void staleWorkerCannotPublishResult() throws Exception {
-        var store =
-                new TransactionalExecutionStore(
-                        JdbcRecordStore.sqlite(directory.resolve("fence.db")));
-        store.admit(request);
-        var key = store.keys(null, 1).get(0);
-        var old = store.claim(key, "old", Duration.ofSeconds(1)).orElseThrow();
-        store.begin(old);
-        store.release(old, Duration.ZERO);
-        var current = store.claim(key, "new", Duration.ofSeconds(1)).orElseThrow();
-        assertThrows(
-                DurableException.class,
-                () ->
-                        store.update(
-                                old,
-                                new ExecutionResult(
-                                        ExecutionState.SUCCEEDED,
-                                        null,
-                                        DurableJson.value("late"),
-                                        null)));
-        store.update(
-                current, new ExecutionResult(ExecutionState.UNKNOWN, null, null, "Needs query"));
-        assertEquals(ExecutionState.UNKNOWN, store.query(request).state());
+        var file = directory.resolve("fence.db");
+        try (var first = JdbcRecordStore.sqlite(file);
+                var second = JdbcRecordStore.sqlite(file)) {
+            var store = new TransactionalExecutionStore(first);
+            var replacement = new TransactionalExecutionStore(second);
+            var command = ExecutionMessages.command(ExecutionMessages.Kind.EXECUTE, request);
+            store.receive(command);
+            var old = store.claim(request, "old", Duration.ofSeconds(1)).orElseThrow();
+            store.begin(old);
+            replacement.receive(command);
+            assertTrue(replacement.claim(request, "new", Duration.ofSeconds(1)).isEmpty());
+            Thread.sleep(1100);
+            var current = replacement.claim(request, "new", Duration.ofSeconds(5)).orElseThrow();
+            assertTrue(replacement.begin(current).attempted());
+            var confirmed =
+                    new ExecutionResult(
+                            ExecutionState.SUCCEEDED,
+                            request.executionId(),
+                            DurableJson.value("verified"),
+                            null);
+            replacement.update(current, confirmed);
+            assertEquals(
+                    DurableException.Code.FENCED,
+                    assertThrows(
+                                    DurableException.class,
+                                    () -> store.update(old, ExecutionResult.unknown("late return")))
+                            .code());
+            assertEquals(confirmed, store.query(request));
+        }
     }
 
     @Test

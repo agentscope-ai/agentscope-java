@@ -26,6 +26,11 @@ import reactor.core.publisher.Flux;
 /** Optional call-scoped host replay boundary. Invoking next preserves recording and model policy. */
 @FunctionalInterface
 public interface ModelInvocation {
+    /** Transport options for this recorded dispatch. The journal retains the original input. */
+    default GenerateOptions providerOptions(String callId, GenerateOptions options) {
+        return options;
+    }
+
     Flux<ChatResponse> stream(
             String model,
             String purpose,

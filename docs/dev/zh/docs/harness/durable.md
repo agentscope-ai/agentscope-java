@@ -682,6 +682,14 @@ SSE 查询支持 threadId/turnId/runId，Last-Event-ID 优先于 cursor 参数�
 
 ## 恢复边界
 
+直接 Executor 的非终态进展由当前 Brain 的租约保护。换主后旧观察不能覆盖新宿主保存的操作句柄；同一执行迟到的已确认终态仍可交付。
+
+同一 Turn 的未完成 Run 连续丢失所有权，超过持久恢复策略的重试次数（尚无策略记录时默认为三次）后，接管宿主停止推理并执行故障收尾。完成一个执行步骤或正常释放租约会清零连续丢失次数。
+
+原生工具已派发、结果不确定时，由获授权的宿主独立确认结果，认领原 Turn，并调用 `AgentScopeAdapter.reconcileNativeTools(context, requestId, evidenceRef, outcomes)`。使用该租约构造 `HarnessContext`，提交全部未核实的原生调用 ID 及对应终态，完成后释放租约。证据引用应指向受控审计记录，勿传入敏感载荷。同一 Turn 的相同请求和结果可以重试；核实只修复原生状态，保留已有的取消或停止恢复决定。
+
+正常完成 Turn 时，适配器在终态事务中保存最近原生状态快照的位置。下次恢复从该快照读取后续日志；按位置显式读取的历史仍完整保留。单个尚未完成的长 Turn 仍需回放自上一个快照起的记录。
+
 Thread 固定 Harness 和原生状态版本，重启需要匹配的工厂、工具绑定与执行环境。
 共享后端不意味着可以切换原生内核。当前提供 Java 实现；其他语言接入需要自己的适配器和协议一致性检查。
 
@@ -867,3 +875,19 @@ var children = new DelegationExecutor(backend, request ->
 取消先于受理时只保存取消记录，后续迟到的 start 不会创建子任务。事务内拒绝跨 Session、父 Thread
 自身及未完成委派形成的 Thread 依赖环。`turn.delegated`、`tool.delegated` 和
 `tool.delegation.cancel_requested` 是统一公开事件；它们不替代真实子任务结果及父任务的结果应用。
+
+### Hands 执行结果不确定时的恢复
+
+服务端已返回执行句柄时，接管的 Hands 会继续查询原句柄。查询返回缺失时仍保留该句柄。没有句柄时，只有提供方能对所有 Hands 按同一 executionId 去重才允许再次启动。事务型 Hands 账本默认在连续 8 次 UNKNOWN 后暂停自动恢复。RocketMQ 宿主可通过 `RocketMqWorker.Builder.unknownLimit` 设置新执行的上限，账本在接纳执行时固定该值。运维端可按原执行身份领取租约，依据外部证据核实结果。首次取消会唤醒已暂停的执行以核实取消结果，重复取消保留原有预算。
+
+### 原生工具中断后的恢复
+
+可按工具名配置恢复策略：
+
+```java
+var recovery = adapter.withNativeToolRecovery(
+        Map.of("lookup", NativeToolRecovery.Replay.SAFE, "charge", NativeToolRecovery.Replay.NEVER),
+        new NativeToolRecovery.ModelCheck(checkModel, evidenceLookup));
+```
+
+首次派发时，journal 记录策略和已获准执行的参数。对允许重复执行的工具使用 `SAFE`，接管的 Brain 可按原调用身份重新执行。未配置的工具默认使用 `NEVER`。模型可提供查询线索，应用的只读 `EvidenceLookup` 负责在独立系统中核对原操作，并返回带原工具名、调用 ID 和证据引用的终态结果。无法核实时，Turn 保持等待，可人工核实或取消。将模型自查参数设为 `null` 即可关闭自查。
