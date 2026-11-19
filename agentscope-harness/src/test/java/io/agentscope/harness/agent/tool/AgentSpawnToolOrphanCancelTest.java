@@ -149,7 +149,8 @@ class AgentSpawnToolOrphanCancelTest {
         // The stock MockModel.withToolCall(...) returns the same id each call, which the
         // ReActAgent dedupes — only the first call executes, then the loop short-circuits to
         // summarizing. Using a generator with a fresh UUID forces every iteration to actually
-        // execute slow_tool, so the orphan (pre-fix) keeps writing new lines until interrupted.
+        // execute slow_tool, true ,so the orphan (pre-fix) keeps writing new lines until
+        // interrupted.
         java.util.function.Function<
                         List<io.agentscope.core.message.Msg>,
                         List<io.agentscope.core.model.ChatResponse>>
@@ -208,7 +209,7 @@ class AgentSpawnToolOrphanCancelTest {
         // exactly the parent-cancel scenario we want to exercise.
         long t0 = System.currentTimeMillis();
         try {
-            tool.agentSpawn(ctx, null, "slow_agent", "go", null, 30, null)
+            tool.agentSpawn(ctx, null, "slow_agent", "go", true, null, 30, null)
                     .timeout(Duration.ofSeconds(2))
                     .block();
         } catch (Exception expected) {

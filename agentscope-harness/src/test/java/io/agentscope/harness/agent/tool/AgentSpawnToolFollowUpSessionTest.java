@@ -138,7 +138,7 @@ class AgentSpawnToolFollowUpSessionTest {
 
         String spawn =
                 assertText(
-                        f.tool.agentSpawn(f.ctx, null, "worker", "first task", null, 5, null)
+                        f.tool.agentSpawn(f.ctx, null, "worker", "first task", true, null, 5, null)
                                 .block(),
                         ToolResultState.SUCCESS);
         assertTrue(spawn.contains("status: ok"), spawn);
@@ -175,7 +175,7 @@ class AgentSpawnToolFollowUpSessionTest {
 
         String spawn =
                 assertText(
-                        f.tool.agentSpawn(f.ctx, null, "worker", null, null, 5, null).block(),
+                        f.tool.agentSpawn(f.ctx, null, "worker", null, true, null, 5, null).block(),
                         ToolResultState.SUCCESS);
         assertTrue(spawn.contains("status: accepted"), spawn);
         assertEquals(0, f.model.calls.size(), "task-less spawn must not invoke the child");

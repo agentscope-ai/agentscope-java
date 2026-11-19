@@ -49,13 +49,17 @@ public interface SubagentGatewayBridge {
     ExposeResult expose(String agentId, String sessionId, Agent agent, OutboundAddress replyTo);
 
     /**
-     * Revokes a previously exposed subagent handle.
+     * Revokes every public handle exposed for the given child session.
      *
-     * <p>The default no-op preserves compatibility with existing expose-only bridge
-     * implementations. Gateway-backed bridges should override this method so releasing a
-     * subagent also makes its public handle unaddressable.
+     * <p>The gateway owns the mapping from public handles to child sessions. The default value
+     * preserves compatibility with existing expose-only bridge implementations; gateway-backed
+     * bridges should override it so releasing a subagent also makes its public handles
+     * unaddressable.
      *
-     * @param subagentId the user-visible handle returned by {@link #expose}
+     * @param sessionId the child session whose exposed handles should be revoked
+     * @return whether the bridge revoked at least one handle or knows the capability is supported
      */
-    default void revoke(String subagentId) {}
+    default boolean revokeBySessionId(String sessionId) {
+        return false;
+    }
 }

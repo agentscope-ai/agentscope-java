@@ -263,7 +263,8 @@ public final class ToolContextState {
             @JsonProperty("agent_id") String agentId,
             @JsonProperty("session_id") String sessionId,
             @JsonProperty("label") String label,
-            @JsonProperty("depth") int depth) {
+            @JsonProperty("depth") int depth,
+            @JsonProperty("reusable") boolean reusable) {
 
         @JsonCreator
         public SpawnEntry(
@@ -271,12 +272,14 @@ public final class ToolContextState {
                 @JsonProperty("agent_id") String agentId,
                 @JsonProperty("session_id") String sessionId,
                 @JsonProperty("label") String label,
-                @JsonProperty("depth") int depth) {
+                @JsonProperty("depth") int depth,
+                @JsonProperty("reusable") boolean reusable) {
             this.key = key;
             this.agentId = agentId;
             this.sessionId = sessionId;
             this.label = label;
             this.depth = depth;
+            this.reusable = reusable;
         }
     }
 

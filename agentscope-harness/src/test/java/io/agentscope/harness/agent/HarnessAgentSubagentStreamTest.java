@@ -149,6 +149,8 @@ class HarnessAgentSubagentStreamTest {
                                                 "researcher",
                                                 "task",
                                                 "research",
+                                                "reusable",
+                                                true,
                                                 "timeout_seconds",
                                                 60))));
         Model memoryModel = mock(Model.class);
@@ -238,6 +240,8 @@ class HarnessAgentSubagentStreamTest {
                                                 childId,
                                                 "task",
                                                 "research X",
+                                                "reusable",
+                                                true,
                                                 "timeout_seconds",
                                                 60))))
                 // Turn 2 (child invocation): reasoning chunk + stop
@@ -324,7 +328,15 @@ class HarnessAgentSubagentStreamTest {
         Model model = mock(Model.class);
         when(model.getModelName()).thenReturn("stub");
         Map<String, Object> spawnInput =
-                Map.of("agent_id", childId, "task", "format data", "timeout_seconds", 60);
+                Map.of(
+                        "agent_id",
+                        childId,
+                        "task",
+                        "format data",
+                        "reusable",
+                        true,
+                        "timeout_seconds",
+                        60);
         when(model.stream(anyList(), any(), any()))
                 .thenReturn(
                         Flux.just(
@@ -429,6 +441,8 @@ class HarnessAgentSubagentStreamTest {
                                                 childId,
                                                 "task",
                                                 "analyse data",
+                                                "reusable",
+                                                true,
                                                 "timeout_seconds",
                                                 60))))
                 .thenReturn(Flux.just(stopChunk("c1", "analysis complete")))
@@ -485,6 +499,8 @@ class HarnessAgentSubagentStreamTest {
                                                 childId,
                                                 "task",
                                                 "check",
+                                                "reusable",
+                                                true,
                                                 "timeout_seconds",
                                                 60))))
                 .thenReturn(Flux.just(stopChunk("c1", "child done")))

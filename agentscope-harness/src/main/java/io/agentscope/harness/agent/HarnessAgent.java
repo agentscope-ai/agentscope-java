@@ -774,8 +774,8 @@ public class HarnessAgent implements Agent, AutoCloseable {
                     }
 
                     @Override
-                    public void revoke(String subagentId) {
-                        gw.revokeSubagent(subagentId);
+                    public boolean revokeBySessionId(String sessionId) {
+                        return gw.revokeSubagentsBySession(sessionId);
                     }
                 };
         io.agentscope.harness.agent.subagent.DefaultAgentManager agentManager = null;

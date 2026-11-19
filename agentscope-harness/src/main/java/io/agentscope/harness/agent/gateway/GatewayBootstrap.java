@@ -142,8 +142,8 @@ public final class GatewayBootstrap {
             }
 
             @Override
-            public void revoke(String subagentId) {
-                gateway.revokeSubagent(subagentId);
+            public boolean revokeBySessionId(String sessionId) {
+                return gateway.revokeSubagentsBySession(sessionId);
             }
         };
     }

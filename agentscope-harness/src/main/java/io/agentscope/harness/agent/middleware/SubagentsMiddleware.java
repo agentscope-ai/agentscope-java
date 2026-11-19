@@ -385,11 +385,6 @@ public class SubagentsMiddleware implements HarnessRuntimeMiddleware {
         return this;
     }
 
-    /** Returns the internally-created spawn tool, or {@code null} in external session mode. */
-    public AgentSpawnTool getOwnedAgentSpawnTool() {
-        return ownedAgentSpawnTool;
-    }
-
     /** Closes the internally-created spawn tool without touching an injected external tool. */
     public synchronized void closeOwnedAgentSpawnTool() {
         AgentSpawnTool spawnTool = ownedAgentSpawnTool;

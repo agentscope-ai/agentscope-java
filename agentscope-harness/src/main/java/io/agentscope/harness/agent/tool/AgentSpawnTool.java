@@ -77,7 +77,6 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicReference;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.Disposable;
@@ -240,22 +239,19 @@ public class AgentSpawnTool implements AutoCloseable {
     private volatile RemoteSubagentTransport remoteTransport = new AgentProtocolTransport();
 
     private record SpawnedAgent(
-            String key, String agentId, String sessionId, String label, Agent agent, int depth) {}
-
-    private enum LifecycleState {
-        ACTIVE,
-        RELEASING,
-        RELEASED
-    }
+            String key,
+            String agentId,
+            String sessionId,
+            String label,
+            Agent agent,
+            int depth,
+            boolean reusable) {}
 
     /** A live agent plus the lifecycle state needed to reject release while work is in flight. */
     private static final class ManagedAgent {
 
         private final SpawnedAgent spawned;
-        private final AtomicReference<String> exposedSubagentId = new AtomicReference<>();
-        private final AtomicReference<SubagentGatewayBridge> exposureBridge =
-                new AtomicReference<>();
-        private LifecycleState state = LifecycleState.ACTIVE;
+        private boolean releasing;
         private int inFlight;
 
         private ManagedAgent(SpawnedAgent spawned) {
@@ -263,26 +259,30 @@ public class AgentSpawnTool implements AutoCloseable {
         }
 
         private synchronized Lease tryAcquire() {
-            if (state != LifecycleState.ACTIVE) {
+            return tryAcquire(null);
+        }
+
+        private synchronized Lease tryAcquire(Runnable onTerminal) {
+            if (releasing) {
                 return null;
             }
             inFlight++;
-            return new Lease(this);
+            return new Lease(this, onTerminal);
         }
 
         private synchronized boolean beginRelease() {
-            if (state != LifecycleState.ACTIVE || inFlight != 0) {
+            if (releasing || inFlight != 0) {
                 return false;
             }
-            state = LifecycleState.RELEASING;
+            releasing = true;
             return true;
         }
 
         private synchronized boolean beginClose() {
-            if (state != LifecycleState.ACTIVE) {
+            if (releasing) {
                 return false;
             }
-            state = LifecycleState.RELEASING;
+            releasing = true;
             return true;
         }
 
@@ -292,12 +292,12 @@ public class AgentSpawnTool implements AutoCloseable {
             }
         }
 
-        private synchronized void markReleased() {
-            state = LifecycleState.RELEASED;
+        private synchronized void markClosed() {
+            releasing = true;
         }
 
-        private synchronized LifecycleState state() {
-            return state;
+        private synchronized boolean isReleasing() {
+            return releasing;
         }
 
         private synchronized int inFlight() {
@@ -309,16 +309,21 @@ public class AgentSpawnTool implements AutoCloseable {
     private static final class Lease implements AutoCloseable {
 
         private final ManagedAgent owner;
+        private final Runnable onTerminal;
         private final AtomicBoolean closed = new AtomicBoolean();
 
-        private Lease(ManagedAgent owner) {
+        private Lease(ManagedAgent owner, Runnable onTerminal) {
             this.owner = owner;
+            this.onTerminal = onTerminal;
         }
 
         @Override
         public void close() {
             if (closed.compareAndSet(false, true)) {
                 owner.releaseLease();
+                if (onTerminal != null) {
+                    onTerminal.run();
+                }
             }
         }
     }
@@ -418,6 +423,8 @@ public class AgentSpawnTool implements AutoCloseable {
                     The subagent does not inherit the parent conversation, so include every \
                     file path, constraint, and expected output format the task needs. New \
                     sessions start from the supplied task; persistent sessions may retain their own history. \
+                    Set reusable=false for a one-shot subagent whose agent_key is invalid after \
+                    the initial task. Set reusable=true when follow-up agent_send calls are needed. \
                     Do not re-spawn the same task reworded to bypass a permission denial; \
                     report the limitation instead.\
                     """)
@@ -431,6 +438,13 @@ public class AgentSpawnTool implements AutoCloseable {
                             description = "Task or prompt to send to the spawned agent",
                             required = false)
                     String task,
+            @ToolParam(
+                            name = "reusable",
+                            description =
+                                    "Whether this subagent remains addressable by agent_send"
+                                            + " after the initial task. false closes it when the"
+                                            + " task reaches a terminal state.")
+                    boolean reusable,
             @ToolParam(
                             name = "label",
                             description =
@@ -458,8 +472,9 @@ public class AgentSpawnTool implements AutoCloseable {
                     Boolean exposeToUser) {
 
         log.debug(
-                "agent_spawn called: agentId={}, timeoutSeconds={}, task={}",
+                "agent_spawn called: agentId={}, reusable={}, timeoutSeconds={}, task={}",
                 agentId,
+                reusable,
                 timeoutSeconds,
                 task);
         int nextDepth = parentSpawnDepth + 1;
@@ -485,6 +500,14 @@ public class AgentSpawnTool implements AutoCloseable {
         String parentSessionId = runtimeContext != null ? runtimeContext.getSessionId() : null;
         var declOpt = manager.getDeclaration(agentId);
         boolean persist = declOpt.map(SubagentDeclaration::isPersistSession).orElse(false);
+        boolean effectiveExpose = resolveExposeToUser(exposeToUser, declOpt, runtimeContext);
+        boolean hasTask = task != null && !task.isBlank();
+        if (!reusable && (!hasTask || canonLabel != null || persist || effectiveExpose)) {
+            return Mono.just(
+                    ToolResultBlock.error(
+                            "reusable=false requires a task and cannot be combined with label,"
+                                    + " persistSession, or expose_to_user."));
+        }
         ScopedRegistry registry = registryFor(runtimeContext);
         try {
 
@@ -502,12 +525,14 @@ public class AgentSpawnTool implements AutoCloseable {
                 // Reuse existing agent if same deterministic key was already spawned.
                 ManagedAgent existing = registry.agentsByKey.get(key);
                 if (existing != null) {
-                    if (existing.state() != LifecycleState.ACTIVE) {
+                    if (existing.isReleasing()) {
                         return Mono.just(ToolResultBlock.error("Agent is being released: " + key));
+                    }
+                    if (!existing.spawned.reusable()) {
+                        return Mono.just(ToolResultBlock.error("Agent is not reusable: " + key));
                     }
                     SpawnedAgent spawned = existing.spawned;
                     String spawnInfo = formatSpawnInfo(key, agentId, sessionId, null);
-                    boolean hasTask = task != null && !task.isBlank();
                     if (!hasTask) {
                         if (!propagateWithLease(
                                 existing, runtimeContext, parentState, currentUserId, declOpt)) {
@@ -517,7 +542,7 @@ public class AgentSpawnTool implements AutoCloseable {
                         return Mono.just(
                                 ToolResultBlock.success(spawnInfo + "\nstatus: accepted (reused)"));
                     }
-                    return execSpawnTask(
+                    return execManagedTask(
                             existing,
                             runtimeContext,
                             parentState,
@@ -568,7 +593,8 @@ public class AgentSpawnTool implements AutoCloseable {
             log.debug("agent_spawn resolved: agentId={}", agentId);
             Agent agent = agentOpt.get();
             SpawnedAgent spawned =
-                    new SpawnedAgent(key, agentId, sessionId, canonLabel, agent, nextDepth);
+                    new SpawnedAgent(
+                            key, agentId, sessionId, canonLabel, agent, nextDepth, reusable);
             ManagedAgent managed = new ManagedAgent(spawned);
 
             // Fully initialize the private candidate before publishing it in the live registry.
@@ -582,8 +608,6 @@ public class AgentSpawnTool implements AutoCloseable {
                     propagateParentDenyRules(parentState, currentUserId, sessionId, agent, declOpt);
                 }
 
-                boolean effectiveExpose =
-                        resolveExposeToUser(exposeToUser, declOpt, runtimeContext);
                 SubagentGatewayBridge exposureBridge = gatewayBridge;
                 if (effectiveExpose && exposureBridge != null) {
                     OutboundAddress replyTo =
@@ -593,8 +617,6 @@ public class AgentSpawnTool implements AutoCloseable {
                     SubagentGatewayBridge.ExposeResult er =
                             exposureBridge.expose(agentId, sessionId, agent, replyTo);
                     subagentId = er.subagentId();
-                    managed.exposedSubagentId.set(subagentId);
-                    managed.exposureBridge.set(exposureBridge);
                 }
             } catch (RuntimeException | Error e) {
                 if (lowerLabel != null) {
@@ -611,7 +633,8 @@ public class AgentSpawnTool implements AutoCloseable {
             synchronized (registry) {
                 winner = registry.agentsByKey.putIfAbsent(key, managed);
                 if (winner == null) {
-                    persistSpawnEntry(parentState, key, agentId, sessionId, canonLabel, nextDepth);
+                    persistSpawnEntry(
+                            parentState, key, agentId, sessionId, canonLabel, nextDepth, reusable);
                 }
             }
             if (winner != null) {
@@ -629,7 +652,7 @@ public class AgentSpawnTool implements AutoCloseable {
                     return Mono.just(
                             ToolResultBlock.success(spawnInfo + "\nstatus: accepted (reused)"));
                 }
-                return execSpawnTask(
+                return execManagedTask(
                         winner,
                         runtimeContext,
                         parentState,
@@ -663,8 +686,6 @@ public class AgentSpawnTool implements AutoCloseable {
             }
 
             String spawnInfo = formatSpawnInfo(key, agentId, sessionId, subagentId);
-            boolean hasTask = task != null && !task.isBlank();
-
             if (!hasTask) {
                 return withSubagentExposedEvent(
                         Mono.just(ToolResultBlock.success(spawnInfo + "\nstatus: accepted")),
@@ -675,7 +696,7 @@ public class AgentSpawnTool implements AutoCloseable {
             }
 
             Mono<ToolResultBlock> execution =
-                    execSpawnTask(
+                    execManagedTask(
                             managed,
                             runtimeContext,
                             parentState,
@@ -762,6 +783,14 @@ public class AgentSpawnTool implements AutoCloseable {
             }
         }
 
+        io.agentscope.core.state.ToolContextState.SpawnEntry stateEntry =
+                parentState == null
+                        ? null
+                        : parentState.getToolContext().getSpawnRegistry().get(key);
+        if (stateEntry != null && !stateEntry.reusable()) {
+            return Mono.just(ToolResultBlock.error("Agent is not reusable: " + key));
+        }
+
         ManagedAgent resolved = registry != null ? registry.agentsByKey.get(key) : null;
         if (resolved == null) {
             resolved = tryRestoreFromState(parentState, key, runtimeContext);
@@ -772,6 +801,9 @@ public class AgentSpawnTool implements AutoCloseable {
         if (parentState != null
                 && !parentState.getToolContext().getSpawnRegistry().containsKey(key)) {
             return Mono.just(ToolResultBlock.error("Unknown agent_key: " + key));
+        }
+        if (!resolved.spawned.reusable()) {
+            return Mono.just(ToolResultBlock.error("Agent is not reusable: " + key));
         }
         final ManagedAgent managed = resolved;
         final SpawnedAgent spawned = managed.spawned;
@@ -824,7 +856,7 @@ public class AgentSpawnTool implements AutoCloseable {
             synchronized (registry) {
                 managed = registry.agentsByKey.get(key);
                 if (managed == null) {
-                    releasedPersistedOnly = removePersistedSpawnEntry(parentState, key);
+                    releasedPersistedOnly = releasePersistedSpawnEntry(parentState, key);
                     if (releasedPersistedOnly) {
                         registry.labelToKey.values().removeIf(key::equals);
                     }
@@ -843,7 +875,7 @@ public class AgentSpawnTool implements AutoCloseable {
             }
         } else {
             managed = null;
-            releasedPersistedOnly = removePersistedSpawnEntry(parentState, key);
+            releasedPersistedOnly = releasePersistedSpawnEntry(parentState, key);
         }
         if (managed == null) {
             if (releasedPersistedOnly) {
@@ -874,11 +906,16 @@ public class AgentSpawnTool implements AutoCloseable {
         if (registry != null) {
             for (ManagedAgent managed : registry.agentsByKey.values()) {
                 SpawnedAgent a = managed.spawned;
-                if (managed.state() == LifecycleState.ACTIVE) {
+                if (!managed.isReleasing()) {
                     entries.put(
                             a.key(),
                             new io.agentscope.core.state.ToolContextState.SpawnEntry(
-                                    a.key(), a.agentId(), a.sessionId(), a.label(), a.depth()));
+                                    a.key(),
+                                    a.agentId(),
+                                    a.sessionId(),
+                                    a.label(),
+                                    a.depth(),
+                                    a.reusable()));
                 }
             }
         }
@@ -892,11 +929,16 @@ public class AgentSpawnTool implements AutoCloseable {
         for (ScopedRegistry registry : registries.values()) {
             for (ManagedAgent managed : registry.agentsByKey.values()) {
                 SpawnedAgent a = managed.spawned;
-                if (managed.state() == LifecycleState.ACTIVE) {
+                if (!managed.isReleasing()) {
                     entries.put(
                             a.key(),
                             new io.agentscope.core.state.ToolContextState.SpawnEntry(
-                                    a.key(), a.agentId(), a.sessionId(), a.label(), a.depth()));
+                                    a.key(),
+                                    a.agentId(),
+                                    a.sessionId(),
+                                    a.label(),
+                                    a.depth(),
+                                    a.reusable()));
                 }
             }
         }
@@ -921,7 +963,7 @@ public class AgentSpawnTool implements AutoCloseable {
             ManagedAgent live = registry != null ? registry.agentsByKey.get(entry.key()) : null;
             if (live != null) {
                 sb.append("  state: ")
-                        .append(live.state().name().toLowerCase(Locale.ROOT))
+                        .append(live.isReleasing() ? "releasing" : "active")
                         .append("\n");
                 sb.append("  in_flight: ").append(live.inFlight()).append("\n");
             }
@@ -974,20 +1016,71 @@ public class AgentSpawnTool implements AutoCloseable {
         return true;
     }
 
+    private boolean releasePersistedSpawnEntry(AgentState parentState, String key) {
+        io.agentscope.core.state.ToolContextState.SpawnEntry entry =
+                parentState == null
+                        ? null
+                        : parentState.getToolContext().getSpawnRegistry().get(key);
+        if (entry == null) {
+            return false;
+        }
+        revokeGatewayExposure(entry.sessionId());
+        parentState.getToolContext().removeSpawnEntry(key);
+        return true;
+    }
+
     private void closeManagedAgent(ManagedAgent managed) {
         try {
-            String subagentId = managed.exposedSubagentId.getAndSet(null);
-            SubagentGatewayBridge bridge = managed.exposureBridge.getAndSet(null);
-            if (subagentId != null && bridge != null) {
-                try {
-                    bridge.revoke(subagentId);
-                } catch (RuntimeException e) {
-                    log.warn("Failed to revoke exposed subagent {}", subagentId, e);
-                }
-            }
+            revokeGatewayExposure(managed.spawned.sessionId());
             closeAgent(managed.spawned.agent());
         } finally {
-            managed.markReleased();
+            managed.markClosed();
+        }
+    }
+
+    /** Closes a one-shot subagent after its execution lease reaches a terminal state. */
+    private void releaseOneShot(
+            ManagedAgent managed, RuntimeContext runtimeContext, AgentState parentState) {
+        if (managed.spawned.reusable()) {
+            return;
+        }
+        ScopedRegistry registry = registries.get(RegistryScope.from(runtimeContext));
+        if (registry == null) {
+            if (managed.beginRelease()) {
+                removePersistedSpawnEntry(parentState, managed.spawned.key());
+                closeManagedAgent(managed);
+            }
+            return;
+        }
+
+        synchronized (registry) {
+            if (!managed.beginRelease()) {
+                return;
+            }
+            registry.agentsByKey.remove(managed.spawned.key(), managed);
+            if (managed.spawned.label() != null) {
+                registry.labelToKey.remove(
+                        managed.spawned.label().toLowerCase(Locale.ROOT), managed.spawned.key());
+            }
+            removePersistedSpawnEntry(parentState, managed.spawned.key());
+        }
+        closeManagedAgent(managed);
+        removeRegistryIfEmpty(runtimeContext, registry);
+    }
+
+    private void revokeGatewayExposure(String sessionId) {
+        SubagentGatewayBridge bridge = gatewayBridge;
+        if (bridge == null) {
+            return;
+        }
+        try {
+            if (!bridge.revokeBySessionId(sessionId)) {
+                log.debug(
+                        "Gateway bridge does not support revoking exposed subagent session {}",
+                        sessionId);
+            }
+        } catch (RuntimeException e) {
+            log.warn("Failed to revoke exposed subagent session {}", sessionId, e);
         }
     }
 
@@ -1439,7 +1532,8 @@ public class AgentSpawnTool implements AutoCloseable {
             String agentId,
             String sessionId,
             String label,
-            int depth) {
+            int depth,
+            boolean reusable) {
         if (parentState == null) {
             return;
         }
@@ -1448,7 +1542,7 @@ public class AgentSpawnTool implements AutoCloseable {
                 .putSpawnEntry(
                         key,
                         new io.agentscope.core.state.ToolContextState.SpawnEntry(
-                                key, agentId, sessionId, label, depth));
+                                key, agentId, sessionId, label, depth, reusable));
     }
 
     private String tryResolveLabelFromState(AgentState parentState, String label) {
@@ -1491,7 +1585,8 @@ public class AgentSpawnTool implements AutoCloseable {
                         entry.sessionId(),
                         entry.label(),
                         agentOpt.get(),
-                        entry.depth());
+                        entry.depth(),
+                        entry.reusable());
         ManagedAgent candidate = new ManagedAgent(restored);
         ScopedRegistry registry = registryFor(runtimeContext);
         try {
@@ -1777,7 +1872,7 @@ public class AgentSpawnTool implements AutoCloseable {
         BackgroundTask bgTask;
         try {
             bgTask = taskRepository.putTask(runtimeContext, taskId, agentId, parentSessionId, spec);
-            bgTask.onCompletion(lease::close);
+            bgTask.whenComplete((ignored, error) -> lease.close());
         } catch (RuntimeException e) {
             lease.close();
             throw e;
@@ -2051,23 +2146,6 @@ public class AgentSpawnTool implements AutoCloseable {
         return sb.toString();
     }
 
-    /**
-     * Executes a task against a previously spawned (or reused) subagent. Factored out of
-     * {@code agentSpawn} to handle the deterministic-key reuse path without duplicating the
-     * sync/async/remote dispatch logic.
-     */
-    private Mono<ToolResultBlock> execSpawnTask(
-            ManagedAgent managed,
-            RuntimeContext runtimeContext,
-            AgentState parentState,
-            String spawnInfo,
-            String task,
-            Integer timeoutSeconds,
-            Optional<SubagentDeclaration> declOpt) {
-        return execManagedTask(
-                managed, runtimeContext, parentState, spawnInfo, task, timeoutSeconds, declOpt);
-    }
-
     private Mono<ToolResultBlock> execManagedTask(
             ManagedAgent managed,
             RuntimeContext runtimeContext,
@@ -2078,7 +2156,9 @@ public class AgentSpawnTool implements AutoCloseable {
             Optional<SubagentDeclaration> declOpt) {
         return Mono.defer(
                 () -> {
-                    Lease lease = managed.tryAcquire();
+                    Lease lease =
+                            managed.tryAcquire(
+                                    () -> releaseOneShot(managed, runtimeContext, parentState));
                     if (lease == null) {
                         return Mono.just(
                                 ToolResultBlock.error(
@@ -2151,7 +2231,7 @@ public class AgentSpawnTool implements AutoCloseable {
                                                 parentSessionId,
                                                 spec);
                                 if (bgTask != null) {
-                                    bgTask.onCompletion(lease::close);
+                                    bgTask.whenComplete((ignored, error) -> lease.close());
                                 } else if (remote) {
                                     lease.close();
                                 }

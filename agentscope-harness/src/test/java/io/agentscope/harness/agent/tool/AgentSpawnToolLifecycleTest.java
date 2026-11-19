@@ -96,6 +96,7 @@ class AgentSpawnToolLifecycleTest {
                                             state,
                                             "worker",
                                             null,
+                                            true,
                                             "reusable-label",
                                             1,
                                             null)
@@ -117,6 +118,132 @@ class AgentSpawnToolLifecycleTest {
     }
 
     @Test
+    void oneShotSyncSpawnClosesWhenTerminalAndRejectsFollowUp() throws Exception {
+        AtomicInteger closed = new AtomicInteger();
+        DefaultAgentManager manager =
+                manager(rc -> closeableAgent("worker", closed, Mono.just(reply("done"))), false);
+        AgentState state = AgentState.builder().build();
+        RuntimeContext context = context("owner", "one-shot-parent");
+        AgentSpawnTool tool = new AgentSpawnTool(manager, new StartingTaskRepository(), 0);
+
+        String spawn =
+                textOf(
+                        tool.agentSpawn(
+                                        context,
+                                        state,
+                                        "worker",
+                                        "single task",
+                                        false,
+                                        null,
+                                        1,
+                                        null)
+                                .block(BLOCK_TIMEOUT));
+        String key = valueAfter(spawn, "agent_key: ");
+
+        assertTrue(spawn.contains("status: ok"));
+        assertEquals(1, closed.get());
+        assertEquals("No addressable subagents.", textOf(tool.agentList(context, state)));
+        assertTrue(state.getToolContext().getSpawnRegistry().isEmpty());
+        assertTrue(
+                textOf(tool.agentSend(context, state, key, null, "follow-up", 1).block())
+                        .contains("Unknown agent_key"));
+    }
+
+    @Test
+    @Timeout(20)
+    void oneShotAsyncSpawnRemainsBusyUntilTerminalThenCloses() throws Exception {
+        CountDownLatch entered = new CountDownLatch(1);
+        CompletableFuture<Msg> completion = new CompletableFuture<>();
+        AtomicInteger closed = new AtomicInteger();
+        DefaultAgentManager manager =
+                manager(
+                        rc ->
+                                closeableAgent(
+                                        "worker",
+                                        closed,
+                                        Mono.defer(
+                                                () -> {
+                                                    entered.countDown();
+                                                    return Mono.fromFuture(completion);
+                                                })),
+                        false);
+        try (StartingTaskRepository repository = new StartingTaskRepository()) {
+            AgentSpawnTool tool = new AgentSpawnTool(manager, repository, 0);
+            AgentState state = AgentState.builder().build();
+            RuntimeContext context = context("owner", "async-one-shot-parent");
+
+            String spawn =
+                    textOf(
+                            tool.agentSpawn(
+                                            context,
+                                            state,
+                                            "worker",
+                                            "single background task",
+                                            false,
+                                            null,
+                                            0,
+                                            null)
+                                    .block(BLOCK_TIMEOUT));
+            String key = valueAfter(spawn, "agent_key: ");
+            assertTrue(entered.await(10, TimeUnit.SECONDS));
+
+            assertTrue(textOf(tool.agentRelease(context, state, key, null)).contains("busy"));
+            assertEquals(0, closed.get());
+
+            completion.complete(reply("done"));
+            repository.awaitTerminal();
+            assertEquals(1, closed.get());
+            assertEquals("No addressable subagents.", textOf(tool.agentList(context, state)));
+            assertTrue(state.getToolContext().getSpawnRegistry().isEmpty());
+        } finally {
+            completion.complete(reply("cleanup"));
+        }
+    }
+
+    @Test
+    void oneShotRejectsConflictingLifecycleOptions() {
+        DefaultAgentManager manager =
+                manager(rc -> closeableAgent("worker", new AtomicInteger(), Mono.empty()), false);
+        DefaultAgentManager persistentManager =
+                manager(rc -> closeableAgent("worker", new AtomicInteger(), Mono.empty()), true);
+        AgentState state = AgentState.builder().build();
+        RuntimeContext context = context("owner", "conflict-parent");
+        AgentSpawnTool tool = new AgentSpawnTool(manager, new StartingTaskRepository(), 0);
+        AgentSpawnTool persistentTool =
+                new AgentSpawnTool(persistentManager, new StartingTaskRepository(), 0);
+
+        assertTrue(
+                textOf(
+                                tool.agentSpawn(
+                                                context, state, "worker", null, false, null, 1,
+                                                null)
+                                        .block(BLOCK_TIMEOUT))
+                        .contains("reusable=false requires a task"));
+        assertTrue(
+                textOf(
+                                tool.agentSpawn(
+                                                context, state, "worker", "task", false, "label", 1,
+                                                null)
+                                        .block(BLOCK_TIMEOUT))
+                        .contains("reusable=false requires a task"));
+        assertTrue(
+                textOf(
+                                tool.agentSpawn(
+                                                context, state, "worker", "task", false, null, 1,
+                                                true)
+                                        .block(BLOCK_TIMEOUT))
+                        .contains("reusable=false requires a task"));
+        assertTrue(
+                textOf(
+                                persistentTool
+                                        .agentSpawn(
+                                                context, state, "worker", "task", false, null, 1,
+                                                null)
+                                        .block(BLOCK_TIMEOUT))
+                        .contains("reusable=false requires a task"));
+    }
+
+    @Test
     void sendByKeyAndLabelWorksBeforeReleaseButCannotRestoreAfterRelease() throws Exception {
         AtomicInteger closed = new AtomicInteger();
         DefaultAgentManager manager =
@@ -127,7 +254,7 @@ class AgentSpawnToolLifecycleTest {
 
         String spawn =
                 textOf(
-                        tool.agentSpawn(context, state, "worker", null, "slot", 1, null)
+                        tool.agentSpawn(context, state, "worker", null, true, "slot", 1, null)
                                 .block(BLOCK_TIMEOUT));
         String key = valueAfter(spawn, "agent_key: ");
 
@@ -188,7 +315,7 @@ class AgentSpawnToolLifecycleTest {
                 .putSpawnEntry(
                         key,
                         new io.agentscope.core.state.ToolContextState.SpawnEntry(
-                                key, "worker", "child-session", "restoring", 1));
+                                key, "worker", "child-session", "restoring", 1, true));
 
         ExecutorService caller = Executors.newSingleThreadExecutor();
         try {
@@ -256,6 +383,7 @@ class AgentSpawnToolLifecycleTest {
                                                             state,
                                                             "worker",
                                                             null,
+                                                            true,
                                                             "initializing",
                                                             1,
                                                             true)
@@ -269,6 +397,7 @@ class AgentSpawnToolLifecycleTest {
 
             allowExposure.countDown();
             assertTrue(spawn.get(10, TimeUnit.SECONDS).contains("status: accepted"));
+            String session = valueAfter(spawn.get(10, TimeUnit.SECONDS), "session_id: ");
             assertTrue(
                     textOf(
                                     tool.agentSend(
@@ -283,7 +412,7 @@ class AgentSpawnToolLifecycleTest {
             assertTrue(
                     textOf(tool.agentRelease(context, state, null, "initializing"))
                             .contains("status: released"));
-            verify(bridge, times(1)).revoke("public-handle");
+            verify(bridge, times(1)).revokeBySessionId(session);
             assertEquals(1, closed.get());
         } finally {
             allowExposure.countDown();
@@ -306,7 +435,15 @@ class AgentSpawnToolLifecycleTest {
 
         String first =
                 textOf(
-                        tool.agentSpawn(firstContext, firstState, "worker", null, "shared", 1, null)
+                        tool.agentSpawn(
+                                        firstContext,
+                                        firstState,
+                                        "worker",
+                                        null,
+                                        true,
+                                        "shared",
+                                        1,
+                                        null)
                                 .block(BLOCK_TIMEOUT));
         String second =
                 textOf(
@@ -315,13 +452,22 @@ class AgentSpawnToolLifecycleTest {
                                         secondState,
                                         "worker",
                                         null,
+                                        true,
                                         "shared",
                                         1,
                                         null)
                                 .block(BLOCK_TIMEOUT));
         String third =
                 textOf(
-                        tool.agentSpawn(thirdContext, thirdState, "worker", null, "shared", 1, null)
+                        tool.agentSpawn(
+                                        thirdContext,
+                                        thirdState,
+                                        "worker",
+                                        null,
+                                        true,
+                                        "shared",
+                                        1,
+                                        null)
                                 .block(BLOCK_TIMEOUT));
         String firstKey = valueAfter(first, "agent_key: ");
         String secondKey = valueAfter(second, "agent_key: ");
@@ -388,6 +534,7 @@ class AgentSpawnToolLifecycleTest {
                                                             state,
                                                             "worker",
                                                             "blocking task",
+                                                            true,
                                                             "sync",
                                                             30,
                                                             null)
@@ -440,6 +587,7 @@ class AgentSpawnToolLifecycleTest {
                                             state,
                                             "worker",
                                             "blocking task",
+                                            true,
                                             "promoted",
                                             1,
                                             null)
@@ -492,6 +640,7 @@ class AgentSpawnToolLifecycleTest {
                                             state,
                                             "worker",
                                             "blocking task",
+                                            true,
                                             "async",
                                             0,
                                             null)
@@ -541,6 +690,7 @@ class AgentSpawnToolLifecycleTest {
                                                         state,
                                                         "worker",
                                                         null,
+                                                        true,
                                                         "duplicate",
                                                         1,
                                                         null)
@@ -587,6 +737,7 @@ class AgentSpawnToolLifecycleTest {
                                                         state,
                                                         "worker",
                                                         null,
+                                                        true,
                                                         "persistent",
                                                         1,
                                                         null)
@@ -635,7 +786,7 @@ class AgentSpawnToolLifecycleTest {
         RuntimeContext context = context("owner", "send-parent");
         String spawn =
                 textOf(
-                        tool.agentSpawn(context, state, "worker", "initial", "racy", 30, null)
+                        tool.agentSpawn(context, state, "worker", "initial", true, "racy", 30, null)
                                 .block(BLOCK_TIMEOUT));
         String key = valueAfter(spawn, "agent_key: ");
         ExecutorService caller = Executors.newSingleThreadExecutor();
@@ -670,6 +821,33 @@ class AgentSpawnToolLifecycleTest {
     }
 
     @Test
+    void persistedOnlyReleaseRevokesGatewayByChildSession() {
+        DefaultAgentManager manager =
+                manager(
+                        rc ->
+                                closeableAgent(
+                                        "worker", new AtomicInteger(), Mono.just(reply("done"))),
+                        false);
+        SubagentGatewayBridge bridge = mock(SubagentGatewayBridge.class);
+        when(bridge.revokeBySessionId(any())).thenReturn(true);
+        AgentSpawnTool tool = new AgentSpawnTool(manager, new StartingTaskRepository(), 0, bridge);
+        AgentState state = AgentState.builder().build();
+        String key = "agent:worker:persisted-only";
+        state.getToolContext()
+                .putSpawnEntry(
+                        key,
+                        new io.agentscope.core.state.ToolContextState.SpawnEntry(
+                                key, "worker", "child-session", "persisted", 1, true));
+
+        assertTrue(
+                textOf(tool.agentRelease(RuntimeContext.empty(), state, key, null))
+                        .contains("status: released"));
+
+        verify(bridge, times(1)).revokeBySessionId("child-session");
+        assertTrue(state.getToolContext().getSpawnRegistry().isEmpty());
+    }
+
+    @Test
     void releaseRevokesExposedGatewayHandleExactlyOnce() throws Exception {
         AtomicInteger closed = new AtomicInteger();
         DefaultAgentManager manager =
@@ -683,13 +861,14 @@ class AgentSpawnToolLifecycleTest {
 
         String spawn =
                 textOf(
-                        tool.agentSpawn(context, state, "worker", null, null, 1, true)
+                        tool.agentSpawn(context, state, "worker", null, true, null, 1, true)
                                 .block(BLOCK_TIMEOUT));
         String key = valueAfter(spawn, "agent_key: ");
+        String session = valueAfter(spawn, "session_id: ");
         assertTrue(
                 textOf(tool.agentRelease(context, state, key, null)).contains("status: released"));
 
-        verify(bridge, times(1)).revoke("public-handle");
+        verify(bridge, times(1)).revokeBySessionId(session);
         assertEquals(1, closed.get());
     }
 

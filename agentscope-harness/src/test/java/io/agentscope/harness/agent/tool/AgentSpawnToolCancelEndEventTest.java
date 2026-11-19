@@ -109,7 +109,7 @@ class AgentSpawnToolCancelEndEventTest {
         RecordingEmitter emitter = new RecordingEmitter();
 
         Disposable subscription =
-                tool.agentSpawn(parentCtx, null, "harness_agent", "work", null, 30, null)
+                tool.agentSpawn(parentCtx, null, "harness_agent", "work", true, null, 30, null)
                         .contextWrite(ctx -> ctx.put(AgentEventEmitter.CONTEXT_KEY, emitter))
                         .subscribe();
 
@@ -157,7 +157,7 @@ class AgentSpawnToolCancelEndEventTest {
 
         RecordingEmitter emitter = new RecordingEmitter();
 
-        tool.agentSpawn(parentCtx, null, "harness_agent", "work", null, 30, null)
+        tool.agentSpawn(parentCtx, null, "harness_agent", "work", true, null, 30, null)
                 .contextWrite(ctx -> ctx.put(AgentEventEmitter.CONTEXT_KEY, emitter))
                 .block();
 
