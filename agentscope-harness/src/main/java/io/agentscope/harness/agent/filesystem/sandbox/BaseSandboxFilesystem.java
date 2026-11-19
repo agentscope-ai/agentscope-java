@@ -167,7 +167,10 @@ public abstract class BaseSandboxFilesystem implements AbstractSandboxFilesystem
                         ? ReadResult.fail("File '" + filePath + "': file_not_found")
                         : ReadResult.fail(executeFailureMessage(result, "reading", filePath));
             }
-            String encoded = result.output() != null ? result.output().strip() : "";
+            // POSIX base64 wraps output at 76 columns with \n separators; keep only the
+            // base64 alphabet so the payload matches the single-line form the local and
+            // remote backends emit and decodes with the strict Base64 decoder (#3966).
+            String encoded = result.output() != null ? result.output().replaceAll("\\s+", "") : "";
             return ReadResult.success(new FileData(encoded, "base64"));
         }
 
