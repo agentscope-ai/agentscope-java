@@ -45,12 +45,20 @@ public interface ContextTokenEstimator {
             for (var tool : input.tools()) {
                 count += 16 + text(JsonUtils.getJsonCodec().toJson(tool));
             }
-            return new Estimate(count, "mixed-text-2.5chars-media-2048-v1", false);
+            return new Estimate(count, "mixed-text-cjk2x-2.5chars-media-2048-v2", false);
         };
     }
 
     private static long text(String value) {
-        return value == null ? 0 : (long) Math.ceil(value.length() / 2.5);
+        if (value == null) return 0;
+        long weightedChars = 0;
+        for (int i = 0; i < value.length(); i++) {
+            char c = value.charAt(i);
+            // CJK ideographs (U+4E00..U+9FFF) cost roughly one token each — about twice the
+            // per-character cost of Latin text — so they carry double weight before the division.
+            weightedChars += c >= '一' && c <= '鿿' ? 2 : 1;
+        }
+        return (long) Math.ceil(weightedChars / 2.5);
     }
 
     private static long block(ContentBlock block) {
