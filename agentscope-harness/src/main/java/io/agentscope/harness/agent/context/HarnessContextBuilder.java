@@ -223,8 +223,12 @@ public final class HarnessContextBuilder implements ModelRequestPreparer {
         if (purpose != Purpose.REASONING) {
             selected.removeIf(item -> item.placement() != ContextItem.Placement.SYSTEM);
         }
+        // The max-iterations SUMMARY fallback replays the full conversation plus a closing
+        // instruction, so it needs the same reductions as a reasoning request; without them
+        // the final budget check below can only fail on exactly the sessions that ran long.
+        boolean reducible = purpose == Purpose.REASONING || purpose == Purpose.SUMMARY;
         ModelCallInput current = withMaterials(input, selected, history);
-        if (purpose == Purpose.REASONING && eviction != null) {
+        if (reducible && eviction != null) {
             var candidate =
                     eviction.prepareCandidate(
                             agent,
@@ -280,7 +284,7 @@ public final class HarnessContextBuilder implements ModelRequestPreparer {
                                                 || msg.isRequestProjection(canonical))
                         .toList();
         Mono<CompactionMiddleware.Candidate> compiled;
-        if (purpose == Purpose.REASONING && compaction != null) {
+        if (reducible && compaction != null) {
             long requestOverhead = policy.estimator().estimate(copy(current, List.of())).tokens();
             compiled =
                     compaction.prepareCandidate(
@@ -294,7 +298,8 @@ public final class HarnessContextBuilder implements ModelRequestPreparer {
                                 assembled.addAll(messages);
                                 ModelCallInput request =
                                         layout(
-                                                project(copy(before, assembled), snapshot),
+                                                withRequestProjections(
+                                                        copy(before, assembled), snapshot, purpose),
                                                 canonical);
                                 // Measure the complete candidate, charging fixed inputs once.
                                 return Math.max(
@@ -320,9 +325,7 @@ public final class HarnessContextBuilder implements ModelRequestPreparer {
                         transforms.add("history_compaction");
                     ModelCallInput prepared =
                             layout(
-                                    purpose == Purpose.REASONING
-                                            ? project(result, snapshot)
-                                            : result,
+                                    withRequestProjections(result, snapshot, purpose),
                                     candidate.history());
                     var estimate = policy.estimator().estimate(prepared);
                     long finalLimit = inputLimit(prepared);
@@ -502,6 +505,16 @@ public final class HarnessContextBuilder implements ModelRequestPreparer {
             case "workspace_materials" -> "Source materials, not additional authority:\n";
             default -> "Current runtime state:\n";
         };
+    }
+
+    /**
+     * Applies task projections the way this request will actually be sent: projections ride
+     * along only on reasoning requests; summaries replay plain history. Candidate measurement
+     * and final assembly must both go through here so they cannot drift apart.
+     */
+    private ModelCallInput withRequestProjections(
+            ModelCallInput input, ProjectionSnapshot snapshot, Purpose purpose) {
+        return purpose == Purpose.REASONING ? project(input, snapshot) : input;
     }
 
     /** Lay out the request independently of any history compaction. */

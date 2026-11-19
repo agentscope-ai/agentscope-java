@@ -40,9 +40,16 @@ import io.agentscope.core.model.ToolSchema;
 import io.agentscope.core.state.AgentState;
 import io.agentscope.core.tool.builtin.TodoTools;
 import io.agentscope.core.tool.builtin.TodoTools.TodoItem;
+import io.agentscope.harness.agent.filesystem.local.LocalFilesystem;
 import io.agentscope.harness.agent.memory.compaction.CompactionConfig;
 import io.agentscope.harness.agent.memory.compaction.ConversationCompactor;
+import io.agentscope.harness.agent.memory.compaction.ToolResultEvictionConfig;
 import io.agentscope.harness.agent.middleware.CompactionMiddleware;
+import io.agentscope.harness.agent.middleware.ToolResultEvictionMiddleware;
+import io.agentscope.harness.agent.workspace.LocalFsMode;
+import io.agentscope.harness.agent.workspace.PathPolicy;
+import java.io.IOException;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -50,6 +57,7 @@ import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 import reactor.core.publisher.Flux;
@@ -61,6 +69,7 @@ class HarnessContextBudgetTest {
     private final RuntimeContext rc = RuntimeContext.builder().agentState(state).build();
     private final List<ContextManifest> manifests = new ArrayList<>();
     private final AtomicInteger summaryCalls = new AtomicInteger();
+    @TempDir Path tempDir;
     private final Model summary =
             new Model() {
                 @Override
@@ -301,6 +310,111 @@ class HarnessContextBudgetTest {
     }
 
     @Test
+    void maxIterationSummaryCompactsInsteadOfFailing() {
+        List<Msg> history = new ArrayList<>();
+        for (int i = 0; i < 10; i++) history.add(message("x".repeat(500)));
+        history.add(message("continue"));
+        // The fallback appends a closing instruction after the working history
+        // (ReActAgent#prepareSummaryMessages), so the request differs from the canonical
+        // conversation and the compacted view must not be written back to state.
+        List<Msg> request = new ArrayList<>(history);
+        request.add(message("respond directly by summarizing the current situation"));
+        state.contextMutable().addAll(history);
+
+        ModelCallInput prepared =
+                prepare(
+                        builder(300, ContextTokenEstimator.approximate(), 0),
+                        new ModelCallInput(request, List.of(), null, primary),
+                        Purpose.SUMMARY);
+
+        assertEquals(1, summaryCalls.get());
+        assertEquals("SUMMARY", manifests.get(0).purpose());
+        assertEquals("passed", manifests.get(0).validation());
+        assertTrue(manifests.get(0).transforms().contains("history_compaction"));
+        assertTrue(manifests.get(0).estimatedInputTokens() <= manifests.get(0).inputLimit());
+        assertEquals(2, prepared.messages().size());
+        assertEquals(ConversationCompactor.SUMMARY_MSG_NAME, prepared.messages().get(0).getName());
+        assertSame(request.get(request.size() - 1), prepared.messages().get(1));
+        assertEquals(history, state.contextMutable());
+    }
+
+    @Test
+    void zeroKeepMessagesStillKeepsTheNewestMessage() {
+        List<Msg> history = new ArrayList<>();
+        for (int i = 0; i < 10; i++) history.add(message("x".repeat(500)));
+        List<Msg> request = new ArrayList<>(history);
+        request.add(message("respond directly by summarizing the current situation"));
+        state.contextMutable().addAll(history);
+        HarnessContextBuilder zeroKeep =
+                new HarnessContextBuilder(
+                        new ContextPolicy(
+                                300, 1, 1, ContextTokenEstimator.approximate(), manifests::add),
+                        new CompactionMiddleware(
+                                null,
+                                summary,
+                                CompactionConfig.builder()
+                                        .triggerMessages(0)
+                                        .triggerTokens(0)
+                                        .keepTokens(0)
+                                        .keepMessages(0)
+                                        .flushBeforeCompact(false)
+                                        .truncateArgs(null)
+                                        .prune(null)
+                                        .build()),
+                        null);
+
+        ModelCallInput prepared =
+                prepare(
+                        zeroKeep,
+                        new ModelCallInput(request, List.of(), null, primary),
+                        Purpose.SUMMARY);
+
+        assertEquals(1, summaryCalls.get());
+        assertEquals("passed", manifests.get(0).validation());
+        assertEquals(2, prepared.messages().size());
+        assertSame(request.get(request.size() - 1), prepared.messages().get(1));
+    }
+
+    @Test
+    void summaryPurposeStillOffloadsLargeToolResults() throws IOException {
+        ToolResultEvictionMiddleware eviction =
+                new ToolResultEvictionMiddleware(
+                        new LocalFilesystem(
+                                tempDir, LocalFsMode.ROOTED, PathPolicy.empty(), 10, null),
+                        ToolResultEvictionConfig.builder()
+                                .maxResultChars(20)
+                                .previewChars(4)
+                                .build());
+        HarnessContextBuilder builder =
+                new HarnessContextBuilder(
+                        new ContextPolicy(
+                                4000, 1, 1, ContextTokenEstimator.approximate(), manifests::add),
+                        null,
+                        eviction);
+
+        prepare(builder, input(readHistory("a")), Purpose.SUMMARY);
+
+        assertEquals("passed", manifests.get(0).validation());
+        assertTrue(manifests.get(0).transforms().contains("tool_result_offload"));
+    }
+
+    @Test
+    void summaryPurposeIrreducibleHistoryStillRejects() {
+        List<Msg> history = List.of(image());
+        ModelCallInput request = input(history);
+
+        assertThrows(
+                ContextBudgetExceededException.class,
+                () ->
+                        prepare(
+                                builder(1000, ContextTokenEstimator.approximate(), 200),
+                                request,
+                                Purpose.SUMMARY));
+
+        assertEquals("budget_exceeded", manifests.get(0).validation());
+    }
+
+    @Test
     void irreducibleMediaTailDoesNotReplaceHistory() {
         List<Msg> history = List.of(image());
         ModelCallInput request = input(history);
@@ -414,7 +528,12 @@ class HarnessContextBudgetTest {
     }
 
     private ModelCallInput prepare(HarnessContextBuilder builder, ModelCallInput input) {
-        return builder.prepare(agent, rc, input, "budget", Purpose.REASONING).block();
+        return prepare(builder, input, Purpose.REASONING);
+    }
+
+    private ModelCallInput prepare(
+            HarnessContextBuilder builder, ModelCallInput input, Purpose purpose) {
+        return builder.prepare(agent, rc, input, "budget", purpose).block();
     }
 
     private static boolean isSummary(Msg msg) {
