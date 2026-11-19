@@ -27,12 +27,16 @@ import io.agentscope.core.event.AgentEndEvent;
 import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.event.AgentEventEmitter;
 import io.agentscope.core.event.AgentStartEvent;
+import io.agentscope.core.event.ConfirmResult;
 import io.agentscope.core.event.SubagentExposedEvent;
 import io.agentscope.core.formatter.DocumentReferenceRenderer;
 import io.agentscope.core.journal.JournalException;
+import io.agentscope.core.message.GenerateReason;
 import io.agentscope.core.message.Msg;
+import io.agentscope.core.message.ToolCallState;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolResultState;
+import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.permission.PermissionContextState;
 import io.agentscope.core.permission.PermissionMode;
 import io.agentscope.core.permission.PermissionRule;
@@ -40,6 +44,7 @@ import io.agentscope.core.state.AgentState;
 import io.agentscope.core.tool.Tool;
 import io.agentscope.core.tool.ToolParam;
 import io.agentscope.core.tool.ToolSuspendException;
+import io.agentscope.core.util.JsonUtils;
 import io.agentscope.harness.agent.HarnessAgent;
 import io.agentscope.harness.agent.gateway.SessionIdUtils;
 import io.agentscope.harness.agent.gateway.SubagentGatewayBridge;
@@ -240,6 +245,10 @@ public class AgentSpawnTool {
             String key, String agentId, String sessionId, String label, Agent agent, int depth) {}
 
     private final ConcurrentHashMap<String, SpawnedAgent> agentsByKey = new ConcurrentHashMap<>();
+
+    /** ASKING tool calls surfaced by local children, keyed by the stable agent handle. */
+    private final ConcurrentHashMap<String, List<ToolUseBlock>> pendingConfirmations =
+            new ConcurrentHashMap<>();
 
     private record LabelKey(String userId, String parentSessionId, String label) {}
 
@@ -530,7 +539,7 @@ public class AgentSpawnTool {
                                                             capturedTask,
                                                             runtimeContext)
                                                     .block();
-                                    return textOf(reply);
+                                    return rememberAndRender(key, reply);
                                 });
             }
             taskRepository.putTask(runtimeContext, taskId, agentId, parentSessionId, spec);
@@ -585,7 +594,8 @@ public class AgentSpawnTool {
                         finalSpawnInfo,
                         timeoutMs,
                         agentId,
-                        forceSync),
+                        forceSync,
+                        List.of()),
                 finalSubagentId,
                 agentId,
                 sessionId,
@@ -708,7 +718,7 @@ public class AgentSpawnTool {
                                                             capturedMessage,
                                                             runtimeContext)
                                                     .block();
-                                    return textOf(reply);
+                                    return rememberAndRender(spawned.key(), reply);
                                 });
             }
             taskRepository.putTask(
@@ -744,7 +754,117 @@ public class AgentSpawnTool {
                 "agent_key: " + finalKey,
                 timeoutMs,
                 spawned.agentId(),
-                forceSync);
+                forceSync,
+                List.of());
+    }
+
+    @Tool(
+            name = "agent_confirm",
+            stateInjected = true,
+            timeoutManaged = true,
+            description =
+                    """
+                    Resume a local subagent that returned status: awaiting_confirm. Pass the exact
+                    agent_key (or label) and one decision for each pending tool call. Use the
+                    tool_call_id from pending_confirms; approved=true continues the child and
+                    approved=false denies it. This is only for local in-process subagents.
+                    """)
+    public Mono<ToolResultBlock> agentConfirm(
+            RuntimeContext runtimeContext,
+            AgentState parentState,
+            @ToolParam(
+                            name = "agent_key",
+                            description = "Exact agent_key returned by agent_spawn",
+                            required = false)
+                    String agentKey,
+            @ToolParam(
+                            name = "label",
+                            description = "Label assigned when the subagent was spawned",
+                            required = false)
+                    String label,
+            @ToolParam(
+                            name = "decisions",
+                            description =
+                                    "List of {toolCallId, approved, reason} decisions for the"
+                                            + " pending tool calls")
+                    List<RemoteConfirmDecision> decisions,
+            @ToolParam(
+                            name = "timeout_seconds",
+                            description = "Max seconds to wait for the resumed child",
+                            required = false)
+                    Integer timeoutSeconds) {
+        boolean hasKey = agentKey != null && !agentKey.isBlank();
+        boolean hasLabel = label != null && !label.isBlank();
+        if (hasKey == hasLabel) {
+            return Mono.just(ToolResultBlock.error("Provide exactly one of agent_key or label."));
+        }
+        if (decisions == null || decisions.isEmpty()) {
+            return Mono.just(ToolResultBlock.error("decisions is required"));
+        }
+
+        String key =
+                hasKey ? agentKey.trim() : labelToKey.get(labelKey(runtimeContext, label.trim()));
+        if (key == null && hasLabel) {
+            key = tryResolveLabelFromState(parentState, label.trim());
+        }
+        if (key == null) {
+            return Mono.just(ToolResultBlock.error("Unknown subagent label: " + label));
+        }
+
+        SpawnedAgent spawned = agentsByKey.get(key);
+        if (spawned == null) {
+            spawned = tryRestoreFromState(parentState, key, runtimeContext);
+        }
+        if (spawned == null) {
+            return Mono.just(ToolResultBlock.error("Unknown agent_key: " + key));
+        }
+        Optional<SubagentDeclaration> declaration =
+                managerFor(runtimeContext).getDeclaration(spawned.agentId());
+        if (declaration.map(SubagentDeclaration::isRemote).orElse(false)) {
+            return Mono.just(
+                    ToolResultBlock.error(
+                            "agent_confirm is for local subagents; use the remote task resume"
+                                    + " API"));
+        }
+
+        List<ToolUseBlock> pending = pendingConfirmationsFor(spawned, runtimeContext);
+        Map<String, ToolUseBlock> pendingById = new LinkedHashMap<>();
+        for (ToolUseBlock toolCall : pending) {
+            if (toolCall.getId() != null) {
+                pendingById.put(toolCall.getId(), toolCall);
+            }
+        }
+        List<ConfirmResult> confirmResults = new ArrayList<>(decisions.size());
+        for (RemoteConfirmDecision decision : decisions) {
+            if (decision == null || decision.getToolCallId() == null) {
+                return Mono.just(ToolResultBlock.error("Every decision needs toolCallId."));
+            }
+            ToolUseBlock toolCall = pendingById.get(decision.getToolCallId());
+            if (toolCall == null) {
+                return Mono.just(
+                        ToolResultBlock.error(
+                                "Decision references a non-pending tool call: "
+                                        + decision.getToolCallId()));
+            }
+            confirmResults.add(
+                    new ConfirmResult(decision.isApproved(), toolCall, null, decision.getReason()));
+        }
+
+        boolean forceSync = isForceSync(runtimeContext);
+        long timeoutMs = resolveEffectiveTimeoutMs(timeoutSeconds, runtimeContext);
+        String userId = runtimeContext != null ? runtimeContext.getUserId() : null;
+        return execWithTimeoutPromotion(
+                spawned.agent(),
+                spawned.sessionId(),
+                userId,
+                "",
+                spawned,
+                runtimeContext,
+                "agent_key: " + key,
+                timeoutMs,
+                spawned.agentId(),
+                forceSync,
+                List.copyOf(confirmResults));
     }
 
     @Tool(name = "agent_list", description = "List active subagents spawned by this agent.")
@@ -826,6 +946,17 @@ public class AgentSpawnTool {
             String prompt,
             SpawnedAgent spawned,
             RuntimeContext parentCtx) {
+        return execLocalSync(agent, sessionId, userId, prompt, spawned, parentCtx, List.of());
+    }
+
+    private Mono<Msg> execLocalSync(
+            Agent agent,
+            String sessionId,
+            String userId,
+            String prompt,
+            SpawnedAgent spawned,
+            RuntimeContext parentCtx,
+            List<ConfirmResult> confirmResults) {
         return Mono.deferContextual(
                         ctxView -> {
                             DefaultAgentManager manager = managerFor(parentCtx);
@@ -857,7 +988,12 @@ public class AgentSpawnTool {
                                         };
 
                                 return manager.invokeAgent(
-                                                agent, sessionId, userId, prompt, parentCtx)
+                                                agent,
+                                                sessionId,
+                                                userId,
+                                                prompt,
+                                                parentCtx,
+                                                confirmResults)
                                         .contextWrite(
                                                 c ->
                                                         c.put(
@@ -892,7 +1028,8 @@ public class AgentSpawnTool {
                                                 prompt,
                                                 childSource,
                                                 StreamOptions.defaults(),
-                                                parentCtx)
+                                                parentCtx,
+                                                confirmResults)
                                         .doOnNext(
                                                 e -> {
                                                     log.debug(
@@ -915,12 +1052,17 @@ public class AgentSpawnTool {
                                                 Mono.defer(
                                                         () ->
                                                                 manager.invokeAgent(
-                                                                        agent, sessionId, userId,
-                                                                        prompt, parentCtx)));
+                                                                        agent,
+                                                                        sessionId,
+                                                                        userId,
+                                                                        prompt,
+                                                                        parentCtx,
+                                                                        confirmResults)));
                             }
 
                             // ── Path 3: non-streaming ──
-                            return manager.invokeAgent(agent, sessionId, userId, prompt, parentCtx);
+                            return manager.invokeAgent(
+                                    agent, sessionId, userId, prompt, parentCtx, confirmResults);
                         })
                 .doOnSuccess(
                         reply -> {
@@ -973,7 +1115,8 @@ public class AgentSpawnTool {
             String header,
             long timeoutMs,
             String agentId,
-            boolean forceSync) {
+            boolean forceSync,
+            List<ConfirmResult> confirmResults) {
 
         return Mono.deferContextual(
                 parentCtx ->
@@ -995,7 +1138,8 @@ public class AgentSpawnTool {
                                                             userId,
                                                             task,
                                                             spawned,
-                                                            invocationContext)
+                                                            invocationContext,
+                                                            confirmResults)
                                                     .contextWrite(
                                                             c ->
                                                                     reactor.util.context.Context.of(
@@ -1048,15 +1192,12 @@ public class AgentSpawnTool {
                                                             agentId,
                                                             sink,
                                                             forceSync,
-                                                            innerSub);
+                                                            innerSub,
+                                                            spawned.key());
                                                 } else {
-                                                    sink.success(
-                                                            ToolResultBlock.success(
-                                                                    header
-                                                                            + "\n"
-                                                                            + "status: ok\n"
-                                                                            + "reply:\n"
-                                                                            + textOf(msg)));
+                                                    rememberPendingConfirmations(
+                                                            spawned.key(), msg);
+                                                    sink.success(formatLocalResult(header, msg));
                                                 }
                                             });
 
@@ -1102,7 +1243,8 @@ public class AgentSpawnTool {
             String agentId,
             reactor.core.publisher.MonoSink<ToolResultBlock> sink,
             boolean forceSync,
-            Disposable innerSub) {
+            Disposable innerSub,
+            String agentKey) {
 
         Throwable cause = err instanceof CompletionException ? err.getCause() : err;
         if (cause instanceof ToolSuspendException || cause instanceof JournalException) {
@@ -1127,7 +1269,8 @@ public class AgentSpawnTool {
             }
             String taskId = "task_" + UUID.randomUUID();
             String parentSessionId = runtimeContext != null ? runtimeContext.getSessionId() : null;
-            CompletableFuture<String> textFuture = bridge.thenApply(AgentSpawnTool::textOf);
+            CompletableFuture<String> textFuture =
+                    bridge.thenApply(msg -> rememberAndRender(agentKey, msg));
             taskRepository.putTask(
                     runtimeContext,
                     taskId,
@@ -1231,6 +1374,77 @@ public class AgentSpawnTool {
      */
     private static String textOf(Msg msg) {
         return DocumentReferenceRenderer.renderMessageText(msg);
+    }
+
+    /**
+     * Renders a local subagent reply while preserving a permission pause. A
+     * {@link GenerateReason#PERMISSION_ASKING} response normally has no text blocks; its
+     * actionable information lives in ASKING {@link ToolUseBlock}s. The old text-only conversion
+     * therefore turned a paused child into an empty successful result.
+     */
+    private static String replyText(Msg msg) {
+        if (msg == null) {
+            return "";
+        }
+        if (msg.getGenerateReason() == GenerateReason.PERMISSION_ASKING) {
+            List<ToolUseBlock> asking =
+                    msg.getContentBlocks(ToolUseBlock.class).stream()
+                            .filter(tool -> tool.getState() == ToolCallState.ASKING)
+                            .toList();
+            return "status: awaiting_confirm\npending_confirms:\n"
+                    + JsonUtils.getJsonCodec().toJson(asking);
+        }
+        return textOf(msg);
+    }
+
+    private static ToolResultBlock formatLocalResult(String header, Msg msg) {
+        String body = replyText(msg);
+        if (msg != null && msg.getGenerateReason() == GenerateReason.PERMISSION_ASKING) {
+            return ToolResultBlock.success(header + "\n" + body);
+        }
+        return ToolResultBlock.success(header + "\nstatus: ok\nreply:\n" + body);
+    }
+
+    private String rememberAndRender(String agentKey, Msg msg) {
+        rememberPendingConfirmations(agentKey, msg);
+        return replyText(msg);
+    }
+
+    private void rememberPendingConfirmations(String agentKey, Msg msg) {
+        if (msg != null && msg.getGenerateReason() == GenerateReason.PERMISSION_ASKING) {
+            List<ToolUseBlock> asking =
+                    msg.getContentBlocks(ToolUseBlock.class).stream()
+                            .filter(tool -> tool.getState() == ToolCallState.ASKING)
+                            .toList();
+            pendingConfirmations.put(agentKey, asking);
+        } else {
+            pendingConfirmations.remove(agentKey);
+        }
+    }
+
+    private List<ToolUseBlock> pendingConfirmationsFor(
+            SpawnedAgent spawned, RuntimeContext runtimeContext) {
+        List<ToolUseBlock> remembered = pendingConfirmations.get(spawned.key());
+        if (remembered != null && !remembered.isEmpty()) {
+            return remembered;
+        }
+        if (!(spawned.agent() instanceof ReActAgent react)) {
+            return List.of();
+        }
+        RuntimeContext childContext =
+                runtimeContext == null
+                        ? RuntimeContext.builder().sessionId(spawned.sessionId()).build()
+                        : RuntimeContext.builder(runtimeContext)
+                                .sessionId(spawned.sessionId())
+                                .build();
+        AgentState state = react.getAgentState(childContext);
+        if (state == null) {
+            return List.of();
+        }
+        return state.contextMutable().stream()
+                .flatMap(message -> message.getContentBlocks(ToolUseBlock.class).stream())
+                .filter(tool -> tool.getState() == ToolCallState.ASKING)
+                .toList();
     }
 
     private static String formatTimeoutPromoted(String taskId, long timeoutMs) {
@@ -1775,7 +1989,7 @@ public class AgentSpawnTool {
                                                             capturedTask,
                                                             runtimeContext)
                                                     .block();
-                                    return textOf(reply);
+                                    return rememberAndRender(spawned.key(), reply);
                                 });
             }
             taskRepository.putTask(
@@ -1813,7 +2027,8 @@ public class AgentSpawnTool {
                 finalSpawnInfo,
                 timeoutMs,
                 spawned.agentId(),
-                forceSync);
+                forceSync,
+                List.of());
     }
 
     private static LabelKey labelKey(RuntimeContext runtimeContext, String label) {
