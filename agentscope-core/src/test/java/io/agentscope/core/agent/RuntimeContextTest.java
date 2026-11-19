@@ -17,8 +17,10 @@ package io.agentscope.core.agent;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import io.agentscope.core.tool.ToolExecutionContext;
 import java.util.concurrent.CyclicBarrier;
@@ -61,8 +63,67 @@ class RuntimeContextTest {
         RuntimeContext ctx = RuntimeContext.empty();
         assertNull(ctx.getSessionId());
         assertNull(ctx.getUserId());
+        assertEquals("main", ctx.getThreadId());
+        assertNull(ctx.getTurnId());
         ctx.put("k", "v");
         assertEquals("v", ctx.get("k"));
+    }
+
+    @Test
+    void recoveryChangesInvocationWithoutChangingTaskAndContextIdentity() {
+        var first =
+                RuntimeContext.builder()
+                        .userId("user")
+                        .sessionId("session")
+                        .threadId("research")
+                        .turnId("task")
+                        .runId("first")
+                        .build();
+        var resumed = RuntimeContext.builder(first).runId(null).build();
+        assertEquals("user", resumed.getUserId());
+        assertEquals("session", resumed.getSessionId());
+        assertEquals("research", resumed.getThreadId());
+        assertEquals("task", resumed.getTurnId());
+        assertNotEquals(first.getRunId(), resumed.getRunId());
+        var child =
+                RuntimeContext.builder(first).threadId("child").turnId(null).runId(null).build();
+        assertEquals("child", child.getThreadId());
+        assertNull(child.getTurnId());
+        assertEquals("task", first.getTurnId());
+        assertEquals("research", first.getThreadId());
+        assertNotEquals(first.getRunId(), child.getRunId());
+        assertSame(resumed, resumed.asToolExecutionContext().get(RuntimeContext.class));
+    }
+
+    @Test
+    void blankThreadOrTurnCannotSilentlySelectAnotherExecutionScope() {
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> RuntimeContext.builder().threadId(" ").build());
+        assertThrows(
+                IllegalArgumentException.class, () -> RuntimeContext.builder().turnId("").build());
+    }
+
+    @Test
+    @DisplayName("a request context has no invocation identity until an execution binds one")
+    void requestContextDoesNotAllocateRun() {
+        assertNull(RuntimeContext.empty().getRunId());
+        assertNull(RuntimeContext.builder().sessionId("sid").userId("u").build().getRunId());
+        assertNull(RuntimeContext.builder().runId(null).build().getRunId());
+        assertThrows(
+                IllegalArgumentException.class, () -> RuntimeContext.builder().runId(" ").build());
+    }
+
+    @Test
+    @DisplayName("runId: explicit builder value is preserved and builder(source) copies it")
+    void runIdExplicitValuePreservedAndCopied() {
+        RuntimeContext source = RuntimeContext.builder().runId("invocation-123").build();
+        assertEquals("invocation-123", source.getRunId());
+        RuntimeContext derived = RuntimeContext.builder(source).build();
+        assertEquals("invocation-123", derived.getRunId());
+        // Deriving with an explicit runId overrides the copied one.
+        RuntimeContext overridden = RuntimeContext.builder(source).runId("invocation-789").build();
+        assertEquals("invocation-789", overridden.getRunId());
     }
 
     @Test

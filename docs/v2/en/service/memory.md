@@ -1,5 +1,6 @@
 ---
 title: "Memory: shared knowledge"
+zh_link: /v2/zh/service/memory
 ---
 
 <Note>
@@ -11,7 +12,7 @@ This is preview documentation. The official release is not yet available.
 ## Interface tour
 
 <Frame caption="Current console UI with fixed demonstration data.">
-  <img src="/imgs/service/memory.png" alt="Memory store and its memory files" />
+  <img src="/v2/assets/imgs/service/memory.png" alt="Memory store and its memory files" />
 </Frame>
 
 Select a store, then inspect its file paths and contents. Add verified, reusable findings to Memory; review temporary discussion and assumptions before turning them into shared knowledge.

@@ -1,12 +1,13 @@
 ---
 title: Publishing components
+zh_link: /v2/zh/service/releasing
 ---
 
 <Note>
 This is preview documentation. The official release is not yet available.
 </Note>
 
-This guide is for release maintainers. Scripts live in `agentscope-service/release/`. Start with [local installation](/v2/en/service/quickstart).
+This guide is for release maintainers. Scripts live in [`agentscope-service/release/`](https://github.com/agentscope-ai/agentscope-java/tree/v2.0.4/agentscope-service/release). Start with [local installation](/v2/en/service/quickstart).
 
 ## Artifacts
 
@@ -50,6 +51,6 @@ Image pushes request SBOM and provenance attestations and record digests in `ima
 
 Freeze source and versions, complete tests and candidate installation, create the corresponding Git tag, then run the `AgentScope Service release` workflow. It builds by default; publication requires selecting a tag and configuring registry credentials.
 
-Attach artifacts, checksums, digests, tested platforms and limitations to the Release. Publish Maven/Python/npm artifacts and verify installation from a new environment. See `agentscope-service/release/README.md` for package publication commands.
+Attach artifacts, checksums, digests, tested platforms and limitations to the Release. Publish Maven/Python/npm artifacts and verify installation from a new environment. See [`agentscope-service/release/README.md`](https://github.com/agentscope-ai/agentscope-java/blob/v2.0.4/agentscope-service/release/README.md) for package publication commands.
 
 The website workflow validates `/docs`; the Mintlify GitHub App publishes the branch configured for the site. Merge the matching documentation into that publication entry point, then verify both Service navigation trees, direct links, images and search.

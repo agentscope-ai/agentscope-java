@@ -22,6 +22,8 @@ import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.agentscope.core.formatter.JsonSchema;
+import io.agentscope.core.formatter.ResponseFormat;
 import io.agentscope.core.model.ExecutionConfig;
 import io.agentscope.core.model.GenerateOptions;
 import java.time.Duration;
@@ -106,6 +108,100 @@ class OllamaOptionsTest {
         assertEquals(0.5, options.getFrequencyPenalty());
         assertEquals(0.3, options.getPresencePenalty());
         assertEquals(Integer.valueOf(123), options.getSeed());
+    }
+
+    @Test
+    void testJsonSchemaResponseFormat() {
+        Map<String, Object> schema =
+                Map.of("type", "object", "properties", Map.of("name", Map.of("type", "string")));
+        GenerateOptions options =
+                GenerateOptions.builder()
+                        .responseFormat(
+                                ResponseFormat.jsonSchema(
+                                        JsonSchema.builder()
+                                                .name("result")
+                                                .schema(schema)
+                                                .strict(true)
+                                                .build()))
+                        .build();
+
+        assertEquals(schema, OllamaOptions.fromGenerateOptions(options).getFormat());
+    }
+
+    @Test
+    void testJsonObjectResponseFormat() {
+        GenerateOptions options =
+                GenerateOptions.builder().responseFormat(ResponseFormat.jsonObject()).build();
+        assertEquals("json", OllamaOptions.fromGenerateOptions(options).getFormat());
+    }
+
+    @Test
+    void testTextResponseFormat() {
+        GenerateOptions options =
+                GenerateOptions.builder().responseFormat(ResponseFormat.text()).build();
+        assertNull(OllamaOptions.fromGenerateOptions(options).getFormat());
+    }
+
+    @Test
+    @DisplayName("Should preserve executionConfig when converting from GenerateOptions")
+    void testFromGenerateOptionsPreservesExecutionConfig() {
+        ExecutionConfig executionConfig =
+                ExecutionConfig.builder()
+                        .timeout(Duration.ofMillis(20))
+                        .maxAttempts(2)
+                        .initialBackoff(Duration.ofMillis(10))
+                        .build();
+
+        GenerateOptions genOptions =
+                GenerateOptions.builder().temperature(0.8).executionConfig(executionConfig).build();
+
+        OllamaOptions options = OllamaOptions.fromGenerateOptions(genOptions);
+
+        assertEquals(executionConfig, options.getExecutionConfig());
+    }
+
+    @Test
+    @DisplayName("Should keep executionConfig unset when GenerateOptions has none")
+    void testFromGenerateOptionsWithoutExecutionConfig() {
+        assertNull(
+                OllamaOptions.fromGenerateOptions(GenerateOptions.builder().build())
+                        .getExecutionConfig());
+        assertNull(OllamaOptions.fromGenerateOptions(null).getExecutionConfig());
+    }
+
+    @Test
+    @DisplayName("Should keep executionConfig through a GenerateOptions round-trip")
+    void testExecutionConfigSurvivesGenerateOptionsRoundTrip() {
+        ExecutionConfig executionConfig =
+                ExecutionConfig.builder().timeout(Duration.ofSeconds(30)).maxAttempts(3).build();
+        OllamaOptions original = OllamaOptions.builder().executionConfig(executionConfig).build();
+
+        GenerateOptions genOptions = original.toGenerateOptions();
+        OllamaOptions converted = OllamaOptions.fromGenerateOptions(genOptions);
+
+        assertEquals(executionConfig, genOptions.getExecutionConfig());
+        assertEquals(executionConfig, converted.getExecutionConfig());
+    }
+
+    @Test
+    @DisplayName("Should merge GenerateOptions executionConfig over the model default")
+    void testMergeGenerateOptionsExecutionConfig() {
+        ExecutionConfig defaultConfig =
+                ExecutionConfig.builder().timeout(Duration.ofMinutes(5)).maxAttempts(3).build();
+        ExecutionConfig perCallConfig =
+                ExecutionConfig.builder().timeout(Duration.ofMillis(20)).maxAttempts(1).build();
+        OllamaOptions defaults = OllamaOptions.builder().executionConfig(defaultConfig).build();
+
+        // Explicit per-call config overrides the default
+        assertEquals(
+                perCallConfig,
+                defaults.merge(GenerateOptions.builder().executionConfig(perCallConfig).build())
+                        .getExecutionConfig());
+
+        // No per-call config keeps the default
+        assertEquals(
+                defaultConfig,
+                defaults.merge(GenerateOptions.builder().build()).getExecutionConfig());
     }
 
     @Test

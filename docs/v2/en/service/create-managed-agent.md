@@ -1,5 +1,6 @@
 ---
 title: "Managed Agent: create and test"
+zh_link: /v2/zh/service/create-managed-agent
 ---
 
 <Note>
@@ -21,7 +22,7 @@ Use supported facts without inventing dates, sources or conclusions.
 ```
 
 <Frame caption="Agent catalog with fixed demonstration data.">
-  <img src="/imgs/service/agents.png" alt="Create and inspect a Managed Agent from the catalog" />
+  <img src="/v2/assets/imgs/service/agents.png" alt="Create and inspect a Managed Agent from the catalog" />
 </Frame>
 
 ## Verify with Chat

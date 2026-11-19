@@ -15,11 +15,15 @@
  */
 package io.agentscope.harness.agent.middleware;
 
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.mock;
 
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.event.AgentEndEvent;
 import io.agentscope.core.event.AgentEvent;
+import io.agentscope.core.journal.InvocationRecorder;
+import io.agentscope.core.journal.JournalException;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.middleware.AgentInput;
@@ -43,6 +47,34 @@ import reactor.core.publisher.Flux;
 class MemoryMaintenanceMiddlewareAsyncGateTest {
 
     @Test
+    void inlineMaintenanceDoesNotSwallowAStorageFailure() {
+        var failure = new JournalException("store unavailable");
+        var middleware =
+                new MemoryMaintenanceMiddleware(
+                        null,
+                        null,
+                        90,
+                        Duration.ZERO,
+                        IsolationScope.SESSION,
+                        (key, gap) -> {
+                            throw failure;
+                        });
+        var context =
+                RuntimeContext.builder()
+                        .sessionId("session")
+                        .put(MemoryFlushMiddleware.INLINE_CONTEXT_KEY, true)
+                        .put(InvocationRecorder.CONTEXT_KEY, mock(InvocationRecorder.class))
+                        .build();
+        assertThrows(
+                JournalException.class,
+                () ->
+                        middleware
+                                .onAgentFinish(
+                                        null, context, Msg.builder().textContent("done").build())
+                                .block(Duration.ofSeconds(5)));
+    }
+
+    @Test
     void gateClaimRunsOffTheCompletingThread() throws Exception {
         AtomicReference<String> claimThread = new AtomicReference<>();
         CountDownLatch claimed = new CountDownLatch(1);
@@ -54,13 +86,7 @@ class MemoryMaintenanceMiddlewareAsyncGateTest {
                 };
         MemoryMaintenanceMiddleware middleware =
                 new MemoryMaintenanceMiddleware(
-                        null,
-                        null,
-                        90,
-                        180,
-                        Duration.ofMinutes(30),
-                        IsolationScope.USER,
-                        recordingGate);
+                        null, null, 90, Duration.ofMinutes(30), IsolationScope.USER, recordingGate);
 
         Msg userMsg = Msg.builder().role(MsgRole.USER).textContent("hi").build();
         RuntimeContext rc = RuntimeContext.builder().userId("alice").build();
@@ -96,7 +122,6 @@ class MemoryMaintenanceMiddlewareAsyncGateTest {
                         null,
                         null,
                         90,
-                        180,
                         Duration.ofMinutes(30),
                         IsolationScope.USER,
                         (name, minGap) -> false);

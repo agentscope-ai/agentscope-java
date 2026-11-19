@@ -35,6 +35,7 @@ import io.agentscope.extensions.model.dashscope.dto.DashScopeMessage;
 import io.agentscope.extensions.model.dashscope.dto.DashScopeParameters;
 import io.agentscope.extensions.model.dashscope.dto.DashScopeRequest;
 import io.agentscope.extensions.model.dashscope.dto.DashScopeResponse;
+import io.agentscope.extensions.model.dashscope.dto.DashScopeSkill;
 import java.nio.charset.StandardCharsets;
 import java.security.KeyPair;
 import java.security.KeyPairGenerator;
@@ -867,6 +868,31 @@ class DashScopeHttpClientTest {
                 DashScopeHttpClient.TEXT_GENERATION_ENDPOINT + "?custom=custom-value",
                 recorded.getPath());
         assertTrue(recorded.getBody().readUtf8().contains("\"custom\":\"custom-value\""));
+    }
+
+    @Test
+    void testAdditionalBodyParamsOverrideReasoningEffort() throws Exception {
+        mockServer.enqueue(
+                new MockResponse()
+                        .setResponseCode(200)
+                        .setBody("{\"request_id\":\"test\",\"output\":{\"choices\":[]}}")
+                        .setHeader("Content-Type", "application/json"));
+
+        DashScopeRequest request = createTestRequest("qwen-plus", "test");
+        request.getParameters().setReasoningEffort("high");
+
+        Map<String, Object> additionalBodyParams = new HashMap<>();
+        additionalBodyParams.put("reasoning_effort", "low");
+
+        client.call(request, null, additionalBodyParams, null);
+
+        RecordedRequest recorded = mockServer.takeRequest();
+        String body = recorded.getBody().readUtf8();
+
+        DashScopeRequest dashScopeRequest =
+                JsonUtils.getJsonCodec().fromJson(body, DashScopeRequest.class);
+        assertNotNull(dashScopeRequest.getParameters());
+        assertEquals("low", dashScopeRequest.getParameters().getReasoningEffort());
     }
 
     // ==================== DashScopeHttpException Tests ====================
@@ -1753,6 +1779,43 @@ class DashScopeHttpClientTest {
         // When output is not a string, decryptResponse should return original response
         assertNotNull(response);
         assertNotNull(response.getOutput());
+    }
+
+    @Test
+    void testSkillOnNonStreamingCallIsRejected() {
+        DashScopeRequest request =
+                DashScopeRequest.builder()
+                        .model("qwen-doc-turbo")
+                        .parameters(
+                                DashScopeParameters.builder()
+                                        .skill(List.of(DashScopeSkill.pptTemplate("news_01")))
+                                        .build())
+                        .build();
+
+        IllegalStateException ex =
+                assertThrows(
+                        IllegalStateException.class, () -> client.call(request, null, null, null));
+        assertTrue(ex.getMessage().contains("stream mode"), ex.getMessage());
+
+        // Requests without a skill are untouched.
+        String responseJson =
+                """
+                {
+                  "request_id": "test",
+                  "output": {
+                    "choices": [{
+                      "message": { "role": "assistant", "content": "ok" },
+                      "finish_reason": "stop"
+                    }]
+                  }
+                }
+                """;
+        mockServer.enqueue(
+                new MockResponse()
+                        .setResponseCode(200)
+                        .setBody(responseJson)
+                        .setHeader("Content-Type", "application/json"));
+        assertNotNull(client.call(createTestRequest("qwen-doc-turbo", "hello"), null, null, null));
     }
 
     private DashScopeRequest createTestRequest(String model, String content) {

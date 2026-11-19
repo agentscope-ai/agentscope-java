@@ -1,5 +1,6 @@
 ---
 title: "Managed Agent: overview and usage"
+zh_link: /v2/zh/service/managed-agent
 ---
 
 <Note>

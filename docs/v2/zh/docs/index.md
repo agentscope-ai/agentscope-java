@@ -1,7 +1,13 @@
 ---
 title: AgentScope 2.0 是什么？
 description: Harness 工程化、企业级分布式部署、底层框架重构。
+en_link: /v2/en/docs/index
 ---
+
+<Note>
+本页属于 2.0 文档，基于 `v2.0.4` 发布标签整理。SDK 示例请使用 AgentScope Java `2.0.4`；当前开发版本的 API 请参阅 [dev 文档](/dev/zh/intro)。
+</Note>
+
 
 AgentScope Java 2.0 从"构建一个智能体"的工具箱，迈向**面向生产环境运行智能体**的完整平台。本次升级围绕三大主题展开，每一部分都对应一个具体要解决的问题。
 

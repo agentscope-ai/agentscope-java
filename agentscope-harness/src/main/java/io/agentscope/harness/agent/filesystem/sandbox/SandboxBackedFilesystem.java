@@ -32,6 +32,7 @@ import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
@@ -104,15 +105,17 @@ public class SandboxBackedFilesystem extends BaseSandboxFilesystem implements Sa
             ExecResult result = active.exec(runtimeContext, command, timeoutSeconds);
             return new ExecuteResponse(
                     result.combinedOutput(), result.exitCode(), result.truncated());
+        } catch (SandboxException.ExecStatusUnknownException e) {
+            return new ExecuteResponse(e.getMessage(), null, false);
         } catch (SandboxException.ExecTimeoutException e) {
-            return new ExecuteResponse(e.getMessage(), 124, false);
+            return new ExecuteResponse(e.getMessage(), 124, false, true);
         } catch (SandboxException.ExecException e) {
             String combined =
                     (e.getStdout() != null ? e.getStdout() : "")
                             + (e.getStderr() != null && !e.getStderr().isBlank()
                                     ? "\n" + e.getStderr()
                                     : "");
-            return new ExecuteResponse(combined, e.getExitCode(), false);
+            return new ExecuteResponse(combined, e.getExitCode(), false, e.isTimedOut());
         } catch (Exception e) {
             log.error("[sandbox-fs] execute failed: {}", command, e);
             return new ExecuteResponse("Internal sandbox error: " + e.getMessage(), -1, false);
@@ -241,6 +244,10 @@ public class SandboxBackedFilesystem extends BaseSandboxFilesystem implements Sa
         if (runtimeContext != null) {
             SandboxAcquireResult bound = runtimeContext.get(SandboxAcquireResult.class);
             if (bound != null) {
+                if (bound.isReleased()) {
+                    throw new SandboxException.SandboxConfigurationException(
+                            "Sandbox acquisition has been released for this call");
+                }
                 s = bound.getSandbox();
             }
         }
@@ -267,7 +274,11 @@ public class SandboxBackedFilesystem extends BaseSandboxFilesystem implements Sa
 
         String archivePath = resolveArchivePath(active, path);
         ByteArrayOutputStream output = new ByteArrayOutputStream();
-        try (TarArchiveOutputStream tar = new TarArchiveOutputStream(output)) {
+        // UTF-8 entry names: this archive is extracted container-side, where tar decodes
+        // names as UTF-8 — the platform default would mangle non-ASCII paths on JVMs
+        // whose default is not UTF-8 (same pinning as the projection tar writer).
+        try (TarArchiveOutputStream tar =
+                new TarArchiveOutputStream(output, StandardCharsets.UTF_8.name())) {
             tar.setLongFileMode(TarArchiveOutputStream.LONGFILE_POSIX);
             TarArchiveEntry entry = new TarArchiveEntry(archivePath);
             entry.setSize(content.length);

@@ -15,17 +15,17 @@
  */
 package io.agentscope.core.skill;
 
+import io.agentscope.core.agent.CapabilitySurface;
+import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.message.ToolResultBlock;
+import io.agentscope.core.skill.util.SkillFileSystemHelper;
+import io.agentscope.core.state.AgentState;
+import io.agentscope.core.state.ToolContextState;
 import io.agentscope.core.tool.AgentTool;
 import io.agentscope.core.tool.ToolCallParam;
 import io.agentscope.core.tool.Toolkit;
-import java.io.IOException;
-import java.nio.charset.MalformedInputException;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
-import java.util.Base64;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -43,8 +43,23 @@ class SkillToolFactory {
 
     private static final Logger logger = LoggerFactory.getLogger(SkillToolFactory.class);
 
+    static final String LOAD_TOOL_NAME = "load_skill_through_path";
+    private static final String LOAD_TOOL_DESCRIPTION =
+            "Load and activate a skill resource by its skillId and resource path.\n\n"
+                + "**Functionality:**\n"
+                + "1. Activates the specified skill for this session (adding its tool groups to"
+                + " this session's active set)\n"
+                + "2. Returns the requested resource content\n"
+                + "\n"
+                + "**Path rules:**\n"
+                + "- Use path=\"SKILL.md\" to load the skill's markdown documentation (name,"
+                + " description, usage instructions).\n"
+                + "- Use exact resource paths listed by the skill, such as \"references/guide.md\""
+                + " or \"scripts/run.py\".\n"
+                + "- Do not use '.', './', the skill directory, or an absolute path.";
+
     private final SkillRegistry skillRegistry;
-    private Toolkit toolkit;
+    private volatile Toolkit toolkit;
 
     SkillToolFactory(SkillRegistry skillRegistry, Toolkit toolkit) {
         this.skillRegistry = skillRegistry;
@@ -52,19 +67,129 @@ class SkillToolFactory {
     }
 
     /**
-     * Binds a toolkit to the skill tool factory.
-     *
-     * <p>
-     * This method binds the toolkit to skill tool factory.
-     * Since ReActAgent uses a deep copy of the Toolkit, rebinding is necessary to
-     * ensure the
-     * skill tool factory references the correct toolkit instance.
+     * Binds the shared toolkit to this skill tool factory (read-only reference).
      *
      * @param toolkit The toolkit to bind to the skill tool factory
      * @throws IllegalArgumentException if the toolkit is null
      */
     void bindToolkit(Toolkit toolkit) {
         this.toolkit = toolkit;
+    }
+
+    /**
+     * Whether a {@code load_skill_through_path} tool is already present on the given toolkit,
+     * regardless of which path registered it (dynamic middleware, static {@code SkillBox},
+     * or any caller).
+     *
+     * @param toolkit the toolkit to inspect
+     * @return {@code true} when a same-named load tool is already registered
+     */
+    static boolean isRuntimeLoadToolRegistered(Toolkit toolkit) {
+        return toolkit.getTool(LOAD_TOOL_NAME) != null;
+    }
+
+    /**
+     * Registers the shared, runtime-resolving {@code load_skill_through_path} tool on the given
+     * toolkit. Used by the dynamic-skill path: the tool is registered once at build time and
+     * resolves the current per-call {@link SkillBox} from the {@link RuntimeContext} at invocation
+     * time, so the shared toolkit is never mutated per call.
+     *
+     * @param toolkit the shared toolkit to register the load tool on
+     */
+    static void registerRuntimeLoadTool(Toolkit toolkit) {
+        if (isRuntimeLoadToolRegistered(toolkit)) {
+            // Already registered by another path (e.g. the static skillBox); never overwrite.
+            // Mixing static and dynamic skill configuration is unsupported, so surface it.
+            logger.warn(
+                    "load_skill_through_path already registered; skipping (a same-named tool is"
+                            + " already present on this toolkit)");
+            return;
+        }
+        // Registered ungrouped so it is always visible/callable and is never dropped by the
+        // META-scoped reset_equipped_tools replacement (like reset_equipped_tools itself).
+        toolkit.registration().agentTool(createRuntimeLoadTool()).apply();
+    }
+
+    /**
+     * Creates the shared {@code load_skill_through_path} tool that resolves the current per-call
+     * {@link SkillBox} at invocation time. Unlike {@link #createSkillAccessToolAgentTool()}, this
+     * tool carries no per-box state, so a single instance is safe to share across concurrent
+     * sessions.
+     */
+    static AgentTool createRuntimeLoadTool() {
+        return new AgentTool() {
+            @Override
+            public String getName() {
+                return LOAD_TOOL_NAME;
+            }
+
+            @Override
+            public String getDescription() {
+                return LOAD_TOOL_DESCRIPTION;
+            }
+
+            @Override
+            public boolean isSystem() {
+                // Framework meta tool: ungrouped, always visible, usable even under DENY_ALL.
+                return true;
+            }
+
+            @Override
+            public Map<String, Object> getParameters() {
+                // Dynamic skills are not known at build time, so the parameter enum is omitted;
+                // the skill catalog is advertised via the system prompt instead.
+                return Map.of(
+                        "type", "object",
+                        "properties",
+                                Map.of(
+                                        "skillId",
+                                                Map.of(
+                                                        "type",
+                                                        "string",
+                                                        "description",
+                                                        "The unique identifier of the skill."),
+                                        "path",
+                                                Map.of(
+                                                        "type",
+                                                        "string",
+                                                        "description",
+                                                        "The exact resource path within the"
+                                                                + " skill. Use 'SKILL.md' to load"
+                                                                + " the skill instructions. Do not"
+                                                                + " use '.', './', directories, or"
+                                                                + " absolute paths.")),
+                        "required", List.of("skillId", "path"));
+            }
+
+            @Override
+            public Mono<ToolResultBlock> callAsync(ToolCallParam param) {
+                try {
+                    SkillBox box = resolveSkillBox(param);
+                    if (box == null) {
+                        return Mono.just(
+                                ToolResultBlock.error(
+                                        "load_skill_through_path: no skill context for this"
+                                                + " call"));
+                    }
+                    return Mono.just(ToolResultBlock.text(box.loadSkillResource(param)));
+                } catch (IllegalArgumentException e) {
+                    logger.warn("Error loading skill resource: {}", e.getMessage());
+                    return Mono.just(ToolResultBlock.error(e.getMessage()));
+                } catch (Exception e) {
+                    logger.error("Unexpected error loading skill resource", e);
+                    return Mono.just(
+                            ToolResultBlock.error(
+                                    e.getMessage() != null
+                                            ? e.getMessage()
+                                            : "Unexpected error: " + e.getClass().getSimpleName()));
+                }
+            }
+        };
+    }
+
+    private static SkillBox resolveSkillBox(ToolCallParam param) {
+        RuntimeContext rc = param.getRuntimeContext();
+        return rc != null ? rc.get(SkillBox.class) : null;
     }
 
     /**
@@ -80,29 +205,24 @@ class SkillToolFactory {
         return new AgentTool() {
             @Override
             public String getName() {
-                return "load_skill_through_path";
+                return LOAD_TOOL_NAME;
             }
 
             @Override
             public String getDescription() {
-                return "Load and activate a skill resource by its ID and resource path.\n\n"
-                        + "**Functionality:**\n"
-                        + "1. Activates the specified skill (making its tools available)\n"
-                        + "2. Returns the requested resource content\n"
-                        + "\n"
-                        + "**Path rules:**\n"
-                        + "- Use path=\"SKILL.md\" to load the skill's markdown documentation"
-                        + " (name, description, usage instructions).\n"
-                        + "- Use exact resource paths listed by the skill, such as"
-                        + " \"references/guide.md\" or \"scripts/run.py\".\n"
-                        + "- Do not use '.', './', the skill directory, or an absolute path.";
+                return LOAD_TOOL_DESCRIPTION;
+            }
+
+            @Override
+            public boolean isSystem() {
+                // Aligned with the runtime load tool: ungrouped and always visible;
+                // grant decisions live in loadSkillResourceImpl.
+                return true;
             }
 
             @Override
             public Map<String, Object> getParameters() {
-                // Get all available skill IDs
-                List<String> availableSkillIds =
-                        new ArrayList<>(skillRegistry.getAllRegisteredSkills().keySet());
+                List<String> availableSkillIds = new ArrayList<>(skillRegistry.getSkillIds());
 
                 return Map.of(
                         "type", "object",
@@ -113,7 +233,7 @@ class SkillToolFactory {
                                                         "type",
                                                         "string",
                                                         "description",
-                                                        "The unique identifier of the" + " skill.",
+                                                        "The unique identifier of the skill.",
                                                         "enum",
                                                         availableSkillIds),
                                         "path",
@@ -148,52 +268,67 @@ class SkillToolFactory {
                                 ToolResultBlock.error("Missing or empty required parameter: path"));
                     }
 
-                    String result = loadSkillResourceImpl(skillId, path);
+                    String result =
+                            loadSkillResourceImpl(
+                                    skillId,
+                                    path,
+                                    resolveToolContext(param),
+                                    param.getRuntimeContext());
                     return Mono.just(ToolResultBlock.text(result));
                 } catch (IllegalArgumentException e) {
-                    logger.error("Error loading skill resource", e);
+                    logger.warn("Error loading skill resource: {}", e.getMessage());
                     return Mono.just(ToolResultBlock.error(e.getMessage()));
                 } catch (Exception e) {
                     logger.error("Unexpected error loading skill resource", e);
-                    return Mono.just(ToolResultBlock.error(e.getMessage()));
+                    return Mono.just(
+                            ToolResultBlock.error(
+                                    e.getMessage() != null
+                                            ? e.getMessage()
+                                            : "Unexpected error: " + e.getClass().getSimpleName()));
                 }
             }
         };
     }
 
     /**
-     * Implementation of skill resource loading logic.
+     * Implementation of skill resource loading logic. Both load paths (per-call box and the
+     * build-time bound static tool) converge here, so the grant gate lives in this method only.
      *
      * @param skillId The unique identifier of the skill
      * @param path The path to the resource file
+     * @param tcs the per-call tool context state (may be {@code null})
+     * @param rc the tool call's runtime context (may be {@code null} → unrestricted: direct
+     *     execution does not pass through grant resolution)
      * @return The formatted resource content or error message with available resources
-     * @throws IllegalArgumentException if skill doesn't exist or resource not found
+     * @throws IllegalArgumentException if skill doesn't exist, is not granted, or resource not
+     *     found
      */
-    private String loadSkillResourceImpl(String skillId, String path) {
+    String loadSkillResourceImpl(
+            String skillId, String path, ToolContextState tcs, RuntimeContext rc) {
         AgentSkill skill = validateSkillExists(skillId);
+        requireSkillGranted(skillId, skill, rc);
 
         // Special handling for SKILL.md - return the skill's markdown content
         if ("SKILL.md".equals(path)) {
-            activateSkill(skillId);
+            activateSkill(skillId, tcs);
             return buildSkillMarkdownResponse(skillId, skill);
         }
 
         // 1. In-memory map (eager FS repos, classpath repos, marketplace prefetch).
         Map<String, String> resources = skill.getResources();
         if (resources != null && resources.containsKey(path)) {
-            activateSkill(skillId);
+            activateSkill(skillId, tcs);
             return buildResourceResponse(skillId, path, resources.get(path));
         }
 
         // 2. Disk fallback via skill.originDir (lazy FS repos, or any FS-backed skill whose
         //    in-memory map didn't preload the requested path). Same sanitisation rules as the
         //    advertised path schema: no '..', no absolute path, no directories.
-        Optional<String> sanitized = sanitizeRelativePath(path);
-        if (sanitized.isPresent() && skill.getOriginDir().isPresent()) {
+        if (skill.getOriginDir().isPresent()) {
             Optional<String> diskContent =
-                    readFromOriginDir(skill.getOriginDir().get(), sanitized.get());
+                    SkillFileSystemHelper.readResource(skill.getOriginDir().get(), path);
             if (diskContent.isPresent()) {
-                activateSkill(skillId);
+                activateSkill(skillId, tcs);
                 return buildResourceResponse(skillId, path, diskContent.get());
             }
         }
@@ -204,54 +339,10 @@ class SkillToolFactory {
                         skillId, path, resources, skill.getOriginDir().orElse(null)));
     }
 
-    private static Optional<String> sanitizeRelativePath(String path) {
-        if (path == null || path.isBlank()) {
-            return Optional.empty();
-        }
-        String normalized = path.replace('\\', '/');
-        if (normalized.startsWith("/") || normalized.contains("..")) {
-            return Optional.empty();
-        }
-        if (".".equals(normalized) || "./".equals(normalized)) {
-            return Optional.empty();
-        }
-        return Optional.of(normalized);
-    }
-
-    /**
-     * Reads a single file under {@code originDir} for the disk-fallback path. Text content is
-     * returned as-is; binary content uses the {@code base64:} prefix convention that matches
-     * {@code SkillFileSystemHelper.readAndPutResource}, so the load tool's contract is identical
-     * whether the resource came from memory or disk.
-     */
-    private static Optional<String> readFromOriginDir(Path originDir, String relPath) {
-        Path target = originDir.resolve(relPath).normalize();
-        if (!target.startsWith(originDir)) {
-            return Optional.empty();
-        }
-        if (!Files.isRegularFile(target) || !Files.isReadable(target)) {
-            return Optional.empty();
-        }
-        try {
-            return Optional.of(Files.readString(target, StandardCharsets.UTF_8));
-        } catch (MalformedInputException e) {
-            try {
-                byte[] bytes = Files.readAllBytes(target);
-                return Optional.of("base64:" + Base64.getEncoder().encodeToString(bytes));
-            } catch (IOException ex) {
-                logger.warn("Failed to read binary resource {}: {}", target, ex.getMessage());
-                return Optional.empty();
-            }
-        } catch (IOException e) {
-            logger.warn("Failed to read resource {}: {}", target, e.getMessage());
-            return Optional.empty();
-        }
-    }
-
     /**
      * Build response for SKILL.md content.
      *
-     * @param skillId The skill ID
+     * @param skillId The skill identifier (echoed as supplied)
      * @param skill The skill instance
      * @return Formatted skill markdown response
      */
@@ -260,7 +351,10 @@ class SkillToolFactory {
         result.append("Successfully loaded skill: ").append(skillId).append("\n\n");
         result.append("Name: ").append(skill.getName()).append("\n");
         result.append("Description: ").append(skill.getDescription()).append("\n");
-        result.append("Source: ").append(skill.getSource()).append("\n\n");
+        if (skill.getSource() != null) {
+            result.append("Source: ").append(skill.getSource()).append("\n");
+        }
+        result.append("\n");
         result.append("Content:\n");
         result.append("---\n");
         result.append(skill.getSkillContent());
@@ -271,7 +365,7 @@ class SkillToolFactory {
     /**
      * Build response for regular resource content.
      *
-     * @param skillId The skill ID
+     * @param skillId The skill identifier (echoed as supplied)
      * @param path The resource path
      * @param resourceContent The resource content
      * @return Formatted resource response
@@ -290,7 +384,7 @@ class SkillToolFactory {
     /**
      * Build error message with available resource paths when resource is not found.
      *
-     * @param skillId The skill ID
+     * @param skillId The skill identifier (echoed as supplied)
      * @param path The requested path that was not found
      * @param resources The available resources map
      * @return Formatted error message with available resources
@@ -312,7 +406,7 @@ class SkillToolFactory {
             resourcePaths.addAll(resources.keySet());
         }
         if (originDir != null) {
-            resourcePaths.addAll(listOriginDirEntries(originDir));
+            resourcePaths.addAll(SkillFileSystemHelper.listResourcePaths(originDir));
         }
 
         message.append("Available resources:\n");
@@ -324,22 +418,31 @@ class SkillToolFactory {
         return message.toString();
     }
 
-    private static List<String> listOriginDirEntries(Path originDir) {
-        List<String> entries = new ArrayList<>();
-        try (var stream = Files.walk(originDir)) {
-            stream.filter(Files::isRegularFile)
-                    .forEach(
-                            p -> {
-                                String rel = originDir.relativize(p).toString().replace('\\', '/');
-                                if (!rel.isBlank() && !"SKILL.md".equals(rel)) {
-                                    entries.add(rel);
-                                }
-                            });
-        } catch (IOException e) {
-            logger.debug(
-                    "Failed to enumerate {} for not-found listing: {}", originDir, e.getMessage());
+    /**
+     * Grant gate for skill loading (both load paths converge here). A missing surface means
+     * this load never entered an agent call() (whose funnel always writes one): treat it as
+     * unrestricted — direct execution is trusted assembler code.
+     *
+     * @param skillId the caller-supplied skill identifier (authoritative for the error echo)
+     * @param skill the resolved skill (from {@link #validateSkillExists})
+     * @param rc the tool call's runtime context (may be {@code null})
+     * @throws IllegalArgumentException when the skill is not granted — byte-identical to the
+     *     {@link #validateSkillExists} not-found wording: do not reveal existence
+     */
+    private void requireSkillGranted(String skillId, AgentSkill skill, RuntimeContext rc) {
+        CapabilitySurface surface = rc != null ? rc.get(CapabilitySurface.class) : null;
+        if (surface == null) {
+            surface = CapabilitySurface.ALLOW_ALL;
         }
-        return entries;
+        if (!surface.allowsSkill(skill)) {
+            logger.warn(
+                    "Skill load denied (grant): skillId='{}', userId='{}', sessionId='{}'",
+                    skillId,
+                    rc != null ? rc.getUserId() : null,
+                    rc != null ? rc.getSessionId() : null);
+            throw new IllegalArgumentException(
+                    String.format("Skill not found: '%s'. Please check the skill ID.", skillId));
+        }
     }
 
     /**
@@ -351,51 +454,57 @@ class SkillToolFactory {
      * @throws IllegalStateException if the skill cannot be loaded after validation
      */
     private AgentSkill validateSkillExists(String skillId) {
-        if (!skillRegistry.exists(skillId)) {
-            throw new IllegalArgumentException(
-                    String.format("Skill not found: '%s'. Please check the skill ID.", skillId));
-        }
-        // Get skill
+        // Exact skillId lookup; a bare name is itself the source-less id form.
         AgentSkill skill = skillRegistry.getSkill(skillId);
         if (skill == null) {
-            throw new IllegalStateException(
-                    String.format(
-                            "Failed to load skill '%s' after validation. This is an internal"
-                                    + " error.",
-                            skillId));
+            throw new IllegalArgumentException(
+                    String.format("Skill not found: '%s'. Please check the skill ID.", skillId));
         }
         return skill;
     }
 
-    private void activateSkill(String skillId) {
-        skillRegistry.setSkillActive(skillId, true);
-        logger.info("Activated skill: {}", skillId);
+    /**
+     * Resolves the per-call {@link ToolContextState} from the tool call's runtime context, so
+     * skill activation targets the active session's activation set instead of the shared group
+     * manager.
+     *
+     * @param param the tool call parameters
+     * @return the resolved tool context state, or {@code null} when unavailable
+     */
+    ToolContextState resolveToolContext(ToolCallParam param) {
+        RuntimeContext rc = param.getRuntimeContext();
+        AgentState state = rc != null ? rc.getAgentState() : null;
+        return state != null ? state.getToolContext() : null;
+    }
 
-        String toolsGroupName = skillRegistry.getRegisteredSkill(skillId).getToolsGroupName();
-        if (toolkit.getToolGroup(toolsGroupName) != null) {
-            toolkit.updateToolGroups(List.of(toolsGroupName), true);
-            logger.info(
-                    "Activated skill tool group: {} and its tools: {}",
-                    toolsGroupName,
-                    toolkit.getToolGroup(toolsGroupName).getTools());
+    private void activateSkill(String skillId, ToolContextState tcs) {
+        // No per-session context: skip the tool-group gate without mutating shared state.
+        if (tcs == null) {
+            logger.warn(
+                    "load_skill_through_path: no per-session runtime context; tool-group activation"
+                            + " skipped");
+            return;
         }
 
-        // Also activate any SkillToolGroup bound to this skill via activateOnSkill
+        // Read-only discovery of the groups owned by this skill: the name-convention group
+        // (skillId_skill_tools) plus any SkillToolGroup bound via activateOnSkill. Shared group
+        // definitions are never mutated.
+        List<String> groups = new ArrayList<>();
+        String toolsGroupName = skillId + "_skill_tools";
+        if (toolkit != null && toolkit.getToolGroup(toolsGroupName) != null) {
+            groups.add(toolsGroupName);
+        }
         AgentSkill agentSkill = skillRegistry.getSkill(skillId);
-        if (agentSkill != null) {
-            List<String> boundGroups =
-                    toolkit.findSkillToolGroupsByActivateOnSkill(agentSkill.getName());
-            for (String group : boundGroups) {
-                if (!group.equals(toolsGroupName)
-                        && toolkit.getToolGroup(group) != null
-                        && !toolkit.getToolGroup(group).isActive()) {
-                    toolkit.updateToolGroups(List.of(group), true);
-                    logger.info(
-                            "Activated skill-bound tool group: {} for skill: {}",
-                            group,
-                            agentSkill.getName());
+        if (agentSkill != null && toolkit != null) {
+            for (String group :
+                    toolkit.findSkillToolGroupsByActivateOnSkill(agentSkill.getName())) {
+                if (!groups.contains(group)) {
+                    groups.add(group);
                 }
             }
         }
+
+        // Atomic union, so parallel loads within a session cannot lose one another's activation.
+        tcs.addActivatedGroups(groups);
     }
 }

@@ -88,13 +88,15 @@ public class AgentRunSandbox extends AbstractBaseSandbox {
 
     @Override
     public void shutdown() throws Exception {
+        // Match E2b/Daytona: a non-owned sandbox is shared/reused, so closing this adapter
+        // must not close its shared MCP channel.
+        if (!arState.isSandboxOwned()) {
+            return;
+        }
         try {
             mcp.close();
         } catch (Exception ignore) {
             // best-effort
-        }
-        if (!arState.isSandboxOwned()) {
-            return;
         }
         String id = arState.getSandboxId();
         if (id != null && !id.isBlank()) {

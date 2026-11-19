@@ -17,19 +17,31 @@ package io.agentscope.core.embedding.dashscope;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.embedding.EmbeddingException;
 import io.agentscope.core.embedding.EmbeddingModel;
+import io.agentscope.core.embedding.EmbeddingResponse;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.URLSource;
 import io.agentscope.core.model.ExecutionConfig;
 import java.time.Duration;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
+import okhttp3.mockwebserver.Dispatcher;
+import okhttp3.mockwebserver.MockResponse;
+import okhttp3.mockwebserver.MockWebServer;
+import okhttp3.mockwebserver.RecordedRequest;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import reactor.core.Disposable;
+import reactor.core.scheduler.Scheduler;
+import reactor.core.scheduler.Schedulers;
 import reactor.test.StepVerifier;
 
 /**
@@ -192,5 +204,116 @@ class DashScopeTextEmbeddingTest {
 
         assertNotNull(model);
         // Timeout will be applied when embed() is called
+    }
+
+    @Test
+    @DisplayName("Should run synchronous SDK calls off non-blocking subscriber threads")
+    void synchronousSdkCallRunsOffNonBlockingSubscriberThread() throws Exception {
+        MockWebServer server = new MockWebServer();
+        CountDownLatch requestReceived = new CountDownLatch(1);
+        CountDownLatch releaseResponse = new CountDownLatch(1);
+        server.setDispatcher(
+                new Dispatcher() {
+                    @Override
+                    public MockResponse dispatch(RecordedRequest request)
+                            throws InterruptedException {
+                        requestReceived.countDown();
+                        releaseResponse.await();
+                        return new MockResponse()
+                                .setResponseCode(200)
+                                .setHeader("Content-Type", "application/json")
+                                .setBody(
+                                        "{\"output\":{\"embeddings\":[{\"embedding\":[0.25],"
+                                                + "\"text_index\":0}]},"
+                                                + "\"usage\":{\"total_tokens\":7},"
+                                                + "\"request_id\":\"test\"}");
+                    }
+                });
+        server.start();
+
+        Scheduler subscriberScheduler = Schedulers.newSingle("embedding-subscriber");
+        CountDownLatch markerRan = new CountDownLatch(1);
+        CountDownLatch completed = new CountDownLatch(1);
+        AtomicReference<EmbeddingResponse> response = new AtomicReference<>();
+        AtomicReference<Throwable> error = new AtomicReference<>();
+        Disposable subscription = null;
+        boolean requestObserved;
+        boolean markerObserved;
+        try {
+            DashScopeTextEmbedding model =
+                    DashScopeTextEmbedding.builder()
+                            .apiKey(TEST_API_KEY)
+                            .modelName(TEST_MODEL_NAME)
+                            .dimensions(1)
+                            .baseUrl(server.url("/").toString())
+                            .build();
+            subscription =
+                    model.embed(TextBlock.builder().text("hello").build())
+                            .subscribeOn(subscriberScheduler)
+                            .subscribe(
+                                    response::set,
+                                    throwable -> {
+                                        error.set(throwable);
+                                        completed.countDown();
+                                    },
+                                    completed::countDown);
+
+            requestObserved = requestReceived.await(5, TimeUnit.SECONDS);
+            subscriberScheduler.schedule(markerRan::countDown);
+            markerObserved = markerRan.await(5, TimeUnit.SECONDS);
+        } finally {
+            releaseResponse.countDown();
+            completed.await(5, TimeUnit.SECONDS);
+            if (subscription != null) {
+                subscription.dispose();
+            }
+            subscriberScheduler.dispose();
+            server.shutdown();
+        }
+
+        assertTrue(requestObserved, "The local server should receive the SDK request");
+        assertTrue(
+                markerObserved,
+                "The synchronous DashScope SDK call must not block the subscriber scheduler");
+        assertNull(error.get());
+        assertNotNull(response.get());
+        assertEquals(0.25, response.get().getEmbedding()[0]);
+        assertNotNull(response.get().getUsage());
+        assertEquals(7, response.get().getUsage().getTotalTokens());
+        assertEquals(7, response.get().getUsage().getInputTokens());
+    }
+
+    @Test
+    @DisplayName("Should return null usage when provider does not report token usage")
+    void testUsageIsNullWhenNotReported() throws Exception {
+        MockWebServer server = new MockWebServer();
+        server.enqueue(
+                new MockResponse()
+                        .setResponseCode(200)
+                        .setHeader("Content-Type", "application/json")
+                        .setBody(
+                                "{\"output\":{\"embeddings\":[{\"embedding\":[0.25],"
+                                        + "\"text_index\":0}]},\"request_id\":\"test\"}"));
+        server.start();
+
+        try {
+            DashScopeTextEmbedding model =
+                    DashScopeTextEmbedding.builder()
+                            .apiKey(TEST_API_KEY)
+                            .modelName(TEST_MODEL_NAME)
+                            .dimensions(1)
+                            .baseUrl(server.url("/").toString())
+                            .build();
+
+            StepVerifier.create(model.embed(TextBlock.builder().text("hello").build()))
+                    .assertNext(
+                            response -> {
+                                assertEquals(0.25, response.getEmbedding()[0]);
+                                assertNull(response.getUsage());
+                            })
+                    .verifyComplete();
+        } finally {
+            server.shutdown();
+        }
     }
 }

@@ -147,6 +147,11 @@ public class MongoBaseStore implements BaseStore {
     }
 
     @Override
+    public boolean supportsAtomicJournalStorage() {
+        return true;
+    }
+
+    @Override
     public boolean putIfVersion(
             List<String> namespace, String key, Map<String, Object> value, long expectedVersion) {
         validateKey(key);

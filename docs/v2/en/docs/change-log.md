@@ -1,6 +1,7 @@
 ---
 title: V1 Migration Guide
 description: Complete migration guide from AgentScope Java 1.x to 2.0
+zh_link: /v2/zh/docs/change-log
 ---
 
 <Tip>
@@ -251,10 +252,12 @@ agent.streamEvents(new UserMessage("Hello"))
 - These tools run commands and read/write files directly against the host process. For `ReActAgent` users who don't need workspace / sandbox isolation, they are the recommended way to give the agent shell and file access:
 
 ```java
+import java.util.Set;
+
 Toolkit toolkit = new Toolkit();
 toolkit.registerTool(new ReadFileTool("/path/to/base/dir"));
 toolkit.registerTool(new WriteFileTool("/path/to/base/dir"));
-toolkit.registerTool(new ShellCommandTool());
+toolkit.registerTool(new ShellCommandTool(Set.of("python3")));
 
 ReActAgent agent = ReActAgent.builder()
     .toolkit(toolkit)
@@ -262,6 +265,7 @@ ReActAgent agent = ReActAgent.builder()
     .build();
 ```
 
+- **Breaking behavior change in 2.0.4:** With the default validators, an empty or cleared whitelist now requires approval. `new ShellCommandTool()` has no approval callback, so commands return `SecurityError` until a whitelist is configured. Configure the required executables or use `new ShellCommandTool(allowedCommands, approvalCallback)`. Relative executables must both stay within the current directory and match the whitelist. Shell operators or expansions also require approval; without an approving callback, the command is rejected. Custom validators retain their own policy. See [shell tool configuration](/v2/en/docs/building-blocks/tool#skill-script-execution-configuring-shell-tools) for migration details and Windows-specific restrictions.
 - For `HarnessAgent` users, the harness module provides its own workspace-aware file and shell tools (`read_file`, `write_file`, `execute`, etc.) with unified local / Docker / cloud-sandbox stores, permission isolation, read/write cache, and HITL approval. It is recommended to use the built-in harness tools for workspace-integrated scenarios.
 
 Detail → [Harness filesystem](/v2/en/docs/harness/filesystem)

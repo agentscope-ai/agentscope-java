@@ -1,6 +1,7 @@
 ---
 title: "Engineering: from GitHub Issue to merged PR"
 description: "Use an all-Hosted Team for analysis, implementation, review, CI, rework, and approval."
+zh_link: /v2/zh/service/cases/sdlc-team
 ---
 
 <Note>
@@ -17,10 +18,10 @@ Download these files, remove the final `.txt`, and place them in the exercise re
 
 | Download | Destination and purpose |
 | --- | --- |
-| [OrderQuery.java](/examples/service/sdlc-team/OrderQuery.java.txt) | Repository root; query implementation |
-| [OrderQueryTest.java](/examples/service/sdlc-team/OrderQueryTest.java.txt) | Repository root; fixed acceptance checks |
-| [Issue requirements](/examples/service/sdlc-team/issue.md.txt) | GitHub Issue body |
-| [CI workflow](/examples/service/sdlc-team/ci.yml.txt) | `.github/workflows/ci.yml` |
+| [OrderQuery.java](/v2/assets/examples/service/sdlc-team/OrderQuery.java.txt) | Repository root; query implementation |
+| [OrderQueryTest.java](/v2/assets/examples/service/sdlc-team/OrderQueryTest.java.txt) | Repository root; fixed acceptance checks |
+| [Issue requirements](/v2/assets/examples/service/sdlc-team/issue.md.txt) | GitHub Issue body |
+| [CI workflow](/v2/assets/examples/service/sdlc-team/ci.yml.txt) | `.github/workflows/ci.yml` |
 
 The fixture implements the query logic behind an order API, not an HTTP server. Filtering and pagination are intentionally absent: three of five checks fail initially. The Issue also requires additional boundary tests. Ignore `out/`, commit the fixture and CI, and create the Issue. Initial CI failure represents the unimplemented feature.
 

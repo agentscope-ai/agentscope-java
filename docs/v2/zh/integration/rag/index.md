@@ -1,5 +1,6 @@
 ---
 title: RAG 知识库
+en_link: /v2/en/integration/rag/index
 ---
 
 选择下方指南，了解RAG 知识库的配置与使用。

@@ -106,6 +106,24 @@ public final class ImageBlock extends ContentBlock {
         return new Builder();
     }
 
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) {
+            return true;
+        }
+        if (!(o instanceof ImageBlock other)) {
+            return false;
+        }
+        return Objects.equals(source, other.source)
+                && Objects.equals(minPixels, other.minPixels)
+                && Objects.equals(maxPixels, other.maxPixels);
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(source, minPixels, maxPixels);
+    }
+
     /**
      * Builder for constructing ImageBlock instances.
      */

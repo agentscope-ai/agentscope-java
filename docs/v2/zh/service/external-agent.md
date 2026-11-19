@@ -1,5 +1,6 @@
 ---
 title: "External Agent：概览与接入用法"
+en_link: /v2/en/service/external-agent
 ---
 
 <Note>

@@ -2,6 +2,7 @@
 title: Quickstart
 description: Get started with AgentScope Java 2.0 — bring up your first long-running
   agent with HarnessAgent
+zh_link: /v2/zh/docs/quickstart
 ---
 
 ## Installation
@@ -23,7 +24,7 @@ AgentScope Java requires JDK 17 or newer. Maven 3.9+ is recommended.
 
 <Note>
 
-Substitute `${agentscope.version}` with the latest version. See [Release Notes](/v2/en/docs/others/release-notes) for the latest version and full release details.
+Set `${agentscope.version}` to `2.0.4` for this documentation. See [Release Notes](/v2/en/docs/others/release-notes) for the changes included in this release.
 
 </Note>
 

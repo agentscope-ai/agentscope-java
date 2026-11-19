@@ -1,5 +1,6 @@
 ---
 title: "自动化任务：计划与 Webhook"
+en_link: /v2/en/service/automation
 ---
 
 <Note>
@@ -11,7 +12,7 @@ Automation 把“何时触发”和“执行什么工作”保存为一条可复
 ## 界面导览
 
 <Frame caption="当前控制台截图，使用固定演示数据。">
-  <img src="/imgs/service/automation.png" alt="Automation 的执行说明和触发配置" />
+  <img src="/v2/assets/imgs/service/automation.png" alt="Automation 的执行说明和触发配置" />
 </Frame>
 
 在编辑窗口中先确认 **Runbook** 和执行 Agent，再选择输出方式、完成策略与触发时间。核对时区后保存；回到详情页使用 **Run now** 检查首次执行。
@@ -19,7 +20,7 @@ Automation 把“何时触发”和“执行什么工作”保存为一条可复
 ### 核对触发计划
 
 <Frame caption="每周一上午 09:00，Asia/Shanghai；预览显示接下来的触发时间。">
-  <img src="/imgs/service/automation-schedule.png" alt="Automation 的 Cron、时区和下次触发预览" />
+  <img src="/v2/assets/imgs/service/automation-schedule.png" alt="Automation 的 Cron、时区和下次触发预览" />
 </Frame>
 
 

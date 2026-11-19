@@ -1,5 +1,6 @@
 ---
 title: "Message events: Channel integration and routing"
+zh_link: /v2/zh/service/channels
 ---
 
 <Note>
@@ -11,7 +12,7 @@ This is preview documentation. The official release is not yet available.
 ## Interface tour
 
 <Frame caption="Current console UI with fixed demonstration data.">
-  <img src="/imgs/service/channels.png" alt="Channel catalog with platform type and running status" />
+  <img src="/v2/assets/imgs/service/channels.png" alt="Channel catalog with platform type and running status" />
 </Frame>
 
 Each card shows the platform type, conversation isolation and runtime status. Open a channel to configure credentials and routing. **running** means the adapter has started; send a message from the actual platform to verify routing and result delivery.

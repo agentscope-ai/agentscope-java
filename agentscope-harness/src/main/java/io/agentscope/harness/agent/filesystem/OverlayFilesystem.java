@@ -55,6 +55,11 @@ import java.util.Map;
  */
 public class OverlayFilesystem implements AbstractFilesystem {
 
+    @Override
+    public io.agentscope.core.journal.AtomicJournalStorage journalStorage(RuntimeContext rc) {
+        return upper.journalStorage(rc);
+    }
+
     private final AbstractFilesystem upper;
     private final AbstractFilesystem lower;
 

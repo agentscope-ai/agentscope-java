@@ -43,8 +43,10 @@ import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.EnumSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import org.slf4j.Logger;
@@ -66,10 +68,12 @@ import reactor.core.publisher.Flux;
  *       {@link #getTools()} and register them on the toolkit at orchestration time).
  *   <li>On every {@link #onAgent}, reloads subagent declarations from the workspace filesystem
  *       (namespace-scoped) to support per-user subagent isolation.
- *   <li>Prepends rich subagent usage guidance and current async task summary to the leading
- *       SYSTEM message of every {@link ReasoningInput}. Because the framework rebuilds the
- *       SYSTEM message from a frozen base each iteration, this is safe — content never
- *       accumulates across iterations.
+ *   <li>Prepends the stable subagent usage guidance to the leading SYSTEM message of every
+ *       {@link ReasoningInput}, and appends the volatile state (available agent catalog, async
+ *       task summary) as a synthetic tail message. Because the framework rebuilds the SYSTEM
+ *       message from a frozen base each iteration, this is safe — content never accumulates
+ *       across iterations, and keeping the volatile parts out of the head keeps the system
+ *       bytes stable across steps (prefix-cache friendly).
  * </ol>
  */
 public class SubagentsMiddleware implements HarnessRuntimeMiddleware {
@@ -95,7 +99,14 @@ public class SubagentsMiddleware implements HarnessRuntimeMiddleware {
             ## Subagents
 
             You have access to subagent tools for spawning and coordinating isolated subagents.
-            Subagents are ephemeral — they live only for the duration of the task and return a single result.
+            Each subagent runs its own conversation, separate from yours. Every invocation — a spawn
+            with a task, or a follow-up send — produces one result: returned directly when you wait
+            synchronously, or pushed back to you when it runs in the background. A live local
+            subagent keeps its own history across follow-up sends; remote backends may start a new
+            conversation for each send. Session persistence and later resumption depend on the
+            declaration (`persistSession`) and the backend, so don't rely on resuming it later.
+            Spawned subagents remain retained and addressable until explicitly released or until
+            the parent agent shuts down.
 
             ### Agent Tools
 
@@ -112,7 +123,9 @@ public class SubagentsMiddleware implements HarnessRuntimeMiddleware {
             - `message` (required): content to send
             - `timeout_seconds`: 0=fire-and-forget, >0=wait for reply (default: 30)
 
-            **`%s`** — List active subagents
+            **`%s`** — List retained, addressable subagents
+
+            %s
 
             ### Task Tools (for async/background operations)
 
@@ -139,9 +152,6 @@ public class SubagentsMiddleware implements HarnessRuntimeMiddleware {
             ### Timeout promotion
             When a sync spawn/send exceeds its timeout, the task is **not lost** — it is automatically promoted to a background task. You receive `status: timeout_promoted` with a `task_id`. Treat it like any async task: the result will be pushed back to you automatically as a `<system-reminder>`. Do NOT retry the same task — it is already running in the background.
 
-            ### Available agent ids
-            %s
-
             ### When to use subagents
             - When a task is complex and multi-step, and can be fully delegated in isolation
             - When a task is independent of other tasks and can run in parallel
@@ -156,9 +166,9 @@ public class SubagentsMiddleware implements HarnessRuntimeMiddleware {
             - If splitting would add latency without benefit
 
             ### Subagent lifecycle
-            1. **Spawn** → Provide clear role, instructions, and expected output format
+            1. **Spawn** → Write a self-contained task: goal, needed context and file paths, constraints, and the expected deliverable. The subagent starts from a fresh conversation and does not see yours
             2. **Run** → The subagent completes the task autonomously
-            3. **Return** → The subagent provides a single structured result
+            3. **Return** → The subagent's final message is delivered as that invocation's result (sync tool result, or pushed back for background tasks)
             4. **Reconcile** → Incorporate or synthesize the result into the main thread
 
             ### Usage patterns
@@ -166,7 +176,9 @@ public class SubagentsMiddleware implements HarnessRuntimeMiddleware {
             - **Parallel sync delegation**: Multiple sync `agent_spawn` / `agent_send` calls in one turn run concurrently by default (Toolkit parallel=true); the parent waits for that batch of tool results before continuing. Pass a Toolkit with parallel=false to opt out.
             - **Mixed short/long work**: Wait for short prerequisite tasks first, continue reasoning with those results, and merge long-running async results later through `task_output` or `wait_async_results`
             - **Sync delegation**: Use default timeout for simple one-shot delegation when one result is needed before the next reasoning step
-            - **Persistent session**: Spawn without a task, then use send for multi-turn interaction
+            - **Persistent session**: Spawn without a task, then use send for multi-turn
+              interaction with the live subagent
+            %s
             - **Cancel stale work**: Use task_cancel to stop background tasks that are no longer needed
             - Subagent results are NOT visible to the user — always summarize them in your response
             """;
@@ -174,6 +186,7 @@ public class SubagentsMiddleware implements HarnessRuntimeMiddleware {
 
     private final List<SubagentEntry> baseEntries;
     private volatile Object subagentTool;
+    private volatile AgentSpawnTool ownedAgentSpawnTool;
     private final TaskTool taskTool;
     private final TaskRepository taskRepository;
     private final boolean isSessionMode;
@@ -211,7 +224,9 @@ public class SubagentsMiddleware implements HarnessRuntimeMiddleware {
         this.workspaceManager = workspaceManager;
         java.util.Objects.requireNonNull(taskRepository, "taskRepository");
         this.taskRepository = taskRepository;
-        this.subagentTool = new AgentSpawnTool(dam, taskRepository, 0);
+        AgentSpawnTool spawnTool = new AgentSpawnTool(dam, taskRepository, 0);
+        this.subagentTool = spawnTool;
+        this.ownedAgentSpawnTool = spawnTool;
         this.taskTool = new TaskTool(taskRepository);
         this.filesystem = filesystem;
         this.mainWorkspace = mainWorkspace;
@@ -240,12 +255,19 @@ public class SubagentsMiddleware implements HarnessRuntimeMiddleware {
         this.agentManager = null;
         this.workspaceManager = null;
         this.subagentTool = externalSubagentTool;
+        this.ownedAgentSpawnTool = null;
         java.util.Objects.requireNonNull(taskRepository, "taskRepository");
         this.taskRepository = taskRepository;
         this.taskTool = new TaskTool(taskRepository);
         this.filesystem = null;
         this.mainWorkspace = null;
         this.factoryBuilder = null;
+    }
+
+    /** Narrow declaration: subclasses overriding more hooks must extend this set. */
+    @Override
+    public Set<ExtensionPoint> activePoints() {
+        return EnumSet.of(ExtensionPoint.ON_AGENT, ExtensionPoint.ON_REASONING);
     }
 
     /**
@@ -297,9 +319,9 @@ public class SubagentsMiddleware implements HarnessRuntimeMiddleware {
                     String userId = rc != null ? rc.getUserId() : null;
                     String hintContent =
                             String.format(
-                                    "<system-notification>Background subagent task '%s'"
+                                    "<system-reminder>Background subagent task '%s'"
                                             + " (agent=%s) has completed.\n\nResult:\n\n%s"
-                                            + "</system-notification>",
+                                            + "</system-reminder>",
                                     taskId, subAgentId, result != null ? result : "(no output)");
                     String hintId = java.util.UUID.randomUUID().toString().replace("-", "");
                     java.util.Map<String, Object> hintPayload =
@@ -356,9 +378,20 @@ public class SubagentsMiddleware implements HarnessRuntimeMiddleware {
         if (this.subagentTool instanceof AgentSpawnTool ast) {
             ast.setGatewayBridge(bridge);
         } else {
-            this.subagentTool = new AgentSpawnTool(agentManager, taskRepository, 0, bridge);
+            AgentSpawnTool spawnTool = new AgentSpawnTool(agentManager, taskRepository, 0, bridge);
+            this.subagentTool = spawnTool;
+            this.ownedAgentSpawnTool = spawnTool;
         }
         return this;
+    }
+
+    /** Closes the internally-created spawn tool without touching an injected external tool. */
+    public synchronized void closeOwnedAgentSpawnTool() {
+        AgentSpawnTool spawnTool = ownedAgentSpawnTool;
+        if (spawnTool != null) {
+            ownedAgentSpawnTool = null;
+            spawnTool.close();
+        }
     }
 
     /**
@@ -430,13 +463,15 @@ public class SubagentsMiddleware implements HarnessRuntimeMiddleware {
             }
         }
 
-        StringBuilder addition = new StringBuilder();
-        addition.append(renderSubagentSection(currentEntries, isSessionMode));
-        String taskSummary = buildTaskSummary(this.taskRepository, rc);
-        if (taskSummary != null) {
-            addition.append(taskSummary);
+        List<Msg> rebuilt =
+                prependToSystemMessage(
+                        input.messages(), renderSubagentSection(currentEntries, isSessionMode));
+        Msg stateMsg =
+                buildSubagentStateMsg(currentEntries, buildTaskSummary(this.taskRepository, rc));
+        if (stateMsg != null) {
+            rebuilt = new ArrayList<>(rebuilt);
+            rebuilt.add(stateMsg);
         }
-        List<Msg> rebuilt = prependToSystemMessage(input.messages(), addition.toString());
         if (deliveryMsg != null) {
             // Inject for this round (parallel to the AgentState write — keeps the message visible
             // in the immediate LLM call regardless of when the framework re-derives messages from
@@ -642,7 +677,40 @@ public class SubagentsMiddleware implements HarnessRuntimeMiddleware {
 
     /**
      * Renders the {@code ## Subagents} system-prompt section for the supplied entries. Shared
-     * with {@link DynamicSubagentsMiddleware}.
+     * with {@link DynamicSubagentsMiddleware}. Contains only per-configuration stable guidance —
+     * the volatile agent catalog and async task summary travel in the tail state message (see
+     * {@link #buildSubagentStateMsg}) so the system head stays byte-stable across steps.
+     */
+    public static String renderSubagentSection(List<SubagentEntry> entries, boolean isSessionMode) {
+        String spawnName = isSessionMode ? "sessions_spawn" : "agent_spawn";
+        String sendName = isSessionMode ? "sessions_send" : "agent_send";
+        String listName = isSessionMode ? "sessions_list" : "agent_list";
+        String releaseSection =
+                isSessionMode
+                        ? ""
+                        : """
+                        **`agent_release`** — Release a retained subagent that is no longer needed
+                        - `agent_key`: copy the full opaque handle returned by `agent_spawn`
+                        - Release is rejected while the subagent has running work; wait for or cancel that work, then retry
+                        - Success invalidates the `agent_key` and revokes any user-addressable Gateway handle
+                        """;
+        String releaseUsage =
+                isSessionMode
+                        ? ""
+                        : "- **Release retained agents**: Once a subagent is no longer needed and"
+                                + " has no running work, call `agent_release`; a successful release"
+                                + " permanently invalidates its `agent_key`";
+        return String.format(
+                SUBAGENT_SECTION_TEMPLATE,
+                spawnName,
+                sendName,
+                listName,
+                releaseSection,
+                releaseUsage);
+    }
+
+    /**
+     * Renders the visible agent catalog lines, or an empty string when no entry is visible.
      *
      * <p>Filters out entries whose declaration sets {@code hidden=true} or {@code mode=PRIMARY}:
      * the LLM should not see internal-use subagents (hidden) and cannot spawn primary-only
@@ -650,16 +718,46 @@ public class SubagentsMiddleware implements HarnessRuntimeMiddleware {
      * such spawns anyway, so advertising them would be a footgun). Programmatic registrations
      * without a declaration ({@code entry.declaration() == null}) are always shown.
      */
-    public static String renderSubagentSection(List<SubagentEntry> entries, boolean isSessionMode) {
-        String agentList =
-                entries.stream()
-                        .filter(SubagentsMiddleware::isVisibleToLlm)
-                        .map(e -> String.format("- `%s`: %s", e.name(), e.description()))
-                        .collect(Collectors.joining("\n"));
-        String spawnName = isSessionMode ? "sessions_spawn" : "agent_spawn";
-        String sendName = isSessionMode ? "sessions_send" : "agent_send";
-        String listName = isSessionMode ? "sessions_list" : "agent_list";
-        return String.format(SUBAGENT_SECTION_TEMPLATE, spawnName, sendName, listName, agentList);
+    private static String renderSubagentCatalog(List<SubagentEntry> entries) {
+        return entries.stream()
+                .filter(SubagentsMiddleware::isVisibleToLlm)
+                .map(e -> String.format("- `%s`: %s", e.name(), e.description()))
+                .collect(Collectors.joining("\n"));
+    }
+
+    /**
+     * Builds the synthetic tail message carrying the volatile subagent state: the available agent
+     * catalog and the async task summary. Returns {@code null} when both parts are empty.
+     *
+     * <p>Role and metadata mirror {@link #buildDeliveryReminder}: the harness layout places this
+     * message after the conversation (same zone as {@code runtime_materials} and {@code
+     * plan_state}), and compaction keeps this request-only projection out of the durable summary.
+     */
+    static Msg buildSubagentStateMsg(List<SubagentEntry> entries, String taskSummary) {
+        String catalog = renderSubagentCatalog(entries);
+        boolean hasTasks = taskSummary != null && !taskSummary.isBlank();
+        if (catalog.isEmpty() && !hasTasks) {
+            return null;
+        }
+        StringBuilder sb = new StringBuilder("<RUNTIME_STATE>\n");
+        if (!catalog.isEmpty()) {
+            sb.append("### Available agent ids\n").append(catalog).append('\n');
+        }
+        if (hasTasks) {
+            sb.append(taskSummary.strip()).append('\n');
+        }
+        sb.append("</RUNTIME_STATE>");
+        return Msg.builder()
+                .role(MsgRole.USER)
+                .name("system")
+                .content(TextBlock.builder().text(sb.toString()).build())
+                .metadata(
+                        Map.of(
+                                Msg.METADATA_SYNTHETIC,
+                                true,
+                                Msg.METADATA_REMINDER_KIND,
+                                "subagent_state"))
+                .build();
     }
 
     /**

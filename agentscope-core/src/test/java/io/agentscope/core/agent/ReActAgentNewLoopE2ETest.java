@@ -26,15 +26,19 @@ import io.agentscope.core.event.AgentEventEmitter;
 import io.agentscope.core.event.AgentStartEvent;
 import io.agentscope.core.event.ModelCallEndEvent;
 import io.agentscope.core.event.ToolCallEndEvent;
+import io.agentscope.core.event.ToolProgressEvent;
+import io.agentscope.core.event.ToolResultDataDeltaEvent;
 import io.agentscope.core.event.ToolResultEndEvent;
 import io.agentscope.core.event.ToolResultTextDeltaEvent;
 import io.agentscope.core.message.ContentBlock;
+import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolResultState;
 import io.agentscope.core.message.ToolUseBlock;
+import io.agentscope.core.message.URLSource;
 import io.agentscope.core.middleware.ActingInput;
 import io.agentscope.core.middleware.AgentInput;
 import io.agentscope.core.middleware.MiddlewareBase;
@@ -49,9 +53,11 @@ import io.agentscope.core.tool.ToolBase;
 import io.agentscope.core.tool.ToolCallParam;
 import io.agentscope.core.tool.Toolkit;
 import java.util.ArrayList;
+import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Function;
 import java.util.function.Supplier;
@@ -162,6 +168,31 @@ class ReActAgentNewLoopE2ETest {
         }
     }
 
+    /** Same as {@link AlwaysAllowTool} but the {@code query} property is required. */
+    private static final class RequiredArgTool extends ToolBase {
+        RequiredArgTool(String name) {
+            super(name, "requires query", requiredSchema(), true, true, false, null, false, false);
+        }
+
+        private static Map<String, Object> requiredSchema() {
+            Map<String, Object> s = AlwaysAllowTool.schema();
+            s.put("required", List.of("query"));
+            return s;
+        }
+
+        @Override
+        public Mono<PermissionDecision> checkPermissions(
+                Map<String, Object> input, PermissionContextState ctx) {
+            return Mono.just(PermissionDecision.allow("ok"));
+        }
+
+        @Override
+        public Mono<ToolResultBlock> callAsync(ToolCallParam param) {
+            Object q = param.getInput() == null ? "" : param.getInput().get("query");
+            return Mono.just(ToolResultBlock.text(getName() + ":" + q));
+        }
+    }
+
     private static final class MetadataTool extends ToolBase {
         MetadataTool(String name) {
             super(
@@ -196,6 +227,11 @@ class ReActAgentNewLoopE2ETest {
         final List<String> trace = new ArrayList<>();
 
         @Override
+        public Set<ExtensionPoint> activePoints() {
+            return EnumSet.of(ExtensionPoint.ON_AGENT, ExtensionPoint.ON_ACTING);
+        }
+
+        @Override
         public Flux<AgentEvent> onAgent(
                 Agent agent,
                 RuntimeContext ctx,
@@ -217,6 +253,11 @@ class ReActAgentNewLoopE2ETest {
     }
 
     private static final class StripToolEventContextMiddleware implements MiddlewareBase {
+        @Override
+        public Set<ExtensionPoint> activePoints() {
+            return EnumSet.of(ExtensionPoint.ON_ACTING);
+        }
+
         @Override
         public Flux<AgentEvent> onActing(
                 Agent agent,
@@ -300,6 +341,129 @@ class ReActAgentNewLoopE2ETest {
                         .flatMap(m -> m.getContentBlocks(TextBlock.class).stream())
                         .anyMatch(tb -> tb.getText().equals("done-final"));
         assertTrue(hasFinalText, "final assistant text 'done-final' must be in state.context");
+    }
+
+    /**
+     * A provider that emits the complete tool call in one chunk without streamed argument
+     * fragments (content unset, parsed input only) must not lose its arguments: fabricated
+     * empty-object content used to mask the intact input for the content-first consumers —
+     * required-parameter validation rejected the call before execution.
+     */
+    @Test
+    void inputOnlySingleChunkToolCallWithRequiredArgsExecutes() {
+        ScriptedModel model =
+                new ScriptedModel(
+                        List.of(
+                                () -> Flux.just(toolUseResponse("c1", "search", "alpha")),
+                                () -> Flux.just(textResponse("done"))));
+        Toolkit tk = new Toolkit();
+        tk.registerAgentTool(new RequiredArgTool("search"));
+
+        ReActAgent agent =
+                ReActAgent.builder()
+                        .name("asst")
+                        .sysPrompt("you are helpful")
+                        .model(model)
+                        .toolkit(tk)
+                        .build();
+
+        List<AgentEvent> events =
+                agent.streamEvents(
+                                List.of(
+                                        Msg.builder()
+                                                .role(MsgRole.USER)
+                                                .textContent("find alpha")
+                                                .build()))
+                        .collectList()
+                        .block();
+        assertNotNull(events);
+
+        events.stream()
+                .filter(e -> e instanceof ToolResultEndEvent)
+                .forEach(
+                        e ->
+                                assertEquals(
+                                        ToolResultState.SUCCESS,
+                                        ((ToolResultEndEvent) e).getState(),
+                                        () -> "events: " + events));
+
+        boolean executedWithArg =
+                agent.getAgentState().getContext().stream()
+                        .flatMap(m -> m.getContentBlocks(ToolResultBlock.class).stream())
+                        .flatMap(
+                                b ->
+                                        b.getOutput() == null
+                                                ? java.util.stream.Stream.empty()
+                                                : b.getOutput().stream())
+                        .filter(b -> b instanceof TextBlock)
+                        .anyMatch(b -> ((TextBlock) b).getText().contains("search:alpha"));
+        assertTrue(executedWithArg, "the tool must run with the argument from the intact input");
+    }
+
+    /**
+     * An input map that cannot be serialized must not fail the reply stream: the accumulator
+     * falls back to empty-object content, so content-first consumers see empty arguments and
+     * the required-parameter validation rejects the call with the generic correction message
+     * (the pre-fix behavior for this edge, kept recoverable). The turn itself ends normally
+     * with a paired error result.
+     */
+    @Test
+    void unserializableInputCompletesTurnWithRecoverableErrorResult() {
+        Map<String, Object> in = new HashMap<>();
+        in.put("query", "alpha");
+        in.put("bad", new Object());
+        ScriptedModel model =
+                new ScriptedModel(
+                        List.of(
+                                () ->
+                                        Flux.just(
+                                                ChatResponse.builder()
+                                                        .content(
+                                                                List.<ContentBlock>of(
+                                                                        ToolUseBlock.builder()
+                                                                                .id("c1")
+                                                                                .name("search")
+                                                                                .input(in)
+                                                                                .build()))
+                                                        .build()),
+                                () -> Flux.just(textResponse("done"))));
+        Toolkit tk = new Toolkit();
+        tk.registerAgentTool(new RequiredArgTool("search"));
+
+        ReActAgent agent =
+                ReActAgent.builder()
+                        .name("asst")
+                        .sysPrompt("you are helpful")
+                        .model(model)
+                        .toolkit(tk)
+                        .build();
+
+        List<AgentEvent> events =
+                agent.streamEvents(
+                                List.of(
+                                        Msg.builder()
+                                                .role(MsgRole.USER)
+                                                .textContent("find alpha")
+                                                .build()))
+                        .collectList()
+                        .block();
+        assertNotNull(events);
+        assertTrue(
+                events.get(events.size() - 1) instanceof AgentEndEvent, () -> "events: " + events);
+        // The recoverable paired error result for c1 must actually exist.
+        ToolResultEndEvent paired =
+                events.stream()
+                        .filter(e -> e instanceof ToolResultEndEvent)
+                        .map(e -> (ToolResultEndEvent) e)
+                        .findFirst()
+                        .orElseThrow(() -> new AssertionError("no ToolResultEndEvent: " + events));
+        assertEquals(ToolResultState.ERROR, paired.getState(), () -> "events: " + events);
+        assertEquals("c1", paired.getToolCallId(), () -> "events: " + events);
+        boolean pairedInContext =
+                agent.getAgentState().getContext().stream()
+                        .flatMap(m -> m.getContentBlocks(ToolResultBlock.class).stream())
+                        .anyMatch(b -> "c1".equals(b.getId()));
+        assertTrue(pairedInContext, "the context must carry the paired error result for c1");
     }
 
     @Test
@@ -415,5 +579,107 @@ class ReActAgentNewLoopE2ETest {
         assertEquals(1L, events.stream().filter(ToolResultEndEvent.class::isInstance).count());
         assertTrue(events.get(0) instanceof AgentStartEvent);
         assertTrue(events.get(events.size() - 1) instanceof AgentEndEvent);
+    }
+
+    @Test
+    void progressAndResultTravelOnTheirOwnEventTypes() {
+        List<AgentEvent> events = runWithProgressTool(ToolResultBlock.text("fingerprint enrolled"));
+
+        List<String> progress =
+                events.stream()
+                        .filter(ToolProgressEvent.class::isInstance)
+                        .map(ToolProgressEvent.class::cast)
+                        .map(ToolProgressEvent::getText)
+                        .toList();
+        assertTrue(
+                progress.contains("scanning 3 dirs"),
+                "the emitted chunk has to reach the stream as progress");
+
+        List<String> resultDeltas =
+                events.stream()
+                        .filter(ToolResultTextDeltaEvent.class::isInstance)
+                        .map(e -> ((ToolResultTextDeltaEvent) e).getDelta())
+                        .toList();
+        assertEquals(
+                List.of("fingerprint enrolled"),
+                resultDeltas,
+                "deltas carry only what the model received, so progress must not appear here");
+    }
+
+    @Test
+    void imageOnlyReturnValueIsCarriedAsDataDelta() {
+        // An image return value has no text, so the delta stream carries it as a data delta
+        // rather than dropping it from the result.
+        List<AgentEvent> events =
+                runWithProgressTool(
+                        ToolResultBlock.of(
+                                ImageBlock.builder()
+                                        .source(new URLSource("https://example.com/chart.png"))
+                                        .build()));
+
+        List<AgentEvent> dataDeltas =
+                events.stream().filter(ToolResultDataDeltaEvent.class::isInstance).toList();
+        assertEquals(1, dataDeltas.size(), "the image is emitted as one data delta");
+        ToolResultDataDeltaEvent dataDelta = (ToolResultDataDeltaEvent) dataDeltas.get(0);
+        assertTrue(dataDelta.getData() instanceof ImageBlock);
+    }
+
+    private List<AgentEvent> runWithProgressTool(ToolResultBlock returnValue) {
+        ScriptedModel model =
+                new ScriptedModel(
+                        List.of(
+                                () -> Flux.just(toolUseResponse("c1", "enroll", "alpha")),
+                                () -> Flux.just(textResponse("done"))));
+        Toolkit tk = new Toolkit();
+        tk.registerAgentTool(new ProgressTool("enroll", returnValue));
+
+        List<AgentEvent> events =
+                ReActAgent.builder()
+                        .name("asst")
+                        .sysPrompt("you are helpful")
+                        .model(model)
+                        .toolkit(tk)
+                        .build()
+                        .streamEvents(
+                                List.of(
+                                        Msg.builder()
+                                                .role(MsgRole.USER)
+                                                .textContent("run enroll")
+                                                .build()))
+                        .collectList()
+                        .block();
+        assertNotNull(events);
+        return events;
+    }
+
+    /** Streams one progress chunk, then returns {@code returnValue}: the {@code ToolEmitter} deal. */
+    private static final class ProgressTool extends ToolBase {
+        private final ToolResultBlock returnValue;
+
+        ProgressTool(String name, ToolResultBlock returnValue) {
+            super(
+                    name,
+                    "streams progress then returns",
+                    AlwaysAllowTool.schema(),
+                    true,
+                    true,
+                    false,
+                    null,
+                    false,
+                    false);
+            this.returnValue = returnValue;
+        }
+
+        @Override
+        public Mono<PermissionDecision> checkPermissions(
+                Map<String, Object> input, PermissionContextState ctx) {
+            return Mono.just(PermissionDecision.allow("ok"));
+        }
+
+        @Override
+        public Mono<ToolResultBlock> callAsync(ToolCallParam param) {
+            param.getEmitter().emit(ToolResultBlock.text("scanning 3 dirs"));
+            return Mono.just(returnValue);
+        }
     }
 }

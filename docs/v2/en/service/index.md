@@ -1,6 +1,12 @@
 ---
 title: "What is AgentScope Service?"
+zh_link: /v2/zh/service/index
 ---
+
+<Note>
+This is the 2.0 documentation, based on the `v2.0.4` release tag. Use AgentScope Java `2.0.4` with these SDK examples. See [dev](/dev/en/intro) for the current development APIs.
+</Note>
+
 
 <Note>
 This is preview documentation. The official release is not yet available.

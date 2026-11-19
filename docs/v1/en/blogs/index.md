@@ -1,5 +1,6 @@
 ---
 title: Article index
+zh_link: /v1/zh/blogs/index
 ---
 
 Technical articles, release highlights, and team notes. Below is the **article index** for this site; the left sidebar stays in sync so you can jump between posts from any page.

@@ -1,5 +1,6 @@
 ---
 title: Gemini
+zh_link: /v2/zh/integration/model/gemini
 ---
 
 `agentscope-extensions-model-gemini` integrates Google Gemini models through the Gemini API and supports the Vertex AI path through explicit configuration.

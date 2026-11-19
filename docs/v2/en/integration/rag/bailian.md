@@ -1,5 +1,6 @@
 ---
 title: Bailian Knowledge
+zh_link: /v2/zh/integration/rag/bailian
 ---
 
 `agentscope-extensions-rag-bailian` integrates Alibaba Cloud Bailian Knowledge Base — embeddings, indexing, and retrieval are all managed by Bailian. The Agent only sends the query and receives documents back.

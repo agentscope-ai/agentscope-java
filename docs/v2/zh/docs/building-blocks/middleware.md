@@ -1,6 +1,7 @@
 ---
 title: Middleware
 description: 在 agent 生命周期的关键位置拦截并扩展行为
+en_link: /v2/en/docs/building-blocks/middleware
 ---
 
 ## 概述

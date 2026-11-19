@@ -1,5 +1,6 @@
 ---
 title: Memory Management
+zh_link: /v1/zh/docs/task/memory
 ---
 
 ## Overview

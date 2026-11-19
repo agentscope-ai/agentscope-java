@@ -123,8 +123,10 @@ public class KubernetesSandboxClient
                             CreateSandboxOptions.builder(merged.getWarmPoolName())
                                     .namespace(merged.getNamespace())
                                     .claimName(claimName)
+                                    .env(merged.getClaimEnv())
                                     .sandboxReadyTimeoutSeconds(
                                             merged.getSandboxReadyTimeoutSeconds())
+                                    .shutdownAfterSeconds(merged.getShutdownAfterSeconds())
                                     .build());
             state.setSandboxName(sdkSandbox.sandboxId());
             String podIp = sdkSandbox.getPodIp();
@@ -251,6 +253,9 @@ public class KubernetesSandboxClient
             return copy(base);
         }
         KubernetesSandboxClientOptions o = copy(base);
+        if (callOptions.getClaimEnv() != null) {
+            o.setClaimEnv(callOptions.getClaimEnv());
+        }
         if (callOptions.getKubernetesClient() != null) {
             o.setKubernetesClient(callOptions.getKubernetesClient());
         }
@@ -284,6 +289,9 @@ public class KubernetesSandboxClient
         if (callOptions.getServerPort() > 0) {
             o.setServerPort(callOptions.getServerPort());
         }
+        if (callOptions.getShutdownAfterSeconds() != null) {
+            o.setShutdownAfterSeconds(callOptions.getShutdownAfterSeconds());
+        }
         return o;
     }
 
@@ -293,6 +301,7 @@ public class KubernetesSandboxClient
         o.setKubernetesConfig(src.getKubernetesConfig());
         o.setNamespace(src.getNamespace());
         o.setWarmPoolName(src.getWarmPoolName());
+        o.setClaimEnv(src.getClaimEnv());
         o.setWorkspaceRoot(src.getWorkspaceRoot());
         o.setFileApiBaseDir(src.getFileApiBaseDir());
         o.setApiUrl(src.getApiUrl());
@@ -305,6 +314,7 @@ public class KubernetesSandboxClient
         o.setRequestTimeoutSeconds(src.getRequestTimeoutSeconds());
         o.setPerAttemptTimeoutSeconds(src.getPerAttemptTimeoutSeconds());
         o.setPortForwardTimeoutSeconds(src.getPortForwardTimeoutSeconds());
+        o.setShutdownAfterSeconds(src.getShutdownAfterSeconds());
         return o;
     }
 

@@ -1,6 +1,7 @@
 ---
 title: "Managed and mixed Teams: from customer needs to a proposal"
 description: "Create a Managed Team for a proposal and PoC plan, then add External queries and Hosted implementation."
+zh_link: /v2/zh/service/cases/presales-team
 ---
 
 <Note>
@@ -19,9 +20,9 @@ Download three text packs. Northstar Retail and the product catalogue are fictio
 
 | Material | Use |
 | --- | --- |
-| [Customer brief](/examples/service/presales-team/customer-brief.txt) | Paste into the Issue and retain the `customer-v1` marker |
-| [Product knowledge](/examples/service/presales-team/product-knowledge.txt) | Split at File markers into `product/capabilities.md` and `product/reference-case.md` Memory documents |
-| [Delivery guide](/examples/service/presales-team/delivery-guide.txt) | Create `delivery/poc-guide.md` in Memory |
+| [Customer brief](/v2/assets/examples/service/presales-team/customer-brief.txt) | Paste into the Issue and retain the `customer-v1` marker |
+| [Product knowledge](/v2/assets/examples/service/presales-team/product-knowledge.txt) | Split at File markers into `product/capabilities.md` and `product/reference-case.md` Memory documents |
+| [Delivery guide](/v2/assets/examples/service/presales-team/delivery-guide.txt) | Create `delivery/poc-guide.md` in Memory |
 
 The customer has 80 stores and about 3,000 daily enquiries and wants web support plus order lookup. Residency, SSO, peak concurrency, model budget, and quality targets are unconfirmed. Daily volume does not establish peak traffic; a four-week PoC does not establish a production launch date.
 

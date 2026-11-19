@@ -1,5 +1,6 @@
 ---
 title: Anthropic
+en_link: /v2/en/integration/model/anthropic
 ---
 
 `agentscope-extensions-model-anthropic` 接入 Anthropic Claude Model，并提供 Anthropic 专属 formatter 和请求 DTO 支持。

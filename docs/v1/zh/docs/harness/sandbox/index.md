@@ -1,5 +1,6 @@
 ---
 title: 沙箱
+en_link: /v1/en/docs/harness/sandbox/index
 ---
 
 [Filesystem](/v1/zh/docs/harness/filesystem) 说明了 agent 的「文件与命令」从哪来。当这些操作必须**与宿主进程隔离**、在**可替换的执行环境**（本地 Unix、Docker 等）里完成，并在多次 `call` 之间**恢复同一份工作区状态**时，应选用本文描述的 **沙箱模式**（`filesystem(SandboxFilesystemSpec)`）。

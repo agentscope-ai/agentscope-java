@@ -1,5 +1,6 @@
 ---
 title: "Create console Issues and assign tasks"
+zh_link: /v2/zh/service/issues
 ---
 
 <Note>
@@ -11,7 +12,7 @@ An Issue holds a work objective, owner, discussion, execution records and delive
 ## Interface tour
 
 <Frame caption="Current console UI with fixed demonstration data.">
-  <img src="/imgs/service/issues.png" alt="Issue list with priority, owner and status" />
+  <img src="/v2/assets/imgs/service/issues.png" alt="Issue list with priority, owner and status" />
 </Frame>
 
 Filter with **Active**, **In review** or **Done**, then compare priority, owner and status in each row. Open an issue title for its discussion and result. Start a new piece of work with **New issue** at the top right.
@@ -68,7 +69,7 @@ Use Chat to clarify a request, then use an Issue for ownership, collaboration an
 ### Chat interface tour
 
 <Frame caption="Current console UI with fixed demonstration data.">
-  <img src="/imgs/service/chat.png" alt="Chat conversation and the Create issue action" />
+  <img src="/v2/assets/imgs/service/chat.png" alt="Chat conversation and the Create issue action" />
 </Frame>
 
 Use the list on the left to reopen conversations. Read replies in **Conversation** and inspect execution events in **Events**. Use **Create issue** at the top right when the discussion is ready for an owner, a deliverable and acceptance criteria.

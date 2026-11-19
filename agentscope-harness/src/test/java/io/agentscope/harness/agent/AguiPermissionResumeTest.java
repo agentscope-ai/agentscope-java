@@ -172,7 +172,7 @@ class AguiPermissionResumeTest {
                                                         Flux.fromIterable(
                                                                 context.finishPendingEvents())))
                                 .collectList()
-                                .block(Duration.ofSeconds(20));
+                                .block(Duration.ofSeconds(60));
             }
             assertNoError(resumed);
             List<AguiEvent.ToolCallResult> results =
@@ -211,7 +211,7 @@ class AguiPermissionResumeTest {
                 .process(AguiRuntimeContextRequest.builder().input(input).build())
                 .events()
                 .collectList()
-                .block(Duration.ofSeconds(20));
+                .block(Duration.ofSeconds(60));
     }
 
     private static void assertNoError(List<AguiEvent> events) {

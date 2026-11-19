@@ -1,5 +1,6 @@
 ---
 title: "生产安装"
+en_link: /v2/en/service/kubernetes
 ---
 
 <Note>

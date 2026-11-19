@@ -1,5 +1,6 @@
 ---
 title: "SSE format and task feedback"
+zh_link: /v2/zh/service/sse-events
 ---
 
 <Note>

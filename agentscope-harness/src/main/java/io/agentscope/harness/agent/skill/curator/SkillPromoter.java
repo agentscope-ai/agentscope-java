@@ -30,7 +30,7 @@ import reactor.core.publisher.Mono;
  * Orchestrates the promotion pipeline: locate draft → run security scan → call gate →
  * physically move {@code _drafts/<name>/} to {@code skills/<name>/} → update sidecar.
  *
- * <p>Surfaced via {@code ReActAgent.promoteSkill(name, reviewerId)}; standalone here so it can
+ * <p>Surfaced via {@code HarnessAgent.promoteSkill(name, reviewerId, ctx)}; standalone here so it can
  * be unit tested without spinning up a full agent.
  */
 @SuppressWarnings("deprecation")

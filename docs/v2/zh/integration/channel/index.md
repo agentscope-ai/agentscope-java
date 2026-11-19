@@ -1,5 +1,6 @@
 ---
 title: Channel 适配器
+en_link: /v2/en/integration/channel/index
 ---
 
 这些扩展通过 Harness 的 [Channel](/v2/zh/docs/harness/channel) 接口将你的 Agent 接入真实的消息平台。每个适配器负责平台特有的认证、webhook 签名校验、消息解析和回复投递——你的 Agent 代码无需感知平台差异。

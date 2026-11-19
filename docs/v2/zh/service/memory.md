@@ -1,5 +1,6 @@
 ---
 title: "Memory：维护共享知识"
+en_link: /v2/en/service/memory
 ---
 
 <Note>
@@ -11,7 +12,7 @@ title: "Memory：维护共享知识"
 ## 界面导览
 
 <Frame caption="当前控制台截图，使用固定演示数据。">
-  <img src="/imgs/service/memory.png" alt="Memory Store 与其中的记忆文件" />
+  <img src="/v2/assets/imgs/service/memory.png" alt="Memory Store 与其中的记忆文件" />
 </Frame>
 
 先选择 Store，再查看其中的文件路径和内容。把已核对、可复用的结论放入 Memory；临时讨论和未经确认的推测不要直接作为共享知识。

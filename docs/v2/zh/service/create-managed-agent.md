@@ -1,5 +1,6 @@
 ---
 title: "Managed Agent：创建与测试"
+en_link: /v2/en/service/create-managed-agent
 ---
 
 <Note>
@@ -21,7 +22,7 @@ title: "Managed Agent：创建与测试"
 ```
 
 <Frame caption="Agent 目录示例，使用固定演示数据。">
-  <img src="/imgs/service/agents.png" alt="从 Agent 目录创建并查看 Managed Agent" />
+  <img src="/v2/assets/imgs/service/agents.png" alt="从 Agent 目录创建并查看 Managed Agent" />
 </Frame>
 
 ## 用 Chat 验证

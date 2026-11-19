@@ -1,5 +1,6 @@
 ---
 title: AgentScope Builder 发布
+en_link: /v2/en/blogs/agentscope-v1-builder
 ---
 
 在 AgentScope 1.1.0 版本中，我们把 OpenClaw、Coding Agent 那套「工作区即真理 + 自我进化」的体验，沉淀成了 `HarnessAgent` + `AbstractFilesystem` + 内置压缩与双层记忆的Harness Engineering 工程基础设施。当时我们留下了一个承诺：**写一套 Agent 逻辑，按需切换形态，从个人本机一路扩到企业分布式部署**。
@@ -292,8 +293,8 @@ java -jar agentscope-examples/agents/agentscope-builder/target/agentscope-builde
 
 服务起在 8080 端口，用 `admin/admin`、`bob/bob` 或 `alice/alice` 登录就能进入完整的 UI。生产部署相关的内容（数据库切换、沙箱镜像、分布式后端）见 [Builder README]。
 
-[Claw README]: https://github.com/agentscope-ai/agentscope-java/tree/main/agentscope-examples/agents/agentscope-paw
-[Builder README]: https://github.com/agentscope-ai/agentscope-java/tree/main/agentscope-service
+[Claw README]: https://github.com/agentscope-ai/agentscope-java/tree/v2.0.0-RC1/agentscope-examples/agents/agentscope-claw
+[Builder README]: https://github.com/agentscope-ai/agentscope-java/tree/v2.0.0-RC1/agentscope-examples/agents/agentscope-builder
 
 ---
 

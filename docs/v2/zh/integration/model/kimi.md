@@ -1,5 +1,6 @@
 ---
 title: Kimi
+en_link: /v2/en/integration/model/kimi
 ---
 
 `agentscope-extensions-model-openai` 通过 OpenAI 兼容模型栈提供 Kimi（月之暗面 / Moonshot AI）的一等支持。引入 OpenAI 模型扩展模块后，可以通过 `ModelRegistry` 使用 `kimi:<model>`。

@@ -1,5 +1,6 @@
 ---
 title: 子 Agent 流式
+en_link: /v1/en/docs/harness/streaming
 ---
 
 > **前置阅读**：[流式输出基础用法](/v1/zh/docs/task/streaming) — `stream()` API、`EventType`、`StreamOptions`、SSE 集成。本页专注 `HarnessAgent` 的**子 agent 事件转发**机制。

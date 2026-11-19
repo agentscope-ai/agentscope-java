@@ -253,33 +253,50 @@ class ToolGroupManager {
      * @return Formatted string describing META-scoped tool groups
      */
     public String getNotes() {
+        return getNotes(toolGroups.keySet());
+    }
+
+    /**
+     * Notes restricted to the given group names (order follows the supplied collection),
+     * formatted the same way as the no-arg form — one {@code - name: description} entry per
+     * META-scoped group, grouped into active/inactive sections. Used by the grant layer to
+     * rebuild the {@code reset_equipped_tools} description from only the activatable groups,
+     * so names and descriptions of cut-off groups are not leaked to the model. The no-arg
+     * form delegates here with the full key set.
+     *
+     * @param groupNames the groups to include (unknown names are skipped)
+     * @return formatted notes restricted to the supplied groups
+     */
+    public String getNotes(Collection<String> groupNames) {
         StringBuilder activatedNotes = new StringBuilder("Activated tool groups:\n");
         StringBuilder inactiveNotes = new StringBuilder("Inactive tool groups:\n");
         boolean hasActivatedGroup = false;
         boolean hasInactiveGroup = false;
-        for (ToolGroup group : toolGroups.values()) {
-            if (group.getScope() != ToolGroupScope.META) {
-                continue;
-            }
-            if (group.isActive()) {
-                hasActivatedGroup = true;
-                activatedNotes.append(
-                        String.format("- %s: %s\n", group.getName(), group.getDescription()));
-            } else {
-                hasInactiveGroup = true;
-                inactiveNotes.append(
-                        String.format("- %s: %s\n", group.getName(), group.getDescription()));
+        if (groupNames != null) {
+            for (String groupName : groupNames) {
+                ToolGroup group = toolGroups.get(groupName);
+                // Unknown names and non-META scopes are invisible to the meta tool (same
+                // scope rule as the no-arg form, which delegates with the full key set).
+                if (group == null || group.getScope() != ToolGroupScope.META) {
+                    continue;
+                }
+                if (group.isActive()) {
+                    hasActivatedGroup = true;
+                    activatedNotes.append(
+                            String.format("- %s: %s\n", group.getName(), group.getDescription()));
+                } else {
+                    hasInactiveGroup = true;
+                    inactiveNotes.append(
+                            String.format("- %s: %s\n", group.getName(), group.getDescription()));
+                }
             }
         }
-
         if (!hasActivatedGroup) {
             activatedNotes.append("No tool groups are currently activated.\n");
         }
-
         if (!hasInactiveGroup) {
             inactiveNotes.append("No tool groups are currently inactive.\n");
         }
-
         activatedNotes.append(inactiveNotes);
         return activatedNotes.toString();
     }
@@ -291,7 +308,9 @@ class ToolGroupManager {
      * @throws IllegalArgumentException if group doesn't exist
      */
     public void validateGroupExists(String groupName) {
-        if (!toolGroups.containsKey(groupName)) {
+        // Null guard: a null entry must be rejected with the disguised not-found wording
+        // (model input may contain JSON nulls), not with a ConcurrentHashMap NPE.
+        if (groupName == null || !toolGroups.containsKey(groupName)) {
             throw new IllegalArgumentException(
                     String.format("Tool group '%s' does not exist", groupName));
         }
@@ -316,6 +335,9 @@ class ToolGroupManager {
      *
      * <p>If the tool is not in any group, it is considered active by default.
      *
+     * <p><b>Legacy single-session API:</b> reads the shared activation flags. Per-call paths use
+     * {@link #isActiveTool(String, Collection)}.
+     *
      * @param toolName Tool name
      * @return true if ungrouped or in at least one active group
      */
@@ -329,6 +351,36 @@ class ToolGroupManager {
         }
         for (String groupName : groups) {
             if (isActiveGroup(groupName)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Check if a tool is in any of the explicitly supplied active groups.
+     *
+     * <p>Per-call / stateless variant of {@link #isActiveTool(String)}: callers that track
+     * activated groups in their own per-session state resolve availability against that set rather
+     * than the shared, concurrently-mutated activation flags. If {@code activeGroups} is {@code
+     * null}, this falls back to {@link #isActiveGroup(String)} for the shared flags.
+     *
+     * <p>If the tool is not in any group, it is considered active by default.
+     *
+     * @param toolName Tool name
+     * @param activeGroups the group names to treat as active (may be {@code null})
+     * @return true if ungrouped or in at least one supplied active group
+     */
+    public boolean isActiveTool(String toolName, Collection<String> activeGroups) {
+        if (toolName == null) {
+            return false;
+        }
+        Set<String> groups = tools.get(toolName);
+        if (groups == null || groups.isEmpty()) {
+            return true;
+        }
+        for (String g : groups) {
+            if (activeGroups != null ? activeGroups.contains(g) : isActiveGroup(g)) {
                 return true;
             }
         }
@@ -369,6 +421,10 @@ class ToolGroupManager {
      *
      * <p>All META-scoped groups not in {@code toActivate} are deactivated.
      * {@link ToolGroupScope#EXTERNAL} groups are not affected.
+     *
+     * <p>Legacy single-session API: mutates the shared activation flags. Framework paths now
+     * apply the same replacement semantics to the per-session {@code ToolContextState} instead
+     * ({@code replaceActivatedGroups}); this method is no longer called by the framework.
      *
      * @param toActivate group names to keep active (must all be META scope)
      */
@@ -462,6 +518,21 @@ class ToolGroupManager {
         }
     }
 
+    /** Removes a deregistered tool from both group indexes. */
+    public void removeToolFromAllGroups(String toolName) {
+        Set<String> groupNames = tools.remove(toolName);
+        if (groupNames == null) {
+            return;
+        }
+        for (String groupName : groupNames) {
+            ToolGroup group = toolGroups.get(groupName);
+            // A concurrent group removal may have already removed this entry.
+            if (group != null) {
+                group.removeTool(toolName);
+            }
+        }
+    }
+
     /**
      * Get all tool group names.
      *
@@ -516,7 +587,26 @@ class ToolGroupManager {
     }
 
     /**
-     * Copy all tool groups from this manager to another manager.
+     * Read-only snapshot of the groups containing {@code toolName}; empty when ungrouped.
+     * Group-membership lookup for grant decisions ({@code CapabilitySurface.allowsTool}).
+     *
+     * @param toolName the tool name to look up
+     * @return the set of group names containing the tool; never {@code null}, empty when
+     *     ungrouped or unknown
+     */
+    public Set<String> getGroupsOfTool(String toolName) {
+        if (toolName == null) {
+            return Set.of();
+        }
+        Set<String> groups = tools.get(toolName);
+        return groups != null ? Set.copyOf(groups) : Set.of();
+    }
+
+    /**
+     * Copy all tool groups (and their activation state) from this manager to another manager.
+     *
+     * <p>Groups are deep-copied so the target has independent activation flags; used by {@link
+     * Toolkit#copy()} for build-time agent isolation.
      *
      * @param target The target manager to copy tool groups to
      */

@@ -27,12 +27,19 @@ public class RemoteConfirmDecision {
 
     private String toolCallId;
     private boolean approved;
+    private String reason;
 
     public RemoteConfirmDecision() {}
 
     public RemoteConfirmDecision(String toolCallId, boolean approved) {
         this.toolCallId = toolCallId;
         this.approved = approved;
+    }
+
+    public RemoteConfirmDecision(String toolCallId, boolean approved, String reason) {
+        this.toolCallId = toolCallId;
+        this.approved = approved;
+        this.reason = reason;
     }
 
     public String getToolCallId() {
@@ -49,5 +56,13 @@ public class RemoteConfirmDecision {
 
     public void setApproved(boolean approved) {
         this.approved = approved;
+    }
+
+    public String getReason() {
+        return reason;
+    }
+
+    public void setReason(String reason) {
+        this.reason = reason;
     }
 }

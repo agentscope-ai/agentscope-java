@@ -1,5 +1,6 @@
 ---
 title: Text-to-Speech (TTS)
+zh_link: /v1/zh/docs/task/tts
 ---
 
 AgentScope Java provides comprehensive TTS capabilities, enabling Agents not only to think and respond, but also to speak. Compared to text-only scenarios, voice is a more natural interaction method, suitable for intelligent customer service, in-car assistants, and real-time conversation scenarios that generate and speak simultaneously.

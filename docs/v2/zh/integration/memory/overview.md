@@ -1,5 +1,6 @@
 ---
 title: 概览
+en_link: /v2/en/integration/memory/overview
 ---
 
 `LongTermMemory` 是 AgentScope 用来在多轮、多会话之间持久化用户偏好、事实、要点的接口。`agentscope-extensions-*` 仓库下提供了对接主流记忆服务的开箱即用实现：

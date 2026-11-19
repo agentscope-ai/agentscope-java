@@ -1,5 +1,6 @@
 ---
 title: "How External registration and dispatch work"
+zh_link: /v2/zh/service/external-agent-execution
 ---
 
 <Note>

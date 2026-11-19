@@ -54,6 +54,34 @@ class SkillFileSystemHelperTest {
 
     private Path skillsBaseDir;
 
+    @Test
+    void resourceReadPreservesBinaryPrefixAndRejectsPaths() throws IOException {
+        Path binary = tempDir.resolve("data.bin");
+        byte[] bytes = {(byte) 0xff, 0};
+        Files.write(binary, bytes);
+        assertEquals(
+                "base64:" + Base64.getEncoder().encodeToString(bytes),
+                SkillFileSystemHelper.readResource(tempDir, "data.bin").orElseThrow());
+        for (String path : List.of("../data.bin", "/data.bin", ".", "./", "missing")) {
+            assertTrue(SkillFileSystemHelper.readResource(tempDir, path).isEmpty(), path);
+        }
+    }
+
+    @Test
+    void resourceListAndReadExcludeUnreadableFiles() throws IOException {
+        Path resources = Files.createDirectories(tempDir.resolve("resources"));
+        Path blocked = resources.resolve("blocked.txt");
+        Files.writeString(blocked, "private");
+        Files.writeString(resources.resolve("visible.txt"), "visible");
+        try (MockedStatic<Files> mocked =
+                Mockito.mockStatic(Files.class, Mockito.CALLS_REAL_METHODS)) {
+            mocked.when(() -> Files.isReadable(blocked)).thenReturn(false);
+            assertTrue(SkillFileSystemHelper.readResource(resources, "blocked.txt").isEmpty());
+            assertEquals(
+                    List.of("visible.txt"), SkillFileSystemHelper.listResourcePaths(resources));
+        }
+    }
+
     @BeforeEach
     void setUp() throws IOException {
         skillsBaseDir = tempDir.resolve("skills");

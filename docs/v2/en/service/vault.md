@@ -1,5 +1,6 @@
 ---
 title: "Vault: credentials for tools"
+zh_link: /v2/zh/service/vault
 ---
 
 <Note>
@@ -11,7 +12,7 @@ This is preview documentation. The official release is not yet available.
 ## Interface tour
 
 <Frame caption="Current console UI with fixed demonstration data.">
-  <img src="/imgs/service/vault.png" alt="Vault and credential metadata list" />
+  <img src="/v2/assets/imgs/service/vault.png" alt="Vault and credential metadata list" />
 </Frame>
 
 Select a vault and check each credential’s label, type and target before linking it to the Agent that needs access. The screenshot contains only synthetic credential metadata, with no real secret.

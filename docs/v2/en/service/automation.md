@@ -1,5 +1,6 @@
 ---
 title: "Automated tasks: schedules and webhooks"
+zh_link: /v2/zh/service/automation
 ---
 
 <Note>
@@ -11,7 +12,7 @@ An Automation saves when to trigger work and what an Agent or Team should do. Us
 ## Interface tour
 
 <Frame caption="Current console UI with fixed demonstration data.">
-  <img src="/imgs/service/automation.png" alt="Automation editor with runbook and trigger settings" />
+  <img src="/v2/assets/imgs/service/automation.png" alt="Automation editor with runbook and trigger settings" />
 </Frame>
 
 In the editor, confirm the **Runbook** and assigned Agent before choosing the output mode, completion policy and trigger schedule. Check the time zone before saving, then use **Run now** on the detail page to verify the first execution.
@@ -19,7 +20,7 @@ In the editor, confirm the **Runbook** and assigned Agent before choosing the ou
 ### Check the trigger schedule
 
 <Frame caption="Mondays at 09:00 in Asia/Shanghai, with the next trigger times shown below.">
-  <img src="/imgs/service/automation-schedule.png" alt="Automation cron expression, time zone and upcoming trigger preview" />
+  <img src="/v2/assets/imgs/service/automation-schedule.png" alt="Automation cron expression, time zone and upcoming trigger preview" />
 </Frame>
 
 

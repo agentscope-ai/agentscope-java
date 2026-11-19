@@ -1,5 +1,6 @@
 ---
 title: 可观测与调试
+en_link: /v1/en/docs/task/observability
 ---
 
 AgentScope Java 提供了多种机制来观测和调试智能体的执行过程：
@@ -325,6 +326,6 @@ TracerRegistry.register(
 
 ## 更多资源
 
-- **Studio 完整示例**: [StudioExample.java](https://github.com/agentscope-ai/agentscope-java/blob/main/agentscope-examples/documentation/advanced/src/main/java/io/agentscope/examples/advanced/StudioExample.java)
+- **Studio 完整示例**: [StudioExample.java](https://github.com/agentscope-ai/agentscope-java/blob/v1.0.11/agentscope-examples/advanced/src/main/java/io/agentscope/examples/advanced/StudioExample.java)
 - **Studio 仓库**: https://github.com/agentscope-ai/agentscope-studio
 - **Hook 文档**: [hook.md](/v1/zh/docs/task/hook)

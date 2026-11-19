@@ -1,5 +1,6 @@
 ---
 title: 核心概念
+en_link: /v1/en/docs/quickstart/key-concepts
 ---
 
 本章从工程实践的角度介绍 AgentScope 中的核心概念，帮助你理解框架的设计理念。

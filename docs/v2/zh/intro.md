@@ -1,8 +1,9 @@
 ---
-title: AgentScope Java v2
+title: AgentScope Java 2.0
 description: 构建分布式企业级智能体
 mode: custom
 toc: false
+en_link: /v2/en/intro
 ---
 
 <div className="agentscope-landing">
@@ -10,6 +11,9 @@ toc: false
 <div className="hs-hero">
 
 <div>
+
+<p className="hs-home-eyebrow">2.0 · v2.0.4</p>
+<p className="hs-version-note">基于 v2.0.4 发布版的文档。<a href="/dev/zh/intro">查看 dev 文档 →</a></p>
 
 <h1 className="hs-hero__headline">
 构建<span className="hs-hero__accent">分布式、企业级</span>智能体！
@@ -20,7 +24,7 @@ AgentScope Java 2.0 是面向企业级、分布式、生产环境的智能体框
 </p>
 
 <div className="hs-hero__actions">
- <a href="/v2/zh/docs/quickstart" className="hs-btn hs-btn--primary">快速开始 →</a> <a href="https://github.com/agentscope-ai/agentscope-java" className="hs-btn hs-btn--secondary"> <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.477 2 2 6.477 2 12c0 4.42 2.865 8.167 6.839 9.49.5.09.682-.217.682-.48 0-.237-.008-.866-.013-1.7-2.782.603-3.369-1.342-3.369-1.342-.454-1.155-1.11-1.462-1.11-1.462-.908-.62.069-.608.069-.608 1.003.07 1.531 1.03 1.531 1.03.892 1.529 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.11-4.555-4.943 0-1.091.39-1.984 1.029-2.683-.103-.253-.446-1.27.098-2.647 0 0 .84-.268 2.75 1.026A9.578 9.578 0 0112 6.836c.85.004 1.705.114 2.504.336 1.909-1.294 2.747-1.026 2.747-1.026.546 1.377.203 2.394.1 2.647.64.699 1.028 1.592 1.028 2.683 0 3.842-2.339 4.687-4.566 4.935.359.309.678.919.678 1.852 0 1.336-.012 2.415-.012 2.741 0 .267.18.577.688.48C19.138 20.163 22 16.418 22 12c0-5.523-4.477-10-10-10z"></path></svg> GitHub </a>
+ <a href="/v2/zh/docs/quickstart" className="hs-btn hs-btn--primary">快速开始 →</a> <a href="https://github.com/agentscope-ai/agentscope-java/tree/v2.0.4" className="hs-btn hs-btn--secondary"> <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.477 2 2 6.477 2 12c0 4.42 2.865 8.167 6.839 9.49.5.09.682-.217.682-.48 0-.237-.008-.866-.013-1.7-2.782.603-3.369-1.342-3.369-1.342-.454-1.155-1.11-1.462-1.11-1.462-.908-.62.069-.608.069-.608 1.003.07 1.531 1.03 1.531 1.03.892 1.529 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.11-4.555-4.943 0-1.091.39-1.984 1.029-2.683-.103-.253-.446-1.27.098-2.647 0 0 .84-.268 2.75 1.026A9.578 9.578 0 0112 6.836c.85.004 1.705.114 2.504.336 1.909-1.294 2.747-1.026 2.747-1.026.546 1.377.203 2.394.1 2.647.64.699 1.028 1.592 1.028 2.683 0 3.842-2.339 4.687-4.566 4.935.359.309.678.919.678 1.852 0 1.336-.012 2.415-.012 2.741 0 .267.18.577.688.48C19.138 20.163 22 16.418 22 12c0-5.523-4.477-10-10-10z"></path></svg> GitHub </a>
 </div>
 
 </div>
@@ -186,7 +190,7 @@ Harness 工程化
 </div>
  <span className="hs-visual__bar-title">智能体运行核心 · 模块全景</span>
 </div>
- <img src="/imgs/v2/as2-release-01.png" alt="AgentScope 2.0 智能体运行核心：Agent Service · Workspace · Middleware · 权限系统 · 上下文管理 · 模型接入 · 消息与事件" style={{"display": "block", "width": "100%", "height": "auto", "border": "0"}} />
+ <img src="/v2/assets/imgs/v2/as2-release-01.png" alt="AgentScope 2.0 智能体运行核心：Agent Service · Workspace · Middleware · 权限系统 · 上下文管理 · 模型接入 · 消息与事件" style={{"display": "block", "width": "100%", "height": "auto", "border": "0"}} />
 </div>
 
 </div>
@@ -222,7 +226,7 @@ Harness 工程化
 </div>
  <span className="hs-visual__bar-title">统一消息结构 → 事件流 → UI 实时跟随</span>
 </div>
- <img src="/imgs/v2/as2-release-03.jpg" alt="统一消息结构（文本/文件/工具结果/模型思考）通过事件流（文本增量/工具执行/用户确认）实时驱动 UI" style={{"display": "block", "width": "100%", "height": "auto", "border": "0"}} />
+ <img src="/v2/assets/imgs/v2/as2-release-03.jpg" alt="统一消息结构（文本/文件/工具结果/模型思考）通过事件流（文本增量/工具执行/用户确认）实时驱动 UI" style={{"display": "block", "width": "100%", "height": "auto", "border": "0"}} />
 </div>
 
 </div>

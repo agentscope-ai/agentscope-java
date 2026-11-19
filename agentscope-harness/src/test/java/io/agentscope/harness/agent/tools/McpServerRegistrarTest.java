@@ -17,10 +17,15 @@ package io.agentscope.harness.agent.tools;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.anyBoolean;
+import static org.mockito.Mockito.anyString;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.mockStatic;
@@ -32,6 +37,7 @@ import io.agentscope.core.tool.Toolkit;
 import io.agentscope.core.tool.mcp.McpClientBuilder;
 import io.agentscope.core.tool.mcp.McpClientWrapper;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -117,26 +123,10 @@ class McpServerRegistrarTest {
         McpServerConfig config = new McpServerConfig();
         config.setTransport("stdio");
         config.setCommand("test-command");
-        McpClientBuilder builder = mock(McpClientBuilder.class);
-        McpClientWrapper wrapper = mock(McpClientWrapper.class);
-        Toolkit toolkit = mock(Toolkit.class);
-        Toolkit.ToolRegistration registration = mock(Toolkit.ToolRegistration.class);
-        when(builder.stdioTransport("test-command", List.of(), Map.of())).thenReturn(builder);
-        when(builder.buildAsync()).thenReturn(Mono.just(wrapper));
-        var discoveredTool = mock(io.modelcontextprotocol.spec.McpSchema.Tool.class);
-        when(discoveredTool.name()).thenReturn("search");
-        when(wrapper.initialize()).thenReturn(Mono.empty());
-        when(wrapper.listTools()).thenReturn(Mono.just(List.of(discoveredTool)));
-        when(toolkit.registration()).thenReturn(registration);
-        when(registration.mcpClient(wrapper)).thenReturn(registration);
-        when(registration.enableTools(List.of("search"))).thenReturn(registration);
+        RegistrationFixture fixture = registrationFixture();
         List<McpServerRegistrationResult> results = new ArrayList<>();
 
-        try (MockedStatic<McpClientBuilder> builders = mockStatic(McpClientBuilder.class)) {
-            builders.when(() -> McpClientBuilder.create("healthy")).thenReturn(builder);
-
-            McpServerRegistrar.register(toolkit, Map.of("healthy", config), results::add);
-        }
+        registerServer("healthy", config, fixture, results);
 
         assertEquals(1, results.size());
         McpServerRegistrationResult result = results.get(0);
@@ -144,9 +134,150 @@ class McpServerRegistrarTest {
         assertEquals("healthy", result.serverName());
         assertEquals("stdio", result.transport());
         assertNull(result.cause());
-        verify(registration).enableTools(List.of("search"));
-        verify(registration).apply();
-        verify(wrapper, never()).close();
+        verify(fixture.registration()).enableTools(List.of("search"));
+        verify(fixture.registration()).apply();
+        verify(fixture.wrapper(), never()).close();
+        verify(fixture.builder(), never()).propagateMeta(anyBoolean());
+        verify(fixture.registration(), never()).propagateMeta(anyBoolean());
+        verify(fixture.registration(), never()).propagateMeta(anyString(), anyBoolean());
+    }
+
+    @Test
+    void register_appliesConnectionLevelPropagateMeta() {
+        McpServerConfig config = new McpServerConfig();
+        config.setTransport("stdio");
+        config.setCommand("test-command");
+        config.setPropagateMeta(false);
+        RegistrationFixture fixture = registrationFixture();
+        List<McpServerRegistrationResult> results = new ArrayList<>();
+
+        registerServer("untrusted", config, fixture, results);
+
+        assertEquals(1, results.size());
+        assertEquals(McpServerRegistrationResult.Status.SUCCESS, results.get(0).status());
+        verify(fixture.builder()).propagateMeta(false);
+    }
+
+    @Test
+    void register_appliesRegistrationLevelDefaultAndPerToolOverrides() {
+        McpServerConfig config = new McpServerConfig();
+        config.setTransport("stdio");
+        config.setCommand("test-command");
+        config.setPropagateMetaDefault(false);
+        config.setPropagateMetaOverrides(Map.of("search", true));
+        RegistrationFixture fixture = registrationFixture();
+        List<McpServerRegistrationResult> results = new ArrayList<>();
+
+        registerServer("semi-trusted", config, fixture, results);
+
+        assertEquals(1, results.size());
+        assertEquals(McpServerRegistrationResult.Status.SUCCESS, results.get(0).status());
+        verify(fixture.registration()).propagateMeta(false);
+        verify(fixture.registration()).propagateMeta("search", true);
+    }
+
+    @Test
+    void register_rejectsNullPropagateMetaOverrideValue() {
+        McpServerConfig config = new McpServerConfig();
+        config.setTransport("stdio");
+        config.setCommand("test-command");
+        Map<String, Boolean> overrides = new HashMap<>();
+        overrides.put("search", null);
+        config.setPropagateMetaOverrides(overrides);
+        RegistrationFixture fixture = registrationFixture();
+        List<McpServerRegistrationResult> results = new ArrayList<>();
+
+        registerServer("bad-override", config, fixture, results);
+
+        assertEquals(1, results.size());
+        assertEquals(McpServerRegistrationResult.Status.FAILED, results.get(0).status());
+        assertInstanceOf(IllegalArgumentException.class, results.get(0).cause());
+        verify(fixture.registration(), never()).apply();
+        verify(fixture.wrapper()).close();
+    }
+
+    @Test
+    void register_appliesPerToolOverrideWithoutRegistrationDefault() {
+        McpServerConfig config = new McpServerConfig();
+        config.setTransport("stdio");
+        config.setCommand("test-command");
+        config.setPropagateMetaOverrides(Map.of("search", false));
+        RegistrationFixture fixture = registrationFixture();
+        List<McpServerRegistrationResult> results = new ArrayList<>();
+
+        registerServer("partially-trusted", config, fixture, results);
+
+        assertEquals(1, results.size());
+        assertEquals(McpServerRegistrationResult.Status.SUCCESS, results.get(0).status());
+        verify(fixture.registration()).propagateMeta("search", false);
+        verify(fixture.registration(), never()).propagateMeta(anyBoolean());
+        verify(fixture.builder(), never()).propagateMeta(anyBoolean());
+    }
+
+    @Test
+    void validatePropagateMetaOverrides_reportsAllNullKeysSorted() {
+        Map<String, Boolean> overrides = new HashMap<>();
+        overrides.put("zeta", null);
+        overrides.put("alpha", null);
+        overrides.put("beta", true);
+
+        IllegalArgumentException failure =
+                assertThrows(
+                        IllegalArgumentException.class,
+                        () -> McpServerRegistrar.validatePropagateMetaOverrides("srv", overrides));
+
+        assertEquals(
+                "MCP server 'srv' has null value(s) for tool(s) [alpha, zeta] in"
+                        + " propagateMetaOverrides.",
+                failure.getMessage());
+    }
+
+    @Test
+    void validatePropagateMetaOverrides_reportsNullKeySortedFirst() {
+        Map<String, Boolean> overrides = new HashMap<>();
+        overrides.put("beta", null);
+        overrides.put(null, null);
+
+        IllegalArgumentException failure =
+                assertThrows(
+                        IllegalArgumentException.class,
+                        () -> McpServerRegistrar.validatePropagateMetaOverrides("srv", overrides));
+
+        assertEquals(
+                "MCP server 'srv' has null value(s) for tool(s) [null, beta] in"
+                        + " propagateMetaOverrides.",
+                failure.getMessage());
+    }
+
+    @Test
+    void validatePropagateMetaOverrides_acceptsNullMapAndCleanEntries() {
+        assertDoesNotThrow(() -> McpServerRegistrar.validatePropagateMetaOverrides("srv", null));
+        assertDoesNotThrow(
+                () ->
+                        McpServerRegistrar.validatePropagateMetaOverrides(
+                                "srv", Map.of("search", true)));
+    }
+
+    @Test
+    void hasMetaPolicy_matchesEachLevelIndividually() {
+        McpServerConfig empty = new McpServerConfig();
+        assertFalse(McpServerRegistrar.hasMetaPolicy(empty));
+
+        McpServerConfig connectionLevel = new McpServerConfig();
+        connectionLevel.setPropagateMeta(true);
+        assertTrue(McpServerRegistrar.hasMetaPolicy(connectionLevel));
+
+        McpServerConfig registrationLevel = new McpServerConfig();
+        registrationLevel.setPropagateMetaDefault(false);
+        assertTrue(McpServerRegistrar.hasMetaPolicy(registrationLevel));
+
+        McpServerConfig emptyOverrides = new McpServerConfig();
+        emptyOverrides.setPropagateMetaOverrides(new HashMap<>());
+        assertFalse(McpServerRegistrar.hasMetaPolicy(emptyOverrides));
+
+        McpServerConfig perTool = new McpServerConfig();
+        perTool.setPropagateMetaOverrides(Map.of("search", false));
+        assertTrue(McpServerRegistrar.hasMetaPolicy(perTool));
     }
 
     @Test
@@ -154,31 +285,15 @@ class McpServerRegistrarTest {
         McpServerConfig config = new McpServerConfig();
         config.setTransport("stdio");
         config.setCommand("test-command");
-        McpClientBuilder builder = mock(McpClientBuilder.class);
-        McpClientWrapper wrapper = mock(McpClientWrapper.class);
-        Toolkit toolkit = mock(Toolkit.class);
-        Toolkit.ToolRegistration registration = mock(Toolkit.ToolRegistration.class);
+        RegistrationFixture fixture = registrationFixture();
         IllegalStateException registrationFailure =
                 new IllegalStateException("registration failure");
         IllegalArgumentException closeFailure = new IllegalArgumentException("close failure");
-        when(builder.stdioTransport("test-command", List.of(), Map.of())).thenReturn(builder);
-        when(builder.buildAsync()).thenReturn(Mono.just(wrapper));
-        var discoveredTool = mock(io.modelcontextprotocol.spec.McpSchema.Tool.class);
-        when(discoveredTool.name()).thenReturn("search");
-        when(wrapper.initialize()).thenReturn(Mono.empty());
-        when(wrapper.listTools()).thenReturn(Mono.just(List.of(discoveredTool)));
-        when(toolkit.registration()).thenReturn(registration);
-        when(registration.mcpClient(wrapper)).thenReturn(registration);
-        when(registration.enableTools(List.of("search"))).thenReturn(registration);
-        doThrow(registrationFailure).when(registration).apply();
-        doThrow(closeFailure).when(wrapper).close();
+        doThrow(registrationFailure).when(fixture.registration()).apply();
+        doThrow(closeFailure).when(fixture.wrapper()).close();
         List<McpServerRegistrationResult> results = new ArrayList<>();
 
-        try (MockedStatic<McpClientBuilder> builders = mockStatic(McpClientBuilder.class)) {
-            builders.when(() -> McpClientBuilder.create("broken")).thenReturn(builder);
-
-            McpServerRegistrar.register(toolkit, Map.of("broken", config), results::add);
-        }
+        registerServer("broken", config, fixture, results);
 
         assertEquals(1, results.size());
         McpServerRegistrationResult result = results.get(0);
@@ -186,7 +301,7 @@ class McpServerRegistrarTest {
         assertSame(registrationFailure, result.cause());
         assertEquals(1, registrationFailure.getSuppressed().length);
         assertSame(closeFailure, registrationFailure.getSuppressed()[0]);
-        verify(wrapper).close();
+        verify(fixture.wrapper()).close();
     }
 
     @Test
@@ -232,4 +347,43 @@ class McpServerRegistrarTest {
 
         assertEquals(List.of("first", "second"), notified);
     }
+
+    /**
+     * Happy-path fixture: a stdio server advertising the single {@code search} tool, wired through
+     * mocked builder / wrapper / toolkit / registration so each test only asserts the wiring
+     * belonging to its own configuration.
+     */
+    private static RegistrationFixture registrationFixture() {
+        McpClientBuilder builder = mock(McpClientBuilder.class);
+        McpClientWrapper wrapper = mock(McpClientWrapper.class);
+        Toolkit toolkit = mock(Toolkit.class);
+        Toolkit.ToolRegistration registration = mock(Toolkit.ToolRegistration.class);
+        when(builder.stdioTransport("test-command", List.of(), Map.of())).thenReturn(builder);
+        when(builder.buildAsync()).thenReturn(Mono.just(wrapper));
+        var discoveredTool = mock(io.modelcontextprotocol.spec.McpSchema.Tool.class);
+        when(discoveredTool.name()).thenReturn("search");
+        when(wrapper.initialize()).thenReturn(Mono.empty());
+        when(wrapper.listTools()).thenReturn(Mono.just(List.of(discoveredTool)));
+        when(toolkit.registration()).thenReturn(registration);
+        when(registration.mcpClient(wrapper)).thenReturn(registration);
+        when(registration.enableTools(List.of("search"))).thenReturn(registration);
+        return new RegistrationFixture(builder, wrapper, toolkit, registration);
+    }
+
+    private static void registerServer(
+            String name,
+            McpServerConfig config,
+            RegistrationFixture fixture,
+            List<McpServerRegistrationResult> results) {
+        try (MockedStatic<McpClientBuilder> builders = mockStatic(McpClientBuilder.class)) {
+            builders.when(() -> McpClientBuilder.create(name)).thenReturn(fixture.builder());
+            McpServerRegistrar.register(fixture.toolkit(), Map.of(name, config), results::add);
+        }
+    }
+
+    private record RegistrationFixture(
+            McpClientBuilder builder,
+            McpClientWrapper wrapper,
+            Toolkit toolkit,
+            Toolkit.ToolRegistration registration) {}
 }

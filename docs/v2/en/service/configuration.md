@@ -1,5 +1,6 @@
 ---
 title: Configuration reference
+zh_link: /v2/zh/service/configuration
 ---
 
 <Note>

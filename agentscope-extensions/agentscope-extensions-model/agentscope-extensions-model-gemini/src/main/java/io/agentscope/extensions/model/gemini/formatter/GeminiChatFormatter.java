@@ -18,7 +18,6 @@ package io.agentscope.extensions.model.gemini.formatter;
 import com.google.genai.types.Content;
 import com.google.genai.types.GenerateContentConfig;
 import com.google.genai.types.GenerateContentResponse;
-import com.google.genai.types.ThinkingConfig;
 import com.google.genai.types.Tool;
 import com.google.genai.types.ToolConfig;
 import io.agentscope.core.formatter.AbstractBaseFormatter;
@@ -45,7 +44,8 @@ import java.util.function.Function;
  * <p><b>Important Gemini API Behaviors:</b>
  * <ul>
  *   <li>System messages are converted to "user" role (Gemini doesn't support system role in contents)</li>
- *   <li>Tool results are independent "user" role Content objects</li>
+ *   <li>Local tool results are independent "user" role Content objects</li>
+ *   <li>Server tool results remain inline in the original "model" Content</li>
  *   <li>Thinking content uses the "thought" flag on Part objects</li>
  * </ul>
  */
@@ -116,17 +116,6 @@ public class GeminiChatFormatter
                 options,
                 defaultOptions,
                 configBuilder::presencePenalty);
-
-        // Apply ThinkingConfig if either includeThoughts or thinkingBudget is set
-        Integer thinkingBudget =
-                getOptionOrDefault(options, defaultOptions, GenerateOptions::getThinkingBudget);
-
-        if (thinkingBudget != null) {
-            ThinkingConfig.Builder thinkingConfigBuilder = ThinkingConfig.builder();
-            thinkingConfigBuilder.includeThoughts(true);
-            thinkingConfigBuilder.thinkingBudget(thinkingBudget);
-            configBuilder.thinkingConfig(thinkingConfigBuilder.build());
-        }
     }
 
     /**

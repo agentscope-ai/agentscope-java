@@ -1,5 +1,6 @@
 ---
 title: "Workspaces：共享指令与能力文件"
+en_link: /v2/en/service/workspaces
 ---
 
 <Note>
@@ -11,7 +12,7 @@ title: "Workspaces：共享指令与能力文件"
 ## 界面导览
 
 <Frame caption="当前控制台截图，使用固定演示数据。">
-  <img src="/imgs/service/workspaces.png" alt="共享 Workspace 列表" />
+  <img src="/v2/assets/imgs/service/workspaces.png" alt="共享 Workspace 列表" />
 </Frame>
 
 从列表打开 Workspace，检查共享说明、技能和工具；使用 **New workspace** 新建资源。将 Workspace 关联到 Agent 后，还需要按该 Agent 的工作方式验证资源是否生效。

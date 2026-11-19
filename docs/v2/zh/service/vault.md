@@ -1,5 +1,6 @@
 ---
 title: "Vault：为工具提供凭据"
+en_link: /v2/en/service/vault
 ---
 
 <Note>
@@ -11,7 +12,7 @@ title: "Vault：为工具提供凭据"
 ## 界面导览
 
 <Frame caption="当前控制台截图，使用固定演示数据。">
-  <img src="/imgs/service/vault.png" alt="Vault 与凭据元数据列表" />
+  <img src="/v2/assets/imgs/service/vault.png" alt="Vault 与凭据元数据列表" />
 </Frame>
 
 选择 Vault 后，核对凭据的名称、类型和目标地址，再将它关联到需要访问该服务的 Agent。图中仅展示演示凭据的元数据，不包含真实密钥。

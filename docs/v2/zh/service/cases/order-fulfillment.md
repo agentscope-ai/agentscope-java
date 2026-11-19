@@ -1,6 +1,7 @@
 ---
 title: "企业业务：订单履约异常处理"
 description: "将多个 AgentScope 应用组成 External Team，跨订单、库存、物流和售后系统协同处置。"
+en_link: /v2/en/service/cases/order-fulfillment
 ---
 
 <Note>
@@ -13,7 +14,7 @@ description: "将多个 AgentScope 应用组成 External Team，跨订单、库�
 
 ## 准备业务资料与接入环境
 
-下载[固定业务数据](/examples/service/order-fulfillment/business-data.json.txt)，保存为 `business-data.json`。它包含三张虚构订单、库存、物流和政策，用于开发工具与核对结果，不是已部署的 OMS/WMS/TMS 服务，也不包含完整 Agent 应用。
+下载[固定业务数据](/v2/assets/examples/service/order-fulfillment/business-data.json.txt)，保存为 `business-data.json`。它包含三张虚构订单、库存、物流和政策，用于开发工具与核对结果，不是已部署的 OMS/WMS/TMS 服务，也不包含完整 Agent 应用。
 
 准备 Java 17+、配套版本的 AgentScope SDK 与 `agentscope-extensions-aistio`、可用模型、Service 地址，以及允许注册到目标 Namespace 的应用凭据。标准 Service 部署优先采用 [Java HTTP 注册与合约](/v2/zh/service/external-agent#java添加-http-注册与合约)。
 

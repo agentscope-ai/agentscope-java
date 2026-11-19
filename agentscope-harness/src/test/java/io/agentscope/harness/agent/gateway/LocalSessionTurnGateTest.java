@@ -19,8 +19,11 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.lang.reflect.Field;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -133,5 +136,90 @@ class LocalSessionTurnGateTest {
         assertTrue(gate.isRunning(key));
         lease.close();
         assertFalse(gate.isRunning(key));
+    }
+
+    @Test
+    void evictsIdleKeysSoTheMapDoesNotGrowWithoutBound() throws Exception {
+        LocalSessionTurnGate gate = new LocalSessionTurnGate();
+
+        for (int i = 0; i < 50; i++) {
+            gate.acquire("session-" + i).close();
+        }
+
+        ConcurrentHashMap<?, ?> gates = internalGates(gate);
+        assertEquals(
+                0,
+                gates.size(),
+                () -> "closed leases must not leave stale gate entries behind: " + gates.size());
+    }
+
+    @Test
+    void closeIsIdempotentSoARepeatedCloseCannotOpenTheGateTwice() throws Exception {
+        LocalSessionTurnGate gate = new LocalSessionTurnGate();
+        String key = "double-close";
+
+        TurnLease lease = gate.acquire(key);
+        lease.close();
+        // TurnLease documents that close() is idempotent. Each extra release leaves one more
+        // permit behind, which would let a later acquirer hold the key at the same time.
+        lease.close();
+        lease.close();
+
+        TurnLease second = gate.acquire(key);
+        assertTrue(gate.isRunning(key), "the second lease must be the only holder");
+        second.close();
+        assertFalse(gate.isRunning(key));
+    }
+
+    @Test
+    void neverOverlapsTwoHoldersForOneKeyUnderChurn() throws Exception {
+        LocalSessionTurnGate gate = new LocalSessionTurnGate();
+        String key = "churn";
+        int threads = 8;
+        int rounds = 200;
+
+        AtomicInteger inside = new AtomicInteger();
+        AtomicInteger maxInside = new AtomicInteger();
+        List<Throwable> errors = Collections.synchronizedList(new ArrayList<>());
+        CountDownLatch go = new CountDownLatch(1);
+        List<Thread> workers = new ArrayList<>();
+
+        for (int t = 0; t < threads; t++) {
+            Thread worker =
+                    new Thread(
+                            () -> {
+                                try {
+                                    go.await();
+                                    for (int r = 0; r < rounds; r++) {
+                                        TurnLease lease = gate.acquire(key);
+                                        int now = inside.incrementAndGet();
+                                        maxInside.accumulateAndGet(now, Math::max);
+                                        Thread.yield();
+                                        inside.decrementAndGet();
+                                        lease.close();
+                                    }
+                                } catch (Throwable e) {
+                                    errors.add(e);
+                                }
+                            });
+            worker.setDaemon(true);
+            workers.add(worker);
+            worker.start();
+        }
+
+        go.countDown();
+        for (Thread worker : workers) {
+            worker.join(30_000);
+        }
+
+        assertTrue(errors.isEmpty(), errors.toString());
+        assertEquals(1, maxInside.get(), "at most one holder per key, even under heavy churn");
+    }
+
+    private static ConcurrentHashMap<?, ?> internalGates(LocalSessionTurnGate gate)
+            throws Exception {
+        Field field = LocalSessionTurnGate.class.getDeclaredField("gates");
+        field.setAccessible(true);
+        return (ConcurrentHashMap<?, ?>) field.get(gate);
     }
 }

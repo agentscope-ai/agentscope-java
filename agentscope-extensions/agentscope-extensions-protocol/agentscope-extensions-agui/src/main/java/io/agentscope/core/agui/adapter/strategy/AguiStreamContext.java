@@ -406,30 +406,49 @@ public class AguiStreamContext {
         private long cumulativeInputTokens;
         private long cumulativeOutputTokens;
         private long cumulativeCachedTokens;
+        private long cumulativeCacheCreationTokens;
+        private long cumulativeReasoningTokens;
+        private long cumulativeToolUsePromptTokens;
         private double cumulativeTime;
 
         TokenUsageSnapshot add(ChatUsage usage) {
             cumulativeInputTokens += usage.getInputTokens();
             cumulativeOutputTokens += usage.getOutputTokens();
             cumulativeCachedTokens += usage.getCachedTokens();
+            cumulativeCacheCreationTokens += usage.getCacheCreationTokens();
+            cumulativeReasoningTokens += usage.getReasoningTokens();
+            cumulativeToolUsePromptTokens += usage.getToolUsePromptTokens();
             cumulativeTime += usage.getTime();
             return new TokenUsageSnapshot(
                     new TokenUsage(
                             usage.getInputTokens(),
                             usage.getOutputTokens(),
                             usage.getCachedTokens(),
+                            usage.getCacheCreationTokens(),
+                            usage.getReasoningTokens(),
+                            usage.getToolUsePromptTokens(),
                             usage.getTime()),
                     new TokenUsage(
                             cumulativeInputTokens,
                             cumulativeOutputTokens,
                             cumulativeCachedTokens,
+                            cumulativeCacheCreationTokens,
+                            cumulativeReasoningTokens,
+                            cumulativeToolUsePromptTokens,
                             cumulativeTime));
         }
     }
 
     record TokenUsageSnapshot(TokenUsage delta, TokenUsage cumulative) {}
 
-    record TokenUsage(long inputTokens, long outputTokens, long cachedTokens, double time) {
+    record TokenUsage(
+            long inputTokens,
+            long outputTokens,
+            long cachedTokens,
+            long cacheCreationTokens,
+            long reasoningTokens,
+            long toolUsePromptTokens,
+            double time) {
         long totalTokens() {
             return inputTokens + outputTokens;
         }

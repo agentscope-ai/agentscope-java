@@ -1,5 +1,6 @@
 ---
 title: Subagent Streaming
+zh_link: /v1/zh/docs/harness/streaming
 ---
 
 > **Prerequisite**: [Streaming basics](/v1/en/docs/task/streaming) — `stream()` API, `EventType`, `StreamOptions`, SSE integration. This page focuses on `HarnessAgent`'s **child-agent event forwarding** mechanism.

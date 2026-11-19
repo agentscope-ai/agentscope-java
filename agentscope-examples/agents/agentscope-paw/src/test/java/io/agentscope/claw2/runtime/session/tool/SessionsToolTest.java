@@ -18,7 +18,6 @@ package io.agentscope.claw2.runtime.session.tool;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
-import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
@@ -37,6 +36,9 @@ import io.agentscope.claw2.runtime.session.SendResult;
 import io.agentscope.claw2.runtime.session.SessionAgentManager;
 import io.agentscope.claw2.runtime.session.SpawnResult;
 import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.ToolResultBlock;
+import io.agentscope.core.message.ToolResultState;
 import io.agentscope.harness.agent.subagent.task.TaskStatus;
 import io.agentscope.harness.agent.subagent.task.WorkspaceTaskRepository;
 import io.agentscope.harness.agent.tool.TaskTool;
@@ -48,6 +50,11 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 class SessionsToolTest {
+    private static String taskText(ToolResultBlock result) {
+        assertEquals(ToolResultState.SUCCESS, result.getState());
+        return ((TextBlock) result.getOutput().get(0)).getText();
+    }
+
     @TempDir Path root;
 
     @Test
@@ -81,7 +88,9 @@ class SessionsToolTest {
         try {
             var tool = new SessionsTool(manager, () -> repo);
             String response =
-                    tool.sessionsSpawn(context, "researcher", "Research EV", null, "run", 0);
+                    taskText(
+                            tool.sessionsSpawn(
+                                    context, "researcher", "Research EV", null, "run", 0));
             String id =
                     response.lines()
                             .filter(l -> l.startsWith("task_id:"))
@@ -92,16 +101,22 @@ class SessionsToolTest {
             var task = repo.getTask(context, "assigned-session", id);
             assertNotNull(task);
             assertNull(repo.getTask(context, "another-session", id));
-            assertTrue(new TaskTool(repo).taskOutput(context, id, false, 0L).contains("running"));
+            assertTrue(
+                    taskText(new TaskTool(repo).taskOutput(context, id, false, 0L))
+                            .contains("running"));
             release.countDown();
             assertTrue(task.waitForCompletion(5000));
             assertEquals("EV evidence", task.getResult());
             assertTrue(
-                    new TaskTool(repo).taskOutput(context, id, false, 0L).contains("EV evidence"));
+                    taskText(tool.sessionsPendingCompletions(context, null, 10))
+                            .contains("EV evidence"));
+            assertTrue(
+                    taskText(new TaskTool(repo).taskOutput(context, id, false, 0L))
+                            .contains("EV evidence"));
             verify(manager, never()).announceCompletion(any(), any(), any());
-            assertThrows(
-                    IllegalArgumentException.class,
-                    () -> new TaskTool(repo).taskOutput(context, "missing", false, 0L));
+            assertEquals(
+                    ToolResultState.ERROR,
+                    new TaskTool(repo).taskOutput(context, "missing", false, 0L).getState());
         } finally {
             release.countDown();
             repo.shutdown();
@@ -144,5 +159,30 @@ class SessionsToolTest {
         } finally {
             repo.shutdown();
         }
+    }
+
+    @Test
+    void sessionsSpawnRegistrationFailureIsError() {
+        SessionAgentManager manager = mock(SessionAgentManager.class);
+        RuntimeContext context = RuntimeContext.builder().sessionId("chat-session").build();
+        when(manager.requesterKeyForSession("chat-session")).thenReturn("chat-session");
+        when(manager.registerSession("researcher", null, "chat-session", 0))
+                .thenReturn(
+                        new SpawnResult(
+                                "run",
+                                null,
+                                null,
+                                null,
+                                "researcher",
+                                "error",
+                                "registry unavailable"));
+
+        ToolResultBlock result =
+                new SessionsTool(manager, () -> null)
+                        .sessionsSpawn(context, "researcher", null, null, "session", null);
+
+        assertEquals(ToolResultState.ERROR, result.getState());
+        assertTrue(
+                ((TextBlock) result.getOutput().get(0)).getText().contains("registry unavailable"));
     }
 }

@@ -1,5 +1,6 @@
 ---
 title: 排障
+en_link: /v2/en/service/troubleshooting
 ---
 
 <Note>

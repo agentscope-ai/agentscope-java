@@ -1,5 +1,6 @@
 ---
 title: Quick Start
+zh_link: /v1/zh/docs/harness/quickstart/index
 ---
 
 This section contains the shortest path to start using `HarnessAgent`.

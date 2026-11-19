@@ -50,10 +50,13 @@ header:
     - '**/*.properties'
     - '**/*.sh'
     - '**/*.bat'
+    # Python utility scripts only; SDK/library sources remain checked
+    - '**/scripts/**/*.py'
     - '**/*.md'
     - '**/*.svg'
     - '**/*.png'
     - '**/*.json'
+    - '**/*.jsonl'
     - '**/*.conf'
     - '**/*.ftl'
     - '**/*.tpl'
@@ -127,11 +130,6 @@ header:
     # Generated sources (controller-gen / protoc output)
     - '**/zz_generated.*.go'
     - '**/*.pb.go'
-    - 'agentscope-service/aistio/sdk/python/aistio/proto/**'
-    # Kubernetes manifests / Helm chart / built frontend assets
-    - 'agentscope-service/aistio/config/**'
-    - 'agentscope-service/aistio/helm/**'
-    - 'agentscope-service/aistio/ui/**'
   comment: on-failure
 
   license-location-threshold: 130

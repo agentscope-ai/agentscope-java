@@ -1,5 +1,6 @@
 ---
 title: 基于 AgentScope 2.0 运行时的 Managed Agents
+en_link: /v2/en/blogs/managed-agents-agentscope-rumtime
 ---
 
 Managed Agents 让 Agent 运行在云端环境中：一方面，推理、编排、Harness 管理等核心环节均由云端统一托管，架构稳定性与运行效果由平台保障；另一方面，长周期任务不再依赖本地设备持续在线——即使个人电脑关机，任务依然可以在云端持续运行。
@@ -352,4 +353,4 @@ AgentScope 2.0 定位面向企业级分布式场景，它既可以做分布式 A
 
 + 文档：[https://java.agentscope.io](https://java.agentscope.io)
 + GitHub：[https://github.com/agentscope-ai/agentscope-java](https://github.com/agentscope-ai/agentscope-java)
-+ AgentScope Builder：[https://github.com/agentscope-ai/agentscope-java/tree/main/agentscope-service](https://github.com/agentscope-ai/agentscope-java/tree/main/agentscope-service)
++ AgentScope Builder：[https://github.com/agentscope-ai/agentscope-java/tree/v2.0.4/agentscope-service](https://github.com/agentscope-ai/agentscope-java/tree/v2.0.4/agentscope-service)

@@ -1,5 +1,6 @@
 ---
 title: Text-to-Speech (TTS) 语音合成
+en_link: /v1/en/docs/task/tts
 ---
 
 AgentScope Java 提供了完整的 TTS 能力支持，让 Agent 不仅能思考和回复，还能开口说话。相比于纯文本的场景，语音是更自然的交互方式，适用于 智能客服、车载助手，以及边生成边朗读的实时对话场景。

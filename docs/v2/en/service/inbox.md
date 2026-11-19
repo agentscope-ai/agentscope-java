@@ -1,5 +1,6 @@
 ---
 title: "Console Inbox: notifications, approvals and reviews"
+zh_link: /v2/zh/service/inbox
 ---
 
 <Note>
@@ -13,7 +14,7 @@ Handle feedback related to your [console Issues](/v2/en/service/issues) here. Ap
 ## Interface tour
 
 <Frame caption="Current console UI with fixed demonstration data.">
-  <img src="/imgs/service/inbox.png" alt="Inbox review request with its linked issue" />
+  <img src="/v2/assets/imgs/service/inbox.png" alt="Inbox review request with its linked issue" />
 </Frame>
 
 Select a notification in the message list, then read the linked issue and its result on the right. Reading a notification does not complete the review; inspect the deliverable before using the review actions.

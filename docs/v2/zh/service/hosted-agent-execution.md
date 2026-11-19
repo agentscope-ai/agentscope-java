@@ -1,5 +1,6 @@
 ---
 title: "Hosted 工作原理与恢复"
+en_link: /v2/en/service/hosted-agent-execution
 ---
 
 <Note>

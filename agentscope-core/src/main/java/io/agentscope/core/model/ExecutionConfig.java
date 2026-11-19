@@ -103,7 +103,10 @@ public class ExecutionConfig {
             return hte.isRetryable();
         }
 
-        if (error instanceof ModelHttpException mhe) {
+        // Implementations without a status code (e.g. OpenAIException wrapping a
+        // streaming transport failure) must fall through to the transport/IO and cause-chain
+        // checks below instead of being classified as a permanent client error (issue #3057).
+        if (error instanceof ModelHttpException mhe && mhe.getStatusCode() != null) {
             return mhe.isRetryableHttpStatus();
         }
 

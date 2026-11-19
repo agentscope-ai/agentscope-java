@@ -1,5 +1,6 @@
 ---
 title: Model Context Protocol
+zh_link: /v1/zh/docs/task/mcp
 ---
 
 AgentScope Java provides full support for Model Context Protocol (MCP), enabling agents to connect to external tool servers and use tools from the MCP ecosystem.

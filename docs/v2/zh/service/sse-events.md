@@ -1,5 +1,6 @@
 ---
 title: "SSE 格式与任务反馈"
+en_link: /v2/en/service/sse-events
 ---
 
 <Note>

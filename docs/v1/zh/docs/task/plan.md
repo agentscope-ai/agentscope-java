@@ -1,5 +1,6 @@
 ---
 title: 计划
+en_link: /v1/en/docs/task/plan
 ---
 
 PlanNotebook 为智能体提供计划管理能力，帮助智能体将复杂任务分解为结构化的子任务并逐步执行。
@@ -84,7 +85,7 @@ Msg response = agent.call(task).block();
 
 ## 完整示例
 
-参考 [PlanNotebookExample.java](https://github.com/agentscope-ai/agentscope-java/blob/main/agentscope-examples/documentation/quickstart/src/main/java/io/agentscope/examples/quickstart/PlanNotebookExample.java)
+参考 [PlanNotebookExample.java](https://github.com/agentscope-ai/agentscope-java/blob/v1.0.11/agentscope-examples/quickstart/src/main/java/io/agentscope/examples/quickstart/PlanNotebookExample.java)
 
 ## 配置选项
 

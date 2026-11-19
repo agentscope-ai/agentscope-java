@@ -1,6 +1,7 @@
 ---
 title: "研发提效：从 GitHub Issue 到 PR 合并"
 description: "使用全 Hosted Team 完成需求分析、实现、Review、CI、返工与审批。"
+en_link: /v2/en/service/cases/sdlc-team
 ---
 
 <Note>
@@ -17,10 +18,10 @@ description: "使用全 Hosted Team 完成需求分析、实现、Review、CI、
 
 | 下载 | 保存位置与用途 |
 | --- | --- |
-| [OrderQuery.java](/examples/service/sdlc-team/OrderQuery.java.txt) | 仓库根目录，待实现的查询函数 |
-| [OrderQueryTest.java](/examples/service/sdlc-team/OrderQueryTest.java.txt) | 仓库根目录，固定验收检查 |
-| [Issue 需求](/examples/service/sdlc-team/issue.md.txt) | 创建 GitHub Issue 时的正文 |
-| [CI workflow](/examples/service/sdlc-team/ci.yml.txt) | `.github/workflows/ci.yml` |
+| [OrderQuery.java](/v2/assets/examples/service/sdlc-team/OrderQuery.java.txt) | 仓库根目录，待实现的查询函数 |
+| [OrderQueryTest.java](/v2/assets/examples/service/sdlc-team/OrderQueryTest.java.txt) | 仓库根目录，固定验收检查 |
+| [Issue 需求](/v2/assets/examples/service/sdlc-team/issue.md.txt) | 创建 GitHub Issue 时的正文 |
+| [CI workflow](/v2/assets/examples/service/sdlc-team/ci.yml.txt) | `.github/workflows/ci.yml` |
 
 样例是订单接口背后的 Java 查询逻辑，不包含 HTTP 服务。初始实现故意缺少筛选和分页：五项固定检查中三项失败；需求还要求 Developer 增加边界测试。将 `out/` 写入练习仓库的 `.gitignore`，提交样例与 CI，再创建需求 Issue。初始 CI 失败是待实现功能的基线。
 

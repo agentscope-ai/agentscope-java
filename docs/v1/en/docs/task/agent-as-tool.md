@@ -1,5 +1,6 @@
 ---
 title: Agent as Tool
+zh_link: /v1/zh/docs/task/agent-as-tool
 ---
 
 <Warning>

@@ -1,5 +1,6 @@
 ---
 title: "Team 工作原理与结果收敛"
+en_link: /v2/en/service/team-execution
 ---
 
 <Note>

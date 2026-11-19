@@ -1,5 +1,6 @@
 ---
 title: 账号、Namespace 与权限
+en_link: /v2/en/service/access
 ---
 
 <Note>

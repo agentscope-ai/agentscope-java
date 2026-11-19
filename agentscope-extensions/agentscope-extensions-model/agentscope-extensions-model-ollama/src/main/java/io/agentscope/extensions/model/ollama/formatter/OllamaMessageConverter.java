@@ -15,12 +15,15 @@
  */
 package io.agentscope.extensions.model.ollama.formatter;
 
+import io.agentscope.core.formatter.DocumentReferenceRenderer;
 import io.agentscope.core.message.ContentBlock;
+import io.agentscope.core.message.DocumentBlock;
 import io.agentscope.core.message.HintBlock;
 import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.ThinkingBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.message.URLSource;
@@ -103,12 +106,17 @@ public class OllamaMessageConverter {
 
         // 2. Map Content and Tool Calls (for Assistant)
         StringBuilder textContent = new StringBuilder();
+        StringBuilder thinkingContent = new StringBuilder();
         List<String> images = new ArrayList<>();
         List<OllamaToolCall> toolCalls = new ArrayList<>();
 
         for (ContentBlock block : msg.getContent()) {
             if (block instanceof TextBlock) {
                 textContent.append(((TextBlock) block).getText());
+            } else if (block instanceof ThinkingBlock thinkingBlock) {
+                if (thinkingBlock.getThinking() != null) {
+                    thinkingContent.append(thinkingBlock.getThinking());
+                }
             } else if (block instanceof ImageBlock) {
                 ImageBlock imageBlock = (ImageBlock) block;
                 try {
@@ -120,6 +128,17 @@ public class OllamaMessageConverter {
                     // For now, logging error and skipping to avoid crashing the whole request,
                     // but usually image is important context.
                 }
+            } else if (block instanceof DocumentBlock documentBlock) {
+                log.debug(
+                        "DocumentBlock is not supported by Ollama; rendering a text reference"
+                                + " for '{}'",
+                        documentBlock.getName() != null
+                                ? documentBlock.getName()
+                                : documentBlock.getId());
+                if (textContent.length() > 0) {
+                    textContent.append("\n");
+                }
+                textContent.append(DocumentReferenceRenderer.render(documentBlock));
             } else if (block instanceof ToolUseBlock) {
                 ToolUseBlock toolUse = (ToolUseBlock) block;
                 // Convert ToolUseBlock to OllamaToolCall
@@ -139,6 +158,10 @@ public class OllamaMessageConverter {
 
         if (textContent.length() > 0) {
             ollamaMsg.setContent(textContent.toString());
+        }
+
+        if (thinkingContent.length() > 0) {
+            ollamaMsg.setThinking(thinkingContent.toString());
         }
 
         if (!images.isEmpty()) {
@@ -168,8 +191,10 @@ public class OllamaMessageConverter {
                                 return Stream.of(hb.getHint());
                             } else if (block instanceof ToolResultBlock toolResult) {
                                 return toolResult.getOutput().stream()
-                                        .filter(output -> output instanceof TextBlock)
-                                        .map(output -> ((TextBlock) output).getText());
+                                        .map(OllamaMessageConverter::toolOutputText)
+                                        .filter(text -> !text.isEmpty());
+                            } else if (block instanceof DocumentBlock document) {
+                                return Stream.of(DocumentReferenceRenderer.render(document));
                             }
                             return Stream.empty();
                         })
@@ -192,8 +217,10 @@ public class OllamaMessageConverter {
                                 return Stream.of(hb.getHint());
                             } else if (block instanceof ToolResultBlock toolResult) {
                                 return toolResult.getOutput().stream()
-                                        .filter(output -> output instanceof TextBlock)
-                                        .map(output -> ((TextBlock) output).getText());
+                                        .map(OllamaMessageConverter::toolOutputText)
+                                        .filter(text -> !text.isEmpty());
+                            } else if (block instanceof DocumentBlock document) {
+                                return Stream.of(DocumentReferenceRenderer.render(document));
                             }
                             return Stream.empty();
                         })
@@ -224,5 +251,21 @@ public class OllamaMessageConverter {
         }
 
         return imagePaths;
+    }
+
+    /**
+     * Render one tool output block as text.
+     *
+     * @param output Block produced by the tool
+     * @return Text for text blocks, a document placeholder for documents, empty otherwise
+     */
+    private static String toolOutputText(ContentBlock output) {
+        if (output instanceof TextBlock tb) {
+            return tb.getText();
+        }
+        if (output instanceof DocumentBlock document) {
+            return DocumentReferenceRenderer.render(document);
+        }
+        return "";
     }
 }

@@ -47,6 +47,9 @@ public enum GenerateReason {
     /** Tool execution was suspended, waiting for user to provide results. */
     TOOL_SUSPENDED,
 
+    /** Execution host paused this invocation at a recoverable boundary. */
+    HOST_PAUSED,
+
     /** Reasoning phase was stopped by a Hook (PostReasoningEvent.stopAgent()). */
     REASONING_STOP_REQUESTED,
 
@@ -82,5 +85,8 @@ public enum GenerateReason {
     INTERRUPTED,
 
     /** Maximum iterations reached. */
-    MAX_ITERATIONS
+    MAX_ITERATIONS,
+
+    /** Tool result returned directly to the caller without a follow-up model call. */
+    TOOL_RETURN_DIRECT
 }

@@ -1,5 +1,6 @@
 ---
 title: 智能体协议
+en_link: /v2/en/integration/protocol/index
 ---
 
 选择下方指南，了解智能体协议的配置与使用。

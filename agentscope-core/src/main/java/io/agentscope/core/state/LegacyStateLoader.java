@@ -26,8 +26,9 @@ import java.util.Optional;
  *
  * <p>This class reads the legacy session keys ({@code memory_messages},
  * {@code toolkit_activeGroups}) and constructs an equivalent {@link AgentState} object. The
- * original session data is not modified or migrated in place; subsequent saves will use the new
- * format automatically.
+ * original session data is not modified or migrated in place. This utility is only an explicit
+ * migration entry point; normal agent activation does not read these keys. Persist the returned
+ * state explicitly or import it through {@code ThreadCheckpoints.initialize}.
  *
  * <p>Legacy keys carry no 2.0-era {@link PermissionContextState}, so callers that need a specific
  * permission context (for example {@code BYPASS} for a pre-seeded privileged session) must pass it
@@ -119,7 +120,8 @@ public final class LegacyStateLoader {
         Optional<ToolkitState> toolkitState =
                 stateStore.get(userId, sessionId, "toolkit_activeGroups", ToolkitState.class);
 
-        AgentState.Builder builder = AgentState.builder().context(msgs);
+        AgentState.Builder builder =
+                AgentState.builder().userId(userId).sessionId(sessionId).context(msgs);
         if (permCtx != null) {
             builder.permissionContext(permCtx);
         }

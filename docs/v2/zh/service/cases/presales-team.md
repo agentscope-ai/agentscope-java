@@ -1,6 +1,7 @@
 ---
 title: "托管与混合团队：从客户需求到售前方案"
 description: "直接创建 Managed Team 交付方案和 PoC 计划，再接入 External 查询与 Hosted 实施。"
+en_link: /v2/en/service/cases/presales-team
 ---
 
 <Note>
@@ -19,9 +20,9 @@ description: "直接创建 Managed Team 交付方案和 PoC 计划，再接入 E
 
 | 资料 | 放置方式 |
 | --- | --- |
-| [客户需求](/examples/service/presales-team/customer-brief.txt) | 把正文作为 Issue 输入，保留 `customer-v1` 标记 |
-| [产品知识](/examples/service/presales-team/product-knowledge.txt) | 按 File 标记创建 `product/capabilities.md` 与 `product/reference-case.md` 两条 Memory 文档 |
-| [交付规范](/examples/service/presales-team/delivery-guide.txt) | 创建 `delivery/poc-guide.md` Memory 文档 |
+| [客户需求](/v2/assets/examples/service/presales-team/customer-brief.txt) | 把正文作为 Issue 输入，保留 `customer-v1` 标记 |
+| [产品知识](/v2/assets/examples/service/presales-team/product-knowledge.txt) | 按 File 标记创建 `product/capabilities.md` 与 `product/reference-case.md` 两条 Memory 文档 |
+| [交付规范](/v2/assets/examples/service/presales-team/delivery-guide.txt) | 创建 `delivery/poc-guide.md` Memory 文档 |
 
 客户有 80 家门店、每天约 3,000 次咨询，希望做网页客服与订单查询。数据地域、SSO 协议、峰值并发、模型预算和质量指标尚未确认。不要让 Agent 用每天咨询量推断准确峰值，或直接承诺四周生产上线。
 

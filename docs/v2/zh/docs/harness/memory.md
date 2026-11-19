@@ -1,6 +1,7 @@
 ---
 title: 记忆（Memory）
 description: 双层长期记忆、对话压缩、大工具结果卸载，prompt 与触发策略均可定制
+en_link: /v2/en/docs/harness/memory
 ---
 
 ## 作用
@@ -79,9 +80,9 @@ HarnessAgent agent = HarnessAgent.builder()
 | 参数 | 默认 | 含义 |
 |------|------|------|
 | `triggerMessages` | `50` | 按条数触发（`0` 表示关闭） |
-| `triggerTokens` | `80_000` | 按 token 估算触发（`0` 表示关闭） |
+| `triggerTokens` | `0` | 按 token 估算触发（`0` 表示动态计算，基于模型上下文窗口减去 `reserved`） |
 | `keepMessages` | `20` | 保留尾部条数 |
-| `keepTokens` | `0` | 非 0 时按 token 预算从尾部往前算，覆盖 `keepMessages` |
+| `keepTokens` | `-1` | `-1` 表示动态计算（基于模型上下文窗口自动计算）；`0` 表示使用 `keepMessages`；`>0` 表示固定 token 预算并覆盖 `keepMessages` |
 | `flushBeforeCompact` | `true` | 压缩前先把新事实写入日流水账（路径 2） |
 | `offloadBeforeCompact` | `true` | 压缩前先把原始消息存一份永不压缩的日志 |
 | `summaryPrompt` | 见 `DEFAULT_SUMMARY_PROMPT` | 路径 3 的摘要 prompt（必须含 `{messages}` 占位符） |
@@ -246,6 +247,8 @@ HarnessAgent.builder()
 - 清理超过 `sessionRetentionDays`（默认 180 天）的会话日志
 
 进入维护流程不一定会调用模型：如果自上次成功合并以来没有新增日流水账内容，consolidation 会跳过 LLM 请求。`FlushTrigger.never()` 不会关闭这条维护路径。
+
+合并结果设有提交门：只有**完整**（未被模型输出上限截断）、纯文本、非空且不超过 `consolidationMaxTokens` 正文目标的结果，在写入 `MEMORY.md` 并确认成功后，才会推进合并水位（watermark）。截断、混入工具调用、超目标、模型异常或写入前取消时，原 `MEMORY.md` 与水位保持原样。写入未确认时，记忆正文可能已经改变，但水位不会推进，下一次维护仍会对同一批流水账重试。合并调用走仅预算检查的辅助边界：不携带父对话历史、工具或任务投影，也不会递归触发压缩。
 
 所有阈值都可以通过 `.memory(MemoryConfig.builder()...)` 调，绝大多数项目不需要碰。
 

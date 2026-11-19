@@ -64,7 +64,7 @@ class WorkspaceContextMiddlewarePathBoundsTest {
         WorkspaceManager wm = track(new WorkspaceManager(workspace, fs));
         WorkspaceContextMiddleware mw = new WorkspaceContextMiddleware(wm);
 
-        String prompt = mw.onSystemPrompt(null, null, "BASE\n").block();
+        String prompt = WorkspacePromptTestSupport.render(mw, null, "BASE\n");
         assertNotNull(prompt);
         // Project + Workspace lines
         assertTrue(prompt.contains("Project (the user's source tree"));
@@ -92,7 +92,7 @@ class WorkspaceContextMiddlewarePathBoundsTest {
         WorkspaceManager wm = track(new WorkspaceManager(workspace, fs));
         WorkspaceContextMiddleware mw = new WorkspaceContextMiddleware(wm);
 
-        String prompt = mw.onSystemPrompt(null, null, "BASE\n").block();
+        String prompt = WorkspacePromptTestSupport.render(mw, null, "BASE\n");
         assertNotNull(prompt);
         assertTrue(prompt.contains("Additional roots: " + shared.toAbsolutePath()));
     }
@@ -109,11 +109,12 @@ class WorkspaceContextMiddlewarePathBoundsTest {
         WorkspaceContextMiddleware mw = new WorkspaceContextMiddleware(wm);
         RuntimeContext rc = RuntimeContext.builder().sessionId("session-1").build();
 
-        String prompt = mw.onSystemPrompt(null, rc, "BASE\n").block();
+        String prompt = WorkspacePromptTestSupport.render(mw, rc, "BASE\n");
 
         assertNotNull(prompt);
         Path effectiveWorkspace = workspace.resolve("session-1").toAbsolutePath();
-        assertTrue(prompt.contains("The workspace directory is: " + effectiveWorkspace + "\n"));
+        assertTrue(
+                prompt.contains("The host workspace directory is: " + effectiveWorkspace + "\n"));
         assertTrue(
                 prompt.contains(
                         "Workspace (your home base — memory, sessions, skills, runtime data): "
@@ -121,7 +122,7 @@ class WorkspaceContextMiddlewarePathBoundsTest {
                                 + "\n"));
         assertFalse(
                 prompt.contains(
-                        "The workspace directory is: " + workspace.toAbsolutePath() + "\n"));
+                        "The host workspace directory is: " + workspace.toAbsolutePath() + "\n"));
         assertTrue(prompt.contains(project.toAbsolutePath().toString()));
         assertFalse(prompt.contains("Additional roots: " + workspace.toAbsolutePath()));
     }
@@ -137,7 +138,7 @@ class WorkspaceContextMiddlewarePathBoundsTest {
         WorkspaceManager wm = track(new WorkspaceManager(workspace, fs));
         WorkspaceContextMiddleware mw = new WorkspaceContextMiddleware(wm);
 
-        String prompt = mw.onSystemPrompt(null, null, "BASE\n").block();
+        String prompt = WorkspacePromptTestSupport.render(mw, null, "BASE\n");
         assertNotNull(prompt);
         assertTrue(
                 prompt.contains("UNRESTRICTED"), () -> "UNRESTRICTED mode not surfaced: " + prompt);

@@ -1,5 +1,6 @@
 ---
 title: "Managed 参数与模型配置"
+en_link: /v2/en/service/managed-agent-configuration
 ---
 
 <Note>

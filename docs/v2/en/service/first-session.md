@@ -1,5 +1,6 @@
 ---
 title: "Quickstart"
+zh_link: /v2/zh/service/first-session
 ---
 
 <Note>
@@ -36,7 +37,7 @@ Review is planned for Monday; its time is unconfirmed.
 Check the owner, deadline and unconfirmed review time. Ask “What information is still missing?” Refresh and reopen this Chat to verify both turns remain available.
 
 <Frame caption="Chat interface with fixed demonstration data. Your Agent name and messages will match the tutorial inputs.">
-  <img src="/imgs/service/chat.png" alt="Select an Agent and start a multi-turn console conversation" />
+  <img src="/v2/assets/imgs/service/chat.png" alt="Select an Agent and start a multi-turn console conversation" />
 </Frame>
 
 ## 2. Publish the Agent as an API service

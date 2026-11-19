@@ -1,5 +1,6 @@
 ---
 title: 百炼记忆
+en_link: /v2/en/integration/memory/bailian
 ---
 
 `agentscope-extensions-memory-bailian` 接入阿里云百炼的长期记忆服务，提供云端托管、企业级的语义记忆能力，支持 rerank、judge、rewrite 等检索增强特性。

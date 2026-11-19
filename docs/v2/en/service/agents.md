@@ -1,5 +1,6 @@
 ---
 title: "Register or create an Agent"
+zh_link: /v2/zh/service/agents
 ---
 
 <Note>
@@ -19,7 +20,7 @@ The three submenus cover creation, registration and verification. Detailed param
 ## Interface tour
 
 <Frame caption="Current console UI with fixed demonstration data.">
-  <img src="/imgs/service/agents.png" alt="Agent catalog with Managed, Hosted and External filters" />
+  <img src="/v2/assets/imgs/service/agents.png" alt="Agent catalog with Managed, Hosted and External filters" />
 </Frame>
 
 Use the filters to distinguish runtime types and the cards to identify each Agent’s purpose. Open a card to configure it, or choose **New agent** to add one. The example shows all three types; verify runtime availability for each Agent before using it.

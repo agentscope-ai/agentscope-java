@@ -1,5 +1,6 @@
 ---
 title: 'AIDC Logistics: Enterprise Agent Development Practice'
+zh_link: /v2/zh/blogs/usecases/aidc-logistics
 ---
 
 ## 01 Background
@@ -289,7 +290,7 @@ As the bottom-most layer of the architecture, its core is interacting with the L
 **5. Zero-intrusion integration of observability and advanced reasoning capabilities**
 
 - Rule: Trace instrumentation, Prompt caching, and tool invocation enhancements are automatically completed at the model layer; business code needs no manual handling.
-- Source analysis: `ChatModelBase.stream()` automatically wraps calls via `TracerRegistry.get().callModel()`; when cacheControl=true, `OpenAIBaseFormatter.applyCacheControl()` automatically adds cache markers; toolChoice and parallelToolCalls parameters directly control tool behavior.
+- Source analysis: `ChatModelBase.stream()` automatically wraps calls via `TracerRegistry.get().callModel()`; when cacheControl=true, the formatter adds cache markers while formatting messages; toolChoice and parallelToolCalls parameters directly control tool behavior.
 
 ![Model layer architecture I](https://mmbiz.qpic.cn/sz_mmbiz_png/bvDbzNRia8j2vyuibOsbQibMibMjVQOymQcVxoTOX2VY8z2jHJ6XdAN5A5FCfD8zWgxt5Abdt2sGI95MLD7eJFMF6pKYduAc8jvaMYS0VfMWw8c/640?wx_fmt=png&from=appmsg)
 
@@ -757,7 +758,7 @@ Why do it this way?
 **Reason one: thread safety.** The underlying model of the reuse layer is an asynchronous thread pool; threads are reused across multiple sessions. If request-level data is passed via `ThreadLocal`, residual data after a thread returns to the pool may pollute subsequent sessions. `RuntimeContext` is bound by the framework to the `AgentBase` instance (per-agent-instance), created with the request and destroyed with it — naturally isolated, with no risk of cross-session data leakage.
 
 
-**Reason two: full-link reachability.** `RuntimeContext` spans the complete lifecycle of an Agent from creation to execution; multiple downstream link nodes can consume it directly via `agent.getRuntimeContext()` without extra parameter passing:
+**Reason two: full-link reachability.** `RuntimeContext` spans the complete lifecycle of an Agent from creation to execution; downstream tools and middlewares receive their own call context explicitly through method parameters:
 
 ![Full-link reachability of RuntimeContext](https://mmbiz.qpic.cn/mmbiz_png/bvDbzNRia8j1eicYBIKHufpOPERtSVarFrRCbGAfib3n75RdOUicqaXEomK9zicOGgJbZN98nR3ic4bBFvXKfuIdYBJTkDkNX56CtX0xLmcicak2pQ/640?wx_fmt=png&from=appmsg)
 

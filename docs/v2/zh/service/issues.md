@@ -1,5 +1,6 @@
 ---
 title: "控制台创建 Issue 与分派任务"
+en_link: /v2/en/service/issues
 ---
 
 <Note>
@@ -11,7 +12,7 @@ Issue 保存一项工作的目标、负责人、讨论、执行记录和交付�
 ## 界面导览
 
 <Frame caption="当前控制台截图，使用固定演示数据。">
-  <img src="/imgs/service/issues.png" alt="Issue 列表中的优先级、负责人和状态" />
+  <img src="/v2/assets/imgs/service/issues.png" alt="Issue 列表中的优先级、负责人和状态" />
 </Frame>
 
 先通过 **Active**、**In review** 或 **Done** 缩小范围，再查看每行的优先级、负责人和状态。点击标题进入讨论与结果页面；新工作从右上角 **New issue** 开始。
@@ -68,7 +69,7 @@ Chat 适合先澄清需求；Issue 用于安排负责人、跟踪协作和验收
 ### Chat 界面导览
 
 <Frame caption="当前控制台截图，使用固定演示数据。">
-  <img src="/imgs/service/chat.png" alt="Chat 对话与工作转换入口" />
+  <img src="/v2/assets/imgs/service/chat.png" alt="Chat 对话与工作转换入口" />
 </Frame>
 
 左侧列表用于找回和整理历史对话；中间 **Conversation** 阅读回复，**Events** 查看执行事件。需要把讨论交付给负责人时，使用右上角 **Create issue**，再补充目标与验收要求。

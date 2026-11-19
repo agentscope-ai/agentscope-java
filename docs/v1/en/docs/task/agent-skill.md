@@ -1,5 +1,6 @@
 ---
 title: Agent Skill
+zh_link: /v1/zh/docs/task/agent-skill
 ---
 
 ## Overview

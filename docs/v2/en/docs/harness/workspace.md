@@ -3,6 +3,7 @@ title: Workspace
 description: 'Source of truth for agent definition and evolution: directory layout,
   workspace-vs-API parity, native multi-tenant isolation, filesystem modes, and deep
   dive on key contents'
+zh_link: /v2/zh/docs/harness/workspace
 ---
 
 ## Design philosophy

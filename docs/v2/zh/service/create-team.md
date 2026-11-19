@@ -1,5 +1,6 @@
 ---
 title: "Team：创建与派发协作任务"
+en_link: /v2/en/service/create-team
 ---
 
 <Note>
@@ -13,7 +14,7 @@ title: "Team：创建与派发协作任务"
 准备两个具备任务能力的 Agent：资料助手负责整理材料，复核助手负责检查证据与缺失信息。在 **DESIGN → Teams** 新建团队，选择资料助手为 **Leader Agent**，在 **Additional members** 中添加复核助手。
 
 <Frame caption="Team 创建界面，使用固定演示数据。">
-  <img src="/imgs/service/teams.png" alt="选择团队 Leader 与协作成员" />
+  <img src="/v2/assets/imgs/service/teams.png" alt="选择团队 Leader 与协作成员" />
 </Frame>
 
 在协作指令中写明：

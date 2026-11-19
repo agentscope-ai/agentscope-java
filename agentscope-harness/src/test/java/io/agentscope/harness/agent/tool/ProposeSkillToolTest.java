@@ -19,7 +19,6 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
@@ -48,9 +47,8 @@ class ProposeSkillToolTest {
     void setUp() {
         var fs = new LocalFilesystem(workspace);
         store = new SkillUsageStore(fs);
-        var mainRepo = new WorkspaceSkillRepository(fs, "skills", RuntimeContext::empty, "main");
-        var draftsRepo =
-                new WorkspaceSkillRepository(fs, "skills/_drafts", RuntimeContext::empty, "drafts");
+        var mainRepo = new WorkspaceSkillRepository(fs, "skills", "main");
+        var draftsRepo = new WorkspaceSkillRepository(fs, "skills/_drafts", "drafts");
         manage = new SkillManageTool(mainRepo, draftsRepo, SkillManageConfig.defaults(), store);
         propose = new ProposeSkillTool(manage);
     }

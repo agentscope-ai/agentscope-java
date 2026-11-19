@@ -16,15 +16,18 @@
 
 package io.agentscope.core.a2a.agent.message;
 
-import io.a2a.spec.DataPart;
-import io.a2a.util.Utils;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
+import io.agentscope.core.util.JsonException;
+import io.agentscope.core.util.JsonUtils;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
+import org.a2aproject.sdk.spec.DataPart;
 
 /**
  * Parser for {@link DataPart} to {@link ContentBlock}.
@@ -47,21 +50,20 @@ public class DataPartParser implements PartParser<DataPart> {
     }
 
     private boolean isCommonDataPart(DataPart part) {
-        if (null == part.getMetadata()) {
+        if (null == part.metadata()) {
             return true;
         }
-        return null == part.getMetadata().get(MessageConstants.BLOCK_TYPE_METADATA_KEY);
+        return null == part.metadata().get(MessageConstants.BLOCK_TYPE_METADATA_KEY);
     }
 
     private ContentBlock parseToTextBlock(DataPart part) {
-        String dataJsonString = Utils.toJsonString(part.getData());
+        String dataJsonString = JsonUtils.getJsonCodec().toJson(part.data());
         return TextBlock.builder().text(dataJsonString).build();
     }
 
     private ContentBlock parseToToolBlock(DataPart part) {
         // value has checked existed in isCommonDataPart().
-        String blockType =
-                part.getMetadata().get(MessageConstants.BLOCK_TYPE_METADATA_KEY).toString();
+        String blockType = part.metadata().get(MessageConstants.BLOCK_TYPE_METADATA_KEY).toString();
         return switch (blockType) {
             case MessageConstants.BlockContent.TYPE_TOOL_USE -> parseToToolUseBlock(part);
             case MessageConstants.BlockContent.TYPE_TOOL_RESULT -> parseToToolResultBlock(part);
@@ -73,7 +75,7 @@ public class DataPartParser implements PartParser<DataPart> {
         ToolUseBlock.Builder builder = ToolUseBlock.builder();
         builder.id(getToolCallId(part)).name(getToolName(part));
         builder.metadata(getOriginalMetadata(part));
-        builder.input(part.getData());
+        builder.input(asMap(part.data()));
         return builder.build();
     }
 
@@ -81,15 +83,13 @@ public class DataPartParser implements PartParser<DataPart> {
         ToolResultBlock.Builder builder = ToolResultBlock.builder();
         builder.id(getToolCallId(part)).name(getToolName(part));
         builder.metadata(getOriginalMetadata(part));
-        Object output = part.getData().get(MessageConstants.TOOL_RESULT_OUTPUT_METADATA_KEY);
+        Object output = asMap(part.data()).get(MessageConstants.TOOL_RESULT_OUTPUT_METADATA_KEY);
         if (output instanceof String) {
             // Adapter Python Agentscope ToolResultBlock define, python tool result output spec is
             // `str | List[TextBlock | ImageBlock | AudioBlock | VideoBlock]`
             builder.output(TextBlock.builder().text(output.toString()).build());
-        } else if (output instanceof List) {
-            @SuppressWarnings("unchecked")
-            List<ContentBlock> outputList = (List<ContentBlock>) output;
-            builder.output(outputList);
+        } else if (output instanceof List<?> outputList) {
+            builder.output(toContentBlocks(outputList));
         } else {
             builder.output(List.of());
         }
@@ -97,21 +97,48 @@ public class DataPartParser implements PartParser<DataPart> {
     }
 
     private String getToolCallId(DataPart part) {
-        Object toolCallId = part.getMetadata().get(MessageConstants.TOOL_CALL_ID_METADATA_KEY);
+        Object toolCallId = part.metadata().get(MessageConstants.TOOL_CALL_ID_METADATA_KEY);
         return null != toolCallId ? toolCallId.toString() : null;
     }
 
     private String getToolName(DataPart part) {
-        Object toolName = part.getMetadata().get(MessageConstants.TOOL_NAME_METADATA_KEY);
+        Object toolName = part.metadata().get(MessageConstants.TOOL_NAME_METADATA_KEY);
         return null != toolName ? toolName.toString() : null;
     }
 
     private Map<String, Object> getOriginalMetadata(DataPart part) {
-        Map<String, Object> result = new HashMap<>(part.getMetadata());
+        Map<String, Object> result = new HashMap<>(part.metadata());
         // Remove agentscope inner metadata.
         result.remove(MessageConstants.TOOL_CALL_ID_METADATA_KEY);
         result.remove(MessageConstants.TOOL_NAME_METADATA_KEY);
         result.remove(MessageConstants.BLOCK_TYPE_METADATA_KEY);
+        // A2A metadata may hold JSON nulls; tool result blocks do not accept null values.
+        result.values().removeIf(Objects::isNull);
         return result;
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> asMap(Object data) {
+        return data instanceof Map<?, ?> map ? (Map<String, Object>) map : Map.of();
+    }
+
+    /**
+     * Rebuilds tool result content blocks. Received over the wire, each block is a JSON object
+     * whose {@code type} names the block; one that is not a known block is kept as JSON text.
+     */
+    private static List<ContentBlock> toContentBlocks(List<?> items) {
+        List<ContentBlock> blocks = new ArrayList<>(items.size());
+        for (Object item : items) {
+            if (item instanceof ContentBlock block) {
+                blocks.add(block);
+                continue;
+            }
+            try {
+                blocks.add(JsonUtils.getJsonCodec().convertValue(item, ContentBlock.class));
+            } catch (JsonException | IllegalArgumentException e) {
+                blocks.add(TextBlock.builder().text(JsonUtils.getJsonCodec().toJson(item)).build());
+            }
+        }
+        return blocks;
     }
 }

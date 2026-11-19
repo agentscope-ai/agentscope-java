@@ -17,12 +17,20 @@ package io.agentscope.harness.agent.subagent;
 
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.Agent;
+import io.agentscope.core.agent.AgentExecutionHost;
+import io.agentscope.core.agent.AgentExecutionPosition;
 import io.agentscope.core.agent.Event;
 import io.agentscope.core.agent.EventSource;
+import io.agentscope.core.agent.ExecutionIdentity;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.agent.StreamOptions;
+import io.agentscope.core.journal.InvocationRecorder;
+import io.agentscope.core.journal.JournalExportSink;
+import io.agentscope.core.journal.ModelInvocation;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
+import io.agentscope.core.message.ToolUseBlock;
+import io.agentscope.core.model.Model;
 import io.agentscope.harness.agent.HarnessAgent;
 import io.agentscope.harness.agent.middleware.SubagentEntry;
 import io.agentscope.harness.agent.tool.AgentSpawnTool;
@@ -31,6 +39,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.function.Supplier;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
@@ -178,20 +187,18 @@ public final class DefaultAgentManager {
 
     public Mono<Msg> invokeAgent(
             Agent agent, String sessionId, String userId, String prompt, RuntimeContext parentRc) {
-        RuntimeContext ctx =
-                parentRc != null
-                        ? RuntimeContext.builder(parentRc)
-                                .sessionId(sessionId)
-                                .userId(userId)
-                                .build()
-                        : RuntimeContext.builder().sessionId(sessionId).userId(userId).build();
-        if (agent instanceof ReActAgent react) {
-            return react.call(List.of(userMessage(prompt)), ctx);
-        }
-        if (agent instanceof HarnessAgent harness) {
-            return harness.call(userMessage(prompt), ctx);
-        }
-        return agent.call(List.of(userMessage(prompt)));
+        RuntimeContext ctx = childContext(sessionId, userId, parentRc);
+        Supplier<Mono<Msg>> local =
+                () -> {
+                    if (agent instanceof ReActAgent react)
+                        return react.call(List.of(userMessage(prompt)), ctx);
+                    if (agent instanceof HarnessAgent harness)
+                        return harness.call(userMessage(prompt), ctx);
+                    return agent.call(List.of(userMessage(prompt)));
+                };
+        SubagentExecution execution =
+                parentRc == null ? null : parentRc.get(SubagentExecution.class);
+        return execution == null ? local.get() : execution.invoke(agent, parentRc, ctx, local);
     }
 
     /**
@@ -233,13 +240,7 @@ public final class DefaultAgentManager {
             RuntimeContext parentRc) {
         Flux<Event> childFlux;
         StreamOptions effective = options != null ? options : StreamOptions.defaults();
-        RuntimeContext ctx =
-                parentRc != null
-                        ? RuntimeContext.builder(parentRc)
-                                .sessionId(sessionId)
-                                .userId(userId)
-                                .build()
-                        : RuntimeContext.builder().sessionId(sessionId).userId(userId).build();
+        RuntimeContext ctx = childContext(sessionId, userId, parentRc);
         if (agent instanceof ReActAgent react) {
             childFlux = react.stream(List.of(userMessage(prompt)), effective, ctx);
         } else if (agent instanceof HarnessAgent harness) {
@@ -248,6 +249,49 @@ public final class DefaultAgentManager {
             childFlux = agent.stream(List.of(userMessage(prompt)), effective);
         }
         return childFlux.map(event -> event.withSource(source));
+    }
+
+    private static RuntimeContext childContext(
+            String sessionId, String userId, RuntimeContext parent) {
+        RuntimeContext child =
+                parent == null
+                        ? RuntimeContext.builder().sessionId(sessionId).userId(userId).build()
+                        : RuntimeContext.builder(parent)
+                                .sessionId(sessionId)
+                                .userId(userId)
+                                .threadId(null)
+                                .turnId(null)
+                                .runId(null)
+                                .build();
+        var recorder = InvocationRecorder.from(parent);
+        // The typed bag carries the caller's pinned model; subagents keep their build-time model.
+        child.put(Model.class, null);
+        child.put(InvocationRecorder.CONTEXT_KEY, null);
+        child.put(InvocationRecorder.PARENT_KEY, null);
+        child.put(JournalExportSink.CONTEXT_KEY, null);
+        if (parent != null
+                && parent.get(JournalExportSink.CONTEXT_KEY) instanceof JournalExportSink sink)
+            child.put(JournalExportSink.CONTEXT_KEY, sink.forChild(sessionId));
+        child.put(AgentExecutionHost.class, null);
+        child.put(ModelInvocation.class, null);
+        child.put(ExecutionIdentity.CONTEXT_KEY, null);
+        child.put(AgentExecutionPosition.class, null);
+        child.put(ToolUseBlock.class, null);
+        child.put(SubagentExecution.Invocation.class, null);
+        child.setAgentState(null);
+        if (parent != null
+                && parent.get(ExecutionIdentity.CONTEXT_KEY)
+                        instanceof ExecutionIdentity identity) {
+            var correlation = new HashMap<String, Object>();
+            correlation.put("parentSessionId", identity.sessionId());
+            correlation.put("parentThreadId", identity.threadId());
+            correlation.put("parentRunId", identity.runId());
+            if (identity.turnId() != null) correlation.put("parentTurnId", identity.turnId());
+            String stepId = recorder == null ? null : recorder.stepId();
+            if (stepId != null) correlation.put("parentStepId", stepId);
+            child.put(InvocationRecorder.PARENT_KEY, Map.copyOf(correlation));
+        }
+        return child;
     }
 
     public WorkspaceManager getWorkspaceManager() {

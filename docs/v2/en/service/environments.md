@@ -1,5 +1,6 @@
 ---
 title: "Environments: execution locations"
+zh_link: /v2/zh/service/environments
 ---
 
 <Note>
@@ -11,7 +12,7 @@ This is preview documentation. The official release is not yet available.
 ## Interface tour
 
 <Frame caption="Current console UI with fixed demonstration data.">
-  <img src="/imgs/service/environments.png" alt="Local and self_hosted environment examples" />
+  <img src="/v2/assets/imgs/service/environments.png" alt="Local and self_hosted environment examples" />
 </Frame>
 
 Choose an environment according to where execution should happen. **Local development** represents local execution, while **Research worker** is an example self_hosted configuration. Creating the record still requires starting and connecting its Worker.

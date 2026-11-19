@@ -1,5 +1,6 @@
 ---
 title: 连接 Runtime Host
+en_link: /v2/en/service/runtime-host
 ---
 
 <Note>

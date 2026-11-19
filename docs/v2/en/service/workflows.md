@@ -1,5 +1,6 @@
 ---
 title: "Workflow: multi-Agent process orchestration"
+zh_link: /v2/zh/service/workflows
 ---
 
 <Note>
@@ -11,7 +12,7 @@ This is preview documentation. The official release is not yet available.
 ## Interface tour
 
 <Frame caption="Current console UI with fixed demonstration data.">
-  <img src="/imgs/service/workflows.png" alt="Workflow Design tab and step dependencies" />
+  <img src="/v2/assets/imgs/service/workflows.png" alt="Workflow Design tab and step dependencies" />
 </Frame>
 
 In **Workflow Design**, inspect steps and dependencies before editing a selected step. Save and validate the draft, then publish a version. **Run Workflow** uses a published version; changing a draft does not update work already running.

@@ -6,6 +6,7 @@ import { createProcessor } from '@mdx-js/mdx';
 import remarkGfm from 'remark-gfm';
 import matter from 'gray-matter';
 import GithubSlugger from 'github-slugger';
+import ignore from 'ignore';
 
 function walk(node, visit) {
   visit(node);
@@ -64,7 +65,12 @@ export function inspectPage(source) {
       links.push(target);
     }
   });
-  return { links, anchors, title: data.title };
+  return {
+    links,
+    anchors,
+    title: data.title,
+    languageLinks: { en: data.en_link, zh: data.zh_link },
+  };
 }
 
 function pageFiles(directory) {
@@ -79,8 +85,15 @@ export function checkSite(docs) {
   const config = JSON.parse(fs.readFileSync(path.join(docs, 'docs.json'), 'utf8'));
   const errors = [];
   const pages = new Map();
+  const ignoreFile = path.join(docs, '.mintignore');
+  const patterns = fs.existsSync(ignoreFile) ? fs.readFileSync(ignoreFile, 'utf8').split(/\r?\n/).map((line) => line.trim()) : [];
+  const excluded = ignore().add(patterns);
   const routes = navigationPages(config.navigation);
-  for (const file of ['v1', 'v2'].flatMap((version) => pageFiles(path.join(docs, version)))) {
+  const versionDirectories = fs.readdirSync(docs, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory() && /^(?:dev|v\d+(?:\.\d+)*)$/.test(entry.name))
+    .map((entry) => path.join(docs, entry.name));
+  for (const file of versionDirectories.flatMap(pageFiles)) {
+    if (excluded.ignores(path.relative(docs, file).split(path.sep).join('/'))) continue;
     const route = '/' + path.relative(docs, file).replace(/\.mdx?$/, '').split(path.sep).join('/');
     try {
       if (pages.has(route)) errors.push(`Duplicate page route: ${route}`);
@@ -92,6 +105,21 @@ export function checkSite(docs) {
   const published = new Set(routes.map((route) => '/' + route));
   for (const route of published) if (!pages.has(route)) errors.push(`Missing navigation page: ${route}`);
   for (const route of pages.keys()) if (!published.has(route)) errors.push(`Page missing from navigation: ${route}`);
+  for (const [route, page] of pages) {
+    const match = route.match(/^\/(dev|v\d+(?:\.\d+)*)\/(en|zh)(\/.*)$/);
+    if (!match) continue;
+    const [, version, language, suffix] = match;
+    const counterpartLanguage = language === 'en' ? 'zh' : 'en';
+    const counterpart = `/${version}/${counterpartLanguage}${suffix}`;
+    const configured = page.languageLinks[counterpartLanguage];
+    if (pages.has(counterpart)) {
+      if (configured !== counterpart) {
+        errors.push(`${route}: ${counterpartLanguage}_link must be ${counterpart}`);
+      }
+    } else if (configured !== undefined) {
+      errors.push(`${route}: ${counterpartLanguage}_link targets a missing translation`);
+    }
+  }
   const redirects = new Map();
   const wildcards = [];
   for (const { source, destination } of config.redirects || []) {
@@ -136,17 +164,28 @@ export function checkSite(docs) {
     const pathname = decodeURIComponent(url.pathname);
     const target = resolve(pathname);
     if (target === null) { errors.push(`${from}: redirect cycle at ${link}`); return; }
+    if (/^https?:\/\//i.test(target)) return;
     const page = pages.get(target);
     if (page) {
       if (url.hash && !page.anchors.has(decodeURIComponent(url.hash.slice(1)))) errors.push(`${from}: missing anchor ${link}`);
       return;
     }
     const file = path.resolve(docs, '.' + target);
+    const relative = path.relative(path.resolve(docs), file).split(path.sep).join('/');
+    if (relative && !relative.startsWith('../') && excluded.ignores(relative)) {
+      errors.push(`${from}: local target excluded by .mintignore ${link}`);
+      return;
+    }
     if (!file.startsWith(path.resolve(docs) + path.sep) || !fs.existsSync(file) || !fs.statSync(file).isFile()) {
       errors.push(`${from}: missing local target ${link}`);
     }
   }
-  for (const [route, page] of pages) for (const link of page.links) checkLink(route, link);
+  for (const [route, page] of pages) for (const link of page.links) {
+    checkLink(route, link);
+    if (/^\/v\d/.test(route) && /^https:\/\/(?:github\.com\/agentscope-ai\/agentscope-java\/(?:blob|tree)|raw\.githubusercontent\.com\/agentscope-ai\/agentscope-java)\/(?:main|master|HEAD|Mintlify|dev)(?:\/|$)/i.test(link)) {
+      errors.push(`${route}: historical source link must use a release tag or commit ${link}`);
+    }
+  }
   for (const [source] of redirects) {
     if (!source.includes('*')) checkLink(source, source);
   }

@@ -1,5 +1,6 @@
 ---
 title: Agent Protocol
+zh_link: /v2/zh/integration/protocol/agent-protocol
 ---
 
 `agentscope-extensions-agent-protocol` exposes AgentScope's [Harness Agent](/v2/en/docs/harness/architecture) as a standard [Agent Protocol](https://agentprotocol.ai/) HTTP API, letting external systems (CI, other agent platforms, automation jobs) submit "tasks" using a uniform contract — no need to know the implementation details.
@@ -215,6 +216,12 @@ Optional `context` fields:
 
 Response on success: `{ "task_id", "status": "pending" }`.
 
+Within one `AgentProtocolTaskStore` instance, concurrent submissions of the same
+`task_id` do not start another run while its execution is in progress. Different
+task IDs can execute independently. Submitting an already completed task ID returns
+HTTP 409. This in-process coordination does not deduplicate submissions across
+server replicas.
+
 ### Poll / wait / cancel
 
 | Method | Path | Notes |
@@ -267,7 +274,7 @@ Both are additive: a client that ignores them keeps reading the flat fields (`te
 {
   "decisions": [
     { "toolCallId": "call-1", "approved": true },
-    { "toolCallId": "call-2", "approved": false }
+    { "toolCallId": "call-2", "approved": false, "reason": "not allowed in production" }
   ]
 }
 ```

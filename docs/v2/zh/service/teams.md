@@ -1,5 +1,6 @@
 ---
 title: "Team：概览与创建"
+en_link: /v2/en/service/teams
 ---
 
 <Note>
@@ -19,7 +20,7 @@ title: "Team：概览与创建"
 ## 界面导览
 
 <Frame caption="当前控制台截图，使用固定演示数据。">
-  <img src="/imgs/service/teams.png" alt="创建 Team 时选择 Leader 和成员" />
+  <img src="/v2/assets/imgs/service/teams.png" alt="创建 Team 时选择 Leader 和成员" />
 </Frame>
 
 填写职责后，在 **Leader Agent** 中选择统一接收任务的 Agent，在 **Additional members** 中选择可协作成员。需要进一步约束委派行为时，再展开 **Advanced coordination instructions**。

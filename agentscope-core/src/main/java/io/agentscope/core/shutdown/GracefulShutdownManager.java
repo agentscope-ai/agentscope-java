@@ -17,6 +17,7 @@ package io.agentscope.core.shutdown;
 
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.AgentBase;
+import io.agentscope.core.agent.RunControl;
 import io.agentscope.core.state.AgentState;
 import java.time.Duration;
 import java.time.Instant;
@@ -179,13 +180,13 @@ public final class GracefulShutdownManager {
         }
     }
 
-    public String registerRequest(Agent agent) {
-        if (!(agent instanceof AgentBase agentBase)) {
+    public String registerRequest(Agent agent, RunControl control) {
+        if (!(agent instanceof AgentBase)) {
             return "";
         }
         ShutdownStateSaver saver = stateSavers.get(agent.getAgentId());
         String requestId = UUID.randomUUID().toString();
-        ActiveRequestContext ctx = new ActiveRequestContext(requestId, agentBase, saver);
+        ActiveRequestContext ctx = new ActiveRequestContext(requestId, saver, control);
         activeRequestsById.put(requestId, ctx);
         return requestId;
     }
@@ -357,5 +358,11 @@ public final class GracefulShutdownManager {
         shutdownStartedAt.set(null);
         monitorStarted.set(false);
         shutdownTimeoutSignal.set(Sinks.empty());
+        // Config was previously left at whatever the last test set, so a later test
+        // asserting the default config (null timeout, SAVE policy) failed whenever the
+        // filesystem-ordered class run placed it after shutdownTimeoutSignal — a
+        // cross-test leak through this JVM-wide singleton observed locally under a
+        // clean rebuild. Reset it like every other field.
+        config.set(GracefulShutdownConfig.DEFAULT);
     }
 }

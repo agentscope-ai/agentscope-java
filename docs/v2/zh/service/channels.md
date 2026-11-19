@@ -1,5 +1,6 @@
 ---
 title: "消息事件：Channel 接入与路由"
+en_link: /v2/en/service/channels
 ---
 
 <Note>
@@ -11,7 +12,7 @@ title: "消息事件：Channel 接入与路由"
 ## 界面导览
 
 <Frame caption="当前控制台截图，使用固定演示数据。">
-  <img src="/imgs/service/channels.png" alt="Channel 目录中的渠道类型和运行状态" />
+  <img src="/v2/assets/imgs/service/channels.png" alt="Channel 目录中的渠道类型和运行状态" />
 </Frame>
 
 卡片显示渠道类型、会话隔离方式和运行状态。点击渠道进入凭据与路由配置；**running** 只表示适配器已启动，还需从实际平台发送消息验证接待对象和结果回传。

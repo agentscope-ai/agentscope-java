@@ -1,5 +1,6 @@
 ---
 title: "Workflow：多 Agent 流程编排"
+en_link: /v2/en/service/workflows
 ---
 
 <Note>
@@ -11,7 +12,7 @@ title: "Workflow：多 Agent 流程编排"
 ## 界面导览
 
 <Frame caption="当前控制台截图，使用固定演示数据。">
-  <img src="/imgs/service/workflows.png" alt="Workflow 的 Design 页面与步骤关系" />
+  <img src="/v2/assets/imgs/service/workflows.png" alt="Workflow 的 Design 页面与步骤关系" />
 </Frame>
 
 在 **Workflow Design** 中检查步骤和依赖，再编辑选中步骤的配置。保存草稿后先校验，再发布版本；**Run Workflow** 使用已发布版本，修改草稿不等于更新已运行的工作。

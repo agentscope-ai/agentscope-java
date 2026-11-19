@@ -1,5 +1,6 @@
 ---
 title: Overview
+zh_link: /v2/zh/integration/skill/overview
 ---
 
 An `AgentSkill` is AgentScope's Markdown + resource-file format for describing a reusable "skill" (see [Harness · Skill](/v2/en/docs/harness/skill)). The `AgentSkillRepository` interface loads skills from external storage and hands them to the `Toolkit` / `ReActAgent`.

@@ -1,6 +1,7 @@
 ---
 title: 智能体
 description: 了解如何在 AgentScope Java 2.0 中定义和配置智能体
+en_link: /v2/en/docs/building-blocks/agent
 ---
 
 ## 概述
@@ -149,10 +150,9 @@ ReActAgent agent =
 
 <Tip>
 
-`ModelRegistry` 的字符串形式（`<provider>:<model>`）需要对应的模型扩展模块在 classpath 中。它支持 `dashscope` / `openai` / `deepseek` / `anthropic` / `gemini` / `ollama`，会自动从环境变量读取 API key（`DASHSCOPE_API_KEY` / `OPENAI_API_KEY` / `DEEPSEEK_API_KEY` / `ANTHROPIC_API_KEY` / `GEMINI_API_KEY`）。需要在长期运行场景下同时获得工作区、会话持久化、记忆压缩、子 agent 等能力，请改用 [`HarnessAgent`](/v2/zh/docs/harness/architecture) —— 它对 `ReActAgent` 做了一层薄包装，builder 接口大体一致。
+`ModelRegistry` 的字符串形式（`<provider>:<model>`）需要对应的模型扩展模块在 classpath 中。它支持 `dashscope` / `openai` / `openai-official` / `deepseek` / `anthropic` / `gemini` / `ollama`，会自动从环境变量读取 API key（`DASHSCOPE_API_KEY` / `OPENAI_API_KEY` / `DEEPSEEK_API_KEY` / `ANTHROPIC_API_KEY` / `GEMINI_API_KEY`）。需要在长期运行场景下同时获得工作区、会话持久化、记忆压缩、子 agent 等能力，请改用 [`HarnessAgent`](/v2/zh/docs/harness/architecture) —— 它对 `ReActAgent` 做了一层薄包装，builder 接口大体一致。
 
 </Tip>
-
 
 ### 参数说明
 
@@ -210,6 +210,26 @@ agent.call(List.of(new UserMessage("Hi there")),
 
 Spring Boot 完整示例见 `agentscope-examples/documentation/.../streaming/StreamingWebExample.java`。
 
+## 控制单次执行
+
+`ReActAgent` 和 `HarnessAgent` 提供 `prepareRun(messages, context)`（事件流）与 `prepareCall(messages, context)`（最终回复），返回带有唯一 `runId()` 的 `AgentRun<T>`。创建句柄不会执行 Agent；订阅一次 `stream()` 才开始执行。
+
+```java
+AgentRun<AgentEvent> run = agent.prepareRun(List.of(new UserMessage("你好")), context);
+String runId = run.runId(); // 先在应用的运行管理器中登记句柄。
+run.stream().subscribe(this::onEvent, this::onError);
+
+// 另一条请求链路可根据 runId 找到这个句柄。
+run.cancel();
+```
+
+- `cancel()` 立即取消响应式执行，支持订阅前和 session 排队期间取消。订阅者收到 `CancellationException`。取消排队中的 B 不会中断正在执行的 A，也不会让 C 越过 A 提前执行。
+- `interrupt()` / `interrupt(message)` 请求已获得执行位置的调用在协作检查点中断。ReActAgent 返回中断恢复消息后，句柄正常完成；若尚未获得执行位置，则只取消这次排队调用。
+- `status()` 返回 `CREATED`、`QUEUED`、`RUNNING`、`COMPLETED`、`FAILED` 或 `CANCELLED`。`QUEUED` 包含进入 Core 生命周期前的准备阶段。`termination()` 可观察终态而不启动执行。订阅者主动取消订阅也会取消句柄。
+- 一个句柄只允许一次订阅；下一次执行需要新句柄，重复订阅会被拒绝。已结束的句柄不能中断后续调用。
+
+运行管理器负责查找、鉴权及终态清理，Agent 不登记 RuntimeContext 对象。取消不会回滚外部副作用，也不能强行终止不响应取消的阻塞工具；立即取消不保证走协作中断的恢复回复和状态保存路径。
+
 ## 中断执行（Interrupt）
 
 当需要从外部中断一个正在运行的 agent call 时（用户取消、超时、优雅停机），使用 `interrupt`：
@@ -226,11 +246,11 @@ RuntimeContext target = RuntimeContext.builder()
 // 中断该 session 正在进行的 call
 agent.interrupt(target);
 
-// 带消息中断——中断消息会被 LLM 在恢复时看到
+// 将消息附加到中断上下文
 agent.interrupt(target, new UserMessage("用户已取消操作"));
 ```
 
-中断是 **per-session** 的：只影响指定 `(userId, sessionId)` 的 in-flight call，不会波及同一 agent 上其他 session 的并发请求。
+这个便捷 API 选择指定 `(userId, sessionId)` 中当前正在执行的调用，不能选择排队中的某次调用；精确操作请使用该次执行的句柄。中断空闲 session 不产生效果。中断信号本身属于执行，不保存在 AgentState 中。
 
 **中断后的行为：**
 - 当前推理/工具执行在下一个检查点（reasoning 开始、acting 开始、streaming 每个 chunk）被拦截
@@ -298,7 +318,7 @@ agent.observe(otherAgentMsg).block();
 
 ## RuntimeContext (per-call 上下文)
 
-`RuntimeContext`（`io.agentscope.core.agent.RuntimeContext`）是 **per-call 元数据袋**：每次 `call` / `stream` 把一份实例传进去，agent 在执行期间把它绑定到自身，下游的工具、middleware、hook 都能读到同一份引用；调用结束后自动解绑。
+`RuntimeContext`（`io.agentscope.core.agent.RuntimeContext`）是 **per-call 元数据袋**。每次调用传入独立实例，工具和 middleware 通过参数接收上下文。Agent 不提供共享的当前上下文 getter，也不向共享 hook 字段注入上下文。技能仓库操作及 `HarnessAgent.promoteSkill(name, reviewerId, ctx)` 同样显式接收上下文；不带上下文的仓库操作使用默认命名空间。
 
 它**不是**持久化状态——`AgentState`（聊天上下文、压缩摘要、权限规则、tool state）才是。`RuntimeContext` 的作用是承载「当前这一次调用」相关的瞬态数据：tenant / userId / request-id、DB 连接、审计 logger、特性开关，等等。
 
@@ -333,13 +353,13 @@ RuntimeContext ctx =
 Msg result = agent.call(List.of(new UserMessage("Hi.")), ctx).block();
 ```
 
-`ReActAgent` 提供 `call` / `stream` 的 `RuntimeContext` 重载；`streamEvents` 未直接重载，需要传 context 时改用 `stream(msgs, options, ctx)` 或先在 builder 上配置全局 `toolExecutionContext`。不传 context 时框架使用 `RuntimeContext.empty()`，会话字段为 `null`，属性表为空，此时 agent 回退到 builder 上配置的 `defaultSessionId`。
+`ReActAgent` 为 `call`、`streamEvents` 和旧版 `stream` API 提供 `RuntimeContext` 重载。事件流使用 `streamEvents(msgs, ctx)` 显式传入上下文。不传 context 时框架使用 `RuntimeContext.empty()`，会话字段为 `null`，属性表为空，此时 agent 回退到 builder 上配置的 `defaultSessionId`。
 
 ### 谁能读到
 
 - **Tool**（`@Tool` 方法或 `ToolBase.callAsync`）—— 见 [Tool — 接收 Context](/v2/zh/docs/building-blocks/tool#接收-context)。
 - **Middleware**（`MiddlewareBase` 所有 hook）—— 作为第二个参数 `ctx` 直接传入。详见 [Middleware — 读取 RuntimeContext](/v2/zh/docs/building-blocks/middleware#读取-runtimecontext)。
-- **同一次调用的所有线程**—— `RuntimeContext` 内部使用 `ConcurrentMap`，hook / tool 之间可以读写同一实例做协调。
+- **同一次调用的所有线程**—— `RuntimeContext` 内部使用 `ConcurrentMap`，middleware / tool 之间可以读写同一实例做协调。
 
 ### 与持久化的关系
 

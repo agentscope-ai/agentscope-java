@@ -1,5 +1,6 @@
 ---
 title: Session Management
+zh_link: /v1/zh/docs/task/session
 ---
 
 Session enables persistent storage and recovery of Agent state, allowing conversations to maintain continuity across application runs.
@@ -473,6 +474,6 @@ redis-cli KEYS "agentscope:session:*" | xargs redis-cli DEL
 
 ## More Resources
 
-- **Complete Example**: [SessionExample.java](https://github.com/agentscope-ai/agentscope-java/blob/main/agentscope-examples/documentation/quickstart/src/main/java/io/agentscope/examples/quickstart/SessionExample.java)
+- **Complete Example**: [SessionExample.java](https://github.com/agentscope-ai/agentscope-java/blob/v1.0.11/agentscope-examples/quickstart/src/main/java/io/agentscope/examples/quickstart/SessionExample.java)
 - **State Documentation**: [state.md](/v1/en/docs/task/state)
 - **Agent Configuration**: [agent-config.md](/v1/en/docs/task/agent-config)

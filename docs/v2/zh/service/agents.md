@@ -1,5 +1,6 @@
 ---
 title: "注册或者创建 Agent"
+en_link: /v2/en/service/agents
 ---
 
 <Note>
@@ -19,7 +20,7 @@ title: "注册或者创建 Agent"
 ## 界面导览
 
 <Frame caption="当前控制台截图，使用固定演示数据。">
-  <img src="/imgs/service/agents.png" alt="Agent 目录与 Managed、Hosted、External 筛选" />
+  <img src="/v2/assets/imgs/service/agents.png" alt="Agent 目录与 Managed、Hosted、External 筛选" />
 </Frame>
 
 顶部筛选用于区分运行方式，卡片说明 Agent 的用途。点击卡片进入配置；需要新能力时点击 **New agent**。示例中三类 Agent 并列展示，实际可用性仍需检查各自的运行环境。

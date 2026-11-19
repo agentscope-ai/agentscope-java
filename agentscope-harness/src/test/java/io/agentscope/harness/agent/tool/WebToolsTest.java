@@ -16,6 +16,7 @@
 
 package io.agentscope.harness.agent.tool;
 
+import static io.agentscope.harness.agent.tool.ToolResultAssertions.assertText;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -94,8 +95,36 @@ class WebToolsTest {
         server.start();
         try {
             String url = "http://127.0.0.1:" + server.getAddress().getPort() + "/";
-            String out = new WebTools.WebFetchTool().webFetch(url, null);
+            String out =
+                    assertText(
+                            new WebTools.WebFetchTool().webFetch(url, null),
+                            ToolResultState.SUCCESS);
             assertTrue(out.contains("hello from http/1.1"));
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
+    void non2xxResponseIsAToolErrorAndKeepsStatusAndBody() throws Exception {
+        HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        server.createContext(
+                "/missing",
+                exchange -> {
+                    byte[] body = "resource not found".getBytes(StandardCharsets.UTF_8);
+                    exchange.sendResponseHeaders(404, body.length);
+                    try (OutputStream os = exchange.getResponseBody()) {
+                        os.write(body);
+                    }
+                });
+        server.start();
+        try {
+            String url = "http://127.0.0.1:" + server.getAddress().getPort() + "/missing";
+            String output =
+                    assertText(
+                            new WebTools.WebFetchTool().webFetch(url, null), ToolResultState.ERROR);
+            assertTrue(output.contains("status=404"));
+            assertTrue(output.contains("resource not found"));
         } finally {
             server.stop(0);
         }
@@ -124,7 +153,10 @@ class WebToolsTest {
             HttpClient custom =
                     HttpClient.newBuilder().version(HttpClient.Version.HTTP_1_1).build();
             String url = "http://127.0.0.1:" + server.getAddress().getPort() + "/";
-            String out = new WebTools.WebFetchTool(custom).webFetch(url, null);
+            String out =
+                    assertText(
+                            new WebTools.WebFetchTool(custom).webFetch(url, null),
+                            ToolResultState.SUCCESS);
             assertTrue(out.contains("custom client hit"));
         } finally {
             server.stop(0);

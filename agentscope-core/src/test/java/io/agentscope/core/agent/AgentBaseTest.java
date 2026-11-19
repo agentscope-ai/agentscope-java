@@ -18,6 +18,7 @@ package io.agentscope.core.agent;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.agent.test.TestConstants;
@@ -51,6 +52,9 @@ import reactor.core.scheduler.Schedulers;
  */
 @DisplayName("AgentBase Tests")
 class AgentBaseTest {
+
+    /** Mirrors AgentBase's private MAX_AGENT_ID_LENGTH, documented on normalizeAgentId. */
+    private static final int MAX_AGENT_ID_LENGTH = 255;
 
     private TestAgent agent;
 
@@ -128,6 +132,43 @@ class AgentBaseTest {
                 agent.getAgentId(),
                 agent2.getAgentId(),
                 "Different agents should have different IDs");
+    }
+
+    @Test
+    @DisplayName("Should reject agent id consisting only of dots")
+    void testNormalizeAgentIdAllDotsRejected() {
+        for (String allDots : new String[] {".", "..", "..."}) {
+            IllegalArgumentException exception =
+                    assertThrows(
+                            IllegalArgumentException.class,
+                            () -> AgentBase.normalizeAgentId(allDots),
+                            "All-dots agent id '" + allDots + "' should be rejected");
+            assertTrue(
+                    exception.getMessage().contains("all dots"),
+                    "Error message should explain the all-dots rule");
+        }
+    }
+
+    @Test
+    @DisplayName("Should reject agent id longer than 255 characters, accepting exactly 255")
+    void testNormalizeAgentIdLengthLimit() {
+        // Exactly at the limit is still valid
+        String atLimit = "a".repeat(MAX_AGENT_ID_LENGTH);
+        assertEquals(
+                atLimit,
+                AgentBase.normalizeAgentId(atLimit),
+                "Agent id at the max length should be accepted");
+
+        // One over the limit is rejected
+        String overLimit = "a".repeat(MAX_AGENT_ID_LENGTH + 1);
+        IllegalArgumentException exception =
+                assertThrows(
+                        IllegalArgumentException.class,
+                        () -> AgentBase.normalizeAgentId(overLimit),
+                        "Agent id exceeding the max length should be rejected");
+        assertTrue(
+                exception.getMessage().contains(String.valueOf(MAX_AGENT_ID_LENGTH)),
+                "Error message should state the max length");
     }
 
     @Test

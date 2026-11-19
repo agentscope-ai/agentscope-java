@@ -21,7 +21,6 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import java.util.List;
-import java.util.Map;
 
 /**
  * OpenAI message DTO.
@@ -97,19 +96,6 @@ public class OpenAIMessage {
     @JsonProperty("refusal")
     private String refusal;
 
-    /**
-     * Cache control configuration for prompt caching.
-     *
-     * <p>Tri-state: {@code null} means "not specified" (the automatic cache-control strategy may
-     * add {@code {"type": "ephemeral"}}); a non-empty map is an explicit {@code cache_control}
-     * value; an empty map is the explicit "no cache" sentinel — combined with
-     * {@link JsonInclude.Include#NON_EMPTY} it is serialized away, so the API receives no
-     * {@code cache_control} field and therefore performs no caching.
-     */
-    @JsonProperty("cache_control")
-    @JsonInclude(JsonInclude.Include.NON_EMPTY)
-    private Map<String, String> cacheControl;
-
     public OpenAIMessage() {}
 
     public String getRole() {
@@ -174,14 +160,6 @@ public class OpenAIMessage {
 
     public void setRefusal(String refusal) {
         this.refusal = refusal;
-    }
-
-    public Map<String, String> getCacheControl() {
-        return cacheControl;
-    }
-
-    public void setCacheControl(Map<String, String> cacheControl) {
-        this.cacheControl = cacheControl;
     }
 
     /**
@@ -281,11 +259,6 @@ public class OpenAIMessage {
 
         public Builder refusal(String refusal) {
             message.setRefusal(refusal);
-            return this;
-        }
-
-        public Builder cacheControl(Map<String, String> cacheControl) {
-            message.setCacheControl(cacheControl);
             return this;
         }
 

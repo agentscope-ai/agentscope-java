@@ -1,5 +1,6 @@
 ---
 title: "快速开始"
+en_link: /v2/en/service/first-session
 ---
 
 <Note>
@@ -35,7 +36,7 @@ title: "快速开始"
 检查回复是否包含负责人、期限及“评审时间待确认”，继续追问“还缺少哪些信息？”。刷新后重新打开这个 Chat，确认两轮历史保留。
 
 <Frame caption="Chat 界面示例，使用固定演示数据；实际 Agent 名称和消息以本教程输入为准。">
-  <img src="/imgs/service/chat.png" alt="在控制台选择 Agent 并进行多轮对话" />
+  <img src="/v2/assets/imgs/service/chat.png" alt="在控制台选择 Agent 并进行多轮对话" />
 </Frame>
 
 ## 2. 将 Agent 作为 API 服务发布

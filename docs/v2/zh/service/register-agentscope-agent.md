@@ -1,5 +1,6 @@
 ---
 title: "AgentScope 框架：注册应用"
+en_link: /v2/en/service/register-agentscope-agent
 ---
 
 <Note>

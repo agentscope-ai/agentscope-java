@@ -1,6 +1,7 @@
 ---
 title: "Enterprise operations: resolve order fulfillment exceptions"
 description: "Coordinate independently deployed AgentScope applications across orders, inventory, logistics, and after-sales systems."
+zh_link: /v2/zh/service/cases/order-fulfillment
 ---
 
 <Note>
@@ -13,7 +14,7 @@ All five Agents, including the Leader, are **AgentScope Java applications regist
 
 ## Prepare data and connectivity
 
-Download the [fixed business dataset](/examples/service/order-fulfillment/business-data.json.txt) as `business-data.json`. It contains three fictional orders, inventory, logistics, and policies for tool development and acceptance. It is not a running OMS/WMS/TMS service or a complete Agent application.
+Download the [fixed business dataset](/v2/assets/examples/service/order-fulfillment/business-data.json.txt) as `business-data.json`. It contains three fictional orders, inventory, logistics, and policies for tool development and acceptance. It is not a running OMS/WMS/TMS service or a complete Agent application.
 
 Prepare Java 17+, matching AgentScope and `agentscope-extensions-aistio` versions, a model, Service connectivity, and application credentials for the target Namespace. For standard Service deployments, start with [Java HTTP registration](/v2/en/service/external-agent).
 

@@ -1,5 +1,6 @@
 ---
 title: Connect a Runtime Host
+zh_link: /v2/zh/service/runtime-host
 ---
 
 <Note>

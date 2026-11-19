@@ -1,5 +1,6 @@
 ---
 title: "Team: create and dispatch collaborative work"
+zh_link: /v2/zh/service/create-team
 ---
 
 <Note>
@@ -13,7 +14,7 @@ Use a Team to let a Leader select members, delegate work and consolidate results
 Prepare two task-capable Agents: a notes assistant to organize material and a reviewer to check evidence and missing information. Create a Team in **DESIGN → Teams**, select the notes assistant as **Leader Agent**, and add the reviewer under **Additional members**.
 
 <Frame caption="Team creation with fixed demonstration data.">
-  <img src="/imgs/service/teams.png" alt="Select a Team Leader and collaborating members" />
+  <img src="/v2/assets/imgs/service/teams.png" alt="Select a Team Leader and collaborating members" />
 </Frame>
 
 Use explicit coordination instructions:

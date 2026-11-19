@@ -1,5 +1,6 @@
 ---
 title: MsgHub
+en_link: /v1/en/docs/task/msghub
 ---
 
 MsgHub 是 AgentScope 中用于多智能体对话的消息广播中心。它管理一组智能体之间的消息分发，无需手动编写消息传递代码。

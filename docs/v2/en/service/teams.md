@@ -1,5 +1,6 @@
 ---
 title: "Team: overview and creation"
+zh_link: /v2/zh/service/teams
 ---
 
 <Note>
@@ -19,7 +20,7 @@ Start with the [practical guide](/v2/en/service/create-team) for creation or con
 ## Interface tour
 
 <Frame caption="Current console UI with fixed demonstration data.">
-  <img src="/imgs/service/teams.png" alt="Team creation with leader and member selection" />
+  <img src="/v2/assets/imgs/service/teams.png" alt="Team creation with leader and member selection" />
 </Frame>
 
 After describing the team’s purpose, select its entry point in **Leader Agent** and collaborators in **Additional members**. Expand **Advanced coordination instructions** when you need to define delegation rules.

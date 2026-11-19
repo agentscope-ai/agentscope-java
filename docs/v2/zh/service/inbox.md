@@ -1,5 +1,6 @@
 ---
 title: "控制台信箱：通知、审批与验收"
+en_link: /v2/en/service/inbox
 ---
 
 <Note>
@@ -13,7 +14,7 @@ Inbox 汇集与你相关的工作更新、审批和结果验收。每天先处�
 ## 界面导览
 
 <Frame caption="当前控制台截图，使用固定演示数据。">
-  <img src="/imgs/service/inbox.png" alt="Inbox 中的待验收通知与关联 Issue" />
+  <img src="/v2/assets/imgs/service/inbox.png" alt="Inbox 中的待验收通知与关联 Issue" />
 </Frame>
 
 先在通知列表中选择需要处理的条目，再在右侧阅读关联 Issue 的说明和交付结果。阅读通知与完成验收是两件事；检查结果后再使用验收操作。

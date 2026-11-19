@@ -1,5 +1,6 @@
 ---
 title: "AgentScope framework: register an application"
+zh_link: /v2/zh/service/register-agentscope-agent
 ---
 
 <Note>

@@ -18,6 +18,7 @@ package io.agentscope.extensions.sandbox.kubernetes.client.crd;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
+import java.util.List;
 import java.util.Map;
 
 /** Spec for {@link SandboxClaim}. */
@@ -33,6 +34,23 @@ public class SandboxClaimSpec {
 
     @JsonProperty("additionalPodMetadata")
     private AdditionalPodMetadata additionalPodMetadata;
+
+    @JsonProperty("env")
+    @JsonInclude(JsonInclude.Include.NON_EMPTY)
+    private List<EnvVar> env;
+
+    public List<EnvVar> getEnv() {
+        return env;
+    }
+
+    public void setEnv(List<EnvVar> env) {
+        this.env = env == null ? null : List.copyOf(env);
+    }
+
+    /** Creation-time environment for a container; null containerName targets the first main container. */
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    public record EnvVar(String name, String value, String containerName) {}
 
     public SandboxClaimSpec() {}
 

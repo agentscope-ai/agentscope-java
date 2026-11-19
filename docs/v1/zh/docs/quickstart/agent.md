@@ -1,5 +1,6 @@
 ---
 title: 智能体
+en_link: /v1/en/docs/quickstart/agent
 ---
 
 AgentScope 提供了开箱即用的 ReAct 智能体 `ReActAgent` 供开发者使用。

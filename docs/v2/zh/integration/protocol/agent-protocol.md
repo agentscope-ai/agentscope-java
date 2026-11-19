@@ -1,5 +1,6 @@
 ---
 title: Agent Protocol
+en_link: /v2/en/integration/protocol/agent-protocol
 ---
 
 `agentscope-extensions-agent-protocol` 把 AgentScope 的 [Harness Agent](/v2/zh/docs/harness/architecture) 暴露为 [Agent Protocol](https://agentprotocol.ai/) 标准 HTTP 接口，让外部系统（CI、其他 Agent 平台、自动化任务）可以用统一的方式提交"任务"，无需关心你的 Agent 实现细节。
@@ -214,6 +215,10 @@ RuntimeContext.builder()
 
 成功响应：`{ "task_id", "status": "pending" }`。
 
+在同一个 `AgentProtocolTaskStore` 实例内，任务执行期间并发提交相同的 `task_id`
+不会启动另一次执行。不同任务 ID 可以独立执行。提交已经完成的任务 ID 会返回
+HTTP 409。这一进程内协调机制不对不同服务副本之间的提交进行去重。
+
 ### 轮询 / 等待 / 取消
 
 | 方法 | 路径 | 说明 |
@@ -266,7 +271,7 @@ RuntimeContext.builder()
 {
   "decisions": [
     { "toolCallId": "call-1", "approved": true },
-    { "toolCallId": "call-2", "approved": false }
+    { "toolCallId": "call-2", "approved": false, "reason": "not allowed in production" }
   ]
 }
 ```

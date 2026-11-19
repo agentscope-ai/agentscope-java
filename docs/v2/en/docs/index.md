@@ -2,7 +2,13 @@
 title: What's AgentScope 2.0?
 description: Harness engineering, enterprise-grade distributed deployment, and a redesigned
   foundation.
+zh_link: /v2/zh/docs/index
 ---
+
+<Note>
+This is the 2.0 documentation, based on the `v2.0.4` release tag. Use AgentScope Java `2.0.4` with these SDK examples. See [dev](/dev/en/intro) for the current development APIs.
+</Note>
+
 
 AgentScope Java 2.0 is a major step up from a "build an agent" toolkit toward a complete platform for **running agents in production**. The improvements fall into three focus areas, each solving a distinct problem.
 

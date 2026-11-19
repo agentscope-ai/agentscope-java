@@ -32,10 +32,12 @@ import io.agentscope.harness.agent.team.TeamWakeups;
 import io.agentscope.harness.agent.tool.TeamTool;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.EnumSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Queue;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
@@ -47,7 +49,9 @@ import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
 
 /**
- * Injects AgentTeams context into the system prompt and exposes a role-clipped {@link TeamTool}.
+ * Injects AgentTeams context and exposes a role-clipped {@link TeamTool}: stable team guidance
+ * goes into the system prompt head, while volatile state (roster statuses, board digest, buffered
+ * notices) rides a synthetic tail message so the head stays byte-stable across steps.
  *
  * <p>Optional {@link #wireMessageBus(MessageBus, String)} pushes mailbox wakeups into the session
  * inbox path used by {@link InboxMiddleware}.
@@ -106,6 +110,12 @@ public final class TeamsMiddleware implements HarnessRuntimeMiddleware {
         if (memberKey != null) {
             BY_MEMBER.put(memberKey, this);
         }
+    }
+
+    /** Narrow declaration: subclasses overriding more hooks must extend this set. */
+    @Override
+    public Set<ExtensionPoint> activePoints() {
+        return EnumSet.of(ExtensionPoint.ON_AGENT, ExtensionPoint.ON_REASONING);
     }
 
     /** Registers this middleware under a runtime session id for TeamEvent delivery. */
@@ -268,13 +278,13 @@ public final class TeamsMiddleware implements HarnessRuntimeMiddleware {
                         ? "A team event arrived. Call listMessages and listTasks to see the current"
                                 + " board and mailbox."
                         : notice;
-        return "<system-notification>Team event for "
+        return "<system-reminder>Team event for "
                 + role
                 + " in team "
                 + team
                 + ":\n\n"
                 + body
-                + "</system-notification>";
+                + "</system-reminder>";
     }
 
     /**
@@ -394,10 +404,14 @@ public final class TeamsMiddleware implements HarnessRuntimeMiddleware {
             RuntimeContext ctx,
             ReasoningInput input,
             Function<ReasoningInput, Flux<AgentEvent>> next) {
-        String section = renderTeamSection(teamContext);
+        String section = renderTeamGuidance(teamContext);
         String buffered = drainPendingNotices();
-        List<Msg> rebuilt =
-                prependToSystemMessage(input.messages(), section + boardDigest + buffered);
+        List<Msg> rebuilt = prependToSystemMessage(input.messages(), section);
+        Msg stateMsg = buildTeamStateMsg(teamContext, boardDigest, buffered);
+        if (stateMsg != null) {
+            rebuilt = new ArrayList<>(rebuilt);
+            rebuilt.add(stateMsg);
+        }
         return next.apply(new ReasoningInput(rebuilt, input.tools(), input.options()));
     }
 
@@ -510,8 +524,17 @@ public final class TeamsMiddleware implements HarnessRuntimeMiddleware {
         return sb.toString();
     }
 
-    /** Renders the system-prompt team section (also used by BYO {@code team_join} kickoff). */
+    /**
+     * Renders the full team section: stable guidance plus the roster. Also used by BYO {@code
+     * team_join} kickoff. The middleware itself prepends only {@link #renderTeamGuidance} to the
+     * system head and ships the roster (member statuses are runtime state) in the tail message.
+     */
     public static String renderTeamSection(TeamContext ctx) {
+        return renderTeamGuidance(ctx) + renderRoster(ctx);
+    }
+
+    /** Renders the per-configuration stable team guidance: identity, objective, rules, role discipline. */
+    private static String renderTeamGuidance(TeamContext ctx) {
         StringBuilder sb = new StringBuilder();
         sb.append("\n## Agent Team\n\n");
         sb.append("You are participating in Agent Team **")
@@ -525,21 +548,6 @@ public final class TeamsMiddleware implements HarnessRuntimeMiddleware {
         sb.append(".\n\n");
         if (ctx.objective() != null && !ctx.objective().isBlank()) {
             sb.append("**Objective:** ").append(ctx.objective()).append("\n\n");
-        }
-        if (ctx.members() != null && !ctx.members().isEmpty()) {
-            sb.append(
-                    "**Roster** (use the member name in bold for every owner / member / to"
-                            + " argument — never the agent name):\n");
-            for (TeamContext.MemberSnapshot m : ctx.members()) {
-                sb.append("- **")
-                        .append(nullToEmpty(m.name()))
-                        .append("** — agent ")
-                        .append(nullToEmpty(m.agentRef()))
-                        .append(", ")
-                        .append(nullToEmpty(m.status()))
-                        .append('\n');
-            }
-            sb.append('\n');
         }
         sb.append(
                 "Coordinate **only** via registered tools whose names match the actions below (for"
@@ -645,6 +653,70 @@ public final class TeamsMiddleware implements HarnessRuntimeMiddleware {
             }
         }
         return sb.toString();
+    }
+
+    /**
+     * Renders the roster snapshot. Member statuses change as teammates work, so this travels in
+     * the tail state message, not the system head. Empty when the context carries no members.
+     */
+    private static String renderRoster(TeamContext ctx) {
+        if (ctx.members() == null || ctx.members().isEmpty()) {
+            return "";
+        }
+        StringBuilder sb = new StringBuilder();
+        sb.append(
+                "**Roster** (use the member name in bold for every owner / member / to"
+                        + " argument — never the agent name):\n");
+        for (TeamContext.MemberSnapshot m : ctx.members()) {
+            sb.append("- **")
+                    .append(nullToEmpty(m.name()))
+                    .append("** — agent ")
+                    .append(nullToEmpty(m.agentRef()))
+                    .append(", ")
+                    .append(nullToEmpty(m.status()))
+                    .append('\n');
+        }
+        sb.append('\n');
+        return sb.toString();
+    }
+
+    /**
+     * Builds the synthetic tail message carrying the volatile team state: the roster snapshot, the
+     * lead's board digest, and notices buffered while no session was bound. Returns {@code null}
+     * when all parts are empty.
+     *
+     * <p>Role and metadata mirror the harness reminder messages: the layout places it after the
+     * conversation, and compaction keeps synthetic messages out of the durable summary.
+     */
+    private static Msg buildTeamStateMsg(TeamContext ctx, String boardDigest, String notices) {
+        String roster = renderRoster(ctx);
+        boolean hasDigest = !boardDigest.isEmpty();
+        boolean hasNotices = !notices.isEmpty();
+        if (roster.isEmpty() && !hasDigest && !hasNotices) {
+            return null;
+        }
+        StringBuilder sb = new StringBuilder("<RUNTIME_STATE>\n");
+        if (!roster.isEmpty()) {
+            sb.append(roster.stripTrailing()).append('\n');
+        }
+        if (hasDigest) {
+            sb.append(boardDigest.stripTrailing()).append('\n');
+        }
+        if (hasNotices) {
+            sb.append(notices.stripTrailing()).append('\n');
+        }
+        sb.append("</RUNTIME_STATE>");
+        return Msg.builder()
+                .role(MsgRole.USER)
+                .name("system")
+                .content(TextBlock.builder().text(sb.toString()).build())
+                .metadata(
+                        Map.of(
+                                Msg.METADATA_SYNTHETIC,
+                                true,
+                                Msg.METADATA_REMINDER_KIND,
+                                "team_state"))
+                .build();
     }
 
     static List<Msg> prependToSystemMessage(List<Msg> messages, String extra) {

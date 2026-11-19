@@ -1,5 +1,6 @@
 ---
 title: Overview
+zh_link: /v2/zh/integration/protocol/overview
 ---
 
 AgentScope offers a few protocol adapters to let an Agent talk to the outside world. Each solves a different problem:

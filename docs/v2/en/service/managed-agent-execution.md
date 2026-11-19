@@ -1,5 +1,6 @@
 ---
 title: "How Managed execution works"
+zh_link: /v2/zh/service/managed-agent-execution
 ---
 
 <Note>

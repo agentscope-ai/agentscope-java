@@ -1,5 +1,6 @@
 ---
 title: "Workspaces: shared instructions and capabilities"
+zh_link: /v2/zh/service/workspaces
 ---
 
 <Note>
@@ -11,7 +12,7 @@ This is preview documentation. The official release is not yet available.
 ## Interface tour
 
 <Frame caption="Current console UI with fixed demonstration data.">
-  <img src="/imgs/service/workspaces.png" alt="Shared workspace list" />
+  <img src="/v2/assets/imgs/service/workspaces.png" alt="Shared workspace list" />
 </Frame>
 
 Open a workspace to inspect its shared instructions, skills and tools, or choose **New workspace** to create one. After linking it to an Agent, verify those resources through that Agent’s actual workflow.

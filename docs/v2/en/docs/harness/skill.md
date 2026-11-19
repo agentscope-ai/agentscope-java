@@ -1,6 +1,7 @@
 ---
 title: Skill
 description: Four-layer skill composition, skill marketplaces, the self-learning loop
+zh_link: /v2/zh/docs/harness/skill
 ---
 
 A skill is a packaged capability: a directory with a `SKILL.md` (purpose + instructions the agent reads), optional reference docs, scripts, samples. Hand it to the agent and it will use it when relevant.

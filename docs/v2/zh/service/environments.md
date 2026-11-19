@@ -1,5 +1,6 @@
 ---
 title: "Environments：配置执行位置"
+en_link: /v2/en/service/environments
 ---
 
 <Note>
@@ -11,7 +12,7 @@ title: "Environments：配置执行位置"
 ## 界面导览
 
 <Frame caption="当前控制台截图，使用固定演示数据。">
-  <img src="/imgs/service/environments.png" alt="Local 与 self_hosted Environment 示例" />
+  <img src="/v2/assets/imgs/service/environments.png" alt="Local 与 self_hosted Environment 示例" />
 </Frame>
 
 先按执行位置区分环境，再进入对应配置。图中 **Local development** 用于本机开发，**Research worker** 是 self_hosted 配置示例；创建环境记录后仍需启动并连接对应 Worker。

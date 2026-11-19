@@ -1,5 +1,6 @@
 ---
 title: "Hosted: connect and create an Agent"
+zh_link: /v2/zh/service/connect-hosted-agent
 ---
 
 <Note>

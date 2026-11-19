@@ -1,6 +1,7 @@
 ---
 title: 快速开始
 description: 快速上手 AgentScope Java 2.0 —— 用 HarnessAgent 跑通第一个长期运行的智能体
+en_link: /v2/en/docs/quickstart
 ---
 
 ## 安装
@@ -22,7 +23,7 @@ AgentScope Java 需要 JDK 17 及以上版本，构建工具推荐 Maven 3.9+。
 
 <Note>
 
-把 `${agentscope.version}` 替换为最新版本号即可，最新版本请参考 [Release Notes](/v2/zh/docs/others/release-notes)。
+本版本文档中的 `${agentscope.version}` 请使用 `2.0.4`，该版本的变更请参考 [Release Notes](/v2/zh/docs/others/release-notes)。
 
 </Note>
 

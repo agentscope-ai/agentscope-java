@@ -1,5 +1,0 @@
-# "experimental" profile: enables not-yet-production features
-# (Runtime Host execution and sandbox provisioning).
-# Usage: helm install aistio ./helm/aistio -f profiles/experimental.yaml
-experimental:
-  enabled: true

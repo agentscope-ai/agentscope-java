@@ -17,6 +17,7 @@ package io.agentscope.extensions.model.anthropic.formatter;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.anthropic.models.messages.ContentBlockParam;
@@ -25,18 +26,23 @@ import com.anthropic.models.messages.ToolResultBlockParam;
 import com.anthropic.models.messages.ToolUseBlockParam;
 import io.agentscope.core.message.Base64Source;
 import io.agentscope.core.message.ContentBlock;
+import io.agentscope.core.message.DocumentBlock;
+import io.agentscope.core.message.FileIdSource;
 import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ThinkingBlock;
 import io.agentscope.core.message.ToolResultBlock;
+import io.agentscope.core.message.ToolResultState;
 import io.agentscope.core.message.ToolUseBlock;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 
 /** Unit tests for AnthropicMessageConverter. */
 class AnthropicMessageConverterTest extends AnthropicFormatterTestBase {
@@ -81,6 +87,59 @@ class AnthropicMessageConverterTest extends AnthropicFormatterTestBase {
     }
 
     @Test
+    void testDocumentBlockWithAnthropicFileIdBecomesDocumentBlock() {
+        Msg msg =
+                Msg.builder()
+                        .name("User")
+                        .role(MsgRole.USER)
+                        .content(
+                                List.of(
+                                        DocumentBlock.builder()
+                                                .source(
+                                                        FileIdSource.builder()
+                                                                .provider("anthropic")
+                                                                .fileId("file-abc")
+                                                                .build())
+                                                .name("report.pdf")
+                                                .build()))
+                        .build();
+
+        List<MessageParam> result = converter.convert(List.of(msg));
+
+        assertEquals(1, result.size());
+        List<ContentBlockParam> blocks = result.get(0).content().asBlockParams();
+        assertEquals(1, blocks.size());
+        assertTrue(blocks.get(0).isDocument());
+        assertEquals("file-abc", blocks.get(0).asDocument().source().asFile().fileId());
+        assertEquals("report.pdf", blocks.get(0).asDocument().title().orElseThrow());
+    }
+
+    @Test
+    void testDocumentBlockRejectsNonAnthropicFileIdProvider() {
+        Msg msg =
+                Msg.builder()
+                        .name("User")
+                        .role(MsgRole.USER)
+                        .content(
+                                List.of(
+                                        DocumentBlock.builder()
+                                                .source(
+                                                        FileIdSource.builder()
+                                                                .provider("dashscope")
+                                                                .fileId("file-abc")
+                                                                .build())
+                                                .name("report.pdf")
+                                                .build()))
+                        .build();
+
+        IllegalArgumentException error =
+                assertThrows(IllegalArgumentException.class, () -> converter.convert(List.of(msg)));
+
+        assertTrue(error.getMessage().contains("Failed to process DocumentBlock"));
+        assertTrue(error.getCause().getMessage().contains("Anthropic file id"));
+    }
+
+    @Test
     void testConvertAssistantMessage() {
         Msg msg =
                 Msg.builder()
@@ -94,6 +153,30 @@ class AnthropicMessageConverterTest extends AnthropicFormatterTestBase {
         assertEquals(1, result.size());
         MessageParam param = result.get(0);
         assertEquals(MessageParam.Role.ASSISTANT, param.role());
+    }
+
+    @Test
+    void testAssistantCitationMetadataIsNotReplayed() {
+        Msg msg =
+                Msg.builder()
+                        .name("Assistant")
+                        .role(MsgRole.ASSISTANT)
+                        .content(TextBlock.builder().text("Cited answer").build())
+                        .metadata(
+                                Map.of(
+                                        AnthropicCitationConverter.MD_CITATIONS,
+                                        List.of(
+                                                Map.of(
+                                                        "type",
+                                                        "page_location",
+                                                        "cited_text",
+                                                        "Source text"))))
+                        .build();
+
+        ContentBlockParam converted =
+                converter.convert(List.of(msg)).get(0).content().asBlockParams().get(0);
+
+        assertTrue(converted.asText().citations().isEmpty());
     }
 
     @Test
@@ -232,6 +315,51 @@ class AnthropicMessageConverterTest extends AnthropicFormatterTestBase {
         // Note: input validation happens during API calls, not during conversion
     }
 
+    @ParameterizedTest
+    @EnumSource(ToolResultState.class)
+    void toolResultFailureStatesReachProviderWithOriginalContent(ToolResultState state) {
+        var output =
+                List.<ContentBlock>of(
+                        TextBlock.builder().text("diagnostic").build(),
+                        ImageBlock.builder()
+                                .source(
+                                        Base64Source.builder()
+                                                .mediaType("image/png")
+                                                .data("aGVsbG8=")
+                                                .build())
+                                .build());
+        var msg =
+                Msg.builder()
+                        .role(MsgRole.TOOL)
+                        .content(
+                                ToolResultBlock.builder()
+                                        .id("call_state")
+                                        .name("search")
+                                        .state(state)
+                                        .output(output)
+                                        .build())
+                        .build();
+        var converted =
+                converter
+                        .convert(List.of(msg))
+                        .get(0)
+                        .content()
+                        .asBlockParams()
+                        .get(0)
+                        .asToolResult();
+        boolean failed =
+                state == ToolResultState.ERROR
+                        || state == ToolResultState.DENIED
+                        || state == ToolResultState.INTERRUPTED;
+        assertEquals(failed, converted.isError().orElse(false));
+        assertEquals(failed, converted.isError().isPresent());
+        assertEquals("call_state", converted.toolUseId());
+        var blocks = converted.content().orElseThrow().asBlocks();
+        assertEquals(2, blocks.size());
+        assertEquals("diagnostic", blocks.get(0).asText().text());
+        assertTrue(blocks.get(1).isImage());
+    }
+
     @Test
     void testConvertToolResultBlockString() {
         Msg msg =
@@ -323,7 +451,43 @@ class AnthropicMessageConverterTest extends AnthropicFormatterTestBase {
     }
 
     @Test
-    void testConvertParallelToolCallsToAlternatingMessages() {
+    void testConvertToolResultBlockWithPdfDocumentBlock() {
+        DocumentBlock pdf =
+                DocumentBlock.builder()
+                        .name("tool-output.pdf")
+                        .mimeType("application/pdf")
+                        .source(
+                                Base64Source.builder()
+                                        .data("JVBERi0xLjQK")
+                                        .mediaType("application/pdf")
+                                        .build())
+                        .build();
+        Msg msg =
+                Msg.builder()
+                        .name("Tool")
+                        .role(MsgRole.TOOL)
+                        .content(
+                                ToolResultBlock.builder()
+                                        .id("call_pdf")
+                                        .name("read_pdf")
+                                        .output(List.of(pdf))
+                                        .build())
+                        .build();
+
+        List<MessageParam> result = converter.convert(List.of(msg));
+
+        ToolResultBlockParam toolResult =
+                result.get(0).content().asBlockParams().get(0).asToolResult();
+        var toolContent = toolResult.content().orElseThrow().asBlocks();
+        assertEquals(1, toolContent.size());
+        assertTrue(toolContent.get(0).isDocument());
+        assertEquals("JVBERi0xLjQK", toolContent.get(0).asDocument().source().asBase64().data());
+        assertTrue(
+                toolContent.get(0).asDocument().citations().orElseThrow().enabled().orElseThrow());
+    }
+
+    @Test
+    void testPreserveParallelToolBatch() {
         Msg userMsg =
                 Msg.builder()
                         .name("User")
@@ -384,36 +548,142 @@ class AnthropicMessageConverterTest extends AnthropicFormatterTestBase {
                                                 .build()))
                         .build();
 
-        List<MessageParam> result =
-                converter.convert(List.of(userMsg, assistantMsg, toolResultsMsg1, toolResultsMsg2));
+        Msg combinedResults =
+                Msg.builder()
+                        .role(MsgRole.TOOL)
+                        .content(
+                                List.of(
+                                        toolResultsMsg1.getContent().get(0),
+                                        toolResultsMsg2.getContent().get(0)))
+                        .build();
+        Msg mixedResults =
+                Msg.builder()
+                        .role(MsgRole.TOOL)
+                        .content(
+                                List.of(
+                                        TextBlock.builder().text("Both cities checked.").build(),
+                                        toolResultsMsg1.getContent().get(0),
+                                        toolResultsMsg2.getContent().get(0)))
+                        .build();
 
-        assertEquals(5, result.size());
-        assertEquals(MessageParam.Role.USER, result.get(0).role());
+        Msg mixedFirstResult =
+                Msg.builder()
+                        .role(MsgRole.TOOL)
+                        .content(
+                                List.of(
+                                        TextBlock.builder().text("Both cities checked.").build(),
+                                        toolResultsMsg1.getContent().get(0)))
+                        .build();
+
+        for (List<Msg> results :
+                List.of(
+                        List.of(toolResultsMsg1, toolResultsMsg2),
+                        List.of(combinedResults),
+                        List.of(mixedResults),
+                        List.of(mixedFirstResult, toolResultsMsg2))) {
+            List<Msg> history = new ArrayList<>(List.of(userMsg, assistantMsg));
+            history.addAll(results);
+            // A subsequent user turn and another batch must stay outside this result batch.
+            history.addAll(List.of(userMsg, assistantMsg, combinedResults));
+            List<MessageParam> result = converter.convert(history);
+
+            assertEquals(6, result.size());
+            assertEquals(MessageParam.Role.USER, result.get(0).role());
+            assertEquals(MessageParam.Role.ASSISTANT, result.get(1).role());
+            List<ContentBlockParam> calls = result.get(1).content().asBlockParams();
+            assertEquals(3, calls.size());
+            assertEquals(
+                    "I will check both cities at the same time.", calls.get(0).asText().text());
+            assertEquals("call_1", calls.get(1).asToolUse().id());
+            assertEquals("call_2", calls.get(2).asToolUse().id());
+            assertEquals(MessageParam.Role.USER, result.get(2).role());
+            List<ContentBlockParam> blocks = result.get(2).content().asBlockParams();
+            assertEquals(
+                    (results.get(0) == mixedResults || results.get(0) == mixedFirstResult) ? 3 : 2,
+                    blocks.size());
+            assertEquals("call_1", blocks.get(0).asToolResult().toolUseId());
+            assertEquals("call_2", blocks.get(1).asToolResult().toolUseId());
+            assertEquals(
+                    "Beijing: sunny, 28 C",
+                    blocks.get(0)
+                            .asToolResult()
+                            .content()
+                            .orElseThrow()
+                            .asBlocks()
+                            .get(0)
+                            .asText()
+                            .text());
+            assertEquals(
+                    "Hangzhou: cloudy, 30 C",
+                    blocks.get(1)
+                            .asToolResult()
+                            .content()
+                            .orElseThrow()
+                            .asBlocks()
+                            .get(0)
+                            .asText()
+                            .text());
+            if (results.get(0) == mixedResults || results.get(0) == mixedFirstResult) {
+                assertEquals("Both cities checked.", blocks.get(2).asText().text());
+            }
+            assertEquals(MessageParam.Role.USER, result.get(3).role());
+            assertEquals(1, result.get(3).content().asBlockParams().size());
+            assertEquals(MessageParam.Role.ASSISTANT, result.get(4).role());
+            assertEquals(2, result.get(5).content().asBlockParams().size());
+        }
+    }
+
+    @Test
+    void testAssistantWithClientToolResultPreservesAssistantContent() {
+        Msg mixedAssistant =
+                Msg.builder()
+                        .role(MsgRole.ASSISTANT)
+                        .content(
+                                List.of(
+                                        TextBlock.builder().text("Checking sales.").build(),
+                                        ToolUseBlock.builder()
+                                                .id("call_sales")
+                                                .name("get_sales")
+                                                .input(Map.of("store_id", "S001"))
+                                                .build(),
+                                        ToolResultBlock.builder()
+                                                .id("call_sales")
+                                                .name("get_sales")
+                                                .output(TextBlock.builder().text("100").build())
+                                                .build()))
+                        .build();
+        Msg nextAssistant =
+                Msg.builder()
+                        .role(MsgRole.ASSISTANT)
+                        .content(List.of(TextBlock.builder().text("Sales are 100.").build()))
+                        .build();
+
+        List<MessageParam> result = converter.convert(List.of(mixedAssistant, nextAssistant));
+
+        assertEquals(3, result.size());
+        assertEquals(MessageParam.Role.ASSISTANT, result.get(0).role());
+        List<ContentBlockParam> assistantBlocks = result.get(0).content().asBlockParams();
+        assertEquals(2, assistantBlocks.size());
+        assertEquals("Checking sales.", assistantBlocks.get(0).asText().text());
+        assertEquals("call_sales", assistantBlocks.get(1).asToolUse().id());
+        assertEquals(MessageParam.Role.USER, result.get(1).role());
+        List<ContentBlockParam> resultBlocks = result.get(1).content().asBlockParams();
+        assertEquals(1, resultBlocks.size());
+        assertEquals("call_sales", resultBlocks.get(0).asToolResult().toolUseId());
         assertEquals(
-                "Check Beijing and Hangzhou weather in parallel.",
-                result.get(0).content().asBlockParams().get(0).asText().text());
-        assertEquals(MessageParam.Role.ASSISTANT, result.get(1).role());
-        assertEquals(2, result.get(1).content().asBlockParams().size());
-        assertTrue(result.get(1).content().asBlockParams().get(0).isText());
+                "100",
+                resultBlocks
+                        .get(0)
+                        .asToolResult()
+                        .content()
+                        .orElseThrow()
+                        .asBlocks()
+                        .get(0)
+                        .asText()
+                        .text());
+        assertEquals(MessageParam.Role.ASSISTANT, result.get(2).role());
         assertEquals(
-                "I will check both cities at the same time.",
-                result.get(1).content().asBlockParams().get(0).asText().text());
-        assertTrue(result.get(1).content().asBlockParams().get(1).isToolUse());
-        assertEquals("call_1", result.get(1).content().asBlockParams().get(1).asToolUse().id());
-        assertEquals(MessageParam.Role.USER, result.get(2).role());
-        assertTrue(result.get(2).content().asBlockParams().get(0).isToolResult());
-        assertEquals(
-                "call_1",
-                result.get(2).content().asBlockParams().get(0).asToolResult().toolUseId());
-        assertEquals(MessageParam.Role.ASSISTANT, result.get(3).role());
-        assertEquals(1, result.get(3).content().asBlockParams().size());
-        assertTrue(result.get(3).content().asBlockParams().get(0).isToolUse());
-        assertEquals("call_2", result.get(3).content().asBlockParams().get(0).asToolUse().id());
-        assertEquals(MessageParam.Role.USER, result.get(4).role());
-        assertTrue(result.get(4).content().asBlockParams().get(0).isToolResult());
-        assertEquals(
-                "call_2",
-                result.get(4).content().asBlockParams().get(0).asToolResult().toolUseId());
+                "Sales are 100.", result.get(2).content().asBlockParams().get(0).asText().text());
     }
 
     @Test
@@ -467,15 +737,11 @@ class AnthropicMessageConverterTest extends AnthropicFormatterTestBase {
     }
 
     @Test
-    @org.junit.jupiter.api.Disabled(
-            "Stage 1 Msg.validateRoleContent rejects SYSTEM + ToolResultBlock at construction;"
-                    + " this split-message fallback is unreachable. See"
-                    + " io.agentscope.core.message.Msg#validateRoleContent.")
     void testConvertMessageWithToolResultAndRegularContent() {
         Msg msg =
                 Msg.builder()
-                        .name("System")
-                        .role(MsgRole.SYSTEM)
+                        .name("Tool")
+                        .role(MsgRole.TOOL)
                         .content(
                                 List.of(
                                         TextBlock.builder().text("Note:").build(),
@@ -488,20 +754,12 @@ class AnthropicMessageConverterTest extends AnthropicFormatterTestBase {
 
         List<MessageParam> result = converter.convert(List.of(msg));
 
-        // Should split into two messages: regular content + tool result
-        assertEquals(2, result.size());
-
-        // First message has regular content
+        assertEquals(1, result.size());
         assertEquals(MessageParam.Role.USER, result.get(0).role());
-        List<ContentBlockParam> firstBlocks = result.get(0).content().asBlockParams();
-        assertEquals(1, firstBlocks.size());
-        assertTrue(firstBlocks.get(0).isText());
-
-        // Second message has tool result
-        assertEquals(MessageParam.Role.USER, result.get(1).role());
-        List<ContentBlockParam> secondBlocks = result.get(1).content().asBlockParams();
-        assertEquals(1, secondBlocks.size());
-        assertTrue(secondBlocks.get(0).isToolResult());
+        List<ContentBlockParam> blocks = result.get(0).content().asBlockParams();
+        assertEquals(2, blocks.size());
+        assertEquals("call_123", blocks.get(0).asToolResult().toolUseId());
+        assertEquals("Note:", blocks.get(1).asText().text());
     }
 
     @Test
@@ -649,5 +907,211 @@ class AnthropicMessageConverterTest extends AnthropicFormatterTestBase {
         assertEquals(1, result.size());
         // TOOL role should be converted to USER
         assertEquals(MessageParam.Role.USER, result.get(0).role());
+    }
+
+    // ==================== Server tools ====================
+
+    private static ToolUseBlock serverToolUseBlock(String id) {
+        return ToolUseBlock.builder()
+                .id(id)
+                .name("web_search")
+                .input(Map.of("query", "AgentScope"))
+                .metadata(Map.of(ToolUseBlock.METADATA_SERVER_TOOL, true))
+                .build();
+    }
+
+    private static ToolResultBlock serverToolResultBlock(String id) {
+        String rawJson =
+                "{\"type\":\"web_search_tool_result\",\"tool_use_id\":\""
+                        + id
+                        + "\",\"content\":[{\"type\":\"web_search_result\","
+                        + "\"url\":\"https://example.com\",\"title\":\"Example\","
+                        + "\"encrypted_content\":\"enc_abc123\",\"page_age\":\"2 days\"}]}";
+        return ToolResultBlock.builder()
+                .id(id)
+                .name("web_search")
+                .output(TextBlock.builder().text("Example (https://example.com)").build())
+                .metadata(
+                        Map.of(
+                                ToolResultBlock.METADATA_SERVER_TOOL,
+                                true,
+                                AnthropicServerToolHelper.RESULT_METADATA,
+                                rawJson))
+                .build();
+    }
+
+    @Test
+    void testServerToolBlocksStayInlineInAssistantMessage() {
+        Msg assistantMsg =
+                Msg.builder()
+                        .name("Assistant")
+                        .role(MsgRole.ASSISTANT)
+                        .content(
+                                List.of(
+                                        serverToolUseBlock("srvtoolu_01"),
+                                        serverToolResultBlock("srvtoolu_01"),
+                                        TextBlock.builder().text("Based on the search...").build()))
+                        .build();
+
+        List<MessageParam> result = converter.convert(List.of(assistantMsg));
+
+        // Server tool blocks must NOT be split into separate user messages
+        assertEquals(1, result.size());
+        MessageParam param = result.get(0);
+        assertEquals(MessageParam.Role.ASSISTANT, param.role());
+
+        List<ContentBlockParam> blocks = param.content().asBlockParams();
+        assertEquals(3, blocks.size());
+
+        // server_tool_use echoed with original id and input
+        assertTrue(blocks.get(0).isServerToolUse());
+        assertEquals("srvtoolu_01", blocks.get(0).asServerToolUse().id());
+
+        // web_search_tool_result echoed verbatim from the raw JSON in metadata
+        assertTrue(blocks.get(1).isWebSearchToolResult());
+        var resultParam = blocks.get(1).asWebSearchToolResult();
+        assertEquals("srvtoolu_01", resultParam.toolUseId());
+        var items = resultParam.content().asItem();
+        assertEquals(1, items.size());
+        assertEquals("https://example.com", items.get(0).url());
+        assertEquals("Example", items.get(0).title());
+        assertEquals("enc_abc123", items.get(0).encryptedContent());
+        assertEquals("2 days", items.get(0).pageAge().orElseThrow());
+
+        assertTrue(blocks.get(2).isText());
+    }
+
+    @Test
+    void testServerToolErrorResultEchoedAsRequestError() {
+        String errorJson =
+                "{\"type\":\"web_search_tool_result\",\"tool_use_id\":\"srvtoolu_err\","
+                        + "\"content\":{\"type\":\"web_search_tool_result_error\","
+                        + "\"error_code\":\"max_uses_exceeded\"}}";
+        ToolResultBlock errorResult =
+                ToolResultBlock.builder()
+                        .id("srvtoolu_err")
+                        .name("web_search")
+                        .output(TextBlock.builder().text("[ERROR] Web search failed").build())
+                        .metadata(
+                                Map.of(
+                                        ToolResultBlock.METADATA_SERVER_TOOL,
+                                        true,
+                                        AnthropicServerToolHelper.RESULT_METADATA,
+                                        errorJson))
+                        .build();
+        Msg assistantMsg =
+                Msg.builder()
+                        .name("Assistant")
+                        .role(MsgRole.ASSISTANT)
+                        .content(
+                                List.of(
+                                        serverToolUseBlock("srvtoolu_err"),
+                                        errorResult,
+                                        TextBlock.builder().text("Search failed.").build()))
+                        .build();
+
+        List<MessageParam> result = converter.convert(List.of(assistantMsg));
+
+        assertEquals(1, result.size());
+        List<ContentBlockParam> blocks = result.get(0).content().asBlockParams();
+        assertTrue(blocks.get(1).isWebSearchToolResult());
+        var resultParam = blocks.get(1).asWebSearchToolResult();
+        assertTrue(resultParam.content().isRequestError());
+    }
+
+    @Test
+    void testCodeExecutionServerToolResultEchoed() {
+        String rawJson =
+                "{\"type\":\"code_execution_tool_result\",\"tool_use_id\":\"srvtoolu_code\","
+                        + "\"content\":{\"type\":\"code_execution_result\",\"stdout\":\"42\\n\","
+                        + "\"stderr\":\"\",\"return_code\":0,\"content\":[]}}";
+        ToolResultBlock codeResult =
+                ToolResultBlock.builder()
+                        .id("srvtoolu_code")
+                        .name("code_execution")
+                        .output(TextBlock.builder().text("42").build())
+                        .metadata(
+                                Map.of(
+                                        ToolResultBlock.METADATA_SERVER_TOOL,
+                                        true,
+                                        AnthropicServerToolHelper.RESULT_METADATA,
+                                        rawJson))
+                        .build();
+        Msg assistantMsg =
+                Msg.builder()
+                        .name("Assistant")
+                        .role(MsgRole.ASSISTANT)
+                        .content(
+                                List.of(
+                                        ToolUseBlock.builder()
+                                                .id("srvtoolu_code")
+                                                .name("code_execution")
+                                                .input(Map.of("code", "print(42)"))
+                                                .metadata(
+                                                        Map.of(
+                                                                ToolUseBlock.METADATA_SERVER_TOOL,
+                                                                true))
+                                                .build(),
+                                        codeResult))
+                        .build();
+
+        List<MessageParam> result = converter.convert(List.of(assistantMsg));
+
+        assertEquals(1, result.size());
+        List<ContentBlockParam> blocks = result.get(0).content().asBlockParams();
+        assertEquals(2, blocks.size());
+        assertTrue(blocks.get(0).isServerToolUse());
+        assertTrue(blocks.get(1).isCodeExecutionToolResult());
+        assertEquals("srvtoolu_code", blocks.get(1).asCodeExecutionToolResult().toolUseId());
+    }
+
+    @Test
+    void testServerToolBlocksDoNotBreakClientToolResultSplitting() {
+        // Assistant message: server tool call + inline result + client tool call
+        Msg assistantMsg =
+                Msg.builder()
+                        .name("Assistant")
+                        .role(MsgRole.ASSISTANT)
+                        .content(
+                                List.of(
+                                        serverToolUseBlock("srvtoolu_02"),
+                                        serverToolResultBlock("srvtoolu_02"),
+                                        ToolUseBlock.builder()
+                                                .id("call_client")
+                                                .name("weather")
+                                                .input(Map.of("city", "Hangzhou"))
+                                                .build()))
+                        .build();
+        // Client tool result arrives as separate TOOL message
+        Msg toolResultMsg =
+                Msg.builder()
+                        .name("Tool")
+                        .role(MsgRole.TOOL)
+                        .content(
+                                List.of(
+                                        ToolResultBlock.builder()
+                                                .id("call_client")
+                                                .name("weather")
+                                                .output(TextBlock.builder().text("Sunny").build())
+                                                .build()))
+                        .build();
+
+        List<MessageParam> result = converter.convert(List.of(assistantMsg, toolResultMsg));
+
+        assertEquals(2, result.size());
+
+        // Assistant message keeps server tool blocks inline plus the client tool_use
+        List<ContentBlockParam> assistantBlocks = result.get(0).content().asBlockParams();
+        assertEquals(3, assistantBlocks.size());
+        assertTrue(assistantBlocks.get(0).isServerToolUse());
+        assertTrue(assistantBlocks.get(1).isWebSearchToolResult());
+        assertTrue(assistantBlocks.get(2).isToolUse());
+        assertEquals("call_client", assistantBlocks.get(2).asToolUse().id());
+
+        // Client tool result becomes a separate user message with tool_result
+        assertEquals(MessageParam.Role.USER, result.get(1).role());
+        List<ContentBlockParam> userBlocks = result.get(1).content().asBlockParams();
+        assertTrue(userBlocks.get(0).isToolResult());
+        assertEquals("call_client", userBlocks.get(0).asToolResult().toolUseId());
     }
 }
