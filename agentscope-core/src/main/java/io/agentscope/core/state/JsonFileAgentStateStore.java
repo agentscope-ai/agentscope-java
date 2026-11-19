@@ -65,9 +65,10 @@ import reactor.core.scheduler.Schedulers;
  *       ...
  * </pre>
  *
- * <p>{@code safe(...)} keeps the literal string when it matches
- * {@code ^[a-zA-Z0-9_\-.]+$}; otherwise it is Base64-URL encoded (no padding) so the
- * filesystem accepts it.
+ * <p>{@code safe(...)} keeps literal file-system-safe identifiers. Other identifiers are stored
+ * as a marker-prefixed Base64-URL segment so an encoded value cannot be confused with a literal
+ * identifier. Legacy unprefixed encoded directories remain readable for compatibility when their
+ * path is not ambiguous.
  *
  * <p>Features: atomic file operations, UTF-8 encoding, graceful handling of missing
  * sessions, hash-based append-or-rewrite for list state.
@@ -85,6 +86,9 @@ public class JsonFileAgentStateStore implements AgentStateStore {
 
     /** Pattern for file-system safe characters: alphanumeric, underscore, hyphen, dot. */
     private static final Pattern SAFE_FILENAME_PATTERN = Pattern.compile("^[a-zA-Z0-9_\\-.]+$");
+
+    /** Marker used to distinguish newly encoded path segments from literal safe identifiers. */
+    private static final String ENCODED_SEGMENT_PREFIX = "~";
 
     // Keep locks after session deletion so queued operations and later saves use the same lock.
     private static final ConcurrentHashMap<Path, ReentrantLock> SESSION_LOCKS =
@@ -217,79 +221,87 @@ public class JsonFileAgentStateStore implements AgentStateStore {
     @Override
     public <T extends State> Optional<T> get(
             String userId, String sessionId, String key, Class<T> type) {
-        Path sessionDir = getSessionDir(userId, sessionId);
-        Path file = getStatePath(sessionDir, key);
-        // Readers take the session lock too: on Windows an open read handle blocks another
-        // thread's replace of the same file (AccessDeniedException), so reads and writes must
-        // be mutually exclusive.
-        ReentrantLock lock = lockFor(sessionDir);
-        lock.lock();
-        try {
-            if (!Files.exists(file)) {
-                return Optional.empty();
-            }
+        for (Path sessionDir : sessionDirs(userId, sessionId)) {
+            Path file = getStatePath(sessionDir, key);
+            // Readers take the session lock too: on Windows an open read handle blocks another
+            // thread's replace of the same file (AccessDeniedException), so reads and writes must
+            // be mutually exclusive.
+            ReentrantLock lock = lockFor(sessionDir);
+            lock.lock();
             try {
-                String json = Files.readString(file, StandardCharsets.UTF_8);
-                return Optional.of(JsonUtils.getJsonCodec().fromJson(json, type));
-            } catch (IOException e) {
-                throw new RuntimeException("Failed to load state: " + key, e);
+                if (!Files.exists(file)) {
+                    continue;
+                }
+                try {
+                    String json = Files.readString(file, StandardCharsets.UTF_8);
+                    return Optional.of(JsonUtils.getJsonCodec().fromJson(json, type));
+                } catch (IOException e) {
+                    throw new RuntimeException("Failed to load state: " + key, e);
+                }
+            } finally {
+                lock.unlock();
             }
-        } finally {
-            lock.unlock();
         }
+        return Optional.empty();
     }
 
     @Override
     public <T extends State> List<T> getList(
             String userId, String sessionId, String key, Class<T> itemType) {
-        Path sessionDir = getSessionDir(userId, sessionId);
-        Path file = getListPath(sessionDir, key);
-        ReentrantLock lock = lockFor(sessionDir);
-        lock.lock();
-        try {
-            if (!Files.exists(file)) {
-                return List.of();
-            }
+        for (Path sessionDir : sessionDirs(userId, sessionId)) {
+            Path file = getListPath(sessionDir, key);
+            ReentrantLock lock = lockFor(sessionDir);
+            lock.lock();
             try {
-                List<T> result = new ArrayList<>();
-                try (BufferedReader reader =
-                        Files.newBufferedReader(file, StandardCharsets.UTF_8)) {
-                    String line;
-                    while ((line = reader.readLine()) != null) {
-                        if (!line.isBlank()) {
-                            result.add(JsonUtils.getJsonCodec().fromJson(line, itemType));
+                if (!Files.exists(file)) {
+                    continue;
+                }
+                try {
+                    List<T> result = new ArrayList<>();
+                    try (BufferedReader reader =
+                            Files.newBufferedReader(file, StandardCharsets.UTF_8)) {
+                        String line;
+                        while ((line = reader.readLine()) != null) {
+                            if (!line.isBlank()) {
+                                result.add(JsonUtils.getJsonCodec().fromJson(line, itemType));
+                            }
                         }
                     }
+                    return result;
+                } catch (IOException e) {
+                    throw new RuntimeException("Failed to load list: " + key, e);
                 }
-                return result;
-            } catch (IOException e) {
-                throw new RuntimeException("Failed to load list: " + key, e);
+            } finally {
+                lock.unlock();
             }
-        } finally {
-            lock.unlock();
         }
+        return List.of();
     }
 
     @Override
     public boolean exists(String userId, String sessionId) {
-        Path dir = getSessionDir(userId, sessionId);
-        ReentrantLock lock = lockFor(dir);
-        lock.lock();
-        try {
-            return Files.exists(dir);
-        } finally {
-            lock.unlock();
+        for (Path dir : sessionDirs(userId, sessionId)) {
+            ReentrantLock lock = lockFor(dir);
+            lock.lock();
+            try {
+                if (Files.exists(dir)) {
+                    return true;
+                }
+            } finally {
+                lock.unlock();
+            }
         }
+        return false;
     }
 
     @Override
     public void delete(String userId, String sessionId) {
-        deleteSession(getSessionDir(userId, sessionId));
+        deleteSession(sessionDirForDelete(userId, sessionId));
     }
 
     @Override
     public void delete(String userId, String sessionId, String key) {
-        Path sessionDir = getSessionDir(userId, sessionId);
+        Path sessionDir = sessionDirForDelete(userId, sessionId);
         ReentrantLock lock = lockFor(sessionDir);
         lock.lock();
         try {
@@ -316,19 +328,20 @@ public class JsonFileAgentStateStore implements AgentStateStore {
     public Set<String> listSessionIds(String userId) {
         // Only reads directory entries, never a session's files, so it takes no session lock;
         // a session created or deleted concurrently may or may not be listed.
-        Path userDir = rootDirectory.resolve(safeSegment(normalizeUser(userId)));
-        if (!Files.isDirectory(userDir)) {
-            return Set.of();
-        }
-        try (Stream<Path> dirs = Files.list(userDir)) {
-            Set<String> result = new HashSet<>();
-            for (Path d : (Iterable<Path>) dirs.filter(Files::isDirectory)::iterator) {
-                result.add(decodeSegment(d.getFileName().toString()));
+        Set<String> result = new HashSet<>();
+        for (Path userDir : userDirs(userId)) {
+            if (!Files.isDirectory(userDir)) {
+                continue;
             }
-            return result;
-        } catch (IOException e) {
-            throw new RuntimeException("Failed to list sessions", e);
+            try (Stream<Path> dirs = Files.list(userDir)) {
+                for (Path d : (Iterable<Path>) dirs.filter(Files::isDirectory)::iterator) {
+                    result.add(decodeSegment(d.getFileName().toString()));
+                }
+            } catch (IOException e) {
+                throw new RuntimeException("Failed to list sessions", e);
+            }
         }
+        return result;
     }
 
     /** Returns the real root directory (for diagnostics). */
@@ -528,19 +541,78 @@ public class JsonFileAgentStateStore implements AgentStateStore {
         if (SAFE_FILENAME_PATTERN.matcher(value).matches()) {
             return value;
         }
-        return Base64.getUrlEncoder()
-                .withoutPadding()
-                .encodeToString(value.getBytes(StandardCharsets.UTF_8));
+        return ENCODED_SEGMENT_PREFIX
+                + Base64.getUrlEncoder()
+                        .withoutPadding()
+                        .encodeToString(value.getBytes(StandardCharsets.UTF_8));
     }
 
     private static String decodeSegment(String segment) {
-        if (SAFE_FILENAME_PATTERN.matcher(segment).matches()) {
+        if (!segment.startsWith(ENCODED_SEGMENT_PREFIX)) {
             return segment;
         }
         try {
-            return new String(Base64.getUrlDecoder().decode(segment), StandardCharsets.UTF_8);
+            return new String(
+                    Base64.getUrlDecoder()
+                            .decode(segment.substring(ENCODED_SEGMENT_PREFIX.length())),
+                    StandardCharsets.UTF_8);
         } catch (IllegalArgumentException e) {
             return segment;
         }
+    }
+
+    private Path sessionDirForDelete(String userId, String sessionId) {
+        Path canonical = getSessionDir(userId, sessionId);
+        Path legacy = legacySessionDir(userId, sessionId);
+        // If both paths exist, only remove the canonical path. The legacy path may belong to a
+        // different literal identifier because the old unprefixed encoding was ambiguous.
+        if (Files.exists(canonical) || canonical.equals(legacy)) {
+            return canonical;
+        }
+        return legacy;
+    }
+
+    private List<Path> sessionDirs(String userId, String sessionId) {
+        Path canonical = getSessionDir(userId, sessionId);
+        Path legacy = legacySessionDir(userId, sessionId);
+        // Prefer the collision-free path whenever it exists. Falling back to a legacy path while
+        // the canonical directory exists could expose a different literal session whose old path
+        // happens to equal this session's legacy encoding.
+        if (Files.exists(canonical) || canonical.equals(legacy)) {
+            return List.of(canonical);
+        }
+        if (Files.exists(legacy)) {
+            return List.of(legacy);
+        }
+        return List.of();
+    }
+
+    private List<Path> userDirs(String userId) {
+        Path canonical = rootDirectory.resolve(safeSegment(normalizeUser(userId)));
+        Path legacy = rootDirectory.resolve(legacySafeSegment(normalizeUser(userId)));
+        // As with session directories, never merge a canonical user directory with an ambiguous
+        // legacy directory that may belong to a different literal user identifier.
+        if (Files.exists(canonical) || canonical.equals(legacy)) {
+            return List.of(canonical);
+        }
+        if (Files.exists(legacy)) {
+            return List.of(legacy);
+        }
+        return List.of();
+    }
+
+    private Path legacySessionDir(String userId, String sessionId) {
+        return rootDirectory
+                .resolve(legacySafeSegment(normalizeUser(userId)))
+                .resolve(legacySafeSegment(requireSessionId(sessionId)));
+    }
+
+    private static String legacySafeSegment(String value) {
+        if (SAFE_FILENAME_PATTERN.matcher(value).matches()) {
+            return value;
+        }
+        return Base64.getUrlEncoder()
+                .withoutPadding()
+                .encodeToString(value.getBytes(StandardCharsets.UTF_8));
     }
 }
