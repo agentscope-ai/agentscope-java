@@ -629,7 +629,7 @@ public final class HarnessContextBuilder implements ModelRequestPreparer {
                 : text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;");
     }
 
-    private static String hash(String text) {
+    static String hash(String text) {
         try {
             return HexFormat.of()
                     .formatHex(

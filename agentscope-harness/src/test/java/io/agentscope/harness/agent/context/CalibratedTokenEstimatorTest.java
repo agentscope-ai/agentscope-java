@@ -38,9 +38,10 @@ import org.junit.jupiter.api.Test;
 
 /**
  * Shape contract for provider-usage calibration: the delegate's estimate is corrected to the
- * anchor {@code providerInputTokens + increment} only on a matching conversation prefix and
- * matching model, the anchor is committed only from a verifiably paired usage message, and
- * without any anchor the behavior is byte-identical to the delegate. Interleaved
+ * anchor {@code providerInputTokens + increment} only on a matching conversation prefix, the
+ * same model instance, and unchanged message content. The anchor is committed only from a
+ * verifiably paired usage message. Without any anchor the behavior is byte-identical to the
+ * delegate. Interleaved
  * conversations calibrate independently through their own slot, and the bounded slot set
  * drops the oldest tracked conversation.
  */
@@ -125,8 +126,9 @@ class CalibratedTokenEstimatorTest {
     }
 
     @Test
-    void fallsBackOnModelSwitch() {
+    void fallsBackOnDifferentModelInstanceWithSameName() {
         CalibratedTokenEstimator estimator = new CalibratedTokenEstimator(biased);
+        when(otherModel.getModelName()).thenReturn("primary");
         Msg first = msg("a");
         Msg second = msg("b");
         estimator.recordPreparedRequest(input(List.of(first, second), List.of(), primary));
@@ -136,6 +138,38 @@ class CalibratedTokenEstimatorTest {
                 estimator.estimate(input(List.of(first, second, msg("c")), List.of(), otherModel));
 
         assertEquals(500, estimate.tokens());
+        assertEquals("biased", estimate.method());
+    }
+
+    @Test
+    void fallsBackWhenExistingMessageContentChanges() {
+        CalibratedTokenEstimator estimator = new CalibratedTokenEstimator(biased);
+        Msg first = msg("a long message");
+        Msg second = msg("b");
+        estimator.recordPreparedRequest(input(List.of(first, second), List.of(), primary));
+        estimator.calibrateFromHistory(List.of(first, second, assistantWithUsage(777)));
+
+        Msg shortenedFirst = first.withContent(List.of(TextBlock.builder().text("a").build()));
+        var estimate =
+                estimator.estimate(
+                        input(List.of(shortenedFirst, second, msg("c")), List.of(), primary));
+
+        assertEquals(first.getId(), shortenedFirst.getId());
+        assertEquals(500, estimate.tokens());
+        assertEquals("biased", estimate.method());
+    }
+
+    @Test
+    void doesNotCommitUsageAfterExistingContentChanges() {
+        CalibratedTokenEstimator estimator = new CalibratedTokenEstimator(biased);
+        Msg first = msg("a long message");
+        estimator.recordPreparedRequest(input(List.of(first), List.of(), primary));
+
+        Msg shortenedFirst = first.withContent(List.of(TextBlock.builder().text("a").build()));
+        estimator.calibrateFromHistory(List.of(shortenedFirst, assistantWithUsage(777)));
+        var estimate = estimator.estimate(input(List.of(first), List.of(), primary));
+
+        assertEquals(300, estimate.tokens());
         assertEquals("biased", estimate.method());
     }
 

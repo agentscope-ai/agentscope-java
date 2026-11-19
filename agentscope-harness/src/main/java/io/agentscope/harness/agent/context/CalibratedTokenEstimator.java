@@ -19,6 +19,8 @@ import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.middleware.ModelCallInput;
 import io.agentscope.core.model.ChatUsage;
+import io.agentscope.core.model.Model;
+import io.agentscope.core.util.JsonUtils;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Iterator;
@@ -31,17 +33,15 @@ import java.util.concurrent.atomic.AtomicReference;
 /**
  * Calibrates a delegate {@link ContextTokenEstimator} with the provider-reported input size of
  * the most recent request: {@code providerInputTokens + (delegate(candidate) −
- * delegate(atAnchor))}, clamped at zero, whenever the candidate still starts with the anchored
- * conversation prefix; otherwise the delegate estimate is returned unchanged.
+ * delegate(atAnchor))}, clamped at zero. The candidate must use the same model instance and
+ * start with the same conversation messages (IDs, roles, names and content); otherwise the
+ * delegate estimate is returned unchanged.
  *
  * <p>The anchor is committed lazily at the next {@link HarnessContextBuilder} prepare entry:
  * the last history message carrying {@link Msg#getChatUsage()} holds the provider measurement
- * of the request that produced it, and it is paired with the recorded base of that request —
- * accepted only when the base's conversation ids equal the ids preceding the usage message, so
- * interrupted calls, rewritten history (compaction) and model switches never commit a mismatched
- * pair. Conversation messages are the non-SYSTEM, non-synthetic messages (projections carry
- * fresh ids every round and are filtered on both record and check sides); in-place edits such
- * as tool-result eviction keep ids and are absorbed by the increment.
+ * of the request that produced it. It is paired with the recorded base only when the
+ * conversation messages before the usage message match the recorded prefix. Conversation
+ * messages exclude SYSTEM and synthetic messages.
  *
  * <p>Thread-safe and shared: one instance serves every call of the assembled agent, across
  * concurrent sessions. Calibration state is a bounded set of per-conversation slots keyed by
@@ -73,14 +73,11 @@ public final class CalibratedTokenEstimator implements ContextTokenEstimator {
     private final AtomicReference<Map<String, Slot>> slots = new AtomicReference<>(Map.of());
 
     /** A verified prepared request awaiting its provider usage. */
-    private record PreparedBase(String modelId, List<String> conversationIds, long rawEstimate) {}
+    private record PreparedBase(Model model, List<String> prefix, long rawEstimate) {}
 
     /** A committed provider measurement anchored at a conversation prefix. */
     private record Anchor(
-            String modelId,
-            List<String> conversationIds,
-            long providerInputTokens,
-            long rawEstimate) {}
+            Model model, List<String> prefix, long providerInputTokens, long rawEstimate) {}
 
     /** One conversation's calibration state. */
     private record Slot(Anchor anchor, PreparedBase pending) {}
@@ -92,15 +89,15 @@ public final class CalibratedTokenEstimator implements ContextTokenEstimator {
     @Override
     public Estimate estimate(ModelCallInput input) {
         Estimate raw = delegate.estimate(input);
-        List<String> ids = conversationIds(input.messages());
-        if (ids == null || ids.isEmpty()) {
+        List<Msg> messages = conversationMessages(input.messages());
+        if (messages == null || messages.isEmpty()) {
             return raw;
         }
-        Slot slot = slots.get().get(ids.get(0));
+        Slot slot = slots.get().get(messages.get(0).getId());
         Anchor current = slot == null ? null : slot.anchor();
         if (current == null
-                || !current.modelId.equals(input.model().getModelName())
-                || !startsWith(ids, current.conversationIds)) {
+                || input.model() != current.model()
+                || !startsWith(messages, current.prefix())) {
             return raw;
         }
         long calibrated =
@@ -110,14 +107,14 @@ public final class CalibratedTokenEstimator implements ContextTokenEstimator {
 
     /**
      * Commits the pending base when the last usage-bearing message in the incoming history pairs
-     * with it: the conversation ids preceding that message must equal the base's recorded ids.
+     * with it: the conversation messages preceding that message must match the recorded prefix.
      * Called at prepare entry, before this prepare's estimates run. The commit lands only while
      * the verified base still holds the pending slot, so a concurrently recorded request keeps
      * its own pairing chance.
      */
     void calibrateFromHistory(List<Msg> incoming) {
-        List<String> ids = new ArrayList<>();
-        List<String> idsAtUsage = null;
+        List<Msg> messages = new ArrayList<>();
+        int messagesBeforeUsage = 0;
         ChatUsage usage = null;
         for (Msg msg : incoming) {
             if (!isConversationMessage(msg)) {
@@ -125,29 +122,27 @@ public final class CalibratedTokenEstimator implements ContextTokenEstimator {
             }
             ChatUsage msgUsage = msg.getChatUsage();
             if (msgUsage != null && msgUsage.getInputTokens() > 0) {
-                idsAtUsage = List.copyOf(ids);
+                messagesBeforeUsage = messages.size();
                 usage = msgUsage;
             }
             if (msg.getId() == null) {
                 return; // an unidentifiable prefix must never anchor
             }
-            ids.add(msg.getId());
+            messages.add(msg);
         }
-        if (usage == null || idsAtUsage.isEmpty()) {
+        if (usage == null || messagesBeforeUsage == 0) {
             return;
         }
-        String key = idsAtUsage.get(0);
+        String key = messages.get(0).getId();
         Slot slot = slots.get().get(key);
         PreparedBase base = slot == null ? null : slot.pending();
-        if (base == null || !idsAtUsage.equals(base.conversationIds)) {
+        if (base == null
+                || messagesBeforeUsage != base.prefix().size()
+                || !startsWith(messages, base.prefix())) {
             return;
         }
         Anchor committed =
-                new Anchor(
-                        base.modelId,
-                        base.conversationIds,
-                        usage.getInputTokens(),
-                        base.rawEstimate);
+                new Anchor(base.model(), base.prefix(), usage.getInputTokens(), base.rawEstimate());
         // Commit only while the verified base still holds its slot: a concurrently recorded
         // request for the same conversation keeps its own pairing chance.
         slots.updateAndGet(
@@ -165,14 +160,16 @@ public final class CalibratedTokenEstimator implements ContextTokenEstimator {
      * increments stay frame-consistent.
      */
     void recordPreparedRequest(ModelCallInput prepared) {
-        List<String> ids = conversationIds(prepared.messages());
-        if (ids == null || ids.isEmpty()) {
+        List<Msg> messages = conversationMessages(prepared.messages());
+        if (messages == null || messages.isEmpty()) {
             return;
         }
         PreparedBase next =
                 new PreparedBase(
-                        prepared.model().getModelName(), ids, delegate.estimate(prepared).tokens());
-        String key = ids.get(0);
+                        prepared.model(),
+                        messageHashes(messages),
+                        delegate.estimate(prepared).tokens());
+        String key = messages.get(0).getId();
         slots.updateAndGet(
                 m -> {
                     Slot previous = m.get(key);
@@ -201,11 +198,11 @@ public final class CalibratedTokenEstimator implements ContextTokenEstimator {
     }
 
     /**
-     * Ordered ids of the conversation messages, or {@code null} when any id is missing (an
+     * Ordered conversation messages, or {@code null} when any id is missing (an
      * unidentifiable prefix must never anchor).
      */
-    private static List<String> conversationIds(List<Msg> messages) {
-        List<String> ids = new ArrayList<>();
+    private static List<Msg> conversationMessages(List<Msg> messages) {
+        List<Msg> conversation = new ArrayList<>();
         for (Msg msg : messages) {
             if (!isConversationMessage(msg)) {
                 continue;
@@ -213,14 +210,23 @@ public final class CalibratedTokenEstimator implements ContextTokenEstimator {
             if (msg.getId() == null) {
                 return null;
             }
-            ids.add(msg.getId());
+            conversation.add(msg);
         }
-        return ids;
+        return conversation;
     }
 
-    private static boolean startsWith(List<String> candidate, List<String> prefix) {
-        return candidate != null
-                && candidate.size() >= prefix.size()
-                && candidate.subList(0, prefix.size()).equals(prefix);
+    private static boolean startsWith(List<Msg> candidate, List<String> prefix) {
+        int length = prefix.size();
+        return candidate.size() >= length
+                && messageHashes(candidate.subList(0, length)).equals(prefix);
+    }
+
+    private static List<String> messageHashes(List<Msg> messages) {
+        return messages.stream().map(CalibratedTokenEstimator::messageHash).toList();
+    }
+
+    private static String messageHash(Msg msg) {
+        Object[] fields = {msg.getId(), msg.getRole(), msg.getName(), msg.getContent()};
+        return HarnessContextBuilder.hash(JsonUtils.getJsonCodec().toJson(fields));
     }
 }
