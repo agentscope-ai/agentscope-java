@@ -18,9 +18,13 @@ package io.agentscope.core.tool.file;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 /**
  * Utility methods shared by text file tools.
@@ -73,9 +77,66 @@ public class FileToolUtils {
                                         + " directory '%s'.",
                                 filePath, normalizedBaseDir));
             }
+
+            // A lexical prefix check is insufficient when a path component is a symbolic link.
+            // Resolve both sides through the filesystem so a link inside baseDir cannot escape
+            // the configured boundary. Missing final components are retained after resolving
+            // their nearest existing ancestor, which keeps new-file creation supported.
+            Path realBaseDir = resolveForBoundary(normalizedBaseDir);
+            Path realPath = resolveForBoundary(path);
+            if (!realPath.startsWith(realBaseDir)) {
+                throw new IOException(
+                        String.format(
+                                "Access denied: The file path '%s' resolves outside the allowed"
+                                        + " base directory '%s'.",
+                                filePath, normalizedBaseDir));
+            }
         }
 
         return path;
+    }
+
+    /**
+     * Resolve all existing path components, including symbolic links, while preserving missing
+     * trailing components for paths that are about to be created.
+     */
+    private static Path resolveForBoundary(Path path) throws IOException {
+        Path current = path.toAbsolutePath().normalize();
+        List<Path> missing = new ArrayList<>();
+        Set<Path> visitedLinks = new HashSet<>();
+
+        while (current != null) {
+            try {
+                Path resolved = current.toRealPath();
+                for (int i = missing.size() - 1; i >= 0; i--) {
+                    resolved = resolved.resolve(missing.get(i));
+                }
+                return resolved.normalize();
+            } catch (NoSuchFileException e) {
+                // A dangling link must still be checked. Follow its target before walking up to
+                // the nearest existing ancestor; otherwise a write could create the target
+                // outside baseDir through the link.
+                if (Files.isSymbolicLink(current)) {
+                    if (!visitedLinks.add(current)) {
+                        throw new IOException("Symbolic link cycle detected: " + path, e);
+                    }
+                    Path target = Files.readSymbolicLink(current);
+                    current =
+                            (target.isAbsolute() ? target : current.getParent().resolve(target))
+                                    .normalize();
+                    continue;
+                }
+
+                Path name = current.getFileName();
+                if (name == null) {
+                    return path.toAbsolutePath().normalize();
+                }
+                missing.add(name);
+                current = current.getParent();
+            }
+        }
+
+        return path.toAbsolutePath().normalize();
     }
 
     /**
