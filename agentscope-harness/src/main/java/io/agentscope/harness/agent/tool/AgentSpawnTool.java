@@ -1388,6 +1388,8 @@ public class AgentSpawnTool implements AutoCloseable {
         return Mono.deferContextual(
                 parentCtx -> {
                     SpawnedAgent spawned = managed.spawned;
+                    RuntimeContext interruptContext =
+                            childInterruptContext(runtimeContext, spawned.sessionId());
                     CompletableFuture<Msg> bridge = new CompletableFuture<>();
                     bridge.whenComplete((ignored, error) -> lease.close());
                     RuntimeContext invocationContext =
@@ -1430,7 +1432,7 @@ public class AgentSpawnTool implements AutoCloseable {
                                                             if (signal == SignalType.CANCEL) {
                                                                 interruptAgent(
                                                                         spawned.agent(),
-                                                                        runtimeContext);
+                                                                        interruptContext);
                                                                 lease.close();
                                                             }
                                                         });
@@ -1487,19 +1489,39 @@ public class AgentSpawnTool implements AutoCloseable {
      * cancelled. Mirrors the fix in core {@code SubAgentTool.interruptAgent} (commit
      * {@code 029cc55e}, issue #1783) — see issue #2062 for the harness-side equivalent.
      *
-     * <p>Only {@link ReActAgent} exposes {@code interrupt(RuntimeContext)}. Other {@link Agent}
-     * implementations are no-ops here; their inner execution will still be disposed by the caller's
-     * {@code sink.onCancel(innerSub::dispose)}, which is enough for non-looping agents.
+     * <p>{@link HarnessAgent} wraps a {@link ReActAgent}, so cancellation must reach its delegate.
+     * Other {@link Agent} implementations are no-ops here; their inner execution will still be
+     * disposed by the caller's {@code sink.onCancel(innerSub::dispose)}, which is enough for
+     * non-looping agents.
      */
     private void interruptAgent(Agent agent, RuntimeContext ctx) {
-        if (agent instanceof ReActAgent ra) {
-            ra.interrupt(ctx);
+        ReActAgent target = null;
+        if (agent instanceof ReActAgent reactAgent) {
+            target = reactAgent;
+        } else if (agent instanceof HarnessAgent harnessAgent) {
+            target = harnessAgent.getDelegate();
+        }
+        if (target != null) {
+            target.interrupt(ctx);
             log.warn(
                     "Sub-agent '{}' (id={}) was interrupted because its parent tool call"
                             + " subscription was cancelled.",
-                    ra.getName(),
-                    ra.getAgentId());
+                    target.getName(),
+                    target.getAgentId());
         }
+    }
+
+    /**
+     * Builds the context used to interrupt a spawned child. The child executes under its own
+     * session, so using the parent context would target the parent's interrupt-control state.
+     */
+    private static RuntimeContext childInterruptContext(
+            RuntimeContext parent, String childSessionId) {
+        String userId = parent != null ? parent.getUserId() : null;
+        if (parent == null) {
+            return RuntimeContext.builder().sessionId(childSessionId).userId(userId).build();
+        }
+        return RuntimeContext.builder(parent).sessionId(childSessionId).userId(userId).build();
     }
 
     /**
