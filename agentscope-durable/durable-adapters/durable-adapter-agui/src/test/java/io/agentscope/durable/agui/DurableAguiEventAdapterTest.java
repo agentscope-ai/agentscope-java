@@ -216,6 +216,33 @@ class DurableAguiEventAdapterTest {
     }
 
     @Test
+    void permissionAskingRunEndWaitsForTheTurnWaitingEvent() {
+        var ended =
+                adapter.committed(
+                        committed(
+                                "run.ended",
+                                "run",
+                                null,
+                                Map.of("status", "STOPPED", "reason", "PERMISSION_ASKING")));
+        assertTrue(ended.isEmpty());
+
+        var events =
+                adapter.map(
+                        waiting(
+                                "run",
+                                List.of(
+                                        interaction(
+                                                "interrupt-1", "call-1", "confirmation", false))));
+
+        assertEquals(1, events.size());
+        var finished = assertInstanceOf(AguiEvent.RunFinished.class, events.get(0));
+        var outcome =
+                assertInstanceOf(AguiEvent.RunFinishedInterruptOutcome.class, finished.outcome());
+        assertEquals(1, outcome.interrupts().size());
+        assertEquals("interrupt-1", outcome.interrupts().get(0).id());
+    }
+
+    @Test
     void runStoppedWithoutWaitingFinishesAsCancelled() {
         var events =
                 adapter.committed(

@@ -1492,7 +1492,8 @@ public final class TransactionalSessionBackend implements SessionBackend {
                     if (next.terminal()
                             || next == TurnStatus.WAITING
                             || next == TurnStatus.PAUSED) {
-                        invocations(s, r).abandon(now, false);
+                        if (next == TurnStatus.WAITING) invocations(s, r).suspend(now);
+                        else invocations(s, r).abandon(now, false);
                         r.owner = null;
                         r.expiresAt = 0;
                         var data = (ObjectNode) lifecycle(r);

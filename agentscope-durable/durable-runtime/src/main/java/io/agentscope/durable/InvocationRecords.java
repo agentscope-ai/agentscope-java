@@ -493,14 +493,22 @@ final class InvocationRecords {
 
     /** Ownership expiry cannot fabricate a native completion; an explicit release records a stop. */
     void abandon(long now, boolean lost) {
-        stop(now, lost, false);
+        stop(now, lost, false, false, false);
     }
 
     void fail(long now) {
-        stop(now, false, true);
+        stop(now, false, true, false, false);
     }
 
-    private void stop(long now, boolean lost, boolean failed) {
+    /**
+     * A Turn parked for human input ends its native Run quietly: {@code turn.waiting} is the public
+     * terminal event, so no extra {@code run.ended} is emitted for the park.
+     */
+    void suspend(long now) {
+        stop(now, false, false, true, true);
+    }
+
+    private void stop(long now, boolean lost, boolean failed, boolean suspended, boolean quiet) {
         if (turn.lastRunId == null) return;
         var run = require(turn.lastRunId);
         if (run.view.status().terminal()) return;
@@ -509,7 +517,9 @@ final class InvocationRecords {
         String reason =
                 lost
                         ? "ownership_lost"
-                        : failed ? "invocation_failed" : paused ? "paused" : "host_released";
+                        : failed
+                                ? "invocation_failed"
+                                : suspended ? "suspended" : paused ? "paused" : "host_released";
         if (run.activeStep != null) {
             var old = step(run.activeStep);
             var ended =
@@ -549,10 +559,10 @@ final class InvocationRecords {
                         old.preparedAt(),
                         old.startedAt(),
                         now,
-                        failed ? "failed" : paused ? "suspended" : "interrupted",
+                        failed ? "failed" : suspended || paused ? "suspended" : "interrupted",
                         reason);
         tx.put(runKey(old.runId()), DurableJson.value(run));
-        emitRun(run.view, lost ? "lost" : "ended");
+        if (!quiet) emitRun(run.view, lost ? "lost" : "ended");
     }
 
     private void emitRun(RunView run, String action) {

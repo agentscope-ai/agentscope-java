@@ -37,14 +37,14 @@ import java.util.Set;
  * Stateful Durable-to-AG-UI 1.0 mapping. One adapter belongs to one stream and reconciles live
  * message previews with their authoritative committed message.
  *
- * <p>A live stream terminates when the Turn parks for human input. The committed {@code
- * turn.waiting} event carries every pending interaction of the Turn and maps to one {@link
+ * <p>A Run that parks for human input reports {@code run.ended} with {@code STOPPED} before the
+ * committed {@code turn.waiting} event, so that end is not terminal. Only {@code turn.waiting}
+ * closes the stream and carries the pending interactions: it maps to one {@link
  * AguiEvent.RunFinished} with a {@link AguiEvent.RunFinishedInterruptOutcome}, after closing the
- * steps, messages and tool calls the Run opened. The agent is waiting, not running, so no later
- * {@code run.ended} closes the stream. Individual {@code interaction.requested} events are not
- * terminal and are not mapped on their own. Each interrupt id is the Durable interaction id, and
- * its {@code toolCallId} is the interaction request id (the tool call id), which the client echoes
- * as {@code interruptId} to resume.
+ * steps, messages and tool calls the Run opened. Individual {@code interaction.requested} events
+ * are not terminal and are not mapped on their own. Each interrupt id is the Durable interaction
+ * id, and its {@code toolCallId} is the interaction request id (the tool call id), which the client
+ * echoes as {@code interruptId} to resume.
  */
 public final class DurableAguiEventAdapter {
     private static final Map<String, Object> CONFIRM_RESPONSE_SCHEMA =
@@ -131,7 +131,9 @@ public final class DurableAguiEventAdapter {
 
     private List<AguiEvent> runEnded(PublicEvent event) {
         String status = event.data().path("status").asText();
-        if ("STOPPED".equals(status) && "suspended".equals(event.data().path("reason").asText()))
+        String reason = event.data().path("reason").asText();
+        if ("STOPPED".equals(status)
+                && ("suspended".equals(reason) || "PERMISSION_ASKING".equals(reason)))
             return List.of();
         String runId = require(event.runId(), "runId");
         if ("FAILED".equals(status) || "LOST".equals(status)) {

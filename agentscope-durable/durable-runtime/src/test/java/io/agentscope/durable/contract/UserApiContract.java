@@ -850,6 +850,12 @@ public abstract class UserApiContract {
         assertEquals(run.runId(), waiting.runId());
         assertEquals(1, waiting.data().path("interactions").size());
         assertEquals(interactionId, waiting.data().path("interactions").get(0).path("id").asText());
+        assertTrue(
+                turn.listEvents(null, 50).events().stream()
+                        .noneMatch(
+                                event ->
+                                        "run.ended".equals(event.type())
+                                                && run.runId().equals(event.runId())));
     }
 
     @Test
