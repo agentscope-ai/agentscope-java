@@ -16,10 +16,9 @@
 package io.agentscope.examples.documentation2.streaming;
 
 import io.agentscope.core.ReActAgent;
+import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.event.TextBlockDeltaEvent;
-import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.UserMessage;
-import io.agentscope.core.state.AgentStateStore;
 import io.agentscope.core.state.JsonFileAgentStateStore;
 import io.agentscope.extensions.model.dashscope.DashScopeChatModel;
 import java.nio.file.Path;
@@ -37,18 +36,15 @@ import reactor.core.scheduler.Schedulers;
 /**
  * StreamingWebExample - Spring Boot + SSE streaming agent responses.
  *
- * <p>Migration notes (from documentation/quickstart):
- * <ul>
- *   <li>Replaced {@code legacy.session.JsonFileAgentStateStore} with {@code io.agentscope.core.state.JsonFileAgentStateStore}.</li>
- *   <li>Replaced {@code agent.loadIfExists(session, id)} / {@code agent.saveTo(session, id)}
- *       with {@code .stateStore(session).defaultSessionId(sessionId)} on the builder.</li>
- * </ul>
+ * <p>A shared builder holds application configuration. Each subscription builds its own agent
+ * and closes it when the stream completes, fails, or is cancelled. The shared state store keeps
+ * conversation history between requests. Applications must sequence requests for the same session.
  *
  * <p>Usage:
  * <pre>
  *   export DASHSCOPE_API_KEY=your_key
- *   mvn spring-boot:run -pl agentscope-examples/documentation2 \
- *       -Dspring-boot.run.mainClass=io.agentscope.examples.documentation2.StreamingWebExample
+ *   mvn spring-boot:run -pl agentscope-examples/documentation \
+ *       -Dspring-boot.run.mainClass=io.agentscope.examples.documentation2.streaming.StreamingWebExample
  *
  *   curl -N "http://localhost:8080/chat?message=Hello"
  *   curl -N "http://localhost:8080/chat?message=What+is+AI?&amp;sessionId=my-session"
@@ -70,23 +66,33 @@ public class StreamingWebExample {
     @RestController
     public static class ChatController implements InitializingBean {
 
-        private String apiKey;
-        private Path sessionPath;
+        private ReActAgent.Builder agentBuilder;
 
         @Override
         public void afterPropertiesSet() {
-            apiKey = System.getenv("DASHSCOPE_API_KEY");
+            String apiKey = System.getenv("DASHSCOPE_API_KEY");
             if (apiKey == null || apiKey.isEmpty()) {
                 throw new IllegalStateException(
                         "DASHSCOPE_API_KEY environment variable is required");
             }
 
-            sessionPath =
+            Path sessionPath =
                     Paths.get(
                             System.getProperty("user.home"),
                             ".agentscope",
                             "examples",
                             "web-sessions");
+
+            agentBuilder =
+                    ReActAgent.builder()
+                            .name("WebAgent")
+                            .model(
+                                    DashScopeChatModel.builder()
+                                            .apiKey(apiKey)
+                                            .modelName("qwen-plus")
+                                            .stream(true)
+                                            .build())
+                            .stateStore(new JsonFileAgentStateStore(sessionPath));
 
             System.out.println("\n=== StreamingWeb Example Started ===");
             System.out.println("Server running at: http://localhost:8080");
@@ -110,27 +116,14 @@ public class StreamingWebExample {
                 @RequestParam String message,
                 @RequestParam(defaultValue = "default") String sessionId) {
 
-            AgentStateStore stateStore = new JsonFileAgentStateStore(sessionPath);
+            // This demo uses anonymous sessions. In production, derive userId from authentication
+            // and verify that the caller can access sessionId before starting the stream.
+            RuntimeContext ctx = RuntimeContext.builder().sessionId(sessionId).build();
 
-            // IMPORTANT: Create a new agent per request. ReActAgent is NOT thread-safe — a single
-            // instance rejects concurrent call()s. Model and AgentStateStore are safe to share;
-            // Toolkit is deep-copied inside build(). This is the recommended pattern for web apps.
-            ReActAgent agent =
-                    ReActAgent.builder()
-                            .name("WebAgent")
-                            .model(
-                                    DashScopeChatModel.builder()
-                                            .apiKey(apiKey)
-                                            .modelName("qwen-plus")
-                                            .stream(true)
-                                            .build())
-                            .stateStore(stateStore)
-                            .defaultSessionId(sessionId)
-                            .build();
-
-            Msg userMsg = new UserMessage(message);
-
-            return agent.streamEvents(userMsg)
+            return Flux.using(
+                            agentBuilder::build,
+                            agent -> agent.streamEvents(new UserMessage(message), ctx),
+                            ReActAgent::close)
                     .subscribeOn(Schedulers.boundedElastic())
                     .filter(event -> event instanceof TextBlockDeltaEvent)
                     .map(event -> ((TextBlockDeltaEvent) event).getDelta());

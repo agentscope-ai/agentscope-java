@@ -190,6 +190,9 @@ class MediaUtilsTest {
         assertEquals("video/quicktime", MediaUtils.determineMediaType("video.mov"));
         assertEquals("video/x-msvideo", MediaUtils.determineMediaType("video.avi"));
 
+        // Documents
+        assertEquals("application/pdf", MediaUtils.determineMediaType("document.pdf"));
+
         // Fallback
         assertEquals("application/octet-stream", MediaUtils.determineMediaType("file.unknown"));
         assertEquals("application/octet-stream", MediaUtils.determineMediaType("file"));
@@ -355,6 +358,20 @@ class MediaUtilsTest {
         assertEquals("mp3", MediaUtils.getExtension("https://example.com/audio.mp3"));
         assertEquals("mp4", MediaUtils.getExtension("https://example.com/video.mp4"));
         assertEquals("xxx", MediaUtils.getExtension("https://example.com/xxx.xxx"));
+    }
+
+    @Test
+    @DisplayName("Should get file URI extensions independently of the host filesystem")
+    void testGetExtensionWithFileUris() {
+        assertEquals(
+                "png", MediaUtils.getExtension("file:///C:/Users/test/image%20with%20spaces.png"));
+        assertEquals("png", MediaUtils.getExtension("file:///tmp/image%20with%20spaces.png"));
+        assertEquals(
+                "png",
+                MediaUtils.getExtension(
+                        tempDir.resolve("image with spaces.png").toUri().toString()));
+        assertEquals("", MediaUtils.getExtension("file:///C:/directory.png/image"));
+        assertEquals("", MediaUtils.getExtension("file:///C:/directory.png/"));
     }
 
     @Test

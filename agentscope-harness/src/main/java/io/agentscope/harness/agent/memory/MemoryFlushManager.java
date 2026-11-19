@@ -16,7 +16,10 @@
 package io.agentscope.harness.agent.memory;
 
 import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.core.formatter.DocumentReferenceRenderer;
+import io.agentscope.core.journal.JournalException;
 import io.agentscope.core.message.ContentBlock;
+import io.agentscope.core.message.DocumentBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
@@ -24,10 +27,12 @@ import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.Model;
 import io.agentscope.core.util.JsonUtils;
+import io.agentscope.harness.agent.context.ContextModelCalls;
 import io.agentscope.harness.agent.memory.compaction.ConversationCompactor;
-import io.agentscope.harness.agent.memory.session.SessionTranscriptWriter;
 import io.agentscope.harness.agent.workspace.WorkspaceConstants;
 import io.agentscope.harness.agent.workspace.WorkspaceManager;
+import java.time.Clock;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
@@ -119,7 +124,7 @@ public class MemoryFlushManager {
         }
 
         String existingMemory = readExistingContent(rc, WorkspaceConstants.MEMORY_MD);
-        String today = LocalDate.now().format(DateTimeFormatter.ISO_LOCAL_DATE);
+        String today = LocalDate.now(clock(rc)).format(DateTimeFormatter.ISO_LOCAL_DATE);
         String dailyRelPath = WorkspaceConstants.MEMORY_DIR + "/" + today + ".md";
         String existingDaily = readExistingContent(rc, dailyRelPath);
 
@@ -154,7 +159,7 @@ public class MemoryFlushManager {
                         .content(TextBlock.builder().text(userPrompt.toString()).build())
                         .build());
 
-        return model.stream(flushInput, null, null)
+        return ContextModelCalls.auxiliary(model, flushInput)
                 .reduce(
                         new StringBuilder(),
                         (sb, chatResponse) -> {
@@ -184,38 +189,6 @@ public class MemoryFlushManager {
     }
 
     /**
-     * Returns the string path of the session JSONL file where messages for the given agent and
-     * session are offloaded. Used by the compaction layer to embed the archive location in the
-     * summary message so the agent can retrieve full history if needed.
-     *
-     * @deprecated Prefer {@link SessionTranscriptWriter#resolveContextPath}.
-     */
-    @Deprecated
-    public String resolveOffloadPath(RuntimeContext rc, String agentId, String sessionId) {
-        return new SessionTranscriptWriter(workspaceManager)
-                .resolveContextPath(rc, agentId, sessionId);
-    }
-
-    /**
-     * Offloads raw messages to the JSONL session tree.
-     *
-     * @deprecated Prefer {@link SessionTranscriptWriter#appendMessages}. Kept as a thin
-     *     delegate so compaction / overflow-recovery call sites keep compiling during the
-     *     migration; new code should use {@link SessionTranscriptWriter} directly.
-     */
-    @Deprecated
-    public void offloadMessages(
-            RuntimeContext rc, List<Msg> messages, String agentId, String sessionId) {
-        new SessionTranscriptWriter(workspaceManager)
-                .appendMessages(rc, messages, agentId, sessionId);
-        log.debug(
-                "Offloaded {} messages for agent={}, session={}",
-                messages.size(),
-                agentId,
-                sessionId);
-    }
-
-    /**
      * Appends the extracted entries to today's daily memory ledger.
      *
      * <p>MEMORY.md is intentionally <b>NOT</b> touched here — it is owned by
@@ -223,22 +196,29 @@ public class MemoryFlushManager {
      * curated, size-bounded MEMORY.md.
      */
     private void writeMemoryFiles(RuntimeContext rc, String content) {
-        String today = LocalDate.now().format(DateTimeFormatter.ISO_LOCAL_DATE);
+        String today = LocalDate.now(clock(rc)).format(DateTimeFormatter.ISO_LOCAL_DATE);
 
         String dailyEntry =
                 String.format(
-                        "\n## Memory Flush — %s\n%s\n",
-                        java.time.Instant.now().toString(), content);
+                        "\n## Memory Flush — %s\n%s\n", Instant.now(clock(rc)).toString(), content);
 
         String dailyRelPath = WorkspaceConstants.MEMORY_DIR + "/" + today + ".md";
-        workspaceManager.appendUtf8WorkspaceRelative(rc, dailyRelPath, dailyEntry);
+        workspaceManager.appendMemoryFileUtf8(rc, dailyRelPath, dailyEntry);
+    }
+
+    private static Clock clock(RuntimeContext context) {
+        Clock supplied = context == null ? null : context.get(Clock.class);
+        return supplied == null ? Clock.systemDefaultZone() : supplied;
     }
 
     private String readExistingContent(RuntimeContext rc, String relativePath) {
         try {
-            String content = workspaceManager.readManagedWorkspaceFileUtf8(rc, relativePath);
+            String content = workspaceManager.readMemoryFileUtf8(rc, relativePath);
             return content != null ? content : "";
         } catch (Exception e) {
+            if (JournalException.causedBy(e))
+                throw new JournalException(
+                        "Memory read cannot advance without its recorded outcome", e);
             log.debug("Could not read {}: {}", relativePath, e.getMessage());
             return "";
         }
@@ -307,6 +287,8 @@ public class MemoryFlushManager {
                 parts.add(renderToolUse(tu));
             } else if (block instanceof ToolResultBlock tr) {
                 parts.add(renderToolResult(tr));
+            } else if (block instanceof DocumentBlock doc) {
+                parts.add(DocumentReferenceRenderer.render(doc));
             }
         }
 
@@ -354,6 +336,11 @@ public class MemoryFlushManager {
                             sb.append(text);
                         }
                     }
+                } else if (out instanceof DocumentBlock doc) {
+                    if (sb.length() > 0 && !Character.isWhitespace(sb.charAt(sb.length() - 1))) {
+                        sb.append(' ');
+                    }
+                    sb.append(DocumentReferenceRenderer.render(doc));
                 }
             }
         }

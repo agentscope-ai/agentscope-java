@@ -15,9 +15,11 @@
  */
 package io.agentscope.extensions.model.dashscope.formatter;
 
+import io.agentscope.core.formatter.DocumentReferenceRenderer;
 import io.agentscope.core.message.AudioBlock;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.DataBlock;
+import io.agentscope.core.message.DocumentBlock;
 import io.agentscope.core.message.HintBlock;
 import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.MessageMetadataKeys;
@@ -27,12 +29,15 @@ import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ThinkingBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
+import io.agentscope.core.message.URLSource;
 import io.agentscope.core.message.VideoBlock;
 import io.agentscope.extensions.model.dashscope.dto.DashScopeContentPart;
 import io.agentscope.extensions.model.dashscope.dto.DashScopeMessage;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.function.Function;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -137,6 +142,31 @@ public class DashScopeMessageConverter {
                             DashScopeContentPart.text(
                                     "[Media - processing failed: " + e.getMessage() + "]"));
                 }
+            } else if (block instanceof DocumentBlock documentBlock) {
+                // qwen-doc-turbo reads public URLs from a doc_url part inside the user turn
+                // itself. File-id documents ride on the injected fileid:// system message, so the
+                // reference here keeps the turn self-describing.
+                if (msg.getRole() == MsgRole.USER
+                        && documentBlock.getSource() instanceof URLSource) {
+                    contents.add(
+                            DashScopeContentPart.docUrl(
+                                    List.of(DashScopeChatFormatter.documentUrl(documentBlock)),
+                                    DashScopeChatFormatter.fileParsingStrategy(documentBlock)));
+                } else if (msg.getRole() == MsgRole.USER) {
+                    contents.add(
+                            DashScopeContentPart.text(
+                                    DashScopeChatFormatter.documentReference(documentBlock)));
+                } else {
+                    // returnDirect tool deliveries put documents on assistant turns; the
+                    // history keeps a reference there instead of losing the attachment.
+                    log.debug(
+                            "Rendering a text reference for a DocumentBlock outside a user"
+                                    + " message for DashScope: {}",
+                            documentBlock.getId());
+                    contents.add(
+                            DashScopeContentPart.text(
+                                    DocumentReferenceRenderer.render(documentBlock)));
+                }
             } else if (block instanceof HintBlock hb) {
                 contents.add(DashScopeContentPart.text(hb.getHint()));
             } else if (block instanceof ThinkingBlock) {
@@ -152,6 +182,19 @@ public class DashScopeMessageConverter {
         // Ensure non-empty content (required by some VL APIs)
         if (contents.isEmpty()) {
             contents.add(DashScopeContentPart.text(""));
+        }
+
+        // Document-capable models validate a type discriminator on every content part of the
+        // turn; an untyped text part next to a doc_url part is rejected with "User content type
+        // must be one of [doc_url,text]". Only document turns are touched so other models keep
+        // their exact request shape.
+        boolean hasDocumentParts = contents.stream().anyMatch(part -> part.getDocUrl() != null);
+        if (hasDocumentParts) {
+            for (DashScopeContentPart part : contents) {
+                if (part.getDocUrl() == null && part.getText() != null && part.getType() == null) {
+                    part.setType(DashScopeContentPart.TYPE_TEXT);
+                }
+            }
         }
 
         DashScopeMessage.Builder builder =
@@ -249,22 +292,43 @@ public class DashScopeMessageConverter {
     }
 
     /**
-     * Extract text content from message by concatenating all TextBlocks.
+     * Extract text, hints, tool-result text, and document references from a message.
      *
      * @param msg The message to extract text from
      * @return Concatenated text content
      */
-    private String extractTextContent(Msg msg) {
-        return msg.getContent().stream()
-                .filter(block -> block instanceof TextBlock || block instanceof HintBlock)
-                .map(
-                        block -> {
-                            if (block instanceof TextBlock tb) {
-                                return tb.getText();
-                            }
-                            return ((HintBlock) block).getHint();
-                        })
-                .reduce("", (a, b) -> a.isEmpty() ? b : a + "\n" + b);
+    String extractTextContent(Msg msg) {
+        String text =
+                msg.getContent().stream()
+                        .flatMap(
+                                block -> {
+                                    if (block instanceof TextBlock tb) {
+                                        return Stream.of(tb.getText());
+                                    } else if (block instanceof HintBlock hb) {
+                                        return Stream.of(hb.getHint());
+                                    } else if (block instanceof ToolResultBlock result) {
+                                        return result.getOutput().stream()
+                                                .filter(output -> output instanceof TextBlock)
+                                                .map(output -> ((TextBlock) output).getText());
+                                    }
+                                    return Stream.empty();
+                                })
+                        .collect(Collectors.joining("\n"));
+        // Documents become references on every role: returnDirect tool deliveries put them on
+        // assistant turns, and dropping them there would erase the attachment from the history.
+        // On a user turn the file itself travels through the doc_url part or the fileid://
+        // system message, so naming it here is enough.
+        String references =
+                msg.getContentBlocks(DocumentBlock.class).stream()
+                        .map(DocumentReferenceRenderer::render)
+                        .collect(Collectors.joining("\n"));
+        if (references.isEmpty()) {
+            return text;
+        }
+        if (text.isEmpty()) {
+            return references;
+        }
+        return text + "\n" + references;
     }
 
     /**
@@ -273,13 +337,13 @@ public class DashScopeMessageConverter {
      * @param msg the source message with metadata
      * @param result the converted DashScope message
      */
-    private void applyCacheControlFromMetadata(Msg msg, DashScopeMessage result) {
+    void applyCacheControlFromMetadata(Msg msg, DashScopeMessage result) {
         if (msg.getMetadata() == null) {
             return;
         }
         Object cacheFlag = msg.getMetadata().get(MessageMetadataKeys.CACHE_CONTROL);
         if (Boolean.TRUE.equals(cacheFlag)) {
-            result.setCacheControl(DashScopeChatFormatter.getEphemeralCacheControl());
+            DashScopeChatFormatter.setCacheControlOnContent(result);
         }
     }
 
@@ -351,6 +415,10 @@ public class DashScopeMessageConverter {
                             DashScopeContentPart.text(
                                     "[Media - processing failed: " + e.getMessage() + "]"));
                 }
+            } else if (block instanceof DocumentBlock documentBlock) {
+                content.add(
+                        DashScopeContentPart.text(
+                                DashScopeChatFormatter.documentReference(documentBlock)));
             }
         }
         return content;

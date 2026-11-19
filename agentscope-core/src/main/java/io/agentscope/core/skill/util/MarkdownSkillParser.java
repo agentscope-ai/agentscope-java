@@ -45,7 +45,7 @@ import org.yaml.snakeyaml.representer.Representer;
  * <p>Frontmatter format:
  * <pre>{@code
  * ---
- * name: example_skill
+ * name: example-skill
  * description: Example skill description
  * version: 1.0.0
  * ---
@@ -73,7 +73,9 @@ public class MarkdownSkillParser {
 
     private static final Pattern FRONTMATTER_PATTERN =
             Pattern.compile(
-                    "^---\\s*[\\r\\n]+(.*?)[\\r\\n]*---(?:\\s*[\\r\\n]+)?(.*)", Pattern.DOTALL);
+                    "^\\uFEFF?---\\s*[\\r\\n]+(.*?)(?<=[\\r\\n])---"
+                            + "(?=[ \\t]*(?:[\\r\\n]|\\z))(?:\\s*[\\r\\n]+)?(.*)",
+                    Pattern.DOTALL);
 
     private static final Pattern SIMPLE_KV_PATTERN =
             Pattern.compile("^([A-Za-z][A-Za-z0-9_-]*)\\s*:\\s*(.*)$");
@@ -91,6 +93,7 @@ public class MarkdownSkillParser {
      * Parse markdown content with YAML frontmatter.
      *
      * <p>Extracts both the YAML metadata and the markdown content.
+     * An optional leading byte order mark (BOM) is allowed before the opening delimiter.
      * If no frontmatter is found, returns empty metadata with the entire content.
      *
      * @param markdown Markdown content (may or may not have frontmatter)

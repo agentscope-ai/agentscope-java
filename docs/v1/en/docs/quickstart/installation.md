@@ -1,4 +1,7 @@
-# Installation
+---
+title: Installation
+zh_link: /v1/zh/docs/quickstart/installation
+---
 
 AgentScope Java supports multiple models, RAG stores, and extensions, each requiring different third-party SDKs. Bundling everything together would bloat your project, so we offer two ways to add dependencies:
 

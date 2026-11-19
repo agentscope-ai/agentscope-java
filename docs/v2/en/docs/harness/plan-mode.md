@@ -1,6 +1,8 @@
 ---
-title: "Plan Mode"
-description: "Think before acting: a read-only phase that writes a plan file and requires HITL approval before executing"
+title: Plan Mode
+description: 'Think before acting: a read-only phase that writes a plan file and requires
+  HITL approval before executing'
+zh_link: /v2/zh/docs/harness/plan-mode
 ---
 
 ## Role
@@ -47,7 +49,7 @@ You can also call `enableTaskList()` so that todos created during the plan phase
 
 ## Workflow
 
-```{mermaid}
+```mermaid
 sequenceDiagram
     autonumber
     participant U as User
@@ -61,7 +63,7 @@ sequenceDiagram
     A->>FS: plan_write to plans/PLAN.md
     A->>H: plan_exit → HITL confirmation
     H-->>A: ConfirmResult(true)
-    A->>A: enter execution phase; all tools allowed
+    A->>A: enter execution phase: all tools allowed
 ```
 
 Any non-whitelisted tool call (e.g. `write_file`, or `execute` unless you [opt in](#allowing-the-shell-during-the-plan-phase-opt-in)) during the plan phase is rejected immediately with something like:
@@ -112,7 +114,7 @@ This mirrors how OpenCode handles its plan agent: it allows the shell for invest
 
 ## Runtime permission switching (the "bypass" escape hatch)
 
-Plan Mode is one specific phase switch. Underneath it, every session carries a [`PermissionMode`](../building-blocks/context.md) that the permission engine evaluates against. You can flip that mode at runtime — for example to grant a deliberate, user-initiated "skip all permission prompts" toggle (similar to a YOLO / dangerous-skip switch in other coding tools):
+Plan Mode is one specific phase switch. Underneath it, every session carries a [`PermissionMode`](/v2/en/docs/building-blocks/context) that the permission engine evaluates against. You can flip that mode at runtime — for example to grant a deliberate, user-initiated "skip all permission prompts" toggle (similar to a YOLO / dangerous-skip switch in other coding tools):
 
 ```java
 RuntimeContext ctx = RuntimeContext.builder().sessionId("my-session").build();
@@ -125,6 +127,19 @@ PermissionMode current = agent.getPermissionMode(userId, sessionId);
 ```
 
 `setPermissionMode(...)` preserves the session's configured allow/deny/ask rules and working directories — only the mode changes — and rebuilds that session's cached permission engine so the switch takes effect on the **next** call. An in-flight call keeps the engine it started with.
+
+To replace a session's rules as well — for example when one shared agent serves several users and each user's role maps to a different rule set — use `replacePermissionContext(...)`. It installs a complete replacement context for that `(userId, sessionId)` only; other sessions are not affected:
+
+```java
+PermissionContextState rules =
+        PermissionContextState.builder()
+                .addDenyRule(
+                        "execute",
+                        new PermissionRule("execute", null, PermissionBehavior.DENY, "role-policy"))
+                .build();
+
+agent.replacePermissionContext(userId, sessionId, rules);
+```
 
 ⚠ `BYPASS` disables all rule evaluation, so treat it as an explicit, per-session, opt-in action and prefer pairing it with a sandbox. To run unattended without prompts but *with* enforcement, use `PermissionMode.DONT_ASK` instead (ASK decisions become DENY rather than being auto-allowed).
 
@@ -163,7 +178,7 @@ Plan Mode and `todo_write` (provided by core) are **independent but commonly use
 
 Typical workflow: write `PLAN.md` during the plan phase → `plan_exit` → in execution use `todo_write` to slice the PLAN into 5–8 todos → progress one at a time. Each reasoning step shows the agent a todos reminder to stay focused.
 
-⚠ Don't confuse with subagent **background tasks** (`task_output` / `task_cancel` / `task_list`) — that's a different concept; see [Subagent](./subagent.md).
+⚠ Don't confuse with subagent **background tasks** (`task_output` / `task_cancel` / `task_list`) — that's a different concept; see [Subagent](/v2/en/docs/harness/subagent).
 
 ## Viewing the task list
 
@@ -205,6 +220,6 @@ agent.streamEvents(message)
 
 ## Related Pages
 
-- [Workspace](./workspace.md) — `plans/` directory location
-- [Subagent](./subagent.md) — `todo_write` ≠ subagent task; don't confuse them
-- [Architecture](./architecture.md) — where Plan Mode sits in the call() timeline
+- [Workspace](/v2/en/docs/harness/workspace) — `plans/` directory location
+- [Subagent](/v2/en/docs/harness/subagent) — `todo_write` ≠ subagent task; don't confuse them
+- [Architecture](/v2/en/docs/harness/architecture) — where Plan Mode sits in the call() timeline

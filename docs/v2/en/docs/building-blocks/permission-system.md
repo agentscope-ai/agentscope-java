@@ -1,6 +1,7 @@
 ---
-title: "Permission System"
-description: "Fine-grained control over which tools your agents can execute and when"
+title: Permission System
+description: Fine-grained control over which tools your agents can execute and when
+zh_link: /v2/zh/docs/building-blocks/permission-system
 ---
 
 ## Overview
@@ -13,7 +14,7 @@ It combines static configuration with dynamic runtime analysis. Three components
 - **Mode** — a global static policy set at configuration time; decides the default behaviour for calls that match no rule (e.g. `EXPLORE` makes the agent read-only, `DONT_ASK` silently denies anything not matching a rule).
 - **Built-in Checks** — runtime analysis performed by the tool itself based on the actual input (implemented in `ToolBase#checkPermissions`). These are runtime checks rather than preconfigured patterns, so they are **non-bypassable** — they are not subject to mode or rules.
 
-```{mermaid}
+```mermaid
 sequenceDiagram
     participant LLM
     participant PS as Permission System
@@ -41,8 +42,10 @@ sequenceDiagram
     end
 ```
 
-:::{dropdown} Detailed decision flow
-```{mermaid}
+
+<Accordion title="Detailed decision flow">
+
+```mermaid
 flowchart TD
     A([Tool Call]) --> B{Deny Rules?}
     B -->|Match| DENY([DENY])
@@ -75,11 +78,22 @@ flowchart TD
     style ASK2 fill:#ffd43b,color:#333
     style ASK3 fill:#ffd43b,color:#333
 ```
-:::
 
-:::{note}
+</Accordion>
+
+
+
+<Note>
+
 Deny rules and dangerous-path checks are **non-bypassable** — they apply even in `BYPASS` mode.
-:::
+
+</Note>
+
+
+### Interceptors and the permission engine
+
+Use [tool call interceptors](/v2/en/docs/building-blocks/tool#tool-call-interceptors) (`ToolkitConfig.interceptor(...)`) for business rules on a specific call's arguments — sandboxing, tenant scoping, auditing; use the permission engine for human-review policy (ALLOW/ASK/DENY). The engine judges the raw model input (that is also what an ASK prompt shows); interceptors run afterwards on the final arguments, so a rewrite lands *after* user approval — when the final value of a security-sensitive argument (path, SQL, URL) must be user-confirmed, suspend for human review from the interceptor instead of rewriting silently. An interceptor denying an already-approved call is expected: the denial feeds back to the model without a second approval round.
+
 
 ## Permission Mode
 
@@ -95,8 +109,12 @@ The `PermissionMode` enum (`io.agentscope.core.permission.PermissionMode`) suppo
 
 Set the mode on the agent builder via `permissionContext(...)`:
 
-::::{tab-set}
-:::{tab-item} Initial config
+
+<Tabs>
+
+
+<Tab title="Initial config">
+
 ```java
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.permission.PermissionContextState;
@@ -115,8 +133,12 @@ ReActAgent agent =
                 .permissionContext(permCtx)
                 .build();
 ```
-:::
-:::{tab-item} ACCEPT_EDITS with working dir
+
+</Tab>
+
+
+<Tab title="ACCEPT_EDITS with working dir">
+
 ```java
 import io.agentscope.core.permission.AdditionalWorkingDirectory;
 import io.agentscope.core.permission.PermissionContextState;
@@ -130,8 +152,12 @@ PermissionContextState permCtx =
                         new AdditionalWorkingDirectory("/my/project", "userSettings"))
                 .build();
 ```
-:::
-::::
+
+</Tab>
+
+
+</Tabs>
+
 
 ## Permission Rule
 
@@ -193,6 +219,24 @@ ConfirmResult result =
 ```
 
 Runnable examples: `agentscope-examples/documentation/.../tool/PermissionContextExample.java`, `hitl/PermissionHITLExample.java`.
+
+### Permission contexts and existing sessions
+
+A non-null `permissionContext` replaces a slot's persisted permission context when the current agent instance loads that slot for the first time. Passing `null` leaves an existing slot's context untouched.
+
+This also applies when rebuilding an agent against the same state store. To preserve runtime permission state across a rebuild, read the old context first and construct the new one from it:
+
+```java
+PermissionContextState old =
+        agent.getAgentState(userId, sessionId).getPermissionContext();
+PermissionContextState next =
+        PermissionContextState.builder()
+                .mode(old.getMode())
+                // carry over working directories and rules you want to keep
+                .build();
+```
+
+A non-null `PermissionContextState.builder().build()` is a valid trivial context, not a no-op: it replaces the old context with the default mode and no rules. Use `null` when you want to leave the existing context unchanged.
 
 ## Built-in checks
 
@@ -341,10 +385,12 @@ When the user denies **all** tool calls from a reasoning step in the confirmatio
 
 To stop the agent in this scenario, wire up an `onActing` middleware that observes `AllToolsDeniedEvent` and emits a `RequestStopEvent`. After stopping, `Msg.getGenerateReason()` returns `ALL_TOOLS_DENIED`.
 
-See [Middleware — Stop agent when all tools are denied](./middleware.md#stop-agent-when-all-tools-are-denied) for the implementation.
+See [Middleware — Stop agent when all tools are denied](/v2/en/docs/building-blocks/middleware#stop-agent-when-all-tools-are-denied) for the implementation.
 ### Streaming mode
 
 When using `streamEvents()`, you don't need to extract `ToolUseBlock`s from the returned `Msg` — the event stream delivers a `RequireUserConfirmEvent` that carries the pending tool calls directly:
+
+When a state store or native session log is configured, the agent saves the pending tool states and confirmation reply identity before publishing this event. Native session logs also commit the pending interaction in that boundary. A failed save fails the invocation without publishing the confirmation prompt. Recovery across process restarts requires a persistent backend; an in-memory backend does not provide it. This ordering does not guarantee delivery of the prompt if the subscriber disconnects after the save.
 
 ```java
 import io.agentscope.core.event.AgentEvent;
@@ -423,8 +469,12 @@ Full runnable example: `agentscope-examples/documentation/.../hitl/PermissionHIT
 
 The examples below show how to configure `permissionContext` for typical deployment scenarios. Each recipe combines a mode with a rule set tuned for one use case.
 
-::::{tab-set}
-:::{tab-item} Read-only exploration
+
+<Tabs>
+
+
+<Tab title="Read-only exploration">
+
 ```java
 // EXPLORE mode: agent freely calls read-only tools; all writes are auto-denied.
 PermissionContextState explore =
@@ -440,8 +490,12 @@ ReActAgent explorer =
                 .permissionContext(explore)
                 .build();
 ```
-:::
-:::{tab-item} Unattended automation
+
+</Tab>
+
+
+<Tab title="Unattended automation">
+
 ```java
 import io.agentscope.core.permission.PermissionBehavior;
 import io.agentscope.core.permission.PermissionRule;
@@ -468,8 +522,12 @@ ReActAgent ciAgent =
                 .build();
 // Only explicitly allowed commands run; everything else is silently denied.
 ```
-:::
-:::{tab-item} Block dangerous commands
+
+</Tab>
+
+
+<Tab title="Block dangerous commands">
+
 ```java
 PermissionContextState bypassWithDeny =
         PermissionContextState.builder()
@@ -485,5 +543,8 @@ PermissionContextState bypassWithDeny =
                 .build();
 // Everything except the explicitly denied tools runs (deny rules can't be bypassed).
 ```
-:::
-::::
+
+</Tab>
+
+
+</Tabs>

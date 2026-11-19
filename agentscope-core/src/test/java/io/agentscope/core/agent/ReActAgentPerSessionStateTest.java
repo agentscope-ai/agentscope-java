@@ -42,20 +42,32 @@ import io.agentscope.core.state.AgentState;
 import io.agentscope.core.state.AgentStateStore;
 import io.agentscope.core.state.InMemoryAgentStateStore;
 import io.agentscope.core.state.JsonFileAgentStateStore;
+import io.agentscope.core.state.LegacyStateLoader;
+import io.agentscope.core.state.State;
 import io.agentscope.core.state.legacy.ToolkitState;
 import io.agentscope.core.tool.Toolkit;
+import java.lang.reflect.Field;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
+import java.util.stream.Stream;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
@@ -89,6 +101,25 @@ class ReActAgentPerSessionStateTest {
                 .build();
     }
 
+    @SuppressWarnings("unchecked")
+    private static Map<String, Long> slotVersionsMap(ReActAgent agent) throws Exception {
+        Field field = ReActAgent.class.getDeclaredField("slotVersions");
+        field.setAccessible(true);
+        return (Map<String, Long>) field.get(agent);
+    }
+
+    private static int slotVersionCount(ReActAgent agent) throws Exception {
+        return slotVersionsMap(agent).size();
+    }
+
+    private static Long slotVersionOf(ReActAgent agent, String slot) throws Exception {
+        return slotVersionsMap(agent).get(slot);
+    }
+
+    private static void clearSlotVersion(ReActAgent agent, String slot) throws Exception {
+        slotVersionsMap(agent).remove(slot);
+    }
+
     @Test
     @DisplayName("fresh slots inherit default tool groups without overriding persisted state")
     void freshSlotsInheritDefaultToolGroupsWithoutOverridingPersistedState() {
@@ -96,7 +127,7 @@ class ReActAgentPerSessionStateTest {
         store.save(
                 "u1",
                 "persisted-empty",
-                "agent_state",
+                new ThreadKey(null, "asst", "unused-bucket", "main").stateEntry("agent_state"),
                 AgentState.builder().userId("u1").sessionId("persisted-empty").build());
 
         Toolkit toolkit = new Toolkit();
@@ -122,8 +153,8 @@ class ReActAgentPerSessionStateTest {
     }
 
     @Test
-    @DisplayName("legacy empty tool groups remain explicitly empty")
-    void legacyEmptyToolGroupsAreNotMistakenForMissingState() {
+    @DisplayName("legacy keys require explicit import before activation")
+    void legacyKeysRequireExplicitImport() {
         InMemoryAgentStateStore store = new InMemoryAgentStateStore();
         store.save("u1", "legacy-empty", "toolkit_activeGroups", new ToolkitState(List.of()));
 
@@ -138,12 +169,22 @@ class ReActAgentPerSessionStateTest {
                         .stateStore(store)
                         .build();
 
+        assertEquals(
+                List.of("default-active"),
+                agent.getAgentState("u1", "legacy-empty").getToolContext().getActivatedGroups(),
+                "Normal activation must not read v1 keys");
+        store.save(
+                "u1",
+                "legacy-empty",
+                new ThreadKey(null, "asst", "unused-bucket", "main").stateEntry("agent_state"),
+                LegacyStateLoader.loadFromLegacySession(store, "u1", "legacy-empty"));
+        agent.clearStateCache("u1", "legacy-empty");
         assertTrue(
                 agent.getAgentState("u1", "legacy-empty")
                         .getToolContext()
                         .getActivatedGroups()
                         .isEmpty(),
-                "A present v1 toolkit_activeGroups=[] value must override fresh defaults");
+                "Explicitly imported empty groups must remain empty");
     }
 
     @Test
@@ -196,6 +237,22 @@ class ReActAgentPerSessionStateTest {
     }
 
     @Test
+    @DisplayName("clearStateCache evicts optimistic-concurrency versions with session caches")
+    void clearStateCacheEvictsSlotVersions() throws Exception {
+        ReActAgent agent = agent(new InMemoryAgentStateStore());
+
+        agent.getAgentState("u1", "sessA");
+        agent.getAgentState("u1", "sessB");
+        assertEquals(2, slotVersionCount(agent));
+
+        agent.clearStateCache("u1", "sessA");
+        assertEquals(1, slotVersionCount(agent));
+
+        agent.clearStateCache();
+        assertEquals(0, slotVersionCount(agent));
+    }
+
+    @Test
     @DisplayName("clearStateCache preserves persisted session state")
     void clearStateCachePreservesPersistedState(@TempDir Path tempDir) {
         JsonFileAgentStateStore store = new JsonFileAgentStateStore(tempDir);
@@ -231,6 +288,93 @@ class ReActAgentPerSessionStateTest {
         AgentState other = reborn.getAgentState("u1", "other");
         assertFalse(other.getPlanModeContext().isPlanActive());
         assertEquals("", other.getSummary());
+    }
+
+    // ==================== sessionIds containing '/' (#2475) ====================
+
+    /** DingTalk-style openConversationId: standard Base64, so it can legitimately contain '/'. */
+    private static final String BASE64_SESSION_ID = "cidTestConversationAbC12/xYz9KlMnOpQrStU=";
+
+    /** Records every {@code (userId, sessionId)} pair that {@code agent_state} is written under. */
+    private static final class IdentityRecordingStore extends InMemoryAgentStateStore {
+        final Set<List<String>> agentStateWrites = ConcurrentHashMap.newKeySet();
+
+        @Override
+        public void save(String userId, String sessionId, String key, State value) {
+            recordWrite(userId, sessionId, key);
+            super.save(userId, sessionId, key, value);
+        }
+
+        @Override
+        public long saveIfVersion(
+                String userId, String sessionId, String key, State value, long expectedVersion) {
+            recordWrite(userId, sessionId, key);
+            return super.saveIfVersion(userId, sessionId, key, value, expectedVersion);
+        }
+
+        private void recordWrite(String userId, String sessionId, String key) {
+            if ("agent_state".equals(key)) {
+                agentStateWrites.add(Arrays.asList(userId, sessionId));
+            }
+        }
+    }
+
+    static Stream<Arguments> sessionIdsContainingSlash() {
+        return Stream.of(
+                Arguments.of("u1", BASE64_SESSION_ID),
+                Arguments.of("u1", "tenant/chat/42"),
+                // A trailing '/' used to split into a blank sessionId, which the store rejects.
+                Arguments.of("u1", "conv/"),
+                // null, blank and "__anon__" all identify the anonymous caller.
+                Arguments.of(null, BASE64_SESSION_ID),
+                Arguments.of("", BASE64_SESSION_ID),
+                Arguments.of("__anon__", BASE64_SESSION_ID));
+    }
+
+    @ParameterizedTest(name = "userId={0}, sessionId={1}")
+    @MethodSource("sessionIdsContainingSlash")
+    @DisplayName("call() persists agent_state under the caller's identity when sessionId has '/'")
+    void callPersistsUnderCallerIdentityWhenSessionIdContainsSlash(
+            String userId, String sessionId) {
+        IdentityRecordingStore store = new IdentityRecordingStore();
+        RuntimeContext ctx = RuntimeContext.builder().userId(userId).sessionId(sessionId).build();
+
+        agent(store).call(List.of(userMsg("hello")), ctx).block(Duration.ofSeconds(5));
+
+        AgentState saved =
+                store.get(userId, sessionId, "agent_state", AgentState.class)
+                        .orElseThrow(
+                                () ->
+                                        new AssertionError(
+                                                "agent_state must be stored under the caller's"
+                                                        + " (userId, sessionId)"));
+        assertTrue(allText(saved).contains("hello"), "the persisted state must hold this turn");
+        assertEquals(
+                Set.of(Arrays.asList(userId, sessionId)),
+                store.agentStateWrites,
+                "agent_state must never be written under a pair re-derived from the slot key");
+    }
+
+    @ParameterizedTest(name = "userId={0}, sessionId={1}")
+    @MethodSource("sessionIdsContainingSlash")
+    @DisplayName("history of a sessionId containing '/' survives calls and agent restarts")
+    void historySurvivesCallsAndRestartsWhenSessionIdContainsSlash(
+            String userId, String sessionId) {
+        InMemoryAgentStateStore store = new InMemoryAgentStateStore();
+        RuntimeContext ctx = RuntimeContext.builder().userId(userId).sessionId(sessionId).build();
+        ReActAgent agent = agent(store);
+
+        agent.call(List.of(userMsg("first")), ctx).block(Duration.ofSeconds(5));
+        agent.call(List.of(userMsg("second")), ctx).block(Duration.ofSeconds(5));
+
+        // Each call reloads the slot from the store, so the second save must see the first save's
+        // version instead of hitting a CAS conflict.
+        assertEquals(0, agent.getStateConflictCount(), "same-session turns must not conflict");
+        // A rebuilt agent starts with an empty cache, so it only sees what the calls persisted.
+        List<String> history = allText(agent(store).getAgentState(userId, sessionId));
+        assertTrue(
+                history.containsAll(List.of("first", "second")),
+                "every turn must be replayable from the store; was " + history);
     }
 
     @Test
@@ -435,6 +579,48 @@ class ReActAgentPerSessionStateTest {
         assertEquals(GenerateReason.INTERRUPTED, restoredRecovery.getGenerateReason());
     }
 
+    @Test
+    @DisplayName("shutdown retry clears and uses the current non-default session state")
+    void shutdownRetryUsesCurrentSessionState() {
+        ReActAgent agent =
+                ReActAgent.builder().name("asst").sysPrompt("hi").model(new NoopModel()).build();
+        AgentState defaultState = agent.getAgentState();
+        AgentState sessionState = agent.getAgentState("u1", "sessA");
+        sessionState.setShutdownInterrupted(true);
+
+        Msg response =
+                agent.call(
+                                List.of(userMsg("duplicate prompt")),
+                                RuntimeContext.builder().userId("u1").sessionId("sessA").build())
+                        .block(Duration.ofSeconds(5));
+
+        assertEquals("ok", response.getTextContent());
+        assertFalse(sessionState.isShutdownInterrupted());
+        assertFalse(defaultState.isShutdownInterrupted());
+        assertTrue(
+                sessionState.getContext().stream()
+                        .noneMatch(msg -> "duplicate prompt".equals(msg.getTextContent())),
+                "the retry input must be discarded for the interrupted session");
+
+        ReActAgent otherAgent =
+                ReActAgent.builder().name("asst").sysPrompt("hi").model(new NoopModel()).build();
+        AgentState otherDefaultState = otherAgent.getAgentState();
+        AgentState otherSessionState = otherAgent.getAgentState("u1", "sessA");
+        otherDefaultState.setShutdownInterrupted(true);
+
+        otherAgent
+                .call(
+                        List.of(userMsg("new prompt")),
+                        RuntimeContext.builder().userId("u1").sessionId("sessA").build())
+                .block(Duration.ofSeconds(5));
+
+        assertTrue(otherDefaultState.isShutdownInterrupted());
+        assertTrue(
+                otherSessionState.getContext().stream()
+                        .anyMatch(msg -> "new prompt".equals(msg.getTextContent())),
+                "a default-session flag must not discard another session's input");
+    }
+
     private static final class DelayedFirstChunkModel extends ChatModelBase {
         private final CountDownLatch subscribed;
 
@@ -553,6 +739,39 @@ class ReActAgentPerSessionStateTest {
         for (int i = 0; i < calls; i++) {
             assertTrue(texts.contains("msg-" + i), "lost input msg-" + i + "; buffer was " + texts);
         }
+    }
+
+    private static final class RecordingStore extends InMemoryAgentStateStore {
+        final List<Long> unconditionalVersions = new CopyOnWriteArrayList<>();
+
+        @Override
+        public long saveIfVersion(String u, String s, String k, State v, long expectedVersion) {
+            long result = super.saveIfVersion(u, s, k, v, expectedVersion);
+            if (expectedVersion == AgentStateStore.UNVERSIONED) {
+                unconditionalVersions.add(result);
+            }
+            return result;
+        }
+    }
+
+    @Test
+    @DisplayName("first unconditional persist caches the store-returned version, not a re-read")
+    void firstUnconditionalPersistCachesOwnWriteVersion() throws Exception {
+        RecordingStore store = new RecordingStore();
+        ReActAgent agent = agent(store);
+
+        agent.getAgentState("u1", "sessA").setSummary("s1");
+        // getAgentState seeds slotVersions with 0L for a fresh slot on a versioning store;
+        // drop the entry to recreate the "version unknown → unconditional persist" window
+        // (e.g. a restart whose version cache is empty), which is the path this fix hardens.
+        clearSlotVersion(agent, new ThreadKey("u1", "asst", "sessA", "main").storagePath());
+        agent.saveAgentState("u1", "sessA");
+
+        assertEquals(1, store.unconditionalVersions.size());
+        assertEquals(1L, store.unconditionalVersions.get(0));
+        assertEquals(
+                1L,
+                slotVersionOf(agent, new ThreadKey("u1", "asst", "sessA", "main").storagePath()));
     }
 
     @Test

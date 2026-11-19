@@ -21,9 +21,13 @@ public class MysqlJdbcStoreDialect implements JdbcStoreDialect {
     @Override
     public String getCreateTableSql() {
         // Keep the composite primary key under InnoDB's utf8mb4 3072-byte limit.
+        // The key columns pin a binary collation: utf8mb4's default collation is
+        // case-insensitive (utf8mb4_0900_ai_ci on MySQL 8.0+, utf8mb4_general_ci on 5.7 and
+        // MariaDB), which makes "README.md" and "readme.md" collide on the primary key so the
+        // second put silently overwrites the first. Payload columns keep the table default.
         return "CREATE TABLE IF NOT EXISTS %s ("
-                + "  namespace_path VARCHAR(512)  NOT NULL,"
-                + "  item_key       VARCHAR(255)  NOT NULL,"
+                + "  namespace_path VARCHAR(512)  COLLATE utf8mb4_bin NOT NULL,"
+                + "  item_key       VARCHAR(255)  COLLATE utf8mb4_bin NOT NULL,"
                 + "  value_json     LONGTEXT      NOT NULL,"
                 + "  version        BIGINT        NOT NULL,"
                 + "  updated_at     BIGINT        NOT NULL,"

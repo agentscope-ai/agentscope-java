@@ -25,6 +25,8 @@ import io.agentscope.dataagent.runtime.session.SessionEntry;
 import io.agentscope.dataagent.runtime.session.SessionKind;
 import io.agentscope.dataagent.web.audit.ActivityEvent;
 import io.agentscope.dataagent.web.audit.AgentActivityStore;
+import io.agentscope.dataagent.web.binding.UserBinding;
+import io.agentscope.dataagent.web.binding.UserBindingStore;
 import io.agentscope.dataagent.web.catalog.AgentCatalogService;
 import io.agentscope.dataagent.web.catalog.AgentDefinition;
 import io.agentscope.dataagent.web.identity.IdentityLinkStore;
@@ -37,6 +39,7 @@ import io.agentscope.harness.agent.gateway.channel.InboundMessage;
 import io.agentscope.harness.agent.gateway.channel.Peer;
 import io.agentscope.harness.agent.gateway.channel.chatui.ChatUiChannel;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -87,6 +90,7 @@ public class ChatController {
     private final ToolEventBus toolEventBus;
     private final AgentAccessGuard guard;
     private final AgentActivityStore activity;
+    private final UserBindingStore userBindings;
 
     /**
      * AgentStateStore keys for which we have already recorded a RUN_SESSION event. Each (userId, agentId)
@@ -103,7 +107,8 @@ public class ChatController {
             UsageStore usageStore,
             ToolEventBus toolEventBus,
             AgentAccessGuard guard,
-            AgentActivityStore activity) {
+            AgentActivityStore activity,
+            UserBindingStore userBindings) {
         this.chatUiChannel = chatUiChannel;
         this.sessionAgentManager = builderBootstrap.gateway().sessionAgentManager();
         this.catalogService = catalogService;
@@ -112,6 +117,7 @@ public class ChatController {
         this.toolEventBus = toolEventBus;
         this.guard = guard;
         this.activity = activity;
+        this.userBindings = userBindings;
     }
 
     /**
@@ -486,6 +492,42 @@ public class ChatController {
     private record CommandResult(String message, String newSessionKey) {}
 
     /**
+     * Builds the inbound message list for a chat turn, applying stored {@link UserBinding}
+     * preferences that can be honoured at the dispatch entry point.
+     *
+     * <p>Currently only {@code language} is wired - it is injected as a {@link MsgRole#SYSTEM}
+     * instruction so the agent actually replies in the requested language. The remaining fields
+     * ({@code enabledSkills}, {@code sessionScope}) require deeper, architecturally-scoped hooks
+     * and are intentionally left as follow-ups:
+     *
+     * <ul>
+     *   <li>{@code enabledSkills} filters the skills loaded by the agent, which happens at agent
+     *       construction time (see {@code DataAgentBootstrap} / {@code SkillRepositorySupport}),
+     *       not at the dispatch entry point.
+     *   <li>{@code sessionScope} overrides per-session key derivation performed by the
+     *       {@code ChannelRouter}, which is outside this controller's responsibility.
+     * </ul>
+     */
+    static List<Msg> shapeInboundMessages(
+            List<UserBinding> preferences, String channelId, String message) {
+        UserBinding pref =
+                preferences.stream()
+                        .filter(b -> channelId.equals(b.channelId()))
+                        .findFirst()
+                        .orElse(null);
+        List<Msg> msgs = new ArrayList<>();
+        if (pref != null && pref.language() != null) {
+            msgs.add(
+                    Msg.builder()
+                            .role(MsgRole.SYSTEM)
+                            .textContent("Reply to the user in " + pref.language() + ".")
+                            .build());
+        }
+        msgs.add(Msg.builder().role(MsgRole.USER).textContent(message).build());
+        return msgs;
+    }
+
+    /**
      * Core dispatch logic. Always routes through {@link ChatUiChannel#dispatch} so that the
      * {@link io.agentscope.harness.agent.gateway.channel.ChannelRouter} runs uniformly — including for
      * the path-mapped Web UI calls. The URL-supplied {@code agentId} is passed as
@@ -498,18 +540,22 @@ public class ChatController {
      */
     private Mono<Msg> executeChat(
             String userId, String agentId, String message, String conversationId) {
-        Msg userMsg = Msg.builder().role(MsgRole.USER).textContent(message).build();
         long startMs = System.currentTimeMillis();
+
+        List<Msg> msgs =
+                shapeInboundMessages(userBindings.list(userId), ChatUiChannel.CHANNEL_ID, message);
 
         InboundMessage inbound;
         if (agentId == null || agentId.isBlank()) {
             // No agent override and no conversation scoping — pure binding-driven routing.
-            inbound = InboundMessage.dm(ChatUiChannel.CHANNEL_ID, userId, List.of(userMsg));
+            inbound = InboundMessage.dm(ChatUiChannel.CHANNEL_ID, userId, List.copyOf(msgs));
         } else {
             String gatewayAgentId = catalogService.resolveGatewayAgentId(userId, agentId);
             inbound =
                     InboundMessage.builder(
-                                    ChatUiChannel.CHANNEL_ID, Peer.direct(userId), List.of(userMsg))
+                                    ChatUiChannel.CHANNEL_ID,
+                                    Peer.direct(userId),
+                                    List.copyOf(msgs))
                             .preferredAgentId(gatewayAgentId)
                             .accountId(conversationId)
                             .build();

@@ -15,7 +15,6 @@
  */
 package io.agentscope.spring.boot.agui.webflux;
 
-import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.agui.AguiException;
 import io.agentscope.core.agui.adapter.AguiAdapterConfig;
 import io.agentscope.core.agui.adapter.AguiAgentAdapterFactory;
@@ -24,8 +23,9 @@ import io.agentscope.core.agui.event.AguiEvent;
 import io.agentscope.core.agui.model.RunAgentInput;
 import io.agentscope.core.agui.processor.AguiRequestProcessor;
 import io.agentscope.core.agui.registry.AguiAgentRegistry;
-import io.agentscope.spring.boot.agui.common.AguiRuntimeContextRequest;
-import io.agentscope.spring.boot.agui.common.AguiRuntimeContextResolver;
+import io.agentscope.core.agui.runtime.AguiRequestBodyParser;
+import io.agentscope.core.agui.runtime.AguiRuntimeContextRequest;
+import io.agentscope.core.agui.runtime.AguiRuntimeContextResolver;
 import io.agentscope.spring.boot.agui.common.DefaultAgentResolver;
 import io.agentscope.spring.boot.agui.common.ThreadSessionManager;
 import java.util.LinkedHashMap;
@@ -78,28 +78,36 @@ public class AguiWebFluxHandler {
 
     private final AguiRequestProcessor processor;
     private final AguiEventEncoder encoder;
+    private final AguiRequestBodyParser requestBodyParser;
     private final String agentIdHeader;
-    private final AguiRuntimeContextResolver runtimeContextResolver;
+    private final boolean interruptOnDisconnect;
 
     private AguiWebFluxHandler(Builder builder) {
         this.processor =
-                AguiRequestProcessor.builder()
-                        .agentResolver(
-                                DefaultAgentResolver.builder()
-                                        .registry(builder.registry)
-                                        .sessionManager(builder.sessionManager)
-                                        .serverSideMemory(builder.serverSideMemory)
-                                        .build())
-                        .config(
-                                builder.config != null
-                                        ? builder.config
-                                        : AguiAdapterConfig.defaultConfig())
-                        .adapterFactory(builder.adapterFactory)
-                        .build();
+                builder.requestProcessor != null
+                        ? builder.requestProcessor
+                        : AguiRequestProcessor.builder()
+                                .agentResolver(
+                                        DefaultAgentResolver.builder()
+                                                .registry(builder.registry)
+                                                .sessionManager(builder.sessionManager)
+                                                .serverSideMemory(builder.serverSideMemory)
+                                                .build())
+                                .config(
+                                        builder.config != null
+                                                ? builder.config
+                                                : AguiAdapterConfig.defaultConfig())
+                                .adapterFactory(builder.adapterFactory)
+                                .runtimeContextResolver(builder.runtimeContextResolver)
+                                .build();
         this.encoder = new AguiEventEncoder();
+        this.requestBodyParser =
+                builder.requestBodyParser != null
+                        ? builder.requestBodyParser
+                        : new AguiRequestBodyParser();
         this.agentIdHeader =
                 builder.agentIdHeader != null ? builder.agentIdHeader : DEFAULT_AGENT_ID_HEADER;
-        this.runtimeContextResolver = builder.runtimeContextResolver;
+        this.interruptOnDisconnect = builder.interruptOnDisconnect;
     }
 
     /**
@@ -112,7 +120,8 @@ public class AguiWebFluxHandler {
      * @return A Mono containing the server response with SSE stream
      */
     public Mono<ServerResponse> handle(ServerRequest request) {
-        return request.bodyToMono(RunAgentInput.class)
+        return request.bodyToMono(String.class)
+                .map(requestBodyParser::parse)
                 .flatMap(input -> processInput(input, request, null))
                 .onErrorResume(this::handleParseError);
     }
@@ -128,7 +137,8 @@ public class AguiWebFluxHandler {
      */
     public Mono<ServerResponse> handleWithAgentId(ServerRequest request) {
         String pathAgentId = request.pathVariable(AGENT_ID_PATH_VARIABLE);
-        return request.bodyToMono(RunAgentInput.class)
+        return request.bodyToMono(String.class)
+                .map(requestBodyParser::parse)
                 .flatMap(input -> processInput(input, request, pathAgentId))
                 .onErrorResume(this::handleParseError);
     }
@@ -145,27 +155,34 @@ public class AguiWebFluxHandler {
             // Process request - returns both agent and event stream
             AguiRequestProcessor.ProcessResult result =
                     processor.process(
-                            input,
-                            headerAgentId,
-                            pathAgentId,
-                            resolveRuntimeContext(input, headerAgentId, pathAgentId, request));
+                            runtimeContextRequest(input, headerAgentId, pathAgentId, request));
 
             // Create SSE stream using ServerSentEvent for proper streaming behavior
+            Flux<AguiEvent> events =
+                    interruptOnDisconnect
+                            ? result.events()
+                            : result.events().publish().autoConnect(1);
             Flux<ServerSentEvent<String>> sseStream =
-                    result.events()
-                            .map(
+                    events.map(
                                     event ->
                                             ServerSentEvent.<String>builder()
                                                     .data(encoder.encodeToJson(event).trim())
                                                     .build())
-                            // When client closes connection (cancels stream), interrupt the agent
+                            // When the client closes the connection, optionally interrupt the agent
                             .doOnCancel(
                                     () -> {
-                                        logger.info(
-                                                "SSE stream cancelled for run {}, interrupting"
-                                                        + " agent",
-                                                runId);
-                                        result.agent().interrupt();
+                                        if (interruptOnDisconnect) {
+                                            logger.info(
+                                                    "SSE stream cancelled for run {}, interrupting"
+                                                            + " agent",
+                                                    runId);
+                                            result.interrupt(threadId);
+                                        } else {
+                                            logger.info(
+                                                    "SSE stream cancelled for run {}, agent"
+                                                            + " continues running",
+                                                    runId);
+                                        }
                                     });
 
             return ServerResponse.ok()
@@ -181,17 +198,9 @@ public class AguiWebFluxHandler {
         }
     }
 
-    private RuntimeContext resolveRuntimeContext(
+    private AguiRuntimeContextRequest<ServerRequest> runtimeContextRequest(
             RunAgentInput input, String headerAgentId, String pathAgentId, ServerRequest request) {
-        return runtimeContextResolver != null
-                ? runtimeContextResolver.resolve(
-                        runtimeContextRequest(input, headerAgentId, pathAgentId, request))
-                : null;
-    }
-
-    private AguiRuntimeContextRequest runtimeContextRequest(
-            RunAgentInput input, String headerAgentId, String pathAgentId, ServerRequest request) {
-        return AguiRuntimeContextRequest.builder()
+        return AguiRuntimeContextRequest.<ServerRequest>builder()
                 .input(input)
                 .headerAgentId(headerAgentId)
                 .pathAgentId(pathAgentId)
@@ -255,7 +264,14 @@ public class AguiWebFluxHandler {
             String threadId, String runId, String errorMessage) {
         String errorEvent =
                 encoder.encodeToJson(
-                                new AguiEvent.Raw(threadId, runId, Map.of("error", errorMessage)))
+                                new AguiEvent.Raw(
+                                        threadId,
+                                        runId,
+                                        Map.of(
+                                                "error",
+                                                errorMessage != null
+                                                        ? errorMessage
+                                                        : "Unknown error")))
                         .trim();
         String finishEvent =
                 encoder.encodeToJson(new AguiEvent.RunFinished(threadId, runId)).trim();
@@ -281,8 +297,28 @@ public class AguiWebFluxHandler {
         private AguiAdapterConfig config;
         private boolean serverSideMemory = false;
         private String agentIdHeader;
+        private boolean interruptOnDisconnect = true;
         private AguiRuntimeContextResolver runtimeContextResolver;
         private AguiAgentAdapterFactory adapterFactory;
+        private AguiRequestBodyParser requestBodyParser;
+        private AguiRequestProcessor requestProcessor;
+
+        /**
+         * Set a custom request processor instead of constructing the default processor.
+         *
+         * <p>When set, {@link #agentRegistry}, {@link #sessionManager}, {@link
+         * #serverSideMemory}, {@link #config}, {@link #adapterFactory}, and {@link
+         * #runtimeContextResolver} are ignored; configure their equivalents on the supplied
+         * processor. A registry is not required. Passing {@code null} restores default processor
+         * construction.
+         *
+         * @param requestProcessor The custom processor, or {@code null} to use the default
+         * @return This builder
+         */
+        public Builder requestProcessor(AguiRequestProcessor requestProcessor) {
+            this.requestProcessor = requestProcessor;
+            return this;
+        }
 
         /**
          * Set the agent registry.
@@ -340,6 +376,17 @@ public class AguiWebFluxHandler {
         }
 
         /**
+         * Set whether to interrupt the agent when the client disconnects.
+         *
+         * @param interruptOnDisconnect whether to interrupt the agent
+         * @return This builder
+         */
+        public Builder interruptOnDisconnect(boolean interruptOnDisconnect) {
+            this.interruptOnDisconnect = interruptOnDisconnect;
+            return this;
+        }
+
+        /**
          * Set the runtime context resolver.
          *
          * @param runtimeContextResolver The resolver used for each request
@@ -362,13 +409,24 @@ public class AguiWebFluxHandler {
         }
 
         /**
+         * Set the request body parser.
+         *
+         * @param requestBodyParser The parser used to decode request bodies
+         * @return This builder
+         */
+        public Builder requestBodyParser(AguiRequestBodyParser requestBodyParser) {
+            this.requestBodyParser = requestBodyParser;
+            return this;
+        }
+
+        /**
          * Build the handler.
          *
          * @return The built handler
-         * @throws IllegalStateException if registry is not set
+         * @throws IllegalStateException if neither a custom processor nor a registry is set
          */
         public AguiWebFluxHandler build() {
-            if (registry == null) {
+            if (requestProcessor == null && registry == null) {
                 throw new IllegalStateException("Agent registry must be set");
             }
             return new AguiWebFluxHandler(this);

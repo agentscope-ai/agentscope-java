@@ -18,6 +18,9 @@ package io.agentscope.core.tool.builtin;
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonPropertyDescription;
+import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.ToolResultBlock;
+import io.agentscope.core.message.ToolResultState;
 import io.agentscope.core.state.AgentState;
 import io.agentscope.core.state.Task;
 import io.agentscope.core.state.TaskContextState;
@@ -95,7 +98,7 @@ public class TodoTools {
             stateInjected = true,
             readOnly = false,
             concurrencySafe = false)
-    public String todoWrite(
+    public ToolResultBlock write(
             @ToolParam(
                             name = "todos",
                             description =
@@ -104,7 +107,7 @@ public class TodoTools {
                     List<TodoItem> todos,
             AgentState state) {
         if (state == null) {
-            return "Error: agent state unavailable; cannot persist todo list.";
+            return ToolResultBlock.error("agent state unavailable; cannot persist todo list.");
         }
         List<TodoItem> items = todos == null ? List.of() : todos;
 
@@ -112,32 +115,36 @@ public class TodoTools {
         // downgrade): the model is responsible for keeping exactly one active task.
         int inProgress = 0;
         for (TodoItem item : items) {
+            if (item == null) return ToolResultBlock.error("todos must not contain null items.");
             Task.State parsed = parseState(item.getStatus());
             if (parsed == null) {
-                return "Error: invalid status '"
-                        + item.getStatus()
-                        + "' for todo '"
-                        + safe(item.getContent())
-                        + "'. Allowed: pending, in_progress, completed.";
+                return ToolResultBlock.error(
+                        "invalid status '"
+                                + item.getStatus()
+                                + "' for todo '"
+                                + safe(item.getContent())
+                                + "'. Allowed: pending, in_progress, completed.");
             }
             if (parsed == Task.State.IN_PROGRESS) {
                 inProgress++;
             }
             if (item.getContent() == null || item.getContent().isBlank()) {
-                return "Error: every todo must have non-blank content.";
+                return ToolResultBlock.error("every todo must have non-blank content.");
             }
         }
         if (inProgress > 1) {
-            return "Error: at most one task may be in_progress at a time, but "
-                    + inProgress
-                    + " were provided. Keep exactly one in_progress.";
+            return ToolResultBlock.error(
+                    "at most one task may be in_progress at a time, but "
+                            + inProgress
+                            + " were provided. Keep exactly one in_progress.");
         }
 
         TaskContextState ctx = state.getTasksContext();
+        TaskContextState snapshot = ctx.snapshot();
         // Preserve ids/created_at for tasks whose content matches an existing one (best-effort),
         // so stable identifiers survive across full-list rewrites.
         Map<String, Task> byContent = new LinkedHashMap<>();
-        for (Task existing : ctx.getTasks()) {
+        for (Task existing : snapshot.getTasks()) {
             byContent.putIfAbsent(existing.getSubject(), existing);
         }
 
@@ -165,14 +172,26 @@ public class TodoTools {
             rebuilt.add(b.build());
         }
 
-        List<Task> live = ctx.tasksMutable();
-        live.clear();
-        live.addAll(rebuilt);
+        ctx.replaceTasks(rebuilt, snapshot.getRevision());
 
-        return render(rebuilt);
+        return ToolResultBlock.of(
+                        TextBlock.builder().text(render(rebuilt)).build(),
+                        Map.of(
+                                "context.state_key",
+                                "tasksContext",
+                                "context.state_revision",
+                                ctx.getRevision(),
+                                "context.representation",
+                                "full"))
+                .withState(ToolResultState.SUCCESS);
     }
 
-    private static String render(List<Task> tasks) {
+    /** Compatibility entry point that renders the structured update receipt. */
+    public String todoWrite(List<TodoItem> todos, AgentState state) {
+        return ((TextBlock) write(todos, state).getOutput().get(0)).getText();
+    }
+
+    public static String render(List<Task> tasks) {
         if (tasks.isEmpty()) {
             return "Todo list cleared (0 items).";
         }

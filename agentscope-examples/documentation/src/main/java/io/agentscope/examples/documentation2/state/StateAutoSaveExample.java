@@ -32,26 +32,26 @@ import java.nio.file.Paths;
  *
  * <p><b>How auto-save/restore works:</b>
  * <ol>
- *   <li><b>Load:</b> When the agent is constructed with a {@code session} and {@code sessionKey},
- *       it calls {@code stateStore.get(userId, sessionId, "agent_state", AgentState.class)} to restore any
+ *   <li><b>Load:</b> At call entry, the agent resolves a Thread from {@code RuntimeContext};
+ *       it calls {@code stateStore.get(userId, sessionId, threadKey.stateEntry("agent_state"), AgentState.class)} to restore any
  *       previously persisted conversation history and toolkit state.</li>
  *   <li><b>Save after each call:</b> After every {@code call()} or {@code stream()} the agent
- *       automatically calls {@code stateStore.save(userId, sessionId, "agent_state", agentState)} to persist
+ *       automatically calls {@code stateStore.save(userId, sessionId, threadKey.stateEntry("agent_state"), agentState)} to persist
  *       the updated state. No manual save is needed.</li>
  *   <li><b>Shutdown save:</b> The {@link io.agentscope.core.shutdown.GracefulShutdownManager}
  *       registers a state saver at construction time, so state is also flushed on JVM shutdown.</li>
  * </ol>
  *
  * <p><b>{@link JsonFileAgentStateStore}:</b> A file-backed session store that writes
- * {@code <sessionId>_agent_state.json} into the configured directory. Suitable for local
+ * a Thread-qualified JSON file within the user/session directory into the configured directory. Suitable for local
  * development and testing. Replace with a Redis or database-backed implementation for
  * production.
  *
  * <p><b>Run:</b>
  * <pre>
  *   export DASHSCOPE_API_KEY=your_key
- *   mvn exec:java -pl agentscope-examples/documentation2 \
- *       -Dexec.mainClass=io.agentscope.examples.documentation2.session.SessionAutoSaveExample
+ *   mvn exec:java -pl agentscope-examples/documentation \
+ *       -Dexec.mainClass=io.agentscope.examples.documentation2.state.StateAutoSaveExample
  * </pre>
  */
 public class StateAutoSaveExample {

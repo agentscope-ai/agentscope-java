@@ -53,6 +53,7 @@ public class HttpTransportConfig {
     private final boolean ignoreSsl;
     private final ProxyConfig proxyConfig;
     private final HttpVersion httpVersion;
+    private final int responsePrefetch;
 
     private HttpTransportConfig(Builder builder) {
         this.connectTimeout = builder.connectTimeout;
@@ -65,6 +66,7 @@ public class HttpTransportConfig {
         this.ignoreSsl = builder.ignoreSsl;
         this.proxyConfig = builder.proxyConfig;
         this.httpVersion = builder.httpVersion;
+        this.responsePrefetch = builder.responsePrefetch;
     }
 
     /**
@@ -168,10 +170,20 @@ public class HttpTransportConfig {
     /**
      * Get the HTTP version.
      *
-     * @return the HTTP version
+     * @return the HTTP version, or null if not configured (auto: HTTP/1.1 for cleartext,
+     *     HTTP/2 for https)
      */
     public HttpVersion getHttpVersion() {
         return httpVersion;
+    }
+
+    /**
+     * Maximum prefetched response chunks per subscription between blocking reads and delivery.
+     *
+     * @return the chunk prefetch (default 32)
+     */
+    public int getResponsePrefetch() {
+        return responsePrefetch;
     }
 
     /**
@@ -205,7 +217,23 @@ public class HttpTransportConfig {
         private Duration keepAliveDuration = Duration.ofMinutes(5);
         private boolean ignoreSsl = false;
         private ProxyConfig proxyConfig = null;
-        private HttpVersion httpVersion = HttpVersion.HTTP_2;
+        private HttpVersion httpVersion = null;
+        private int responsePrefetch = 32;
+
+        /**
+         * Bound read-ahead between stream I/O and response processing for JDK and OkHttp transports.
+         * This preserves chunk order and backpressure; it is not a byte or connection limit.
+         *
+         * @param responsePrefetch positive number of chunks (default 32)
+         * @return this builder
+         */
+        public Builder responsePrefetch(int responsePrefetch) {
+            if (responsePrefetch < 1) {
+                throw new IllegalArgumentException("responsePrefetch must be positive");
+            }
+            this.responsePrefetch = responsePrefetch;
+            return this;
+        }
 
         /**
          * Set the connect timeout.
@@ -326,9 +354,13 @@ public class HttpTransportConfig {
         }
 
         /**
-         * Set the HTTP version to use.
+         * Set the HTTP version, or null for automatic resolution (the default): cleartext
+         * requests use HTTP/1.1, https requests use HTTP/2 via ALPN. Explicit {@link
+         * HttpVersion#HTTP_2} on cleartext URLs opts in to an h2c upgrade, which some servers
+         * (e.g. vLLM/uvicorn) do not handle. Any non-https scheme counts as cleartext. Only
+         * {@link JdkHttpTransport} honors this option.
          *
-         * @param httpVersion the HTTP version
+         * @param httpVersion the HTTP version, or null for auto
          * @return this builder
          */
         public Builder httpVersion(HttpVersion httpVersion) {

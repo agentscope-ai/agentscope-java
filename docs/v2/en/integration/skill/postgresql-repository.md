@@ -1,4 +1,7 @@
-# PostgreSQL Skill Repository
+---
+title: PostgreSQL Skill Repository
+zh_link: /v2/zh/integration/skill/postgresql-repository
+---
 
 `agentscope-extensions-skill-postgresql-repository` stores skills in PostgreSQL with full CRUD: edit and save in your admin console / business system, and the Agent picks up changes immediately on the next read.
 

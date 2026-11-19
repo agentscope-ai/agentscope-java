@@ -18,13 +18,15 @@ package io.agentscope.core.agent;
 import io.agentscope.core.state.AgentState;
 import io.agentscope.core.tool.ContextStore;
 import io.agentscope.core.tool.ToolExecutionContext;
+import io.agentscope.core.tool.ToolRequestConfig;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 
 /**
- * Per-call metadata for an agent run: session-scoped fields plus a thread-safe attribute bag and
+ * Per-call metadata for an agent run: Session/Thread/Turn identity, a thread-safe attribute bag and
  * an optional {@link ToolExecutionContext} (tool-POJO / DI layer).
  *
  * <p>Attributes are not persisted. Hooks and tools may read and update the same instance for the
@@ -32,10 +34,21 @@ import java.util.concurrent.ConcurrentMap;
  */
 public class RuntimeContext {
 
+    public static final String PRIMARY_THREAD_ID = "main";
+
     private static final String TYPED_DEFAULT_KEY = "";
 
     private final String sessionId;
     private final String userId;
+    private final String threadId;
+    private final String turnId;
+
+    /**
+     * Optional host-supplied invocation identity. An unbound request context has no Run yet;
+     * the execution entry allocates one and binds it to the invocation's context. Hosts supplying
+     * an identity must use a fresh value for each invocation.
+     */
+    private final String runId;
 
     /**
      * Call-scoped {@link AgentState} for the active {@code (userId, sessionId)} slot. Set once at
@@ -56,13 +69,28 @@ public class RuntimeContext {
 
     private final ToolExecutionContext toolExecutionContext;
 
+    /**
+     * Per-call tool request config (immutable). Carries the per-call tool difference — externally
+     * injected (schema-only) tools + merge mode — composed with the agent's shared toolkit to
+     * produce the tool surface for one call. {@code null} means use the shared toolkit as-is.
+     */
+    private ToolRequestConfig toolRequestConfig;
+
     private RuntimeContext(Builder builder) {
         this.sessionId = builder.sessionId;
         this.userId = builder.userId;
+        this.threadId = builder.threadId == null ? PRIMARY_THREAD_ID : builder.threadId;
+        this.turnId = builder.turnId;
+        if (threadId.isBlank() || (turnId != null && turnId.isBlank()))
+            throw new IllegalArgumentException("Thread and turn identities must not be blank");
+        this.runId = builder.runId;
+        if (runId != null && runId.isBlank())
+            throw new IllegalArgumentException("Run identity must not be blank");
         this.stringAttributes = new ConcurrentHashMap<>();
         this.typedAttributes = new ConcurrentHashMap<>();
         this.toolExecutionContext = builder.toolExecutionContext;
         this.agentState = builder.agentState;
+        this.toolRequestConfig = builder.toolRequestConfig;
         if (builder.stringExtras != null) {
             this.stringAttributes.putAll(builder.stringExtras);
         }
@@ -84,7 +112,7 @@ public class RuntimeContext {
     }
 
     /**
-     * Shallow, mutable empty context (null session fields, empty attribute maps, no tool context).
+     * Shallow, mutable context with the primary Thread, no Session/Turn/Run, and no tool context.
      */
     public static RuntimeContext empty() {
         return new Builder().build();
@@ -96,6 +124,29 @@ public class RuntimeContext {
 
     public String getUserId() {
         return userId;
+    }
+
+    /** Continuing Agent context within the business Session; never a Java thread identity. */
+    public String getThreadId() {
+        return threadId;
+    }
+
+    /** Optional host-supplied logical task identity; direct calls leave this null. */
+    public String getTurnId() {
+        return turnId;
+    }
+
+    /**
+     * Returns the invocation identity for logs and events. Null before execution unless a host
+     * supplied it. Inside the Agent invocation it matches {@link AgentRun#runId()}.
+     */
+    public String getRunId() {
+        return runId;
+    }
+
+    /** Generates a fresh opaque runId (32-char hex); the single source for default ids. */
+    public static String generateRunId() {
+        return UUID.randomUUID().toString().replace("-", "");
     }
 
     /**
@@ -140,6 +191,23 @@ public class RuntimeContext {
      */
     public ToolExecutionContext getToolExecutionContext() {
         return toolExecutionContext;
+    }
+
+    /**
+     * Returns the per-call tool request config, or {@code null} when none was provided (the
+     * execution engine then uses the agent's shared toolkit as-is).
+     */
+    public ToolRequestConfig getToolRequestConfig() {
+        return toolRequestConfig;
+    }
+
+    /**
+     * Installs the per-call tool request config. Intended for callers that need to vary the tool
+     * surface per call without mutating the agent's shared toolkit (concurrency-safe). Set to
+     * {@code null} to use the shared toolkit as-is.
+     */
+    public void setToolRequestConfig(ToolRequestConfig toolRequestConfig) {
+        this.toolRequestConfig = toolRequestConfig;
     }
 
     @SuppressWarnings("unchecked")
@@ -325,10 +393,14 @@ public class RuntimeContext {
     public static class Builder {
         private String sessionId;
         private String userId;
+        private String threadId;
+        private String turnId;
+        private String runId;
         private Map<String, Object> stringExtras;
         private final Map<Class<?>, Map<String, Object>> typedValues = new HashMap<>();
         private ToolExecutionContext toolExecutionContext;
         private AgentState agentState;
+        private ToolRequestConfig toolRequestConfig;
 
         public Builder sessionId(String sessionId) {
             this.sessionId = sessionId;
@@ -337,6 +409,28 @@ public class RuntimeContext {
 
         public Builder userId(String userId) {
             this.userId = userId;
+            return this;
+        }
+
+        /** Selects a continuing context. Null selects the primary Thread. */
+        public Builder threadId(String threadId) {
+            this.threadId = threadId;
+            return this;
+        }
+
+        /** Pins a logical task across invocations. Null clears an inherited task identity. */
+        public Builder turnId(String turnId) {
+            this.turnId = turnId;
+            return this;
+        }
+
+        /**
+         * Sets an explicit invocation identity; uniqueness is the caller's. This is not a trace or
+         * task identity. Overrides a value copied by {@link #from(RuntimeContext)}. Unset or null
+         * lets the execution entry allocate a new identity for each invocation.
+         */
+        public Builder runId(String runId) {
+            this.runId = runId;
             return this;
         }
 
@@ -382,8 +476,14 @@ public class RuntimeContext {
             }
             this.sessionId = source.sessionId;
             this.userId = source.userId;
+            this.threadId = source.threadId;
+            this.turnId = source.turnId;
+            // Derivation within an invocation preserves identity. New invocations explicitly
+            // replace runId; independent child tasks also replace Thread/Turn identity.
+            this.runId = source.runId;
             this.agentState = source.agentState;
             this.toolExecutionContext = source.toolExecutionContext;
+            this.toolRequestConfig = source.toolRequestConfig;
             if (!source.stringAttributes.isEmpty()) {
                 this.stringExtras = new ConcurrentHashMap<>(source.stringAttributes);
             }
@@ -403,6 +503,16 @@ public class RuntimeContext {
          */
         public Builder toolExecutionContext(ToolExecutionContext toolExecutionContext) {
             this.toolExecutionContext = toolExecutionContext;
+            return this;
+        }
+
+        /**
+         * Installs a per-call tool request config. When set, the agent's execution engine composes
+         * this immutable tool difference with the shared toolkit for the duration of the call
+         * (concurrency-safe). {@code null} (the default) means use the shared toolkit as-is.
+         */
+        public Builder toolRequestConfig(ToolRequestConfig toolRequestConfig) {
+            this.toolRequestConfig = toolRequestConfig;
             return this;
         }
 

@@ -1,6 +1,7 @@
 ---
-title: "文件系统（Filesystem）"
-description: "三种部署模式：本机 + shell / 共享存储 / 沙箱；IsolationScope 隔离维度；多用户隔离；技能与工具在各模式下的行为"
+title: 文件系统（Filesystem）
+description: 三种部署模式：本机 + shell / 共享存储 / 沙箱；IsolationScope 隔离维度；多用户隔离；技能与工具在各模式下的行为
+en_link: /v2/en/docs/harness/filesystem
 ---
 
 ## 作用
@@ -53,6 +54,8 @@ HarnessAgent agent = HarnessAgent.builder()
 | `anonymousUserId(String)` | `userId` 为空时使用的兜底标识 | `"_default"` |
 | `addSharedPrefix(String)` | 额外的工作区相对路径前缀也路由到 KV（例如 `"prompts/"` / `"configs/"`） | 无 |
 | `workspaceIndex(WorkspaceIndex)` | 加速远端 ls/glob/grep 的 SQLite 索引 | 不加索引，走全量扫描 |
+
+可选的本地索引无法初始化时（例如 `.index/workspace.db` 已损坏），`WorkspaceIndex.open(workspaceRoot)` 返回 `null`，并关闭本次尝试中已经获取的连接。调用方可以回退到远端扫描，不会保留这条初始化失败的连接。成功返回的索引会持有连接，直到调用 `close()`。
 
 #### 内置路由规则
 
@@ -140,7 +143,7 @@ HarnessAgent agent = HarnessAgent.builder()
 | `exposedPorts(int...)` | 暴露端口 | 无 |
 | `environment(Map)` | 容器环境变量 | 无 |
 | `workspaceRoot(String)` | 容器内工作区挂载点 | `/workspace` |
-| `additionalRunArgs(String...)` | 额外的 `docker run` 参数 | 无 |
+| `additionalRunArgs(String...)` / `additionalRunArgs(List)` | 额外的 `docker run` 参数，多次调用会追加 | 无 |
 | `snapshotSpec(SandboxSnapshotSpec)` | 快照策略 | `NoopSnapshotSpec`（不快照） |
 | `workspaceSpec(WorkspaceSpec)` | 工作区挂载规则 | 默认 |
 | `executionGuard(SandboxExecutionGuard)` | 并发执行守卫（用于 AGENT / GLOBAL scope） | 无 |
@@ -177,7 +180,7 @@ HarnessAgent agent = HarnessAgent.builder()
 | `kubernetesClient(KubernetesClient)` | 自定义 fabric8 客户端 | 自动加载 kubeconfig |
 | `snapshotSpec(SandboxSnapshotSpec)` | 快照策略（与 PVC 的取舍见沙箱文档） | `NoopSnapshotSpec` |
 
-`apiUrl` / `gateway*` 都不配时，默认用 `kubectl port-forward` 方式建立本地隧道（适合开发环境）。运行时镜像必须满足[运行时镜像约束](./sandbox.md#运行时镜像约束)；**工作区持久化依赖模板里的 PVC 配置**，详见[沙箱 - Kubernetes 后端的状态保存](./sandbox.md#kubernetes-后端的状态保存pvc-是第一层)。
+`apiUrl` / `gateway*` 都不配时，默认用 `kubectl port-forward` 方式建立本地隧道（适合开发环境）。运行时镜像必须满足[运行时镜像约束](/v2/zh/docs/harness/sandbox#运行时镜像约束)；**工作区持久化依赖模板里的 PVC 配置**，详见[沙箱 - Kubernetes 后端的状态保存](/v2/zh/docs/harness/sandbox#kubernetes-后端的状态保存pvc-是第一层)。
 
 #### E2B 沙箱
 
@@ -193,6 +196,35 @@ HarnessAgent agent = HarnessAgent.builder()
         .isolationScope(IsolationScope.SESSION))
     .build();
 ```
+
+对接自建 E2B 兼容后端（如 CubeSandbox）时，如果数据面由单一固定网关地址承载，可以设置 `envdSandboxUrl`——等价于官方 SDK 的 `E2B_SANDBOX_URL`。设置后所有沙箱的 envd 流量都打到该地址，路由依赖请求头 `E2b-Sandbox-Id` / `E2b-Sandbox-Port`（与官方 SDK 一样自动携带），因此不需要泛域名 DNS：
+
+```java
+.filesystem(new E2bFilesystemSpec()
+    .apiKey("${E2B_API_KEY}")
+    .apiBaseUrl("http://10.0.0.1:3000")     // 控制面
+    .envdSandboxUrl("http://10.0.0.1:8080") // 数据面（网关需按 E2B header 路由）
+    ...)
+```
+
+E2B volumes（private beta）提供独立于沙箱生命周期的持久存储。用 `volumeMount(name, path)`
+在沙箱创建时挂载已存在的 volume——`name` 是已存在的 volume 名，`path` 是沙箱内绝对挂载路径。
+挂载以 `volumeMounts: [{name, path}]` 随 `POST /sandboxes` 发送，沙箱重建（connect 失败回退或
+原生快照恢复）时会自动重新挂载。平台 400 错误（无 beta 权限、volume 名不存在）会连同响应体抛出。
+
+```java
+.filesystem(new E2bFilesystemSpec()
+    .apiKey("${E2B_API_KEY}")
+    .templateId("my-template")
+    .volumeMount("my-data", "/mnt/data")   // 已存在的 volume
+    .workspaceRoot("/mnt/data/ws")          // 工作区落在该 volume 上
+    .isolationScope(IsolationScope.SESSION))
+```
+
+当 `workspaceRoot` 落在 volume 挂载点上时，TAR 工作区持久化自动跳过（数据已在 volume 里持久化），
+销毁时也不再 `rm -rf`；原生快照仍然执行，用于保留软件环境（安装的依赖、系统状态）。E2B volume
+可读写、可同时被多个沙箱挂载且无锁保证——workspace-on-volume 布局请按单写者使用。Volume 的
+生命周期管理（创建/删除/查看）仍在 E2B 控制台/SDK 里完成——这里只覆盖创建时挂载。
 
 #### Daytona 沙箱
 
@@ -328,6 +360,9 @@ HarnessAgent agent = HarnessAgent.builder()
 | `addRoot(Path)` | 额外允许访问的宿主目录 | 无 |
 | `additionalRoots(Collection)` | 批量设置额外目录 | 无 |
 | `projectWritable(boolean)` | 文件工具写项目文件时直接落到项目目录，而非 workspace | `false` |
+| `namespaceBoundary(Boolean)` | 覆盖命名空间边界开关（绝对路径只能落到 workspace 下调用者自己的命名空间内，参见[隔离维度](#isolationscope--多用户与多副本怎么分桶)）；传 `true`/`false` 强制开关，不传则取默认 | `ROOTED` 时开启 |
+
+> **升级提示 — workspace 根目录下的绝对路径：** `ROOTED` workspace 默认启用命名空间边界后，形如 `<workspace>/skills/tool.md` 的绝对路径无法再触及 workspace 根目录下的共享内容（此前任一会话都可以借绝对路径访问其他会话的目录）。共享内容仍然可以通过 workspace 相对路径访问（overlay 会将其解析到只读的项目层）；经过安全评估的单租户 workspace 如需保留旧行为，传 `.namespaceBoundary(false)` 即可。
 
 #### 路径解析策略（`LocalFsMode`）
 
@@ -466,12 +501,12 @@ workspace/
 
 ### 技能（Skills）
 
-`DynamicSkillMiddleware` 在每轮推理前从技能仓库列表合并技能，渲染到 system prompt 里。技能文件的加载走 `AbstractFilesystem` 接口，所以在三种模式下透明工作：
+`HarnessSkillMiddleware` 在每次 call 前从技能仓库列表合并技能，渲染到 system prompt 里。技能文件的加载走 `AbstractFilesystem` 接口，所以在三种模式下透明工作：
 
 | 模式 | 技能加载方式 |
 |------|------------|
 | 本机 | 从 `workspace/skills/` 直接读本地磁盘；`<userId>/skills/` 做用户覆盖 |
-| 共享存储 | `skills/` 路由到 KV，先查远端再退回本地模板。管理台编辑技能后所有副本下次推理生效 |
+| 共享存储 | `skills/` 路由到 KV，先查远端再退回本地模板。管理台编辑技能后所有副本下次 call 生效 |
 | 沙箱 | 宿主 `skills/` 在启动时通过 workspace projection 注入沙箱的 `/workspace/skills/` |
 
 四层优先级不变（低 → 高）：`projectGlobalSkillsDir` → `skillRepository` → `workspace/skills/` → `<userId>/skills/`。
@@ -480,11 +515,19 @@ workspace/
 
 所有文件工具都通过 `AbstractFilesystem` 接口调用，每次操作传入当前 `RuntimeContext`，由文件系统后端决定实际读写位置。agent 代码完全感知不到模式差异。
 
+`read_file` 默认每次最多返回 16,000 个 Unicode 码点，即使省略 `limit` 或单行内容很长也受此限制。可选参数 `max_chars` 可调整每页大小，请求值不会超过应用配置的上限（默认 32,000）。`offset` 和 `limit` 仍按行选择内容；`char_offset` 从零开始，在**同一行范围返回的文本内**按字符分页。发生截断时，结果会给出下一页的 `char_offset`，继续读取时保持 path、`offset` 和 `limit` 不变。分页不会拆开 Unicode 代理对。拼接多页时应保持文件不变，偏移量不代表不可变快照。
+
+通过 `HarnessAgent.Builder.readFileMaxChars(int)` 配置上限。例如，`.readFileMaxChars(64_000)` 允许工具调用请求最多 64,000 个码点。配置值不得小于 16,000，更小的值会抛出 `IllegalArgumentException`。自动创建的通用子 Agent 和声明式子 Agent 均继承此配置。提高上限后，省略 `max_chars` 时的默认读取量仍为 16,000。直接使用 `FilesystemTool` 时，可通过 `(filesystem, pathNormalizer, readFileMaxChars)` 构造器传入上限；现有构造器继续使用默认上限。
+
+转存后的工具结果文件也受此限制。这是适用于所有文件系统后端的工具输出上限，不限制后端读取所选内容时的内存分配和 I/O。二进制文件按编码后的文本分页，需拼接完整内容后再解码。
+
 | 模式 | 读写行为 |
 |------|---------|
 | 本机 | `OverlayFilesystem`：写落 workspace（上层），读先 workspace 后 project（下层）。开启 `projectWritable(true)` 后，非元数据写入路由到项目目录 |
 | 共享存储 | `CompositeFilesystem`：命中路由的路径走 KV overlay（远端上层 + 本地模板下层），其余走本地 |
 | 沙箱 | 所有文件操作转发到沙箱容器内 |
+
+`edit_file` 的 `oldString` 不能为空，`newString` 不能为 `null`；要删除匹配文本，请将 `newString` 设为空字符串 `""`。替换前会把 CRLF 和单独的 CR 行尾统一为 LF，所有文件系统模式下的匹配与写回语义一致，写回内容使用 LF 行尾。
 
 ### Shell 执行（execute）
 
@@ -504,7 +547,9 @@ workspace/
 
 ## 工作区里的两层读取
 
-`AGENTS.md`、`MEMORY.md`、`KNOWLEDGE.md` 等关键文件在读取时有"两层兜底"：先看你配的文件系统后端，没有再退回本地磁盘。这对**模式 1（共享存储）下的"模板文件"** 很有用：第一个副本启动时本地有 `AGENTS.md` 模板，立刻可用；后续副本会从共享存储读出最新版本。
+`AGENTS.md`、`KNOWLEDGE.md` 等关键文件在读取时有"两层兜底"：先看你配的文件系统后端，没有再退回本地磁盘。这对**模式 1（共享存储）下的"模板文件"** 很有用：第一个副本启动时本地有 `AGENTS.md` 模板，立刻可用；后续副本会从共享存储读出最新版本。
+
+按身份的运行时数据（`MEMORY.md`、`memory/*.md`、task records）兜底落在 **caller 命名空间内**，不会回退到 workspace 根。规则见 [workspace](/v2/zh/docs/harness/workspace#两层读架构filesystem-first--本地兜底)。
 
 写入永远走配置的文件系统后端。
 
@@ -523,9 +568,9 @@ HarnessAgent.builder()
 
 ## 相关文档
 
-- [沙箱](./sandbox.md) — 模式 2 的运行时细节（容器生命周期、快照恢复链路）
-- [工作区](./workspace.md) — 目录布局、加载机制、两层读取的"下层"来源
-- [Context](../building-blocks/context.md) — `AgentState` 与 `AgentStateStore`、`(userId, sessionId)` 寻址
-- [技能](./skill.md) — 四层合成、自学习闭环、`<available_skills>` 块
-- [工具](../building-blocks/tool.md) — `read_file` / `write_file` / `execute` 等参数
-- [架构](./architecture.md) — 文件系统与运行时上下文如何协作
+- [沙箱](/v2/zh/docs/harness/sandbox) — 模式 2 的运行时细节（容器生命周期、快照恢复链路）
+- [工作区](/v2/zh/docs/harness/workspace) — 目录布局、加载机制、两层读取的"下层"来源
+- [Context](/v2/zh/docs/building-blocks/context) — `AgentState` 与 `AgentStateStore`、`(userId, sessionId)` 寻址
+- [技能](/v2/zh/docs/harness/skill) — 四层合成、自学习闭环、`<available_skills>` 块
+- [工具](/v2/zh/docs/building-blocks/tool) — `read_file` / `write_file` / `execute` 等参数
+- [架构](/v2/zh/docs/harness/architecture) — 文件系统与运行时上下文如何协作

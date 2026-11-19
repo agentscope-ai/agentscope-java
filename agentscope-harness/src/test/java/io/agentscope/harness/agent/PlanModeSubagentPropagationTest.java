@@ -26,11 +26,14 @@ import io.agentscope.core.middleware.ActingInput;
 import io.agentscope.core.model.ToolSchema;
 import io.agentscope.core.state.InMemoryAgentStateStore;
 import io.agentscope.core.util.JsonUtils;
+import io.agentscope.harness.agent.context.ContextRenderer;
+import io.agentscope.harness.agent.context.WorkspaceContextMaterials;
 import io.agentscope.harness.agent.filesystem.local.LocalFilesystem;
 import io.agentscope.harness.agent.middleware.PlanModeMiddleware;
 import io.agentscope.harness.agent.middleware.SubagentEntry;
 import io.agentscope.harness.agent.subagent.SubagentDeclaration;
 import io.agentscope.harness.agent.subagent.WorkspaceMode;
+import io.agentscope.harness.agent.testing.HarnessQuiescence;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
@@ -41,11 +44,49 @@ import org.junit.jupiter.api.io.TempDir;
 import reactor.core.publisher.Flux;
 
 /** Regression coverage for plan-mode capabilities inherited by automatic subagent factories. */
+@HarnessQuiescence
 class PlanModeSubagentPropagationTest {
 
     private static final String PLAN_DIR = "review-plans";
 
     @TempDir Path workspace;
+
+    @Test
+    void planModeIsPrivateToTheAddressedThread() throws Exception {
+        var left =
+                RuntimeContext.builder()
+                        .userId("user")
+                        .sessionId("session")
+                        .threadId("left")
+                        .build();
+        var right = RuntimeContext.builder(left).threadId("right").build();
+        try (var agent =
+                HarnessAgent.builder()
+                        .name("assistant")
+                        .model(new MockModel("unused"))
+                        .workspace(workspace)
+                        .enablePlanMode()
+                        .build()) {
+            agent.enterPlanMode(left);
+            assertTrue(agent.isPlanModeActive(left));
+            assertFalse(agent.isPlanModeActive(right));
+            agent.enterPlanMode(right);
+            agent.exitPlanMode(left);
+            assertFalse(agent.isPlanModeActive(left));
+            assertTrue(agent.isPlanModeActive(right));
+            assertEquals("left", agent.getDelegate().getAgentState(left).getThreadId());
+        }
+        try (var reopened =
+                HarnessAgent.builder()
+                        .name("assistant")
+                        .model(new MockModel("unused"))
+                        .workspace(workspace)
+                        .enablePlanMode()
+                        .build()) {
+            assertFalse(reopened.isPlanModeActive(left));
+            assertTrue(reopened.isPlanModeActive(right));
+        }
+    }
 
     @Test
     void declaredSubagent_inheritsPlanModeManagerMiddlewareAndConfiguration() throws Exception {
@@ -124,6 +165,8 @@ class PlanModeSubagentPropagationTest {
 
             context.setAgentState(childState);
             String prompt = middleware.onSystemPrompt(child, context, "base prompt").block();
+            assertEquals("base prompt", prompt);
+            prompt += ContextRenderer.render(context.get(WorkspaceContextMaterials.class).items());
             assertTrue(prompt.contains("PLAN MODE is active"));
             assertTrue(prompt.contains(PLAN_DIR + "/PLAN.md"));
             assertTrue(prompt.contains("execute"), "allowShellInPlanMode must be inherited");

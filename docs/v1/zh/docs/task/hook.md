@@ -1,4 +1,7 @@
-# Hook
+---
+title: 钩子系统
+en_link: /v1/en/docs/task/hook
+---
 
 Hook 是一系列的扩展点，用于在特定执行阶段监控和修改智能体行为。
 
@@ -202,7 +205,7 @@ public class ErrorHandlingHook implements Hook {
 ## 完整示例
 
 查看完整的 Hook 示例：
-- [HookExample.java](https://github.com/agentscope-ai/agentscope-java/blob/main/agentscope-examples/documentation/quickstart/src/main/java/io/agentscope/examples/quickstart/HookExample.java)
+- [HookExample.java](https://github.com/agentscope-ai/agentscope-java/blob/v1.0.11/agentscope-examples/quickstart/src/main/java/io/agentscope/examples/quickstart/HookExample.java)
 
 运行示例：
 ```bash
@@ -247,4 +250,3 @@ public class JsonlTraceExample {
     }
 }
 ```
-

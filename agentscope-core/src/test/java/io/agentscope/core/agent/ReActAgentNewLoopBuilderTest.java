@@ -21,6 +21,7 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.ReActAgent;
+import io.agentscope.core.agent.config.FailoverListener;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.middleware.MiddlewareBase;
@@ -31,7 +32,9 @@ import io.agentscope.core.model.ToolSchema;
 import io.agentscope.core.shutdown.GracefulShutdownMiddleware;
 import io.agentscope.core.state.AgentState;
 import io.agentscope.core.tool.Toolkit;
+import java.util.EnumSet;
 import java.util.List;
+import java.util.Set;
 import org.junit.jupiter.api.Test;
 import reactor.core.publisher.Flux;
 import reactor.test.StepVerifier;
@@ -136,12 +139,18 @@ class ReActAgentNewLoopBuilderTest {
         assertSame(lowerPriority, middlewares.get(4));
     }
 
-    private record OrderedMiddleware(int order) implements MiddlewareBase {}
+    private record OrderedMiddleware(int order) implements MiddlewareBase {
+        @Override
+        public Set<ExtensionPoint> activePoints() {
+            return EnumSet.noneOf(ExtensionPoint.class);
+        }
+    }
 
     @Test
     void fromAgentCopiesModelResilienceConfig() {
         ChatModelBase model = newFakeModel();
         ChatModelBase fallback = newFakeModel();
+        FailoverListener listener = (primary, error) -> {};
 
         ReActAgent source =
                 ReActAgent.builder()
@@ -150,6 +159,7 @@ class ReActAgentNewLoopBuilderTest {
                         .model(model)
                         .fallbackModel(fallback)
                         .maxRetries(7)
+                        .failoverListener(listener)
                         .toolkit(new Toolkit())
                         .build();
 
@@ -158,6 +168,7 @@ class ReActAgentNewLoopBuilderTest {
         assertNotNull(copy.getModelConfig());
         assertEquals(7, copy.getModelConfig().maxRetries());
         assertSame(fallback, copy.getModelConfig().fallbackModel());
+        assertSame(listener, copy.getModelConfig().failoverListener());
         assertSame(model, copy.getModel());
     }
 

@@ -17,6 +17,7 @@ package io.agentscope.core.tool;
 
 import static org.junit.Assert.assertThrows;
 
+import io.agentscope.core.journal.JournalException;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.tool.test.ToolTestUtils;
@@ -52,6 +53,37 @@ class ToolMethodInvokerTest {
         ToolCallParam param =
                 ToolCallParam.builder().toolUseBlock(toolUseBlock).input(input).build();
         return invoker.invokeAsync(tools, method, param, responseConverter).block();
+    }
+
+    @Test
+    void sessionBoundaryFailuresPropagateAcrossAllMethodReturnTypes() throws Exception {
+        var tools = new SessionFailureTools();
+        for (String name : List.of("sync", "reactive", "future")) {
+            var failure =
+                    assertThrows(
+                            JournalException.class,
+                            () ->
+                                    invokeWithParam(
+                                            tools,
+                                            SessionFailureTools.class.getMethod(name),
+                                            Map.of()));
+            Assertions.assertEquals("durable boundary unavailable", failure.getMessage());
+        }
+    }
+
+    static class SessionFailureTools {
+        public String sync() {
+            throw new JournalException("durable boundary unavailable");
+        }
+
+        public Mono<String> reactive() {
+            return Mono.error(new JournalException("durable boundary unavailable"));
+        }
+
+        public CompletableFuture<String> future() {
+            return CompletableFuture.failedFuture(
+                    new JournalException("durable boundary unavailable"));
+        }
     }
 
     // Test class with various method signatures for testing
@@ -497,7 +529,8 @@ class ToolMethodInvokerTest {
 
         Assertions.assertNotNull(response);
         Assertions.assertFalse(ToolTestUtils.isErrorResponse(response));
-        Assertions.assertEquals("null", ToolTestUtils.extractContent(response));
+        Assertions.assertEquals(
+                "(completed with no output)", ToolTestUtils.extractContent(response));
     }
 
     @Test

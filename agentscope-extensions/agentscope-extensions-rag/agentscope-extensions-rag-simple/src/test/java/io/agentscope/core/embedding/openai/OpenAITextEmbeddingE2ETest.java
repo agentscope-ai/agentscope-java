@@ -21,6 +21,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.embedding.EmbeddingModel;
 import io.agentscope.core.message.TextBlock;
+import java.util.ArrayList;
+import java.util.List;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -43,13 +46,23 @@ class OpenAITextEmbeddingE2ETest {
     private static final String MODEL_NAME = "text-embedding-3-small";
     private static final int EXPECTED_DIMENSIONS = 1536;
 
+    private final List<OpenAITextEmbedding> models = new ArrayList<>();
+
+    @AfterEach
+    void tearDown() {
+        models.forEach(OpenAITextEmbedding::close);
+    }
+
     private EmbeddingModel createModel() {
         String apiKey = System.getenv("OPENAI_API_KEY");
-        return OpenAITextEmbedding.builder()
-                .apiKey(apiKey)
-                .modelName(MODEL_NAME)
-                .dimensions(EXPECTED_DIMENSIONS)
-                .build();
+        OpenAITextEmbedding model =
+                OpenAITextEmbedding.builder()
+                        .apiKey(apiKey)
+                        .modelName(MODEL_NAME)
+                        .dimensions(EXPECTED_DIMENSIONS)
+                        .build();
+        models.add(model);
+        return model;
     }
 
     @Test
@@ -60,7 +73,8 @@ class OpenAITextEmbeddingE2ETest {
         TextBlock textBlock = TextBlock.builder().text("Hello, world!").build();
         StepVerifier.create(model.embed(textBlock))
                 .assertNext(
-                        embedding -> {
+                        response -> {
+                            double[] embedding = response.getEmbedding();
                             assertNotNull(embedding, "Embedding should not be null");
                             assertEquals(
                                     EXPECTED_DIMENSIONS,
@@ -85,8 +99,8 @@ class OpenAITextEmbeddingE2ETest {
         EmbeddingModel model = createModel();
         TextBlock textBlock = TextBlock.builder().text("Test text for consistency").build();
 
-        double[] embedding1 = model.embed(textBlock).block();
-        double[] embedding2 = model.embed(textBlock).block();
+        double[] embedding1 = model.embed(textBlock).block().getEmbedding();
+        double[] embedding2 = model.embed(textBlock).block().getEmbedding();
 
         assertNotNull(embedding1);
         assertNotNull(embedding2);
@@ -129,7 +143,8 @@ class OpenAITextEmbeddingE2ETest {
 
         StepVerifier.create(model.embed(textBlock))
                 .assertNext(
-                        embedding -> {
+                        response -> {
+                            double[] embedding = response.getEmbedding();
                             assertNotNull(embedding, "Embedding should not be null");
                             assertEquals(
                                     EXPECTED_DIMENSIONS,
@@ -153,7 +168,8 @@ class OpenAITextEmbeddingE2ETest {
 
         StepVerifier.create(model.embed(textBlock))
                 .assertNext(
-                        embedding -> {
+                        response -> {
+                            double[] embedding = response.getEmbedding();
                             assertNotNull(embedding, "Embedding should not be null");
                             assertEquals(
                                     EXPECTED_DIMENSIONS,
@@ -171,7 +187,8 @@ class OpenAITextEmbeddingE2ETest {
 
         StepVerifier.create(model.embed(textBlock))
                 .assertNext(
-                        embedding -> {
+                        response -> {
+                            double[] embedding = response.getEmbedding();
                             assertNotNull(embedding, "Embedding should not be null");
                             assertEquals(
                                     EXPECTED_DIMENSIONS,
@@ -187,18 +204,20 @@ class OpenAITextEmbeddingE2ETest {
         String apiKey = System.getenv("OPENAI_API_KEY");
         // Test with smaller dimensions
         int smallDimensions = 512;
-        EmbeddingModel model =
+        OpenAITextEmbedding model =
                 OpenAITextEmbedding.builder()
                         .apiKey(apiKey)
                         .modelName(MODEL_NAME)
                         .dimensions(smallDimensions)
                         .build();
+        models.add(model);
 
         TextBlock textBlock = TextBlock.builder().text("Test text with custom dimensions").build();
 
         StepVerifier.create(model.embed(textBlock))
                 .assertNext(
-                        embedding -> {
+                        response -> {
+                            double[] embedding = response.getEmbedding();
                             assertNotNull(embedding, "Embedding should not be null");
                             assertEquals(
                                     smallDimensions,

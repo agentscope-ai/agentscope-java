@@ -131,16 +131,19 @@ public class FeishuCallbackController {
             }
         }
 
-        // 4. Idempotency: drop duplicate event_id silently with 200 so Feishu stops retrying.
-        Optional<String> eventId = FeishuInboundMapper.extractEventId(envelope);
-        if (eventId.isPresent()
-                && !channel.idempotency().firstSeen(channelId + "|" + eventId.get())) {
-            log.debug(
-                    "Feishu callback: duplicate event_id={} (channelId='{}')",
-                    eventId.get(),
-                    channelId);
-            return Mono.just(ResponseEntity.ok("{}"));
+        // Event authenticity is required for identity attribution. URL verification
+        // above uses the challenge token; normal events carry it in the header.
+        String configuredToken = channel.properties().verificationToken();
+        String eventToken = envelope.path("header").path("token").asText("");
+        if (configuredToken == null
+                || configuredToken.isBlank()
+                || !java.security.MessageDigest.isEqual(
+                        configuredToken.getBytes(java.nio.charset.StandardCharsets.UTF_8),
+                        eventToken.getBytes(java.nio.charset.StandardCharsets.UTF_8))) {
+            return Mono.just(ResponseEntity.status(HttpStatus.UNAUTHORIZED).build());
         }
+        // Durable intake owns deduplication. Marking an event seen before persistence
+        // would lose work when the control plane is temporarily unavailable.
 
         // 5. Map to InboundMessage; non-text or malformed -> ack silently.
         Optional<InboundMessage> inbound = channel.mapper().map(envelope);
@@ -167,7 +170,9 @@ public class FeishuCallbackController {
                                     "Feishu callback: agent run failed (channelId='{}'): {}",
                                     channelId,
                                     err.getMessage());
-                            return Mono.just(ResponseEntity.ok("{}"));
+                            return Mono.just(
+                                    ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                                            .body("{}"));
                         });
     }
 }

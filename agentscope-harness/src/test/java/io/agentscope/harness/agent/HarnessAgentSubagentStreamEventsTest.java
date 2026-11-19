@@ -28,6 +28,7 @@ import static org.mockito.Mockito.when;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.event.AgentEventType;
+import io.agentscope.core.event.AgentStartEvent;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
@@ -35,8 +36,11 @@ import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.Model;
 import io.agentscope.harness.agent.filesystem.local.LocalFilesystem;
+import io.agentscope.harness.agent.testing.HarnessQuiescence;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -55,6 +59,7 @@ import reactor.core.publisher.Flux;
  * ({@code Flux<AgentEvent>}) path instead of the deprecated {@code stream()} ({@code Flux<Event>})
  * path.
  */
+@HarnessQuiescence
 class HarnessAgentSubagentStreamEventsTest {
 
     @TempDir Path workspace;
@@ -135,6 +140,8 @@ class HarnessAgentSubagentStreamEventsTest {
                                                 childId,
                                                 "task",
                                                 "research X",
+                                                "reusable",
+                                                true,
                                                 "timeout_seconds",
                                                 60))))
                 .thenReturn(
@@ -188,10 +195,234 @@ class HarnessAgentSubagentStreamEventsTest {
                     "source should contain childId; got: " + childEvent.getSource());
         }
 
+        // The final segment is the spawned instance's own session id. Two spawns of the same
+        // subagent type therefore receive distinct source paths in one parent session.
+        AgentStartEvent childStart =
+                childEvents.stream()
+                        .filter(e -> e instanceof AgentStartEvent)
+                        .map(e -> (AgentStartEvent) e)
+                        .findFirst()
+                        .orElseThrow();
+        assertEquals(
+                "sess-stream-events/" + childId + "/" + childStart.getSessionId(),
+                childStart.getSource(),
+                "source should identify the child instance");
+
         // Parent events: source == null
         assertTrue(
                 events.stream().anyMatch(e -> e.getSource() == null),
                 "expected at least one parent event with source == null");
+    }
+
+    // -----------------------------------------------------------------
+    // 1a. Two spawned instances of the same subagent type must keep
+    // distinct source paths inside one parent session.
+    // -----------------------------------------------------------------
+
+    @Test
+    void streamEvents_sameTypeSubagentInstancesGetDistinctSources() throws Exception {
+        String childId = "researcher";
+        writeSubagentSpec(childId, "Research specialist", "You are a researcher.");
+
+        Model model = mock(Model.class);
+        when(model.getModelName()).thenReturn("stub");
+        when(model.stream(anyList(), any(), any()))
+                .thenReturn(
+                        Flux.just(
+                                toolCallChunk(
+                                        "p1",
+                                        "agent_spawn",
+                                        Map.of(
+                                                "agent_id",
+                                                childId,
+                                                "task",
+                                                "research first",
+                                                "reusable",
+                                                true,
+                                                "timeout_seconds",
+                                                60))))
+                .thenReturn(Flux.just(stopChunk("c1", "first complete")))
+                .thenReturn(Flux.just(stopChunk("p1", "first turn complete")))
+                .thenReturn(
+                        Flux.just(
+                                toolCallChunk(
+                                        "p2",
+                                        "agent_spawn",
+                                        Map.of(
+                                                "agent_id",
+                                                childId,
+                                                "task",
+                                                "research second",
+                                                "reusable",
+                                                true,
+                                                "timeout_seconds",
+                                                60))))
+                .thenReturn(Flux.just(stopChunk("c2", "second complete")))
+                .thenReturn(Flux.just(stopChunk("p3", "both complete")));
+
+        parent =
+                HarnessAgent.builder()
+                        .name("parent")
+                        .model(model)
+                        .workspace(workspace)
+                        .abstractFilesystem(new LocalFilesystem(workspace))
+                        .build();
+
+        RuntimeContext ctx = RuntimeContext.builder().sessionId("sess-multi-instance").build();
+        List<AgentEvent> firstTurn =
+                parent.streamEvents(
+                                List.of(
+                                        Msg.builder()
+                                                .role(MsgRole.USER)
+                                                .textContent("start")
+                                                .build()),
+                                ctx)
+                        .collectList()
+                        .block();
+        List<AgentEvent> secondTurn =
+                parent.streamEvents(
+                                List.of(
+                                        Msg.builder()
+                                                .role(MsgRole.USER)
+                                                .textContent("continue")
+                                                .build()),
+                                RuntimeContext.builder().sessionId(ctx.getSessionId()).build())
+                        .collectList()
+                        .block();
+
+        List<AgentEvent> events = new ArrayList<>(firstTurn);
+        events.addAll(secondTurn);
+
+        assertNotNull(events);
+        List<AgentStartEvent> childStarts =
+                events.stream()
+                        .filter(e -> e instanceof AgentStartEvent && e.getSource() != null)
+                        .map(e -> (AgentStartEvent) e)
+                        .collect(Collectors.toList());
+
+        assertEquals(2, childStarts.size(), "expected two child starts");
+        assertEquals(
+                2,
+                childStarts.stream().map(AgentStartEvent::getSessionId).distinct().count(),
+                "same-type child instances must use distinct session ids");
+        assertEquals(
+                2,
+                childStarts.stream().map(AgentStartEvent::getSource).distinct().count(),
+                "same-type child instances must use distinct source paths");
+        for (AgentStartEvent start : childStarts) {
+            assertTrue(
+                    start.getSource().startsWith("sess-multi-instance/" + childId + "/"),
+                    "source should use the parent session and child type: " + start.getSource());
+        }
+    }
+
+    // -----------------------------------------------------------------
+    // 1b. streamEvents() under AsyncToolMiddleware — child events still
+    //     forwarded with source tag (regression for the bare-subscribe
+    //     context break in AsyncToolMiddleware.onActing).
+    //
+    // AsyncToolMiddleware wraps the acting phase with Flux.create +
+    // next.apply(input).subscribe(...). The bare subscribe detaches the
+    // Reactor Context, so runToolBatch's deferContextual captures an empty
+    // context — AgentEventEmitter.CONTEXT_KEY (set by buildAgentStream) is
+    // lost. Without the emitter-recovery in executeToolCalls' contextWrite,
+    // AgentSpawnTool#execLocalSync would fall through to the non-streaming
+    // path (Path 3) and child AgentEvents would never reach the parent's
+    // streamEvents() stream.
+    // -----------------------------------------------------------------
+
+    @Test
+    void streamEvents_childEventsForwardedWithSource_underAsyncToolMiddleware() throws Exception {
+        String childId = "researcher";
+        writeSubagentSpec(childId, "Research specialist", "You are a researcher.");
+
+        Model model = mock(Model.class);
+        when(model.getModelName()).thenReturn("stub");
+        when(model.stream(anyList(), any(), any()))
+                .thenReturn(
+                        Flux.just(
+                                toolCallChunk(
+                                        "p1",
+                                        "agent_spawn",
+                                        Map.of(
+                                                "agent_id",
+                                                childId,
+                                                "task",
+                                                "research X",
+                                                "reusable",
+                                                true,
+                                                "timeout_seconds",
+                                                60))))
+                .thenReturn(
+                        Flux.just(
+                                new ChatResponse(
+                                        "c1",
+                                        List.of(TextBlock.builder().text("researching…").build()),
+                                        null,
+                                        Map.of(),
+                                        null),
+                                stopChunk("c1", "research complete")))
+                .thenReturn(Flux.just(stopChunk("p2", "summary done")));
+
+        // Registering AsyncToolMiddleware (messageBus + asyncToolTimeout) is
+        // what triggers the bug: its bare next.apply(input).subscribe(...)
+        // detaches the Reactor Context during the acting phase.
+        parent =
+                HarnessAgent.builder()
+                        .name("parent")
+                        .model(model)
+                        .workspace(workspace)
+                        .abstractFilesystem(new LocalFilesystem(workspace))
+                        .asyncToolTimeout(Duration.ofSeconds(30))
+                        .build();
+
+        RuntimeContext ctx = RuntimeContext.builder().sessionId("sess-async-stream-events").build();
+
+        List<AgentEvent> events =
+                parent.streamEvents(
+                                List.of(
+                                        Msg.builder()
+                                                .role(MsgRole.USER)
+                                                .textContent("start")
+                                                .build()),
+                                ctx)
+                        .collectList()
+                        .block();
+
+        assertNotNull(events);
+        assertFalse(events.isEmpty());
+
+        // Child events: source != null, contains childId. Without the fix
+        // these would be empty — the emitter is lost in the acting context.
+        List<AgentEvent> childEvents =
+                events.stream().filter(e -> e.getSource() != null).collect(Collectors.toList());
+        assertFalse(
+                childEvents.isEmpty(),
+                "expected child events with source tag under AsyncToolMiddleware; got types: "
+                        + events.stream()
+                                .map(e -> e.getType() + "(src=" + e.getSource() + ")")
+                                .collect(Collectors.joining(", ")));
+
+        for (AgentEvent childEvent : childEvents) {
+            assertTrue(
+                    childEvent.getSource().contains(childId),
+                    "source should contain childId; got: " + childEvent.getSource());
+        }
+
+        // Child AGENT_START / AGENT_END bookends present with source
+        assertTrue(
+                childEvents.stream().anyMatch(e -> e.getType() == AgentEventType.AGENT_START),
+                "expected child AGENT_START with source under AsyncToolMiddleware");
+        assertTrue(
+                childEvents.stream().anyMatch(e -> e.getType() == AgentEventType.AGENT_END),
+                "expected child AGENT_END with source under AsyncToolMiddleware");
+
+        // Parent bookends: source == null
+        assertEquals(AgentEventType.AGENT_START, events.get(0).getType());
+        assertNull(events.get(0).getSource(), "first event should be parent AGENT_START");
+        assertEquals(AgentEventType.AGENT_END, events.get(events.size() - 1).getType());
+        assertNull(
+                events.get(events.size() - 1).getSource(), "last event should be parent AGENT_END");
     }
 
     // -----------------------------------------------------------------
@@ -216,6 +447,8 @@ class HarnessAgentSubagentStreamEventsTest {
                                                 childId,
                                                 "task",
                                                 "format data",
+                                                "reusable",
+                                                true,
                                                 "timeout_seconds",
                                                 60))))
                 .thenReturn(Flux.just(stopChunk("c1", "formatted")))
@@ -283,6 +516,8 @@ class HarnessAgentSubagentStreamEventsTest {
                                                 childId,
                                                 "task",
                                                 "analyse data",
+                                                "reusable",
+                                                true,
                                                 "timeout_seconds",
                                                 60))))
                 .thenReturn(Flux.just(stopChunk("c1", "analysis complete")))
@@ -363,6 +598,8 @@ class HarnessAgentSubagentStreamEventsTest {
                                                 childId,
                                                 "task",
                                                 "help with X",
+                                                "reusable",
+                                                true,
                                                 "timeout_seconds",
                                                 60))))
                 .thenReturn(Flux.just(stopChunk("c1", "helped")))

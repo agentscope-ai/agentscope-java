@@ -1,6 +1,7 @@
 ---
-title: "计划模式（Plan Mode）"
-description: "动手前先想清楚：只读阶段写计划文件，HITL 后再进入执行阶段"
+title: 计划模式（Plan Mode）
+description: 动手前先想清楚：只读阶段写计划文件，HITL 后再进入执行阶段
+en_link: /v2/en/docs/harness/plan-mode
 ---
 
 ## 作用
@@ -47,7 +48,7 @@ Builder 选项：
 
 ## 工作流
 
-```{mermaid}
+```mermaid
 sequenceDiagram
     autonumber
     participant U as User
@@ -112,7 +113,7 @@ HarnessAgent agent = HarnessAgent.builder()
 
 ## 运行期切换权限模式（"危险开关"逃生口）
 
-Plan Mode 只是一个具体的阶段开关。在它之下，每个 session 都带着一个 [`PermissionMode`](../building-blocks/context.md)，由权限引擎在评估时使用。你可以在运行期翻转这个 mode——比如提供一个由用户显式触发的"跳过所有权限确认"开关（类似其它编码工具里的 YOLO / dangerous-skip 开关）：
+Plan Mode 只是一个具体的阶段开关。在它之下，每个 session 都带着一个 [`PermissionMode`](/v2/zh/docs/building-blocks/context)，由权限引擎在评估时使用。你可以在运行期翻转这个 mode——比如提供一个由用户显式触发的"跳过所有权限确认"开关（类似其它编码工具里的 YOLO / dangerous-skip 开关）：
 
 ```java
 RuntimeContext ctx = RuntimeContext.builder().sessionId("my-session").build();
@@ -125,6 +126,19 @@ PermissionMode current = agent.getPermissionMode(userId, sessionId);
 ```
 
 `setPermissionMode(...)` 会保留该 session 已配置的 allow/deny/ask 规则与工作目录——只改 mode——并重建该 session 缓存的权限引擎，使切换在**下一次** call 生效；正在进行中的 call 仍沿用它启动时的引擎。
+
+如果连规则也要换——比如一个共享的 agent 服务多个用户，每个用户的角色对应不同的规则集——请用 `replacePermissionContext(...)`。它只为这一个 `(userId, sessionId)` 装上一份完整的替换上下文，不影响其它 session：
+
+```java
+PermissionContextState rules =
+        PermissionContextState.builder()
+                .addDenyRule(
+                        "execute",
+                        new PermissionRule("execute", null, PermissionBehavior.DENY, "role-policy"))
+                .build();
+
+agent.replacePermissionContext(userId, sessionId, rules);
+```
 
 ⚠ `BYPASS` 会关闭所有规则评估，因此应当作为显式的、按 session 的主动操作，并建议配合沙箱使用。如果想要**无人值守且不弹确认、但仍保留管控**，请改用 `PermissionMode.DONT_ASK`（ASK 决策会变成 DENY，而不是被自动放行）。
 
@@ -163,7 +177,7 @@ Plan Mode 与 `todo_write`（core 提供）是两个**独立但常常一起用**
 
 典型工作流：plan 阶段写完 `PLAN.md` → `plan_exit` → 执行阶段用 `todo_write` 把 PLAN 拆成 5–8 条 todo → 逐条推进。Agent 每轮推理前能看到 todos 的小提示，帮助保持聚焦。
 
-⚠ 不要和子 agent 的**后台任务**（`task_output` / `task_cancel` / `task_list`）混淆——那是另一回事，详见 [子 Agent](./subagent.md)。
+⚠ 不要和子 agent 的**后台任务**（`task_output` / `task_cancel` / `task_list`）混淆——那是另一回事，详见 [子 Agent](/v2/zh/docs/harness/subagent)。
 
 ## 查看任务列表
 
@@ -205,6 +219,6 @@ agent.streamEvents(message)
 
 ## 相关文档
 
-- [工作区](./workspace.md) — `plans/` 目录的位置
-- [子 Agent](./subagent.md) — `todo_write` ≠ subagent task，不要混淆
-- [架构](./architecture.md) — Plan Mode 在 call() 时序中的位置
+- [工作区](/v2/zh/docs/harness/workspace) — `plans/` 目录的位置
+- [子 Agent](/v2/zh/docs/harness/subagent) — `todo_write` ≠ subagent task，不要混淆
+- [架构](/v2/zh/docs/harness/architecture) — Plan Mode 在 call() 时序中的位置

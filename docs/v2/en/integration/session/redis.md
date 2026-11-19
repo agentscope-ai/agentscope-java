@@ -1,6 +1,14 @@
-```{note}
-This page has been superseded by [Distributed Storage — Redis](../distributed/redis.md). Content below is kept for reference.
-```
+---
+title: Redis State Store
+zh_link: /v2/zh/integration/session/redis
+---
+
+<Note>
+
+This page has been superseded by [Distributed Storage — Redis](/v2/en/integration/distributed/redis). Content below is kept for reference.
+
+</Note>
+
 
 # Redis State Store
 

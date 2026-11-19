@@ -35,9 +35,11 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.EnumSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.function.Function;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -76,6 +78,7 @@ public class DynamicSubagentsMiddleware implements HarnessRuntimeMiddleware {
     private final Function<SubagentDeclaration, SubagentFactory> factoryBuilder;
     private final DefaultAgentManager agentManager;
     private volatile Object subagentTool;
+    private volatile AgentSpawnTool ownedAgentSpawnTool;
     private final TaskTool taskTool;
     private final TaskRepository taskRepository;
 
@@ -94,11 +97,21 @@ public class DynamicSubagentsMiddleware implements HarnessRuntimeMiddleware {
         this.agentManager = agentManager;
         java.util.Objects.requireNonNull(taskRepository, "taskRepository");
         this.taskRepository = taskRepository;
-        this.subagentTool =
-                subagentTool != null
-                        ? subagentTool
-                        : new AgentSpawnTool(agentManager, taskRepository, 0);
+        if (subagentTool != null) {
+            this.subagentTool = subagentTool;
+            this.ownedAgentSpawnTool = null;
+        } else {
+            AgentSpawnTool spawnTool = new AgentSpawnTool(agentManager, taskRepository, 0);
+            this.subagentTool = spawnTool;
+            this.ownedAgentSpawnTool = spawnTool;
+        }
         this.taskTool = new TaskTool(taskRepository);
+    }
+
+    /** Narrow declaration: subclasses overriding more hooks must extend this set. */
+    @Override
+    public Set<ExtensionPoint> activePoints() {
+        return EnumSet.of(ExtensionPoint.ON_REASONING);
     }
 
     /**
@@ -118,9 +131,20 @@ public class DynamicSubagentsMiddleware implements HarnessRuntimeMiddleware {
         if (this.subagentTool instanceof AgentSpawnTool ast) {
             ast.setGatewayBridge(bridge);
         } else {
-            this.subagentTool = new AgentSpawnTool(agentManager, taskRepository, 0, bridge);
+            AgentSpawnTool spawnTool = new AgentSpawnTool(agentManager, taskRepository, 0, bridge);
+            this.subagentTool = spawnTool;
+            this.ownedAgentSpawnTool = spawnTool;
         }
         return this;
+    }
+
+    /** Closes the internally-created spawn tool without touching an injected external tool. */
+    public synchronized void closeOwnedAgentSpawnTool() {
+        AgentSpawnTool spawnTool = ownedAgentSpawnTool;
+        if (spawnTool != null) {
+            ownedAgentSpawnTool = null;
+            spawnTool.close();
+        }
     }
 
     /**
@@ -129,6 +153,13 @@ public class DynamicSubagentsMiddleware implements HarnessRuntimeMiddleware {
      * exposed-subagent recovery.
      */
     public DefaultAgentManager getAgentManager() {
+        return agentManager;
+    }
+
+    /** Loads declarations for host-owned continuation without invoking a model. */
+    public DefaultAgentManager refreshAgentManager(RuntimeContext context) {
+        RuntimeContext effective = context == null ? RuntimeContext.empty() : context;
+        if (agentManager != null) agentManager.replaceAgents(reloadEntries(effective));
         return agentManager;
     }
 
@@ -155,19 +186,16 @@ public class DynamicSubagentsMiddleware implements HarnessRuntimeMiddleware {
         if (agentManager != null) {
             agentManager.replaceAgents(merged);
         }
-        StringBuilder addition = new StringBuilder();
-        if (!merged.isEmpty()) {
-            addition.append(SubagentsMiddleware.renderSubagentSection(merged, false));
-        }
-        String taskSummary = SubagentsMiddleware.buildTaskSummary(taskRepository, rc);
-        if (taskSummary != null) {
-            addition.append(taskSummary);
-        }
-        if (addition.length() == 0) {
-            return next.apply(input);
-        }
+        Msg stateMsg =
+                SubagentsMiddleware.buildSubagentStateMsg(
+                        merged, SubagentsMiddleware.buildTaskSummary(taskRepository, rc));
         List<Msg> rebuilt =
-                SubagentsMiddleware.prependToSystemMessage(input.messages(), addition.toString());
+                SubagentsMiddleware.prependToSystemMessage(
+                        input.messages(), SubagentsMiddleware.renderSubagentSection(merged, false));
+        if (stateMsg != null) {
+            rebuilt = new ArrayList<>(rebuilt);
+            rebuilt.add(stateMsg);
+        }
         return next.apply(new ReasoningInput(rebuilt, input.tools(), input.options()));
     }
 

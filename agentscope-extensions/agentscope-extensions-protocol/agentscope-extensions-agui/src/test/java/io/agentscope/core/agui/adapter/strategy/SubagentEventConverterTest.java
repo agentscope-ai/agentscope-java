@@ -21,6 +21,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.agui.adapter.AguiAdapterConfig;
 import io.agentscope.core.agui.event.AguiEvent;
+import io.agentscope.core.event.AgentEndEvent;
 import io.agentscope.core.event.AgentStartEvent;
 import io.agentscope.core.event.TextBlockDeltaEvent;
 import java.util.List;
@@ -45,19 +46,29 @@ class SubagentEventConverterTest {
         AguiStreamContext context =
                 new AguiStreamContext("t1", "r1", AguiAdapterConfig.defaultConfig());
 
-        AgentStartEvent childStart = new AgentStartEvent("child-sess", null, "researcher");
-        childStart.withSource("main/researcher");
+        AgentStartEvent childStart = new AgentStartEvent("child-sess", "child-reply", "researcher");
+        childStart.withSource("main/researcher/child-sess");
         List<AguiEvent> startEvents = registry.convert(childStart, context);
         assertEquals(1, startEvents.size());
         AguiEvent.Custom custom = assertInstanceOf(AguiEvent.Custom.class, startEvents.get(0));
         assertEquals(SubagentEventConverter.NAME_LIFECYCLE, custom.name());
         @SuppressWarnings("unchecked")
         Map<String, Object> value = (Map<String, Object>) custom.value();
-        assertEquals("main/researcher", value.get("source"));
+        assertEquals("main/researcher/child-sess", value.get("source"));
         assertEquals("AGENT_START", value.get("type"));
+        assertEquals("child-reply", value.get("replyId"));
+
+        AgentEndEvent childEnd = new AgentEndEvent("child-reply");
+        childEnd.withSource("main/researcher/child-sess");
+        List<AguiEvent> endEvents = registry.convert(childEnd, context);
+        AguiEvent.Custom endCustom = assertInstanceOf(AguiEvent.Custom.class, endEvents.get(0));
+        @SuppressWarnings("unchecked")
+        Map<String, Object> endValue = (Map<String, Object>) endCustom.value();
+        assertEquals("AGENT_END", endValue.get("type"));
+        assertEquals("child-reply", endValue.get("replyId"));
 
         TextBlockDeltaEvent delta = new TextBlockDeltaEvent(null, "b1", "hi");
-        delta.withSource("main/researcher");
+        delta.withSource("main/researcher/child-sess");
         List<AguiEvent> textEvents = registry.convert(delta, context);
         assertEquals(1, textEvents.size());
         AguiEvent.Custom textCustom = assertInstanceOf(AguiEvent.Custom.class, textEvents.get(0));
@@ -75,7 +86,7 @@ class SubagentEventConverterTest {
                         AguiAdapterConfig.builder().emitSubagentEventsAsNative(true).build());
 
         AgentStartEvent childStart = new AgentStartEvent("child-sess", null, "researcher");
-        childStart.withSource("main/researcher");
+        childStart.withSource("main/researcher/child-sess");
         List<AguiEvent> events = registry.convert(childStart, context);
         assertTrue(events.stream().anyMatch(e -> e instanceof AguiEvent.RunStarted));
     }

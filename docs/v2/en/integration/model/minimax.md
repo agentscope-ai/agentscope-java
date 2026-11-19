@@ -1,4 +1,7 @@
-# MiniMax Model
+---
+title: MiniMax
+zh_link: /v2/zh/integration/model/minimax
+---
 
 `agentscope-extensions-model-openai` provides first-class MiniMax support through the OpenAI-compatible model stack. Add the OpenAI model extension module, then use `minimax:<model>` with `ModelRegistry`.
 

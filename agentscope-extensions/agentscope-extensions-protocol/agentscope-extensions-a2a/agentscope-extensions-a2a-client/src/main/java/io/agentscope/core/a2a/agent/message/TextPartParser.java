@@ -16,10 +16,11 @@
 
 package io.agentscope.core.a2a.agent.message;
 
-import io.a2a.spec.TextPart;
 import io.agentscope.core.message.ContentBlock;
+import io.agentscope.core.message.HintBlock;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ThinkingBlock;
+import org.a2aproject.sdk.spec.TextPart;
 
 /**
  * Parser for {@link TextPart} to {@link TextBlock} or
@@ -29,19 +30,17 @@ public class TextPartParser implements PartParser<TextPart> {
 
     @Override
     public ContentBlock parse(TextPart part) {
-        if (isThinkingBlock(part)) {
-            return ThinkingBlock.builder().thinking(part.getText()).build();
+        String blockType =
+                MetadataUtil.metadataValue(part, MessageConstants.BLOCK_TYPE_METADATA_KEY);
+        if (MessageConstants.BlockContent.TYPE_THINKING.equals(blockType)) {
+            return ThinkingBlock.builder().thinking(part.text()).build();
         }
-        return TextBlock.builder().text(part.getText()).build();
-    }
-
-    private boolean isThinkingBlock(TextPart part) {
-        if (null == part.getMetadata()
-                || part.getMetadata().isEmpty()
-                || !part.getMetadata().containsKey(MessageConstants.BLOCK_TYPE_METADATA_KEY)) {
-            return false;
+        if (MessageConstants.BlockContent.TYPE_HINT.equals(blockType)) {
+            return new HintBlock(
+                    MetadataUtil.metadataValue(part, MessageConstants.HINT_ID_METADATA_KEY),
+                    part.text(),
+                    MetadataUtil.metadataValue(part, MessageConstants.HINT_SOURCE_METADATA_KEY));
         }
-        return MessageConstants.BlockContent.TYPE_THINKING.equals(
-                part.getMetadata().get(MessageConstants.BLOCK_TYPE_METADATA_KEY));
+        return TextBlock.builder().text(part.text()).build();
     }
 }

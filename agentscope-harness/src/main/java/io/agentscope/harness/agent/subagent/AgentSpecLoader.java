@@ -22,6 +22,7 @@ import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
 import io.agentscope.harness.agent.filesystem.model.FileInfo;
 import io.agentscope.harness.agent.filesystem.model.GlobResult;
 import io.agentscope.harness.agent.filesystem.model.ReadResult;
+import io.agentscope.harness.agent.memory.compaction.CompactionConfig;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -56,6 +57,10 @@ import org.slf4j.LoggerFactory;
  * model: qwen3-max          # optional model override
  * maxIters: 12              # optional (default 10)
  * tools: [read_file, grep_files, edit_file]   # optional allowlist
+ * compaction:              # absent/null: inherit; false: disable; true: defaults
+ *   triggerMessages: 20
+ *   keepMessages: 5
+ *   keepTokens: 0         # use the message-count keep window
  * ---
  *
  * # Inline body (only when workspace.path is absent)
@@ -215,17 +220,21 @@ public final class AgentSpecLoader {
      */
     @SuppressWarnings("unchecked")
     public static SubagentDeclaration parse(String markdown, String name, Path mainWorkspace) {
-        if (markdown == null || markdown.isBlank() || !markdown.startsWith("---")) {
+        String content =
+                markdown != null && markdown.startsWith("\uFEFF")
+                        ? markdown.substring(1)
+                        : markdown;
+        if (content == null || content.isBlank() || !content.startsWith("---")) {
             return null;
         }
-        int endIdx = markdown.indexOf("---", 3);
+        int endIdx = content.indexOf("---", 3);
         if (endIdx == -1) {
             log.warn("Agent declaration front matter not closed with --- in '{}'", name);
             return null;
         }
 
-        String frontMatterStr = markdown.substring(3, endIdx).trim();
-        String body = markdown.substring(endIdx + 3).trim();
+        String frontMatterStr = content.substring(3, endIdx).trim();
+        String body = content.substring(endIdx + 3).trim();
 
         Map<String, Object> fm;
         try {
@@ -311,6 +320,11 @@ public final class AgentSpecLoader {
         if (exposeToUser == null) {
             exposeToUser = asNullableBoolean(fm.get("exposeToUser"));
         }
+        Boolean enablePendingToolRecovery =
+                asNullableBoolean(fm.get("enable_pending_tool_recovery"));
+        if (enablePendingToolRecovery == null) {
+            enablePendingToolRecovery = asNullableBoolean(fm.get("enablePendingToolRecovery"));
+        }
 
         List<String> tools = parseToolNames(asString(fm.get("tools")));
         List<String> skills = parseToolNames(asString(fm.get("skills")));
@@ -328,8 +342,15 @@ public final class AgentSpecLoader {
                         .mode(declMode)
                         .hidden(hidden)
                         .exposeToUser(exposeToUser)
+                        .enablePendingToolRecovery(enablePendingToolRecovery)
                         .tools(tools.isEmpty() ? null : tools)
                         .skills(skills.isEmpty() ? null : skills);
+
+        try {
+            applyCompaction(fm.get("compaction"), builder);
+        } catch (IllegalArgumentException e) {
+            log.warn("Ignoring invalid compaction config for '{}': {}", name, e.getMessage());
+        }
 
         if (workspacePath != null) {
             builder.workspace(workspacePath);
@@ -343,6 +364,82 @@ public final class AgentSpecLoader {
     // -------------------------------------------------------------------------
     // Helpers
     // -------------------------------------------------------------------------
+
+    private static void applyCompaction(Object value, SubagentDeclaration.Builder declaration) {
+        if (value == null) {
+            return;
+        }
+        if (Boolean.FALSE.equals(value)) {
+            declaration.disableCompaction();
+            return;
+        }
+        CompactionConfig.Builder config = CompactionConfig.builder();
+        if (Boolean.TRUE.equals(value)) {
+            declaration.compaction(config.build());
+            return;
+        }
+        if (!(value instanceof Map<?, ?> fields)) {
+            throw new IllegalArgumentException("compaction must be a boolean or mapping");
+        }
+        for (Map.Entry<?, ?> field : fields.entrySet()) {
+            String key = String.valueOf(field.getKey());
+            Object setting = field.getValue();
+            switch (key) {
+                case "triggerMessages" -> config.triggerMessages(compactionInt(key, setting));
+                case "triggerTokens" -> config.triggerTokens(compactionInt(key, setting));
+                case "reserved" -> config.reserved(compactionInt(key, setting));
+                case "keepMessages" -> config.keepMessages(compactionInt(key, setting));
+                case "keepTokens" -> config.keepTokens(compactionInt(key, setting));
+                case "keepTokensMin" -> config.keepTokensMin(compactionInt(key, setting));
+                case "keepTokensMax" -> config.keepTokensMax(compactionInt(key, setting));
+                case "keepTokensRatio" -> {
+                    if (!(setting instanceof Number number)
+                            || !Double.isFinite(number.doubleValue())) {
+                        throw new IllegalArgumentException(key + " must be a finite number");
+                    }
+                    if (number.doubleValue() <= 0 || number.doubleValue() > 1) {
+                        throw new IllegalArgumentException(
+                                key + " must be greater than 0 and at most 1");
+                    }
+                    config.keepTokensRatio(number.doubleValue());
+                }
+                case "summaryPrompt" -> {
+                    if (!(setting instanceof String prompt)) {
+                        throw new IllegalArgumentException(key + " must be a string");
+                    }
+                    if (!prompt.contains("{messages}")) {
+                        throw new IllegalArgumentException(
+                                key + " must contain the {messages} placeholder");
+                    }
+                    config.summaryPrompt(prompt);
+                }
+                case "flushBeforeCompact" -> {
+                    if (!(setting instanceof Boolean enabled)) {
+                        throw new IllegalArgumentException(key + " must be a boolean");
+                    }
+                    config.flushBeforeCompact(enabled);
+                }
+                default -> throw new IllegalArgumentException("Unknown compaction field: " + key);
+            }
+        }
+        CompactionConfig built = config.build();
+        if (built.getKeepTokensMin() > built.getKeepTokensMax()) {
+            throw new IllegalArgumentException("keepTokensMin must not exceed keepTokensMax");
+        }
+        declaration.compaction(built);
+    }
+
+    private static int compactionInt(String key, Object value) {
+        if (value instanceof Number number && number.doubleValue() == number.intValue()) {
+            int setting = number.intValue();
+            int minimum = "keepTokens".equals(key) ? -1 : 0;
+            if (setting < minimum) {
+                throw new IllegalArgumentException(key + " must be at least " + minimum);
+            }
+            return setting;
+        }
+        throw new IllegalArgumentException(key + " must be a 32-bit integer");
+    }
 
     private static String stripMdExtension(String filename) {
         if (filename.endsWith(".md")) {

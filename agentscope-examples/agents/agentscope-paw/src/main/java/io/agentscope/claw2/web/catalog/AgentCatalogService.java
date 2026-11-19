@@ -22,9 +22,9 @@ import io.agentscope.claw2.web.scaffold.WorkspaceScaffolder;
 import io.agentscope.claw2.web.template.TemplateRegistry;
 import io.agentscope.claw2.web.toolbus.ToolEventBus;
 import io.agentscope.claw2.web.toolbus.ToolNotificationMiddleware;
+import io.agentscope.core.journal.ThreadJournalStore;
 import io.agentscope.core.model.Model;
 import io.agentscope.harness.agent.HarnessAgent;
-import io.agentscope.harness.agent.transcript.TranscriptStore;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -68,8 +68,7 @@ public class AgentCatalogService {
     private final Model model;
     private final ToolEventBus toolEventBus;
     private final TemplateRegistry templateRegistry;
-    private final Optional<TranscriptStore> transcriptStore;
-    private final String transcriptTenant;
+    private final Optional<ThreadJournalStore> threadJournalStore;
 
     /** Custom agent ids that have been built and registered in the gateway during this run. */
     private final ConcurrentHashMap<String, String> registeredCustomIds = new ConcurrentHashMap<>();
@@ -80,18 +79,14 @@ public class AgentCatalogService {
             Optional<Model> modelOpt,
             ToolEventBus toolEventBus,
             TemplateRegistry templateRegistry,
-            Optional<TranscriptStore> transcriptStore,
-            String pawTranscriptTenant) {
+            Optional<ThreadJournalStore> threadJournalStore) {
         this.bootstrap = bootstrap;
         this.store = store;
         this.model = modelOpt.orElse(null);
         this.toolEventBus = toolEventBus;
         this.templateRegistry = templateRegistry;
-        this.transcriptStore = transcriptStore != null ? transcriptStore : Optional.empty();
-        this.transcriptTenant =
-                pawTranscriptTenant != null && !pawTranscriptTenant.isBlank()
-                        ? pawTranscriptTenant
-                        : "default";
+        this.threadJournalStore =
+                threadJournalStore != null ? threadJournalStore : Optional.empty();
     }
 
     // -----------------------------------------------------------------
@@ -316,7 +311,7 @@ public class AgentCatalogService {
                             "shell_execute",
                             "memory_search",
                             "memory_get",
-                            "session_search");
+                            "thread_search");
 
             AgentConfigEntry.ToolsConfig tc = cfg != null ? cfg.getTools() : null;
             AgentConfigEntry.IdentityConfig ic = cfg != null ? cfg.getIdentity() : null;
@@ -368,8 +363,7 @@ public class AgentCatalogService {
         }
         b.workspace(workspace);
         b.middleware(new ToolNotificationMiddleware(toolEventBus));
-        transcriptStore.ifPresent(
-                store -> b.transcriptStore(store).transcriptTenant(transcriptTenant));
+        threadJournalStore.ifPresent(b::threadJournalStore);
 
         HarnessAgent agent = b.build();
         HarnessGateway gateway = bootstrap.gateway();

@@ -1,4 +1,7 @@
-# MySQL / JDBC
+---
+title: MySQL / JDBC
+zh_link: /v2/zh/integration/distributed/mysql
+---
 
 `agentscope-extensions-mysql` provides full-stack JDBC-based distributed storage for teams with existing relational database infrastructure.
 

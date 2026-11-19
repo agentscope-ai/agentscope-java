@@ -335,7 +335,7 @@ class DashScopeMultiAgentFormatterGroundTruthTest {
 
     private static void buildGroundTruth() {
         File imageFile = new File(imagePath);
-        String absoluteImagePath = "file://" + imageFile.getAbsolutePath();
+        String absoluteImagePath = "data:image/png;base64,ZmFrZSBpbWFnZSBjb250ZW50";
 
         // Build groundTruthMultiagent: system + conversation + tools
         groundTruthMultiagent = new ArrayList<>();

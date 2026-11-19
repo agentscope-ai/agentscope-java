@@ -17,6 +17,8 @@ package io.agentscope.extensions.sandbox.kubernetes;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -28,23 +30,33 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import io.agentscope.core.message.ToolExecutionDetails;
+import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.extensions.sandbox.kubernetes.client.CommandExecutor;
 import io.agentscope.extensions.sandbox.kubernetes.client.Filesystem;
 import io.agentscope.extensions.sandbox.kubernetes.client.Sandbox;
+import io.agentscope.extensions.sandbox.kubernetes.client.exceptions.SandboxRequestException;
 import io.agentscope.extensions.sandbox.kubernetes.client.model.ExecutionResult;
+import io.agentscope.harness.agent.filesystem.sandbox.SandboxBackedFilesystem;
 import io.agentscope.harness.agent.sandbox.ExecResult;
+import io.agentscope.harness.agent.sandbox.SandboxErrorCode;
+import io.agentscope.harness.agent.sandbox.SandboxException;
+import io.agentscope.harness.agent.tool.ShellExecuteTool;
 import java.io.ByteArrayInputStream;
 import java.io.InputStream;
 import java.time.Duration;
 import java.util.Base64;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.ArgumentCaptor;
 
 class KubernetesSandboxTest {
 
     private CommandExecutor commands;
     private Filesystem files;
+    private Sandbox sdkSandbox;
     private KubernetesSandboxState state;
     private KubernetesSandbox sandbox;
 
@@ -52,9 +64,10 @@ class KubernetesSandboxTest {
     void setUp() {
         commands = mock(CommandExecutor.class);
         files = mock(Filesystem.class);
-        Sandbox sdkSandbox = mock(Sandbox.class);
+        sdkSandbox = mock(Sandbox.class);
         when(sdkSandbox.commands()).thenReturn(commands);
         when(sdkSandbox.files()).thenReturn(files);
+        when(sdkSandbox.isActive()).thenReturn(true);
 
         state = new KubernetesSandboxState();
         state.setSessionId("session-1");
@@ -75,7 +88,87 @@ class KubernetesSandboxTest {
         assertEquals("out", result.stdout());
         ArgumentCaptor<String> cmd = ArgumentCaptor.forClass(String.class);
         verify(commands).run(cmd.capture(), eq(Duration.ofSeconds(30)));
-        assertEquals("cd '/workspace' && (echo hi)", cmd.getValue());
+        assertEquals("cd '/workspace' && (\necho hi\n)", cmd.getValue());
+    }
+
+    @Test
+    void httpWaitFailureReachesToolAsUnknownRatherThanProcessTimeout() {
+        when(commands.run(anyString(), any(Duration.class)))
+                .thenThrow(
+                        new SandboxRequestException(
+                                "Execution outcome unknown; inspect state before retrying",
+                                null,
+                                new java.net.http.HttpTimeoutException("wait expired"),
+                                true));
+        SandboxBackedFilesystem filesystem = new SandboxBackedFilesystem();
+        filesystem.setSandbox(sandbox);
+        ToolResultBlock result =
+                new ShellExecuteTool(filesystem).execute(null, "side-effect", null, 300);
+        assertEquals(ToolExecutionDetails.Outcome.UNKNOWN, result.getExecutionDetails().outcome());
+        assertEquals(null, result.getExecutionDetails().exitCode());
+        verify(commands).run(anyString(), eq(Duration.ofSeconds(300)));
+    }
+
+    @Test
+    void confirmedRuntimeTimeoutPreservesPartialOutputAndExitCode() {
+        when(commands.run(anyString(), any(Duration.class)))
+                .thenReturn(
+                        new ExecutionResult(
+                                "before", "Command timed out after 2 seconds", 124, true));
+        SandboxException.ExecException error =
+                assertThrows(
+                        SandboxException.ExecException.class,
+                        () -> sandbox.doExec(null, "echo before; sleep 10", 2));
+        assertEquals(124, error.getExitCode());
+        assertEquals("before", error.getStdout());
+        assertTrue(error.isTimedOut());
+    }
+
+    @Test
+    void exitCode124AloneDoesNotConfirmRuntimeTimeout() {
+        when(commands.run(anyString(), any(Duration.class)))
+                .thenReturn(new ExecutionResult("before", "process exited", 124));
+
+        SandboxException.ExecException error =
+                assertThrows(
+                        SandboxException.ExecException.class,
+                        () -> sandbox.doExec(null, "exit 124", 2));
+
+        assertFalse(error.isTimedOut());
+    }
+
+    @ParameterizedTest
+    @ValueSource(
+            strings = {"cat <<'EOF'\nhello\nEOF", "echo hi\n# comment", "echo hi \\", "echo hi"})
+    void doExecKeepsClosingParenOnItsOwnLine(String command) throws Exception {
+        when(commands.run(anyString(), any(Duration.class)))
+                .thenReturn(new ExecutionResult("done", "", 0));
+
+        ExecResult result = sandbox.doExec(null, command, 30);
+
+        assertEquals(0, result.exitCode());
+        ArgumentCaptor<String> cmd = ArgumentCaptor.forClass(String.class);
+        verify(commands).run(cmd.capture(), eq(Duration.ofSeconds(30)));
+        String wrapped = cmd.getValue();
+        assertEquals("cd '/workspace' && (\n" + command + "\n)", wrapped);
+        // Closing ')' must be on its own line, not glued to the last payload line.
+        assertTrue(wrapped.endsWith("\n)"));
+        String lastPayloadLine = command.substring(command.lastIndexOf('\n') + 1);
+        assertFalse(wrapped.contains(lastPayloadLine + ")"));
+    }
+
+    @Test
+    void doExecRejectsNullOrBlankCommand() {
+        SandboxException.ExecException nullEx =
+                assertThrows(
+                        SandboxException.ExecException.class, () -> sandbox.doExec(null, null, 30));
+        assertEquals("empty command rejected by KubernetesSandbox", nullEx.getStderr());
+
+        SandboxException.ExecException blankEx =
+                assertThrows(
+                        SandboxException.ExecException.class,
+                        () -> sandbox.doExec(null, "  \t", 30));
+        assertEquals("empty command rejected by KubernetesSandbox", blankEx.getStderr());
     }
 
     @Test
@@ -104,6 +197,43 @@ class KubernetesSandboxTest {
         verify(files, never()).write(anyString(), any(byte[].class));
         String b64 = Base64.getEncoder().encodeToString(tar);
         verify(commands).run(contains("echo '" + b64 + "' | base64 -d > /tmp/ws-hydrate-"));
+    }
+
+    @Test
+    void hydrateUsesUniqueTempArchivePerCall() throws Exception {
+        when(commands.run(anyString())).thenReturn(new ExecutionResult("", "", 0));
+
+        sandbox.doHydrateWorkspace(new ByteArrayInputStream("tar-one".getBytes()));
+        sandbox.doHydrateWorkspace(new ByteArrayInputStream("tar-two".getBytes()));
+
+        // Concurrent transfers must never share a temp archive: a deterministic name lets
+        // one call's rm -f cleanup delete another call's archive before tar -xf runs.
+        ArgumentCaptor<String> path = ArgumentCaptor.forClass(String.class);
+        verify(files, org.mockito.Mockito.times(2)).write(path.capture(), any(byte[].class));
+        String first = path.getAllValues().get(0);
+        String second = path.getAllValues().get(1);
+        assertTrue(first.startsWith(".agentscope-tmp/ws-hydrate-"));
+        assertTrue(second.startsWith(".agentscope-tmp/ws-hydrate-"));
+        assertTrue(!first.equals(second));
+    }
+
+    @Test
+    void persistUsesUniqueTempArchivePerCall() throws Exception {
+        when(commands.run(anyString())).thenReturn(new ExecutionResult("", "", 0));
+        when(files.read(startsWith(".agentscope-tmp/ws-persist-")))
+                .thenReturn("fake-tar".getBytes());
+
+        sandbox.doPersistWorkspace();
+        sandbox.doPersistWorkspace();
+
+        // Same uniqueness contract as hydrate: concurrent persists must not share a
+        // temp archive, even if a future refactor splits the naming method.
+        ArgumentCaptor<String> path = ArgumentCaptor.forClass(String.class);
+        verify(files, org.mockito.Mockito.times(2)).read(path.capture());
+        String first = path.getAllValues().get(0);
+        String second = path.getAllValues().get(1);
+        assertTrue(first.startsWith(".agentscope-tmp/ws-persist-"));
+        assertTrue(!first.equals(second));
     }
 
     @Test
@@ -158,6 +288,50 @@ class KubernetesSandboxTest {
     }
 
     @Test
+    void fileTransferFailsClearlyWhenConnectionIsClosed() {
+        when(sdkSandbox.isActive()).thenReturn(false);
+
+        SandboxException uploadFailure =
+                assertThrows(
+                        SandboxException.class,
+                        () -> sandbox.uploadFile("/workspace/src/Foo.java", new byte[] {1}));
+        SandboxException downloadFailure =
+                assertThrows(
+                        SandboxException.class,
+                        () -> sandbox.downloadFile("/workspace/src/Foo.java"));
+
+        assertEquals("Kubernetes sandbox connection has been closed", uploadFailure.getMessage());
+        assertEquals("Kubernetes sandbox connection has been closed", downloadFailure.getMessage());
+        assertEquals(SandboxErrorCode.SANDBOX_CONNECTION_CLOSED, uploadFailure.getErrorCode());
+        assertEquals(SandboxErrorCode.SANDBOX_CONNECTION_CLOSED, downloadFailure.getErrorCode());
+        verify(commands, never()).run(anyString());
+        verify(files, never()).read(anyString());
+        verify(files, never()).write(anyString(), org.mockito.ArgumentMatchers.<byte[]>any());
+    }
+
+    @Test
+    void operationalEntryPointsFailClearlyWhenConnectionIsClosed() {
+        when(sdkSandbox.isActive()).thenReturn(false);
+
+        SandboxException execFailure =
+                assertThrows(SandboxException.class, () -> sandbox.doExec(null, "echo hi", 30));
+        SandboxException persistFailure =
+                assertThrows(SandboxException.class, sandbox::doPersistWorkspace);
+        SandboxException hydrateFailure =
+                assertThrows(
+                        SandboxException.class,
+                        () -> sandbox.doHydrateWorkspace(new ByteArrayInputStream(new byte[] {1})));
+
+        assertEquals(SandboxErrorCode.SANDBOX_CONNECTION_CLOSED, execFailure.getErrorCode());
+        assertEquals(SandboxErrorCode.SANDBOX_CONNECTION_CLOSED, persistFailure.getErrorCode());
+        assertEquals(SandboxErrorCode.SANDBOX_CONNECTION_CLOSED, hydrateFailure.getErrorCode());
+        verify(commands, never()).run(anyString());
+        verify(commands, never()).run(anyString(), any(Duration.class));
+        verify(files, never()).read(anyString());
+        verify(files, never()).write(anyString(), org.mockito.ArgumentMatchers.<byte[]>any());
+    }
+
+    @Test
     void persistUsesExecWhenFileApiDisabled() throws Exception {
         state.setFileApiBaseDir("");
         byte[] tar = "fake-tar".getBytes();
@@ -169,5 +343,33 @@ class KubernetesSandboxTest {
 
         assertArrayEquals(tar, archive.readAllBytes());
         verify(commands).run(contains("| base64"));
+    }
+
+    @Test
+    void setupRejectsConfirmedMkdirTimeout() {
+        when(commands.run(anyString())).thenReturn(new ExecutionResult("", "timed out", 124));
+        SandboxException.SandboxRuntimeException error =
+                assertThrows(
+                        SandboxException.SandboxRuntimeException.class, sandbox::doSetupWorkspace);
+        assertTrue(error.getMessage().contains("exit=124"));
+    }
+
+    @Test
+    void hydrateDoesNotTransferArchiveAfterMkdirTimeout() {
+        when(commands.run(anyString())).thenReturn(new ExecutionResult("", "timed out", 124));
+        assertThrows(
+                SandboxException.SandboxRuntimeException.class,
+                () -> sandbox.doHydrateWorkspace(new ByteArrayInputStream(new byte[0])));
+        verify(files, never()).write(anyString(), any(byte[].class));
+        verify(commands).run("mkdir -p '/workspace'");
+    }
+
+    @Test
+    void uploadDoesNotWriteAfterMkdirTimeout() {
+        when(commands.run(anyString())).thenReturn(new ExecutionResult("", "timed out", 124));
+        assertThrows(
+                SandboxException.SandboxRuntimeException.class,
+                () -> sandbox.uploadFile("/workspace/nested/file", new byte[0]));
+        verify(files, never()).write(anyString(), any(byte[].class));
     }
 }

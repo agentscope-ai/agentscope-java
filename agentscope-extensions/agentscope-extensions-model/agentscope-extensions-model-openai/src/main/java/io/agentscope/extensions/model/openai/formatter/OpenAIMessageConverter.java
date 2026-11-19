@@ -15,11 +15,13 @@
  */
 package io.agentscope.extensions.model.openai.formatter;
 
+import io.agentscope.core.formatter.DocumentReferenceRenderer;
 import io.agentscope.core.formatter.MediaUtils;
 import io.agentscope.core.message.AudioBlock;
 import io.agentscope.core.message.Base64Source;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.DataBlock;
+import io.agentscope.core.message.DocumentBlock;
 import io.agentscope.core.message.HintBlock;
 import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.MessageMetadataKeys;
@@ -39,9 +41,12 @@ import io.agentscope.extensions.model.openai.dto.OpenAIMessage;
 import io.agentscope.extensions.model.openai.dto.OpenAIReasoningDetail;
 import io.agentscope.extensions.model.openai.dto.OpenAIToolCall;
 import java.util.ArrayList;
+import java.util.Base64;
 import java.util.List;
+import java.util.Map;
 import java.util.function.Function;
 import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -294,6 +299,12 @@ public class OpenAIMessageConverter {
                             OpenAIContentPart.text(
                                     "[Media - processing failed: " + errorMsg + "]"));
                 }
+            } else if (block instanceof DocumentBlock db) {
+                log.warn(
+                        "DocumentBlock is not supported by OpenAI; sending a text reference"
+                                + " instead of '{}'",
+                        db.getName() != null ? db.getName() : db.getId());
+                contentParts.add(OpenAIContentPart.text(DocumentReferenceRenderer.render(db)));
             } else if (block instanceof ToolUseBlock) {
                 log.warn("ToolUseBlock is not supported in user messages");
             } else if (block instanceof ToolResultBlock) {
@@ -312,7 +323,9 @@ public class OpenAIMessageConverter {
     private OpenAIMessage convertAssistantMessage(Msg msg) {
         OpenAIMessage.Builder builder = OpenAIMessage.builder().role("assistant");
 
-        String textContent = textExtractor.apply(msg);
+        // returnDirect tool deliveries put documents on assistant turns; the history keeps a
+        // reference there instead of losing the attachment.
+        String textContent = extractTextWithDocumentReferences(msg);
         // Qwen3 and similar models in thinking mode may produce assistant messages with
         // reasoning_content + tool_calls but null content. Due to @JsonInclude(NON_NULL),
         // a null content would be omitted from the JSON, causing strict OpenAI-compatible
@@ -341,8 +354,9 @@ public class OpenAIMessageConverter {
                 if (detailsObj instanceof List<?> list && !list.isEmpty()) {
                     List<OpenAIReasoningDetail> details = new ArrayList<>();
                     for (Object item : list) {
-                        if (item instanceof OpenAIReasoningDetail rd) {
-                            details.add(rd);
+                        OpenAIReasoningDetail detail = toRequestReasoningDetail(item);
+                        if (detail != null) {
+                            details.add(detail);
                         }
                     }
                     if (!details.isEmpty()) {
@@ -360,19 +374,18 @@ public class OpenAIMessageConverter {
         List<ToolUseBlock> toolBlocks = msg.getContentBlocks(ToolUseBlock.class);
         if (!toolBlocks.isEmpty()) {
             List<OpenAIToolCall> toolCalls = new ArrayList<>();
-            List<OpenAIReasoningDetail> reasoningDetails = new ArrayList<>();
 
             // First pass: find any thought signature in the blocks
             String fallbackSignature = null;
             for (ToolUseBlock toolUse : toolBlocks) {
                 if (toolUse.getMetadata() != null) {
-                    Object signatureObj =
-                            toolUse.getMetadata().get(ToolUseBlock.METADATA_THOUGHT_SIGNATURE);
-                    if (signatureObj instanceof String) {
-                        fallbackSignature = (String) signatureObj;
-                        if (fallbackSignature != null && !fallbackSignature.isEmpty()) {
-                            break;
-                        }
+                    String candidate =
+                            toSignatureString(
+                                    toolUse.getMetadata()
+                                            .get(ToolUseBlock.METADATA_THOUGHT_SIGNATURE));
+                    if (candidate != null) {
+                        fallbackSignature = candidate;
+                        break;
                     }
                 }
             }
@@ -392,15 +405,7 @@ public class OpenAIMessageConverter {
                 if (toolUse.getMetadata() != null) {
                     Object signatureObj =
                             toolUse.getMetadata().get(ToolUseBlock.METADATA_THOUGHT_SIGNATURE);
-                    if (signatureObj instanceof String) {
-                        signature = (String) signatureObj;
-                    }
-
-                    // Add reasoning detail if present
-                    Object detailObj = toolUse.getMetadata().get("reasoningDetail");
-                    if (detailObj instanceof OpenAIReasoningDetail) {
-                        reasoningDetails.add((OpenAIReasoningDetail) detailObj);
-                    }
+                    signature = toSignatureString(signatureObj);
                 }
 
                 // Fallback to shared signature if missing
@@ -425,13 +430,29 @@ public class OpenAIMessageConverter {
                         signature != null);
             }
             builder.toolCalls(toolCalls);
-
-            if (!reasoningDetails.isEmpty()) {
-                builder.reasoningDetails(reasoningDetails);
-            }
         }
 
         return builder.build();
+    }
+
+    /**
+     * Extract text and append one reference per document carried by the message.
+     *
+     * @param msg The message to extract content from
+     * @return Text with document references
+     */
+    private String extractTextWithDocumentReferences(Msg msg) {
+        String textContent = textExtractor.apply(msg);
+        String references =
+                msg.getContentBlocks(DocumentBlock.class).stream()
+                        .map(DocumentReferenceRenderer::render)
+                        .collect(Collectors.joining("\n"));
+        if (references.isEmpty()) {
+            return textContent;
+        }
+        return textContent == null || textContent.isEmpty()
+                ? references
+                : textContent + "\n" + references;
     }
 
     /**
@@ -459,7 +480,7 @@ public class OpenAIMessageConverter {
             if (result != null) {
                 content = toolResultConverter.apply(result.getOutput());
             } else {
-                content = textExtractor.apply(msg);
+                content = extractTextWithDocumentReferences(msg);
             }
             if (content == null) {
                 content = "";
@@ -483,6 +504,61 @@ public class OpenAIMessageConverter {
             }
         }
         return false;
+    }
+
+    /**
+     * Normalizes a thought signature metadata value to a Base64 string.
+     *
+     * <p>Signatures are produced as {@code byte[]} by some model parsers and as Base64 strings by
+     * others; after a JSON state persistence round-trip a {@code byte[]} signature is restored as
+     * a Base64 {@code String}. Both forms are accepted here.
+     *
+     * @param signature the raw metadata value
+     * @return the Base64 string form, or {@code null} if no usable signature is present
+     */
+    private static String toSignatureString(Object signature) {
+        if (signature instanceof String s && !s.isEmpty()) {
+            return s;
+        }
+        if (signature instanceof byte[] bytes && bytes.length > 0) {
+            return Base64.getEncoder().encodeToString(bytes);
+        }
+        return null;
+    }
+
+    /**
+     * Copies an {@link OpenAIReasoningDetail} from metadata for a request.
+     *
+     * <p>After a JSON state persistence round-trip the typed detail object is restored as a {@code
+     * LinkedHashMap}, so it is converted back to its typed form here.
+     *
+     * <p>The streaming index is omitted from the request copy because strict compatible APIs reject
+     * it in message history. The original metadata retains the index for streaming and persistence.
+     *
+     * @param value the raw metadata value
+     * @return the request detail, or {@code null} if it cannot be restored
+     */
+    private static OpenAIReasoningDetail toRequestReasoningDetail(Object value) {
+        OpenAIReasoningDetail detail;
+        if (value instanceof OpenAIReasoningDetail typedDetail) {
+            detail = typedDetail;
+        } else if (value instanceof Map<?, ?>) {
+            try {
+                detail = JsonUtils.getJsonCodec().convertValue(value, OpenAIReasoningDetail.class);
+            } catch (RuntimeException e) {
+                log.warn("Failed to restore reasoning detail from metadata", e);
+                return null;
+            }
+        } else {
+            return null;
+        }
+        OpenAIReasoningDetail requestDetail = new OpenAIReasoningDetail();
+        requestDetail.setId(detail.getId());
+        requestDetail.setType(detail.getType());
+        requestDetail.setData(detail.getData());
+        requestDetail.setText(detail.getText());
+        requestDetail.setFormat(detail.getFormat());
+        return requestDetail;
     }
 
     /**
@@ -534,13 +610,13 @@ public class OpenAIMessageConverter {
      * @param msg the source message with metadata
      * @param result the converted OpenAI message
      */
-    private void applyCacheControlFromMetadata(Msg msg, OpenAIMessage result) {
+    void applyCacheControlFromMetadata(Msg msg, OpenAIMessage result) {
         if (msg.getMetadata() == null) {
             return;
         }
         Object cacheFlag = msg.getMetadata().get(MessageMetadataKeys.CACHE_CONTROL);
         if (Boolean.TRUE.equals(cacheFlag)) {
-            result.setCacheControl(OpenAIBaseFormatter.getEphemeralCacheControl());
+            OpenAIBaseFormatter.setCacheControlOnContent(result);
         }
     }
 }

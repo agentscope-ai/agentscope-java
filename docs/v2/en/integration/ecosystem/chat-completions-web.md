@@ -1,4 +1,7 @@
-# Chat Completions Web
+---
+title: Chat Completions Web
+zh_link: /v2/zh/integration/ecosystem/chat-completions-web
+---
 
 `agentscope-extensions-chat-completions-web` exposes an AgentScope Agent behind an [OpenAI Chat Completions](https://platform.openai.com/docs/api-reference/chat)-compatible API, so OpenAI SDKs, LangChain, LlamaIndex, ChatBox, etc. can connect as if they were talking to OpenAI.
 

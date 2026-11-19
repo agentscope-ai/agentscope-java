@@ -16,12 +16,15 @@
 package io.agentscope.extensions.model.dashscope;
 
 import io.agentscope.core.formatter.Formatter;
+import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.Msg;
+import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.model.ChatModelBase;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.ModelContextWindows;
 import io.agentscope.core.model.ModelException;
+import io.agentscope.core.model.ModelSchedulers;
 import io.agentscope.core.model.ModelUtils;
 import io.agentscope.core.model.ToolChoice;
 import io.agentscope.core.model.ToolSchema;
@@ -33,15 +36,17 @@ import io.agentscope.core.model.transport.ProxyConfig;
 import io.agentscope.extensions.model.dashscope.dto.DashScopeMessage;
 import io.agentscope.extensions.model.dashscope.dto.DashScopeRequest;
 import io.agentscope.extensions.model.dashscope.dto.DashScopeResponse;
+import io.agentscope.extensions.model.dashscope.dto.DashScopeSkill;
 import io.agentscope.extensions.model.dashscope.formatter.DashScopeChatFormatter;
 import io.agentscope.extensions.model.dashscope.formatter.DashScopeMultiAgentFormatter;
 import java.time.Instant;
+import java.util.Collection;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Flux;
-import reactor.core.scheduler.Schedulers;
 
 /**
  * DashScope Chat Model using native HTTP API.
@@ -76,6 +81,11 @@ public class DashScopeChatModel extends ChatModelBase {
     // HTTP client for API calls
     private final DashScopeHttpClient httpClient;
 
+    @Override
+    public boolean supportsToolChoiceSpecific() {
+        return true;
+    }
+
     /**
      * Creates a new DashScope chat model instance with automatic API type detection.
      *
@@ -84,7 +94,7 @@ public class DashScopeChatModel extends ChatModelBase {
      *
      * @param apiKey the API key for DashScope authentication
      * @param modelName the model name (e.g., "qwen-max", "qwen-vl-plus")
-     * @param stream whether streaming should be enabled (ignored if enableThinking is true)
+     * @param stream whether streaming should be enabled
      * @param enableThinking whether thinking mode should be enabled (null for disabled)
      * @param enableSearch whether search enhancement should be enabled (null for disabled)
      * @param defaultOptions default generation options (null for defaults)
@@ -126,7 +136,7 @@ public class DashScopeChatModel extends ChatModelBase {
      *
      * @param apiKey the API key for DashScope authentication
      * @param modelName the model name (e.g., "qwen-max", "qwen-vl-plus")
-     * @param stream whether streaming should be enabled (ignored if enableThinking is true)
+     * @param stream whether streaming should be enabled
      * @param enableThinking whether thinking mode should be enabled (null for disabled)
      * @param enableSearch whether search enhancement should be enabled (null for disabled)
      * @param endpointType the endpoint type to use (null for AUTO detection)
@@ -150,14 +160,59 @@ public class DashScopeChatModel extends ChatModelBase {
             HttpTransport httpTransport,
             String publicKeyId,
             String publicKey) {
+        this(
+                apiKey,
+                modelName,
+                stream,
+                enableThinking,
+                enableSearch,
+                endpointType,
+                defaultOptions,
+                baseUrl,
+                formatter,
+                httpTransport,
+                publicKeyId,
+                publicKey,
+                null);
+    }
+
+    /**
+     * Creates a new DashScope chat model instance with explicit API type and additional
+     * multimodal model patterns.
+     *
+     * @param apiKey the API key for DashScope authentication
+     * @param modelName the model name (e.g., "qwen-max", "qwen-vl-plus")
+     * @param stream whether streaming should be enabled
+     * @param enableThinking whether thinking mode should be enabled (null for disabled)
+     * @param enableSearch whether search enhancement should be enabled (null for disabled)
+     * @param endpointType the endpoint type to use (null for AUTO detection)
+     * @param defaultOptions default generation options (null for defaults)
+     * @param baseUrl custom base URL for DashScope API (null for default)
+     * @param formatter the message formatter to use (null for default DashScope formatter)
+     * @param httpTransport custom HTTP transport (null for default from factory)
+     * @param publicKeyId the RSA public key ID for encryption (null to disable encryption)
+     * @param publicKey the RSA public key for encryption (Base64-encoded, null to disable encryption)
+     * @param multimodalModelPatterns case-insensitive substring patterns that extend the
+     *     built-in multimodal model detection when endpointType is AUTO (null to disable)
+     */
+    public DashScopeChatModel(
+            String apiKey,
+            String modelName,
+            boolean stream,
+            Boolean enableThinking,
+            Boolean enableSearch,
+            EndpointType endpointType,
+            GenerateOptions defaultOptions,
+            String baseUrl,
+            Formatter<DashScopeMessage, DashScopeResponse, DashScopeRequest> formatter,
+            HttpTransport httpTransport,
+            String publicKeyId,
+            String publicKey,
+            Collection<String> multimodalModelPatterns) {
         this.modelName = modelName;
-        // Thinking mode requires streaming; override stream setting if needed
-        if (enableThinking != null && enableThinking && !stream) {
-            log.info(
-                    "Thinking mode is enabled but stream=false was specified. "
-                            + "Forcing stream=true as thinking mode requires streaming.");
-        }
-        this.stream = enableThinking != null && enableThinking ? true : stream;
+        // DashScope only rejects the non-streaming + thinking combination for some open-source
+        // thinking models.
+        this.stream = stream;
         this.enableThinking = enableThinking;
         this.enableSearch = enableSearch;
         this.endpointType = endpointType != null ? endpointType : EndpointType.AUTO;
@@ -175,6 +230,7 @@ public class DashScopeChatModel extends ChatModelBase {
                         .baseUrl(baseUrl)
                         .publicKeyId(publicKeyId)
                         .publicKey(publicKey)
+                        .multimodalModelPatterns(multimodalModelPatterns)
                         .build();
     }
 
@@ -241,9 +297,10 @@ public class DashScopeChatModel extends ChatModelBase {
         List<DashScopeMessage> dashScopeMessages;
         if (useMultimodal) {
             if (formatter instanceof DashScopeChatFormatter chatFormatter) {
-                dashScopeMessages = chatFormatter.formatMultiModal(messages);
+                dashScopeMessages = chatFormatter.formatMultiModal(messages, effectiveOptions);
             } else if (formatter instanceof DashScopeMultiAgentFormatter multiAgentFormatter) {
-                dashScopeMessages = multiAgentFormatter.formatMultiModal(messages);
+                dashScopeMessages =
+                        multiAgentFormatter.formatMultiModal(messages, effectiveOptions);
             } else {
                 throw new IllegalStateException(
                         "DashScope vision models require DashScopeChatFormatter or"
@@ -251,7 +308,7 @@ public class DashScopeChatModel extends ChatModelBase {
                                 + formatter.getClass().getName());
             }
         } else {
-            dashScopeMessages = formatter.format(messages);
+            dashScopeMessages = formatter.format(messages, effectiveOptions);
         }
 
         // Build request using formatter
@@ -280,26 +337,25 @@ public class DashScopeChatModel extends ChatModelBase {
         // Apply thinking mode if enabled
         applyThinkingMode(request, effectiveOptions);
 
-        // Apply cache control if enabled (adds cache_control to system msgs + last msg)
-        if (Boolean.TRUE.equals(effectiveOptions.getCacheControl())) {
-            if (formatter instanceof DashScopeChatFormatter chatFmt) {
-                chatFmt.applyCacheControl(request.getInput().getMessages());
-            } else if (formatter instanceof DashScopeMultiAgentFormatter multiFmt) {
-                multiFmt.applyCacheControl(request.getInput().getMessages());
-            }
-        }
+        // DashScope rejects `skill` outside streaming mode with a dedicated error; fail fast with
+        // an actionable message instead.
+        validateSkillStreamRequirement(request, effectiveOptions);
 
         // Set endpoint type for endpoint selection
         request.setEndpointType(endpointType);
 
         if (stream) {
             // Streaming mode
+            boolean skillActive =
+                    DashScopeHttpClient.isSkillConfigured(
+                            request, effectiveOptions.getAdditionalBodyParams());
             return httpClient.stream(
                             request,
                             effectiveOptions.getAdditionalHeaders(),
                             effectiveOptions.getAdditionalBodyParams(),
                             effectiveOptions.getAdditionalQueryParams())
-                    .map(response -> formatter.parseResponse(response, start));
+                    .map(response -> formatter.parseResponse(response, start))
+                    .map(chatResponse -> annotateSkillOutput(chatResponse, skillActive));
         } else {
             // Non-streaming mode
             return Flux.defer(
@@ -322,8 +378,71 @@ public class DashScopeChatModel extends ChatModelBase {
                                                     e));
                                 }
                             })
-                    .subscribeOn(Schedulers.boundedElastic());
+                    .subscribeOn(ModelSchedulers.requests());
         }
+    }
+
+    /**
+     * Fail fast when a {@code skill} is configured for a non-streaming model.
+     *
+     * <p>DashScope rejects the parameter with {@code The parameter skill is only supported in
+     * stream mode}; surfacing that here names the fix instead of an opaque provider error.
+     *
+     * @param request the built request (its parameters may carry a skill directly)
+     * @param options the effective per-call options (a skill may arrive via additional body
+     *     params, which the HTTP client merges into the parameters object)
+     */
+    private void validateSkillStreamRequirement(DashScopeRequest request, GenerateOptions options) {
+        if (stream) {
+            return;
+        }
+        if (DashScopeHttpClient.isSkillConfigured(request, options.getAdditionalBodyParams())) {
+            throw new IllegalStateException(DashScopeHttpClient.SKILL_STREAM_REQUIREMENT_MESSAGE);
+        }
+    }
+
+    /**
+     * Marks streaming chunks whose text content carries skill output.
+     *
+     * <p>In skill mode the outline and page content stream through {@code reasoning_content}
+     * (thinking blocks) while the final download URL arrives in {@code content} (text blocks), so
+     * a chunk with text content carries the artifact. The flag propagates through the reasoning
+     * accumulator into the final assistant message metadata under
+     * {@link DashScopeSkill#RESPONSE_METADATA_KEY}, letting consumers identify skill output. The
+     * download URL remains in the text content.
+     *
+     * @param response the parsed response chunk
+     * @param skillActive whether the request was configured with a skill
+     * @return the annotated response, unchanged when no skill is active or the chunk has no text
+     */
+    private static ChatResponse annotateSkillOutput(ChatResponse response, boolean skillActive) {
+        if (!skillActive || !hasTextContent(response)) {
+            return response;
+        }
+        Map<String, Object> metadata =
+                new HashMap<>(response.getMetadata() != null ? response.getMetadata() : Map.of());
+        metadata.put(DashScopeSkill.RESPONSE_METADATA_KEY, DashScopeSkill.TYPE_PPT);
+        return ChatResponse.builder()
+                .id(response.getId())
+                .content(response.getContent())
+                .usage(response.getUsage())
+                .metadata(metadata)
+                .finishReason(response.getFinishReason())
+                .build();
+    }
+
+    private static boolean hasTextContent(ChatResponse response) {
+        if (response.getContent() == null) {
+            return false;
+        }
+        for (ContentBlock block : response.getContent()) {
+            if (block instanceof TextBlock textBlock
+                    && textBlock.getText() != null
+                    && !textBlock.getText().isEmpty()) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**
@@ -414,6 +533,7 @@ public class DashScopeChatModel extends ChatModelBase {
         private int contextWindowSize = -1;
         private Boolean nativeStructuredOutput;
         private Boolean nativeStructuredOutputWithTools;
+        private Collection<String> multimodalModelPatterns;
 
         /**
          * Sets the API key for DashScope authentication.
@@ -443,9 +563,6 @@ public class DashScopeChatModel extends ChatModelBase {
         /**
          * Sets whether streaming should be enabled.
          *
-         * <p>This setting is ignored if enableThinking is set to true, as thinking mode
-         * automatically enables streaming.
-         *
          * @param stream true to enable streaming, false for non-streaming
          * @return this builder instance
          */
@@ -456,9 +573,6 @@ public class DashScopeChatModel extends ChatModelBase {
 
         /**
          * Sets whether thinking mode should be enabled.
-         *
-         * <p>When enabled, this automatically enables streaming and may override the stream setting.
-         * Thinking mode allows the model to show its reasoning process.
          *
          * @param enableThinking true to enable thinking mode, false to disable, null for default
          * @return this builder instance
@@ -680,6 +794,34 @@ public class DashScopeChatModel extends ChatModelBase {
         }
 
         /**
+         * Sets additional case-insensitive substring patterns for multimodal model detection.
+         *
+         * <p>When {@link EndpointType#AUTO} is used, a model name matching any of these
+         * patterns (as a substring, case-insensitively) is routed to the multimodal
+         * generation API, in addition to the built-in model-name rules of
+         * {@link DashScopeHttpClient#isMultimodalModel(String)}. This lets you use
+         * multimodal models not yet covered by the built-in whitelist (e.g.
+         * {@code "deepseek-v4.1"}) without waiting for a framework update.
+         *
+         * <p>Example:
+         * <pre>{@code
+         * DashScopeChatModel model = DashScopeChatModel.builder()
+         *     .apiKey("sk-xxx")
+         *     .modelName("deepseek-v4.1")
+         *     .multimodalModelPatterns(List.of("deepseek-v4"))
+         *     .build();
+         * }</pre>
+         *
+         * @param multimodalModelPatterns case-insensitive substring patterns (may be null)
+         * @return this builder instance
+         * @see DashScopeHttpClient.Builder#multimodalModelPatterns(Collection)
+         */
+        public Builder multimodalModelPatterns(Collection<String> multimodalModelPatterns) {
+            this.multimodalModelPatterns = multimodalModelPatterns;
+            return this;
+        }
+
+        /**
          * Builds the DashScopeChatModel instance.
          *
          * <p>This method ensures that the defaultOptions always has proper executionConfig
@@ -726,7 +868,8 @@ public class DashScopeChatModel extends ChatModelBase {
                             formatter,
                             transport,
                             finalPublicKeyId,
-                            finalPublicKey);
+                            finalPublicKey,
+                            multimodalModelPatterns);
             model.setContextWindowSize(
                     contextWindowSize >= 0
                             ? contextWindowSize

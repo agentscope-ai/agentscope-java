@@ -21,6 +21,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.embedding.EmbeddingModel;
+import io.agentscope.core.embedding.EmbeddingResponse;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.TextBlock;
@@ -233,7 +234,8 @@ class KnowledgeRetrievalToolsTest {
         knowledge.addDocuments(List.of(doc1, doc2)).block();
 
         // Call tool
-        String result = tools.retrieveKnowledge("content", 5, null, null);
+        String result =
+                extractTextFromResult(tools.retrieveKnowledge("content", 5, null, null).block());
 
         assertNotNull(result);
         assertTrue(result.contains("Retrieved"));
@@ -258,7 +260,8 @@ class KnowledgeRetrievalToolsTest {
         KnowledgeRetrievalTools errorTools = new KnowledgeRetrievalTools(errorKB);
 
         // Should return error message instead of throwing
-        String result = errorTools.retrieveKnowledge("query", 5, null, null);
+        String result =
+                extractTextFromResult(errorTools.retrieveKnowledge("query", 5, null, null).block());
         assertNotNull(result);
         assertTrue(result.contains("Failed to retrieve"));
     }
@@ -267,7 +270,8 @@ class KnowledgeRetrievalToolsTest {
     @DisplayName("Should return empty message for empty results")
     void testRetrieveKnowledgeEmptyResults() {
         // Knowledge base is empty, so retrieval should return empty message
-        String result = tools.retrieveKnowledge("query", 5, null, null);
+        String result =
+                extractTextFromResult(tools.retrieveKnowledge("query", 5, null, null).block());
 
         assertNotNull(result);
         assertTrue(
@@ -314,7 +318,7 @@ class KnowledgeRetrievalToolsTest {
         }
 
         @Override
-        public Mono<double[]> embed(ContentBlock block) {
+        public Mono<EmbeddingResponse> embed(ContentBlock block) {
             if (shouldThrowError) {
                 return Mono.error(new RuntimeException("Mock embedding error"));
             }
@@ -325,7 +329,7 @@ class KnowledgeRetrievalToolsTest {
                             // Generate deterministic embedding based on text
                             double[] embedding =
                                     embeddings.computeIfAbsent(text, k -> generateEmbedding(text));
-                            return embedding.clone();
+                            return new EmbeddingResponse(embedding.clone(), null);
                         });
             }
             return Mono.error(new UnsupportedOperationException("Unsupported content block type"));

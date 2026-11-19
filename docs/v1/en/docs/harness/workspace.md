@@ -1,4 +1,7 @@
-# Workspace
+---
+title: Workspace
+zh_link: /v1/zh/docs/harness/workspace
+---
 
 ## Purpose
 
@@ -12,7 +15,7 @@ Before every reasoning turn, a few key workspace files are automatically injecte
 |------|--------|
 | `HarnessAgent.build()` | `WorkspaceManager.validate()` checks that the directory and `AGENTS.md` exist; missing items only warn |
 | Before every `call()` reasoning turn | `WorkspaceContextHook` reads `AGENTS.md` / `MEMORY.md` / `knowledge/` / extra files and injects into system prompt |
-| Compaction / end of call | `MemoryFlushHook`, `SessionPersistenceHook`, etc. write back to `memory/`, `agents/.../sessions/` via `WorkspaceManager` |
+| Compaction / end of call | `MemoryFlushMiddleware` writes back to `memory/` via `WorkspaceManager`; the runtime appends session journal commits under `.agentscope-runtime/` |
 
 ## Directory Layout
 
@@ -28,15 +31,14 @@ workspace/                           ← default: .agentscope/workspace
 │   └── .consolidation_state         ← MemoryConsolidator internal state
 ├── skills/<skill-name>/SKILL.md     ← custom skills
 ├── subagents/<id>.md                ← subagent declarations (filename = agent_id, auto-discovered)
-└── agents/<agentId>/
-    ├── workspace/                   ← runtime root for isolated subagents (auto-created when no workspace.path)
-    └── sessions/
-        ├── sessions.json            ← session index (id / summary / updatedAt)
-        ├── <sessionId>.jsonl        ← LLM-visible compacted context
-        └── <sessionId>.log.jsonl   ← full conversation log (append-only)
+├── agents/<agentId>/workspace/      ← runtime root for isolated subagents (auto-created when no workspace.path)
+└── .agentscope-runtime/             ← private native session journal (not model-visible)
+    └── agents/<agentId>/sessions/<userId>/<sessionId>/
+        ├── session.json             ← session header
+        └── …                        ← hash-chained commit + payload objects
 ```
 
-> The three-layer model for subagents (declaration / definition / runtime) is detailed in [Subagent](./subagent.md).
+> The three-layer model for subagents (declaration / definition / runtime) is detailed in [Subagent](/v1/en/docs/harness/subagent).
 
 ## Key Logic
 
@@ -44,7 +46,7 @@ workspace/                           ← default: .agentscope/workspace
 
 `WorkspaceManager` is a stateless accessor; all reads and writes follow the same contract:
 
-```{mermaid}
+```mermaid
 graph LR
     Caller[Hook / Tool] -->|read| WM[WorkspaceManager]
     WM -->|read first| FS[AbstractFilesystem<br/>multi-tenant namespace transparent]
@@ -94,7 +96,6 @@ wm.listMemoryFilePaths();
 wm.listSessionLogFiles();
 
 wm.appendUtf8WorkspaceRelative(rel, content);  // goes through AbstractFilesystem
-wm.updateSessionIndex(agentId, sessionId, summary); // maintains sessions.json
 ```
 
 ## Configuration
@@ -110,11 +111,11 @@ HarnessAgent agent = HarnessAgent.builder()
     .build();
 ```
 
-If `AGENTS.md` is missing, the agent still works but loses the persona section. It is recommended to at least write a minimal skeleton (see the quickstart in [overview.md](./overview.md)).
+If `AGENTS.md` is missing, the agent still works but loses the persona section. It is recommended to at least write a minimal skeleton (see the quickstart in [overview.md](/v1/en/docs/harness/overview)).
 
 ## Related Pages
 
-- [Architecture](./architecture.md) — `WorkspaceContextHook` position in the `call()` lifecycle
-- [Filesystem](./filesystem.md) — implementation of the "upper layer" in the two-layer read path
-- [Memory](./memory.md) — how `MEMORY.md` / `memory/*.md` are generated and maintained
-- [Session](./session.md) — details of `agents/<agentId>/sessions/`
+- [Architecture](/v1/en/docs/harness/architecture) — `WorkspaceContextHook` position in the `call()` lifecycle
+- [Filesystem](/v1/en/docs/harness/filesystem) — implementation of the "upper layer" in the two-layer read path
+- [Memory](/v1/en/docs/harness/memory) — how `MEMORY.md` / `memory/*.md` are generated and maintained
+- [Session](/v1/en/docs/harness/session) — details of `agents/<agentId>/sessions/`

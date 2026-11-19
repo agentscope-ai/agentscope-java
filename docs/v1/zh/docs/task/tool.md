@@ -1,4 +1,7 @@
-# 工具
+---
+title: 工具系统
+en_link: /v1/en/docs/task/tool
+---
 
 工具系统让智能体能够执行 API 调用、数据库查询、文件操作等外部操作。
 
@@ -198,7 +201,7 @@ public String query(
 }
 ```
 
-> 详细配置参见 [智能体](../quickstart/agent.md) 文档。
+> 详细配置参见 [智能体](/v1/zh/docs/quickstart/agent) 文档。
 
 ## 内置工具
 
@@ -256,7 +259,7 @@ toolkit.registerTool(new OpenAIMultiModalTool(System.getenv("OPENAI_API_KEY")));
 
 ### 子智能体工具
 
-可以将智能体注册为工具，供其他智能体调用。详见 [Agent as Tool](agent-as-tool.md)。
+可以将智能体注册为工具，供其他智能体调用。详见 [Agent as Tool](/v1/zh/docs/task/agent-as-tool)。
 
 ## AgentTool 接口
 
@@ -399,6 +402,6 @@ boolean isExternal = toolkit.isExternalTool("query_database");  // true
 
 ## 完整示例
 
-- **工具调用示例**: [ToolCallingExample.java](https://github.com/agentscope-ai/agentscope-java/blob/main/agentscope-examples/documentation/quickstart/src/main/java/io/agentscope/examples/quickstart/ToolCallingExample.java)
-- **工具组示例**: [ToolGroupExample.java](https://github.com/agentscope-ai/agentscope-java/blob/main/agentscope-examples/documentation/quickstart/src/main/java/io/agentscope/examples/quickstart/ToolGroupExample.java)
-- **多模态工具示例**: [MultiModalToolExample.java](https://github.com/agentscope-ai/agentscope-java/blob/main/agentscope-examples/documentation/quickstart/src/main/java/io/agentscope/examples/quickstart/MultiModalToolExample.java)
+- **工具调用示例**: [ToolCallingExample.java](https://github.com/agentscope-ai/agentscope-java/blob/v1.0.11/agentscope-examples/quickstart/src/main/java/io/agentscope/examples/quickstart/ToolCallingExample.java)
+- **工具组示例**: [ToolGroupExample.java](https://github.com/agentscope-ai/agentscope-java/blob/v1.0.11/agentscope-examples/quickstart/src/main/java/io/agentscope/examples/quickstart/ToolGroupExample.java)
+- **多模态工具示例**: [MultiModalToolExample.java](https://github.com/agentscope-ai/agentscope-java/blob/v1.0.11/agentscope-examples/quickstart/src/main/java/io/agentscope/examples/quickstart/MultiModalToolExample.java)

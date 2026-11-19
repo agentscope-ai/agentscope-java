@@ -23,6 +23,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.ThinkingBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.extensions.model.openai.dto.OpenAIMessage;
@@ -194,6 +195,47 @@ class DeepSeekMultiAgentFormatterTest {
         void testEmptyMessageList() {
             List<OpenAIMessage> result = formatter.format(List.of());
             assertTrue(result.isEmpty());
+        }
+
+        @Test
+        @DisplayName("Should backfill reasoning_content via format with options")
+        void testFormatWithOptionsBackfillsReasoning() {
+            List<OpenAIMessage> result =
+                    formatter.format(
+                            List.of(
+                                    Msg.builder()
+                                            .role(MsgRole.ASSISTANT)
+                                            .content(
+                                                    List.of(
+                                                            ThinkingBlock.builder()
+                                                                    .thinking("history")
+                                                                    .build(),
+                                                            ToolUseBlock.builder()
+                                                                    .id("call_1")
+                                                                    .name("get_weather")
+                                                                    .input(
+                                                                            Map.of(
+                                                                                    "city",
+                                                                                    "Beijing"))
+                                                                    .build()))
+                                            .build(),
+                                    Msg.builder()
+                                            .role(MsgRole.ASSISTANT)
+                                            .content(
+                                                    List.of(
+                                                            ToolUseBlock.builder()
+                                                                    .id("call_1")
+                                                                    .name("get_weather")
+                                                                    .input(
+                                                                            Map.of(
+                                                                                    "city",
+                                                                                    "Beijing"))
+                                                                    .build()))
+                                            .build()),
+                            null);
+
+            assertEquals("history", result.get(0).getReasoningContent());
+            assertEquals("", result.get(1).getReasoningContent());
         }
     }
 

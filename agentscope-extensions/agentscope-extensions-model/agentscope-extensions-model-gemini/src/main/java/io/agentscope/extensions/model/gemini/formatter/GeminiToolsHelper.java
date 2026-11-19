@@ -18,27 +18,32 @@ package io.agentscope.extensions.model.gemini.formatter;
 import com.google.genai.types.FunctionCallingConfig;
 import com.google.genai.types.FunctionCallingConfigMode;
 import com.google.genai.types.FunctionDeclaration;
-import com.google.genai.types.Schema;
+import com.google.genai.types.GenerateContentConfig;
 import com.google.genai.types.Tool;
 import com.google.genai.types.ToolConfig;
-import com.google.genai.types.Type;
 import io.agentscope.core.model.ToolChoice;
 import io.agentscope.core.model.ToolSchema;
+import io.agentscope.extensions.model.gemini.tool.GeminiServerTool;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * Handles tool registration and configuration for Gemini API.
+ * Converts and combines tool configuration for the Gemini API.
  *
- * <p>This helper converts AgentScope tool schemas to Gemini's Tool and ToolConfig format:
+ * <p><b>Responsibilities:</b>
  * <ul>
- *   <li>Tool: Contains function declarations with JSON Schema parameters</li>
- *   <li>ToolConfig: Contains function calling mode configuration</li>
+ *   <li>Convert AgentScope {@link ToolSchema} definitions into a Gemini {@link Tool} containing
+ *       function declarations and JSON Schema parameters</li>
+ *   <li>Append provider-specific {@link GeminiServerTool} entries to {@link
+ *       GenerateContentConfig} while preserving existing function tools</li>
+ *   <li>Convert AgentScope {@link ToolChoice} into Gemini {@link ToolConfig} function-calling
+ *       policy</li>
  * </ul>
+ *
+ * <p>Function tools and Gemini server tools remain separate entries in {@code
+ * GenerateContentConfig.tools}; tool-choice policy applies to function calling only.
  *
  * <p><b>Tool Choice Mapping:</b>
  * <ul>
@@ -52,10 +57,35 @@ public class GeminiToolsHelper {
 
     private static final Logger log = LoggerFactory.getLogger(GeminiToolsHelper.class);
 
-    /**
-     * Creates a new GeminiToolsHelper.
-     */
+    /** Creates a new GeminiToolsHelper. */
     public GeminiToolsHelper() {}
+
+    /**
+     * Append Gemini server tools to a content config without mutating its existing tool list.
+     *
+     * @param config      Existing content config
+     * @param serverTools Gemini server tools to append (may be null or empty)
+     * @return A config containing both existing and server tools, or {@code config} when there are
+     * no server tools
+     */
+    public static GenerateContentConfig mergeServerTools(
+            GenerateContentConfig config, List<GeminiServerTool> serverTools) {
+        if (serverTools == null || serverTools.isEmpty()) {
+            return config;
+        }
+        GenerateContentConfig.Builder updateConfigBuilder = config.toBuilder();
+        ToolConfig.Builder toolConfigBuilder =
+                config.toolConfig().map(ToolConfig::toBuilder).orElseGet(ToolConfig::builder);
+
+        List<Tool> mergedTools = new ArrayList<>(config.tools().orElseGet(List::of));
+        serverTools.stream().map(GeminiServerTool::toTool).forEach(mergedTools::add);
+        updateConfigBuilder
+                .tools(mergedTools)
+                // You must set the `include_server_side_tool_invocations` flag to `true` to enable
+                // tool context looping.
+                .toolConfig(toolConfigBuilder.includeServerSideToolInvocations(true).build());
+        return updateConfigBuilder.build();
+    }
 
     /**
      * Convert AgentScope ToolSchema list to Gemini Tool object.
@@ -71,128 +101,25 @@ public class GeminiToolsHelper {
         List<FunctionDeclaration> functionDeclarations = new ArrayList<>();
 
         for (ToolSchema toolSchema : tools) {
-            try {
-                FunctionDeclaration.Builder builder = FunctionDeclaration.builder();
+            FunctionDeclaration.Builder builder = FunctionDeclaration.builder();
 
-                // Set name (required)
-                if (toolSchema.getName() != null) {
-                    builder.name(toolSchema.getName());
-                }
-
-                // Set description (optional)
-                if (toolSchema.getDescription() != null) {
-                    builder.description(toolSchema.getDescription());
-                }
-
-                // Convert parameters to Gemini Schema
-                if (toolSchema.getParameters() != null && !toolSchema.getParameters().isEmpty()) {
-                    Schema schema = convertParametersToSchema(toolSchema.getParameters());
-                    builder.parameters(schema);
-                }
-
-                functionDeclarations.add(builder.build());
-                log.debug("Converted tool schema: {}", toolSchema.getName());
-
-            } catch (Exception e) {
-                log.error(
-                        "Failed to convert tool schema '{}': {}",
-                        toolSchema.getName(),
-                        e.getMessage(),
-                        e);
+            if (toolSchema.getName() != null) {
+                builder.name(toolSchema.getName());
             }
-        }
 
-        if (functionDeclarations.isEmpty()) {
-            return null;
+            if (toolSchema.getDescription() != null) {
+                builder.description(toolSchema.getDescription());
+            }
+
+            if (toolSchema.getParameters() != null && !toolSchema.getParameters().isEmpty()) {
+                builder.parametersJsonSchema(toolSchema.getParameters());
+            }
+
+            functionDeclarations.add(builder.build());
+            log.debug("Converted tool schema: {}", toolSchema.getName());
         }
 
         return Tool.builder().functionDeclarations(functionDeclarations).build();
-    }
-
-    /**
-     * Convert parameters map to Gemini Schema object.
-     *
-     * @param parameters Parameter schema map (JSON Schema format)
-     * @return Gemini Schema object
-     */
-    protected Schema convertParametersToSchema(Map<String, Object> parameters) {
-        Schema.Builder schemaBuilder = Schema.builder();
-
-        // Set type (default to OBJECT)
-        if (parameters.containsKey("type")) {
-            String typeStr = (String) parameters.get("type");
-            Type type = convertJsonTypeToGeminiType(typeStr);
-            schemaBuilder.type(type);
-        } else {
-            schemaBuilder.type(new Type(Type.Known.OBJECT));
-        }
-
-        // Set description
-        if (parameters.containsKey("description")) {
-            schemaBuilder.description((String) parameters.get("description"));
-        }
-
-        // Set properties (for OBJECT type)
-        if (parameters.containsKey("properties")) {
-            @SuppressWarnings("unchecked")
-            Map<String, Object> propertiesMap = (Map<String, Object>) parameters.get("properties");
-
-            Map<String, Schema> propertiesSchemas = new HashMap<>();
-            for (Map.Entry<String, Object> entry : propertiesMap.entrySet()) {
-                @SuppressWarnings("unchecked")
-                Map<String, Object> propertySchema = (Map<String, Object>) entry.getValue();
-                propertiesSchemas.put(entry.getKey(), convertParametersToSchema(propertySchema));
-            }
-            schemaBuilder.properties(propertiesSchemas);
-        }
-
-        // Set required fields
-        if (parameters.containsKey("required")) {
-            @SuppressWarnings("unchecked")
-            List<String> required = (List<String>) parameters.get("required");
-            schemaBuilder.required(required);
-        }
-
-        // Set items (for ARRAY type)
-        if (parameters.containsKey("items")) {
-            @SuppressWarnings("unchecked")
-            Map<String, Object> itemsSchema = (Map<String, Object>) parameters.get("items");
-            schemaBuilder.items(convertParametersToSchema(itemsSchema));
-        }
-
-        // Set enum values
-        if (parameters.containsKey("enum")) {
-            @SuppressWarnings("unchecked")
-            List<String> enumValues = (List<String>) parameters.get("enum");
-            schemaBuilder.enum_(enumValues);
-        }
-
-        return schemaBuilder.build();
-    }
-
-    /**
-     * Convert JSON Schema type string to Gemini Type.
-     *
-     * @param jsonType JSON Schema type string (e.g., "object", "string", "number")
-     * @return Gemini Type object
-     */
-    protected Type convertJsonTypeToGeminiType(String jsonType) {
-        if (jsonType == null) {
-            return new Type(Type.Known.TYPE_UNSPECIFIED);
-        }
-
-        return switch (jsonType.toLowerCase()) {
-            case "object" -> new Type(Type.Known.OBJECT);
-            case "array" -> new Type(Type.Known.ARRAY);
-            case "string" -> new Type(Type.Known.STRING);
-            case "number" -> new Type(Type.Known.NUMBER);
-            case "integer" -> new Type(Type.Known.INTEGER);
-            case "boolean" -> new Type(Type.Known.BOOLEAN);
-            default -> {
-                log.warn("Unknown JSON type '{}', using TYPE_UNSPECIFIED", jsonType);
-                yield new Type(Type.Known.TYPE_UNSPECIFIED);
-            }
-        };
     }
 
     /**

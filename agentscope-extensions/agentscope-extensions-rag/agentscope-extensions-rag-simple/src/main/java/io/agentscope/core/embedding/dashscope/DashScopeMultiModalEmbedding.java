@@ -23,17 +23,22 @@ import com.alibaba.dashscope.embeddings.MultiModalEmbeddingResult;
 import com.alibaba.dashscope.embeddings.MultiModalEmbeddingResultItem;
 import io.agentscope.core.embedding.EmbeddingException;
 import io.agentscope.core.embedding.EmbeddingModel;
+import io.agentscope.core.embedding.EmbeddingResponse;
+import io.agentscope.core.embedding.EmbeddingUsage;
 import io.agentscope.core.embedding.EmbeddingUtils;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.model.ExecutionConfig;
 import io.agentscope.extensions.model.dashscope.formatter.DashScopeMediaConverter;
+import java.time.Duration;
+import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Schedulers;
 
 /**
  * DashScope Multi-Modal Embedding Model implementation.
@@ -98,13 +103,13 @@ public class DashScopeMultiModalEmbedding implements EmbeddingModel {
     }
 
     @Override
-    public Mono<double[]> embed(ContentBlock block) {
+    public Mono<EmbeddingResponse> embed(ContentBlock block) {
         if (block == null) {
             return Mono.error(
                     new EmbeddingException("ContentBlock cannot be null", modelName, "dashscope"));
         }
 
-        Mono<double[]> embeddingMono =
+        Mono<EmbeddingResponse> embeddingMono =
                 Mono.fromCallable(
                                 () -> {
                                     try {
@@ -119,6 +124,7 @@ public class DashScopeMultiModalEmbedding implements EmbeddingModel {
                                                 "dashscope");
                                     }
                                 })
+                        .subscribeOn(Schedulers.boundedElastic())
                         .onErrorMap(
                                 e -> {
                                     if (e instanceof EmbeddingException) {
@@ -141,11 +147,12 @@ public class DashScopeMultiModalEmbedding implements EmbeddingModel {
      * Embeds a single ContentBlock (TextBlock or ImageBlock) using MultiModalEmbedding API.
      *
      * @param block the content block to embed
-     * @return embedding vector
+     * @return embedding response containing the vector and usage
      * @throws EmbeddingException if embedding fails or block type is unsupported
      */
-    private double[] embed0(ContentBlock block) throws EmbeddingException {
+    private EmbeddingResponse embed0(ContentBlock block) throws EmbeddingException {
         try {
+            Instant startTime = Instant.now();
             MultiModalEmbeddingParam param;
 
             if (block instanceof TextBlock textBlock) {
@@ -170,14 +177,42 @@ public class DashScopeMultiModalEmbedding implements EmbeddingModel {
             MultiModalEmbeddingResult result = callEmbeddingAPI(param);
             double[] embedding = parseEmbeddingResult(result);
             validateDimensions(embedding);
+            EmbeddingUsage usage = extractUsage(result, startTime);
 
-            return embedding;
+            return new EmbeddingResponse(embedding, usage);
         } catch (EmbeddingException e) {
             throw e;
         } catch (Exception e) {
             throw new EmbeddingException(
                     "Failed to embed content block: " + e.getMessage(), e, modelName, "dashscope");
         }
+    }
+
+    /**
+     * Extracts token usage from the multi-modal embedding result.
+     *
+     * <p>Returns {@code null} when either field is absent, consistent with
+     * {@code OpenAITextEmbedding.extractUsage}.
+     *
+     * @param result the embedding result from the API
+     * @param startTime the request start time for elapsed time calculation
+     * @return usage information, or null when the provider does not report usage
+     */
+    private EmbeddingUsage extractUsage(MultiModalEmbeddingResult result, Instant startTime) {
+        if (result == null || result.getUsage() == null) {
+            return null;
+        }
+        Integer inputTokens = result.getUsage().getInputTokens();
+        Integer totalTokens = result.getUsage().getTotalUsage();
+        if (inputTokens == null || totalTokens == null) {
+            return null;
+        }
+        double elapsedSeconds = Duration.between(startTime, Instant.now()).toMillis() / 1000.0;
+        return EmbeddingUsage.builder()
+                .inputTokens(inputTokens)
+                .totalTokens(totalTokens)
+                .time(elapsedSeconds)
+                .build();
     }
 
     /**

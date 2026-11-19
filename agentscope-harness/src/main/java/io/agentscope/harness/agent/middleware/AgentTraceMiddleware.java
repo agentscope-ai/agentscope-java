@@ -24,17 +24,21 @@ import io.agentscope.core.event.ToolCallStartEvent;
 import io.agentscope.core.event.ToolResultEndEvent;
 import io.agentscope.core.event.ToolResultStartEvent;
 import io.agentscope.core.event.ToolResultTextDeltaEvent;
+import io.agentscope.core.formatter.DocumentReferenceRenderer;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.middleware.ActingInput;
 import io.agentscope.core.middleware.AgentInput;
 import io.agentscope.core.middleware.ReasoningInput;
+import io.agentscope.core.model.Model;
 import io.agentscope.core.state.AgentState;
 import io.agentscope.core.util.JsonUtils;
 import java.util.ArrayList;
+import java.util.EnumSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Function;
 import org.slf4j.Logger;
@@ -51,6 +55,13 @@ import reactor.core.publisher.Flux;
 public class AgentTraceMiddleware implements HarnessRuntimeMiddleware {
 
     private static final Logger log = LoggerFactory.getLogger(AgentTraceMiddleware.class);
+
+    /** Narrow declaration: subclasses overriding more hooks must extend this set. */
+    @Override
+    public Set<ExtensionPoint> activePoints() {
+        return EnumSet.of(
+                ExtensionPoint.ON_AGENT, ExtensionPoint.ON_REASONING, ExtensionPoint.ON_ACTING);
+    }
 
     @Override
     public Flux<AgentEvent> onAgent(
@@ -70,7 +81,9 @@ public class AgentTraceMiddleware implements HarnessRuntimeMiddleware {
                         "[{}] PRE_CALL  |   [{}] {}",
                         name,
                         msg.getRole(),
-                        truncate(msg.getTextContent(), 200));
+                        // Documents are invisible to getTextContent(); the reference keeps the
+                        // trace showing what the model actually received.
+                        truncate(DocumentReferenceRenderer.renderMessageText(msg), 200));
             }
         }
         return next.apply(input)
@@ -94,7 +107,7 @@ public class AgentTraceMiddleware implements HarnessRuntimeMiddleware {
             return next.apply(input);
         }
         String name = agent.getName();
-        String modelName = resolveModelName(agent);
+        String modelName = resolveModelName(agent, ctx);
         int msgCount = input.messages() != null ? input.messages().size() : 0;
         log.info("[{}] PRE_REASONING  | model={}, messages={}", name, modelName, msgCount);
         if (log.isDebugEnabled() && input.messages() != null) {
@@ -254,9 +267,23 @@ public class AgentTraceMiddleware implements HarnessRuntimeMiddleware {
         }
     }
 
-    private static String resolveModelName(Agent agent) {
-        if (agent instanceof ReActAgent r && r.getModel() != null) {
-            return r.getModel().getModelName();
+    /**
+     * Resolves the model name serving this call — the model pinned on the {@link RuntimeContext}
+     * when set, else the agent's identity resolution or build-time default — so traces attribute
+     * the model actually executing the run.
+     */
+    private static String resolveModelName(Agent agent, RuntimeContext ctx) {
+        if (agent instanceof ReActAgent r) {
+            try {
+                Model effective = ctx != null ? r.getModel(ctx) : r.getModel();
+                if (effective != null) {
+                    return effective.getModelName();
+                }
+            } catch (RuntimeException e) {
+                // Unresolvable identity: the run itself fails fast at the model boundary; the
+                // trace reports the raw identity instead of failing the trace here.
+                return "<unresolved:" + r.getModelIdentity() + ">";
+            }
         }
         return "<unknown>";
     }

@@ -18,12 +18,16 @@ package io.agentscope.core.middleware;
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.event.AgentEvent;
+import io.agentscope.core.message.Msg;
+import io.agentscope.core.state.AgentState;
+import java.util.List;
+import java.util.Set;
 import java.util.function.Function;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 /**
- * Middleware provides interception mechanisms at 5 key execution points
+ * Middleware provides interception mechanisms at 6 key execution points
  * in the Agent lifecycle.
  *
  * <p><b>Onion Pattern</b> (4 hooks — wrap execution with before/after logic):
@@ -39,12 +43,28 @@ import reactor.core.publisher.Mono;
  *   <li>{@link #onSystemPrompt} — transforms the system prompt string</li>
  * </ul>
  *
- * <p>Each hook has a default implementation that delegates directly to
- * {@code next}, so subclasses only need to override the hooks they care about.
+ * <p><b>Notification Pattern</b> (one-way synchronous notification, no {@code next}
+ * delegation):
+ * <ul>
+ *   <li>{@link #onAgentStateReady} — notified once this call's AgentState is ready</li>
+ * </ul>
+ *
+ * <p>Each onion/transformer hook has a default implementation that delegates
+ * directly to {@code next}, so subclasses only need to override the hooks they
+ * care about; {@link #onAgentStateReady} defaults to a no-op. Every
+ * implementation should additionally declare the points it participates in via
+ * {@link #activePoints()}; an undeclared middleware (returning {@code null})
+ * has its participation set inferred from the hooks its class actually
+ * implements.
  *
  * <p><b>Example:</b>
  * <pre>{@code
  * MiddlewareBase logging = new MiddlewareBase() {
+ *     @Override
+ *     public Set<ExtensionPoint> activePoints() {
+ *         return EnumSet.of(ExtensionPoint.ON_REASONING);
+ *     }
+ *
  *     @Override
  *     public Flux<AgentEvent> onReasoning(
  *             Agent agent, RuntimeContext ctx, ReasoningInput input,
@@ -57,6 +77,79 @@ import reactor.core.publisher.Mono;
  * }</pre>
  */
 public interface MiddlewareBase {
+
+    /**
+     * Middleware extension points. Adding a point adds one constant here; the
+     * grouping mechanism stays unchanged. A middleware participates at a new
+     * point only when it declares the point or implements the new hook —
+     * which is exactly why a capability whose activation has side effects
+     * beyond the declaring middleware must never be gated on participation
+     * alone: it requires an explicit declaration or an explicit switch.
+     *
+     * <p>Each constant names the hook method it pairs with; auto-detection of
+     * undeclared ({@code null}) middlewares resolves participation from these
+     * pairings.
+     */
+    enum ExtensionPoint {
+        ON_AGENT("onAgent"),
+        ON_REASONING("onReasoning"),
+        ON_ACTING("onActing"),
+        ON_MODEL_CALL("onModelCall"),
+        ON_SYSTEM_PROMPT("onSystemPrompt"),
+        ON_AGENT_STATE_READY("onAgentStateReady"),
+        ON_AGENT_FINISH("onAgentFinish");
+
+        private final String hookMethod;
+
+        ExtensionPoint(String hookMethod) {
+            this.hookMethod = hookMethod;
+        }
+
+        /** Name of the hook method this point pairs with (auto-detection support). */
+        String hookMethod() {
+            return hookMethod;
+        }
+    }
+
+    /**
+     * Returns the extension points where this middleware is active — the sole
+     * source of its participation set. For an explicit declaration this is a
+     * participation switch, not a statement about which methods are
+     * overridden: a point declared active but not overridden simply runs its
+     * default (pass-through / no-op), and a point omitted is never invoked —
+     * even if overridden.
+     *
+     * <p><b>Every implementation should override this method</b> and declare
+     * exactly the points it hooks — e.g. {@code EnumSet.of(ExtensionPoint.ON_REASONING)}
+     * — or {@code EnumSet.allOf(ExtensionPoint.class)} when participating at
+     * every point is intended. The declaration is authoritative and is read
+     * once at agent construction. An empty set
+     * ({@code EnumSet.noneOf(ExtensionPoint.class)}) keeps this middleware
+     * registered while participating at no point — useful as a runtime
+     * switch.
+     *
+     * <p>Returning {@code null} — the default — delegates the participation
+     * set to the framework: it infers, per class and computed once, exactly
+     * the points whose hook methods this middleware implements
+     * (implementations inherited from superclasses count). The {@code null}
+     * default exists for API compatibility with middlewares written before
+     * this contract and may change in a future release — do not rely on it.
+     * Inference is a fallback, not a statement of intent: a hook overridden
+     * only by a pass-through base class still lights up its point, and an
+     * intentional opt-out is expressible only through an explicit
+     * declaration.
+     *
+     * <p>Activation is decided once at agent construction; mutating the
+     * returned set (or changing later results) has no effect on an
+     * already-built agent.
+     *
+     * @return the set of extension points this middleware participates in;
+     *         {@code null} lets the framework infer the set from the hooks
+     *         this class implements
+     */
+    default Set<ExtensionPoint> activePoints() {
+        return null;
+    }
 
     /**
      * Returns this middleware's execution order.
@@ -157,5 +250,45 @@ public interface MiddlewareBase {
      */
     default Mono<String> onSystemPrompt(Agent agent, RuntimeContext ctx, String currentPrompt) {
         return Mono.just(currentPrompt);
+    }
+
+    /**
+     * Notified once per lifecycle execution (subscription), right after this call's
+     * {@link AgentState} is bound to the {@link RuntimeContext} — resolved from the
+     * {@code (userId, sessionId)} slot or freshly created for a brand-new session — and
+     * before the input enters the pipeline (memory, reasoning).
+     *
+     * <p>This is a one-way synchronous notification without {@code next} delegation:
+     * middlewares run in {@link #order()} sequence (higher first) and must be non-blocking —
+     * never re-enter the same session's agent, which would deadlock on its call gate. A
+     * thrown exception fails the call: it propagates to the caller unchanged and the
+     * remaining middlewares are not invoked.
+     *
+     * <p>Lifecycle window: the notification runs after this call has been admitted and
+     * registered for interruption, but before the request-state binding, the tracing
+     * envelope, and the error-event chain are in place. An interrupt issued while the
+     * notification runs is honored; a thrown exception, however, reaches the caller
+     * directly without ErrorEvent hooks or tracing spans — keep implementations
+     * non-blocking and fast-failing.
+     *
+     * @param agent         the agent instance
+     * @param ctx           per-call runtime context (session, user, attributes)
+     * @param state         this call's just-ready state, same instance as
+     *                      {@code ctx.getAgentState()}, never {@code null}; a brand-new
+     *                      session starts with an empty context
+     * @param inputMessages this call's input (after {@code onAgent} middleware, not yet
+     *                      merged with memory) as a private mutable copy; in-place changes
+     *                      apply to the whole call, the caller's original list is unaffected
+     */
+    default void onAgentStateReady(
+            Agent agent, RuntimeContext ctx, AgentState state, List<Msg> inputMessages) {}
+
+    /**
+     * Runs after a successful call result, before native checkpoints and writer release.
+     * Unlike onAgent completion, this boundary still carries the active call's RuntimeContext.
+     * Implementations return their completion signal and must preserve cancellation.
+     */
+    default Mono<Void> onAgentFinish(Agent agent, RuntimeContext ctx, Msg result) {
+        return Mono.empty();
     }
 }

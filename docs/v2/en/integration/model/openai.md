@@ -1,4 +1,7 @@
-# OpenAI Model
+---
+title: OpenAI
+zh_link: /v2/zh/integration/model/openai
+---
 
 `agentscope-extensions-model-openai` integrates OpenAI Chat Completions-style models. It is also the module to use for OpenAI-compatible endpoints such as DeepSeek, GLM, Kimi, MiniMax, and similar services when their wire format follows the OpenAI API.
 
@@ -37,6 +40,10 @@ OpenAIChatModel model = OpenAIChatModel.builder()
     .build();
 ```
 
+## Reasoning history
+
+The formatter preserves reasoning detail blocks in conversation history, including encrypted data. When formatting the next request, it copies each detail without the optional `index` field, which strict OpenAI-compatible endpoints reject as a streaming-only field. The original response and persisted history retain their indexes; `id`, `type`, `data`, `text`, `format`, and block order are preserved in requests.
+
 ## Spring Boot
 
 Spring Boot applications can use the OpenAI starter:
@@ -49,4 +56,4 @@ Spring Boot applications can use the OpenAI starter:
 </dependency>
 ```
 
-Full builder options, formatters, credentials, and registry context details are covered in [Model](../../docs/building-blocks/model.md).
+Full builder options, formatters, credentials, and registry context details are covered in [Model](/v2/en/docs/building-blocks/model).

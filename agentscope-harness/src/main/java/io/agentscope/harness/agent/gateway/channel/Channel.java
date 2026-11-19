@@ -119,6 +119,14 @@ public interface Channel {
      */
     default void deliver(OutboundAddress address, List<Msg> messages) {}
 
+    /** Delivers one durable notification and returns the provider message ID, not a local ack.
+     * Unsupported transports fail explicitly so callers can keep the notification pending.
+     */
+    default Mono<String> deliverWithReceipt(
+            OutboundAddress address, Msg message, String deliveryId) {
+        return Mono.error(new UnsupportedOperationException("Provider receipts are not supported"));
+    }
+
     /**
      * Applies a new routing {@link ChannelConfig} (bindings, dmScope, defaultAgentId) without
      * tearing down the channel's transport. Implementations that hold their {@link #config()} in a

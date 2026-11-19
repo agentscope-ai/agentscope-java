@@ -15,6 +15,7 @@
  */
 package io.agentscope.harness.agent.skill.runtime;
 
+import io.agentscope.core.agent.CapabilitySurface;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.skill.AgentSkill;
 import io.agentscope.core.skill.util.MarkdownSkillParser;
@@ -39,9 +40,10 @@ import reactor.core.publisher.Mono;
  * <ol>
  *   <li>{@code skill.getResources().get(path)} — in-memory map (Layer 1/3 host repositories and
  *       marketplace repositories that preload everything)
- *   <li>{@code entry.lazyResources().read(path)} — filesystem fallback for sources that
- *       implement {@link io.agentscope.harness.agent.skill.LazyResourceCapable}
- *       (e.g. {@code WorkspaceSkillRepository})
+ *   <li>{@code entry.lazyResources().read(path)} — filesystem fallback. Populated by sources
+ *       that implement {@link io.agentscope.harness.agent.skill.LazyResourceCapable} (e.g.
+ *       {@code WorkspaceSkillRepository}) or, for other repositories, by an origin-dir reader
+ *       built from {@code skill.getOriginDir()} when present
  *   <li>Not found → error with a deduped enumeration of {@code SKILL.md} + in-memory keys +
  *       lazy listing
  * </ol>
@@ -98,19 +100,21 @@ public final class SkillLoadTool implements AgentTool {
     }
 
     @Override
+    public boolean isSystem() {
+        // Framework meta tool (aligned with the core load tool in SkillToolFactory):
+        // ungrouped, always visible and callable even under a restricted capability
+        // surface / DENY_ALL — per-skill grant decisions live in isSkillGranted.
+        return true;
+    }
+
+    @Override
     public String getName() {
         return TOOL_NAME;
     }
 
     @Override
     public String getDescription() {
-        return "Load and return a skill resource by its skill id and a path relative to the"
-                + " skill root.\n\n"
-                + "Path rules:\n"
-                + "- Use path=\"SKILL.md\" to load the skill's markdown documentation.\n"
-                + "- Use exact resource paths listed by the skill, e.g."
-                + " \"references/guide.md\" or \"scripts/run.py\".\n"
-                + "- Do not use '.', './', the skill directory itself, or an absolute path.";
+        return "Read a skill's full instructions or a referenced resource file.";
     }
 
     @Override
@@ -144,11 +148,10 @@ public final class SkillLoadTool implements AgentTool {
                                         "type",
                                         "string",
                                         "description",
-                                        "Exact resource path within the skill."
-                                                + " Use 'SKILL.md' for the skill's"
-                                                + " instructions; do not use '.',"
-                                                + " './', directories, or absolute"
-                                                + " paths.")),
+                                        "Exact file path relative to the skill root: 'SKILL.md'"
+                                                + " for instructions, or a referenced resource"
+                                                + " such as 'references/guide.md' or"
+                                                + " 'scripts/run.py'.")),
                 "required", List.of("skillId", "path"));
     }
 
@@ -170,11 +173,10 @@ public final class SkillLoadTool implements AgentTool {
             SkillCatalog catalog = catalogFor(param);
             HarnessSkillEntry entry = catalog.get(skillId);
             if (entry == null) {
-                return Mono.just(
-                        ToolResultBlock.error(
-                                "Skill not found: '"
-                                        + skillId
-                                        + "'. Check the available skills list."));
+                return Mono.just(ToolResultBlock.error(skillNotFound(skillId)));
+            }
+            if (!isSkillGranted(param, entry)) {
+                return Mono.just(ToolResultBlock.error(skillNotFound(skillId)));
             }
 
             return Mono.just(loadOne(entry, path));
@@ -182,6 +184,42 @@ public final class SkillLoadTool implements AgentTool {
             log.error("load_skill_through_path failed", e);
             return Mono.just(ToolResultBlock.error(e.getMessage()));
         }
+    }
+
+    /**
+     * Grant gate for skill loading. Defense in depth on top of the catalog boundary: the
+     * per-call catalog installed by the skill middleware is already grant-filtered, this check
+     * also covers catalogs installed through other paths. A missing surface means the call never
+     * entered an agent {@code call()} funnel: treat it as unrestricted — direct execution is
+     * trusted assembler code, the same stance as the core execution gates.
+     *
+     * @param param the tool call parameters
+     * @param entry the resolved catalog entry
+     * @return {@code true} when the skill passes the call's grant set
+     */
+    private boolean isSkillGranted(ToolCallParam param, HarnessSkillEntry entry) {
+        CapabilitySurface surface =
+                param.getRuntimeContext() != null
+                        ? param.getRuntimeContext().get(CapabilitySurface.class)
+                        : null;
+        if (surface == null || surface.allowsSkill(entry.skill())) {
+            return true;
+        }
+        log.warn(
+                "Skill load denied (grant): skillId='{}', userId='{}', sessionId='{}'",
+                entry.skill().getName(),
+                param.getRuntimeContext().getUserId(),
+                param.getRuntimeContext().getSessionId());
+        return false;
+    }
+
+    /**
+     * @param skillId the caller-supplied skill identifier (authoritative for the error echo)
+     * @return the not-found error text — byte-identical for unknown and un-granted skills so
+     *     the model cannot distinguish existence
+     */
+    private static String skillNotFound(String skillId) {
+        return "Skill not found: '" + skillId + "'. Check the available skills list.";
     }
 
     private SkillCatalog catalogFor(ToolCallParam param) {
@@ -206,7 +244,7 @@ public final class SkillLoadTool implements AgentTool {
             return ToolResultBlock.text(formatResource(entry, path, mem.get(path)));
         }
 
-        // 3. Lazy fallback (WorkspaceSkillRepository and other LazyResourceCapable sources).
+        // 3. Lazy fallback (LazyResourceCapable sources, or an origin-dir reader for others).
         if (entry.lazyResources() != null) {
             Optional<String> lazy = entry.lazyResources().read(path);
             if (lazy.isPresent()) {
@@ -222,12 +260,22 @@ public final class SkillLoadTool implements AgentTool {
     //  Formatting helpers
     // ---------------------------------------------------------------------
 
-    /**
-     * Wrapping fence used to demarcate file content from the surrounding tool-result header.
-     * Four backticks so it stays unambiguous even when the wrapped body contains the more common
-     * triple-backtick code fences.
-     */
-    private static final String CONTENT_FENCE = "````";
+    /** Uses a fence longer than every backtick run in the wrapped content. */
+    private static String contentFence(String content) {
+        int length = 4;
+        int run = 0;
+        if (content != null) {
+            for (int i = 0; i < content.length(); i++) {
+                if (content.charAt(i) == '`') {
+                    run++;
+                    length = Math.max(length, run + 1);
+                } else {
+                    run = 0;
+                }
+            }
+        }
+        return "`".repeat(length);
+    }
 
     private String formatSkillMarkdown(HarnessSkillEntry entry) {
         AgentSkill skill = entry.skill();
@@ -235,7 +283,9 @@ public final class SkillLoadTool implements AgentTool {
         sb.append("Successfully loaded skill: ").append(skill.getSkillId()).append("\n\n");
         sb.append("Name: ").append(skill.getName()).append("\n");
         sb.append("Description: ").append(skill.getDescription()).append("\n");
-        sb.append("Source: ").append(skill.getSource()).append("\n");
+        if (skill.getSource() != null) {
+            sb.append("Source: ").append(skill.getSource()).append("\n");
+        }
         if (entry.filesRoot() != null && !entry.filesRoot().isBlank()) {
             sb.append("Files root: ").append(entry.filesRoot()).append("\n");
         }
@@ -245,17 +295,19 @@ public final class SkillLoadTool implements AgentTool {
         // anything near the frontmatter boundary, since the parser eats that whitespace.
         String fullMarkdown =
                 MarkdownSkillParser.generate(skill.getMetadata(), skill.getSkillContent());
+        String fence = contentFence(fullMarkdown);
         sb.append("\nContent (").append("SKILL.md").append("):\n");
-        sb.append(CONTENT_FENCE).append("markdown\n");
+        sb.append(fence).append("markdown\n");
         sb.append(fullMarkdown);
         if (!fullMarkdown.endsWith("\n")) {
             sb.append("\n");
         }
-        sb.append(CONTENT_FENCE).append("\n");
+        sb.append(fence).append("\n");
         return sb.toString();
     }
 
     private String formatResource(HarnessSkillEntry entry, String path, String content) {
+        String fence = contentFence(content);
         StringBuilder sb = new StringBuilder();
         sb.append("Successfully loaded resource from skill: ")
                 .append(entry.skill().getSkillId())
@@ -265,12 +317,12 @@ public final class SkillLoadTool implements AgentTool {
             sb.append("Files root: ").append(entry.filesRoot()).append("\n");
         }
         sb.append("\nContent (").append(path).append("):\n");
-        sb.append(CONTENT_FENCE).append("\n");
+        sb.append(fence).append("\n");
         sb.append(content);
         if (content == null || !content.endsWith("\n")) {
             sb.append("\n");
         }
-        sb.append(CONTENT_FENCE).append("\n");
+        sb.append(fence).append("\n");
         return sb.toString();
     }
 

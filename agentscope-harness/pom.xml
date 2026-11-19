@@ -45,6 +45,13 @@
             <scope>test</scope>
         </dependency>
 
+        <!-- Exercise AG-UI resume conversion against the real HarnessAgent. -->
+        <dependency>
+            <groupId>io.agentscope</groupId>
+            <artifactId>agentscope-extensions-agui</artifactId>
+            <scope>test</scope>
+        </dependency>
+
         <!-- YAML parsing for subagent config -->
         <dependency>
             <groupId>com.fasterxml.jackson.dataformat</groupId>

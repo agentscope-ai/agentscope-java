@@ -1,4 +1,7 @@
-# Tool
+---
+title: Tool System
+zh_link: /v1/zh/docs/task/tool
+---
 
 The tool system enables agents to perform external operations such as API calls, database queries, file operations, etc.
 
@@ -199,7 +202,7 @@ public String query(
 }
 ```
 
-> See [Agent](../quickstart/agent.md) documentation for detailed configuration.
+> See [Agent](/v1/en/docs/quickstart/agent) documentation for detailed configuration.
 
 ## Built-in Tools
 
@@ -257,7 +260,7 @@ toolkit.registerTool(new OpenAIMultiModalTool(System.getenv("OPENAI_API_KEY")));
 
 ### Sub-agent Tools
 
-Agents can be registered as tools for other agents to call. See [Agent as Tool](agent-as-tool.md) for details.
+Agents can be registered as tools for other agents to call. See [Agent as Tool](/v1/en/docs/task/agent-as-tool) for details.
 
 ## AgentTool Interface
 
@@ -401,6 +404,6 @@ The call flow is the same as Tool Suspend: LLM calls → returns `TOOL_SUSPENDED
 
 ## Complete Examples
 
-- **Tool Call Example**: [ToolCallingExample.java](https://github.com/agentscope-ai/agentscope-java/blob/main/agentscope-examples/documentation/quickstart/src/main/java/io/agentscope/examples/quickstart/ToolCallingExample.java)
-- **Tool Group Example**: [ToolGroupExample.java](https://github.com/agentscope-ai/agentscope-java/blob/main/agentscope-examples/documentation/quickstart/src/main/java/io/agentscope/examples/quickstart/ToolGroupExample.java)
-- **MultiModal Tool Example**: [MultiModalToolExample.java](https://github.com/agentscope-ai/agentscope-java/blob/main/agentscope-examples/documentation/quickstart/src/main/java/io/agentscope/examples/quickstart/MultiModalToolExample.java)
+- **Tool Call Example**: [ToolCallingExample.java](https://github.com/agentscope-ai/agentscope-java/blob/v1.0.11/agentscope-examples/quickstart/src/main/java/io/agentscope/examples/quickstart/ToolCallingExample.java)
+- **Tool Group Example**: [ToolGroupExample.java](https://github.com/agentscope-ai/agentscope-java/blob/v1.0.11/agentscope-examples/quickstart/src/main/java/io/agentscope/examples/quickstart/ToolGroupExample.java)
+- **MultiModal Tool Example**: [MultiModalToolExample.java](https://github.com/agentscope-ai/agentscope-java/blob/v1.0.11/agentscope-examples/quickstart/src/main/java/io/agentscope/examples/quickstart/MultiModalToolExample.java)

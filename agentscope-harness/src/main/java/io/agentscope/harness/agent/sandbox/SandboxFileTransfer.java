@@ -35,26 +35,30 @@ public interface SandboxFileTransfer {
     /**
      * Whether this sandbox can natively transfer the given path.
      *
-     * @param absolutePath absolute path inside the sandbox
+     * @param path path to probe — absolute inside the sandbox; implementations may also
+     *     accept forms they can resolve themselves (e.g. workspace-relative paths)
      * @return true if {@link #uploadFile} / {@link #downloadFile} accept this path
      */
-    boolean supportsFileTransfer(String absolutePath);
+    boolean supportsFileTransfer(String path);
 
     /**
      * Writes a file inside the sandbox, creating parent directories if needed.
      *
-     * @param absolutePath absolute destination path inside the sandbox
+     * @param path destination path inside the sandbox — absolute, or a form the
+     *     implementation resolves
      * @param content file bytes
-     * @throws Exception when the transfer fails
+     * @throws Exception when the transfer fails; unlike a declined path, a failed transfer
+     *     is not retried through the exec strategy
      */
-    void uploadFile(String absolutePath, byte[] content) throws Exception;
+    void uploadFile(String path, byte[] content) throws Exception;
 
     /**
      * Reads a file from the sandbox.
      *
-     * @param absolutePath absolute path inside the sandbox
+     * @param path path inside the sandbox — absolute, or a form the implementation resolves
      * @return file bytes
-     * @throws Exception when the transfer fails
+     * @throws Exception when the transfer fails; unlike a declined path, a failed transfer
+     *     is not retried through the exec strategy
      */
-    byte[] downloadFile(String absolutePath) throws Exception;
+    byte[] downloadFile(String path) throws Exception;
 }

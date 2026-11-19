@@ -24,13 +24,13 @@ import java.util.Objects;
 /**
  * Document input content in the AG-UI protocol.
  *
- * <p>JSON form: {@code {"type": "document", "source": {"type": "url", "value": "..."}, "metadata": {...}}}
+ * <p>JSON form: {@code {"type": "document", "id": "...", "source": {"type": "url", "value": "..."},
+ * "metadata": {...}}}
  *
- * <p>Shares the same structure as {@link ImageInputContent}, {@link AudioInputContent},
- * and {@link VideoInputContent} (source + metadata). Maps to AgentScope's
- * {@link io.agentscope.core.message.DataBlock} during conversion.
+ * <p>It maps to AgentScope's {@code DocumentBlock} during conversion.
  *
- * @param source the document source (URL or data), must not be null
+ * @param id optional identifier of this part within its message
+ * @param source the document source (URL, data, or file), must not be null
  * @param metadata optional metadata, may be null
  * @author shanhongyu
  * @since 2026-08-01
@@ -38,6 +38,7 @@ import java.util.Objects;
 @JsonInclude(JsonInclude.Include.NON_NULL)
 @JsonIgnoreProperties(ignoreUnknown = true)
 public record DocumentInputContent(
+        @JsonProperty("id") String id,
         @JsonProperty("source") InputContentSource source,
         @JsonProperty("metadata") Map<String, Object> metadata)
         implements InputContent {
@@ -45,10 +46,21 @@ public record DocumentInputContent(
     /**
      * Compact constructor ensuring {@code source} is non-null.
      *
+     * @param id optional part identifier
      * @param source the document source
      * @param metadata optional metadata
      */
     public DocumentInputContent {
         Objects.requireNonNull(source, "source cannot be null");
+    }
+
+    /**
+     * Creates a document part without a part identifier.
+     *
+     * @param source the document source
+     * @param metadata optional metadata
+     */
+    public DocumentInputContent(InputContentSource source, Map<String, Object> metadata) {
+        this(null, source, metadata);
     }
 }

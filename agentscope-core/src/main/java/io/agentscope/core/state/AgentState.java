@@ -16,10 +16,8 @@
 package io.agentscope.core.state;
 
 import com.fasterxml.jackson.annotation.JsonCreator;
-import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonPropertyOrder;
-import io.agentscope.core.interruption.InterruptControl;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.permission.PermissionContextState;
 import java.util.ArrayList;
@@ -45,6 +43,7 @@ import java.util.UUID;
  */
 @JsonPropertyOrder({
     "session_id",
+    "thread_id",
     "user_id",
     "summary",
     "context",
@@ -59,6 +58,7 @@ import java.util.UUID;
 public final class AgentState implements State {
 
     private final String sessionId;
+    private final String threadId;
     private final String userId;
     private String summary;
     private final List<Msg> context;
@@ -70,16 +70,11 @@ public final class AgentState implements State {
     private final TaskContextState tasksContext;
     private final PlanModeContextState planModeContext;
 
-    /**
-     * Per-session interrupt signal. Runtime-only (never serialized): a stateless agent engine
-     * attaches one of these per {@code (userId, sessionId)} slot so a targeted {@code interrupt}
-     * signals exactly one session's in-flight call. Lazily created and {@code transient} so it is
-     * not part of {@code equals}/{@code hashCode} or JSON.
-     */
-    private transient volatile InterruptControl interruptControl;
-
     private AgentState(Builder builder) {
         this.sessionId = builder.sessionId == null ? newHex() : builder.sessionId;
+        this.threadId = builder.threadId;
+        if (threadId == null || threadId.isBlank())
+            throw new IllegalArgumentException("Thread identity must not be blank");
         this.userId = builder.userId;
         this.summary = builder.summary == null ? "" : builder.summary;
         this.context = new ArrayList<>(builder.context);
@@ -105,6 +100,7 @@ public final class AgentState implements State {
     @JsonCreator
     static AgentState fromJson(
             @JsonProperty("session_id") String sessionId,
+            @JsonProperty("thread_id") String threadId,
             @JsonProperty("user_id") String userId,
             @JsonProperty("summary") String summary,
             @JsonProperty("context") List<Msg> context,
@@ -115,7 +111,8 @@ public final class AgentState implements State {
             @JsonProperty("tool_context") ToolContextState toolContext,
             @JsonProperty("tasks_context") TaskContextState tasksContext,
             @JsonProperty("plan_mode_context") PlanModeContextState planModeContext) {
-        Builder b = builder();
+        // AgentScope 2.0 state predates Thread identity and belongs to the canonical main Thread.
+        Builder b = builder().threadId(threadId == null || threadId.isBlank() ? "main" : threadId);
         if (sessionId != null) {
             b.sessionId(sessionId);
         }
@@ -159,6 +156,11 @@ public final class AgentState implements State {
     @JsonProperty("session_id")
     public String getSessionId() {
         return sessionId;
+    }
+
+    @JsonProperty("thread_id")
+    public String getThreadId() {
+        return threadId;
     }
 
     /** Nullable; {@code null} = anonymous / single-tenant context. */
@@ -247,25 +249,6 @@ public final class AgentState implements State {
         return planModeContext;
     }
 
-    /**
-     * The per-session interrupt signal for this state, created on first access. Runtime-only and not
-     * serialized.
-     */
-    @JsonIgnore
-    public InterruptControl interruptControl() {
-        InterruptControl local = interruptControl;
-        if (local == null) {
-            synchronized (this) {
-                local = interruptControl;
-                if (local == null) {
-                    local = new InterruptControl();
-                    interruptControl = local;
-                }
-            }
-        }
-        return local;
-    }
-
     public static Builder builder() {
         return new Builder();
     }
@@ -298,6 +281,7 @@ public final class AgentState implements State {
         return curIter == other.curIter
                 && shutdownInterrupted == other.shutdownInterrupted
                 && Objects.equals(sessionId, other.sessionId)
+                && Objects.equals(threadId, other.threadId)
                 && Objects.equals(userId, other.userId)
                 && Objects.equals(summary, other.summary)
                 && Objects.equals(context, other.context)
@@ -312,6 +296,7 @@ public final class AgentState implements State {
     public int hashCode() {
         return Objects.hash(
                 sessionId,
+                threadId,
                 userId,
                 summary,
                 context,
@@ -328,6 +313,8 @@ public final class AgentState implements State {
     public String toString() {
         return "AgentState{sessionId="
                 + sessionId
+                + ", threadId="
+                + threadId
                 + ", replyId="
                 + replyId
                 + ", curIter="
@@ -341,6 +328,7 @@ public final class AgentState implements State {
 
     public static final class Builder {
         private String sessionId;
+        private String threadId = "main";
         private String userId;
         private String summary;
         private List<Msg> context = new ArrayList<>();
@@ -356,6 +344,11 @@ public final class AgentState implements State {
 
         public Builder sessionId(String sessionId) {
             this.sessionId = sessionId;
+            return this;
+        }
+
+        public Builder threadId(String threadId) {
+            this.threadId = threadId;
             return this;
         }
 

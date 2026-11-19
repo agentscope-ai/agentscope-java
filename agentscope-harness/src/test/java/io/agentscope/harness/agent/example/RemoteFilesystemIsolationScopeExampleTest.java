@@ -17,6 +17,7 @@ package io.agentscope.harness.agent.example;
 
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.mockito.AdditionalAnswers.delegatesTo;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.Mockito.mock;
@@ -29,10 +30,12 @@ import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.Model;
 import io.agentscope.core.state.AgentStateStore;
+import io.agentscope.core.state.InMemoryAgentStateStore;
 import io.agentscope.harness.agent.HarnessAgent;
 import io.agentscope.harness.agent.IsolationScope;
 import io.agentscope.harness.agent.filesystem.remote.store.InMemoryStore;
 import io.agentscope.harness.agent.filesystem.spec.RemoteFilesystemSpec;
+import io.agentscope.harness.agent.testing.HarnessQuiescence;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
@@ -73,6 +76,7 @@ import reactor.core.publisher.Flux;
  * directly where possible to keep the example focused on namespace routing rather than agent
  * conversation mechanics.
  */
+@HarnessQuiescence
 class RemoteFilesystemIsolationScopeExampleTest {
 
     @TempDir Path workspace;
@@ -100,7 +104,7 @@ class RemoteFilesystemIsolationScopeExampleTest {
                         .filesystem(
                                 new RemoteFilesystemSpec(store)
                                         .isolationScope(IsolationScope.SESSION))
-                        .stateStore(mock(AgentStateStore.class))
+                        .stateStore(stateStore())
                         .build()) {
 
             // Call as session-1 and write MEMORY.md
@@ -141,7 +145,7 @@ class RemoteFilesystemIsolationScopeExampleTest {
                         .filesystem(
                                 new RemoteFilesystemSpec(store)
                                         .isolationScope(IsolationScope.SESSION))
-                        .stateStore(mock(AgentStateStore.class))
+                        .stateStore(stateStore())
                         .build()) {
 
             // First call writes MEMORY.md under session-1
@@ -183,7 +187,7 @@ class RemoteFilesystemIsolationScopeExampleTest {
                         .workspace(workspace.toAbsolutePath().normalize().toString())
                         .filesystem(
                                 new RemoteFilesystemSpec(store).isolationScope(IsolationScope.USER))
-                        .stateStore(mock(AgentStateStore.class))
+                        .stateStore(stateStore())
                         .build()) {
 
             // Call as alice / session-a and write MEMORY.md
@@ -222,7 +226,7 @@ class RemoteFilesystemIsolationScopeExampleTest {
                         .workspace(workspace.toAbsolutePath().normalize().toString())
                         .filesystem(
                                 new RemoteFilesystemSpec(store).isolationScope(IsolationScope.USER))
-                        .stateStore(mock(AgentStateStore.class))
+                        .stateStore(stateStore())
                         .build()) {
 
             agent.call(userMsg("alice writes"), ctx("s1", "alice")).block();
@@ -259,7 +263,7 @@ class RemoteFilesystemIsolationScopeExampleTest {
                         .filesystem(
                                 new RemoteFilesystemSpec(store)
                                         .isolationScope(IsolationScope.AGENT))
-                        .stateStore(mock(AgentStateStore.class))
+                        .stateStore(stateStore())
                         .build()) {
 
             // Alice writes
@@ -309,5 +313,9 @@ class RemoteFilesystemIsolationScopeExampleTest {
                         "stop");
         when(model.stream(anyList(), any(), any())).thenReturn(Flux.just(chunk));
         return model;
+    }
+
+    private static AgentStateStore stateStore() {
+        return mock(AgentStateStore.class, delegatesTo(new InMemoryAgentStateStore()));
     }
 }

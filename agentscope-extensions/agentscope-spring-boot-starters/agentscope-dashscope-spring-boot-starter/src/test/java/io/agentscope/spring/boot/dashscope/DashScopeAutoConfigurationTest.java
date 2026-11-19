@@ -188,6 +188,26 @@ class DashScopeAutoConfigurationTest {
         assertThat(builder.build().getModelName()).isEqualTo("customized");
     }
 
+    @Test
+    void shouldBindMultimodalModelPatterns() {
+        contextRunner
+                .withPropertyValues(
+                        "agentscope.model.provider=dashscope",
+                        "agentscope.dashscope.api-key=test-dashscope-key",
+                        "agentscope.dashscope.model-name=deepseek-v4.1",
+                        "agentscope.dashscope.multimodal-model-patterns[0]=deepseek-v4",
+                        "agentscope.dashscope.multimodal-model-patterns[1]=deepseek-v5")
+                .run(
+                        context -> {
+                            DashScopeChatModel model = context.getBean(DashScopeChatModel.class);
+                            assertThat(model.getModelName()).isEqualTo("deepseek-v4.1");
+                            DashScopeProperties properties =
+                                    context.getBean(DashScopeProperties.class);
+                            assertThat(properties.getMultimodalModelPatterns())
+                                    .containsExactly("deepseek-v4", "deepseek-v5");
+                        });
+    }
+
     @Configuration(proxyBeanMethods = false)
     static class CustomModelConfiguration {
 

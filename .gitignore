@@ -8,6 +8,7 @@ target/
 *.iws
 *.iml
 *.ipr
+.openidea/
 
 ### Eclipse ###
 .apt_generated
@@ -52,11 +53,10 @@ docs/_build
 # vibe coding
 .claude
 openspec
-AGENTS.md
-CLAUDE.md
 .omc/
 .qoder/
 .cursor/
+.codex-tmp/
 
 ##Log
 logs/
@@ -83,6 +83,8 @@ logs/
 **/frontend/storybook-static/
 # boba-tea-shop: generated static assets served by the supervisor-agent
 **/boba-tea-shop/supervisor-agent/**/static/
+# copilotkit: frontend-maven-plugin npm build output served from the jar
+agentscope-examples/agentscope-copilotkit/src/main/resources/static/
 
 ##agentscope
 .agentscope/
@@ -92,12 +94,50 @@ logs/
 
 .dev-stack/
 
-# aistio local build artifacts
-agentscope-service/aistio/bin/
-agentscope-service/aistio/aistiod
-agentscope-service/aistio/aistiod.exe
-agentscope-service/aistio/*.test
-agentscope-service/aistio/cover.out
-agentscope-service/aistio/coverage.*
-agentscope-service/aistio/.idea/
-agentscope-service/.dev-stack/
+# Mintlify documentation dependencies and local preview
+/docs/node_modules/
+/docs/.mintlify/
+
+# Local dependencies, caches, reports and build output across all modules
+node_modules/
+.pnpm-store/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.cache/
+dist/
+coverage/
+test-results/
+playwright-report/
+*.tsbuildinfo
+
+# Temporary files, logs, binary packages and local databases
+*.log
+*.tmp
+*.temp
+*.swp
+*~
+*.class
+*.jar
+*.war
+*.zip
+*.tar
+*.gz
+*.tgz
+*.exe
+*.dll
+*.dylib
+*.so
+*.pyc
+*.sqlite
+*.sqlite3
+*.db-shm
+*.db-wal
+!.mvn/wrapper/maven-wrapper.jar
+
+# Local credentials; example templates are source files
+.env
+.env.*
+!.env.example
+!.env.sample
+!.env.template

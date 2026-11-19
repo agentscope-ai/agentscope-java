@@ -33,8 +33,10 @@ import io.agentscope.harness.agent.bus.AsyncToolRegistry;
 import io.agentscope.harness.agent.bus.MessageBus;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.EnumSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.TimeUnit;
@@ -87,6 +89,12 @@ public class AsyncToolMiddleware implements HarnessRuntimeMiddleware {
         this.messageBus = messageBus;
         this.offloadTimeout = offloadTimeout;
         this.asyncToolRegistry = asyncToolRegistry;
+    }
+
+    /** Narrow declaration: subclasses overriding more hooks must extend this set. */
+    @Override
+    public Set<ExtensionPoint> activePoints() {
+        return EnumSet.of(ExtensionPoint.ON_ACTING);
     }
 
     @Override
@@ -257,8 +265,8 @@ public class AsyncToolMiddleware implements HarnessRuntimeMiddleware {
 
         String hintContent =
                 String.format(
-                        "<system-notification>Tool '%s' running in background has completed.\n\n"
-                                + "Result:\n\n%s</system-notification>",
+                        "<system-reminder>Tool '%s' running in background has completed.\n\n"
+                                + "Result:\n\n%s</system-reminder>",
                         toolNames, resultText.length() > 0 ? resultText.toString() : "(no output)");
 
         String hintId = UUID.randomUUID().toString().replace("-", "");

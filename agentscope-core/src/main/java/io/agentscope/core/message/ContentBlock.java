@@ -37,6 +37,7 @@ import io.agentscope.core.state.State;
  *   <li>{@link ToolResultBlock} - Tool execution results
  *   <li>{@link HintBlock} - Hints for LLM reasoning (e.g., from RAG)
  *   <li>{@link DataBlock} - Generic binary data block unifying image/audio/video
+ *   <li>{@link DocumentBlock} - Document input (file ID, URL, or Base64) for document-aware models
  * </ul>
  *
  * <p>Uses Jackson annotations for polymorphic JSON serialization with the "type" discriminator
@@ -53,7 +54,8 @@ import io.agentscope.core.state.State;
     @JsonSubTypes.Type(value = ToolUseBlock.class, name = "tool_use"),
     @JsonSubTypes.Type(value = ToolResultBlock.class, name = "tool_result"),
     @JsonSubTypes.Type(value = HintBlock.class, name = "hint"),
-    @JsonSubTypes.Type(value = DataBlock.class, name = "data")
+    @JsonSubTypes.Type(value = DataBlock.class, name = "data"),
+    @JsonSubTypes.Type(value = DocumentBlock.class, name = "document")
 })
 public sealed class ContentBlock implements State
         permits TextBlock,
@@ -64,4 +66,5 @@ public sealed class ContentBlock implements State
                 ToolUseBlock,
                 ToolResultBlock,
                 HintBlock,
-                DataBlock {}
+                DataBlock,
+                DocumentBlock {}

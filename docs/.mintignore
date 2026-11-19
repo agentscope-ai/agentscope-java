@@ -1,0 +1,24 @@
+README.md
+scripts/**
+node_modules/**
+_build/**
+_extra/**
+_sphinx_extensions/**
+_static/**
+_templates/**
+__pycache__/**
+package.json
+package-lock.json
+
+# Repository-only implementation plans; validated separately from published guides.
+jev/**
+
+# Internal Managed Agents discussion drafts; keep their repository paths.
+v2/zh/blogs/Managed Agents MQ 与 Redis 架构设计.md
+v2/zh/blogs/Managed Agents POC 设计.md
+v2/zh/blogs/Managed Agents RocketMQ 架构与流程.md
+v2/zh/blogs/Managed Agents Sticky Session 设计.md
+v2/zh/blogs/Managed Agents 改造待办.md
+v2/zh/blogs/Managed Agents MQ 与 Redis 架构设计 v2.md
+v2/zh/blogs/harness-design.md
+v2/zh/blogs/Managed Agents Brain Harness 内核设计.md

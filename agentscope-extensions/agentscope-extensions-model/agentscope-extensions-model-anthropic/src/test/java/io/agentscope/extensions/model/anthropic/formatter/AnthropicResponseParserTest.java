@@ -24,23 +24,57 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
+import com.anthropic.core.JsonValue;
+import com.anthropic.core.ObjectMappers;
+import com.anthropic.models.messages.CitationPageLocation;
+import com.anthropic.models.messages.CodeExecutionResultBlock;
+import com.anthropic.models.messages.CodeExecutionToolResultBlock;
 import com.anthropic.models.messages.ContentBlock;
+import com.anthropic.models.messages.DirectCaller;
 import com.anthropic.models.messages.Message;
+import com.anthropic.models.messages.MessageDeltaUsage;
+import com.anthropic.models.messages.OutputTokensDetails;
 import com.anthropic.models.messages.RawContentBlockDeltaEvent;
+import com.anthropic.models.messages.RawContentBlockStartEvent;
+import com.anthropic.models.messages.RawMessageDeltaEvent;
 import com.anthropic.models.messages.RawMessageStartEvent;
 import com.anthropic.models.messages.RawMessageStreamEvent;
+import com.anthropic.models.messages.ServerToolUseBlock;
+import com.anthropic.models.messages.StopReason;
 import com.anthropic.models.messages.Usage;
+import com.anthropic.models.messages.WebSearchResultBlock;
+import com.anthropic.models.messages.WebSearchToolResultBlock;
+import com.anthropic.models.messages.WebSearchToolResultError;
+import com.anthropic.models.messages.WebSearchToolResultErrorCode;
+import io.agentscope.core.ReActAgent;
+import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ThinkingBlock;
+import io.agentscope.core.message.ToolCallState;
+import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.ChatUsage;
+import io.agentscope.core.model.GenerateOptions;
+import io.agentscope.core.model.Model;
+import io.agentscope.core.model.ToolSchema;
+import io.agentscope.core.tool.AgentTool;
+import io.agentscope.core.tool.ToolCallParam;
+import io.agentscope.core.tool.Toolkit;
+import io.agentscope.core.util.JsonUtils;
 import java.lang.reflect.Method;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
 
 /** Unit tests for AnthropicResponseParser. */
@@ -64,11 +98,17 @@ class AnthropicResponseParserTest extends AnthropicFormatterTestBase {
      */
     private ChatResponse invokeParseStreamEvent(RawMessageStreamEvent event, Instant startTime)
             throws Exception {
+        Class<?> stateClass =
+                Class.forName(AnthropicResponseParser.class.getName() + "$StreamUsageState");
+        var constructor = stateClass.getDeclaredConstructor();
+        constructor.setAccessible(true);
+        Object state = constructor.newInstance();
+
         Method method =
                 AnthropicResponseParser.class.getDeclaredMethod(
-                        "parseStreamEvent", RawMessageStreamEvent.class, Instant.class);
+                        "parseStreamEvent", RawMessageStreamEvent.class, Instant.class, stateClass);
         method.setAccessible(true);
-        return (ChatResponse) method.invoke(null, event, startTime);
+        return (ChatResponse) method.invoke(null, event, startTime, state);
     }
 
     @Test
@@ -84,6 +124,9 @@ class AnthropicResponseParserTest extends AnthropicFormatterTestBase {
         when(message.usage()).thenReturn(usage);
         when(usage.inputTokens()).thenReturn(100L);
         when(usage.outputTokens()).thenReturn(50L);
+        when(usage.outputTokensDetails()).thenReturn(Optional.empty());
+        when(usage.cacheReadInputTokens()).thenReturn(Optional.empty());
+        when(usage.cacheCreationInputTokens()).thenReturn(Optional.empty());
 
         when(contentBlock.text()).thenReturn(Optional.of(textBlock));
         when(contentBlock.toolUse()).thenReturn(Optional.empty());
@@ -106,6 +149,94 @@ class AnthropicResponseParserTest extends AnthropicFormatterTestBase {
     }
 
     @Test
+    void testParseMessageWithPdfCitation() {
+        CitationPageLocation providerCitation =
+                CitationPageLocation.builder()
+                        .citedText("PDF source text")
+                        .documentIndex(0)
+                        .documentTitle("guide.pdf")
+                        .fileId(Optional.empty())
+                        .startPageNumber(2)
+                        .endPageNumber(3)
+                        .build();
+        com.anthropic.models.messages.TextBlock providerText =
+                com.anthropic.models.messages.TextBlock.builder()
+                        .text("The feature is supported.")
+                        .addCitation(providerCitation)
+                        .build();
+        Message message =
+                Message.builder()
+                        .id("msg_cited")
+                        .diagnostics(Optional.empty())
+                        .stopDetails(Optional.empty())
+                        .addContent(providerText)
+                        .model("claude-sonnet-4-20250514")
+                        .role(JsonValue.from("assistant"))
+                        .stopReason(Optional.empty())
+                        .stopSequence(Optional.empty())
+                        .type(JsonValue.from("message"))
+                        .usage(
+                                Usage.builder()
+                                        .cacheCreation(Optional.empty())
+                                        .cacheCreationInputTokens(Optional.empty())
+                                        .cacheReadInputTokens(Optional.empty())
+                                        .inferenceGeo(Optional.empty())
+                                        .inputTokens(10)
+                                        .outputTokens(5)
+                                        .outputTokensDetails(Optional.empty())
+                                        .serverToolUse(Optional.empty())
+                                        .serviceTier(Optional.empty())
+                                        .build())
+                        .build();
+
+        ChatResponse response = AnthropicResponseParser.parseMessage(message, Instant.now());
+
+        TextBlock parsed = assertInstanceOf(TextBlock.class, response.getContent().get(0));
+        assertEquals("The feature is supported.", parsed.getText());
+        List<Map<String, Object>> citations =
+                (List<Map<String, Object>>)
+                        response.getMetadata().get(AnthropicCitationConverter.MD_CITATIONS);
+        assertNotNull(citations);
+        assertEquals(1, citations.size());
+        Map<String, Object> citation = citations.get(0);
+        assertEquals("page_location", citation.get("type"));
+        assertEquals(0L, citation.get("block_index"));
+        assertEquals("PDF source text", citation.get("cited_text"));
+        assertEquals(0L, citation.get("document_index"));
+        assertEquals("guide.pdf", citation.get("document_title"));
+        assertEquals(2L, citation.get("start_page_number"));
+        assertEquals(3L, citation.get("end_page_number"));
+    }
+
+    @Test
+    void testParseMessageReadsCacheReadInputTokens() {
+        Message message = mock(Message.class);
+        Usage usage = mock(Usage.class);
+        ContentBlock contentBlock = mock(ContentBlock.class);
+
+        when(message.id()).thenReturn("msg_cache");
+        when(message.content()).thenReturn(List.of(contentBlock));
+        when(message.usage()).thenReturn(usage);
+        when(usage.inputTokens()).thenReturn(1000L);
+        when(usage.outputTokens()).thenReturn(50L);
+        when(usage.outputTokensDetails()).thenReturn(Optional.empty());
+        when(usage.cacheReadInputTokens()).thenReturn(Optional.of(500L));
+        when(usage.cacheCreationInputTokens()).thenReturn(Optional.of(200L));
+
+        when(contentBlock.text()).thenReturn(Optional.empty());
+        when(contentBlock.toolUse()).thenReturn(Optional.empty());
+        when(contentBlock.thinking()).thenReturn(Optional.empty());
+
+        Instant startTime = Instant.now();
+        ChatResponse response = AnthropicResponseParser.parseMessage(message, startTime);
+
+        assertNotNull(response);
+        assertNotNull(response.getUsage());
+        assertEquals(500, response.getUsage().getCachedTokens());
+        assertEquals(1700, response.getUsage().getInputTokens());
+    }
+
+    @Test
     void testParseMessageWithToolUseBlock() {
         // Create mock Message with tool use content
         // Note: We use null input to avoid Kotlin reflection issues with JsonValue mocking
@@ -119,6 +250,9 @@ class AnthropicResponseParserTest extends AnthropicFormatterTestBase {
         when(message.usage()).thenReturn(usage);
         when(usage.inputTokens()).thenReturn(200L);
         when(usage.outputTokens()).thenReturn(100L);
+        when(usage.outputTokensDetails()).thenReturn(Optional.empty());
+        when(usage.cacheReadInputTokens()).thenReturn(Optional.empty());
+        when(usage.cacheCreationInputTokens()).thenReturn(Optional.empty());
 
         when(contentBlock.text()).thenReturn(Optional.empty());
         when(contentBlock.toolUse()).thenReturn(Optional.of(toolUseBlock));
@@ -143,6 +277,101 @@ class AnthropicResponseParserTest extends AnthropicFormatterTestBase {
         assertTrue(parsedToolUse.getInput().isEmpty());
     }
 
+    @ParameterizedTest
+    @ValueSource(
+            strings = {
+                "{\"store_id\":\"S001\",\"month\":\"2026-10\"}",
+                "{\"query\":\"a=1,"
+                        + " b=2\",\"filters\":{\"active\":true},\"ids\":[1,2],\"optional\":null}",
+                "{}"
+            })
+    void nonStreamingToolArgumentsSurviveAgentExecution(String arguments) throws Exception {
+        String json =
+                """
+                {"id":"msg_tool","type":"message","role":"assistant","model":"claude-sonnet-4-5",
+                 "content":[{"type":"tool_use","id":"call_store","name":"get_store_sales","input":%s}],
+                 "stop_reason":"tool_use","usage":{"input_tokens":10,"output_tokens":20}}
+                """
+                        .formatted(arguments);
+        Message message = ObjectMappers.jsonMapper().readValue(json, Message.class);
+        ChatResponse parsed = AnthropicResponseParser.parseMessage(message, Instant.now());
+        ToolUseBlock call = assertInstanceOf(ToolUseBlock.class, parsed.getContent().get(0));
+        Map<?, ?> expected = JsonUtils.getJsonCodec().fromJson(arguments, Map.class);
+        assertEquals(expected, call.getInput());
+        assertEquals(expected, JsonUtils.getJsonCodec().fromJson(call.getContent(), Map.class));
+
+        AtomicReference<Map<String, Object>> executedArguments = new AtomicReference<>();
+        Toolkit toolkit = new Toolkit();
+        toolkit.registerTool(
+                new AgentTool() {
+                    @Override
+                    public String getName() {
+                        return "get_store_sales";
+                    }
+
+                    @Override
+                    public String getDescription() {
+                        return "Get store sales";
+                    }
+
+                    @Override
+                    public Map<String, Object> getParameters() {
+                        return Map.of("type", "object", "properties", Map.of());
+                    }
+
+                    @Override
+                    public Mono<ToolResultBlock> callAsync(ToolCallParam param) {
+                        executedArguments.set(param.getToolUseBlock().getInput());
+                        return Mono.just(ToolResultBlock.text("1286400"));
+                    }
+                });
+        AtomicInteger requests = new AtomicInteger();
+        Model model =
+                new Model() {
+                    @Override
+                    public String getModelName() {
+                        return "nonstream-fixture";
+                    }
+
+                    @Override
+                    public Flux<ChatResponse> stream(
+                            List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
+                        if (requests.getAndIncrement() == 0) {
+                            return Flux.just(parsed);
+                        }
+                        ToolResultBlock result =
+                                messages.stream()
+                                        .flatMap(
+                                                msg ->
+                                                        msg
+                                                                .getContentBlocks(
+                                                                        ToolResultBlock.class)
+                                                                .stream())
+                                        .findFirst()
+                                        .orElseThrow();
+                        assertEquals("call_store", result.getId());
+                        assertEquals("1286400", ((TextBlock) result.getOutput().get(0)).getText());
+                        return Flux.just(
+                                ChatResponse.builder()
+                                        .content(List.of(TextBlock.builder().text("done").build()))
+                                        .build());
+                    }
+                };
+        try (ReActAgent agent =
+                ReActAgent.builder()
+                        .name("fixture")
+                        .model(model)
+                        .toolkit(toolkit)
+                        .maxIters(3)
+                        .build()) {
+            Msg answer = agent.call(List.of()).block(Duration.ofSeconds(5));
+            assertNotNull(answer);
+            assertEquals("done", answer.getTextContent());
+        }
+        assertEquals(expected, executedArguments.get());
+        assertEquals(2, requests.get());
+    }
+
     @Test
     void testParseMessageWithThinkingBlock() {
         // Create mock Message with thinking content
@@ -156,6 +385,9 @@ class AnthropicResponseParserTest extends AnthropicFormatterTestBase {
         when(message.usage()).thenReturn(usage);
         when(usage.inputTokens()).thenReturn(150L);
         when(usage.outputTokens()).thenReturn(75L);
+        when(usage.outputTokensDetails()).thenReturn(Optional.empty());
+        when(usage.cacheReadInputTokens()).thenReturn(Optional.empty());
+        when(usage.cacheCreationInputTokens()).thenReturn(Optional.empty());
 
         when(contentBlock.text()).thenReturn(Optional.empty());
         when(contentBlock.toolUse()).thenReturn(Optional.empty());
@@ -190,6 +422,9 @@ class AnthropicResponseParserTest extends AnthropicFormatterTestBase {
         when(message.usage()).thenReturn(usage);
         when(usage.inputTokens()).thenReturn(300L);
         when(usage.outputTokens()).thenReturn(150L);
+        when(usage.outputTokensDetails()).thenReturn(Optional.empty());
+        when(usage.cacheReadInputTokens()).thenReturn(Optional.empty());
+        when(usage.cacheCreationInputTokens()).thenReturn(Optional.empty());
 
         // Text block
         when(textContentBlock.text()).thenReturn(Optional.of(textBlock));
@@ -227,6 +462,9 @@ class AnthropicResponseParserTest extends AnthropicFormatterTestBase {
         when(message.usage()).thenReturn(usage);
         when(usage.inputTokens()).thenReturn(50L);
         when(usage.outputTokens()).thenReturn(0L);
+        when(usage.outputTokensDetails()).thenReturn(Optional.empty());
+        when(usage.cacheReadInputTokens()).thenReturn(Optional.empty());
+        when(usage.cacheCreationInputTokens()).thenReturn(Optional.empty());
 
         Instant startTime = Instant.now();
         ChatResponse response = AnthropicResponseParser.parseMessage(message, startTime);
@@ -249,6 +487,9 @@ class AnthropicResponseParserTest extends AnthropicFormatterTestBase {
         when(message.usage()).thenReturn(usage);
         when(usage.inputTokens()).thenReturn(100L);
         when(usage.outputTokens()).thenReturn(50L);
+        when(usage.outputTokensDetails()).thenReturn(Optional.empty());
+        when(usage.cacheReadInputTokens()).thenReturn(Optional.empty());
+        when(usage.cacheCreationInputTokens()).thenReturn(Optional.empty());
 
         when(contentBlock.text()).thenReturn(Optional.empty());
         when(contentBlock.toolUse()).thenReturn(Optional.of(toolUseBlock));
@@ -299,11 +540,15 @@ class AnthropicResponseParserTest extends AnthropicFormatterTestBase {
         RawMessageStreamEvent event = mock(RawMessageStreamEvent.class);
         RawMessageStartEvent messageStart = mock(RawMessageStartEvent.class);
         Message message = mock(Message.class);
+        Usage usage = mock(Usage.class);
 
         when(event.isMessageStart()).thenReturn(true);
         when(event.asMessageStart()).thenReturn(messageStart);
         when(messageStart.message()).thenReturn(message);
         when(message.id()).thenReturn("msg_stream_123");
+        when(message.usage()).thenReturn(usage);
+        when(usage.cacheReadInputTokens()).thenReturn(Optional.empty());
+        when(usage.cacheCreationInputTokens()).thenReturn(Optional.empty());
 
         when(event.isContentBlockDelta()).thenReturn(false);
         when(event.isContentBlockStart()).thenReturn(false);
@@ -335,6 +580,63 @@ class AnthropicResponseParserTest extends AnthropicFormatterTestBase {
                 assertInstanceOf(ThinkingBlock.class, response.getContent().get(0));
         assertEquals("Let me reason through this.", parsedThinking.getThinking());
         assertNull(response.getUsage());
+    }
+
+    @Test
+    void testParseStreamEventsAccumulateCitationsUntilMessageDelta() {
+        CitationPageLocation providerCitation =
+                CitationPageLocation.builder()
+                        .citedText("Streamed PDF source")
+                        .documentIndex(1)
+                        .documentTitle(Optional.empty())
+                        .fileId(Optional.empty())
+                        .startPageNumber(4)
+                        .endPageNumber(5)
+                        .build();
+        RawContentBlockDeltaEvent citationDelta =
+                RawContentBlockDeltaEvent.builder()
+                        .index(2)
+                        .citationsDelta(providerCitation)
+                        .build();
+
+        RawMessageStreamEvent citationEvent =
+                RawMessageStreamEvent.ofContentBlockDelta(citationDelta);
+
+        RawMessageStreamEvent terminalEvent = mock(RawMessageStreamEvent.class);
+        RawMessageDeltaEvent messageDelta = mock(RawMessageDeltaEvent.class);
+        MessageDeltaUsage deltaUsage = mock(MessageDeltaUsage.class);
+        when(terminalEvent.isMessageDelta()).thenReturn(true);
+        when(terminalEvent.asMessageDelta()).thenReturn(messageDelta);
+        when(messageDelta.usage()).thenReturn(deltaUsage);
+        when(messageDelta.delta()).thenReturn(mock(RawMessageDeltaEvent.Delta.class));
+        when(deltaUsage.outputTokens()).thenReturn(12L);
+        when(deltaUsage.outputTokensDetails()).thenReturn(Optional.empty());
+        when(deltaUsage.inputTokens()).thenReturn(Optional.empty());
+        when(deltaUsage.cacheReadInputTokens()).thenReturn(Optional.empty());
+        when(deltaUsage.cacheCreationInputTokens()).thenReturn(Optional.empty());
+
+        Flux<ChatResponse> responseFlux =
+                AnthropicResponseParser.parseStreamEvents(
+                        Flux.just(citationEvent, terminalEvent), Instant.now());
+
+        StepVerifier.create(responseFlux)
+                .assertNext(
+                        response -> {
+                            List<Map<String, Object>> citations =
+                                    (List<Map<String, Object>>)
+                                            response.getMetadata()
+                                                    .get(AnthropicCitationConverter.MD_CITATIONS);
+                            assertNotNull(citations);
+                            assertEquals(1, citations.size());
+                            Map<String, Object> citation = citations.get(0);
+                            assertEquals("page_location", citation.get("type"));
+                            assertEquals(2L, citation.get("block_index"));
+                            assertEquals("Streamed PDF source", citation.get("cited_text"));
+                            assertEquals(1L, citation.get("document_index"));
+                            assertEquals(4L, citation.get("start_page_number"));
+                            assertEquals(5L, citation.get("end_page_number"));
+                        })
+                .verifyComplete();
     }
 
     @Test
@@ -402,5 +704,447 @@ class AnthropicResponseParserTest extends AnthropicFormatterTestBase {
         StepVerifier.create(AnthropicResponseParser.parseStreamEvents(errorFlux, startTime))
                 .expectError(RuntimeException.class)
                 .verify();
+    }
+
+    // ==================== Server tools (web search) ====================
+
+    private static ServerToolUseBlock buildServerToolUseBlock(String id) {
+        return ServerToolUseBlock.builder()
+                .id(id)
+                .name(ServerToolUseBlock.Name.WEB_SEARCH)
+                .input(JsonValue.from(Map.of("query", "AgentScope")))
+                .caller(DirectCaller.builder().build())
+                .build();
+    }
+
+    private static WebSearchToolResultBlock buildWebSearchResultBlock(String toolUseId) {
+        return WebSearchToolResultBlock.builder()
+                .toolUseId(toolUseId)
+                .caller(DirectCaller.builder().build())
+                .contentOfResultBlocks(
+                        List.of(
+                                WebSearchResultBlock.builder()
+                                        .url("https://example.com")
+                                        .title("Example")
+                                        .encryptedContent("enc_abc123")
+                                        .pageAge("2 days")
+                                        .build()))
+                .build();
+    }
+
+    @Test
+    void testParseMessageWithServerToolUseAndWebSearchResult() {
+        Message message = mock(Message.class);
+        Usage usage = mock(Usage.class);
+
+        ContentBlock serverToolUseUnion =
+                ContentBlock.ofServerToolUse(buildServerToolUseBlock("srvtoolu_01"));
+        ContentBlock webSearchResultUnion =
+                ContentBlock.ofWebSearchToolResult(buildWebSearchResultBlock("srvtoolu_01"));
+
+        when(message.id()).thenReturn("msg_server");
+        when(message.content()).thenReturn(List.of(serverToolUseUnion, webSearchResultUnion));
+        when(message.usage()).thenReturn(usage);
+        when(usage.inputTokens()).thenReturn(100L);
+        when(usage.outputTokens()).thenReturn(50L);
+
+        ChatResponse response = AnthropicResponseParser.parseMessage(message, Instant.now());
+
+        assertNotNull(response);
+        assertEquals(2, response.getContent().size());
+
+        ToolUseBlock toolUse = assertInstanceOf(ToolUseBlock.class, response.getContent().get(0));
+        assertEquals("srvtoolu_01", toolUse.getId());
+        assertEquals("web_search", toolUse.getName());
+        assertTrue(toolUse.isServerTool());
+        assertEquals(ToolCallState.FINISHED, toolUse.getState());
+        assertEquals("AgentScope", toolUse.getInput().get("query"));
+
+        io.agentscope.core.message.ToolResultBlock toolResult =
+                assertInstanceOf(
+                        io.agentscope.core.message.ToolResultBlock.class,
+                        response.getContent().get(1));
+        assertEquals("srvtoolu_01", toolResult.getId());
+        assertTrue(toolResult.isServerTool());
+
+        // The raw block (including encrypted_content) is preserved in metadata as JSON
+        String rawJson =
+                assertInstanceOf(
+                        String.class,
+                        toolResult.getMetadata().get(AnthropicServerToolHelper.RESULT_METADATA));
+        assertTrue(rawJson.contains("\"web_search_tool_result\""));
+        assertTrue(rawJson.contains("\"srvtoolu_01\""));
+        assertTrue(rawJson.contains("\"enc_abc123\""));
+        assertTrue(rawJson.contains("\"2 days\""));
+
+        // Human-readable output
+        TextBlock outputText = assertInstanceOf(TextBlock.class, toolResult.getOutput().get(0));
+        assertEquals("Example (https://example.com)", outputText.getText());
+    }
+
+    @Test
+    void testParseMessageWithWebSearchError() {
+        Message message = mock(Message.class);
+        Usage usage = mock(Usage.class);
+
+        WebSearchToolResultBlock errorBlock =
+                WebSearchToolResultBlock.builder()
+                        .toolUseId("srvtoolu_err")
+                        .caller(DirectCaller.builder().build())
+                        .content(
+                                WebSearchToolResultError.builder()
+                                        .errorCode(WebSearchToolResultErrorCode.MAX_USES_EXCEEDED)
+                                        .build())
+                        .build();
+
+        when(message.id()).thenReturn("msg_err");
+        when(message.content()).thenReturn(List.of(ContentBlock.ofWebSearchToolResult(errorBlock)));
+        when(message.usage()).thenReturn(usage);
+        when(usage.inputTokens()).thenReturn(10L);
+        when(usage.outputTokens()).thenReturn(5L);
+
+        ChatResponse response = AnthropicResponseParser.parseMessage(message, Instant.now());
+
+        assertEquals(1, response.getContent().size());
+        io.agentscope.core.message.ToolResultBlock toolResult =
+                assertInstanceOf(
+                        io.agentscope.core.message.ToolResultBlock.class,
+                        response.getContent().get(0));
+        assertTrue(toolResult.isServerTool());
+        String rawJson =
+                assertInstanceOf(
+                        String.class,
+                        toolResult.getMetadata().get(AnthropicServerToolHelper.RESULT_METADATA));
+        assertTrue(rawJson.contains("\"max_uses_exceeded\""));
+        TextBlock errorText = assertInstanceOf(TextBlock.class, toolResult.getOutput().get(0));
+        assertTrue(errorText.getText().contains("max_uses_exceeded"));
+    }
+
+    @Test
+    void testParseMessageWithCodeExecutionResult() {
+        Message message = mock(Message.class);
+        Usage usage = mock(Usage.class);
+
+        CodeExecutionToolResultBlock codeResult =
+                CodeExecutionToolResultBlock.builder()
+                        .toolUseId("srvtoolu_code")
+                        .content(
+                                CodeExecutionResultBlock.builder()
+                                        .stdout("42\n")
+                                        .stderr("")
+                                        .returnCode(0)
+                                        .content(List.of())
+                                        .build())
+                        .build();
+
+        when(message.id()).thenReturn("msg_code");
+        when(message.content())
+                .thenReturn(List.of(ContentBlock.ofCodeExecutionToolResult(codeResult)));
+        when(message.usage()).thenReturn(usage);
+        when(usage.inputTokens()).thenReturn(10L);
+        when(usage.outputTokens()).thenReturn(5L);
+
+        ChatResponse response = AnthropicResponseParser.parseMessage(message, Instant.now());
+
+        assertEquals(1, response.getContent().size());
+        io.agentscope.core.message.ToolResultBlock toolResult =
+                assertInstanceOf(
+                        io.agentscope.core.message.ToolResultBlock.class,
+                        response.getContent().get(0));
+        assertEquals("srvtoolu_code", toolResult.getId());
+        assertEquals("code_execution", toolResult.getName());
+        assertTrue(toolResult.isServerTool());
+        String rawJson =
+                assertInstanceOf(
+                        String.class,
+                        toolResult.getMetadata().get(AnthropicServerToolHelper.RESULT_METADATA));
+        assertTrue(rawJson.contains("\"code_execution_tool_result\""));
+        assertTrue(rawJson.contains("\"42\\n\""));
+    }
+
+    @Test
+    void testParseStreamEventServerToolUseStart() throws Exception {
+        RawContentBlockStartEvent startEvent =
+                RawContentBlockStartEvent.builder()
+                        .index(0)
+                        .contentBlock(buildServerToolUseBlock("srvtoolu_stream"))
+                        .build();
+        RawMessageStreamEvent event = RawMessageStreamEvent.ofContentBlockStart(startEvent);
+
+        ChatResponse response = invokeParseStreamEvent(event, Instant.now());
+
+        assertNotNull(response);
+        assertEquals(1, response.getContent().size());
+        ToolUseBlock toolUse = assertInstanceOf(ToolUseBlock.class, response.getContent().get(0));
+        assertEquals("srvtoolu_stream", toolUse.getId());
+        assertEquals("web_search", toolUse.getName());
+        assertTrue(toolUse.isServerTool());
+        assertEquals(ToolCallState.FINISHED, toolUse.getState());
+    }
+
+    @Test
+    void testParseStreamEventWebSearchToolResultStart() throws Exception {
+        RawContentBlockStartEvent startEvent =
+                RawContentBlockStartEvent.builder()
+                        .index(1)
+                        .contentBlock(buildWebSearchResultBlock("srvtoolu_stream"))
+                        .build();
+        RawMessageStreamEvent event = RawMessageStreamEvent.ofContentBlockStart(startEvent);
+
+        ChatResponse response = invokeParseStreamEvent(event, Instant.now());
+
+        assertNotNull(response);
+        assertEquals(1, response.getContent().size());
+        io.agentscope.core.message.ToolResultBlock toolResult =
+                assertInstanceOf(
+                        io.agentscope.core.message.ToolResultBlock.class,
+                        response.getContent().get(0));
+        assertEquals("srvtoolu_stream", toolResult.getId());
+        assertTrue(toolResult.isServerTool());
+    }
+
+    @Test
+    void testParseMessageWithCachedTokens() {
+        // input_tokens excludes cached tokens in the Anthropic API; the parser adds them back
+        Message message = mock(Message.class);
+        Usage usage = mock(Usage.class);
+        OutputTokensDetails outputTokensDetails = mock(OutputTokensDetails.class);
+
+        when(message.id()).thenReturn("msg_cached");
+        when(message.content()).thenReturn(List.of());
+        when(message.usage()).thenReturn(usage);
+        when(usage.inputTokens()).thenReturn(100L);
+        when(usage.outputTokens()).thenReturn(50L);
+        when(usage.outputTokensDetails()).thenReturn(Optional.of(outputTokensDetails));
+        when(outputTokensDetails.thinkingTokens()).thenReturn(12L);
+        when(usage.cacheReadInputTokens()).thenReturn(Optional.of(80L));
+        when(usage.cacheCreationInputTokens()).thenReturn(Optional.of(20L));
+
+        ChatResponse response = AnthropicResponseParser.parseMessage(message, Instant.now());
+
+        ChatUsage responseUsage = response.getUsage();
+        assertNotNull(responseUsage);
+        assertEquals(200, responseUsage.getInputTokens()); // 100 + 80 + 20
+        assertEquals(80, responseUsage.getCachedTokens());
+        assertEquals(20, responseUsage.getCacheCreationTokens());
+        assertEquals(50, responseUsage.getOutputTokens());
+        assertEquals(12, responseUsage.getReasoningTokens());
+    }
+
+    @Test
+    void testParseStreamEventsCombineStartAndDeltaUsage() {
+        // message_start carries prompt usage (input + cached tokens); message_delta carries the
+        // final output tokens. The parser must combine them.
+        RawMessageStreamEvent startEvent = mock(RawMessageStreamEvent.class);
+        RawMessageStartEvent messageStart = mock(RawMessageStartEvent.class);
+        Message message = mock(Message.class);
+        Usage startUsage = mock(Usage.class);
+
+        when(startEvent.isMessageStart()).thenReturn(true);
+        when(startEvent.asMessageStart()).thenReturn(messageStart);
+        when(messageStart.message()).thenReturn(message);
+        when(message.id()).thenReturn("msg_stream_cached");
+        when(message.usage()).thenReturn(startUsage);
+        when(startUsage.inputTokens()).thenReturn(100L);
+        when(startUsage.cacheReadInputTokens()).thenReturn(Optional.of(50L));
+        when(startUsage.cacheCreationInputTokens()).thenReturn(Optional.of(30L));
+
+        RawMessageStreamEvent deltaEvent = mock(RawMessageStreamEvent.class);
+        RawMessageDeltaEvent messageDelta = mock(RawMessageDeltaEvent.class);
+        MessageDeltaUsage deltaUsage = mock(MessageDeltaUsage.class);
+
+        when(deltaEvent.isMessageDelta()).thenReturn(true);
+        when(deltaEvent.asMessageDelta()).thenReturn(messageDelta);
+        when(messageDelta.usage()).thenReturn(deltaUsage);
+        when(messageDelta.delta()).thenReturn(mock(RawMessageDeltaEvent.Delta.class));
+        when(deltaUsage.outputTokens()).thenReturn(42L);
+        when(deltaUsage.outputTokensDetails()).thenReturn(Optional.empty());
+        when(deltaUsage.inputTokens()).thenReturn(Optional.empty());
+        when(deltaUsage.cacheReadInputTokens()).thenReturn(Optional.empty());
+        when(deltaUsage.cacheCreationInputTokens()).thenReturn(Optional.empty());
+
+        Instant startTime = Instant.now();
+        Flux<ChatResponse> responseFlux =
+                AnthropicResponseParser.parseStreamEvents(
+                        Flux.just(startEvent, deltaEvent), startTime);
+
+        StepVerifier.create(responseFlux)
+                .assertNext(
+                        response -> {
+                            // message_delta: final usage combining the prompt usage recorded
+                            // from message_start
+                            ChatUsage usage = response.getUsage();
+                            assertNotNull(usage);
+                            assertEquals(180, usage.getInputTokens()); // 100 + 50 + 30
+                            assertEquals(50, usage.getCachedTokens());
+                            assertEquals(30, usage.getCacheCreationTokens());
+                            assertEquals(42, usage.getOutputTokens());
+                        })
+                .verifyComplete();
+    }
+
+    @Test
+    void testParseStreamEventsDeltaCarryingOwnPromptUsage() {
+        // Some responses include prompt usage directly on message_delta; it takes priority over
+        // the values recorded from message_start
+        RawMessageStreamEvent deltaEvent = mock(RawMessageStreamEvent.class);
+        RawMessageDeltaEvent messageDelta = mock(RawMessageDeltaEvent.class);
+        MessageDeltaUsage deltaUsage = mock(MessageDeltaUsage.class);
+
+        when(deltaEvent.isMessageDelta()).thenReturn(true);
+        when(deltaEvent.asMessageDelta()).thenReturn(messageDelta);
+        when(messageDelta.usage()).thenReturn(deltaUsage);
+        when(messageDelta.delta()).thenReturn(mock(RawMessageDeltaEvent.Delta.class));
+        when(deltaUsage.outputTokens()).thenReturn(42L);
+        when(deltaUsage.outputTokensDetails()).thenReturn(Optional.empty());
+        when(deltaUsage.inputTokens()).thenReturn(Optional.of(100L));
+        when(deltaUsage.cacheReadInputTokens()).thenReturn(Optional.of(50L));
+        when(deltaUsage.cacheCreationInputTokens()).thenReturn(Optional.of(30L));
+
+        Instant startTime = Instant.now();
+        Flux<ChatResponse> responseFlux =
+                AnthropicResponseParser.parseStreamEvents(Flux.just(deltaEvent), startTime);
+
+        StepVerifier.create(responseFlux)
+                .assertNext(
+                        response -> {
+                            ChatUsage usage = response.getUsage();
+                            assertNotNull(usage);
+                            assertEquals(180, usage.getInputTokens()); // 100 + 50 + 30
+                            assertEquals(50, usage.getCachedTokens());
+                            assertEquals(30, usage.getCacheCreationTokens());
+                            assertEquals(42, usage.getOutputTokens());
+                        })
+                .verifyComplete();
+    }
+
+    @Test
+    void testParseMessageWithoutIdFallsBackToGeneratedId() throws Exception {
+        // A proxy may strip the top-level id, and the SDK throws on the typed accessor (issue
+        // #592).
+        String json =
+                "{\"type\":\"message\",\"role\":\"assistant\",\"model\":\"claude-sonnet-4-5\","
+                        + "\"content\":[{\"type\":\"text\",\"text\":\"2 + 3 = 5\"}],"
+                        + "\"stop_reason\":\"end_turn\","
+                        + "\"usage\":{\"input_tokens\":10,\"output_tokens\":5}}";
+        Message message = ObjectMappers.jsonMapper().readValue(json, Message.class);
+
+        ChatResponse response = AnthropicResponseParser.parseMessage(message, Instant.now());
+
+        assertNotNull(response);
+        assertNotNull(response.getId());
+        assertFalse(response.getId().isBlank());
+        assertEquals(1, response.getContent().size());
+        TextBlock parsedText = assertInstanceOf(TextBlock.class, response.getContent().get(0));
+        assertEquals("2 + 3 = 5", parsedText.getText());
+    }
+
+    @Test
+    void testParseMessageReusesRawId() throws Exception {
+        // Covers the raw _id() branch: the hand-rolled mocks only stub the typed accessor.
+        String json =
+                "{\"id\":\"msg_01ABC\",\"type\":\"message\",\"role\":\"assistant\","
+                        + "\"model\":\"claude-sonnet-4-5\","
+                        + "\"content\":[{\"type\":\"text\",\"text\":\"hi\"}],"
+                        + "\"usage\":{\"input_tokens\":1,\"output_tokens\":2}}";
+        Message message = ObjectMappers.jsonMapper().readValue(json, Message.class);
+
+        ChatResponse response = AnthropicResponseParser.parseMessage(message, Instant.now());
+
+        assertEquals("msg_01ABC", response.getId());
+    }
+
+    @Test
+    void testParseStreamEventMessageStartWithoutIdDoesNotThrow() throws Exception {
+        // Before the fix this threw, which aborted the whole message_start branch and dropped the
+        // prompt-token accounting that message_delta reads back out of the shared usage state.
+        String json =
+                "{\"type\":\"message\",\"role\":\"assistant\",\"model\":\"claude-sonnet-4-5\","
+                        + "\"content\":[],\"usage\":{\"input_tokens\":10,\"output_tokens\":1}}";
+        Message message = ObjectMappers.jsonMapper().readValue(json, Message.class);
+
+        RawMessageStartEvent messageStart = mock(RawMessageStartEvent.class);
+        when(messageStart.message()).thenReturn(message);
+
+        RawMessageStreamEvent event = mock(RawMessageStreamEvent.class);
+        when(event.isMessageStart()).thenReturn(true);
+        when(event.asMessageStart()).thenReturn(messageStart);
+        when(event.isContentBlockDelta()).thenReturn(false);
+        when(event.isContentBlockStart()).thenReturn(false);
+        when(event.isMessageDelta()).thenReturn(false);
+
+        ChatResponse response = invokeParseStreamEvent(event, Instant.now());
+
+        assertNotNull(response);
+        assertNotNull(response.getId()); // generated, since the proxy stripped it
+        assertTrue(response.getContent().isEmpty());
+    }
+
+    // ==================== Finish reason ====================
+
+    @Test
+    void testParseMessageReportsStopReasonAsFinishReason() {
+        Message message = mock(Message.class);
+        Usage usage = mock(Usage.class);
+
+        when(message.id()).thenReturn("msg_truncated");
+        when(message.content()).thenReturn(List.of());
+        when(message.usage()).thenReturn(usage);
+        when(message.stopReason()).thenReturn(Optional.of(StopReason.MAX_TOKENS));
+        when(usage.inputTokens()).thenReturn(10L);
+        when(usage.outputTokens()).thenReturn(5L);
+        when(usage.outputTokensDetails()).thenReturn(Optional.empty());
+        when(usage.cacheReadInputTokens()).thenReturn(Optional.empty());
+        when(usage.cacheCreationInputTokens()).thenReturn(Optional.empty());
+
+        ChatResponse response = AnthropicResponseParser.parseMessage(message, Instant.now());
+
+        assertEquals("max_tokens", response.getFinishReason());
+    }
+
+    @Test
+    void testParseMessageWithoutStopReasonHasNoFinishReason() {
+        Message message = mock(Message.class);
+        Usage usage = mock(Usage.class);
+
+        when(message.id()).thenReturn("msg_no_stop_reason");
+        when(message.content()).thenReturn(List.of());
+        when(message.usage()).thenReturn(usage);
+        when(message.stopReason()).thenReturn(Optional.empty());
+        when(usage.inputTokens()).thenReturn(10L);
+        when(usage.outputTokens()).thenReturn(5L);
+        when(usage.outputTokensDetails()).thenReturn(Optional.empty());
+        when(usage.cacheReadInputTokens()).thenReturn(Optional.empty());
+        when(usage.cacheCreationInputTokens()).thenReturn(Optional.empty());
+
+        ChatResponse response = AnthropicResponseParser.parseMessage(message, Instant.now());
+
+        assertNull(response.getFinishReason());
+    }
+
+    @Test
+    void testParseStreamEventsReportsStopReasonOfMessageDelta() {
+        RawMessageStreamEvent deltaEvent = mock(RawMessageStreamEvent.class);
+        RawMessageDeltaEvent messageDelta = mock(RawMessageDeltaEvent.class);
+        RawMessageDeltaEvent.Delta delta = mock(RawMessageDeltaEvent.Delta.class);
+        MessageDeltaUsage deltaUsage = mock(MessageDeltaUsage.class);
+
+        when(deltaEvent.isMessageDelta()).thenReturn(true);
+        when(deltaEvent.asMessageDelta()).thenReturn(messageDelta);
+        when(messageDelta.delta()).thenReturn(delta);
+        when(delta.stopReason()).thenReturn(Optional.of(StopReason.MAX_TOKENS));
+        when(messageDelta.usage()).thenReturn(deltaUsage);
+        when(deltaUsage.outputTokens()).thenReturn(42L);
+        when(deltaUsage.outputTokensDetails()).thenReturn(Optional.empty());
+        when(deltaUsage.inputTokens()).thenReturn(Optional.empty());
+        when(deltaUsage.cacheReadInputTokens()).thenReturn(Optional.empty());
+        when(deltaUsage.cacheCreationInputTokens()).thenReturn(Optional.empty());
+
+        Flux<ChatResponse> responseFlux =
+                AnthropicResponseParser.parseStreamEvents(Flux.just(deltaEvent), Instant.now());
+
+        StepVerifier.create(responseFlux)
+                .assertNext(response -> assertEquals("max_tokens", response.getFinishReason()))
+                .verifyComplete();
     }
 }

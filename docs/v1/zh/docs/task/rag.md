@@ -1,4 +1,7 @@
-# RAG (检索增强生成)
+---
+title: RAG
+en_link: /v1/en/docs/task/rag
+---
 
 AgentScope 提供内置 RAG 支持，使 Agent 能够访问外部知识库。
 
@@ -441,7 +444,7 @@ RAGFlowConfig config = RAGFlowConfig.builder()
     // === 高级检索功能（可选）===
     .useKg(false)                               // 知识图谱多跳查询，默认 false
     .tocEnhance(false)                          // 目录增强检索，默认 false
-    .rerankId(1)                                // 重排序模型 ID
+    .rerankId("BAAI/bge-reranker-v2-m3@BAAI")   // 重排序模型 ID（模型名或 hex UUID）
     .keyword(false)                             // 关键词匹配，默认 false
     .highlight(false)                           // 高亮匹配结果，默认 false
     .addCrossLanguage("en")                     // 添加目标语言
@@ -537,15 +540,15 @@ public class CustomReader implements Reader {
    - 使用 **Agentic 模式**：复杂任务、选择性检索、强大的 LLM
 
 6. **向量存储选择**：
-   - 使用 **InMemoryStore**：开发、测试、小型数据集（<10K 文档）
+   - 使用 **InMemoryStore**：开发、测试、小型数据集（&lt;10K 文档）
    - 使用 **QdrantStore**：生产环境、大型数据集、需要持久化
    - 使用 **ElasticsearchStore**: 生产环境、大型数据集、私有部署服务。
 
 ## 完整示例
 
-- **本地知识库示例**: [RAGExample.java](https://github.com/agentscope-ai/agentscope-java/blob/main/agentscope-examples/documentation/advanced/src/main/java/io/agentscope/examples/advanced/RAGExample.java)
-- **百炼知识库示例**: [BailianRAGExample.java](https://github.com/agentscope-ai/agentscope-java/blob/main/agentscope-examples/documentation/advanced/src/main/java/io/agentscope/examples/advanced/BailianRAGExample.java)
-- **Dify 知识库示例**: [DifyRAGExample.java](https://github.com/agentscope-ai/agentscope-java/blob/main/agentscope-examples/documentation/quickstart/src/main/java/io/agentscope/examples/quickstart/DifyRAGExample.java)
-- **RAGFlow 知识库示例**: [RAGFlowRAGExample.java](https://github.com/agentscope-ai/agentscope-java/blob/main/agentscope-examples/documentation/quickstart/src/main/java/io/agentscope/examples/quickstart/RAGFlowRAGExample.java)
-- **Elasticsearch 知识库实例**: [ElasticsearchRAGExample.java](https://github.com/agentscope-ai/agentscope-java/blob/main/agentscope-examples/documentation/advanced/src/main/java/io/agentscope/examples/advanced/ElasticsearchRAGExample.java)
-- **PgVector 知识库示例**: [PgVectorRAGExample.java](https://github.com/agentscope-ai/agentscope-java/blob/main/agentscope-examples/documentation/quickstart/src/main/java/io/agentscope/examples/quickstart/PgVectorRAGExample.java)
+- **本地知识库示例**: [RAGExample.java](https://github.com/agentscope-ai/agentscope-java/blob/v1.0.11/agentscope-examples/advanced/src/main/java/io/agentscope/examples/advanced/RAGExample.java)
+- **百炼知识库示例**: [BailianRAGExample.java](https://github.com/agentscope-ai/agentscope-java/blob/v1.0.11/agentscope-examples/advanced/src/main/java/io/agentscope/examples/advanced/BailianRAGExample.java)
+- **Dify 知识库示例**: [DifyRAGExample.java](https://github.com/agentscope-ai/agentscope-java/blob/v1.0.11/agentscope-examples/quickstart/src/main/java/io/agentscope/examples/quickstart/DifyRAGExample.java)
+- **RAGFlow 知识库示例**: [RAGFlowRAGExample.java](https://github.com/agentscope-ai/agentscope-java/blob/v1.0.11/agentscope-examples/quickstart/src/main/java/io/agentscope/examples/quickstart/RAGFlowRAGExample.java)
+- **Elasticsearch 知识库实例**: [ElasticsearchRAGExample.java](https://github.com/agentscope-ai/agentscope-java/blob/v1.0.11/agentscope-examples/advanced/src/main/java/io/agentscope/examples/advanced/ElasticsearchRAGExample.java)
+- **PgVector 知识库示例**: [PgVectorRAGExample.java](https://github.com/agentscope-ai/agentscope-java/blob/v1.0.11/agentscope-examples/quickstart/src/main/java/io/agentscope/examples/quickstart/PgVectorRAGExample.java)

@@ -21,16 +21,25 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.io.IOException;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
+import okhttp3.OkHttpClient;
+import okhttp3.Protocol;
+import okhttp3.Response;
+import okhttp3.ResponseBody;
 import okhttp3.mockwebserver.MockResponse;
 import okhttp3.mockwebserver.MockWebServer;
 import okhttp3.mockwebserver.RecordedRequest;
+import okio.BufferedSink;
+import okio.Okio;
+import okio.Pipe;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import reactor.core.scheduler.Schedulers;
 import reactor.test.StepVerifier;
 
 /**
@@ -138,6 +147,57 @@ class OkHttpTransportTest {
         assertEquals(2, events.size());
         assertTrue(events.get(0).contains("\"id\":\"1\""));
         assertTrue(events.get(1).contains("\"id\":\"2\""));
+    }
+
+    @Test
+    void testStreamEmitsBufferedEventsWhenDownstreamRequestsIncrementally() throws Exception {
+        Pipe responsePipe = new Pipe(1024);
+        BufferedSink responseSink = Okio.buffer(responsePipe.sink());
+        responseSink.writeUtf8("data: 1\n\ndata: 2\n\n").flush();
+
+        OkHttpClient client =
+                new OkHttpClient.Builder()
+                        .addInterceptor(
+                                chain ->
+                                        new Response.Builder()
+                                                .request(chain.request())
+                                                .protocol(Protocol.HTTP_1_1)
+                                                .code(200)
+                                                .message("OK")
+                                                .body(
+                                                        ResponseBody.create(
+                                                                Okio.buffer(responsePipe.source()),
+                                                                null,
+                                                                -1))
+                                                .build())
+                        .build();
+        OkHttpTransport customTransport =
+                new OkHttpTransport(client, HttpTransportConfig.defaults());
+        HttpRequest request =
+                HttpRequest.builder()
+                        .url("http://localhost/stream-backpressure")
+                        .method("POST")
+                        .body("{}")
+                        .build();
+
+        try {
+            StepVerifier.create(customTransport.stream(request).publishOn(Schedulers.parallel(), 1))
+                    .expectNext("1")
+                    .expectNext("2")
+                    .then(
+                            () -> {
+                                try {
+                                    responseSink.writeUtf8("data: [DONE]\n\n").close();
+                                } catch (IOException e) {
+                                    throw new RuntimeException(e);
+                                }
+                            })
+                    .expectComplete()
+                    .verify(Duration.ofSeconds(2));
+        } finally {
+            responseSink.close();
+            customTransport.close();
+        }
     }
 
     @Test

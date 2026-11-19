@@ -23,6 +23,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import io.agentscope.core.agent.Event;
@@ -30,23 +32,31 @@ import io.agentscope.core.agent.EventSource;
 import io.agentscope.core.agent.EventType;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.agent.StreamOptions;
+import io.agentscope.core.message.GenerateReason;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.Model;
+import io.agentscope.core.tool.ToolSuspendException;
 import io.agentscope.harness.agent.filesystem.local.LocalFilesystem;
+import io.agentscope.harness.agent.memory.MemoryConfig;
+import io.agentscope.harness.agent.subagent.SubagentExecution;
+import io.agentscope.harness.agent.testing.HarnessQuiescence;
+import java.net.http.HttpClient;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Collectors;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
 
 /**
  * Verifies that synchronous local subagent invocations forward child {@link Event}s into the
@@ -61,6 +71,7 @@ import reactor.core.publisher.Flux;
  * child → parent turn 2) yields the appropriate {@link ChatResponse}. This mirrors how
  * {@code buildDeclaredFactory} captures {@code this.model} for child agents.
  */
+@HarnessQuiescence
 class HarnessAgentSubagentStreamTest {
 
     @TempDir Path workspace;
@@ -69,6 +80,8 @@ class HarnessAgentSubagentStreamTest {
     // "parent" agent's persisted AgentState from leaking between cases.
     @TempDir Path stateHome;
 
+    private HarnessAgent parent;
+    private HarnessAgent agent;
     private String previousStateHome;
 
     @BeforeEach
@@ -79,6 +92,12 @@ class HarnessAgentSubagentStreamTest {
 
     @AfterEach
     void restoreStateHome() {
+        if (parent != null) {
+            parent.close();
+        }
+        if (agent != null) {
+            agent.close();
+        }
         if (previousStateHome != null) {
             System.setProperty("agentscope.state.home", previousStateHome);
         } else {
@@ -109,6 +128,66 @@ class HarnessAgentSubagentStreamTest {
                         .content(contentJson)
                         .build();
         return new ChatResponse(id, List.of(tc), null, Map.of(), "tool_use");
+    }
+
+    @Test
+    void hostChildSuspensionPreservesTheParentToolCall() throws Exception {
+        Files.createDirectories(workspace.resolve("subagents"));
+        Files.writeString(
+                workspace.resolve("subagents/researcher.md"),
+                "---\ndescription: Researcher\n---\nResearch.");
+        Model model = mock(Model.class);
+        when(model.getModelName()).thenReturn("stub");
+        when(model.stream(anyList(), any(), any()))
+                .thenReturn(
+                        Flux.just(
+                                toolCallChunk(
+                                        "owned-spawn",
+                                        "agent_spawn",
+                                        Map.of(
+                                                "agent_id",
+                                                "researcher",
+                                                "task",
+                                                "research",
+                                                "reusable",
+                                                true,
+                                                "timeout_seconds",
+                                                60))));
+        Model memoryModel = mock(Model.class);
+        when(memoryModel.getModelName()).thenReturn("memory-stub");
+        when(memoryModel.stream(anyList(), any(), any()))
+                .thenReturn(Flux.just(stopChunk("memory", "NO_REPLY")));
+        parent =
+                HarnessAgent.builder()
+                        .name("parent")
+                        .model(model)
+                        .memory(MemoryConfig.builder().model(memoryModel).build())
+                        .workspace(workspace)
+                        .abstractFilesystem(new LocalFilesystem(workspace))
+                        .build();
+        AtomicReference<String> parentCall = new AtomicReference<>();
+        SubagentExecution execution =
+                (childAgent, parentContext, childContext, local) -> {
+                    parentCall.set(parentContext.get(ToolUseBlock.class).getId());
+                    assertNull(childContext.get(ToolUseBlock.class));
+                    assertEquals(
+                            "researcher",
+                            parentContext.get(SubagentExecution.Invocation.class).agentId());
+                    return Mono.error(new ToolSuspendException("child needs an external result"));
+                };
+        Msg result =
+                parent.call(
+                                List.of(Msg.builder().role(MsgRole.USER).textContent("go").build()),
+                                RuntimeContext.builder()
+                                        .sessionId("owned-parent")
+                                        .put(SubagentExecution.class, execution)
+                                        .build())
+                        .block();
+        assertNotNull(result);
+        assertEquals("tc-owned-spawn", parentCall.get());
+        assertEquals(GenerateReason.TOOL_SUSPENDED, result.getGenerateReason());
+        assertEquals("tc-owned-spawn", result.getContentBlocks(ToolUseBlock.class).get(0).getId());
+        verify(model, times(1)).stream(anyList(), any(), any());
     }
 
     // -----------------------------------------------------------------
@@ -161,6 +240,8 @@ class HarnessAgentSubagentStreamTest {
                                                 childId,
                                                 "task",
                                                 "research X",
+                                                "reusable",
+                                                true,
                                                 "timeout_seconds",
                                                 60))))
                 // Turn 2 (child invocation): reasoning chunk + stop
@@ -176,7 +257,7 @@ class HarnessAgentSubagentStreamTest {
                 // Turn 3 (parent): final summary
                 .thenReturn(Flux.just(stopChunk("p2", "summary done")));
 
-        HarnessAgent parent =
+        parent =
                 HarnessAgent.builder()
                         .name("parent")
                         .model(model)
@@ -247,7 +328,15 @@ class HarnessAgentSubagentStreamTest {
         Model model = mock(Model.class);
         when(model.getModelName()).thenReturn("stub");
         Map<String, Object> spawnInput =
-                Map.of("agent_id", childId, "task", "format data", "timeout_seconds", 60);
+                Map.of(
+                        "agent_id",
+                        childId,
+                        "task",
+                        "format data",
+                        "reusable",
+                        true,
+                        "timeout_seconds",
+                        60);
         when(model.stream(anyList(), any(), any()))
                 .thenReturn(
                         Flux.just(
@@ -273,7 +362,7 @@ class HarnessAgentSubagentStreamTest {
                 // parent final
                 .thenReturn(Flux.just(stopChunk("p2", "all done")));
 
-        HarnessAgent parent =
+        parent =
                 HarnessAgent.builder()
                         .name("parent")
                         .model(model)
@@ -352,12 +441,14 @@ class HarnessAgentSubagentStreamTest {
                                                 childId,
                                                 "task",
                                                 "analyse data",
+                                                "reusable",
+                                                true,
                                                 "timeout_seconds",
                                                 60))))
                 .thenReturn(Flux.just(stopChunk("c1", "analysis complete")))
                 .thenReturn(Flux.just(stopChunk("p2", "result obtained")));
 
-        HarnessAgent parent =
+        parent =
                 HarnessAgent.builder()
                         .name("parent")
                         .model(model)
@@ -374,6 +465,68 @@ class HarnessAgentSubagentStreamTest {
         assertNotNull(reply, "reply must not be null");
         assertTrue(
                 reply.getTextContent().contains("result obtained"),
+                "final reply text mismatch; got: " + reply.getTextContent());
+    }
+
+    /**
+     * A custom {@link java.net.http.HttpClient} configured on the parent builder must be inherited
+     * by spawned subagents: {@code buildDeclaredFactory} captures {@code b.webHttpClient} and
+     * forwards it onto the child builder.
+     */
+    @Test
+    void call_localSubagent_inheritsCustomWebHttpClient() throws Exception {
+        String childId = "webclient-child";
+        Files.createDirectories(workspace.resolve("subagents"));
+        Files.writeString(
+                workspace.resolve("subagents/" + childId + ".md"),
+                """
+                ---
+                description: Web client child
+                ---
+                You are a helper.
+                """);
+
+        Model model = mock(Model.class);
+        when(model.getModelName()).thenReturn("stub");
+        when(model.stream(anyList(), any(), any()))
+                .thenReturn(
+                        Flux.just(
+                                toolCallChunk(
+                                        "p1",
+                                        "agent_spawn",
+                                        Map.of(
+                                                "agent_id",
+                                                childId,
+                                                "task",
+                                                "check",
+                                                "reusable",
+                                                true,
+                                                "timeout_seconds",
+                                                60))))
+                .thenReturn(Flux.just(stopChunk("c1", "child done")))
+                .thenReturn(Flux.just(stopChunk("p2", "parent done")));
+
+        parent =
+                HarnessAgent.builder()
+                        .name("parent")
+                        .model(model)
+                        .workspace(workspace)
+                        .abstractFilesystem(new LocalFilesystem(workspace))
+                        .webHttpClient(
+                                HttpClient.newBuilder()
+                                        .version(HttpClient.Version.HTTP_1_1)
+                                        .build())
+                        .build();
+
+        Msg reply =
+                parent.call(
+                                List.of(Msg.builder().role(MsgRole.USER).textContent("go").build()),
+                                RuntimeContext.builder().sessionId("sess-webclient").build())
+                        .block();
+
+        assertNotNull(reply, "reply must not be null");
+        assertTrue(
+                reply.getTextContent().contains("parent done"),
                 "final reply text mismatch; got: " + reply.getTextContent());
     }
 
@@ -450,7 +603,7 @@ class HarnessAgentSubagentStreamTest {
         Model model = mock(Model.class);
         when(model.getModelName()).thenReturn("stub");
 
-        HarnessAgent agent =
+        agent =
                 HarnessAgent.builder()
                         .name("diag-parent")
                         .model(model)

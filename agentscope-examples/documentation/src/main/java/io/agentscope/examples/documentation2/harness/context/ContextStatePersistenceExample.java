@@ -95,9 +95,17 @@ public class ContextStatePersistenceExample {
         System.out.println("\n── Step 2: Inspect persisted AgentState ──\n");
 
         Optional<AgentState> aliceState =
-                stateStore.get("alice", "alice-session-1", "agent_state", AgentState.class);
+                stateStore.get(
+                        "alice",
+                        "alice-session-1",
+                        agent.threadKey(aliceCtx).stateEntry("agent_state"),
+                        AgentState.class);
         Optional<AgentState> bobState =
-                stateStore.get("bob", "bob-session-1", "agent_state", AgentState.class);
+                stateStore.get(
+                        "bob",
+                        "bob-session-1",
+                        agent.threadKey(bobCtx).stateEntry("agent_state"),
+                        AgentState.class);
 
         System.out.println(
                 "Alice context size: "
@@ -127,7 +135,11 @@ public class ContextStatePersistenceExample {
                 "Resumed reply: " + (resumed != null ? resumed.getTextContent() : "(null)"));
 
         Optional<AgentState> resumedState =
-                stateStore.get("alice", "alice-session-1", "agent_state", AgentState.class);
+                stateStore.get(
+                        "alice",
+                        "alice-session-1",
+                        agent2.threadKey(aliceCtx).stateEntry("agent_state"),
+                        AgentState.class);
         System.out.println(
                 "Alice context after resume: "
                         + resumedState.map(s -> s.getContext().size()).orElse(0)

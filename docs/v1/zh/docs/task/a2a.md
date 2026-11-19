@@ -1,4 +1,7 @@
-# A2A (Agent2Agent)
+---
+title: A2A 协议
+en_link: /v1/en/docs/task/a2a
+---
 
 A2A 是 AgentScope 对 [A2A 协议](https://a2a-protocol.org/latest/specification/) 的支持，包括客户端（调用远程 Agent）和服务端（暴露本地 Agent）两部分。
 
@@ -295,7 +298,7 @@ agent.interrupt(Msg.builder()
 ## 更多资源
 
 - **A2A 协议规范**: https://a2a-protocol.org/latest/specification/
-- **Agent 接口**: [Agent.java](https://github.com/agentscope-ai/agentscope-java/blob/main/agentscope-core/src/main/java/io/agentscope/core/agent/Agent.java)
+- **Agent 接口**: [Agent.java](https://github.com/agentscope-ai/agentscope-java/blob/v1.0.11/agentscope-core/src/main/java/io/agentscope/core/agent/Agent.java)
 - **Nacos 快速开始** : https://nacos.io/docs/latest/quickstart/quick-start
 - **Nacos Java SDK** : https://nacos.io/docs/latest/manual/user/java-sdk/usage
 - **Nacos Java SDK 更多配置参数** : https://nacos.io/docs/latest/manual/user/java-sdk/properties

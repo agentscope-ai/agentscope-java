@@ -36,18 +36,10 @@
     </properties>
 
     <dependencies>
-        <!-- AgentScope Core -->
+        <!-- Use the modular core; the all-in-one JAR also embeds optional extension classes. -->
         <dependency>
             <groupId>io.agentscope</groupId>
             <artifactId>agentscope-core</artifactId>
-            <optional>true</optional>
-            <scope>provided</scope>
-        </dependency>
-
-        <!-- Core AgentScope library -->
-        <dependency>
-            <groupId>io.agentscope</groupId>
-            <artifactId>agentscope</artifactId>
         </dependency>
 
         <!-- Spring Boot auto-configuration SPI -->

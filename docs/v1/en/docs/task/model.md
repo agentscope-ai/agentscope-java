@@ -1,4 +1,7 @@
-# Model
+---
+title: Model Integration
+zh_link: /v1/zh/docs/task/model
+---
 
 This guide introduces the LLM models supported by AgentScope Java and how to configure them.
 
@@ -28,7 +31,7 @@ This guide introduces the LLM models supported by AgentScope Java and how to con
 
 ## ModelRegistry
 
-[`ModelRegistry`](https://github.com/agentscope-ai/agentscope-java/blob/main/agentscope-core/src/main/java/io/agentscope/core/model/ModelRegistry.java) (`io.agentscope.core.model.ModelRegistry`) resolves a `Model` from a **string id**, so you do not have to call each vendor’s `*ChatModel.builder()` for simple setups. With Harness, use `HarnessAgent.builder().model(String)`; anywhere else that needs a `Model`, call `ModelRegistry.resolve(...)` and pass the result into `ReActAgent` or other builders.
+[`ModelRegistry`](https://github.com/agentscope-ai/agentscope-java/blob/v1.1.0-RC2/agentscope-core/src/main/java/io/agentscope/core/model/ModelRegistry.java) (`io.agentscope.core.model.ModelRegistry`) resolves a `Model` from a **string id**, so you do not have to call each vendor’s `*ChatModel.builder()` for simple setups. With Harness, use `HarnessAgent.builder().model(String)`; anywhere else that needs a `Model`, call `ModelRegistry.resolve(...)` and pass the result into `ReActAgent` or other builders.
 
 ### API summary
 
@@ -52,7 +55,7 @@ With the right environment variables set, you can use these id forms (with `reso
 | `dashscope:qwen-max` | `DASHSCOPE_API_KEY` | Alibaba DashScope / Bailian |
 | Any id starting with `qwen-`, e.g. `qwen-max` | `DASHSCOPE_API_KEY` | Uses the whole string as the DashScope `modelName` |
 | `anthropic:claude-sonnet-4-5-20250929` | `ANTHROPIC_API_KEY` (optional; SDK may read from the environment) | Anthropic Claude |
-| `gemini:gemini-2.5-flash` | `GEMINI_API_KEY` | Google Gemini API |
+| `gemini:gemini-3.8-flash` | `GEMINI_API_KEY` | Google Gemini API |
 | `ollama:llama3` | `OLLAMA_BASE_URL` (optional, default `http://localhost:11434`) | Local Ollama |
 
 Within one process, repeated `resolve` of the **same** factory-based id returns a **cached** `Model` instance. **Named** registrations are not cached that way.
@@ -161,7 +164,7 @@ DashScopeChatModel model = DashScopeChatModel.builder()
 DashScopeChatModel model = DashScopeChatModel.builder()
         .apiKey(System.getenv("DASHSCOPE_API_KEY"))
         .modelName("qwen3-max")
-        .enableThinking(true)  // Enables thinking mode and automatically enables streaming
+        .enableThinking(true)
         .defaultOptions(GenerateOptions.builder()
                 .thinkingBudget(5000)  // Token budget for thinking
                 .build())
@@ -229,7 +232,7 @@ Anthropic's Claude series models.
 ```java
 AnthropicChatModel model = AnthropicChatModel.builder()
         .apiKey(System.getenv("ANTHROPIC_API_KEY"))
-        .modelName("claude-sonnet-4-5-20250929")  // Default
+        .modelName("claude-sonnet-5-5")  // Default
         .build();
 ```
 
@@ -238,7 +241,7 @@ AnthropicChatModel model = AnthropicChatModel.builder()
 | Option | Description |
 |--------|-------------|
 | `apiKey` | Anthropic API key |
-| `modelName` | Model name, default `claude-sonnet-4-5-20250929` |
+| `modelName` | Model name, default `claude-sonnet-5-5` |
 | `baseUrl` | Custom API endpoint (optional) |
 | `stream` | Enable streaming, default `true` |
 
@@ -251,7 +254,7 @@ Google's Gemini series models, supporting both Gemini API and Vertex AI.
 ```java
 GeminiChatModel model = GeminiChatModel.builder()
         .apiKey(System.getenv("GEMINI_API_KEY"))
-        .modelName("gemini-2.5-flash")  // Default
+        .modelName("gemini-3.8-flash")  // Default
         .baseUrl("https://your-gateway.example")  // Optional
         .build();
 ```
@@ -274,7 +277,7 @@ GeminiChatModel model = GeminiChatModel.builder()
 |--------|-------------|
 | `apiKey` | Gemini API key |
 | `baseUrl` | Custom Gemini API endpoint (optional) |
-| `modelName` | Model name, default `gemini-2.5-flash` |
+| `modelName` | Model name, default `gemini-3.8-flash` |
 | `project` | GCP project ID (Vertex AI) |
 | `location` | GCP region (Vertex AI) |
 | `vertexAI` | Whether to use Vertex AI |

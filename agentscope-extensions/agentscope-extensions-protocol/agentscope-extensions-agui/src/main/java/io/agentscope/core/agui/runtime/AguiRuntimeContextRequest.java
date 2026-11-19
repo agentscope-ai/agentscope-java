@@ -1,0 +1,233 @@
+/*
+ * Copyright 2024-2026 the original author or authors.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package io.agentscope.core.agui.runtime;
+
+import io.agentscope.core.agui.model.RunAgentInput;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+
+/**
+ * Request-scoped data available when resolving an AG-UI {@link
+ * io.agentscope.core.agent.RuntimeContext}.
+ *
+ * @param <T> the native request type (e.g. {@code HttpServletRequest} under Spring MVC,
+ *            {@code ServerRequest} under WebFlux, or {@code Object} when there is no
+ *            transport-specific native request)
+ */
+public final class AguiRuntimeContextRequest<T> {
+
+    /** Transport that received the AG-UI request. */
+    public enum Transport {
+        MVC,
+        WEBFLUX,
+        CUSTOM
+    }
+
+    private final RunAgentInput input;
+    private final String headerAgentId;
+    private final String pathAgentId;
+    private final String userId;
+    private final Transport transport;
+    private final String method;
+    private final String path;
+    private final Map<String, List<String>> headers;
+    private final Map<String, List<String>> queryParams;
+    private final T nativeRequest;
+
+    private AguiRuntimeContextRequest(Builder<T> builder) {
+        this.input = Objects.requireNonNull(builder.input, "input cannot be null");
+        this.headerAgentId = builder.headerAgentId;
+        this.pathAgentId = builder.pathAgentId;
+        this.userId = builder.userId;
+        this.transport = builder.transport != null ? builder.transport : Transport.CUSTOM;
+        this.method = builder.method;
+        this.path = builder.path;
+        this.headers = immutableMultiValueMap(builder.headers);
+        this.queryParams = immutableMultiValueMap(builder.queryParams);
+        this.nativeRequest = builder.nativeRequest;
+    }
+
+    public RunAgentInput getInput() {
+        return input;
+    }
+
+    public String getHeaderAgentId() {
+        return headerAgentId;
+    }
+
+    public String getPathAgentId() {
+        return pathAgentId;
+    }
+
+    /**
+     * Returns the caller-asserted user id for this request, or {@code null}/blank when not
+     * provided. Hosts that resolve identity from their authentication context can pass it here
+     * instead of installing an {@link AguiRuntimeContextResolver}; a configured resolver still
+     * takes precedence over this value.
+     */
+    public String getUserId() {
+        return userId;
+    }
+
+    public Transport getTransport() {
+        return transport;
+    }
+
+    public String getMethod() {
+        return method;
+    }
+
+    public String getPath() {
+        return path;
+    }
+
+    public Map<String, List<String>> getHeaders() {
+        return headers;
+    }
+
+    public String firstHeader(String name) {
+        return firstValue(headers, name, true);
+    }
+
+    public Map<String, List<String>> getQueryParams() {
+        return queryParams;
+    }
+
+    public String firstQueryParam(String name) {
+        return firstValue(queryParams, name, false);
+    }
+
+    public T getNativeRequest() {
+        return nativeRequest;
+    }
+
+    public static <T> Builder<T> builder() {
+        return new Builder<>();
+    }
+
+    private static String firstValue(
+            Map<String, List<String>> values, String name, boolean ignoreCase) {
+        if (name == null) {
+            return null;
+        }
+        for (Map.Entry<String, List<String>> entry : values.entrySet()) {
+            boolean matches =
+                    ignoreCase
+                            ? entry.getKey().equalsIgnoreCase(name)
+                            : entry.getKey().equals(name);
+            if (matches && !entry.getValue().isEmpty()) {
+                return entry.getValue().get(0);
+            }
+        }
+        return null;
+    }
+
+    private static Map<String, List<String>> immutableMultiValueMap(
+            Map<String, List<String>> values) {
+        if (values == null || values.isEmpty()) {
+            return Map.of();
+        }
+        Map<String, List<String>> copy = new LinkedHashMap<>();
+        values.forEach(
+                (key, value) -> {
+                    if (key != null && value != null) {
+                        copy.put(key, Collections.unmodifiableList(new ArrayList<>(value)));
+                    }
+                });
+        return Collections.unmodifiableMap(copy);
+    }
+
+    /** Builder for {@link AguiRuntimeContextRequest}. */
+    public static final class Builder<T> {
+
+        private RunAgentInput input;
+        private String headerAgentId;
+        private String pathAgentId;
+        private String userId;
+        private Transport transport;
+        private String method;
+        private String path;
+        private Map<String, List<String>> headers;
+        private Map<String, List<String>> queryParams;
+        private T nativeRequest;
+
+        public Builder<T> input(RunAgentInput input) {
+            this.input = input;
+            return this;
+        }
+
+        public Builder<T> headerAgentId(String headerAgentId) {
+            this.headerAgentId = headerAgentId;
+            return this;
+        }
+
+        public Builder<T> pathAgentId(String pathAgentId) {
+            this.pathAgentId = pathAgentId;
+            return this;
+        }
+
+        /**
+         * Sets the caller-asserted user id for this request. {@code null}/blank means not
+         * provided; a configured {@link AguiRuntimeContextResolver} takes precedence over this
+         * value.
+         *
+         * @param userId the caller-asserted user id, or null when not provided
+         * @return This builder
+         */
+        public Builder<T> userId(String userId) {
+            this.userId = userId;
+            return this;
+        }
+
+        public Builder<T> transport(Transport transport) {
+            this.transport = transport;
+            return this;
+        }
+
+        public Builder<T> method(String method) {
+            this.method = method;
+            return this;
+        }
+
+        public Builder<T> path(String path) {
+            this.path = path;
+            return this;
+        }
+
+        public Builder<T> headers(Map<String, List<String>> headers) {
+            this.headers = headers;
+            return this;
+        }
+
+        public Builder<T> queryParams(Map<String, List<String>> queryParams) {
+            this.queryParams = queryParams;
+            return this;
+        }
+
+        public Builder<T> nativeRequest(T nativeRequest) {
+            this.nativeRequest = nativeRequest;
+            return this;
+        }
+
+        public AguiRuntimeContextRequest<T> build() {
+            return new AguiRuntimeContextRequest<>(this);
+        }
+    }
+}

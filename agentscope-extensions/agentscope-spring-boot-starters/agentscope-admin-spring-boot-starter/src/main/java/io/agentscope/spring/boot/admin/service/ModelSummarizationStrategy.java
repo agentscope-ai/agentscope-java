@@ -15,7 +15,9 @@
  */
 package io.agentscope.spring.boot.admin.service;
 
+import io.agentscope.core.formatter.DocumentReferenceRenderer;
 import io.agentscope.core.message.ContentBlock;
+import io.agentscope.core.message.DocumentBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
@@ -98,16 +100,27 @@ public final class ModelSummarizationStrategy implements SummarizationStrategy {
 
     private static String extractText(Msg msg) {
         try {
-            String t = msg.getTextContent();
-            if (t != null && !t.isBlank()) return t;
+            // Renders the body plus a reference per document, wherever the message carries one -
+            // a non-blank body must not hide an attachment from the summary.
+            String rendered = DocumentReferenceRenderer.renderMessageText(msg);
+            if (rendered != null && !rendered.isBlank()) {
+                return rendered;
+            }
         } catch (RuntimeException ignored) {
             // fall through to manual extraction
         }
-        List<TextBlock> blocks = msg.getContentBlocks(TextBlock.class);
-        if (blocks == null || blocks.isEmpty()) return "";
+        // A message can be documents only. Folding it into an empty string would make the
+        // caller drop the whole turn, taking the attachment out of the summary with it.
         StringBuilder sb = new StringBuilder();
-        for (TextBlock b : blocks) {
-            if (b.getText() != null) sb.append(b.getText());
+        for (ContentBlock block : msg.getContent()) {
+            if (block instanceof TextBlock b) {
+                if (b.getText() != null) sb.append(b.getText());
+            } else if (block instanceof DocumentBlock document) {
+                if (sb.length() > 0 && !Character.isWhitespace(sb.charAt(sb.length() - 1))) {
+                    sb.append(' ');
+                }
+                sb.append(DocumentReferenceRenderer.render(document));
+            }
         }
         return sb.toString();
     }

@@ -16,6 +16,7 @@
 package io.agentscope.core.agui.processor;
 
 import io.agentscope.core.agent.Agent;
+import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.agui.AguiException;
 
 /**
@@ -38,13 +39,29 @@ public interface AgentResolver {
     Agent resolveAgent(String agentId, String threadId);
 
     /**
+     * Resolve an agent by its ID, thread ID and user ID.
+     *
+     * <p>The default implementation ignores {@code userId}. Session-aware resolvers should override
+     * this so tenants with the same thread id do not share an agent instance.
+     *
+     * @param agentId The agent ID to resolve
+     * @param threadId The thread ID for session management
+     * @param userId The user ID, may be {@code null} for anonymous
+     * @return The resolved agent
+     * @throws AguiException.AgentNotFoundException if the agent is not found
+     */
+    default Agent resolveAgent(String agentId, String threadId, String userId) {
+        return resolveAgent(agentId, threadId);
+    }
+
+    /**
      * Check if a thread has existing memory/conversation history.
      *
      * <p>This is used to determine whether to use frontend-provided history
      * or rely on server-side memory.
      *
-     * @param threadId The thread ID to check
+     * @param runtimeContext The runtime context identifying the thread and user
      * @return true if the thread has existing memory
      */
-    boolean hasMemory(String threadId);
+    boolean hasMemory(RuntimeContext runtimeContext);
 }

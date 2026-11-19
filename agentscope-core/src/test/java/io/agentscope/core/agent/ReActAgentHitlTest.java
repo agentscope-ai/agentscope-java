@@ -16,6 +16,8 @@
 package io.agentscope.core.agent;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -26,6 +28,8 @@ import io.agentscope.core.event.ConfirmResult;
 import io.agentscope.core.event.RequestStopEvent;
 import io.agentscope.core.event.RequireUserConfirmEvent;
 import io.agentscope.core.event.ToolResultEndEvent;
+import io.agentscope.core.event.ToolResultStartEvent;
+import io.agentscope.core.event.ToolResultTextDeltaEvent;
 import io.agentscope.core.event.UserConfirmResultEvent;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.GenerateReason;
@@ -40,12 +44,16 @@ import io.agentscope.core.model.ChatModelBase;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.ToolSchema;
+import io.agentscope.core.permission.PermissionBehavior;
 import io.agentscope.core.permission.PermissionContextState;
 import io.agentscope.core.permission.PermissionDecision;
+import io.agentscope.core.permission.PermissionRule;
 import io.agentscope.core.state.AgentState;
+import io.agentscope.core.state.InMemoryAgentStateStore;
 import io.agentscope.core.tool.ToolBase;
 import io.agentscope.core.tool.ToolCallParam;
 import io.agentscope.core.tool.Toolkit;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -115,7 +123,7 @@ class ReActAgentHitlTest {
         return ChatResponse.builder().content(List.copyOf(toolUses)).build();
     }
 
-    private static final class AskingTool extends ToolBase {
+    private static class AskingTool extends ToolBase {
         AskingTool(String name) {
             super(name, "asks for permission", schemaFor(), false, true, false, null, false, false);
         }
@@ -141,6 +149,19 @@ class ReActAgentHitlTest {
         public Mono<ToolResultBlock> callAsync(ToolCallParam param) {
             Object q = param.getInput() == null ? "" : param.getInput().get("query");
             return Mono.just(ToolResultBlock.text("executed:" + q));
+        }
+    }
+
+    /** AskingTool whose matchRule honors an exact query match, so a remembered
+     * conditional rule can fail to cover a later, differently-parameterized ask. */
+    private static final class QueryScopedTool extends AskingTool {
+        QueryScopedTool(String name) {
+            super(name);
+        }
+
+        @Override
+        public boolean matchRule(String ruleContent, Map<String, Object> toolInput) {
+            return ruleContent != null && ruleContent.equals(toolInput.get("query"));
         }
     }
 
@@ -170,6 +191,35 @@ class ReActAgentHitlTest {
         public Mono<ToolResultBlock> callAsync(ToolCallParam param) {
             Object q = param.getInput() == null ? "" : param.getInput().get("query");
             return Mono.just(ToolResultBlock.text("allowed:" + q));
+        }
+    }
+
+    private static final class DenyingTool extends ToolBase {
+        DenyingTool(String name) {
+            super(name, "auto-denies", schemaFor(), false, true, false, null, false, false);
+        }
+
+        private static Map<String, Object> schemaFor() {
+            Map<String, Object> schema = new HashMap<>();
+            schema.put("type", "object");
+            Map<String, Object> props = new HashMap<>();
+            Map<String, Object> q = new HashMap<>();
+            q.put("type", "string");
+            props.put("query", q);
+            schema.put("properties", props);
+            return schema;
+        }
+
+        @Override
+        public Mono<PermissionDecision> checkPermissions(
+                Map<String, Object> toolInput, PermissionContextState context) {
+            return Mono.just(PermissionDecision.deny("deny: " + getName()));
+        }
+
+        @Override
+        public Mono<ToolResultBlock> callAsync(ToolCallParam param) {
+            Object q = param.getInput() == null ? "" : param.getInput().get("query");
+            return Mono.just(ToolResultBlock.text("denied:" + q));
         }
     }
 
@@ -215,7 +265,11 @@ class ReActAgentHitlTest {
     }
 
     private static Msg confirmMsg(boolean confirmed, ToolUseBlock toolCall) {
-        return confirmMsg(List.of(new ConfirmResult(confirmed, toolCall, null)));
+        return confirmMsg(confirmed, toolCall, null);
+    }
+
+    private static Msg confirmMsg(boolean confirmed, ToolUseBlock toolCall, String reason) {
+        return confirmMsg(List.of(new ConfirmResult(confirmed, toolCall, null, reason)));
     }
 
     private static Msg confirmMsg(List<ConfirmResult> confirmResults) {
@@ -227,6 +281,27 @@ class ReActAgentHitlTest {
                 .textContent("[confirm]")
                 .metadata(meta)
                 .build();
+    }
+
+    private static String toolResultText(ToolResultBlock tr) {
+        return tr.getOutput().stream()
+                .filter(b -> b instanceof TextBlock)
+                .map(b -> ((TextBlock) b).getText())
+                .findFirst()
+                .orElse("");
+    }
+
+    private static void removeLastAssistantMetadata(ReActAgent agent, String key) {
+        List<Msg> context = agent.getAgentState().contextMutable();
+        for (int i = context.size() - 1; i >= 0; i--) {
+            Msg msg = context.get(i);
+            if (msg.getRole() == MsgRole.ASSISTANT) {
+                Map<String, Object> metadata = new HashMap<>(msg.getMetadata());
+                metadata.remove(key);
+                context.set(i, msg.withMetadata(metadata));
+                return;
+            }
+        }
     }
 
     @Test
@@ -299,6 +374,86 @@ class ReActAgentHitlTest {
     }
 
     @Test
+    void ungrantedAskingToolSkipsConfirmationWithNotFoundResult() {
+        // Regression: the grant gate must run BEFORE the permission pipeline — an ungranted
+        // call must never reach human confirmation; it resolves as non-existent with the
+        // executor gate's byte-identical not-found wording.
+        ChatModelBase model =
+                new ScriptedModel(
+                        List.of(
+                                () -> Flux.just(toolUseResponse("tc1", "ask", "x")),
+                                () -> Flux.just(textResponse("done"))));
+        ReActAgent agent =
+                ReActAgent.builder()
+                        .name("asst")
+                        .model(model)
+                        .toolkit(toolkitWith(new AskingTool("ask")))
+                        .capabilityResolver((ctx, a) -> CapabilitySurface.DENY_ALL)
+                        .build();
+
+        List<AgentEvent> events = agent.streamEvents(List.of()).collectList().block();
+        assertNotNull(events);
+
+        assertEquals(
+                0,
+                countOf(events, RequireUserConfirmEvent.class),
+                "an ungranted call must not request confirmation");
+        assertTrue(
+                events.stream()
+                        .filter(e -> e instanceof ToolResultTextDeltaEvent)
+                        .map(e -> ((ToolResultTextDeltaEvent) e).getDelta())
+                        .anyMatch("Error: Tool not found: ask"::equals),
+                "not-found wording must be byte-identical to the executor gate");
+        assertTrue(
+                events.stream()
+                        .anyMatch(
+                                e ->
+                                        e instanceof ToolResultEndEvent end
+                                                && "tc1".equals(end.getToolCallId())
+                                                && end.getState() == ToolResultState.ERROR),
+                "the ungranted call resolves with an ERROR end event");
+    }
+
+    @Test
+    void ungrantedToolInMixedBatchResolvesWhileGrantedToolExecutes() {
+        ChatModelBase model =
+                new ScriptedModel(
+                        List.of(
+                                () ->
+                                        Flux.just(
+                                                toolUseResponse("tc1", "allow", "x"),
+                                                toolUseResponse("tc2", "ask", "y")),
+                                () -> Flux.just(textResponse("done"))));
+        ReActAgent agent =
+                ReActAgent.builder()
+                        .name("asst")
+                        .model(model)
+                        .toolkit(toolkitWith(new AllowingTool("allow"), new AskingTool("ask")))
+                        .capabilityResolver(
+                                (ctx, a) ->
+                                        new CapabilitySurface(
+                                                null, null, java.util.Set.of("allow")))
+                        .build();
+
+        List<AgentEvent> events = agent.streamEvents(List.of()).collectList().block();
+        assertNotNull(events);
+
+        assertEquals(
+                0,
+                countOf(events, RequireUserConfirmEvent.class),
+                "the granted tool needs no confirmation and the ungranted one must not ask");
+        List<String> deltas =
+                events.stream()
+                        .filter(e -> e instanceof ToolResultTextDeltaEvent)
+                        .map(e -> ((ToolResultTextDeltaEvent) e).getDelta())
+                        .toList();
+        assertTrue(deltas.contains("allowed:x"), "the granted tool executes normally");
+        assertTrue(
+                deltas.contains("Error: Tool not found: ask"),
+                "the ungranted tool resolves as non-existent");
+    }
+
+    @Test
     void confirmedResumeEmitsUserConfirmResultEventCorrelatedToRequireEvent() {
         ChatModelBase model =
                 new ScriptedModel(
@@ -328,6 +483,125 @@ class ReActAgentHitlTest {
         assertEquals(req.getReplyId(), confirm.getReplyId());
         assertEquals(1, confirm.getConfirmResults().size());
         assertEquals("tc1", confirm.getConfirmResults().get(0).getToolCall().getId());
+    }
+
+    @Test
+    void deniedResumeEmitsToolResultEventsCorrelatedToRequireEvent() {
+        ChatModelBase model =
+                new ScriptedModel(
+                        List.of(
+                                () -> Flux.just(toolUseResponse("tc1", "ask", "x")),
+                                () -> Flux.just(textResponse("done"))));
+        ReActAgent agent = buildAgent(model, toolkitWith(new AskingTool("ask")));
+
+        List<AgentEvent> pauseEvents = agent.streamEvents(List.of()).collectList().block();
+        assertNotNull(pauseEvents);
+        RequireUserConfirmEvent req =
+                (RequireUserConfirmEvent)
+                        pauseEvents.get(indexOf(pauseEvents, RequireUserConfirmEvent.class));
+
+        List<AgentEvent> resumeEvents =
+                agent.streamEvents(List.of(confirmMsg(false, req.getToolCalls().get(0))))
+                        .collectList()
+                        .block();
+        assertNotNull(resumeEvents);
+
+        int iStart = indexOf(resumeEvents, ToolResultStartEvent.class);
+        int iDelta = indexOf(resumeEvents, ToolResultTextDeltaEvent.class);
+        int iEnd = indexOf(resumeEvents, ToolResultEndEvent.class);
+        assertTrue(iStart >= 0, "denied resume must emit ToolResultStartEvent");
+        assertTrue(iDelta > iStart, "denied resume must emit a result delta");
+        assertTrue(iEnd > iDelta, "denied resume must emit ToolResultEndEvent");
+        ToolResultEndEvent end = (ToolResultEndEvent) resumeEvents.get(iEnd);
+        assertEquals(req.getReplyId(), end.getReplyId());
+        assertEquals("tc1", end.getToolCallId());
+        assertEquals(ToolResultState.DENIED, end.getState());
+    }
+
+    @Test
+    void deniedResumeWithoutPersistedReplyIdStillEmitsToolResultEvents() {
+        ChatModelBase model =
+                new ScriptedModel(
+                        List.of(
+                                () -> Flux.just(toolUseResponse("tc1", "ask", "x")),
+                                () -> Flux.just(textResponse("done"))));
+        ReActAgent agent = buildAgent(model, toolkitWith(new AskingTool("ask")));
+
+        List<AgentEvent> pauseEvents = agent.streamEvents(List.of()).collectList().block();
+        assertNotNull(pauseEvents);
+        RequireUserConfirmEvent req =
+                (RequireUserConfirmEvent)
+                        pauseEvents.get(indexOf(pauseEvents, RequireUserConfirmEvent.class));
+        removeLastAssistantMetadata(agent, Msg.METADATA_CONFIRM_REQUEST_REPLY_ID);
+
+        List<AgentEvent> resumeEvents =
+                agent.streamEvents(List.of(confirmMsg(false, req.getToolCalls().get(0))))
+                        .collectList()
+                        .block();
+        assertNotNull(resumeEvents);
+
+        int iConfirm = indexOf(resumeEvents, UserConfirmResultEvent.class);
+        int iStart = indexOf(resumeEvents, ToolResultStartEvent.class);
+        int iDelta = indexOf(resumeEvents, ToolResultTextDeltaEvent.class);
+        int iEnd = indexOf(resumeEvents, ToolResultEndEvent.class);
+        assertTrue(iConfirm >= 0, "legacy resume must still emit UserConfirmResultEvent");
+        assertTrue(iStart > iConfirm, "denied resume must emit ToolResultStartEvent");
+        assertTrue(iDelta > iStart, "denied resume must emit a result delta");
+        assertTrue(iEnd > iDelta, "denied resume must emit ToolResultEndEvent");
+
+        UserConfirmResultEvent confirm = (UserConfirmResultEvent) resumeEvents.get(iConfirm);
+        ToolResultEndEvent end = (ToolResultEndEvent) resumeEvents.get(iEnd);
+        assertFalse(confirm.getReplyId().isBlank(), "fallback reply id must not be blank");
+        assertNotEquals(req.getReplyId(), confirm.getReplyId());
+        assertEquals(confirm.getReplyId(), end.getReplyId());
+        assertEquals("tc1", end.getToolCallId());
+        assertEquals(ToolResultState.DENIED, end.getState());
+    }
+
+    @Test
+    void mixedBatchEmitsToolResultEventsForAutoDeniedToolsBeforeConfirmationRequest() {
+        ChatModelBase model =
+                new ScriptedModel(
+                        List.of(
+                                () ->
+                                        Flux.just(
+                                                toolUseResponse(
+                                                        List.of(
+                                                                ToolUseBlock.builder()
+                                                                        .id("tc-ask")
+                                                                        .name("ask")
+                                                                        .input(Map.of("query", "x"))
+                                                                        .build(),
+                                                                ToolUseBlock.builder()
+                                                                        .id("tc-deny")
+                                                                        .name("deny")
+                                                                        .input(Map.of("query", "y"))
+                                                                        .build())))));
+        ReActAgent agent =
+                buildAgent(model, toolkitWith(new AskingTool("ask"), new DenyingTool("deny")));
+
+        List<AgentEvent> events = agent.streamEvents(List.of()).collectList().block();
+        assertNotNull(events);
+
+        int iToolStart = indexOf(events, ToolResultStartEvent.class);
+        int iToolDelta = indexOf(events, ToolResultTextDeltaEvent.class);
+        int iToolEnd = indexOf(events, ToolResultEndEvent.class);
+        int iReq = indexOf(events, RequireUserConfirmEvent.class);
+        int iStop = indexOf(events, RequestStopEvent.class);
+
+        assertTrue(iToolStart >= 0, "auto-denied tool must emit ToolResultStartEvent");
+        assertTrue(iToolDelta > iToolStart, "auto-denied tool must emit a result delta");
+        assertTrue(iToolEnd > iToolDelta, "auto-denied tool must emit ToolResultEndEvent");
+        assertTrue(iReq > iToolEnd, "confirmation request must follow auto-denied results");
+        assertTrue(iStop > iReq, "RequestStopEvent must follow RequireUserConfirmEvent");
+
+        ToolResultEndEvent end = (ToolResultEndEvent) events.get(iToolEnd);
+        assertEquals("tc-deny", end.getToolCallId());
+        assertEquals(ToolResultState.DENIED, end.getState());
+
+        RequireUserConfirmEvent req = (RequireUserConfirmEvent) events.get(iReq);
+        assertEquals(1, req.getToolCalls().size());
+        assertEquals("tc-ask", req.getToolCalls().get(0).getId());
     }
 
     @Test
@@ -655,5 +929,333 @@ class ReActAgentHitlTest {
         ToolResultEndEvent end =
                 (ToolResultEndEvent) events.get(indexOf(events, ToolResultEndEvent.class));
         assertEquals(ToolResultState.SUCCESS, end.getState());
+    }
+
+    @Test
+    void deniedConfirmResultWithCustomReasonWritesReasonToContext() {
+        ChatModelBase model =
+                new ScriptedModel(
+                        List.of(
+                                () -> Flux.just(toolUseResponse("tc1", "ask", "x")),
+                                () -> Flux.just(textResponse("done"))));
+        ReActAgent agent = buildAgent(model, toolkitWith(new AskingTool("ask")));
+
+        Msg first = agent.call(List.of()).block();
+        assertNotNull(first);
+        assertEquals(GenerateReason.PERMISSION_ASKING, first.getGenerateReason());
+        ToolUseBlock pending = first.getContentBlocks(ToolUseBlock.class).get(0);
+
+        String reason = "Denied: querying production data is not allowed";
+        Msg second = agent.call(List.of(confirmMsg(false, pending, reason))).block();
+        assertNotNull(second);
+
+        ToolResultBlock deniedResult =
+                agent.getAgentState().getContext().stream()
+                        .flatMap(m -> m.getContentBlocks(ToolResultBlock.class).stream())
+                        .filter(tr -> "tc1".equals(tr.getId()))
+                        .findFirst()
+                        .orElse(null);
+        assertNotNull(deniedResult, "expected a ToolResultBlock for the denied tool");
+        assertEquals(ToolResultState.DENIED, deniedResult.getState());
+        assertEquals(
+                reason,
+                toolResultText(deniedResult),
+                "custom denial reason must replace the default text");
+    }
+
+    @Test
+    void deniedConfirmResultOnResumeEmitsToolResultEventTriple() {
+        ChatModelBase model =
+                new ScriptedModel(
+                        List.of(
+                                () -> Flux.just(toolUseResponse("tc1", "ask", "x")),
+                                () -> Flux.just(textResponse("done"))));
+        ReActAgent agent = buildAgent(model, toolkitWith(new AskingTool("ask")));
+
+        Msg first = agent.call(List.of()).block();
+        assertNotNull(first);
+        ToolUseBlock pending = first.getContentBlocks(ToolUseBlock.class).get(0);
+
+        String reason = "not today";
+        List<AgentEvent> events =
+                agent.streamEvents(List.of(confirmMsg(false, pending, reason)))
+                        .collectList()
+                        .block();
+        assertNotNull(events);
+
+        int iStart = indexOf(events, ToolResultStartEvent.class);
+        int iDelta = indexOf(events, ToolResultTextDeltaEvent.class);
+        int iEnd = indexOf(events, ToolResultEndEvent.class);
+        assertTrue(iStart >= 0, "manual denial must emit ToolResultStartEvent (issue #2492)");
+        assertTrue(iDelta > iStart, "ToolResultTextDeltaEvent must follow start");
+        assertTrue(iEnd > iDelta, "ToolResultEndEvent must follow delta");
+
+        ToolResultStartEvent start = (ToolResultStartEvent) events.get(iStart);
+        assertEquals("tc1", start.getToolCallId());
+
+        ToolResultTextDeltaEvent delta = (ToolResultTextDeltaEvent) events.get(iDelta);
+        assertEquals("tc1", delta.getToolCallId());
+        assertEquals(reason, delta.getDelta(), "delta must carry the denial reason");
+
+        ToolResultEndEvent end = (ToolResultEndEvent) events.get(iEnd);
+        assertEquals("tc1", end.getToolCallId());
+        assertEquals(ToolResultState.DENIED, end.getState());
+    }
+
+    @Test
+    void deniedConfirmResultWithoutReasonKeepsDefaultText() {
+        ChatModelBase model =
+                new ScriptedModel(
+                        List.of(
+                                () -> Flux.just(toolUseResponse("tc1", "ask", "x")),
+                                () -> Flux.just(textResponse("done"))));
+        ReActAgent agent = buildAgent(model, toolkitWith(new AskingTool("ask")));
+
+        Msg first = agent.call(List.of()).block();
+        assertNotNull(first);
+        ToolUseBlock pending = first.getContentBlocks(ToolUseBlock.class).get(0);
+
+        Msg second = agent.call(List.of(confirmMsg(false, pending))).block();
+        assertNotNull(second);
+
+        ToolResultBlock deniedResult =
+                agent.getAgentState().getContext().stream()
+                        .flatMap(m -> m.getContentBlocks(ToolResultBlock.class).stream())
+                        .filter(tr -> "tc1".equals(tr.getId()))
+                        .findFirst()
+                        .orElse(null);
+        assertNotNull(deniedResult);
+        assertEquals(
+                "Permission denied by user",
+                toolResultText(deniedResult),
+                "default denial text must be preserved for backward compatibility");
+    }
+
+    @Test
+    void confirmedRulesPersistAcrossCallsWithStateStore() {
+        InMemoryAgentStateStore store = new InMemoryAgentStateStore();
+        ChatModelBase model =
+                new ScriptedModel(
+                        List.of(
+                                () -> Flux.just(toolUseResponse("tc1", "ask", "ping")),
+                                () -> Flux.just(textResponse("done")),
+                                () -> Flux.just(toolUseResponse("tc2", "ask", "pong")),
+                                () -> Flux.just(textResponse("done again"))));
+        Toolkit toolkit = toolkitWith(new AskingTool("ask"));
+        ReActAgent agent =
+                ReActAgent.builder()
+                        .name("persist-asst")
+                        .model(model)
+                        .toolkit(toolkit)
+                        .stateStore(store)
+                        .build();
+
+        // Call 1: tool asks, call pauses with PERMISSION_ASKING
+        Msg firstResult = agent.call(List.of()).block();
+        assertNotNull(firstResult);
+        assertEquals(GenerateReason.PERMISSION_ASKING, firstResult.getGenerateReason());
+
+        // Call 2: confirm WITH a rule to remember ("always allow ask")
+        ToolUseBlock pending = firstResult.getContentBlocks(ToolUseBlock.class).get(0);
+        // Null ruleContent = unconditional match (ToolBase.matchRule
+        // convention); a real UI would use tool.generateSuggestions(input).
+        PermissionRule remembered =
+                new PermissionRule("ask", null, PermissionBehavior.ALLOW, "user_confirm");
+        PermissionRule sessionDeny =
+                new PermissionRule("bash", "rm -rf", PermissionBehavior.DENY, "user_confirm");
+        PermissionRule sessionAsk =
+                new PermissionRule("write", "/etc/**", PermissionBehavior.ASK, "user_confirm");
+        PermissionRule sessionPassthrough =
+                new PermissionRule("noop", null, PermissionBehavior.PASSTHROUGH, "user_confirm");
+        Msg secondResult =
+                agent.call(
+                                List.of(
+                                        confirmMsg(
+                                                List.of(
+                                                        new ConfirmResult(
+                                                                true,
+                                                                pending,
+                                                                Arrays.asList(
+                                                                        remembered,
+                                                                        sessionDeny,
+                                                                        sessionAsk,
+                                                                        sessionPassthrough,
+                                                                        null),
+                                                                null)))))
+                        .block();
+        assertNotNull(secondResult);
+
+        // The accepted rule must reach the persisted session state: the next
+        // call rebuilds the engine from the stored permission context, so an
+        // engine-only addition would be lost (issue #3369).
+        AgentState saved =
+                store.get(null, "persist-asst", "agent_state", AgentState.class).orElse(null);
+        assertNotNull(saved, "agent state must be persisted");
+        Map<String, List<PermissionRule>> allowRules = saved.getPermissionContext().getAllowRules();
+        assertTrue(
+                allowRules.getOrDefault("ask", List.of()).contains(remembered),
+                "accepted rule must be persisted into the permission context");
+        assertTrue(
+                saved.getPermissionContext()
+                        .getDenyRules()
+                        .getOrDefault("bash", List.of())
+                        .contains(sessionDeny),
+                "deny rule must be persisted too");
+        assertTrue(
+                saved.getPermissionContext()
+                        .getAskRules()
+                        .getOrDefault("write", List.of())
+                        .contains(sessionAsk),
+                "ask rule must be persisted too");
+        assertTrue(
+                saved.getPermissionContext().getAllowRules().values().stream()
+                        .noneMatch(l -> l.contains(sessionPassthrough)),
+                "passthrough rules must not be persisted");
+
+        // A rules list containing only null entries: nothing accepted, so
+        // the persisted context must not change.
+        ChatModelBase nullRulesModel =
+                new ScriptedModel(
+                        List.of(
+                                () -> Flux.just(toolUseResponse("tc3", "ask", "again")),
+                                () -> Flux.just(textResponse("done3")),
+                                () -> Flux.just(toolUseResponse("tc4", "ask", "once more")),
+                                () -> Flux.just(textResponse("done4"))));
+        ReActAgent nullRulesAgent =
+                ReActAgent.builder()
+                        .name("null-rules-asst")
+                        .model(nullRulesModel)
+                        .toolkit(toolkitWith(new AskingTool("ask")))
+                        .stateStore(store)
+                        .build();
+
+        Msg nullAsk = nullRulesAgent.call(List.of()).block();
+        assertNotNull(nullAsk);
+        assertEquals(GenerateReason.PERMISSION_ASKING, nullAsk.getGenerateReason());
+
+        ToolUseBlock nullPending = nullAsk.getContentBlocks(ToolUseBlock.class).get(0);
+        Msg nullConfirmResult =
+                nullRulesAgent
+                        .call(
+                                List.of(
+                                        confirmMsg(
+                                                List.of(
+                                                        new ConfirmResult(
+                                                                true,
+                                                                nullPending,
+                                                                Arrays.asList(
+                                                                        (PermissionRule) null),
+                                                                null)))))
+                        .block();
+        assertNotNull(nullConfirmResult);
+
+        AgentState reloaded =
+                store.get(null, "null-rules-asst", "agent_state", AgentState.class).orElse(null);
+        assertNotNull(reloaded);
+        assertTrue(
+                reloaded.getPermissionContext()
+                        .getAllowRules()
+                        .getOrDefault("ask", List.of())
+                        .isEmpty(),
+                "no rule may be persisted when nothing was accepted");
+
+        // Cross-instance persistence: a second agent over the same store
+        // and slot rebuilds its engine from the persisted context, so the
+        // remembered rule suppresses the ask without any re-confirm.
+        ChatModelBase secondModel =
+                new ScriptedModel(
+                        List.of(
+                                () -> Flux.just(toolUseResponse("tc2", "ask", "pong")),
+                                () -> Flux.just(textResponse("finally done"))));
+        ReActAgent secondAgent =
+                ReActAgent.builder()
+                        .name("persist-asst")
+                        .model(secondModel)
+                        .toolkit(toolkitWith(new AskingTool("ask")))
+                        .stateStore(store)
+                        .build();
+        Msg resumed = secondAgent.call(List.of()).block();
+        assertNotNull(resumed, "persisted rule must allow the tool to run");
+        assertNotEquals(
+                GenerateReason.PERMISSION_ASKING,
+                resumed.getGenerateReason(),
+                "remembered rule must suppress the follow-up ask");
+        assertTrue(
+                resumed.getContentBlocks(TextBlock.class).stream()
+                        .anyMatch(b -> "finally done".equals(b.getText())),
+                "the allowed tool call must complete normally");
+    }
+
+    @Test
+    void confirmedIdenticalRuleTwiceKeepsSinglePersistedEntry() {
+        InMemoryAgentStateStore store = new InMemoryAgentStateStore();
+        ChatModelBase model =
+                new ScriptedModel(
+                        List.of(
+                                () -> Flux.just(toolUseResponse("dc1", "ask", "foo")),
+                                () -> Flux.just(textResponse("ran foo")),
+                                () -> Flux.just(toolUseResponse("dc2", "ask", "bar")),
+                                () -> Flux.just(textResponse("ran bar"))));
+        ReActAgent agent =
+                ReActAgent.builder()
+                        .name("dedup-asst")
+                        .model(model)
+                        .toolkit(toolkitWith(new QueryScopedTool("ask")))
+                        .stateStore(store)
+                        .build();
+
+        // First ask: query=foo pauses; the user remembers an ALLOW rule
+        // scoped to exactly that query.
+        Msg firstAsk = agent.call(List.of()).block();
+        assertNotNull(firstAsk);
+        assertEquals(GenerateReason.PERMISSION_ASKING, firstAsk.getGenerateReason());
+        PermissionRule scoped =
+                new PermissionRule("ask", "foo", PermissionBehavior.ALLOW, "user_confirm");
+        Msg ranFoo =
+                agent.call(
+                                List.of(
+                                        confirmMsg(
+                                                List.of(
+                                                        new ConfirmResult(
+                                                                true,
+                                                                firstAsk.getContentBlocks(
+                                                                                ToolUseBlock.class)
+                                                                        .get(0),
+                                                                List.of(scoped),
+                                                                null)))))
+                        .block();
+        assertNotNull(ranFoo);
+
+        // A different query is not covered by the scoped rule: it asks
+        // again, and the user confirms with the identical rule a second
+        // time — the real integration path for a repeated accept.
+        Msg secondAsk = agent.call(List.of()).block();
+        assertNotNull(secondAsk);
+        assertEquals(GenerateReason.PERMISSION_ASKING, secondAsk.getGenerateReason());
+        Msg ranBar =
+                agent.call(
+                                List.of(
+                                        confirmMsg(
+                                                List.of(
+                                                        new ConfirmResult(
+                                                                true,
+                                                                secondAsk
+                                                                        .getContentBlocks(
+                                                                                ToolUseBlock.class)
+                                                                        .get(0),
+                                                                List.of(scoped),
+                                                                null)))))
+                        .block();
+        assertNotNull(ranBar);
+
+        // Both accepts carried the identical rule: the persisted context
+        // must hold exactly one entry, not one per accept.
+        AgentState saved =
+                store.get(null, "dedup-asst", "agent_state", AgentState.class).orElse(null);
+        assertNotNull(saved, "agent state must be persisted");
+        List<PermissionRule> persisted =
+                saved.getPermissionContext().getAllowRules().getOrDefault("ask", List.of());
+        assertEquals(1, persisted.size(), "identical re-accept must not grow the persisted table");
+        assertTrue(persisted.contains(scoped), "the accepted rule must be persisted");
     }
 }

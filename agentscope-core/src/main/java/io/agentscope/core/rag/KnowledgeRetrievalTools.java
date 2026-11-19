@@ -19,11 +19,13 @@ import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.message.Msg;
+import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.rag.model.Document;
 import io.agentscope.core.rag.model.RetrieveConfig;
 import io.agentscope.core.tool.Tool;
 import io.agentscope.core.tool.ToolParam;
 import java.util.List;
+import reactor.core.publisher.Mono;
 
 /**
  * Knowledge retrieval tools for Agentic RAG mode.
@@ -122,7 +124,7 @@ public class KnowledgeRetrievalTools {
                     "Retrieve relevant documents from knowledge base. Use this tool when you need"
                         + " to find specific information or when user asks questions about stored"
                         + " knowledge.")
-    public String retrieveKnowledge(
+    public Mono<ToolResultBlock> retrieveKnowledge(
             @ToolParam(
                             name = "query",
                             description =
@@ -161,9 +163,13 @@ public class KnowledgeRetrievalTools {
 
         return knowledge
                 .retrieve(query, config)
-                .map(this::formatDocumentsForTool)
-                .onErrorReturn("Failed to retrieve knowledge for query: " + query)
-                .block(); // Convert to synchronous call to match Tool interface
+                .map(result -> ToolResultBlock.success(formatDocumentsForTool(result)))
+                .onErrorResume(
+                        e ->
+                                Mono.just(
+                                        ToolResultBlock.error(
+                                                "Failed to retrieve knowledge for query: "
+                                                        + query)));
     }
 
     /**

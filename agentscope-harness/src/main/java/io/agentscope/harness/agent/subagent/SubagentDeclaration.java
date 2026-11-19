@@ -15,6 +15,7 @@
  */
 package io.agentscope.harness.agent.subagent;
 
+import io.agentscope.harness.agent.memory.compaction.CompactionConfig;
 import io.agentscope.harness.agent.subagent.protocol.RemoteStreamDetail;
 import java.nio.file.Path;
 import java.util.Collections;
@@ -96,8 +97,11 @@ public final class SubagentDeclaration {
     private final boolean persistSession;
     private final boolean inheritParentPermissions;
     private final Boolean exposeToUser;
+    private final Boolean enablePendingToolRecovery;
     private final List<String> tools;
     private final List<String> skills;
+    private final CompactionConfig compactionConfig;
+    private final boolean disableCompaction;
 
     /** Base URL of the remote task server (e.g. {@code http://host:8080}). */
     private final String url;
@@ -141,8 +145,11 @@ public final class SubagentDeclaration {
         this.persistSession = b.persistSession;
         this.inheritParentPermissions = b.inheritParentPermissions;
         this.exposeToUser = b.exposeToUser;
+        this.enablePendingToolRecovery = b.enablePendingToolRecovery;
         this.tools = b.tools != null ? List.copyOf(b.tools) : List.of();
         this.skills = b.skills != null ? List.copyOf(b.skills) : List.of();
+        this.compactionConfig = b.compactionConfig;
+        this.disableCompaction = b.disableCompaction;
         this.url = b.url;
         this.headers = b.headers != null && !b.headers.isEmpty() ? Map.copyOf(b.headers) : null;
         this.remoteStreaming = b.remoteStreaming;
@@ -264,7 +271,7 @@ public final class SubagentDeclaration {
 
     /**
      * Whether the subagent's session state should persist across parent calls. When {@code true},
-     * the spawn key is derived deterministically from (parentSessionId, agentId, label), enabling
+     * the spawn key is derived deterministically from (userId, parentSessionId, agentId, label), enabling
      * state recovery after process restarts. When {@code false} (default), a random UUID is used.
      */
     public boolean isPersistSession() {
@@ -301,6 +308,15 @@ public final class SubagentDeclaration {
     }
 
     /**
+     * Recovery policy for orphaned tool calls in an automatically constructed local subagent.
+     * {@code null} (default) inherits the parent's setting; {@code true} or {@code false}
+     * explicitly overrides it. Remote subagents configure recovery on their own server.
+     */
+    public Boolean getEnablePendingToolRecovery() {
+        return enablePendingToolRecovery;
+    }
+
+    /**
      * Optional tool allowlist. When non-empty, only inherited parent tools whose names are listed
      * remain on the subagent's inherited toolkit. Empty means inherit all parent tools.
      */
@@ -310,6 +326,22 @@ public final class SubagentDeclaration {
 
     public List<String> getSkills() {
         return skills;
+    }
+
+    /**
+     * Optional compaction configuration for this subagent.
+     *
+     * <p>When {@code null}, the subagent inherits the parent configuration unless
+     * {@link #isCompactionDisabled()} is {@code true}. Remote subagents manage compaction on their
+     * own server and do not consume this setting.
+     */
+    public CompactionConfig getCompactionConfig() {
+        return compactionConfig;
+    }
+
+    /** Whether this declaration explicitly disables compaction for the local subagent. */
+    public boolean isCompactionDisabled() {
+        return disableCompaction;
     }
 
     /** Returns {@code true} when this declaration targets a remote task HTTP server. */
@@ -396,8 +428,11 @@ public final class SubagentDeclaration {
         private boolean persistSession = false;
         private boolean inheritParentPermissions = true;
         private Boolean exposeToUser;
+        private Boolean enablePendingToolRecovery;
         private List<String> tools;
         private List<String> skills;
+        private CompactionConfig compactionConfig;
+        private boolean disableCompaction;
         private String url;
         private Map<String, String> headers;
         private Boolean remoteStreaming;
@@ -461,7 +496,8 @@ public final class SubagentDeclaration {
 
         /**
          * Optional model override resolved via {@link io.agentscope.core.model.ModelRegistry}.
-         * Falls back to the parent model when blank or unresolvable.
+         * Falls back to the parent model when blank or unresolvable. Legacy eager semantics:
+         * resolved once when the subagent agent is built, not per call.
          */
         public Builder model(String model) {
             this.model = model;
@@ -531,7 +567,7 @@ public final class SubagentDeclaration {
 
         /**
          * When {@code true}, the subagent's spawn key is derived deterministically from
-         * (parentSessionId, agentId, label), enabling state recovery across parent calls and
+         * (userId, parentSessionId, agentId, label), enabling state recovery across parent calls and
          * process restarts. Defaults to {@code false}.
          */
         public Builder persistSession(boolean persistSession) {
@@ -562,6 +598,18 @@ public final class SubagentDeclaration {
         }
 
         /**
+         * Overrides pending-tool recovery for this local subagent. Pass {@code null} to inherit
+         * the parent setting (the default). Permission confirmations are never auto-recovered.
+         *
+         * @param enable whether to enable recovery, or {@code null} to inherit
+         * @return this builder
+         */
+        public Builder enablePendingToolRecovery(Boolean enable) {
+            this.enablePendingToolRecovery = enable;
+            return this;
+        }
+
+        /**
          * Tool allowlist: when non-empty, only inherited parent tools with listed names are kept.
          * Child-local tool registrations are unaffected.
          */
@@ -572,6 +620,26 @@ public final class SubagentDeclaration {
 
         public Builder skills(List<String> skills) {
             this.skills = skills;
+            return this;
+        }
+
+        /**
+         * Sets a compaction configuration for this subagent.
+         *
+         * <p>An explicit declaration-level configuration takes precedence over the parent agent's
+         * compaction configuration and can enable compaction for this subagent even when the parent
+         * disables it.
+         */
+        public Builder compaction(CompactionConfig compactionConfig) {
+            this.compactionConfig = compactionConfig;
+            this.disableCompaction = false;
+            return this;
+        }
+
+        /** Disables compaction for this subagent, overriding the parent's configuration. */
+        public Builder disableCompaction() {
+            this.compactionConfig = null;
+            this.disableCompaction = true;
             return this;
         }
 

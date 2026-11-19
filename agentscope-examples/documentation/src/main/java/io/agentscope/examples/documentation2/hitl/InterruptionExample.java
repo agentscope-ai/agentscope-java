@@ -19,7 +19,7 @@ import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.event.AgentEvent;
-import io.agentscope.core.event.ToolResultTextDeltaEvent;
+import io.agentscope.core.event.ToolProgressEvent;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.UserMessage;
@@ -32,6 +32,8 @@ import io.agentscope.core.tool.ToolParam;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.extensions.model.dashscope.DashScopeChatModel;
 import io.agentscope.extensions.model.dashscope.formatter.DashScopeChatFormatter;
+import java.util.EnumSet;
+import java.util.Set;
 import java.util.function.Function;
 import reactor.core.publisher.Flux;
 
@@ -46,7 +48,7 @@ import reactor.core.publisher.Flux;
  *       {@code next.apply()}.</li>
  *   <li>{@code PreActingEvent} / {@code PostActingEvent} → {@code onActing()} before/after
  *       {@code next.apply()}.</li>
- *   <li>{@code ActingChunkEvent} → tap {@code ToolResultTextDeltaEvent} in acting stream.</li>
+ *   <li>{@code ActingChunkEvent} → tap {@code ToolProgressEvent} in acting stream.</li>
  *   <li>{@code ErrorEvent} → {@code doOnError()} on the agent stream.</li>
  *   <li>{@code agent.getMemory().getMessages()} → {@code agent.getAgentState().getContext()}.</li>
  *   <li>Removed {@code .memory(new InMemoryMemory())}.</li>
@@ -159,6 +161,11 @@ public class InterruptionExample {
     static class MonitoringMiddleware implements MiddlewareBase {
 
         @Override
+        public Set<ExtensionPoint> activePoints() {
+            return EnumSet.of(ExtensionPoint.ON_AGENT, ExtensionPoint.ON_ACTING);
+        }
+
+        @Override
         public Flux<AgentEvent> onAgent(
                 Agent agent,
                 RuntimeContext ctx,
@@ -189,9 +196,9 @@ public class InterruptionExample {
             return next.apply(input)
                     .doOnNext(
                             event -> {
-                                if (event instanceof ToolResultTextDeltaEvent delta) {
+                                if (event instanceof ToolProgressEvent progress) {
                                     System.out.println(
-                                            "[Middleware] Tool progress: " + delta.getDelta());
+                                            "[Middleware] Tool progress: " + progress.getText());
                                 }
                             })
                     .doOnComplete(() -> System.out.println("[Middleware] Tool result completed"));

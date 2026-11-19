@@ -26,7 +26,13 @@ public enum ToolResultState {
 
     DENIED("denied"),
 
-    RUNNING("running");
+    RUNNING("running"),
+
+    /**
+     * The tool call was suspended and awaits execution outside the agent runtime. A suspended
+     * result carries no output: the real result is supplied by the caller on resume.
+     */
+    SUSPENDED("suspended");
 
     private final String value;
 

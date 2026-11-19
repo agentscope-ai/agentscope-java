@@ -15,12 +15,18 @@
  */
 package io.agentscope.core.tool;
 
+import io.agentscope.core.agent.CapabilitySurface;
+import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.message.ToolResultBlock;
+import io.agentscope.core.state.AgentState;
+import io.agentscope.core.state.ToolContextState;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Mono;
 
 /**
@@ -28,12 +34,36 @@ import reactor.core.publisher.Mono;
  */
 class MetaToolFactory {
 
+    private static final Logger logger = LoggerFactory.getLogger(MetaToolFactory.class);
+
     private final ToolGroupManager groupManager;
     private final ToolRegistry toolRegistry;
 
     MetaToolFactory(ToolGroupManager groupManager, ToolRegistry toolRegistry) {
         this.groupManager = groupManager;
         this.toolRegistry = toolRegistry;
+    }
+
+    /**
+     * The fixed prefix of the {@code reset_equipped_tools} description, excluding the group
+     * notes. Schema post-processing rebuilds a restricted description from this constant plus
+     * only the activatable groups' notes; {@link #createResetEquippedToolsAgentTool()} keeps the
+     * full one.
+     *
+     * @return the fixed description prefix, without group notes
+     */
+    static String baseDescription() {
+        return "Reset your equipped tools based on your current task requirements. "
+                + "These tools are organized into different groups, and you can "
+                + "activate/deactivate them by specifying which groups to keep "
+                + "active.\n\n"
+                + "**Important: The input list is the FINAL set of active tool "
+                + "groups, not incremental changes.** Any group not included in "
+                + "the list will be deactivated, regardless of its previous "
+                + "state.\n\n"
+                + "**Best practice**: Activate only what you need for the current "
+                + "task, and promptly deactivate groups as soon as they are no "
+                + "longer needed to conserve context space.\n\n";
     }
 
     /**
@@ -50,18 +80,12 @@ class MetaToolFactory {
 
             @Override
             public String getDescription() {
-                return "Reset your equipped tools based on your current task requirements. "
-                        + "These tools are organized into different groups, and you can "
-                        + "activate/deactivate them by specifying which groups to keep "
-                        + "active.\n\n"
-                        + "**Important: The input list is the FINAL set of active tool "
-                        + "groups, not incremental changes.** Any group not included in "
-                        + "the list will be deactivated, regardless of its previous "
-                        + "state.\n\n"
-                        + "**Best practice**: Activate only what you need for the current "
-                        + "task, and promptly deactivate groups as soon as they are no "
-                        + "longer needed to conserve context space.\n\n"
-                        + groupManager.getNotes();
+                return baseDescription() + groupManager.getNotes();
+            }
+
+            @Override
+            public boolean isSystem() {
+                return true;
             }
 
             @Override
@@ -107,8 +131,10 @@ class MetaToolFactory {
                                 ToolResultBlock.error("Missing required parameter: to_activate"));
                     }
 
-                    String result = resetEquippedToolsImpl(toActivate);
-                    return Mono.just(ToolResultBlock.text(result));
+                    RuntimeContext rc = param.getRuntimeContext();
+                    String result =
+                            resetEquippedToolsImpl(toActivate, resolveToolContext(param), rc);
+                    return Mono.just(ToolResultBlock.success(result));
                 } catch (Exception e) {
                     return Mono.just(ToolResultBlock.error(e.getMessage()));
                 }
@@ -117,31 +143,87 @@ class MetaToolFactory {
     }
 
     /**
+     * Resolves the per-call {@link ToolContextState} from the tool call's runtime context, so the
+     * meta tool targets the active session's activation set instead of the shared group manager.
+     *
+     * @param param the tool call parameters
+     * @return the resolved tool context state, or {@code null} when unavailable
+     */
+    private ToolContextState resolveToolContext(ToolCallParam param) {
+        RuntimeContext rc = param.getRuntimeContext();
+        AgentState state = rc != null ? rc.getAgentState() : null;
+        return state != null ? state.getToolContext() : null;
+    }
+
+    /**
      * Implementation of reset_equipped_tools logic.
      *
      * <p>Uses <b>replacement semantics</b>: all META-scoped groups not in the input list are
-     * deactivated. EXTERNAL-scoped groups are unaffected.
+     * deactivated. EXTERNAL-scoped groups are unaffected. The activation set is always written to
+     * the per-call {@link ToolContextState} (the single source of truth for the session); the
+     * shared group manager is never mutated. When no per-session context is available the tool
+     * fails fast without touching shared state.
      *
      * @param toActivate List of tool group names to activate (must all be META scope)
+     * @param tcs the per-call tool context state (must be non-null)
+     * @param rc the tool call's runtime context: carries the per-request capability grant set
+     *     (missing → {@code ALLOW_ALL}: direct execution does not pass through grant resolution)
+     *     and the identity used for denial logging; may be {@code null}
      * @return Response message describing the resulting state
-     * @throws IllegalArgumentException if any group doesn't exist
+     * @throws IllegalArgumentException if any group doesn't exist (or is not activatable)
      */
-    private String resetEquippedToolsImpl(List<String> toActivate) {
+    private String resetEquippedToolsImpl(
+            List<String> toActivate, ToolContextState tcs, RuntimeContext rc) {
+        // A missing surface means this call never entered an agent call() (whose funnel
+        // always writes one): treat it as unrestricted — direct execution is trusted
+        // assembler code.
+        CapabilitySurface surface = rc != null ? rc.get(CapabilitySurface.class) : null;
+        if (surface == null) {
+            surface = CapabilitySurface.ALLOW_ALL;
+        }
         // Validate: all groups must exist and be META scope
         for (String groupName : toActivate) {
             groupManager.validateGroupExists(groupName);
             ToolGroup group = groupManager.getToolGroup(groupName);
             if (group.getScope() != ToolGroupScope.META) {
-                return "Error: Group '" + groupName + "' is not manageable by this tool.";
+                throw new IllegalArgumentException(
+                        "Group '" + groupName + "' is not manageable by this tool.");
+            }
+            boolean allowed =
+                    group.isSystem()
+                            || surface.allowsToolGroupActivation(
+                                    groupName, groupManager::getGroupsOfTool);
+            if (!allowed) {
+                logger.warn(
+                        "Denied unauthorized group activation via reset_equipped_tools:"
+                                + " group='{}', userId='{}', sessionId='{}'",
+                        groupName,
+                        rc != null ? rc.getUserId() : null,
+                        rc != null ? rc.getSessionId() : null);
+                // Byte-identical to the validateGroupExists not-found wording: do not
+                // reveal existence.
+                throw new IllegalArgumentException(
+                        String.format("Tool group '%s' does not exist", groupName));
             }
         }
 
-        // Replace: deactivate all META groups, then activate specified ones
-        groupManager.replaceMetaActiveGroups(toActivate);
+        // No per-session context: never fall back to mutating the shared group manager. A missing
+        // runtime context is an integration fault, and touching shared state here would be
+        // destructive — fail fast instead.
+        if (tcs == null) {
+            throw new IllegalStateException(
+                    "reset_equipped_tools requires a per-session runtime context");
+        }
+
+        // Single source of truth: atomically keep EXTERNAL-scoped groups and replace META-scoped
+        // ones,
+        // so a concurrent additive tool (skill activation) is not lost by this replace.
+        tcs.replaceActivatedGroups(groupManager.getMetaGroupNames(), toActivate);
 
         // Build response (aligned with Python format)
         if (toActivate.isEmpty()) {
-            return "All tool groups are currently deactivated.";
+            // Only META groups are deactivated here; EXTERNAL-scoped groups are preserved.
+            return "All META tool groups are currently deactivated.";
         }
 
         String groupNames = toActivate.stream().collect(Collectors.joining(", "));

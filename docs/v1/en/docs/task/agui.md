@@ -1,4 +1,7 @@
-# AG-UI Protocol Integration
+---
+title: AG-UI Protocol
+zh_link: /v1/zh/docs/task/agui
+---
 
 AG-UI is a frontend-backend communication protocol for exposing agents to web frontends. With AG-UI, you can quickly integrate AgentScope agents with compatible frontend frameworks.
 
@@ -149,12 +152,14 @@ function App() {
 
 ## Example Project
 
-See complete example at [agentscope-examples/agui](https://github.com/agentscope-ai/agentscope-java/tree/main/agentscope-examples/agui):
+See complete example at [agentscope-examples/agui](https://github.com/agentscope-ai/agentscope-java/tree/v1.0.11/agentscope-examples/agui):
+
+Run from a repository checkout at `v1.0.11`:
 
 ```bash
 export DASHSCOPE_API_KEY=your-key
 cd agentscope-examples/agui
-mvn spring-boot:run
+mvn spring-boot:run -Dspring-boot.run.mainClass=io.agentscope.examples.agui.AguiExampleApplication
 ```
 
 Visit http://localhost:8080 to see the demo.

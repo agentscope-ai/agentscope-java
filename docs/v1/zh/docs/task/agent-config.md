@@ -1,4 +1,7 @@
-# Agent 配置（Agent Configuration）
+---
+title: Agent 配置（Agent Configuration）
+en_link: /v1/en/docs/task/agent-config
+---
 
 ## 概述
 

@@ -1,4 +1,7 @@
-# 模型
+---
+title: 模型集成
+en_link: /v1/en/docs/task/model
+---
 
 本指南介绍 AgentScope Java 支持的 LLM 模型及其配置方法。
 
@@ -28,7 +31,7 @@
 
 ## ModelRegistry
 
-[`ModelRegistry`](https://github.com/agentscope-ai/agentscope-java/blob/main/agentscope-core/src/main/java/io/agentscope/core/model/ModelRegistry.java)（`io.agentscope.core.model.ModelRegistry`）用**字符串 id**得到 `Model` 实例，适合不想手写各厂商 `*ChatModel.builder()` 的场景。例如 Harness 场景下可使用 `HarnessAgent.builder().model(String)`；任意需要 `Model` 的地方可先调用 `ModelRegistry.resolve(...)` 再传入 `ReActAgent` 等构建器。
+[`ModelRegistry`](https://github.com/agentscope-ai/agentscope-java/blob/v1.1.0-RC2/agentscope-core/src/main/java/io/agentscope/core/model/ModelRegistry.java)（`io.agentscope.core.model.ModelRegistry`）用**字符串 id**得到 `Model` 实例，适合不想手写各厂商 `*ChatModel.builder()` 的场景。例如 Harness 场景下可使用 `HarnessAgent.builder().model(String)`；任意需要 `Model` 的地方可先调用 `ModelRegistry.resolve(...)` 再传入 `ReActAgent` 等构建器。
 
 ### API 一览
 
@@ -52,7 +55,7 @@
 | `dashscope:qwen-max` | `DASHSCOPE_API_KEY` | 阿里云 DashScope / 百炼 |
 | `qwen-max` 等以 `qwen-` 开头的 id | `DASHSCOPE_API_KEY` | 将整个字符串作为 DashScope 的 `modelName` |
 | `anthropic:claude-sonnet-4-5-20250929` | `ANTHROPIC_API_KEY`（可选；未设置时可依赖 SDK 从环境读取） | Anthropic Claude |
-| `gemini:gemini-2.5-flash` | `GEMINI_API_KEY` | Google Gemini API |
+| `gemini:gemini-3.8-flash` | `GEMINI_API_KEY` | Google Gemini API |
 | `ollama:llama3` | `OLLAMA_BASE_URL`（可选，默认 `http://localhost:11434`） | 本地 Ollama |
 
 同一进程内，对**相同**工厂解析 id 多次时，返回的 `Model` 实例会被缓存复用；**具名**注册不走该缓存。
@@ -161,7 +164,7 @@ DashScopeChatModel model = DashScopeChatModel.builder()
 DashScopeChatModel model = DashScopeChatModel.builder()
         .apiKey(System.getenv("DASHSCOPE_API_KEY"))
         .modelName("qwen3-max")
-        .enableThinking(true)  // 启用思考模式，并自动启用流式输出
+        .enableThinking(true)
         .defaultOptions(GenerateOptions.builder()
                 .thinkingBudget(5000)  // 思考 token 预算
                 .build())
@@ -227,7 +230,7 @@ Anthropic 的 Claude 系列模型。
 ```java
 AnthropicChatModel model = AnthropicChatModel.builder()
         .apiKey(System.getenv("ANTHROPIC_API_KEY"))
-        .modelName("claude-sonnet-4-5-20250929")  // 默认值
+        .modelName("claude-sonnet-5-5")  // 默认值
         .build();
 ```
 
@@ -236,7 +239,7 @@ AnthropicChatModel model = AnthropicChatModel.builder()
 | 配置项 | 说明 |
 |--------|------|
 | `apiKey` | Anthropic API 密钥 |
-| `modelName` | 模型名称，默认 `claude-sonnet-4-5-20250929` |
+| `modelName` | 模型名称，默认 `claude-sonnet-5-5` |
 | `baseUrl` | 自定义 API 端点（可选） |
 | `stream` | 是否启用流式输出，默认 `true` |
 
@@ -249,7 +252,7 @@ Google 的 Gemini 系列模型，支持 Gemini API 和 Vertex AI。
 ```java
 GeminiChatModel model = GeminiChatModel.builder()
         .apiKey(System.getenv("GEMINI_API_KEY"))
-        .modelName("gemini-2.5-flash")  // 默认值
+        .modelName("gemini-3.8-flash")  // 默认值
         .baseUrl("https://your-gateway.example")  // 可选
         .build();
 ```
@@ -272,7 +275,7 @@ GeminiChatModel model = GeminiChatModel.builder()
 |--------|------|
 | `apiKey` | Gemini API 密钥 |
 | `baseUrl` | 自定义 Gemini API 端点（可选） |
-| `modelName` | 模型名称，默认 `gemini-2.5-flash` |
+| `modelName` | 模型名称，默认 `gemini-3.8-flash` |
 | `project` | GCP 项目 ID（Vertex AI） |
 | `location` | GCP 区域（Vertex AI） |
 | `vertexAI` | 是否使用 Vertex AI |

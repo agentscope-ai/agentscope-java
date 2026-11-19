@@ -19,12 +19,19 @@ import io.agentscope.core.skill.AgentSkill;
 import io.agentscope.core.skill.repository.AgentSkillRepository;
 import io.agentscope.harness.agent.skill.WorkspaceSkillRepository;
 import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.FileVisitResult;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.SimpleFileVisitor;
+import java.nio.file.attribute.BasicFileAttributes;
+import java.nio.file.attribute.FileTime;
 import java.nio.file.attribute.PosixFilePermission;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.time.Duration;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.EnumSet;
@@ -40,7 +47,7 @@ import org.slf4j.LoggerFactory;
 
 /**
  * Materialises non-workspace skill resources (Layer 1 / Layer 2 / marketplace) to
- * {@code <wsRoot>/.skills-cache/<source-ns>/<skill-name>/} so that:
+ * {@code <wsRoot>/.skills-cache/<scope>/<source-ns>/<skill-name>/} so that:
  *
  * <ul>
  *   <li>shell-mode HarnessAgents (sandbox or Local-with-shell) can execute the staged scripts
@@ -53,6 +60,14 @@ import org.slf4j.LoggerFactory;
  * <p>The stager keeps no cross-call state: each invocation rebuilds the white-list of
  * directories that should remain under {@code .skills-cache}, materialises any files whose
  * SHA-256 has changed, and deletes orphan directories not present in the white-list.
+ *
+ * <p><b>The cache is shared.</b> One stager instance serves every concurrent call against a
+ * workspace root, and on a shared volume other replicas write into the same tree. A white-list
+ * built from one call's visible skills therefore says nothing about what other in-flight calls
+ * still need: with per-user skill visibility, call B's "orphan" is call A's live
+ * {@code filesRoot}. Orphan GC is consequently gated on {@link #DEFAULT_ORPHAN_GRACE} — a
+ * directory is deleted only after sitting untouched for that long, and every retained directory
+ * is touched on each pass — and every traversal tolerates entries deleted underneath it.
  *
  * <p>Workspace-native skills (those produced by {@link WorkspaceSkillRepository}) are NOT
  * staged: they already live under {@code <wsRoot>/skills/} (or are produced lazily from the
@@ -67,10 +82,32 @@ public final class MarketplaceStager {
     public static final String CACHE_DIR = ".skills-cache";
     public static final String GLOBAL_NAMESPACE = "_global";
 
+    /**
+     * How long an orphan must sit untouched before it may be deleted. The window has to outlast
+     * the longest call that could still shell out to a staged script, because a staged path is
+     * handed to the model in the system prompt and used much later in the call. Leaving a stale
+     * directory costs a few KB; deleting a live one breaks another user's call, so the default
+     * errs long.
+     */
+    public static final Duration DEFAULT_ORPHAN_GRACE = Duration.ofMinutes(30);
+
+    /** Segment used when the caller has no isolation identity to key on. */
+    public static final String SHARED_SCOPE = "_shared";
+
     private final Path workspaceRoot;
+    private final Duration orphanGrace;
 
     public MarketplaceStager(Path workspaceRoot) {
+        this(workspaceRoot, DEFAULT_ORPHAN_GRACE);
+    }
+
+    /** Overload for callers (and tests) that need a non-default orphan grace window. */
+    public MarketplaceStager(Path workspaceRoot, Duration orphanGrace) {
         this.workspaceRoot = workspaceRoot;
+        this.orphanGrace =
+                orphanGrace != null && !orphanGrace.isNegative()
+                        ? orphanGrace
+                        : DEFAULT_ORPHAN_GRACE;
     }
 
     /**
@@ -79,10 +116,16 @@ public final class MarketplaceStager {
      * {@link WorkspaceSkillRepository} are returned as {@link StageResult.WorkspaceNative}
      * — they need no staging because the workspace tree already contains them.
      *
+     * <p>Staged skill names must identify a single directory and unsafe names are rejected before
+     * staging writes or resource cleanup. Source namespaces may contain repository-specific
+     * identifiers such as {@code owner/repository}; they are mapped to one safe directory
+     * segment, with a digest to disambiguate changed identifiers. Windows device names are
+     * rejected as skill names and mapped as source or scope identifiers. An invalid skill receives
+     * {@link StageResult#NONE} and other skills are still staged.
+     *
      * <p>The white-list of staged directories is rebuilt every call; any pre-existing
-     * directory under {@code .skills-cache/<source-ns>/} not in the white-list is removed
-     * (cheap orphan GC: marketplace repos that no longer publish a given skill leave no
-     * residue).
+     * directory under {@code .skills-cache/<scope>/<source-ns>/} not in the white-list is
+     * eligible for removal after {@link #DEFAULT_ORPHAN_GRACE}.
      *
      * @param visible       skill+repository pairs in compose order (winner per name already
      *                      deduped upstream)
@@ -93,6 +136,22 @@ public final class MarketplaceStager {
      */
     public Map<String, StageResult> stage(
             List<RepoBound> visible, Map<AgentSkillRepository, String> sourceNs) {
+        // null means "no identity to key on", which is distinct from an identity that
+        // happens to be spelled like the shared bucket.
+        return stage(visible, sourceNs, null);
+    }
+
+    /**
+     * Stages into this call's isolation scope. Every directory GC may remove lives under
+     * {@code .skills-cache/<scope>/}, and only calls that share a scope share that subtree —
+     * so a white-list built from one call's visible skills is authoritative for everything it
+     * can reach, which is the property the flat layout never had.
+     *
+     * @param scope per-call isolation key (typically {@code userId} or {@code sessionId});
+     *     blank collapses to {@value #SHARED_SCOPE}
+     */
+    public Map<String, StageResult> stage(
+            List<RepoBound> visible, Map<AgentSkillRepository, String> sourceNs, String scope) {
         Map<String, StageResult> roots = new HashMap<>(visible.size());
         if (workspaceRoot == null) {
             // No host workspace available (rare; e.g. classpath-only build). Skip staging
@@ -108,9 +167,84 @@ public final class MarketplaceStager {
             return roots;
         }
 
-        Path cacheRoot = workspaceRoot.resolve(CACHE_DIR);
+        Path scopeRoot =
+                workspaceRoot
+                        .toAbsolutePath()
+                        .normalize()
+                        .resolve(CACHE_DIR)
+                        .resolve(scopeSegment(scope));
         Set<Path> retained = new HashSet<>();
 
+        stageAll(visible, sourceNs, scopeRoot, retained, roots);
+
+        try {
+            garbageCollectOrphans(scopeRoot, retained);
+        } catch (Exception e) {
+            // Cache hygiene is best-effort and must never fail the agent call — the same
+            // fallback the per-skill materialisation applies.
+            log.warn("Orphan GC under {} skipped: {}", scopeRoot, e.getMessage());
+        }
+        return roots;
+    }
+
+    /** Bound mapped identities while leaving room for a disambiguating digest. */
+    private static final int MAX_CACHE_SEGMENT = 64;
+
+    /**
+     * Maps a caller-supplied identity to one path segment. Sanitising alone would
+     * not do: {@code alice@corp.com} and {@code alice#corp.com} both flatten to
+     * {@code alice_corp.com}, and two identities sharing a subtree is exactly what the scope
+     * exists to prevent. Anything that is not already a distinct, filesystem-safe segment keeps
+     * a readable prefix and is disambiguated by a digest of the original.
+     */
+    private static String scopeSegment(String scope) {
+        if (scope == null || scope.isBlank()) {
+            return SHARED_SCOPE;
+        }
+        return safeSegment(scope, SHARED_SCOPE);
+    }
+
+    /**
+     * Maps a repository source identifier to one safe directory segment. Source identifiers are
+     * metadata rather than user-controlled skill names, and shipped repositories use values such
+     * as {@code owner/repository}; rejecting those values would silently disable staging. A digest
+     * suffix disambiguates identifiers whenever sanitisation changes them.
+     */
+    private static String sourceNamespaceSegment(String namespace) {
+        if (namespace == null || namespace.isBlank()) {
+            return GLOBAL_NAMESPACE;
+        }
+        return safeSegment(namespace, null);
+    }
+
+    /** Shared mapping for identities; skill names are validated without rewriting them. */
+    private static String safeSegment(String raw, String reservedAlias) {
+        String safe = raw.replaceAll("[^A-Za-z0-9._-]", "_");
+        if (isWindowsDeviceName(safe)) {
+            // A suffix alone would leave names such as NUL.txt-<digest> reserved on Windows.
+            safe = "_" + safe;
+        }
+        boolean lossless =
+                safe.equals(raw)
+                        && !safe.equals(reservedAlias)
+                        && safe.length() <= MAX_CACHE_SEGMENT
+                        // Spaces are already replaced above; this also excludes "." and "..".
+                        && !safe.endsWith(".");
+        if (lossless) {
+            return safe;
+        }
+        String digest = sha256(raw.getBytes(StandardCharsets.UTF_8)).substring(0, 12);
+        int keep = Math.min(safe.length(), MAX_CACHE_SEGMENT - digest.length() - 1);
+        return safe.substring(0, keep) + "-" + digest;
+    }
+
+    /** Materialises every eligible input under this call's scope subtree. */
+    private void stageAll(
+            List<RepoBound> visible,
+            Map<AgentSkillRepository, String> sourceNs,
+            Path scopeRoot,
+            Set<Path> retained,
+            Map<String, StageResult> roots) {
         for (RepoBound bound : visible) {
             AgentSkill skill = bound.skill();
             String name = skill.getName();
@@ -127,24 +261,64 @@ public final class MarketplaceStager {
             String ns = sourceNs.get(bound.repo());
             if (ns == null || ns.isBlank()) {
                 ns = bound.repo().getSource();
-                if (ns == null || ns.isBlank()) {
-                    ns = GLOBAL_NAMESPACE;
-                }
             }
 
-            Path stagedDir = cacheRoot.resolve(ns).resolve(name);
             try {
-                materializeIfChanged(stagedDir, skill.getResources());
+                // Skill names are rejected below; source identifiers are normalised because
+                // shipped repositories legitimately use owner/repository and nested classpath
+                // resource names. The result is still one safe segment for GC to traverse.
+                String namespaceSegment = sourceNamespaceSegment(ns);
+                Path namespaceDir = resolveStagingDirectory(scopeRoot, namespaceSegment);
+                Path stagedDir = resolveStagingDirectory(namespaceDir, name);
+                if (!materializeIfChanged(stagedDir, skill.getResources())) {
+                    // Nothing was materialised, which is what a lazy repository produces:
+                    // it publishes no in-memory resources. Reporting Cached here would
+                    // render a <files-root> for a directory that stays permanently empty,
+                    // so report NONE and let shell-mode rendering omit the skill.
+                    log.debug("Skill '{}' (source-ns={}) staged no resources", name, ns);
+                    roots.put(name, StageResult.NONE);
+                    continue;
+                }
+                // Mark as live before GC runs: this is what stops a concurrent call — or
+                // another replica sharing the volume — from treating it as an orphan.
+                touch(stagedDir);
                 retained.add(stagedDir);
-                roots.put(name, new StageResult.Cached(ns, name));
+                roots.put(
+                        name,
+                        new StageResult.Cached(
+                                scopeRoot.getFileName().toString(), namespaceSegment, name));
             } catch (Exception e) {
                 log.warn("Failed to stage skill '{}' (source-ns={}): {}", name, ns, e.getMessage());
                 roots.put(name, StageResult.NONE);
             }
         }
+    }
 
-        garbageCollectOrphans(cacheRoot, retained);
-        return roots;
+    /** Resolves one directory component without allowing aliases of its parent or siblings. */
+    private static Path resolveStagingDirectory(Path parent, String name) {
+        Path resolved = parent.resolve(name).normalize();
+        // Check both separator styles and drive syntax even on Unix, since the cache may be
+        // projected onto another filesystem. Windows also aliases trailing dots and spaces
+        // and reserves device names, including those with an extension.
+        if (!parent.equals(resolved.getParent())
+                || name.indexOf('/') >= 0
+                || name.indexOf('\\') >= 0
+                || name.indexOf(':') >= 0
+                || name.endsWith(".")
+                || name.endsWith(" ")
+                || isWindowsDeviceName(name)) {
+            throw new IllegalArgumentException(
+                    "Staging path component must be a single directory name");
+        }
+        return resolved;
+    }
+
+    private static boolean isWindowsDeviceName(String name) {
+        int dot = name.indexOf('.');
+        String stem = dot < 0 ? name : name.substring(0, dot);
+        // Win32 also recognises superscript 1, 2 and 3 in COM/LPT device names.
+        return stem.toUpperCase(Locale.ROOT)
+                .matches("CON|PRN|AUX|NUL|(?:COM|LPT)[1-9\u00b9\u00b2\u00b3]");
     }
 
     /** Convenience for callers that don't care about return values. */
@@ -153,12 +327,13 @@ public final class MarketplaceStager {
             return;
         }
         Path cacheRoot = workspaceRoot.resolve(CACHE_DIR);
-        if (Files.isDirectory(cacheRoot)) {
-            try {
-                deleteRecursively(cacheRoot);
-            } catch (IOException e) {
-                log.warn("Failed to clear {}: {}", cacheRoot, e.getMessage());
-            }
+        if (!Files.isDirectory(cacheRoot)) {
+            return;
+        }
+        try {
+            deleteRecursively(cacheRoot);
+        } catch (IOException | RuntimeException e) {
+            log.warn("Failed to clear {}: {}", cacheRoot, e.getMessage());
         }
     }
 
@@ -166,12 +341,16 @@ public final class MarketplaceStager {
     //  Internals
     // =========================================================================
 
-    private void materializeIfChanged(Path stagedDir, Map<String, String> resources)
+    private boolean materializeIfChanged(Path stagedDir, Map<String, String> resources)
             throws IOException {
-        Files.createDirectories(stagedDir);
         if (resources == null || resources.isEmpty()) {
-            return;
+            // Nothing to write: leave no directory behind, so the caller can tell a
+            // staged skill apart from one whose content is unavailable.
+            return false;
         }
+        // The staged directory is created lazily by writeIfChanged, on the first entry that
+        // survives the filter below. Creating it here instead would materialise a directory
+        // for a map whose entries are all rejected, contradicting the contract above.
         // Track files we expect; remove any extras under stagedDir afterwards.
         Set<Path> expected = new HashSet<>();
         for (Map.Entry<String, String> e : resources.entrySet()) {
@@ -196,6 +375,7 @@ public final class MarketplaceStager {
         // Remove stale files under the staged dir that no longer correspond to a published
         // resource for this skill. Keeps stage idempotent and self-cleaning per skill.
         removeUnexpected(stagedDir, expected);
+        return !expected.isEmpty();
     }
 
     private void writeIfChanged(Path target, byte[] bytes) throws IOException {
@@ -273,7 +453,7 @@ public final class MarketplaceStager {
                     .filter(p -> !expected.contains(p.normalize()))
                     .forEach(toDelete::add);
             for (Path p : toDelete) {
-                Files.deleteIfExists(p);
+                deleteQuietly(p);
             }
             // Prune now-empty subdirectories left after file removal.
             try (var dirStream = Files.walk(stagedDir)) {
@@ -287,12 +467,14 @@ public final class MarketplaceStager {
                 for (Path d : dirs) {
                     try (var probe = Files.list(d)) {
                         if (probe.findAny().isEmpty()) {
-                            Files.deleteIfExists(d);
+                            deleteQuietly(d);
                         }
                     }
                 }
             }
-        } catch (IOException e) {
+        } catch (IOException | UncheckedIOException e) {
+            // Files.walk / Files.list wrap mid-iteration IO errors (an entry deleted by a
+            // concurrent call) in UncheckedIOException, which is NOT an IOException.
             log.debug("Cleanup of {} failed: {}", stagedDir, e.getMessage());
         }
     }
@@ -301,6 +483,9 @@ public final class MarketplaceStager {
         if (!Files.isDirectory(cacheRoot)) {
             return;
         }
+        // `retained` reflects ONE call's visible skills; the cache is shared. Only delete
+        // entries that no call has staged for a full grace window.
+        Instant cutoff = Instant.now().minus(orphanGrace);
         // Two-level layout: <source-ns>/<skill-name>/
         try (var nsStream = Files.list(cacheRoot)) {
             List<Path> nsDirs = new ArrayList<>();
@@ -310,35 +495,83 @@ public final class MarketplaceStager {
                     List<Path> skillDirs = new ArrayList<>();
                     skillStream.filter(Files::isDirectory).forEach(skillDirs::add);
                     for (Path skillDir : skillDirs) {
-                        if (!retained.contains(skillDir)) {
-                            deleteRecursively(skillDir);
+                        if (retained.contains(skillDir) || !isStale(skillDir, cutoff)) {
+                            continue;
                         }
+                        deleteRecursively(skillDir);
                     }
                 }
                 // Clean up empty namespace dir.
                 try (var probe = Files.list(nsDir)) {
                     if (probe.findAny().isEmpty()) {
-                        Files.deleteIfExists(nsDir);
+                        deleteQuietly(nsDir);
                     }
                 }
             }
-        } catch (IOException e) {
+        } catch (IOException | UncheckedIOException e) {
             log.debug("Orphan GC under {} failed: {}", cacheRoot, e.getMessage());
         }
     }
 
+    /** Refreshes the mtime GC reads, so a live directory is never mistaken for an orphan. */
+    private static void touch(Path dir) {
+        try {
+            Files.setLastModifiedTime(dir, FileTime.from(Instant.now()));
+        } catch (IOException | RuntimeException e) {
+            log.debug("Failed to touch {}: {}", dir, e.getMessage());
+        }
+    }
+
+    /** Unreadable mtime means we cannot prove the entry is dead, so we keep it. */
+    private static boolean isStale(Path dir, Instant cutoff) {
+        try {
+            return Files.getLastModifiedTime(dir).toInstant().isBefore(cutoff);
+        } catch (IOException | RuntimeException e) {
+            log.debug("Cannot read mtime of {}; keeping it: {}", dir, e.getMessage());
+            return false;
+        }
+    }
+
+    /** Delete one entry, tolerating a concurrent call having deleted or replaced it already. */
+    private static void deleteQuietly(Path p) {
+        try {
+            Files.deleteIfExists(p);
+        } catch (IOException | RuntimeException e) {
+            log.debug("Failed to delete {}: {}", p, e.getMessage());
+        }
+    }
+
+    /**
+     * Recursive delete that tolerates the tree changing underneath it. Uses
+     * {@link Files#walkFileTree} rather than {@link Files#walk}: the lazy stream aborts the
+     * whole traversal with an {@link UncheckedIOException} the moment an entry vanishes, while
+     * the visitor reports it through {@code visitFileFailed} and we simply carry on.
+     */
     private void deleteRecursively(Path root) throws IOException {
         if (!Files.exists(root)) {
             return;
         }
-        try (var stream = Files.walk(root)) {
-            List<Path> all = new ArrayList<>();
-            stream.forEach(all::add);
-            all.sort((a, b) -> b.getNameCount() - a.getNameCount());
-            for (Path p : all) {
-                Files.deleteIfExists(p);
-            }
-        }
+        Files.walkFileTree(
+                root,
+                new SimpleFileVisitor<Path>() {
+                    @Override
+                    public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) {
+                        deleteQuietly(file);
+                        return FileVisitResult.CONTINUE;
+                    }
+
+                    @Override
+                    public FileVisitResult visitFileFailed(Path file, IOException exc) {
+                        // Gone or unreadable — nothing left for us to remove.
+                        return FileVisitResult.CONTINUE;
+                    }
+
+                    @Override
+                    public FileVisitResult postVisitDirectory(Path dir, IOException exc) {
+                        deleteQuietly(dir);
+                        return FileVisitResult.CONTINUE;
+                    }
+                });
     }
 
     private static byte[] decode(String content) {
@@ -365,9 +598,9 @@ public final class MarketplaceStager {
 
     /**
      * Resolves per-repository {@code source} namespaces. When two repositories report the same
-     * {@code getSource()}, the second and subsequent ones receive an {@code _<idx>} suffix
-     * (with a warning log). Layer-1 host repositories whose source string is empty get
-     * {@link #GLOBAL_NAMESPACE}.
+     * {@code getSource()}, each receives an {@code _<idx>} suffix
+     * (with a warning log). Each result is then mapped to one safe directory segment. Layer-1
+     * host repositories whose source string is empty get {@link #GLOBAL_NAMESPACE}.
      */
     public static Map<AgentSkillRepository, String> resolveSourceNamespaces(
             List<AgentSkillRepository> repos) {
@@ -386,11 +619,11 @@ public final class MarketplaceStager {
             String src = effectiveSource(repo);
             int total = count.getOrDefault(src, 1);
             if (total == 1) {
-                ns.put(repo, src);
+                ns.put(repo, sourceNamespaceSegment(src));
             } else {
                 int idx = seen.merge(src, 1, Integer::sum);
                 String resolved = src + "_" + idx;
-                ns.put(repo, resolved);
+                ns.put(repo, sourceNamespaceSegment(resolved));
                 if (idx > 1 || total > 1) {
                     log.warn(
                             "Skill repository source '{}' is used by {} repositories;"
@@ -419,17 +652,42 @@ public final class MarketplaceStager {
     /** Pairs a skill with the repository that produced it. */
     public record RepoBound(AgentSkill skill, AgentSkillRepository repo) {}
 
+    /**
+     * Workspace-relative include-root (forward slashes) of a cached skill's staged directory —
+     * the per-skill narrowing unit for sandbox workspace projection.
+     *
+     * @param cached a successful staging outcome
+     * @return {@code .skills-cache/<scopeSegment>/<sourceNamespace>/<skillName>}
+     */
+    public static String projectionRoot(StageResult.Cached cached) {
+        return CACHE_DIR
+                + "/"
+                + cached.scopeSegment()
+                + "/"
+                + cached.sourceNamespace()
+                + "/"
+                + cached.skillName();
+    }
+
     /** Outcome of staging one skill. */
     public sealed interface StageResult {
         StageResult NONE = new None();
 
-        /** No staging applied — skill source has no shell-reachable representation. */
+        /**
+         * No staging applied — skill source has no shell-reachable representation.
+         *
+         * <p>Also returned when a repository published no resources that could be staged. Nothing
+         * was staged and nothing is retained for the skill on this pass, so a directory written by
+         * an earlier call becomes orphan-GC eligible: {@code NONE} does not mean "the files cached
+         * earlier are still there".
+         */
         record None() implements StageResult {}
 
         /** Skill comes from {@link WorkspaceSkillRepository} (already in workspace/skills/). */
         record WorkspaceNative() implements StageResult {}
 
-        /** Skill staged under {@code .skills-cache/<sourceNs>/<skillName>/}. */
-        record Cached(String sourceNamespace, String skillName) implements StageResult {}
+        /** Skill staged under {@code .skills-cache/<scope>/<sourceNs>/<skillName>/}. */
+        record Cached(String scopeSegment, String sourceNamespace, String skillName)
+                implements StageResult {}
     }
 }

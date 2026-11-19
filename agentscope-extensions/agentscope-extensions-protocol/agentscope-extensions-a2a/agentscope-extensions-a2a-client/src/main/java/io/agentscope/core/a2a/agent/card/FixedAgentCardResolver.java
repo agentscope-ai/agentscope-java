@@ -16,7 +16,7 @@
 
 package io.agentscope.core.a2a.agent.card;
 
-import io.a2a.spec.AgentCard;
+import org.a2aproject.sdk.spec.AgentCard;
 
 /**
  * Agent Card Producer for Fixed AgentCard.

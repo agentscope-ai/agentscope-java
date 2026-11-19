@@ -22,7 +22,10 @@ import io.agentscope.harness.agent.sandbox.SandboxException;
 import io.agentscope.harness.agent.sandbox.SandboxState;
 import io.agentscope.harness.agent.sandbox.WorkspaceSpec;
 import io.agentscope.harness.agent.sandbox.json.HarnessSandboxJacksonModule;
+import io.agentscope.harness.agent.sandbox.snapshot.RemoteSandboxSnapshot;
+import io.agentscope.harness.agent.sandbox.snapshot.RemoteSnapshotSpec;
 import io.agentscope.harness.agent.sandbox.snapshot.SandboxSnapshotSpec;
+import java.util.List;
 import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -58,17 +61,22 @@ public class E2bSandboxClient implements SandboxClient<E2bSandboxClientOptions> 
             E2bSandboxClientOptions options) {
         String sessionId = UUID.randomUUID().toString();
         E2bSandboxClientOptions merged = merge(options);
+        String workspaceRoot = resolveWorkspaceRoot(workspaceSpec, merged.getWorkspaceRoot());
+        requireAbsoluteWorkspaceRoot(workspaceRoot);
 
         E2bSandboxState state = new E2bSandboxState();
         state.setSessionId(sessionId);
         state.setWorkspaceSpec(workspaceSpec);
         state.setTemplateId(merged.getTemplateId());
-        state.setWorkspaceRoot(merged.getWorkspaceRoot());
+        state.setWorkspaceRoot(workspaceRoot);
         state.setSandboxOwned(true);
         state.setWorkspaceRootReady(false);
         state.setPersistenceMode(merged.getPersistenceMode());
         state.setCodec(merged.getCodec());
         state.setSandboxDomain(merged.getDomain());
+        state.setEnvdSandboxUrl(merged.getEnvdSandboxUrl());
+        state.setVolumeMounts(merged.getVolumeMounts());
+        state.setWorkspaceOnVolume(isWorkspaceOnVolume(workspaceRoot, merged.getVolumeMounts()));
 
         if (snapshotSpec != null) {
             state.setSnapshot(snapshotSpec.build(sessionId));
@@ -78,14 +86,47 @@ public class E2bSandboxClient implements SandboxClient<E2bSandboxClientOptions> 
         return new E2bSandbox(state, merged);
     }
 
+    /** Attaches a borrowed instance without creating it, renewing its TTL, or restoring files. */
+    public Sandbox connectExisting(String sandboxId, String accessToken) {
+        if (sandboxId == null || !sandboxId.matches("[A-Za-z0-9_-]{1,256}")) {
+            throw new IllegalArgumentException("Existing Sandbox ID required");
+        }
+        String workspaceRoot = defaultOptions.getWorkspaceRoot();
+        requireAbsoluteWorkspaceRoot(workspaceRoot);
+        var workspace = new WorkspaceSpec();
+        workspace.setRoot(workspaceRoot);
+        var state = new E2bSandboxState();
+        state.setSessionId(UUID.randomUUID().toString());
+        state.setWorkspaceSpec(workspace);
+        state.setSandboxId(sandboxId);
+        state.setSandboxOwned(false);
+        state.setWorkspaceRoot(workspaceRoot);
+        state.setWorkspaceRootReady(true);
+        state.setSandboxDomain(defaultOptions.getDomain());
+        state.setEnvdSandboxUrl(defaultOptions.getEnvdSandboxUrl());
+        state.setEnvdAccessToken(accessToken);
+        state.setPersistenceMode(defaultOptions.getPersistenceMode());
+        state.setCodec(defaultOptions.getCodec());
+        state.setVolumeMounts(defaultOptions.getVolumeMounts());
+        state.setWorkspaceOnVolume(
+                isWorkspaceOnVolume(workspaceRoot, defaultOptions.getVolumeMounts()));
+        return new E2bSandbox(state, copy(defaultOptions));
+    }
+
     @Override
     public Sandbox resume(SandboxState state) {
         if (!(state instanceof E2bSandboxState e2b)) {
             throw new IllegalArgumentException(
                     "Expected E2bSandboxState but got: " + state.getClass().getName());
         }
-        E2bSandboxClientOptions resumed = merge(null);
+        // Resume the directory that actually backed this sandbox. The constructor aligns
+        // legacy manifest metadata before the superclass captures its materialization root.
+        String workspaceRoot = e2b.getWorkspaceRoot();
+        requireAbsoluteWorkspaceRoot(workspaceRoot);
+        e2b.setWorkspaceOnVolume(isWorkspaceOnVolume(workspaceRoot, e2b.getVolumeMounts()));
+        E2bSandboxClientOptions resumed = copy(defaultOptions);
         resumed.setCodec(e2b.getCodec());
+        resumed.setEnvdSandboxUrl(e2b.getEnvdSandboxUrl());
         return new E2bSandbox(e2b, resumed);
     }
 
@@ -112,6 +153,20 @@ public class E2bSandboxClient implements SandboxClient<E2bSandboxClientOptions> 
         }
     }
 
+    /**
+     * Restores the runtime storage client omitted from remote snapshot JSON while keeping the
+     * persisted archive id, matching {@code DockerSandboxClient}.
+     */
+    @Override
+    public SandboxState deserializeState(String json, SandboxSnapshotSpec snapshotSpec) {
+        SandboxState state = deserializeState(json);
+        if (snapshotSpec instanceof RemoteSnapshotSpec remoteSpec
+                && state.getSnapshot() instanceof RemoteSandboxSnapshot snapshot) {
+            state.setSnapshot(new RemoteSandboxSnapshot(remoteSpec.getClient(), snapshot.getId()));
+        }
+        return state;
+    }
+
     private E2bSandboxClientOptions merge(E2bSandboxClientOptions call) {
         E2bSandboxClientOptions o = copy(defaultOptions);
         if (call == null) {
@@ -125,6 +180,18 @@ public class E2bSandboxClient implements SandboxClient<E2bSandboxClientOptions> 
         }
         if (call.getDomain() != null) {
             o.setDomain(call.getDomain());
+        }
+        if (call.getEnvdSandboxUrl() != null) {
+            o.setEnvdSandboxUrl(call.getEnvdSandboxUrl());
+        }
+        if (call.getEnvdBaseUrl() != null) {
+            o.setEnvdBaseUrl(call.getEnvdBaseUrl());
+        }
+        if (call.recreateOnConnectFailureOverride() != null) {
+            o.setRecreateOnConnectFailure(call.isRecreateOnConnectFailure());
+        }
+        if (call.getMaxCapturedBytes() > 0) {
+            o.setMaxCapturedBytes(call.getMaxCapturedBytes());
         }
         if (call.getSandboxTimeoutSeconds() > 0) {
             o.setSandboxTimeoutSeconds(call.getSandboxTimeoutSeconds());
@@ -147,10 +214,73 @@ public class E2bSandboxClient implements SandboxClient<E2bSandboxClientOptions> 
         if (call.getHttpClient() != null) {
             o.setHttpClient(call.getHttpClient());
         }
+        // Null or empty call mounts keep the defaults (same convention as AgentRun OSS mounts);
+        // there is intentionally no "clear all mounts" via merge.
+        if (call.getVolumeMounts() != null && !call.getVolumeMounts().isEmpty()) {
+            o.setVolumeMounts(call.getVolumeMounts());
+        }
         o.setConnectTimeoutSeconds(call.getConnectTimeoutSeconds());
         o.setReadTimeoutSeconds(call.getReadTimeoutSeconds());
         o.setMaxRetries(call.getMaxRetries());
+        // 0 means "left at default" (indistinguishable from an explicit disable on a primitive),
+        // so only a positive per-call value overrides; the client default governs otherwise.
+        if (call.getSnapshotRetention() > 0) {
+            o.setSnapshotRetention(call.getSnapshotRetention());
+        }
+        if (!call.getEnvs().isEmpty()) {
+            o.getEnvs().putAll(call.getEnvs());
+        }
         return o;
+    }
+
+    /**
+     * Rejects blank or relative workspace roots fail-fast; every E2B operation assumes an
+     * absolute in-sandbox path.
+     *
+     * @param workspaceRoot workspace root to check
+     */
+    private static void requireAbsoluteWorkspaceRoot(String workspaceRoot) {
+        if (workspaceRoot == null
+                || workspaceRoot.isBlank()
+                || !workspaceRoot.strip().startsWith("/")) {
+            throw new SandboxException.SandboxConfigurationException(
+                    "E2B workspaceRoot must be an absolute in-sandbox path but was: "
+                            + workspaceRoot);
+        }
+    }
+
+    /**
+     * Resolves the effective in-sandbox workspace root, preferring an explicit {@link
+     * WorkspaceSpec} root over the options value.
+     *
+     * @param spec workspace spec supplied by the caller, may be {@code null}
+     * @param fallback root from the merged client options or persisted state
+     * @return the root to use for this sandbox
+     */
+    private static String resolveWorkspaceRoot(WorkspaceSpec spec, String fallback) {
+        if (spec != null && spec.getRoot() != null && !spec.getRoot().isBlank()) {
+            return spec.getRoot();
+        }
+        return fallback;
+    }
+
+    /**
+     * Returns whether a mount covers the effective workspace root.
+     *
+     * @param root effective workspace root
+     * @param mounts configured volume mounts
+     * @return true when a mount covers the workspace root
+     */
+    private static boolean isWorkspaceOnVolume(String root, List<E2bVolumeMount> mounts) {
+        if (root == null || root.isBlank() || mounts == null) {
+            return false;
+        }
+        for (E2bVolumeMount m : mounts) {
+            if (m != null && E2bVolumeMount.coversWorkspaceRoot(root, m.getPath())) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static E2bSandboxClientOptions copy(E2bSandboxClientOptions src) {
@@ -158,6 +288,10 @@ public class E2bSandboxClient implements SandboxClient<E2bSandboxClientOptions> 
         o.setApiKey(src.getApiKey());
         o.setApiBaseUrl(src.getApiBaseUrl());
         o.setDomain(src.getDomain());
+        o.setEnvdSandboxUrl(src.getEnvdSandboxUrl());
+        o.setEnvdBaseUrl(src.getEnvdBaseUrl());
+        o.setRecreateOnConnectFailure(src.isRecreateOnConnectFailure());
+        o.setMaxCapturedBytes(src.getMaxCapturedBytes());
         o.setTemplateId(src.getTemplateId());
         o.setWorkspaceRoot(src.getWorkspaceRoot());
         o.setSandboxTimeoutSeconds(src.getSandboxTimeoutSeconds());
@@ -165,9 +299,12 @@ public class E2bSandboxClient implements SandboxClient<E2bSandboxClientOptions> 
         o.setPersistenceMode(src.getPersistenceMode());
         o.setCodec(src.getCodec());
         o.setHttpClient(src.getHttpClient());
+        o.setVolumeMounts(src.getVolumeMounts());
         o.setConnectTimeoutSeconds(src.getConnectTimeoutSeconds());
         o.setReadTimeoutSeconds(src.getReadTimeoutSeconds());
         o.setMaxRetries(src.getMaxRetries());
+        o.setSnapshotRetention(src.getSnapshotRetention());
+        o.setEnvs(src.getEnvs());
         return o;
     }
 }

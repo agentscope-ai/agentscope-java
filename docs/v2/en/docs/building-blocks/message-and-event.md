@@ -1,6 +1,7 @@
 ---
-title: "Message & Event"
-description: "The core data abstractions for agent communication and streaming"
+title: Message & Event
+description: The core data abstractions for agent communication and streaming
+zh_link: /v2/zh/docs/building-blocks/message-and-event
 ---
 
 Message and event are the two fundamental data structures in AgentScope.
@@ -14,9 +15,13 @@ The event sequence emitted by a single `call` always condenses into exactly one 
 
 `Msg` (`io.agentscope.core.message`) represents one turn of conversation — a user input, an agent reply, or a system instruction — with content modelled as an ordered list of typed `ContentBlock`s.
 
-:::{tip}
+
+<Tip>
+
 A single assistant `Msg` corresponds to one full `call` cycle (multiple reasoning + acting iterations until the final reply).
-:::
+
+</Tip>
+
 
 ### Structure
 
@@ -41,15 +46,20 @@ Message content is composed of typed blocks, each representing one type of infor
 |-------|-------------|-----------|
 | `TextBlock` | Plain text content | USER, ASSISTANT, SYSTEM |
 | `DataBlock` | Binary data (image / audio / video) via base64 or URL — unifies the legacy ImageBlock / AudioBlock / VideoBlock | USER, ASSISTANT |
+| `DocumentBlock` | Document input (PDF, Word, plain text) via a provider-scoped file ID (`FileIdSource` with `provider` and `file_id`), URL, or base64 | USER |
 | `ImageBlock` / `AudioBlock` / `VideoBlock` | Legacy concrete media blocks (still supported; new code should prefer `DataBlock`) | USER |
 | `ThinkingBlock` | Model reasoning / chain of thought | ASSISTANT |
 | `ToolUseBlock` | A tool call: `id` / `name` / `input` / `state` (`ToolCallState`) | ASSISTANT |
 | `ToolResultBlock` | A tool result with `state` (`ToolResultState`) | ASSISTANT |
 | `HintBlock` | Instructions injected into the loop as user context | ASSISTANT |
 
-:::{note}
-Role constraints are enforced at construction: `USER` only allows text/data/image/audio/video blocks; `SYSTEM` only allows `TextBlock`; `ASSISTANT` allows all block types.
-:::
+
+<Note>
+
+Role constraints are enforced at construction: `USER` only allows text/data/document/image/audio/video blocks; `SYSTEM` only allows `TextBlock`; `ASSISTANT` allows all block types.
+
+</Note>
+
 
 ### Creating a message
 
@@ -130,7 +140,7 @@ Events are the streaming counterpart of messages. While the agent runs, it emits
 
 Every event carries `getReplyId()`, tying it to the message being assembled. Within a reply, `getBlockId()` or `getToolCallId()` acts as a correlation key for events that belong to the same content-block lifecycle. Events follow a **start → delta → end** pattern:
 
-```{mermaid}
+```mermaid
 sequenceDiagram
     participant Client
     participant Agent
@@ -166,6 +176,7 @@ sequenceDiagram
         rect rgba(200, 200, 100, 0.1)
             Note over Client,Agent: ToolResultBlock (toolCallId)
             Agent->>Client: ToolResultStartEvent
+            Agent->>Client: ToolProgressEvent (×N, from ToolEmitter)
             Agent->>Client: ToolResultTextDeltaEvent (×N)
             Agent->>Client: ToolResultDataDeltaEvent (×N)
             Agent->>Client: ToolResultEndEvent
@@ -186,12 +197,14 @@ All events extend `AgentEvent` (`io.agentscope.core.event`), which exposes the c
 | `getId()` | `String` | Unique event identifier |
 | `getCreatedAt()` | `String` | ISO 8601 timestamp |
 | `getType()` | `AgentEventType` | Event type enum |
-| `getSource()` | `String` | Source path identifying the originating agent. `null` for top-level agent events; a slash-separated path (e.g. `"main/researcher"`) for events forwarded from a subagent |
+| `getSource()` | `String` | Source path identifying the originating agent. `null` for top-level agent events; local subagent events use `parentSessionId/agentId/subagentSessionId` (e.g. `"main/researcher/sub-1"`), and remote subagent events use `parentSessionId/agentId/taskId` |
 | `getMetadata()` | `Map<String, Object>` | Optional key/value bag. Remote subagent forwards also set `taskId` (`AgentEvent.METADATA_TASK_ID`) to the harness / Agent Protocol task id and `parentSessionId` (`AgentEvent.METADATA_PARENT_SESSION_ID`) to the parent session when events are task-backed |
 
 Events are grouped below; unless noted otherwise, every event also carries `getReplyId()` linking it to the message being assembled.
 
-  :::{dropdown} Lifecycle events
+
+<Accordion title="Lifecycle events">
+
 **AgentStartEvent** — agent begins a new reply.
 
     | Method | Type | Description |
@@ -214,9 +227,13 @@ Events are grouped below; unless noted otherwise, every event also carries `getR
     | `getReplyId()` | `String` | Reply message ID |
 
     **RequestStopEvent** — early-stop request raised by middleware or a tool.
-:::
 
-  :::{dropdown} Text streaming events
+</Accordion>
+
+
+
+<Accordion title="Text streaming events">
+
 **TextBlockStartEvent** — a new text block begins.
 
     | Method | Type | Description |
@@ -238,20 +255,32 @@ Events are grouped below; unless noted otherwise, every event also carries `getR
     |--------|------|-------------|
     | `getReplyId()` | `String` | Reply message ID |
     | `getBlockId()` | `String` | Text-block correlation key within the current reply |
-:::
 
-  :::{dropdown} Thinking streaming events
+</Accordion>
+
+
+
+<Accordion title="Thinking streaming events">
+
 **ThinkingBlockStartEvent / ThinkingBlockDeltaEvent / ThinkingBlockEndEvent** — same shape as the text streaming events; specific to the model's chain of thought. Its `blockId` has the same reply-scoped correlation-key semantics.
-:::
 
-  :::{dropdown} Data streaming events
+</Accordion>
+
+
+
+<Accordion title="Data streaming events">
+
 **DataBlockStartEvent / DataBlockDeltaEvent / DataBlockEndEvent** — same shape as the text streaming events, carrying images / audio / video binary data:
 
     - `DataBlockStartEvent`: `getMediaType()` returns the MIME type (e.g. `"image/png"`).
     - `DataBlockDeltaEvent`: `getData()` returns incremental base64-encoded data.
-:::
 
-  :::{dropdown} Tool-call streaming events
+</Accordion>
+
+
+
+<Accordion title="Tool-call streaming events">
+
 **ToolCallStartEvent** — agent begins a tool call.
 
     | Method | Type | Description |
@@ -263,31 +292,45 @@ Events are grouped below; unless noted otherwise, every event also carries `getR
     **ToolCallDeltaEvent** — incremental tool-call arguments arrive; `getDelta()` returns a JSON fragment.
 
     **ToolCallEndEvent** — tool-call arguments complete.
-:::
 
-  :::{dropdown} Tool-result streaming events
-**ToolResultStartEvent** — tool starts executing (carries `toolCallId`, `toolCallName`).
+</Accordion>
 
-    **ToolResultTextDeltaEvent** — incremental text output from the tool; `getDelta()` returns a text fragment.
 
-    **ToolResultDataDeltaEvent** — incremental binary output from the tool; similar to `DataBlockDeltaEvent` with `mediaType` / `data` / `url`.
 
-    **ToolResultEndEvent** — tool completes.
+<Accordion title="Tool-result streaming events">
+
+**ToolResultStartEvent** — the tool starts executing (carries `toolCallId`, `toolCallName`); in sequential batches it fires when the tool's turn arrives, not when the batch is admitted.
+
+    **ToolProgressEvent** — an intermediate update published by a running tool through `ToolEmitter`. Progress is for display only and is never sent to the LLM; it must not be treated as part of the tool result.
+
+    **ToolResultTextDeltaEvent** — incremental text output from the tool's return value; `getDelta()` returns a text fragment. This is what the LLM receives as the tool result.
+
+    **ToolResultDataDeltaEvent** — incremental binary or structured output from the tool's return value; similar to `DataBlockDeltaEvent` with `mediaType` / `data` / `url`.
+
+    **ToolResultEndEvent** — the final tool result is available. Its text/data deltas and end event are delivered without waiting for other tools in the batch. Results may arrive in completion order; correlate them by `replyId` and `toolCallId`. PostActing, context updates, and the next model call still wait for the whole batch, with results kept in the original call order.
 
     | Method | Type | Description |
     |--------|------|-------------|
     | `getReplyId()` | `String` | Reply message ID |
     | `getToolCallId()` | `String` | The matching tool call ID |
     | `getState()` | `ToolResultState` | Final state: `SUCCESS`, `ERROR`, `INTERRUPTED`, `DENIED`, `RUNNING` |
-:::
 
-  :::{dropdown} Model-call events
+</Accordion>
+
+
+
+<Accordion title="Model-call events">
+
 **ModelCallStartEvent** — model API call starts (carries `modelName`).
 
     **ModelCallEndEvent** — model API call completes (carries `inputTokens` / `outputTokens`).
-:::
 
-  :::{dropdown} Human-in-the-loop events
+</Accordion>
+
+
+
+<Accordion title="Human-in-the-loop events">
+
 **RequireUserConfirmEvent** — agent pauses for user confirmation.
 
     | Method | Type | Description |
@@ -323,9 +366,13 @@ Events are grouped below; unless noted otherwise, every event also carries `getR
     | Method | Type | Description |
     |--------|------|-------------|
     | `getDeniedToolCalls()` | `List<ToolUseBlock>` | The denied tool calls |
-:::
 
-  :::{dropdown} Subagent events
+</Accordion>
+
+
+
+<Accordion title="Subagent events">
+
 **SubagentExposedEvent** — a subagent spawned via `agent_spawn(expose_to_user=true)` has been exposed as a user-addressable entry point. SSE / streaming consumers can use this to render a new conversation entry in the UI.
 
 | Method | Type | Description |
@@ -334,7 +381,9 @@ Events are grouped below; unless noted otherwise, every event also carries `getR
 | `getAgentId()` | `String` | Agent type ID of the subagent |
 | `getSessionId()` | `String` | Session ID of the subagent |
 | `getLabel()` | `String` | User-visible label (optional) |
-:::
+
+</Accordion>
+
 
 ## Reconstructing messages from events
 
@@ -369,9 +418,13 @@ agent.streamEvents(userMsg)
         .blockLast();
 ```
 
-:::{tip}
+
+<Tip>
+
 This decoupling makes deployments flexible: the backend pushes the event stream over SSE, and the frontend reconstructs the message client-side. Even if the connection drops, replaying events from any checkpoint restores the message state precisely.
-:::
+
+</Tip>
+
 
 ### Example: streaming UI
 
@@ -404,17 +457,26 @@ agent.streamEvents(new UserMessage("user", "Help me fix this bug"))
 
 ## Further reading
 
-::::{grid} 2
 
-:::{grid-item-card} Agent
-:link: ./agent.html
+<CardGroup cols={2}>
+
+
+
+<Card title="Agent" href="/v2/en/docs/building-blocks/agent">
+
 
 How agents emit events and messages in the ReAct loop
-:::
-  :::{grid-item-card} Context
-:link: context.html
+
+</Card>
+
+
+<Card title="Context" href="/v2/en/docs/building-blocks/context">
+
 
 How messages are stored and persisted
-:::
 
-::::
+</Card>
+
+
+
+</CardGroup>

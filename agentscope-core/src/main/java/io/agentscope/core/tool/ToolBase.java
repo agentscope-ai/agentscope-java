@@ -53,14 +53,14 @@ import reactor.core.publisher.Mono;
  *         .description("Read a file")
  *         .inputSchema(schema)
  *         .readOnly(true)
- *         .concurrencySafe(true)
- *         .build());
+ *         .concurrencySafe(true));
  * }</pre>
  */
 public abstract class ToolBase implements AgentTool {
 
     private final String name;
     private final String description;
+    private final String title;
     private final Map<String, Object> inputSchema;
     private final boolean concurrencySafe;
     private final boolean readOnly;
@@ -68,6 +68,10 @@ public abstract class ToolBase implements AgentTool {
     private final boolean stateInjected;
     private final boolean mcp;
     private final String mcpName;
+    private final boolean returnDirect;
+
+    /** Whether this is a system capability exempt from grant-layer trimming. */
+    private final boolean system;
 
     /** Sensitive files; subclasses may replace this list to widen or narrow protection. */
     protected List<String> dangerousFiles = ToolDangerousPathConstants.DEFAULT_DANGEROUS_FILES;
@@ -81,13 +85,16 @@ public abstract class ToolBase implements AgentTool {
         this(
                 builder.name,
                 builder.description,
+                builder.title,
                 builder.inputSchema,
                 builder.readOnly,
                 builder.concurrencySafe,
                 builder.mcp,
                 builder.mcpName,
                 builder.externalTool,
-                builder.stateInjected);
+                builder.stateInjected,
+                builder.returnDirect,
+                builder.system);
         if (builder.dangerousFiles != null) {
             this.dangerousFiles = List.copyOf(builder.dangerousFiles);
         }
@@ -110,8 +117,37 @@ public abstract class ToolBase implements AgentTool {
             String mcpName,
             boolean externalTool,
             boolean stateInjected) {
+        this(
+                name,
+                description,
+                null,
+                inputSchema,
+                readOnly,
+                concurrencySafe,
+                mcp,
+                mcpName,
+                externalTool,
+                stateInjected,
+                false,
+                false);
+    }
+
+    private ToolBase(
+            String name,
+            String description,
+            String title,
+            Map<String, Object> inputSchema,
+            boolean readOnly,
+            boolean concurrencySafe,
+            boolean mcp,
+            String mcpName,
+            boolean externalTool,
+            boolean stateInjected,
+            boolean returnDirect,
+            boolean system) {
         this.name = Objects.requireNonNull(name, "name must not be null");
         this.description = Objects.requireNonNull(description, "description must not be null");
+        this.title = title;
         this.inputSchema = Objects.requireNonNull(inputSchema, "inputSchema must not be null");
         this.readOnly = readOnly;
         this.concurrencySafe = concurrencySafe;
@@ -119,6 +155,8 @@ public abstract class ToolBase implements AgentTool {
         this.mcpName = mcpName;
         this.externalTool = externalTool;
         this.stateInjected = stateInjected;
+        this.returnDirect = returnDirect;
+        this.system = system;
         if (mcp && (mcpName == null || mcpName.isBlank())) {
             throw new IllegalArgumentException("mcpName is required when mcp is true");
         }
@@ -135,6 +173,11 @@ public abstract class ToolBase implements AgentTool {
     }
 
     @Override
+    public final String getTitle() {
+        return title;
+    }
+
+    @Override
     public final Map<String, Object> getParameters() {
         return inputSchema;
     }
@@ -146,6 +189,29 @@ public abstract class ToolBase implements AgentTool {
     @Override
     public final boolean isReadOnly() {
         return readOnly;
+    }
+
+    /**
+     * Whether this is a system capability exempt from grant-layer (per-user capability)
+     * trimming. Only framework/infrastructure tools should be marked system; a business tool
+     * marked system bypasses per-user capability trimming entirely (explicit declaration by
+     * the assembler — trusted boundary).
+     */
+    @Override
+    public final boolean isSystem() {
+        return system;
+    }
+
+    /**
+     * Whether this tool's result should short-circuit the ReAct loop and be returned directly
+     * to the caller as the turn's final answer, instead of being fed back to the model for
+     * another reasoning iteration. Defaults to {@code false}.
+     *
+     * @return {@code true} to return the result directly and skip the follow-up model call
+     */
+    @Override
+    public final boolean isReturnDirect() {
+        return returnDirect;
     }
 
     public final boolean isExternalTool() {
@@ -275,13 +341,16 @@ public abstract class ToolBase implements AgentTool {
     public static final class Builder {
         private String name;
         private String description;
+        private String title;
         private Map<String, Object> inputSchema;
         private boolean readOnly = false;
         private boolean concurrencySafe = true;
         private boolean externalTool = false;
         private boolean stateInjected = false;
+        private boolean returnDirect = false;
         private boolean mcp = false;
         private String mcpName;
+        private boolean system = false;
         private List<String> dangerousFiles;
         private List<String> dangerousDirectories;
 
@@ -294,6 +363,12 @@ public abstract class ToolBase implements AgentTool {
 
         public Builder description(String description) {
             this.description = description;
+            return this;
+        }
+
+        /** Sets the human-readable display name surfaced through {@link #getTitle()}. */
+        public Builder title(String title) {
+            this.title = title;
             return this;
         }
 
@@ -322,10 +397,29 @@ public abstract class ToolBase implements AgentTool {
             return this;
         }
 
+        /** Sets whether this tool's result should be returned directly to the caller. */
+        public Builder returnDirect(boolean returnDirect) {
+            this.returnDirect = returnDirect;
+            return this;
+        }
+
         /** Marks the tool as an MCP tool and records the MCP server name. */
         public Builder mcp(String mcpName) {
             this.mcp = true;
             this.mcpName = mcpName;
+            return this;
+        }
+
+        /**
+         * Marks the tool as a system capability exempt from grant-layer trimming. Only mark
+         * framework/infrastructure tools; business tools marked system bypass per-user
+         * capability trimming entirely.
+         *
+         * @param system true to exempt this tool from grant-layer trimming
+         * @return This builder for method chaining
+         */
+        public Builder system(boolean system) {
+            this.system = system;
             return this;
         }
 

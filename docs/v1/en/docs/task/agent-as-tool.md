@@ -1,10 +1,17 @@
-# Agent as Tool
+---
+title: Agent as Tool
+zh_link: /v1/zh/docs/task/agent-as-tool
+---
 
-```{admonition} Experimental Feature
-:class: warning
+<Warning>
+
+**Experimental Feature**
+
 
 This feature is currently experimental and the API may change. If you encounter any issues, please provide feedback via [GitHub Issues](https://github.com/agentscope-ai/agentscope-java/issues).
-```
+
+</Warning>
+
 
 ## Overview
 

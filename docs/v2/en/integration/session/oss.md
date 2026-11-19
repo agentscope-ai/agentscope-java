@@ -1,6 +1,14 @@
-```{note}
-This page has been superseded by [Distributed Storage — OSS](../distributed/oss.md). Content below is kept for reference.
-```
+---
+title: OSS State Store
+zh_link: /v2/zh/integration/session/oss
+---
+
+<Note>
+
+This page has been superseded by [Distributed Storage — OSS](/v2/en/integration/distributed/oss). Content below is kept for reference.
+
+</Note>
+
 
 # OSS State Store
 

@@ -1,6 +1,8 @@
 ---
-title: "Filesystem"
-description: "Three deployment modes: local + shell / shared store / sandbox; IsolationScope dimensions; multi-user isolation; how skills and tools behave in each mode"
+title: Filesystem
+description: 'Three deployment modes: local + shell / shared store / sandbox; IsolationScope
+  dimensions; multi-user isolation; how skills and tools behave in each mode'
+zh_link: /v2/zh/docs/harness/filesystem
 ---
 
 ## Role
@@ -53,6 +55,8 @@ HarnessAgent agent = HarnessAgent.builder()
 | `anonymousUserId(String)` | Fallback identifier when `userId` is absent | `"_default"` |
 | `addSharedPrefix(String)` | Route additional workspace-relative prefixes to the KV (e.g. `"prompts/"`, `"configs/"`) | none |
 | `workspaceIndex(WorkspaceIndex)` | SQLite index to accelerate remote ls/glob/grep | none (falls back to full store scan) |
+
+`WorkspaceIndex.open(workspaceRoot)` returns `null` when the optional local index cannot initialize, for example if `.index/workspace.db` is corrupt. It closes any connection acquired during that failed attempt, so callers can fall back to remote scans without retaining the failed connection. A successfully returned index keeps its connection until `close()` is called.
 
 #### Built-in routing rules
 
@@ -140,7 +144,7 @@ HarnessAgent agent = HarnessAgent.builder()
 | `exposedPorts(int...)` | Exposed ports | none |
 | `environment(Map)` | Container environment variables | none |
 | `workspaceRoot(String)` | Workspace mount point inside the container | `/workspace` |
-| `additionalRunArgs(String...)` | Extra `docker run` arguments | none |
+| `additionalRunArgs(String...)` / `additionalRunArgs(List)` | Extra `docker run` arguments; repeated calls append | none |
 | `snapshotSpec(SandboxSnapshotSpec)` | Snapshot strategy | `NoopSnapshotSpec` (no snapshots) |
 | `workspaceSpec(WorkspaceSpec)` | Workspace mount rules | default |
 | `executionGuard(SandboxExecutionGuard)` | Concurrency guard for AGENT / GLOBAL scope | none |
@@ -177,7 +181,7 @@ Main `KubernetesFilesystemSpec` options:
 | `kubernetesClient(KubernetesClient)` | custom fabric8 client | kubeconfig auto-loaded |
 | `snapshotSpec(SandboxSnapshotSpec)` | snapshot strategy (see the sandbox page for the PVC trade-off) | `NoopSnapshotSpec` |
 
-When neither `apiUrl` nor `gateway*` is set, a local tunnel via `kubectl port-forward` is used (good for development). The runtime image must satisfy the [runtime image contract](./sandbox.md#runtime-image-contract); **workspace persistence depends on the PVC configured in the template** — see [Sandbox - Kubernetes state persistence](./sandbox.md#kubernetes-state-persistence-pvc-is-the-first-layer).
+When neither `apiUrl` nor `gateway*` is set, a local tunnel via `kubectl port-forward` is used (good for development). The runtime image must satisfy the [runtime image contract](/v2/en/docs/harness/sandbox#runtime-image-contract); **workspace persistence depends on the PVC configured in the template** — see [Sandbox - Kubernetes state persistence](/v2/en/docs/harness/sandbox#kubernetes-state-persistence-pvc-is-the-first-layer).
 
 #### E2B sandbox
 
@@ -193,6 +197,40 @@ HarnessAgent agent = HarnessAgent.builder()
         .isolationScope(IsolationScope.SESSION))
     .build();
 ```
+
+Self-hosted E2B-compatible backends (e.g. CubeSandbox) that front the data plane with a single fixed gateway address can set `envdSandboxUrl` — the equivalent of the official SDK's `E2B_SANDBOX_URL`. Every sandbox's envd traffic then goes to that URL, and routing relies on the `E2b-Sandbox-Id` / `E2b-Sandbox-Port` request headers (sent automatically, like the official SDKs), so no wildcard DNS is required:
+
+```java
+.filesystem(new E2bFilesystemSpec()
+    .apiKey("${E2B_API_KEY}")
+    .apiBaseUrl("http://10.0.0.1:3000")     // control plane
+    .envdSandboxUrl("http://10.0.0.1:8080") // data plane (gateway must route by the E2B headers)
+    ...)
+```
+
+E2B volumes (private beta) provide persistent storage independent of sandbox lifecycles.
+Mount a pre-existing volume at sandbox creation time with `volumeMount(name, path)` —
+`name` is the existing volume name, `path` is the absolute in-sandbox mount path.
+The mounts are sent as `volumeMounts: [{name, path}]` on `POST /sandboxes` and re-attached
+automatically whenever the sandbox is recreated (connect-fallback or native-snapshot restore).
+Platform 400s (no beta access, unknown volume name) propagate with the response body.
+
+```java
+.filesystem(new E2bFilesystemSpec()
+    .apiKey("${E2B_API_KEY}")
+    .templateId("my-template")
+    .volumeMount("my-data", "/mnt/data")   // pre-existing volume
+    .workspaceRoot("/mnt/data/ws")          // workspace lives on the volume
+    .isolationScope(IsolationScope.SESSION))
+```
+
+When `workspaceRoot` sits on a volume mount, TAR workspace persistence becomes a no-op
+(the bytes are already durable) and destroy skips `rm -rf`; native snapshots still run so
+the software environment (installed deps, system state) is preserved. E2B volumes are
+read-write and can be mounted by multiple sandboxes at once with no locking guarantees —
+treat the workspace-on-volume layout as single-writer. Volume lifecycle
+management (create/delete/list) stays in the E2B dashboard/SDK — this covers attach-at-create
+only.
 
 #### Daytona sandbox
 
@@ -328,6 +366,9 @@ HarnessAgent agent = HarnessAgent.builder()
 | `addRoot(Path)` | Extra host directory the agent may access | none |
 | `additionalRoots(Collection)` | Batch-set extra directories | none |
 | `projectWritable(boolean)` | Route non-workspace writes to the project directory instead of workspace | `false` |
+| `namespaceBoundary(Boolean)` | Override the namespace boundary (absolute paths confined to the caller's own namespace under the workspace root, [isolation scopes](#isolationscope--bucketing-across-users-and-replicas)); `true`/`false` force, omit for the default | on for `ROOTED` |
+
+> **Upgrading — absolute paths under the workspace root:** the namespace boundary is on by default for `ROOTED` workspaces, so an absolute key such as `<workspace>/skills/tool.md` no longer reaches shared content at the workspace root (previously any session could address another session's directory that way). Shared content stays reachable through workspace-relative paths, which the overlay resolves against the read-only project layer; on a vetted single-tenant workspace that needs the old behaviour, pass `.namespaceBoundary(false)`.
 
 #### Path resolution policy (`LocalFsMode`)
 
@@ -466,12 +507,12 @@ workspace/
 
 ### Skills
 
-`DynamicSkillMiddleware` merges skills from the repository list before each reasoning turn and renders them into the system prompt. Skill file loading goes through the `AbstractFilesystem` interface, so it works transparently across all three modes:
+`HarnessSkillMiddleware` merges skills from the repository list before each call and renders them into the system prompt. Skill file loading goes through the `AbstractFilesystem` interface, so it works transparently across all three modes:
 
 | Mode | How skills load |
 |------|----------------|
 | Local | Read directly from `workspace/skills/` on local disk; `<userId>/skills/` for per-user overrides |
-| Shared store | `skills/` routes to KV — checks remote first, falls back to local template. Admin edits take effect on the next reasoning turn across all replicas |
+| Shared store | `skills/` routes to KV — checks remote first, falls back to local template. Admin edits take effect on the next call across all replicas |
 | Sandbox | Host `skills/` are injected into the sandbox's `/workspace/skills/` via workspace projection at startup |
 
 The four-layer priority is unchanged (low → high): `projectGlobalSkillsDir` → `skillRepository` → `workspace/skills/` → `<userId>/skills/`.
@@ -480,11 +521,19 @@ The four-layer priority is unchanged (low → high): `projectGlobalSkillsDir` �
 
 All file tools call through the `AbstractFilesystem` interface, passing the current `RuntimeContext` on every operation. The filesystem implementation decides the actual read/write location. Agent code is completely unaware of the mode.
 
+`read_file` bounds each response to 16,000 Unicode code points by default, even when `limit` is omitted or a single line is very long. Set the optional `max_chars` to request a different page size, clamped to the application-configured maximum (32,000 by default). `offset` and `limit` still select lines; `char_offset` selects a character page **within that same line selection**, starting at zero. When truncated, the result supplies the next `char_offset`: keep the same path, `offset`, and `limit` to continue. Unicode surrogate pairs are never split. Read a stable file when assembling multiple pages; offsets do not identify an immutable snapshot.
+
+Configure the maximum with `HarnessAgent.Builder.readFileMaxChars(int)`. For example, `.readFileMaxChars(64_000)` permits a tool call to request up to 64,000 code points. The configured maximum must be at least 16,000; smaller values cause `IllegalArgumentException`. Automatically constructed general-purpose and declared subagents inherit the setting. Raising the maximum does not change the 16,000-code-point page size when `max_chars` is omitted. Direct users of `FilesystemTool` can pass the maximum to its `(filesystem, pathNormalizer, readFileMaxChars)` constructor; existing constructors retain the default maximum.
+
+This also bounds reads of offloaded tool artifacts. These limits apply to tool output for all filesystem backends; they do not bound the backend's allocation or I/O when producing the selected content. Binary content is paged as its encoded text and must be reassembled before decoding.
+
 | Mode | Read/write behavior |
 |------|-------------------|
 | Local | `OverlayFilesystem`: writes land in workspace (upper); reads check workspace first, then project (lower). With `projectWritable(true)`, non-metadata writes are routed to the project directory |
 | Shared store | `CompositeFilesystem`: routed paths go through KV overlay (remote upper + local template lower); others go local |
 | Sandbox | All file operations forwarded into the sandbox container |
+
+`edit_file` requires a non-empty `oldString` and a non-null `newString`; pass `""` as `newString` to delete the matched text. Replacement normalizes CRLF and lone-CR line endings to LF before matching and writes the edited content with LF line endings, consistently across filesystem modes.
 
 ### Shell execution (execute)
 
@@ -504,7 +553,9 @@ Under shared-store mode, `tools.json` also follows the "remote upper, local temp
 
 ## Two-layer reading in the workspace
 
-Key files like `AGENTS.md`, `MEMORY.md`, `KNOWLEDGE.md` have a "two-layer fallback" on reads: look in your configured filesystem first, fall back to local disk if not found. This is useful for **"template files" in mode 1 (shared store)**: the first replica's local has the template `AGENTS.md` so it works immediately; later replicas read the up-to-date version from the shared store.
+Key files like `AGENTS.md`, `KNOWLEDGE.md` have a "two-layer fallback" on reads: look in your configured filesystem first, fall back to local disk if not found. This is useful for **"template files" in mode 1 (shared store)**: the first replica's local has the template `AGENTS.md` so it works immediately; later replicas read the up-to-date version from the shared store.
+
+Per-identity runtime data (`MEMORY.md`, `memory/*.md`, task records) falls back **inside the caller's namespace**, never the workspace root. See [Workspace](/v2/en/docs/harness/workspace#two-layer-reads-filesystem-first--local-fallback) for the rule.
 
 Writes always go through the configured filesystem store.
 
@@ -523,9 +574,9 @@ Usually not needed — the three modes cover ~95% of use cases.
 
 ## Related Pages
 
-- [Sandbox](./sandbox.md) — runtime details of mode 2 (container lifecycle, snapshot recovery chain)
-- [Workspace](./workspace.md) — directory layout, loading mechanics, the "lower layer" of two-layer reads
-- [Context](../building-blocks/context.md) — `AgentState` and `AgentStateStore`, `(userId, sessionId)` addressing
-- [Skills](./skill.md) — four-layer composition, self-learning loop, the `<available_skills>` block
-- [Tools](../building-blocks/tool.md) — `read_file` / `write_file` / `execute` parameters
-- [Architecture](./architecture.md) — how filesystem and runtime context cooperate
+- [Sandbox](/v2/en/docs/harness/sandbox) — runtime details of mode 2 (container lifecycle, snapshot recovery chain)
+- [Workspace](/v2/en/docs/harness/workspace) — directory layout, loading mechanics, the "lower layer" of two-layer reads
+- [Context](/v2/en/docs/building-blocks/context) — `AgentState` and `AgentStateStore`, `(userId, sessionId)` addressing
+- [Skills](/v2/en/docs/harness/skill) — four-layer composition, self-learning loop, the `<available_skills>` block
+- [Tools](/v2/en/docs/building-blocks/tool) — `read_file` / `write_file` / `execute` parameters
+- [Architecture](/v2/en/docs/harness/architecture) — how filesystem and runtime context cooperate

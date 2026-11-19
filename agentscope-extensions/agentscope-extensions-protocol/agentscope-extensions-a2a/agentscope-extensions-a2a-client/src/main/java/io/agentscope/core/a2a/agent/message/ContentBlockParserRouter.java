@@ -16,16 +16,18 @@
 
 package io.agentscope.core.a2a.agent.message;
 
-import io.a2a.spec.Part;
 import io.agentscope.core.a2a.agent.utils.LoggerUtil;
 import io.agentscope.core.message.AudioBlock;
 import io.agentscope.core.message.ContentBlock;
+import io.agentscope.core.message.DocumentBlock;
+import io.agentscope.core.message.HintBlock;
 import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ThinkingBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.message.VideoBlock;
+import org.a2aproject.sdk.spec.Part;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -50,6 +52,8 @@ public class ContentBlockParserRouter {
             return new TextBlockParser().parse(textBlock);
         } else if (contentBlock instanceof ThinkingBlock thinkingBlock) {
             return new ThinkingBlockParser().parse(thinkingBlock);
+        } else if (contentBlock instanceof HintBlock hintBlock) {
+            return new HintBlockParser().parse(hintBlock);
         } else if (contentBlock instanceof ImageBlock imageBlock) {
             return new ImageBlockParser().parse(imageBlock);
         } else if (contentBlock instanceof AudioBlock audioBlock) {
@@ -60,6 +64,8 @@ public class ContentBlockParserRouter {
             return new ToolUseBlockParser().parse(toolUseBlock);
         } else if (contentBlock instanceof ToolResultBlock toolResultBlock) {
             return new ToolResultBlockParser().parse(toolResultBlock);
+        } else if (contentBlock instanceof DocumentBlock documentBlock) {
+            return new DocumentBlockParser().parse(documentBlock);
         }
         LoggerUtil.warn(
                 log,

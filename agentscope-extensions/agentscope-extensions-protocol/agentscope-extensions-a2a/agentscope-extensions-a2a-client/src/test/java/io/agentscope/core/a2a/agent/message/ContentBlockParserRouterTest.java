@@ -15,27 +15,34 @@
  */
 package io.agentscope.core.a2a.agent.message;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
-import io.a2a.spec.DataPart;
-import io.a2a.spec.FilePart;
-import io.a2a.spec.FileWithBytes;
-import io.a2a.spec.Part;
-import io.a2a.spec.TextPart;
 import io.agentscope.core.message.AudioBlock;
 import io.agentscope.core.message.Base64Source;
 import io.agentscope.core.message.ContentBlock;
+import io.agentscope.core.message.DocumentBlock;
+import io.agentscope.core.message.FileIdSource;
+import io.agentscope.core.message.HintBlock;
 import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ThinkingBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
+import io.agentscope.core.message.URLSource;
 import io.agentscope.core.message.VideoBlock;
 import java.util.Base64;
+import org.a2aproject.sdk.spec.DataPart;
+import org.a2aproject.sdk.spec.FileContent;
+import org.a2aproject.sdk.spec.FilePart;
+import org.a2aproject.sdk.spec.FileWithBytes;
+import org.a2aproject.sdk.spec.FileWithUri;
+import org.a2aproject.sdk.spec.Part;
+import org.a2aproject.sdk.spec.TextPart;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -83,6 +90,23 @@ class ContentBlockParserRouterTest {
     }
 
     @Test
+    @DisplayName("Should parse HintBlock with its identity and source")
+    void testParseHintBlock() {
+        HintBlock block = new HintBlock("hint-1", "Check the inbox", "alice");
+
+        Part<?> result = router.parse(block);
+
+        assertNotNull(result);
+        TextPart textPart = assertInstanceOf(TextPart.class, result);
+        assertEquals("Check the inbox", textPart.text());
+        assertEquals(
+                MessageConstants.BlockContent.TYPE_HINT,
+                textPart.metadata().get(MessageConstants.BLOCK_TYPE_METADATA_KEY));
+        assertEquals("hint-1", textPart.metadata().get(MessageConstants.HINT_ID_METADATA_KEY));
+        assertEquals("alice", textPart.metadata().get(MessageConstants.HINT_SOURCE_METADATA_KEY));
+    }
+
+    @Test
     @DisplayName("Should parse ImageBlock")
     void testParseImageBlock() {
         ImageBlock block = mock(ImageBlock.class);
@@ -95,7 +119,7 @@ class ContentBlockParserRouterTest {
 
         assertNotNull(result);
         assertInstanceOf(FilePart.class, result);
-        assertInstanceOf(FileWithBytes.class, ((FilePart) result).getFile());
+        assertInstanceOf(FileWithBytes.class, ((FilePart) result).file());
     }
 
     @Test
@@ -111,7 +135,7 @@ class ContentBlockParserRouterTest {
 
         assertNotNull(result);
         assertInstanceOf(FilePart.class, result);
-        assertInstanceOf(FileWithBytes.class, ((FilePart) result).getFile());
+        assertInstanceOf(FileWithBytes.class, ((FilePart) result).file());
     }
 
     @Test
@@ -127,7 +151,7 @@ class ContentBlockParserRouterTest {
 
         assertNotNull(result);
         assertInstanceOf(FilePart.class, result);
-        assertInstanceOf(FileWithBytes.class, ((FilePart) result).getFile());
+        assertInstanceOf(FileWithBytes.class, ((FilePart) result).file());
     }
 
     @Test
@@ -150,6 +174,81 @@ class ContentBlockParserRouterTest {
 
         assertNotNull(result);
         assertInstanceOf(DataPart.class, result);
+    }
+
+    @Test
+    @DisplayName("Should parse a DocumentBlock with a URL source to a FilePart")
+    void testParseDocumentBlockWithUrlSource() {
+        DocumentBlock block =
+                DocumentBlock.builder()
+                        .name("report.pdf")
+                        .mimeType("application/pdf")
+                        .source(new URLSource("https://example.com/report.pdf"))
+                        .build();
+
+        Part<?> result = router.parse(block);
+
+        assertNotNull(result);
+        assertInstanceOf(FilePart.class, result);
+        FileContent file = ((FilePart) result).file();
+        assertEquals("report.pdf", file.name());
+        assertEquals("application/pdf", file.mimeType());
+        assertEquals("https://example.com/report.pdf", ((FileWithUri) file).uri());
+    }
+
+    @Test
+    @DisplayName("Should take the MIME type from the URL source when the block has none")
+    void testParseDocumentBlockWithMimeTypeOnTheSource() {
+        DocumentBlock block =
+                DocumentBlock.builder()
+                        .name("report.pdf")
+                        .source(
+                                URLSource.builder()
+                                        .url("https://example.com/report.pdf")
+                                        .mimeType("application/pdf")
+                                        .build())
+                        .build();
+
+        Part<?> result = router.parse(block);
+
+        assertInstanceOf(FilePart.class, result);
+        assertEquals("application/pdf", ((FilePart) result).file().mimeType());
+    }
+
+    @Test
+    @DisplayName("Should fall back to a text reference when a URL document has no MIME type")
+    void testParseUrlDocumentWithoutMimeTypeAsText() {
+        DocumentBlock block =
+                DocumentBlock.builder()
+                        .name("topic.pdf")
+                        .source(new URLSource("https://example.test/download?id=7"))
+                        .build();
+
+        Part<?> result = router.parse(block);
+
+        assertInstanceOf(TextPart.class, result);
+        assertEquals(
+                "[document: topic.pdf, url: https://example.test/download?id=7]",
+                ((TextPart) result).text());
+    }
+
+    @Test
+    @DisplayName("Should fall back to a text reference for a provider file id")
+    void testParseFileIdDocumentBlockAsText() {
+        DocumentBlock block =
+                DocumentBlock.builder()
+                        .name("report.pdf")
+                        .mimeType("application/pdf")
+                        .source(new FileIdSource("dashscope", "file-1"))
+                        .build();
+
+        Part<?> result = router.parse(block);
+
+        assertNotNull(result);
+        assertInstanceOf(TextPart.class, result);
+        assertEquals(
+                "[document: report.pdf, application/pdf, provider file id: file-1 (dashscope)]",
+                ((TextPart) result).text());
     }
 
     @Test

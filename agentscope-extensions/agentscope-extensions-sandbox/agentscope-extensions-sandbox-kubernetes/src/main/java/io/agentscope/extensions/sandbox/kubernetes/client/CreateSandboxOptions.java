@@ -15,7 +15,9 @@
  */
 package io.agentscope.extensions.sandbox.kubernetes.client;
 
+import io.agentscope.extensions.sandbox.kubernetes.client.crd.SandboxClaimSpec.EnvVar;
 import java.util.Collections;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -33,12 +35,14 @@ public final class CreateSandboxOptions {
     private final Map<String, String> labels;
     private final Map<String, String> podLabels;
     private final Map<String, String> podAnnotations;
+    private final List<EnvVar> env;
 
     private CreateSandboxOptions(Builder builder) {
         if (builder.warmPool == null || builder.warmPool.isBlank()) {
             throw new IllegalArgumentException("Warmpool name cannot be empty");
         }
         this.warmPool = builder.warmPool;
+        this.env = builder.env == null ? List.of() : List.copyOf(builder.env);
         this.namespace = builder.namespace != null ? builder.namespace : "default";
         this.claimName = builder.claimName;
         this.sandboxReadyTimeoutSeconds =
@@ -99,6 +103,10 @@ public final class CreateSandboxOptions {
         return podAnnotations;
     }
 
+    public List<EnvVar> env() {
+        return env;
+    }
+
     /** Builder for {@link CreateSandboxOptions}. */
     public static final class Builder {
         private final String warmPool;
@@ -109,6 +117,7 @@ public final class CreateSandboxOptions {
         private Map<String, String> labels;
         private Map<String, String> podLabels;
         private Map<String, String> podAnnotations;
+        private List<EnvVar> env;
 
         private Builder(String warmPool) {
             this.warmPool = warmPool;
@@ -152,6 +161,11 @@ public final class CreateSandboxOptions {
 
         public Builder podAnnotations(Map<String, String> podAnnotations) {
             this.podAnnotations = podAnnotations;
+            return this;
+        }
+
+        public Builder env(List<EnvVar> env) {
+            this.env = env;
             return this;
         }
 

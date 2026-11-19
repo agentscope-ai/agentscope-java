@@ -16,10 +16,12 @@
 package io.agentscope.harness.agent.gateway;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.test.MockModel;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
@@ -31,6 +33,7 @@ import io.agentscope.harness.agent.HarnessAgent;
 import io.agentscope.harness.agent.filesystem.local.LocalFilesystem;
 import io.agentscope.harness.agent.filesystem.remote.store.BaseStore;
 import io.agentscope.harness.agent.filesystem.remote.store.InMemoryStore;
+import io.agentscope.harness.agent.testing.HarnessQuiescence;
 import java.nio.file.Path;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -41,6 +44,7 @@ import java.util.function.Function;
 import java.util.function.Supplier;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.mockito.Mockito;
 
 /**
  * End-to-end coverage of the distributed exposed-subagent recovery chain introduced for the
@@ -60,6 +64,7 @@ import org.junit.jupiter.api.io.TempDir;
  * sees in its context: node B observing {@code turns=2} can only happen if it resolved the handle
  * from the shared registry <em>and</em> loaded node A's prior turn from the shared state store.
  */
+@HarnessQuiescence
 class SubagentRegistryRecoveryIntegrationTest {
 
     @TempDir Path workspace;
@@ -221,5 +226,64 @@ class SubagentRegistryRecoveryIntegrationTest {
                         Instant.now().minusSeconds(120),
                         Instant.now().minusSeconds(60)));
         assertTrue(reader.find("sub-expired").isEmpty(), "expired record must not resolve");
+    }
+
+    @Test
+    void storeBackedRegistryRevokesEveryHandleForChildSession() {
+        BaseStore sharedBase = new InMemoryStore();
+        SubagentRegistry writer = new StoreBackedSubagentRegistry(sharedBase);
+        SubagentRegistry reader = new StoreBackedSubagentRegistry(sharedBase);
+        writer.register(record("sub-first", SUB_SESSION));
+        writer.register(record("sub-second", SUB_SESSION));
+        writer.register(record("sub-other", "other-session"));
+
+        assertTrue(writer.revokeBySessionId(SUB_SESSION));
+        assertTrue(reader.find("sub-first").isEmpty());
+        assertTrue(reader.find("sub-second").isEmpty());
+        assertTrue(reader.find("sub-other").isPresent());
+        assertFalse(writer.revokeBySessionId("missing-session"));
+    }
+
+    @Test
+    void storeBackedRegistryRevokesHandlesBeyondFirstSearchPage() {
+        BaseStore sharedBase = new InMemoryStore();
+        SubagentRegistry writer = new StoreBackedSubagentRegistry(sharedBase);
+        SubagentRegistry reader = new StoreBackedSubagentRegistry(sharedBase);
+        for (int i = 0; i < 1001; i++) {
+            writer.register(record("sub-page-" + i, SUB_SESSION));
+        }
+
+        assertTrue(writer.revokeBySessionId(SUB_SESSION));
+
+        assertTrue(reader.find("sub-page-0").isEmpty());
+        assertTrue(reader.find("sub-page-1000").isEmpty());
+    }
+
+    @Test
+    void gatewayRevokesLiveAndDurableHandlesForChildSession() {
+        BaseStore sharedBase = new InMemoryStore();
+        HarnessGateway gateway = HarnessGateway.create();
+        gateway.setSubagentRegistry(new StoreBackedSubagentRegistry(sharedBase));
+        Agent agent = Mockito.mock(Agent.class);
+        String first = gateway.exposeSubagent("echo", SUB_SESSION, agent, null);
+        String second = gateway.exposeSubagent("echo", SUB_SESSION, agent, null);
+        String other = gateway.exposeSubagent("echo", "other-session", agent, null);
+
+        assertTrue(gateway.revokeSubagentsBySession(SUB_SESSION));
+
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> gateway.runSubagent(first, List.of()).block());
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> gateway.runSubagent(second, List.of()).block());
+        assertTrue(new StoreBackedSubagentRegistry(sharedBase).find(first).isEmpty());
+        assertTrue(new StoreBackedSubagentRegistry(sharedBase).find(second).isEmpty());
+        assertTrue(new StoreBackedSubagentRegistry(sharedBase).find(other).isPresent());
+    }
+
+    private static SubagentRecord record(String subagentId, String sessionId) {
+        return new SubagentRecord(
+                subagentId, "echo", sessionId, "user-1", "parent-1", Instant.now(), null);
     }
 }

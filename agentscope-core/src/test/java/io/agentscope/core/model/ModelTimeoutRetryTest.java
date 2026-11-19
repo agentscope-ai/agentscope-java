@@ -20,6 +20,8 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.model.transport.HttpTransportException;
+import java.net.SocketException;
 import java.time.Duration;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -237,6 +239,128 @@ class ModelTimeoutRetryTest {
 
         // Should only attempt once
         assertEquals(1, attemptCount.get());
+    }
+
+    @Test
+    @DisplayName("Should retry connection reset before the first response is emitted")
+    void shouldRetryConnectionResetBeforeFirstResponseEmitted() {
+        AtomicInteger attemptCount = new AtomicInteger(0);
+
+        // First attempt resets the connection before emitting anything (issue #3057);
+        // the retry opens a fresh connection and succeeds.
+        Flux<ChatResponse> source =
+                Flux.defer(
+                        () -> {
+                            if (attemptCount.incrementAndGet() == 1) {
+                                return Flux.error(
+                                        new HttpTransportException(
+                                                "SSE/NDJSON stream failed: Connection reset",
+                                                new SocketException("Connection reset")));
+                            }
+                            return Flux.just(createMockResponse());
+                        });
+
+        ExecutionConfig executionConfig =
+                ExecutionConfig.builder()
+                        .maxAttempts(3)
+                        .initialBackoff(Duration.ofMillis(10))
+                        .build();
+        GenerateOptions options =
+                GenerateOptions.builder().executionConfig(executionConfig).build();
+
+        StepVerifier.create(
+                        ModelUtils.applyTimeoutAndRetry(
+                                source, options, null, "test-model", "test"))
+                .expectNextCount(1)
+                .verifyComplete();
+
+        // Nothing had been emitted when the first attempt failed, so a retry was allowed
+        assertEquals(2, attemptCount.get());
+    }
+
+    @Test
+    @DisplayName("Should not retry after a response has already been emitted")
+    void shouldNotRetryAfterResponseEmitted() {
+        AtomicInteger attemptCount = new AtomicInteger(0);
+
+        // Every attempt emits one response chunk and then the connection resets:
+        // retrying would reissue the request and duplicate the already-delivered chunk.
+        Flux<ChatResponse> source =
+                Flux.defer(
+                        () -> {
+                            attemptCount.incrementAndGet();
+                            return Flux.concat(
+                                    Flux.just(createMockResponse()),
+                                    Flux.error(
+                                            new HttpTransportException(
+                                                    "SSE/NDJSON stream failed: Connection reset",
+                                                    new SocketException("Connection reset"))));
+                        });
+
+        ExecutionConfig executionConfig =
+                ExecutionConfig.builder()
+                        .maxAttempts(3)
+                        .initialBackoff(Duration.ofMillis(10))
+                        .build();
+        GenerateOptions options =
+                GenerateOptions.builder().executionConfig(executionConfig).build();
+
+        // The already-emitted chunk is delivered, then the error propagates without retry
+        StepVerifier.create(
+                        ModelUtils.applyTimeoutAndRetry(
+                                source, options, null, "test-model", "test"))
+                .expectNextCount(1)
+                .expectError(HttpTransportException.class)
+                .verify();
+
+        assertEquals(1, attemptCount.get());
+    }
+
+    @Test
+    @DisplayName("Should retry after role-only chunks that carry no visible content")
+    void shouldRetryAfterEmptyContentChunks() {
+        AtomicInteger attemptCount = new AtomicInteger(0);
+
+        // First attempt emits a role-only chunk (no content blocks) before the connection
+        // resets: nothing user-visible was delivered, so retrying cannot duplicate content.
+        Flux<ChatResponse> source =
+                Flux.defer(
+                        () -> {
+                            if (attemptCount.incrementAndGet() == 1) {
+                                return Flux.concat(
+                                        Flux.just(
+                                                new ChatResponse(
+                                                        "role-only-chunk",
+                                                        List.of(),
+                                                        null,
+                                                        null,
+                                                        null)),
+                                        Flux.error(
+                                                new HttpTransportException(
+                                                        "SSE/NDJSON stream failed: Connection"
+                                                                + " reset",
+                                                        new SocketException("Connection reset"))));
+                            }
+                            return Flux.just(createMockResponse());
+                        });
+
+        ExecutionConfig executionConfig =
+                ExecutionConfig.builder()
+                        .maxAttempts(3)
+                        .initialBackoff(Duration.ofMillis(10))
+                        .build();
+        GenerateOptions options =
+                GenerateOptions.builder().executionConfig(executionConfig).build();
+
+        StepVerifier.create(
+                        ModelUtils.applyTimeoutAndRetry(
+                                source, options, null, "test-model", "test"))
+                // role-only chunk of attempt 1 + the full response of attempt 2
+                .expectNextCount(2)
+                .verifyComplete();
+
+        // The role-only chunk carries no visible content, so a retry was allowed
+        assertEquals(2, attemptCount.get());
     }
 
     // Helper methods to create test models

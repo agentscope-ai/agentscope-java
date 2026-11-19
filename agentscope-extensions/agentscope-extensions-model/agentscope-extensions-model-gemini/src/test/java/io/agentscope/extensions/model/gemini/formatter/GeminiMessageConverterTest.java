@@ -21,10 +21,16 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.google.genai.types.CodeExecutionResult;
 import com.google.genai.types.Content;
+import com.google.genai.types.Outcome;
 import com.google.genai.types.Part;
+import com.google.genai.types.ToolResponse;
 import io.agentscope.core.message.AudioBlock;
 import io.agentscope.core.message.Base64Source;
+import io.agentscope.core.message.DataBlock;
+import io.agentscope.core.message.DocumentBlock;
+import io.agentscope.core.message.FileIdSource;
 import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
@@ -34,6 +40,7 @@ import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.message.URLSource;
 import io.agentscope.core.message.VideoBlock;
+import io.agentscope.core.util.JsonUtils;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.HashMap;
@@ -410,6 +417,37 @@ class GeminiMessageConverterTest {
     }
 
     @Test
+    @DisplayName("Should handle tool result with URL data block")
+    void testToolResultWithURLData() {
+        DataBlock dataBlock =
+                DataBlock.builder()
+                        .source(URLSource.builder().url("https://example.com/asset.bin").build())
+                        .build();
+
+        ToolResultBlock toolResultBlock =
+                ToolResultBlock.builder()
+                        .id("call_123")
+                        .name("tool")
+                        .output(List.of(dataBlock))
+                        .build();
+
+        Msg msg =
+                Msg.builder()
+                        .name("system")
+                        .content(List.of(toolResultBlock))
+                        .role(MsgRole.TOOL)
+                        .build();
+
+        List<Content> result = converter.convertMessages(List.of(msg));
+
+        Part part = result.get(0).parts().get().get(0);
+        String output = (String) part.functionResponse().get().response().get().get("output");
+        assertTrue(
+                output.contains(
+                        "The returned data can be found at: https://example.com/asset.bin"));
+    }
+
+    @Test
     @DisplayName("Should handle empty tool result output")
     void testToolResultEmptyOutput() {
         ToolResultBlock toolResultBlock =
@@ -431,6 +469,44 @@ class GeminiMessageConverterTest {
         Part part = result.get(0).parts().get().get(0);
         String output = (String) part.functionResponse().get().response().get().get("output");
         assertEquals("", output);
+    }
+
+    @Test
+    @DisplayName("A base64 document in a tool result is referenced, never written to disk")
+    void testToolResultWithBase64DocumentUsesReference() {
+        ToolResultBlock toolResultBlock =
+                ToolResultBlock.builder()
+                        .id("call_123")
+                        .name("tool")
+                        .output(
+                                List.of(
+                                        DocumentBlock.builder()
+                                                .source(
+                                                        Base64Source.builder()
+                                                                .mediaType("application/pdf")
+                                                                .data("aGVsbG8gd29ybGQ=")
+                                                                .build())
+                                                .name("report.pdf")
+                                                .mimeType("application/pdf")
+                                                .build()))
+                        .build();
+
+        Msg msg =
+                Msg.builder()
+                        .name("system")
+                        .content(List.of(toolResultBlock))
+                        .role(MsgRole.TOOL)
+                        .build();
+
+        List<Content> result = converter.convertMessages(List.of(msg));
+
+        Part part = result.get(0).parts().get().get(0);
+        String output = (String) part.functionResponse().get().response().get().get("output");
+        assertTrue(output.contains("[document: report.pdf, application/pdf"), output);
+        assertTrue(output.contains("inline base64"), output);
+        // The legacy media path hands the model a temp file path on the local disk; documents
+        // must not go through it.
+        assertFalse(output.contains("can be found at"), output);
     }
 
     @Test
@@ -627,17 +703,19 @@ class GeminiMessageConverterTest {
 
         List<Content> result = converter.convertMessages(List.of(msg));
 
-        // Should have 2 Content objects: tool result added first, then text parts
+        // Should have 2 Content objects: the message's own text parts first, then the tool
+        // result content appended after them so the response always follows the call.
         assertEquals(2, result.size());
 
-        // First content should be the tool result (added during block processing)
-        Content toolResultContent = result.get(0);
+        // First content should have text parts before and after
+        Content textContent = result.get(0);
+        assertEquals("user", textContent.role().get());
+        assertEquals(2, textContent.parts().get().size());
+
+        // Second content should be the tool result (appended after the message content)
+        Content toolResultContent = result.get(1);
         assertEquals("user", toolResultContent.role().get());
         assertNotNull(toolResultContent.parts().get().get(0).functionResponse().get());
-
-        // Second content should have text parts before and after
-        Content textContent = result.get(1);
-        assertEquals(2, textContent.parts().get().size());
     }
 
     @Test
@@ -1016,5 +1094,666 @@ class GeminiMessageConverterTest {
         Map<String, Object> args = part.functionCall().get().args().get();
         assertEquals("Tokyo", args.get("city"));
         assertEquals("celsius", args.get("unit"));
+    }
+
+    @Test
+    @DisplayName(
+            "Should keep inline server tool call and result in the model message (regression:"
+                    + " previously split and reordered)")
+    void testConvertAssistantMessageWithInlineServerToolResult() {
+        // Blocks exactly as produced by GeminiResponseParser from a response that contains a
+        // server-side tool call with its inline result plus a local function call.
+        ToolUseBlock serverToolUse =
+                ToolUseBlock.builder()
+                        .id("call_277215")
+                        .name("GOOGLE_SEARCH_WEB")
+                        .input(Map.of("queries", List.of("southernmost city in China")))
+                        .metadata(Map.of(ToolUseBlock.METADATA_SERVER_TOOL, true))
+                        .build();
+
+        ToolResponse serverToolResponse =
+                ToolResponse.builder()
+                        .id("call_277215")
+                        .toolType("GOOGLE_SEARCH_WEB")
+                        .response(Map.of("search_suggestions", "southernmost city in China"))
+                        .build();
+
+        ToolResultBlock serverToolResult =
+                ToolResultBlock.builder()
+                        .id("call_277215")
+                        .name("GOOGLE_SEARCH_WEB")
+                        .metadata(
+                                Map.of(
+                                        ToolResultBlock.METADATA_SERVER_TOOL,
+                                        true,
+                                        GeminiResponseParser.METADATA_SERVER_TOOL_RESPONSE,
+                                        serverToolResponse.toJson(),
+                                        ToolUseBlock.METADATA_THOUGHT_SIGNATURE,
+                                        "server-result-signature".getBytes()))
+                        .output(
+                                TextBlock.builder()
+                                        .text(
+                                                "{\"search_suggestions\":\"southernmost city in"
+                                                        + " China\"}")
+                                        .build())
+                        .build();
+
+        ToolUseBlock localToolUse =
+                ToolUseBlock.builder()
+                        .id("call_277275")
+                        .name("getWeather")
+                        .input(Map.of("location", "Sansha, China"))
+                        .build();
+
+        Msg msg =
+                Msg.builder()
+                        .name("assistant")
+                        .content(List.of(serverToolUse, serverToolResult, localToolUse))
+                        .role(MsgRole.ASSISTANT)
+                        .build();
+
+        // Format for the next request; must not throw (regression: convertValue(String, Map)
+        // previously raised IllegalArgumentException on the serialized response JSON).
+        List<Content> result = converter.convertMessages(List.of(msg));
+
+        // Gemini requires the original candidate content to be circulated as one model message:
+        // toolCall, toolResponse and functionCall stay together and retain their signatures.
+        assertEquals(1, result.size(), "One model content expected");
+
+        Content modelContent = result.get(0);
+        assertEquals("model", modelContent.role().get());
+        List<Part> modelParts = modelContent.parts().get();
+        assertEquals(3, modelParts.size(), "toolCall, toolResponse and functionCall expected");
+
+        Part toolCallPart = modelParts.get(0);
+        assertTrue(toolCallPart.toolCall().isPresent());
+        assertEquals("call_277215", toolCallPart.toolCall().get().id().get());
+        assertEquals(
+                "GOOGLE_SEARCH_WEB", toolCallPart.toolCall().get().toolType().get().toString());
+
+        Part toolResponsePart = modelParts.get(1);
+        assertTrue(toolResponsePart.toolResponse().isPresent());
+        ToolResponse toolResponse = toolResponsePart.toolResponse().get();
+        assertEquals("call_277215", toolResponse.id().get());
+        assertEquals("GOOGLE_SEARCH_WEB", toolResponse.toolType().get().toString());
+        assertArrayEquals(
+                "server-result-signature".getBytes(),
+                toolResponsePart.thoughtSignature().orElseThrow());
+        assertEquals(
+                "southernmost city in China",
+                toolResponse.response().get().get("search_suggestions"));
+
+        Part functionCallPart = modelParts.get(2);
+        assertTrue(functionCallPart.functionCall().isPresent());
+        assertEquals("getWeather", functionCallPart.functionCall().get().name().get());
+    }
+
+    @Test
+    @DisplayName("Should skip server tool result without raw metadata")
+    void testConvertServerToolResultWithNonJsonOutput() {
+        ToolResultBlock serverToolResult =
+                ToolResultBlock.builder()
+                        .id("call_1")
+                        .name("GOOGLE_SEARCH_WEB")
+                        .metadata(Map.of(ToolResultBlock.METADATA_SERVER_TOOL, true))
+                        .output(TextBlock.builder().text("plain text result").build())
+                        .build();
+
+        Msg msg =
+                Msg.builder()
+                        .name("assistant")
+                        .content(List.of(serverToolResult))
+                        .role(MsgRole.ASSISTANT)
+                        .build();
+
+        List<Content> result = converter.convertMessages(List.of(msg));
+
+        assertEquals(0, result.size());
+    }
+
+    @Test
+    @DisplayName("Should keep server tool response parseable with realistic Gemini payload")
+    void testConvertServerToolResultWithSearchSuggestionsHtml() {
+        // Mirrors the real GOOGLE_SEARCH_WEB toolResponse payload shape
+        String htmlSuggestions =
+                "<div class=\"container\">\n"
+                        + "  <a class=\"chip\""
+                        + " href=\"https://www.google.com/search?q=southernmost+city+in+China\">"
+                        + "southernmost city in China</a>\n"
+                        + "</div>";
+        String json =
+                JsonUtils.getJsonCodec().toJson(Map.of("search_suggestions", htmlSuggestions));
+        ToolResponse original =
+                ToolResponse.builder()
+                        .id("call_2")
+                        .toolType("GOOGLE_SEARCH_WEB")
+                        .response(Map.of("search_suggestions", htmlSuggestions))
+                        .build();
+
+        ToolResultBlock serverToolResult =
+                ToolResultBlock.builder()
+                        .id("call_2")
+                        .name("GOOGLE_SEARCH_WEB")
+                        .metadata(
+                                Map.of(
+                                        ToolResultBlock.METADATA_SERVER_TOOL,
+                                        true,
+                                        GeminiResponseParser.METADATA_SERVER_TOOL_RESPONSE,
+                                        original.toJson()))
+                        .output(TextBlock.builder().text(json).build())
+                        .build();
+
+        Msg msg =
+                Msg.builder()
+                        .name("assistant")
+                        .content(List.of(serverToolResult))
+                        .role(MsgRole.ASSISTANT)
+                        .build();
+
+        List<Content> result = converter.convertMessages(List.of(msg));
+
+        Part part = result.get(0).parts().get().get(0);
+        ToolResponse toolResponse = part.toolResponse().get();
+        assertEquals(htmlSuggestions, toolResponse.response().get().get("search_suggestions"));
+    }
+
+    @Test
+    @DisplayName("Should convert code execution blocks back to Gemini parts")
+    void testConvertCodeExecutionBlocks() {
+        ToolUseBlock executableCode =
+                ToolUseBlock.builder()
+                        .id("code-execution-1")
+                        .name("CODE_EXECUTION")
+                        .input(Map.of("language", "PYTHON", "code", "print(1 + 1)"))
+                        .metadata(
+                                Map.of(
+                                        ToolUseBlock.METADATA_SERVER_TOOL,
+                                        true,
+                                        GeminiResponseParser.METADATA_CODE_EXECUTION,
+                                        true,
+                                        ToolUseBlock.METADATA_THOUGHT_SIGNATURE,
+                                        "code-signature".getBytes()))
+                        .build();
+
+        CodeExecutionResult original =
+                CodeExecutionResult.builder()
+                        .id("code-execution-1")
+                        .outcome(Outcome.Known.OUTCOME_OK)
+                        .output("2")
+                        .build();
+
+        ToolResultBlock codeExecutionResult =
+                ToolResultBlock.builder()
+                        .id("code-execution-1")
+                        .name("CODE_EXECUTION")
+                        .output(TextBlock.builder().text("2").build())
+                        .metadata(
+                                Map.of(
+                                        ToolResultBlock.METADATA_SERVER_TOOL,
+                                        true,
+                                        GeminiResponseParser.METADATA_CODE_EXECUTION,
+                                        true,
+                                        GeminiResponseParser.METADATA_CODE_EXECUTION_RESULT,
+                                        original.toJson(),
+                                        ToolUseBlock.METADATA_THOUGHT_SIGNATURE,
+                                        "result-signature".getBytes()))
+                        .build();
+
+        Msg msg =
+                Msg.builder()
+                        .name("assistant")
+                        .content(List.of(executableCode, codeExecutionResult))
+                        .role(MsgRole.ASSISTANT)
+                        .build();
+
+        List<Content> result = converter.convertMessages(List.of(msg));
+
+        assertEquals(1, result.size());
+        List<Part> parts = result.get(0).parts().get();
+        assertEquals(2, parts.size());
+
+        Part executableCodePart = parts.get(0);
+        assertTrue(executableCodePart.executableCode().isPresent());
+        assertEquals("code-execution-1", executableCodePart.executableCode().get().id().get());
+        assertEquals(
+                "PYTHON", executableCodePart.executableCode().get().language().get().toString());
+        assertEquals(
+                "print(1 + 1)", executableCodePart.executableCode().get().code().orElseThrow());
+        assertArrayEquals(
+                "code-signature".getBytes(), executableCodePart.thoughtSignature().orElseThrow());
+
+        Part resultPart = parts.get(1);
+        assertTrue(resultPart.codeExecutionResult().isPresent());
+        assertEquals("code-execution-1", resultPart.codeExecutionResult().get().id().get());
+        assertEquals(
+                "OUTCOME_OK", resultPart.codeExecutionResult().get().outcome().get().toString());
+        assertEquals("2", resultPart.codeExecutionResult().get().output().orElseThrow());
+        assertArrayEquals(
+                "result-signature".getBytes(), resultPart.thoughtSignature().orElseThrow());
+    }
+
+    @Test
+    @DisplayName("Should restore server tool result signature after JSON persistence")
+    void testServerToolResultSignatureRestoredAfterJsonRoundTrip() {
+        ToolResponse original =
+                ToolResponse.builder()
+                        .id("server-result-1")
+                        .toolType("GOOGLE_SEARCH_WEB")
+                        .response(Map.of("result", "ok"))
+                        .build();
+
+        ToolResultBlock serverToolResult =
+                ToolResultBlock.builder()
+                        .id("server-result-1")
+                        .name("GOOGLE_SEARCH_WEB")
+                        .output(TextBlock.builder().text("{\"result\":\"ok\"}").build())
+                        .metadata(
+                                Map.of(
+                                        ToolResultBlock.METADATA_SERVER_TOOL,
+                                        true,
+                                        GeminiResponseParser.METADATA_SERVER_TOOL_RESPONSE,
+                                        original.toJson(),
+                                        ToolUseBlock.METADATA_THOUGHT_SIGNATURE,
+                                        "persisted-signature".getBytes()))
+                        .build();
+        Msg msg =
+                Msg.builder()
+                        .name("assistant")
+                        .content(List.of(serverToolResult))
+                        .role(MsgRole.ASSISTANT)
+                        .build();
+
+        Msg roundTripped =
+                JsonUtils.getJsonCodec().fromJson(JsonUtils.getJsonCodec().toJson(msg), Msg.class);
+
+        List<Content> result = converter.convertMessages(List.of(roundTripped));
+
+        Part part = result.get(0).parts().get().get(0);
+        assertTrue(part.toolResponse().isPresent());
+        assertArrayEquals("persisted-signature".getBytes(), part.thoughtSignature().orElseThrow());
+    }
+
+    @Test
+    @DisplayName("Should restore server tool response from raw metadata")
+    void testServerToolResponseRestoredFromRawMetadata() {
+        ToolResponse original =
+                ToolResponse.builder()
+                        .id("raw-server-response")
+                        .toolType("GOOGLE_SEARCH_WEB")
+                        .response(Map.of("search_suggestions", "raw response"))
+                        .build();
+
+        ToolResultBlock serverToolResult =
+                ToolResultBlock.builder()
+                        .id("raw-server-response")
+                        .name("GOOGLE_SEARCH_WEB")
+                        .output(TextBlock.builder().text("corrupted display text").build())
+                        .metadata(
+                                Map.of(
+                                        ToolResultBlock.METADATA_SERVER_TOOL,
+                                        true,
+                                        GeminiResponseParser.METADATA_SERVER_TOOL_RESPONSE,
+                                        original.toJson()))
+                        .build();
+        Msg msg =
+                Msg.builder()
+                        .name("assistant")
+                        .content(List.of(serverToolResult))
+                        .role(MsgRole.ASSISTANT)
+                        .build();
+
+        List<Content> result = converter.convertMessages(List.of(msg));
+
+        Part part = result.get(0).parts().get().get(0);
+        assertTrue(part.toolResponse().isPresent());
+        assertEquals("raw-server-response", part.toolResponse().get().id().orElseThrow());
+        assertEquals(
+                "GOOGLE_SEARCH_WEB", part.toolResponse().get().toolType().orElseThrow().toString());
+        assertEquals(
+                "raw response",
+                part.toolResponse().get().response().orElseThrow().get("search_suggestions"));
+    }
+
+    @Test
+    @DisplayName("Should restore code execution result from raw metadata")
+    void testCodeExecutionResultRestoredFromRawMetadata() {
+        CodeExecutionResult original =
+                CodeExecutionResult.builder()
+                        .id("raw-code-result")
+                        .outcome(Outcome.Known.OUTCOME_OK)
+                        .output("42")
+                        .build();
+
+        ToolResultBlock codeResult =
+                ToolResultBlock.builder()
+                        .id("raw-code-result")
+                        .name("CODE_EXECUTION")
+                        .output(TextBlock.builder().text("corrupted display text").build())
+                        .metadata(
+                                Map.of(
+                                        ToolResultBlock.METADATA_SERVER_TOOL,
+                                        true,
+                                        GeminiResponseParser.METADATA_CODE_EXECUTION,
+                                        true,
+                                        GeminiResponseParser.METADATA_CODE_EXECUTION_RESULT,
+                                        original.toJson()))
+                        .build();
+        Msg msg =
+                Msg.builder()
+                        .name("assistant")
+                        .content(List.of(codeResult))
+                        .role(MsgRole.ASSISTANT)
+                        .build();
+
+        List<Content> result = converter.convertMessages(List.of(msg));
+
+        Part part = result.get(0).parts().get().get(0);
+        assertTrue(part.codeExecutionResult().isPresent());
+        assertEquals("raw-code-result", part.codeExecutionResult().get().id().orElseThrow());
+        assertEquals(
+                "OUTCOME_OK", part.codeExecutionResult().get().outcome().orElseThrow().toString());
+        assertEquals("42", part.codeExecutionResult().get().output().orElseThrow());
+    }
+
+    @Test
+    @DisplayName("Should convert a base64 DocumentBlock to inline data")
+    void testConvertBase64DocumentBlock() {
+        DocumentBlock document =
+                DocumentBlock.builder()
+                        .source(
+                                Base64Source.builder()
+                                        .data(
+                                                Base64.getEncoder()
+                                                        .encodeToString("%PDF-1.4".getBytes()))
+                                        .mediaType("application/pdf")
+                                        .build())
+                        .name("report.pdf")
+                        .mimeType("application/pdf")
+                        .build();
+        Msg msg = Msg.builder().name("user").content(List.of(document)).role(MsgRole.USER).build();
+
+        List<Content> result = converter.convertMessages(List.of(msg));
+
+        Part part = result.get(0).parts().get().get(0);
+        assertTrue(part.inlineData().isPresent());
+        assertEquals("application/pdf", part.inlineData().get().mimeType().orElseThrow());
+    }
+
+    @Test
+    @DisplayName("Should convert a provider file id DocumentBlock to file data")
+    void testConvertFileIdDocumentBlock() {
+        DocumentBlock document =
+                DocumentBlock.builder()
+                        .source(new FileIdSource("gemini", "files/abc123"))
+                        .name("report.pdf")
+                        .mimeType("application/pdf")
+                        .build();
+        Msg msg = Msg.builder().name("user").content(List.of(document)).role(MsgRole.USER).build();
+
+        List<Content> result = converter.convertMessages(List.of(msg));
+
+        Part part = result.get(0).parts().get().get(0);
+        assertTrue(part.fileData().isPresent());
+        assertEquals(
+                "https://generativelanguage.googleapis.com/v1beta/files/abc123",
+                part.fileData().get().fileUri().orElseThrow());
+        assertEquals("application/pdf", part.fileData().get().mimeType().orElseThrow());
+    }
+
+    @Test
+    @DisplayName("Should infer the MIME type from the name when a file id document omits it")
+    void testConvertFileIdDocumentBlockWithoutMimeType() {
+        DocumentBlock document =
+                DocumentBlock.builder()
+                        .source(new FileIdSource("gemini", "files/abc123"))
+                        .name("report.pdf")
+                        .build();
+        Msg msg = Msg.builder().name("user").content(List.of(document)).role(MsgRole.USER).build();
+
+        List<Content> result = converter.convertMessages(List.of(msg));
+
+        Part part = result.get(0).parts().get().get(0);
+        assertTrue(part.fileData().isPresent(), "fileData must carry a MIME type to be accepted");
+        assertEquals("application/pdf", part.fileData().get().mimeType().orElseThrow());
+    }
+
+    @Test
+    @DisplayName(
+            "Should fall back to a placeholder when a file id document has no usable MIME type")
+    void testConvertFileIdDocumentBlockWithoutResolvableMimeType() {
+        DocumentBlock document =
+                DocumentBlock.builder()
+                        .source(new FileIdSource("gemini", "files/abc123"))
+                        .name("mystery")
+                        .build();
+        Msg msg = Msg.builder().name("user").content(List.of(document)).role(MsgRole.USER).build();
+
+        List<Content> result = converter.convertMessages(List.of(msg));
+
+        Part part = result.get(0).parts().get().get(0);
+        assertTrue(part.fileData().isEmpty(), "an untyped fileData part is rejected by the API");
+        assertEquals("[Document - unsupported MIME type: mystery]", part.text().orElseThrow());
+    }
+
+    @Test
+    @DisplayName("Should degrade when a URL document cannot be read")
+    void testUnreadableUrlDocumentBlockDegrades() {
+        DocumentBlock document =
+                DocumentBlock.builder()
+                        .source(new URLSource("/agentscope-nonexistent/report.pdf"))
+                        .name("report.pdf")
+                        .mimeType("application/pdf")
+                        .build();
+        Msg msg = Msg.builder().name("user").content(List.of(document)).role(MsgRole.USER).build();
+
+        List<Content> result = converter.convertMessages(List.of(msg));
+
+        Part part = result.get(0).parts().get().get(0);
+        assertTrue(part.inlineData().isEmpty(), "an unreadable file must not be sent as bytes");
+        assertEquals("[Document - not readable: report.pdf]", part.text().orElseThrow());
+    }
+
+    @Test
+    @DisplayName("Should fall back to a placeholder for a file id that is not a URI")
+    void testConvertFileIdDocumentBlockWithUnusableFileId() {
+        DocumentBlock document =
+                DocumentBlock.builder()
+                        .source(new FileIdSource("gemini", "fileid://abc"))
+                        .name("report.pdf")
+                        .mimeType("application/pdf")
+                        .build();
+        Msg msg = Msg.builder().name("user").content(List.of(document)).role(MsgRole.USER).build();
+
+        List<Content> result = converter.convertMessages(List.of(msg));
+
+        Part part = result.get(0).parts().get().get(0);
+        assertTrue(part.fileData().isEmpty());
+        assertEquals("[Document - not supported by Gemini: report.pdf]", part.text().orElseThrow());
+    }
+
+    @Test
+    @DisplayName("Should pass through a full file URI unchanged")
+    void testConvertFileIdDocumentBlockWithFullUri() {
+        DocumentBlock document =
+                DocumentBlock.builder()
+                        .source(
+                                new FileIdSource(
+                                        "gemini",
+                                        "https://generativelanguage.googleapis.com/v1beta/files/x1"))
+                        .name("report.pdf")
+                        .mimeType("application/pdf")
+                        .build();
+        Msg msg = Msg.builder().name("user").content(List.of(document)).role(MsgRole.USER).build();
+
+        List<Content> result = converter.convertMessages(List.of(msg));
+
+        assertEquals(
+                "https://generativelanguage.googleapis.com/v1beta/files/x1",
+                result.get(0).parts().get().get(0).fileData().get().fileUri().orElseThrow());
+    }
+
+    @Test
+    @DisplayName("Should fall back to a text placeholder for a foreign provider file id")
+    void testConvertFileIdDocumentBlockFromAnotherProvider() {
+        DocumentBlock document =
+                DocumentBlock.builder()
+                        .source(new FileIdSource("dashscope", "file-abc"))
+                        .name("report.pdf")
+                        .mimeType("application/pdf")
+                        .build();
+        Msg msg = Msg.builder().name("user").content(List.of(document)).role(MsgRole.USER).build();
+
+        List<Content> result = converter.convertMessages(List.of(msg));
+
+        Part part = result.get(0).parts().get().get(0);
+        assertEquals("[Document - not supported by Gemini: report.pdf]", part.text().orElseThrow());
+        assertTrue(part.fileData().isEmpty());
+    }
+
+    @Test
+    @DisplayName("Should fall back to a placeholder when the document MIME type is unknown")
+    void testDocumentBlockWithUnresolvableMimeTypeFallsBackToPlaceholder() {
+        DocumentBlock document =
+                DocumentBlock.builder()
+                        .source(URLSource.builder().url("https://example.com/report.docx").build())
+                        .name("report.docx")
+                        .build();
+        Msg msg = Msg.builder().name("user").content(List.of(document)).role(MsgRole.USER).build();
+
+        List<Content> result = converter.convertMessages(List.of(msg));
+
+        Part part = result.get(0).parts().get().get(0);
+        assertTrue(
+                part.text().orElse("").contains("[Document - unsupported MIME type: report.docx]"));
+    }
+
+    @Test
+    @DisplayName("Should degrade a document whose declared MIME type the API cannot read")
+    void testDocumentBlockWithDeclaredUnsupportedMimeTypeDegrades() {
+        DocumentBlock document =
+                DocumentBlock.builder()
+                        .source(
+                                Base64Source.builder()
+                                        .mediaType(
+                                                "application/vnd.openxmlformats-officedocument"
+                                                        + ".wordprocessingml.document")
+                                        .data("aGVsbG8=")
+                                        .build())
+                        .name("report.docx")
+                        .build();
+        Msg msg = Msg.builder().name("user").content(List.of(document)).role(MsgRole.USER).build();
+
+        List<Content> result = converter.convertMessages(List.of(msg));
+
+        Part part = result.get(0).parts().get().get(0);
+        assertTrue(
+                part.inlineData().isEmpty(),
+                "an unlisted document type is rejected by the API; it must not be inlined");
+        assertTrue(
+                part.text().orElse("").contains("[Document - unsupported MIME type: report.docx]"));
+    }
+
+    @Test
+    @DisplayName("Should degrade a file id document whose declared MIME type the API cannot read")
+    void testFileIdDocumentBlockWithDeclaredUnsupportedMimeTypeDegrades() {
+        DocumentBlock document =
+                DocumentBlock.builder()
+                        .source(new FileIdSource("gemini", "files/abc123"))
+                        .name("report.docx")
+                        .mimeType("application/msword")
+                        .build();
+        Msg msg = Msg.builder().name("user").content(List.of(document)).role(MsgRole.USER).build();
+
+        List<Content> result = converter.convertMessages(List.of(msg));
+
+        Part part = result.get(0).parts().get().get(0);
+        assertTrue(part.fileData().isEmpty());
+        assertTrue(
+                part.text().orElse("").contains("[Document - unsupported MIME type: report.docx]"));
+    }
+
+    @Test
+    @DisplayName("Should accept a supported document MIME type that carries parameters")
+    void testDocumentBlockWithMimeTypeParametersStillInlines() {
+        DocumentBlock document =
+                DocumentBlock.builder()
+                        .source(
+                                Base64Source.builder()
+                                        .mediaType("application/pdf; charset=binary")
+                                        .data(Base64.getEncoder().encodeToString(new byte[] {1}))
+                                        .build())
+                        .name("report.pdf")
+                        .build();
+        Msg msg = Msg.builder().name("user").content(List.of(document)).role(MsgRole.USER).build();
+
+        List<Content> result = converter.convertMessages(List.of(msg));
+
+        Part part = result.get(0).parts().get().get(0);
+        assertTrue(part.inlineData().isPresent());
+        assertEquals(
+                "application/pdf; charset=binary",
+                part.inlineData().get().mimeType().orElseThrow());
+    }
+
+    @Test
+    @DisplayName("Should inline officially supported text formats such as markdown")
+    void testDocumentBlockWithOfficialTextFormatsInlines() {
+        for (String mimeType : List.of("text/markdown", "text/x-typescript", "application/json")) {
+            DocumentBlock document =
+                    DocumentBlock.builder()
+                            .source(
+                                    Base64Source.builder()
+                                            .mediaType(mimeType)
+                                            .data(
+                                                    Base64.getEncoder()
+                                                            .encodeToString(new byte[] {1}))
+                                            .build())
+                            .name("notes.md")
+                            .build();
+            Msg msg =
+                    Msg.builder()
+                            .name("user")
+                            .content(List.of(document))
+                            .role(MsgRole.USER)
+                            .build();
+
+            List<Content> result = converter.convertMessages(List.of(msg));
+
+            Part part = result.get(0).parts().get().get(0);
+            assertTrue(
+                    part.inlineData().isPresent(),
+                    mimeType + " is listed by the generateContent reference and must be inlined");
+        }
+    }
+
+    @Test
+    @DisplayName("Should keep a text reference for a DocumentBlock outside a user message")
+    void testConvertDocumentBlockOutsideUserMessageKeepsReference() {
+        DocumentBlock document =
+                DocumentBlock.builder()
+                        .source(new FileIdSource("gemini", "files/abc123"))
+                        .name("report.pdf")
+                        .mimeType("application/pdf")
+                        .build();
+        Msg msg =
+                Msg.builder()
+                        .name("assistant")
+                        .content(List.of(TextBlock.builder().text("done").build(), document))
+                        .role(MsgRole.ASSISTANT)
+                        .build();
+
+        List<Content> result = converter.convertMessages(List.of(msg));
+
+        String text =
+                result.get(0).parts().get().stream()
+                        .map(part -> part.text().orElse(""))
+                        .reduce("", String::concat);
+        assertTrue(text.contains("done"));
+        // returnDirect tool deliveries put documents on assistant turns; the reference survives
+        // so the next round of conversation still names the attachment.
+        assertTrue(text.contains("[document: report.pdf, application/pdf"), text);
+        assertTrue(
+                result.get(0).parts().get().stream()
+                        .noneMatch(part -> part.fileData().isPresent()));
     }
 }

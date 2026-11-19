@@ -19,18 +19,7 @@ import io.agentscope.core.message.Msg;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 
-/**
- * Per-session interrupt signal.
- *
- * <p>Holds the mutable interrupt flag, source, and optional user message for a single conversational
- * session. A stateless agent engine (e.g. {@code ReActAgent}) keeps one {@code InterruptControl} per
- * {@code (userId, sessionId)} slot (attached transiently to that slot's {@code AgentState}), so a
- * targeted {@code interrupt(userId, sessionId)} signals exactly one session's in-flight call without
- * affecting other concurrent calls on the same agent instance.
- *
- * <p>This holder is intentionally runtime-only: it is never serialized as part of the persisted
- * agent state.
- */
+/** A runtime-only cooperative interrupt signal owned by one execution, never by a session. */
 public final class InterruptControl {
 
     private final AtomicBoolean flag = new AtomicBoolean(false);
@@ -53,7 +42,7 @@ public final class InterruptControl {
         this.flag.set(true);
     }
 
-    /** @return {@code true} if this session has been interrupted and not yet reset */
+    /** @return {@code true} if this execution has been interrupted and not yet reset */
     public boolean isInterrupted() {
         return flag.get();
     }
