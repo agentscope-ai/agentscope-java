@@ -89,7 +89,7 @@ class AgentSpawnToolResultStateTest {
     void spawnAndSendFailuresCarryErrorState() {
         AgentSpawnTool tool = localTool(false);
         assertText(
-                tool.agentSpawn(context, null, "missing", null, null, 1, null).block(),
+                tool.agentSpawn(context, null, "missing", null, true, null, 1, null).block(),
                 ToolResultState.ERROR);
         assertText(
                 tool.agentSend(context, null, null, null, "hello", 1).block(),
@@ -106,10 +106,10 @@ class AgentSpawnToolResultStateTest {
         assertText(
                 tool.agentSend(context, null, "key", null, " ", 1).block(), ToolResultState.ERROR);
         assertText(
-                tool.agentSpawn(context, null, "worker", null, "label", 1, null).block(),
+                tool.agentSpawn(context, null, "worker", null, true, "label", 1, null).block(),
                 ToolResultState.SUCCESS);
         assertText(
-                tool.agentSpawn(context, null, "worker", null, "label", 1, null).block(),
+                tool.agentSpawn(context, null, "worker", null, true, "label", 1, null).block(),
                 ToolResultState.ERROR);
     }
 
@@ -122,7 +122,7 @@ class AgentSpawnToolResultStateTest {
                                 Msg.builder().role(MsgRole.ASSISTANT).textContent(reply).build()));
         AgentSpawnTool tool = localTool(true);
         ToolResultBlock spawned =
-                tool.agentSpawn(context, null, "worker", "go", "worker", 1, null).block();
+                tool.agentSpawn(context, null, "worker", "go", true, "worker", 1, null).block();
         String agentKey = key(spawned);
         assertTrue(assertText(spawned, ToolResultState.SUCCESS).endsWith(reply));
         assertTrue(
@@ -132,7 +132,9 @@ class AgentSpawnToolResultStateTest {
                         .endsWith(reply));
         assertTrue(
                 assertText(
-                                tool.agentSpawn(context, null, "worker", "again", "worker", 1, null)
+                                tool.agentSpawn(
+                                                context, null, "worker", "again", true, "worker", 1,
+                                                null)
                                         .block(),
                                 ToolResultState.SUCCESS)
                         .endsWith(reply));
@@ -145,14 +147,16 @@ class AgentSpawnToolResultStateTest {
                 .thenReturn(Mono.error(new IllegalStateException("child failed")));
         AgentSpawnTool tool = localTool(true);
         String agentKey =
-                key(tool.agentSpawn(context, null, "worker", null, "worker", 1, null).block());
+                key(
+                        tool.agentSpawn(context, null, "worker", null, true, "worker", 1, null)
+                                .block());
         assertTrue(
                 assertText(
                                 tool.agentSend(context, null, agentKey, null, "go", 1).block(),
                                 ToolResultState.ERROR)
                         .contains("child failed"));
         assertText(
-                tool.agentSpawn(context, null, "worker", "go", "worker", 1, null).block(),
+                tool.agentSpawn(context, null, "worker", "go", true, "worker", 1, null).block(),
                 ToolResultState.ERROR);
     }
 
@@ -189,7 +193,7 @@ class AgentSpawnToolResultStateTest {
                 .thenAnswer(invocation -> taskRef.get());
 
         ToolResultBlock spawned =
-                tool.agentSpawn(context, null, "worker", "go", "worker", 0, null).block();
+                tool.agentSpawn(context, null, "worker", "go", true, "worker", 0, null).block();
         assertText(spawned, ToolResultState.SUCCESS);
 
         BackgroundTask task = taskRef.get();
@@ -205,12 +209,14 @@ class AgentSpawnToolResultStateTest {
         AgentSpawnTool tool = localTool(true);
         assertText(tool.agentList(), ToolResultState.SUCCESS);
         String agentKey =
-                key(tool.agentSpawn(context, null, "worker", "go", "worker", 0, null).block());
+                key(
+                        tool.agentSpawn(context, null, "worker", "go", true, "worker", 0, null)
+                                .block());
         assertText(
-                tool.agentSpawn(context, null, "worker", null, "worker", 0, null).block(),
+                tool.agentSpawn(context, null, "worker", null, true, "worker", 0, null).block(),
                 ToolResultState.SUCCESS);
         assertText(
-                tool.agentSpawn(context, null, "worker", "again", "worker", 0, null).block(),
+                tool.agentSpawn(context, null, "worker", "again", true, "worker", 0, null).block(),
                 ToolResultState.SUCCESS);
         assertText(
                 tool.agentSend(context, null, agentKey, null, "again", 0).block(),
@@ -265,18 +271,18 @@ class AgentSpawnToolResultStateTest {
                 .thenReturn(new BackgroundTask("cancelled", "worker", cancelled));
         assertTrue(
                 assertText(
-                                tool.agentSpawn(context, null, "worker", "go", null, 1, null)
+                                tool.agentSpawn(context, null, "worker", "go", true, null, 1, null)
                                         .block(),
                                 ToolResultState.SUCCESS)
                         .endsWith("[ERROR] just data"));
         assertTrue(
                 assertText(
-                                tool.agentSpawn(context, null, "worker", "go", null, 1, null)
+                                tool.agentSpawn(context, null, "worker", "go", true, null, 1, null)
                                         .block(),
                                 ToolResultState.ERROR)
                         .contains("remote failed"));
         assertText(
-                tool.agentSpawn(context, null, "worker", "go", null, 1, null).block(),
+                tool.agentSpawn(context, null, "worker", "go", true, null, 1, null).block(),
                 ToolResultState.INTERRUPTED);
     }
 }
