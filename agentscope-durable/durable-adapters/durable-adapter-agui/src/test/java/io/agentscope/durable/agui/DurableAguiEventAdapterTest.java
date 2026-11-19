@@ -225,13 +225,22 @@ class DurableAguiEventAdapterTest {
 
     @Test
     void permissionAskingRunEndWaitsForTheTurnWaitingEvent() {
+        assertParkedRunEndWaitsForTurnWaiting("PERMISSION_ASKING");
+    }
+
+    @Test
+    void toolSuspendedRunEndWaitsForTheTurnWaitingEvent() {
+        assertParkedRunEndWaitsForTurnWaiting("TOOL_SUSPENDED");
+    }
+
+    private void assertParkedRunEndWaitsForTurnWaiting(String reason) {
         var ended =
                 adapter.committed(
                         committed(
                                 "run.ended",
                                 "run",
                                 null,
-                                Map.of("status", "STOPPED", "reason", "PERMISSION_ASKING")));
+                                Map.of("status", "STOPPED", "reason", reason)));
         assertTrue(ended.isEmpty());
 
         var events =
@@ -259,6 +268,21 @@ class DurableAguiEventAdapterTest {
                                 "run",
                                 null,
                                 Map.of("status", "STOPPED", "reason", "host_released")));
+
+        assertEquals(1, events.size());
+        var finished = assertInstanceOf(AguiEvent.RunFinished.class, events.get(0));
+        assertInstanceOf(AguiEvent.RunFinishedCancelledOutcome.class, finished.outcome());
+    }
+
+    @Test
+    void hostPausedRunEndFinishesAsCancelled() {
+        var events =
+                adapter.committed(
+                        committed(
+                                "run.ended",
+                                "run",
+                                null,
+                                Map.of("status", "STOPPED", "reason", "HOST_PAUSED")));
 
         assertEquals(1, events.size());
         var finished = assertInstanceOf(AguiEvent.RunFinished.class, events.get(0));

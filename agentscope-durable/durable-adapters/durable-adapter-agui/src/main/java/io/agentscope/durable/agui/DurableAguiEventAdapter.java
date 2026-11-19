@@ -51,6 +51,10 @@ import java.util.Set;
  * stream.
  */
 public final class DurableAguiEventAdapter {
+    /** Run reasons that park the Run for human input instead of ending it. */
+    private static final Set<String> PARKED_RUN_REASONS =
+            Set.of("suspended", "PERMISSION_ASKING", "TOOL_SUSPENDED");
+
     private static final Map<String, Object> CONFIRM_RESPONSE_SCHEMA =
             Map.of(
                     "type",
@@ -135,9 +139,8 @@ public final class DurableAguiEventAdapter {
 
     private List<AguiEvent> runEnded(PublicEvent event) {
         String status = event.data().path("status").asText();
-        String reason = event.data().path("reason").asText();
         if ("STOPPED".equals(status)
-                && ("suspended".equals(reason) || "PERMISSION_ASKING".equals(reason)))
+                && PARKED_RUN_REASONS.contains(event.data().path("reason").asText()))
             return List.of();
         String runId = require(event.runId(), "runId");
         if ("FAILED".equals(status) || "LOST".equals(status)) {
