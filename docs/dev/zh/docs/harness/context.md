@@ -377,16 +377,61 @@ builder.contextPolicy(new ContextPolicy(
 | 读取什么 | 如何理解 |
 | --- | --- |
 | `callId()`、`purpose()`、`model()` | 标识这次模型请求准备及其用途、模型。`callId` 不是 `sessionId`、`turnId` 或 `runId` |
+| `policyVersion()` | 清单的布局版本，当前是 `harness-context-v3`。分段种类或计数规则变化时它会改值，消费方据此识别口径变更，避免把不同口径的数字混在一起 |
 | `estimatedInputTokens()`、`inputLimit()` | 整个请求的估算输入量与最终可用输入上限；不是供应商账单中的实际 token 用量。`countingMethod()` 和 `exact()` 说明计数方式及是否精确 |
-| `items()` | 本轮保留的消息、工具 Schema 和材料元数据。材料可通过 `sourceId`、`revision`、`contentHash` 核对来源与版本，通过 `placement` 查看放置位置；消息和工具条目的版本、位置可能为空 |
+| `items()` | 本轮保留的消息、工具 Schema 和材料元数据。材料可通过 `sourceId`、`revision`、`contentHash` 核对来源与版本，通过 `placement` 查看放置位置；消息和工具条目的版本、位置可能为空。`contentChars()` 给出被计算哈希的那段内容的长度（UTF-16 码元），用于比较各来源，也可用于加总整个请求；`0` 表示未记录长度 |
 | `transforms()` | 准备期间做过的处理，例如 `tool_result_offload`（大结果卸载）、`history_compaction`（历史压缩处理），以及材料省略或来源失败记录 |
 | `validation()` | `passed` 为准备通过；`budget_exceeded` 为超出预算；`invalid_tool_pairs` 为工具调用与结果配对异常；`state_conflict` / `history_conflict` 为准备期间状态或历史发生冲突；`build_failed` 为其他构建失败 |
+
+`items()` 是可加划分：每个贡献只出现一次，因此对 `contentChars()` 求和就是本轮请求的实测内容总量。合并后的系统消息和渲染 `ContextItem` 来源的材料消息不单独列出——它们的底层来源已经列出，求和不重复。记录下来的系统输入列表为空时，表示全部系统内容都来自材料，已经按材料计过一次。
+
+`contentChars()` 与 `contentHash` 算的是同一份字节：对消息和工具，它是 content 的 JSON 序列化结果，不是原文，所以记录值会比你写进去的文字字符数大（引号、转义、块结构都算在内）；对材料，它是来源原文。用它比较来源大小、加总请求，不要当成原文长度。
+
+`sourceType()` 标明分段：`system_prompt` 为合并前的基础系统消息，`tool_mcp` / `tool_system` 为按来源区分的工具 Schema，`message_user` / `message_assistant` / `message_tool` / `message_summary` 为对话消息，`runtime_projection` 为尚未进入正式历史的注入状态，材料则沿用 `ContextItem` 的 kind。已持久化进历史的合成通知（任务投递、后台事件）此时属于对话内容，归入 `message_user`。
+
+`ContextUsage.breakdown(manifest)` 把这些分段汇总成展示类别，按大小从大到小排列，并省略没有记录长度的类别：
+
+| `Share.source()` | 汇总了哪些分段 |
+| --- | --- |
+| `system_prompt` | `system_prompt` 以及所有放在 `SYSTEM` 的材料 |
+| `skills` | `skills` |
+| `mcp_tool_schemas` | `tool_mcp` |
+| `system_tool_schemas` | `tool_system` |
+| `messages` | `message_user`、`message_assistant`、`message_tool`、`message_summary` |
+| `other` | 其余全部 kind：运行时状态、参考材料、投影、日期 |
+
+有三点边界。消息、工具与 `system_prompt` 条目记的是序列化 JSON 的长度，短消息会带有结构开销，媒体块计入编码后大小而不是 token 成本；材料条目记的是拼装前的原文长度，渲染时加的包裹标记不计入任何分段；在本轮工具配置下查不到的工具（按次注入的 Schema，或没有工具表的 agent）归入 `tool_system`，不做猜测。
 
 例如，前文注册的 `project-guide` 来源返回了 `login` 块，它在清单中的 ID 是 `source/project-guide/login`。如果在 `items()` 中找到它，版本是 `guide-v3`，且校验通过，说明这份约定已经纳入本轮准备好的请求；若回答仍不符合约定，应进一步检查内容和指令是否清晰。
 
 如果没有找到它，就看 `transforms()`：出现 `omitted_for_budget:source/project-guide/login`，说明材料因预算不足被省略，可以缩短材料或调整预算、优先级；出现 `source_unavailable:source/project-guide/:...`，说明配置为 `OMIT` 的来源读取失败，应检查数据源或超时。两种记录都没有时，再检查来源是否返回空列表、是否到了刷新时机，以及本轮请求是否会加载该来源。
 
 构建过早失败时，清单可能没有条目，token 数和上限为 `-1`、计数方式为 `unavailable`，表示尚未获得统计结果。这时应结合调用抛出的异常排查，不能据此认定所有材料都被预算策略省略了。
+
+#### 把类别拆回具体来源
+
+`ContextUsage` 还能回答「这个类别由哪些来源组成」，并给出面板需要的汇总值：
+
+| 方法 | 返回 |
+| --- | --- |
+| `breakdown(manifest, includeEmpty)` | 与上面相同的份额；传入 `includeEmpty` 时每个类别都会返回，没有内容的类别 `chars` 与 `ratio` 为 `0`，面板可以保持固定的行集合 |
+| `itemBreakdown(manifest)` | 每个来源一行 `ItemShare`：类别、来源类型、来源 ID、放置位置、字符数、占比、合并了多少个条目，以及这些条目共有的内容哈希；按大小从大到小排列，合计与 `breakdown` 相等 |
+| `systemBreakdown(manifest)` | 同样的行，但只限系统通道；占比以系统通道自身合计为分母，不是整轮请求 |
+| `systemChannelIsSingleBlock(manifest)` | 请求只带了一个系统来源时为 `true`，此时中间件追加到系统提示词里的文字全在这一块里，无法再拆开。默认 Harness 会注册多个 `SYSTEM` 材料，因此在默认配置下它通常是 `false`；它回答的是「系统通道有几块」，而不是「是否追加了技能目录」 |
+| `summary(manifest)` | `totalChars`、`estimatedInputTokens`、`inputLimit`、`countingMethod`、`exact`、`validation`，以及六个类别按展示顺序的合计 |
+
+`ItemShare.contentHash()` 标识的是内容，不是一个稳定身份。合并进同一行的条目只有在哈希一致时才保留该值，不一致、或其中任一条目没有哈希时返回 `null`。两次调用若内容相同则哈希相同，这正是「`sourceId` 每次重新生成」的来源可以跨调用对上的依据——但内容变长时哈希也会变，因此它不能追踪一个不断变化的来源。
+
+```java
+Consumer<ContextManifest> panel =
+        manifest -> {
+            ContextUsage.Summary totals = ContextUsage.summary(manifest);
+            List<ContextUsage.Share> rows = ContextUsage.breakdown(manifest, true);
+            List<ContextUsage.ItemShare> sources = ContextUsage.itemBreakdown(manifest);
+        };
+```
+
+某个类别为 `0`，表示本轮准备好的请求里没有可归因到它的内容：来源可能没被使用，长度可能未记录，也可能被合并进了优先级更高的类别（放在 `SYSTEM` 的材料计入 `system_prompt`）。这不代表框架没有采集到。这些数字描述的是准备好之后的请求，因此前置钩子、系统提示词中间件、模型调用中间件注入的内容都在其中：记忆以对话消息进入，解析出的日期与技能目录由 Harness 自带中间件注册为材料，或由应用注册。真正缺少的是准备之后才追加的内容；中间件拼进系统提示词的文字仍会被统计，但只属于一个条目，无法还原成各个贡献者。`totalChars` 与 `estimatedInputTokens` 是同一请求的两个视角：前者数原文字符，后者走配置的估算器；两者都不是供应商的实际用量。当应用让中间件把技能目录追加到系统提示词、而不是注册成材料时，`skills` 会一直是 `0`，而那段文字计入 `system_prompt`。`systemChannelIsSingleBlock` 能告诉你系统通道是否只有一块——那正是这种用法可能产生的形态；但默认 Harness 会注册多个 `SYSTEM` 材料，所以在默认配置下它通常是 `false`。无论哪种情况，都应把 0 当作下限，而不是「没有技能」的证据。
 
 ### 在事件流和会话日志中查看
 

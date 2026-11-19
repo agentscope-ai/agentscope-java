@@ -27,7 +27,10 @@ import io.agentscope.core.middleware.ReasoningInput;
 import io.agentscope.core.middleware.TaskContextProjection;
 import io.agentscope.core.state.AgentState;
 import io.agentscope.core.state.TaskContextState;
+import io.agentscope.core.tool.ToolBase;
+import io.agentscope.core.tool.Toolkit;
 import io.agentscope.core.util.JsonUtils;
+import io.agentscope.harness.agent.memory.compaction.ConversationCompactor;
 import io.agentscope.harness.agent.middleware.CompactionMiddleware;
 import io.agentscope.harness.agent.middleware.ToolResultEvictionMiddleware;
 import java.nio.charset.StandardCharsets;
@@ -51,6 +54,8 @@ import reactor.core.scheduler.Schedulers;
 public final class HarnessContextBuilder implements ModelRequestPreparer {
     private static final String ORIGINAL_SYSTEM_INPUTS =
             "agentscope.context.original_system_inputs";
+    private static final Set<String> MATERIAL_REMINDER_KINDS =
+            Set.of("harness_instructions", "runtime_materials", "workspace_materials");
     private static final Logger log = LoggerFactory.getLogger(HarnessContextBuilder.class);
     private final ContextPolicy policy;
     private final CompactionMiddleware compaction;
@@ -128,7 +133,7 @@ public final class HarnessContextBuilder implements ModelRequestPreparer {
                                                                         purpose.name(),
                                                                         input.model()
                                                                                 .getModelName(),
-                                                                        "harness-context-v2",
+                                                                        "harness-context-v3",
                                                                         -1,
                                                                         -1,
                                                                         "unavailable",
@@ -329,25 +334,42 @@ public final class HarnessContextBuilder implements ModelRequestPreparer {
                         validation = "budget_exceeded";
                     }
                     List<ContextManifest.Item> items = new ArrayList<>();
+                    Toolkit toolkit = toolkit(agent);
                     for (Msg msg : prepared.messages()) {
-                        String kind =
-                                msg.getRole() == MsgRole.SYSTEM
-                                        ? "system_input"
-                                        : msg.isRequestProjection(candidate.history())
-                                                ? "runtime_projection"
-                                                : "message";
+                        if (isCompiledSystem(msg)) {
+                            // The merged system message repeats every SYSTEM material; record the
+                            // pre-merge inputs instead so each segment is counted exactly once.
+                            for (Msg prompt : originalSystemInputs(msg)) {
+                                String promptJson =
+                                        JsonUtils.getJsonCodec().toJson(prompt.getContent());
+                                items.add(
+                                        new ContextManifest.Item(
+                                                "system_prompt",
+                                                prompt.getId(),
+                                                hash(promptJson),
+                                                promptJson.length()));
+                            }
+                            continue;
+                        }
+                        if (isRenderedMaterial(msg)) continue;
+                        String messageJson = JsonUtils.getJsonCodec().toJson(msg.getContent());
                         items.add(
                                 new ContextManifest.Item(
-                                        kind,
+                                        messageKind(msg, candidate.history()),
                                         msg.getId(),
-                                        hash(JsonUtils.getJsonCodec().toJson(msg.getContent()))));
+                                        hash(messageJson),
+                                        messageJson.length()));
                     }
                     for (var tool : prepared.tools()) {
+                        String toolJson = JsonUtils.getJsonCodec().toJson(tool);
                         items.add(
                                 new ContextManifest.Item(
-                                        "tool_schema",
+                                        isMcpTool(toolkit, tool.getName(), rc)
+                                                ? "tool_mcp"
+                                                : "tool_system",
                                         tool.getName(),
-                                        hash(JsonUtils.getJsonCodec().toJson(tool))));
+                                        hash(toolJson),
+                                        toolJson.length()));
                     }
                     for (ContextItem item : selected) {
                         if (!item.content().isBlank())
@@ -359,14 +381,15 @@ public final class HarnessContextBuilder implements ModelRequestPreparer {
                                             item.revision(),
                                             item.placement().name(),
                                             item.required(),
-                                            item.priority()));
+                                            item.priority(),
+                                            item.content().length()));
                     }
                     ContextManifest manifest =
                             new ContextManifest(
                                     callId,
                                     purpose.name(),
                                     prepared.model().getModelName(),
-                                    "harness-context-v2",
+                                    "harness-context-v3",
                                     estimate.tokens(),
                                     finalLimit,
                                     estimate.method(),
@@ -614,6 +637,73 @@ public final class HarnessContextBuilder implements ModelRequestPreparer {
     private static boolean synthetic(Msg msg) {
         return msg.getMetadata() != null
                 && Boolean.TRUE.equals(msg.getMetadata().get(Msg.METADATA_SYNTHETIC));
+    }
+
+    private static boolean isCompiledSystem(Msg msg) {
+        return synthetic(msg)
+                && "compiled_system".equals(msg.getMetadata().get(Msg.METADATA_REMINDER_KIND));
+    }
+
+    /**
+     * Returns the pre-merge SYSTEM inputs recorded by {@code layout}. An empty record means every
+     * SYSTEM input came from a {@link ContextItem} material, which the material loop already
+     * counts, so nothing is reported here. A compiled system message without the record at all is
+     * reported as itself, which is the best available attribution.
+     */
+    private static List<Msg> originalSystemInputs(Msg compiled) {
+        Object originals = compiled.getMetadata().get(ORIGINAL_SYSTEM_INPUTS);
+        if (!(originals instanceof List<?> sources)) return List.of(compiled);
+        List<Msg> prompts = new ArrayList<>(sources.size());
+        for (Object source : sources) {
+            if (source instanceof Msg prompt) prompts.add(prompt);
+        }
+        return prompts;
+    }
+
+    /**
+     * Rendered material messages repeat content already reported through their {@link ContextItem}
+     * entries, so the manifest omits them to keep the segments disjoint.
+     */
+    private static boolean isRenderedMaterial(Msg msg) {
+        if (!synthetic(msg)) return false;
+        return MATERIAL_REMINDER_KINDS.contains(
+                String.valueOf(msg.getMetadata().get(Msg.METADATA_REMINDER_KIND)));
+    }
+
+    private static String messageKind(Msg msg, List<Msg> canonical) {
+        if (msg.getRole() == MsgRole.SYSTEM) return "system_prompt";
+        if (msg.isRequestProjection(canonical)) return "runtime_projection";
+        if (ConversationCompactor.SUMMARY_MSG_NAME.equals(msg.getName())) return "message_summary";
+        return switch (msg.getRole()) {
+            case TOOL -> "message_tool";
+            case ASSISTANT -> "message_assistant";
+            default -> "message_user";
+        };
+    }
+
+    /** The agent's runtime toolkit, or {@code null} when this agent type does not expose one. */
+    private static Toolkit toolkit(Agent agent) {
+        if (agent == null) return null;
+        try {
+            return agent.getToolkit();
+        } catch (RuntimeException error) {
+            // Attribution must not reject an otherwise valid request.
+            log.debug(
+                    "Toolkit unavailable for context attribution: {}",
+                    error.getClass().getSimpleName());
+            return null;
+        }
+    }
+
+    /**
+     * Whether {@code name} resolves to an MCP-backed tool under this request's tool config.
+     * Unresolvable names (schema-only injections, or agents without a toolkit) count as framework
+     * tools.
+     */
+    private static boolean isMcpTool(Toolkit toolkit, String name, RuntimeContext rc) {
+        if (toolkit == null) return false;
+        var tool = toolkit.getTool(name, rc == null ? null : rc.getToolRequestConfig());
+        return tool instanceof ToolBase base && base.isMcp();
     }
 
     private static String escape(String text) {
