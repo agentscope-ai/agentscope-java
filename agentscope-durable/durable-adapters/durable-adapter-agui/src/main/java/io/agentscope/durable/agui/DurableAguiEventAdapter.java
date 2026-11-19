@@ -47,37 +47,14 @@ import java.util.Set;
  * echoes as {@code interruptId} to resume.
  *
  * <p>A waiting Turn without pending interactions (for example waiting on a signal) has no AG-UI
- * interrupt to deliver and produces no terminal frame; the host decides whether to keep or end that
- * stream.
+ * interrupt to deliver; its stream follows the Run's own terminal event, if any.
  */
 public final class DurableAguiEventAdapter {
     /** Run reasons that park the Run for human input instead of ending it. */
     private static final Set<String> PARKED_RUN_REASONS =
             Set.of("suspended", "PERMISSION_ASKING", "TOOL_SUSPENDED");
 
-    private static final Map<String, Object> CONFIRM_RESPONSE_SCHEMA =
-            Map.of(
-                    "type",
-                    "object",
-                    "properties",
-                    Map.of(
-                            "approved",
-                            Map.of("type", "boolean"),
-                            "editedArgs",
-                            Map.of(
-                                    "type",
-                                    "object",
-                                    "description",
-                                    "Full replacement of the tool args. Not merged."),
-                            "reason",
-                            Map.of(
-                                    "type",
-                                    "string",
-                                    "description",
-                                    "Optional explanation supplied when the tool call is"
-                                            + " denied.")),
-                    "required",
-                    List.of("approved"));
+    private static final Map<String, Object> CONFIRM_RESPONSE_SCHEMA = Map.of("type", "boolean");
 
     private final Set<String> messages = new HashSet<>();
     private final Map<String, StringBuilder> messageText = new HashMap<>();

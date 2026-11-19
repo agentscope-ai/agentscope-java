@@ -859,6 +859,73 @@ public abstract class UserApiContract {
     }
 
     @Test
+    void waitingWithoutInteractionsStillEndsTheNativeRun() {
+        var turn = session.submit("signal-wait", "wait input");
+        var lease = claim();
+        var run = backend.prepareRun(lease, "native-signal-wait");
+        var frame = backend.frame(lease);
+        backend.commit(
+                lease,
+                new Commit(
+                        "signal-wait-started",
+                        frame.turn().revision(),
+                        frame.checkpoint(),
+                        List.of(),
+                        List.of(),
+                        List.of(),
+                        List.of(),
+                        TurnStatus.RUNNING,
+                        null,
+                        null,
+                        null,
+                        null,
+                        new RunChange(run.runId(), RunStatus.RUNNING, null, null),
+                        List.of()));
+        var current = backend.frame(lease);
+        backend.commit(
+                lease,
+                new Commit(
+                        "signal-wait-parked",
+                        current.turn().revision(),
+                        current.checkpoint(),
+                        List.of(),
+                        List.of(),
+                        List.of(),
+                        List.of(),
+                        TurnStatus.WAITING,
+                        new WaitCondition("x.ready", 0),
+                        null,
+                        null,
+                        null,
+                        null,
+                        List.of()));
+
+        var events = turn.listEvents(null, 50).events();
+        var waiting =
+                events.stream()
+                        .filter(event -> "turn.waiting".equals(event.type()))
+                        .findFirst()
+                        .orElseThrow();
+        assertTrue(waiting.data().path("interactions").isEmpty());
+        assertTrue(
+                events.stream()
+                        .anyMatch(
+                                event ->
+                                        "run.ended".equals(event.type())
+                                                && run.runId().equals(event.runId())
+                                                && "STOPPED"
+                                                        .equals(
+                                                                event.data()
+                                                                        .path("status")
+                                                                        .asText())
+                                                && "host_released"
+                                                        .equals(
+                                                                event.data()
+                                                                        .path("reason")
+                                                                        .asText())));
+    }
+
+    @Test
     void resumeRequiresObservedPauseAndDoesNotBypassAnUnsatisfiedWait() {
         var turn = session.submit("one", "one");
         var lease = claim();

@@ -1492,15 +1492,17 @@ public final class TransactionalSessionBackend implements SessionBackend {
                     if (next.terminal()
                             || next == TurnStatus.WAITING
                             || next == TurnStatus.PAUSED) {
-                        if (next == TurnStatus.WAITING) invocations(s, r).suspend(now);
+                        List<Interaction> pending =
+                                next == TurnStatus.WAITING
+                                        ? pendingInteractions(s, r.id)
+                                        : List.of();
+                        if (!pending.isEmpty()) invocations(s, r).suspend(now);
                         else invocations(s, r).abandon(now, false);
                         r.owner = null;
                         r.expiresAt = 0;
                         var data = (ObjectNode) lifecycle(r);
                         if (next == TurnStatus.WAITING)
-                            data.set(
-                                    "interactions",
-                                    DurableJson.value(pendingInteractions(s, r.id)));
+                            data.set("interactions", DurableJson.value(pending));
                         append(
                                 s,
                                 r,

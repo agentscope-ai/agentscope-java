@@ -17,7 +17,6 @@ package io.agentscope.durable.agui;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.agui.AguiInterruptConstants;
@@ -85,7 +84,7 @@ class DurableAguiEventAdapterTest {
         assertEquals(
                 "Tool 'send_email' requires user confirmation before execution",
                 confirmation.message());
-        assertNotNull(confirmation.responseSchema());
+        assertEquals(Map.of("type", "boolean"), confirmation.responseSchema());
         assertEquals(
                 "send_email",
                 confirmation.metadata().get(AguiInterruptConstants.METADATA_TOOL_NAME));
