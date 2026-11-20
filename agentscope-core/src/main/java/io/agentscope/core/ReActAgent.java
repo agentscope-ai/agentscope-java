@@ -4161,7 +4161,8 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                                                                         PERMISSION_DENIED_BY_RULES)));
                                 return autoDeniedEvents.concatWith(
                                         Flux.just(
-                                                new RequireUserConfirmEvent(replyId, pending),
+                                                new RequireUserConfirmEvent(
+                                                        replyId, pending, gate.askMessages()),
                                                 new RequestStopEvent(
                                                         "permission asking",
                                                         GenerateReason.PERMISSION_ASKING)));
@@ -4379,8 +4380,18 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
          * @param pendingAsk tool calls that require user confirmation before execution.
          * @param autoDeniedIds ids of tool calls whose decision was {@code DENY}; the agent loop
          *     synthesises denied results for them without invoking the tool.
+         * @param askMessages the human-readable message each ASK decision carried, keyed by
+         *     tool call id; surfaced on {@link RequireUserConfirmEvent} so callers can show why
+         *     the confirmation is needed (#3315).
          */
-        private record PermissionGate(List<ToolUseBlock> pendingAsk, Set<String> autoDeniedIds) {}
+        private record PermissionGate(
+                List<ToolUseBlock> pendingAsk,
+                Set<String> autoDeniedIds,
+                Map<String, String> askMessages) {
+            PermissionGate(List<ToolUseBlock> pendingAsk, Set<String> autoDeniedIds) {
+                this(pendingAsk, autoDeniedIds, Map.of());
+            }
+        }
 
         /**
          * Run every tool call through the permission gate.
@@ -4410,16 +4421,23 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                             verdicts -> {
                                 List<ToolUseBlock> pending = new ArrayList<>();
                                 Set<String> denied = new HashSet<>();
+                                Map<String, String> askMessages = new HashMap<>();
                                 for (PermissionVerdict v : verdicts) {
                                     switch (v.behavior()) {
                                         case DENY -> denied.add(v.use().getId());
-                                        case ASK -> pending.add(v.use());
+                                        case ASK -> {
+                                            pending.add(v.use());
+                                            if (v.askMessage() != null
+                                                    && !v.askMessage().isBlank()) {
+                                                askMessages.put(v.use().getId(), v.askMessage());
+                                            }
+                                        }
                                         case ALLOW, PASSTHROUGH -> {
                                             // auto-approved; falls through to execution
                                         }
                                     }
                                 }
-                                return new PermissionGate(pending, denied);
+                                return new PermissionGate(pending, denied, askMessages);
                             });
         }
 
@@ -4442,7 +4460,8 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                                 use,
                                                 decision == null
                                                         ? PermissionBehavior.ASK
-                                                        : decision.getBehavior()));
+                                                        : decision.getBehavior(),
+                                                decision == null ? null : decision.getMessage()));
             }
             return tb.checkPermissions(input, state.getPermissionContext())
                     .map(
@@ -4454,15 +4473,31 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                 // gates execution; PASSTHROUGH and ALLOW both run, DENY is
                                 // honoured.
                                 return switch (decision.getBehavior()) {
-                                    case ASK -> new PermissionVerdict(use, PermissionBehavior.ASK);
+                                    case ASK ->
+                                            new PermissionVerdict(
+                                                    use,
+                                                    PermissionBehavior.ASK,
+                                                    decision.getMessage());
                                     case DENY ->
-                                            new PermissionVerdict(use, PermissionBehavior.DENY);
-                                    default -> new PermissionVerdict(use, PermissionBehavior.ALLOW);
+                                            new PermissionVerdict(
+                                                    use,
+                                                    PermissionBehavior.DENY,
+                                                    decision.getMessage());
+                                    default ->
+                                            new PermissionVerdict(
+                                                    use,
+                                                    PermissionBehavior.ALLOW,
+                                                    decision.getMessage());
                                 };
                             });
         }
 
-        private record PermissionVerdict(ToolUseBlock use, PermissionBehavior behavior) {}
+        private record PermissionVerdict(
+                ToolUseBlock use, PermissionBehavior behavior, String askMessage) {
+            PermissionVerdict(ToolUseBlock use, PermissionBehavior behavior) {
+                this(use, behavior, null);
+            }
+        }
 
         /**
          * Grant check for the acting phase, ordered before the permission pipeline so an
