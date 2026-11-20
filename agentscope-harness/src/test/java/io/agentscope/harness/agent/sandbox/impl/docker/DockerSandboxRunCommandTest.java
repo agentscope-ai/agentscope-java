@@ -47,6 +47,7 @@ class DockerSandboxRunCommandTest {
 
     private static DockerSandboxState minimalState() {
         DockerSandboxState state = new DockerSandboxState();
+        state.setContainerId("container-1");
         state.setImage("ubuntu:22.04");
         state.setWorkspaceRoot("/workspace");
         state.setWorkspaceSpec(new WorkspaceSpec());
@@ -108,5 +109,23 @@ class DockerSandboxRunCommandTest {
                 cmd.subList(0, 5));
         // Image precedes the entrypoint tokens.
         assertEquals("ubuntu:22.04", cmd.get(cmd.size() - 4));
+    }
+
+    @Test
+    void hydrateCommandPreservesArchivePermissions() {
+        DockerSandbox sandbox = new DockerSandbox(minimalState());
+
+        assertEquals(
+                List.of(
+                        "docker",
+                        "exec",
+                        "-i",
+                        "container-1",
+                        "tar",
+                        "-xpf",
+                        "-",
+                        "-C",
+                        "/workspace"),
+                sandbox.buildHydrateCommand());
     }
 }
