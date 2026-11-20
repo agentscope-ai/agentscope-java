@@ -22,9 +22,6 @@ import io.agentscope.durable.DurableTypes.PublicEvent;
 import io.agentscope.durable.DurableTypes.Snapshot;
 import java.time.Duration;
 import java.util.Objects;
-import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
@@ -59,9 +56,7 @@ public final class SessionEventSubscription implements AutoCloseable {
     private long generation;
     private long retryAfter;
     private ScheduledFuture<?> scheduled;
-    private final ConcurrentLinkedQueue<LiveEvent> live = new ConcurrentLinkedQueue<>();
-    private final Set<String> completedMessages = ConcurrentHashMap.newKeySet();
-    private final Set<String> completedToolCalls = ConcurrentHashMap.newKeySet();
+    private final PreviewBuffer live = new PreviewBuffer();
     private AutoCloseable liveSubscription;
 
     SessionEventSubscription(
@@ -98,8 +93,8 @@ public final class SessionEventSubscription implements AutoCloseable {
                             session.liveEvents()
                                     .subscribe(
                                             event -> {
-                                                if (filter.matches(event)) {
-                                                    live.add(event);
+                                                if (filter.matches(session.key(), event)
+                                                        && live.offer(event)) {
                                                     changed();
                                                 }
                                             });
@@ -149,12 +144,7 @@ public final class SessionEventSubscription implements AutoCloseable {
             if (reader == null) {
                 reader =
                         new SessionEventClient(
-                                session,
-                                filter,
-                                initialCursor,
-                                snapshots,
-                                this::durable,
-                                this::changed);
+                                session, filter, initialCursor, snapshots, events, this::changed);
                 if (closed) {
                     reader.close();
                     return;
@@ -166,7 +156,7 @@ public final class SessionEventSubscription implements AutoCloseable {
             }
             if (closed) return;
             if (reader.poll() > 0) delay = 0;
-            if (reader.replayCaughtUp() && drainLive() > 0) delay = 0;
+            if (reader.replayCaughtUp() && live.drain(session, liveEvents) > 0) delay = 0;
             lastFailure = null;
         } catch (RuntimeException error) {
             failed = true;
@@ -186,27 +176,6 @@ public final class SessionEventSubscription implements AutoCloseable {
                 }
             }
         }
-    }
-
-    private int drainLive() {
-        int delivered = 0;
-        for (LiveEvent event; (event = live.poll()) != null; ) {
-            String messageId = event.data().path("messageId").asText(null);
-            if (messageId != null && completedMessages.contains(messageId)) continue;
-            String toolCallId = event.data().path("toolCallId").asText(null);
-            if (toolCallId != null && completedToolCalls.contains(toolCallId)) continue;
-            liveEvents.accept(event);
-            delivered++;
-        }
-        return delivered;
-    }
-
-    private void durable(PublicEvent event) {
-        if ("message.completed".equals(event.type()))
-            completedMessages.add(event.data().path("messageId").asText());
-        if ("tool.call.updated".equals(event.type()))
-            completedToolCalls.add(event.data().path("callId").asText());
-        events.accept(event);
     }
 
     /** Last successfully acknowledged cursor; persist event/snapshot cursors inside callbacks. */

@@ -43,6 +43,7 @@ import io.agentscope.durable.DurableTypes.Lease;
 import io.agentscope.durable.DurableTypes.Lifecycle;
 import io.agentscope.durable.DurableTypes.ModelCallPage;
 import io.agentscope.durable.DurableTypes.ModelCallView;
+import io.agentscope.durable.DurableTypes.PreviewIdentity;
 import io.agentscope.durable.DurableTypes.PublicEvent;
 import io.agentscope.durable.DurableTypes.RecoveryView;
 import io.agentscope.durable.DurableTypes.Restoration;
@@ -2256,6 +2257,22 @@ public final class TransactionalSessionBackend implements SessionBackend {
             if (queued)
                 append(s, r, new EventInput("cancelled:" + r.id, "turn.cancelled", lifecycle(r)));
         }
+    }
+
+    @Override
+    public List<Boolean> previewEligibility(SessionKey key, List<PreviewIdentity> identities) {
+        if (identities.size() > PreviewBuffer.BATCH)
+            throw error(DurableException.Code.INVALID, "Too many preview identities");
+        return store.transaction(
+                key.storageKey(),
+                tx -> {
+                    var state = load(tx);
+                    if (!key.equals(state.session.key()))
+                        throw error(DurableException.Code.CONFLICT, "Session key mismatch");
+                    return identities.stream()
+                            .map(id -> id.pending(state.messages::get, state.projectedTools::get))
+                            .toList();
+                });
     }
 
     @Override
