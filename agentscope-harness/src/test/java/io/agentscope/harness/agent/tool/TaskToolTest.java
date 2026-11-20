@@ -23,11 +23,21 @@ import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolResultState;
+import io.agentscope.core.message.ToolUseBlock;
+import io.agentscope.core.model.ExecutionConfig;
+import io.agentscope.core.tool.ToolCallParam;
+import io.agentscope.core.tool.Toolkit;
+import io.agentscope.core.tool.ToolkitConfig;
 import io.agentscope.harness.agent.subagent.task.BackgroundTask;
 import io.agentscope.harness.agent.subagent.task.TaskRepository;
+import java.time.Duration;
+import java.util.Map;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
 
 class TaskToolTest {
     private final RuntimeContext context = RuntimeContext.empty();
@@ -108,5 +118,42 @@ class TaskToolTest {
         } finally {
             Thread.interrupted();
         }
+    }
+
+    @Test
+    @Timeout(5)
+    void taskOutputManagesItsOwnWaitBeyondOrdinaryToolTimeout() {
+        BackgroundTask task =
+                new BackgroundTask(
+                        "late",
+                        "agent",
+                        CompletableFuture.supplyAsync(
+                                () -> "late result",
+                                CompletableFuture.delayedExecutor(200, TimeUnit.MILLISECONDS)));
+        when(repository.getTask(context, context.getSessionId(), "late")).thenReturn(task);
+        Toolkit toolkit =
+                new Toolkit(
+                        ToolkitConfig.builder()
+                                .executionConfig(
+                                        ExecutionConfig.builder()
+                                                .timeout(Duration.ofMillis(50))
+                                                .build())
+                                .build());
+        toolkit.registerTool(tool);
+        Map<String, Object> input = Map.of("task_id", "late", "block", true, "timeout", 1000);
+        ToolUseBlock toolCall =
+                ToolUseBlock.builder().id("task-output").name("task_output").input(input).build();
+
+        ToolResultBlock result =
+                toolkit.callTool(
+                                ToolCallParam.builder()
+                                        .toolUseBlock(toolCall)
+                                        .input(input)
+                                        .runtimeContext(context)
+                                        .build())
+                        .block(Duration.ofSeconds(4));
+
+        String output = assertText(result, ToolResultState.SUCCESS);
+        assertTrue(output.contains("late result"));
     }
 }
