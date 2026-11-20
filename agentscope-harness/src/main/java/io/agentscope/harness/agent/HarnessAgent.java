@@ -855,6 +855,32 @@ public class HarnessAgent implements Agent, AutoCloseable {
         return call(new UserMessage(text), ctx);
     }
 
+    /**
+     * Calls the agent with a plain text input, structured output class, and per-call
+     * {@link RuntimeContext}.
+     *
+     * @param text           input text (wrapped into a {@link UserMessage})
+     * @param structuredModel class defining the expected structure
+     * @param ctx             runtime context to propagate into the call
+     * @return response message with structured data in metadata
+     */
+    public Mono<Msg> call(String text, Class<?> structuredModel, RuntimeContext ctx) {
+        return call(new UserMessage(text), structuredModel, ctx);
+    }
+
+    /**
+     * Calls the agent with a plain text input, structured output JSON schema, and per-call
+     * {@link RuntimeContext}.
+     *
+     * @param text  input text (wrapped into a {@link UserMessage})
+     * @param schema JSON schema defining the expected structure
+     * @param ctx   runtime context to propagate into the call
+     * @return response message with structured data in metadata
+     */
+    public Mono<Msg> call(String text, JsonNode schema, RuntimeContext ctx) {
+        return call(List.of(new UserMessage(text)), schema, ctx);
+    }
+
     public Mono<Msg> call(List<Msg> msgs, RuntimeContext ctx) {
         RuntimeContext effective =
                 ensureSessionDefaults(ctx != null ? ctx : RuntimeContext.empty());
@@ -1115,10 +1141,6 @@ public class HarnessAgent implements Agent, AutoCloseable {
      * caller-supplied {@link RuntimeContext}. Mirrors {@code ReActAgent#streamEvents(List, Class,
      * RuntimeContext)} with the same sandbox-lifecycle acquire/release semantics.
      *
-     * <p>Unlike {@code ReActAgent}, this class deliberately offers no context-less structured
-     * overload: its context-less plain {@code streamEvents} entries are
-     * {@code @Deprecated(since = "2.2.0")} in favor of an explicit {@link RuntimeContext}.
-     *
      * @param msgs input messages
      * @param structuredModel class defining the expected structure
      * @param ctx runtime context to propagate into the call
@@ -1129,17 +1151,13 @@ public class HarnessAgent implements Agent, AutoCloseable {
         RuntimeContext effective =
                 ensureSessionDefaults(ctx != null ? ctx : RuntimeContext.empty());
         return wrappedStreamEvents(
-                effective, () -> delegate.streamEvents(msgs, structuredModel, effective));
+                effective, eff -> delegate.streamEvents(msgs, structuredModel, eff));
     }
 
     /**
      * Stream fine-grained {@link AgentEvent}s with structured output (JSON-schema-driven) and a
      * caller-supplied {@link RuntimeContext}. Mirrors {@code ReActAgent#streamEvents(List, JsonNode,
      * RuntimeContext)} with the same sandbox-lifecycle acquire/release semantics.
-     *
-     * <p>Unlike {@code ReActAgent}, this class deliberately offers no context-less structured
-     * overload: its context-less plain {@code streamEvents} entries are
-     * {@code @Deprecated(since = "2.2.0")} in favor of an explicit {@link RuntimeContext}.
      *
      * @param msgs input messages
      * @param schema JSON schema defining the expected structure
@@ -1149,7 +1167,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
     public Flux<AgentEvent> streamEvents(List<Msg> msgs, JsonNode schema, RuntimeContext ctx) {
         RuntimeContext effective =
                 ensureSessionDefaults(ctx != null ? ctx : RuntimeContext.empty());
-        return wrappedStreamEvents(effective, () -> delegate.streamEvents(msgs, schema, effective));
+        return wrappedStreamEvents(effective, eff -> delegate.streamEvents(msgs, schema, eff));
     }
 
     @Override

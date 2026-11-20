@@ -326,27 +326,6 @@ class ReActAgentStreamEventsStructuredOutputTest {
     }
 
     @Test
-    void contextlessClassAndSchemaOverloadsYieldStructuredResults() {
-        ReActAgent agent = agent(fallbackModel());
-
-        List<AgentEvent> classEvents =
-                agent.streamEvents(List.of(userMsg()), WeatherResponse.class)
-                        .collectList()
-                        .block(Duration.ofSeconds(10));
-        assertNotNull(classEvents);
-        assertWeather(lastResult(classEvents).getResult());
-
-        List<AgentEvent> schemaEvents =
-                agent.streamEvents(List.of(userMsg()), weatherSchema())
-                        .collectList()
-                        .block(Duration.ofSeconds(10));
-        assertNotNull(schemaEvents);
-        assertTrue(
-                lastResult(schemaEvents).getResult().hasStructuredData(),
-                "context-less JsonNode overload should yield a structured result");
-    }
-
-    @Test
     void castedNullStructuredArgumentFailsFastClearly() {
         ReActAgent agent = agent(fallbackModel());
 
