@@ -55,6 +55,7 @@ import io.agentscope.durable.ToolBinding;
 import io.agentscope.durable.codec.agentscope.AgentScopeCheckpointCodec;
 import io.agentscope.harness.agent.HarnessAgent;
 import io.agentscope.harness.agent.middleware.MemoryFlushMiddleware;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashSet;
@@ -91,14 +92,41 @@ public final class AgentScopeAdapter implements HarnessAdapter {
     private final Function<InvocationBinding, NativeAgent> factory;
     private final Map<String, String> executors;
     private final Map<String, ToolBinding> bindings;
+    private final QueuedModelRequest.Publisher publisher;
+    private final Duration replyTimeout;
 
     private AgentScopeAdapter(
             Function<InvocationBinding, NativeAgent> factory,
             Map<String, String> executors,
             Map<String, ToolBinding> bindings) {
+        this(factory, executors, bindings, null, ExecutionConfig.MODEL_DEFAULTS.getTimeout());
+    }
+
+    private AgentScopeAdapter(
+            Function<InvocationBinding, NativeAgent> factory,
+            Map<String, String> executors,
+            Map<String, ToolBinding> bindings,
+            QueuedModelRequest.Publisher publisher,
+            Duration replyTimeout) {
+        this.replyTimeout = replyTimeout;
+        this.publisher = publisher;
         this.factory = factory;
         this.executors = Map.copyOf(executors);
         this.bindings = Map.copyOf(bindings);
+    }
+
+    /** Dispatch reasoning model calls to a durable message queue. */
+    public AgentScopeAdapter withQueuedModel(QueuedModelRequest.Publisher publisher) {
+        return withQueuedModel(publisher, ExecutionConfig.MODEL_DEFAULTS.getTimeout());
+    }
+
+    /** Maximum time after broker acceptance to wait for missing frames, across owners. */
+    public AgentScopeAdapter withQueuedModel(
+            QueuedModelRequest.Publisher publisher, Duration replyTimeout) {
+        if (replyTimeout.toMillis() < 1)
+            throw new IllegalArgumentException("Model reply timeout must be positive");
+        return new AgentScopeAdapter(
+                factory, executors, bindings, Objects.requireNonNull(publisher), replyTimeout);
     }
 
     /** Registers schemas from the same immutable definitions used by the remote worker. */
@@ -264,7 +292,7 @@ public final class AgentScopeAdapter implements HarnessAdapter {
     public void execute(HarnessContext context) {
         if (pauseIfRequested(context)) return;
         var log = new BackendThreadJournal(context, executors, bindings);
-        var host = new AgentScopeExecutionHost(context, log);
+        var host = new AgentScopeExecutionHost(context, log, publisher, replyTimeout);
         if (host.pending()) host.restoreEntry();
         else if (completeInvocation(context, log)) return;
         var frame = context.frame();
@@ -396,6 +424,10 @@ public final class AgentScopeAdapter implements HarnessAdapter {
                     failure);
         }
         if (pauseIfRequested(context)) return;
+        if (host.waitingForModel() != null) {
+            waitFor(context, host.waitingForModel());
+            return;
+        }
         if (host.pending())
             throw new DurableException(
                     DurableException.Code.UNAVAILABLE, "Native finalization is incomplete");

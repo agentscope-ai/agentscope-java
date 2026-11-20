@@ -28,18 +28,25 @@ import io.agentscope.core.message.Msg;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.ChatUsage;
 import io.agentscope.core.model.GenerateOptions;
+import io.agentscope.core.model.Model;
 import io.agentscope.core.model.ToolSchema;
 import io.agentscope.core.state.AgentState;
 import io.agentscope.core.util.JsonUtils;
 import io.agentscope.durable.DurableException;
 import io.agentscope.durable.DurableJson;
+import io.agentscope.durable.DurableTypes.Signal;
 import io.agentscope.durable.DurableTypes.TurnStatus;
+import io.agentscope.durable.DurableTypes.TurnView;
+import io.agentscope.durable.DurableTypes.WaitCondition;
 import io.agentscope.durable.HarnessContext;
+import io.agentscope.durable.ModelReplyProtocol;
 import io.agentscope.durable.codec.agentscope.DurableEventSchemas;
 import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -47,6 +54,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Function;
 import java.util.function.Supplier;
 import reactor.core.publisher.Flux;
@@ -65,6 +73,28 @@ final class AgentScopeExecutionHost implements AgentExecutionHost, ModelInvocati
 
     private final HarnessContext durable;
     private final BackendThreadJournal log;
+    private final QueuedModelRequest.Publisher publisher;
+    private QueuedModelRequest pendingRequest;
+    private boolean queuedFallback;
+
+    private static final class RemoteModelFailure extends IllegalStateException {
+        RemoteModelFailure(String message) {
+            super(message);
+        }
+    }
+
+    private int pendingIteration;
+    private long replyDeadline;
+    private long replyProgress = -1;
+    private long replyIdleMillis;
+    private String workerAttempt = "0";
+    private String replyProgressAttempt = "0";
+    private WaitCondition waitingForModel;
+
+    WaitCondition waitingForModel() {
+        return waitingForModel;
+    }
+
     private Frame frame;
     private long replayAfter;
     private final Set<String> replayed = new HashSet<>();
@@ -79,13 +109,22 @@ final class AgentScopeExecutionHost implements AgentExecutionHost, ModelInvocati
         return Mono.<Void>fromRunnable(
                         () -> {
                             checkControl();
-                            if (boundary == Boundary.REASONING) applyInputs(runtime, state);
+                            if (boundary == Boundary.REASONING) {
+                                context = runtime;
+                                if (pendingRequest == null) {
+                                    queuedFallback = false;
+                                    applyInputs(runtime, state);
+                                }
+                            }
                         })
                 .subscribeOn(Schedulers.boundedElastic());
     }
 
     private void checkControl() {
-        var turn = durable.frame().turn();
+        checkControl(durable.frame().turn());
+    }
+
+    private static void checkControl(TurnView turn) {
         if (turn.cancellationRequested())
             throw new DurableException(
                     DurableException.Code.FENCED, "Cancellation requests a durable handoff");
@@ -137,13 +176,38 @@ final class AgentScopeExecutionHost implements AgentExecutionHost, ModelInvocati
                 : UUID.randomUUID().toString();
     }
 
-    AgentScopeExecutionHost(HarnessContext durable, BackendThreadJournal log) {
+    AgentScopeExecutionHost(
+            HarnessContext durable,
+            BackendThreadJournal log,
+            QueuedModelRequest.Publisher publisher,
+            Duration replyTimeout) {
         this.durable = durable;
         this.log = log;
+        this.publisher = publisher;
+        this.replyIdleMillis = replyTimeout.toMillis();
         for (var event : log.scan(0, log.head().seq())) {
             if ("state/checkpoint".equals(event.type())) replayAfter = event.seq();
             if (!durable.lease().turnId().equals(event.turnId())) continue;
             var data = event.data();
+            if (DurableEventSchemas.QUEUED_MODEL.equals(event.type())) {
+                pendingRequest =
+                        DurableJson.convert(
+                                DurableJson.value(data.get("request")), QueuedModelRequest.class);
+                pendingIteration = ((Number) data.get("iteration")).intValue();
+                queuedFallback = Boolean.TRUE.equals(data.get("fallback"));
+                replyDeadline = 0;
+                replyProgress = -1;
+            } else if (isQueued(data.get("modelCallId"))) {
+                if (DurableEventSchemas.MODEL_ACCEPTED.equals(event.type())) {
+                    replyDeadline = ((Number) data.get("replyDeadline")).longValue();
+                    replyIdleMillis =
+                            ((Number) data.getOrDefault("idleMillis", replyIdleMillis)).longValue();
+                    replyProgress = ((Number) data.getOrDefault("sequence", -1L)).longValue();
+                    replyProgressAttempt = String.valueOf(data.getOrDefault("workerAttempt", "0"));
+                }
+                if ("model/end".equals(event.type()) && "completed".equals(data.get("status")))
+                    pendingRequest = null;
+            }
             if (DurableEventSchemas.START.equals(event.type())) {
                 frame =
                         new Frame(
@@ -333,15 +397,344 @@ final class AgentScopeExecutionHost implements AgentExecutionHost, ModelInvocati
                                             .map(value -> response((Map<?, ?>) value));
                                 }
                             }
-                            String call = id == null ? UUID.randomUUID().toString() : id;
+                            String candidate = id == null ? UUID.randomUUID().toString() : id;
+                            String call =
+                                    "REASONING".equals(purpose)
+                                                    && (publisher != null || pendingRequest != null)
+                                            ? prepareQueued(
+                                                    candidate, model, messages, tools, options)
+                                            : candidate;
                             log.modelStarted(
                                     call,
                                     new ModelCapture(
                                             model, purpose, messages, tools, options, hash));
                             return Flux.defer(() -> next.apply(call))
-                                    .doOnNext(chunk -> log.modelChunk(call, chunk));
+                                    .doOnNext(chunk -> log.modelChunk(call, chunk))
+                                    .doOnComplete(
+                                            () -> {
+                                                if (isQueued(call)) pendingRequest = null;
+                                            });
                         })
                 .subscribeOn(Schedulers.boundedElastic());
+    }
+
+    private String prepareQueued(
+            String id,
+            String model,
+            List<Msg> messages,
+            List<ToolSchema> tools,
+            GenerateOptions options) {
+        var recorder = InvocationRecorder.from(context);
+        int iteration = recorder.executionPosition().reasoningIteration();
+        if (pendingRequest == null) {
+            pendingRequest =
+                    QueuedModelRequest.prepare(
+                            durable.lease().thread(),
+                            durable.lease().turnId(),
+                            id,
+                            model,
+                            messages,
+                            tools,
+                            options);
+            recorder.checkpointedRecordNow(
+                    context.getAgentState(),
+                    "queued_model",
+                    DurableEventSchemas.QUEUED_MODEL,
+                    Map.of(
+                            "request",
+                            pendingRequest,
+                            "iteration",
+                            iteration,
+                            "fallback",
+                            queuedFallback));
+            pendingIteration = iteration;
+            replyDeadline = 0;
+            replyProgress = -1;
+        }
+        if (iteration != pendingIteration || !model.equals(pendingRequest.model()))
+            throw new DurableException(
+                    DurableException.Code.CONFLICT,
+                    "Recovered reasoning position changed for call " + pendingRequest.callId());
+        if (replyDeadline > 0) {
+            var frame = durable.frame();
+            String first =
+                    QueuedModelRequest.key(
+                            pendingRequest.callId(),
+                            ModelReplyProtocol.active(frame.signals(), pendingRequest.callId()),
+                            0);
+            if (frame.signals().stream().noneMatch(s -> s.key().equals(first))) {
+                checkReplyDeadline(frame.now(), 0);
+                waitingForModel = new WaitCondition(first, replyDeadline);
+                throw new AgentExecutionHost.Paused();
+            }
+        }
+        return pendingRequest.callId();
+    }
+
+    private boolean isQueued(Object callId) {
+        return pendingRequest != null && pendingRequest.callId().equals(callId);
+    }
+
+    @Override
+    public boolean resumingFallback(String purpose) {
+        return "REASONING".equals(purpose) && pendingRequest != null && queuedFallback;
+    }
+
+    @Override
+    public boolean beginFallback(String purpose, Throwable cause) {
+        if (!"REASONING".equals(purpose) || publisher == null && pendingRequest == null)
+            return true;
+        if (pendingRequest != null && !(cause instanceof RemoteModelFailure)) return false;
+        pendingRequest = null;
+        queuedFallback = true;
+        return true;
+    }
+
+    @Override
+    public Mono<Void> admit(String callId, Mono<Void> admission) {
+        if (!isQueued(callId)) return admission;
+        if (replyDeadline > 0) return Mono.empty();
+        return admission.then(
+                Mono.<Void>fromRunnable(
+                                () -> {
+                                    if (publisher == null)
+                                        throw new DurableException(
+                                                DurableException.Code.INCOMPATIBLE,
+                                                "Model publisher missing");
+                                    try {
+                                        publisher.publish(pendingRequest);
+                                    } catch (DurableException error) {
+                                        throw error;
+                                    } catch (RuntimeException error) {
+                                        throw new DurableException(
+                                                DurableException.Code.UNAVAILABLE,
+                                                "Model publish acceptance unknown for call "
+                                                        + callId,
+                                                error);
+                                    }
+                                    replyDeadline =
+                                            Math.addExact(durable.frame().now(), replyIdleMillis);
+                                    var recorder = InvocationRecorder.from(context);
+                                    recorder.append(
+                                            DurableEventSchemas.MODEL_ACCEPTED,
+                                            Map.of(
+                                                    "modelCallId",
+                                                    callId,
+                                                    "replyDeadline",
+                                                    replyDeadline,
+                                                    "idleMillis",
+                                                    replyIdleMillis),
+                                            true);
+                                    recorder.flushNow();
+                                    waitingForModel =
+                                            new WaitCondition(
+                                                    QueuedModelRequest.key(callId, 0),
+                                                    replyDeadline);
+                                    throw new AgentExecutionHost.Paused();
+                                })
+                        .subscribeOn(Schedulers.boundedElastic()));
+    }
+
+    @Override
+    public Flux<ChatResponse> responses(
+            String callId,
+            Model model,
+            List<Msg> messages,
+            List<ToolSchema> tools,
+            GenerateOptions options) {
+        if (!isQueued(callId)) return model.stream(messages, tools, options);
+        workerAttempt = ModelReplyProtocol.active(durable.frame().signals(), callId);
+        if (!workerAttempt.equals(replyProgressAttempt)) {
+            replyProgress = -1;
+            replyProgressAttempt = workerAttempt;
+        }
+        var seq = new AtomicLong();
+        var buffered = new HashMap<String, Signal>();
+        var emptyPolls = new AtomicLong();
+        var changed = new AtomicLong();
+        var observed = new AtomicLong();
+        reactor.core.publisher.Sinks.Many<Long> hints =
+                reactor.core.publisher.Sinks.many().replay().latest();
+        Flux<ChatResponse> replies =
+                Mono.defer(
+                                () -> {
+                                    String key =
+                                            QueuedModelRequest.key(
+                                                    callId, workerAttempt, seq.get());
+                                    {
+                                        observed.set(changed.get());
+                                        var frame = durable.frame();
+                                        checkControl(frame.turn());
+                                        if (!workerAttempt.equals(
+                                                ModelReplyProtocol.active(frame.signals(), callId)))
+                                            throw new DurableException(
+                                                    DurableException.Code.UNAVAILABLE,
+                                                    "Model worker attempt replaced for call "
+                                                            + callId);
+                                        buffered.clear();
+                                        for (var signal : frame.signals())
+                                            buffered.put(signal.key(), signal);
+                                        if (!buffered.containsKey(key))
+                                            checkReplyDeadline(frame.now(), seq.get());
+                                    }
+                                    Signal signal = buffered.remove(key);
+                                    if (signal != null && signal.value().path("last").asBoolean())
+                                        durable.sealModelReply(
+                                                QueuedModelRequest.seal(callId, workerAttempt));
+                                    if (signal != null) {
+                                        emptyPolls.set(0);
+                                        if (seq.get() > replyProgress) {
+                                            replyProgress = seq.get();
+                                            replyDeadline =
+                                                    Math.addExact(
+                                                            durable.frame().now(), replyIdleMillis);
+                                            var recorder = InvocationRecorder.from(context);
+                                            recorder.append(
+                                                    DurableEventSchemas.MODEL_ACCEPTED,
+                                                    Map.of(
+                                                            "modelCallId",
+                                                            callId,
+                                                            "replyDeadline",
+                                                            replyDeadline,
+                                                            "sequence",
+                                                            replyProgress,
+                                                            "idleMillis",
+                                                            replyIdleMillis,
+                                                            "workerAttempt",
+                                                            workerAttempt),
+                                                    true);
+                                            recorder.flushNow();
+                                        }
+                                    }
+                                    return Mono.justOrEmpty(signal);
+                                })
+                        .subscribeOn(Schedulers.boundedElastic())
+                        .repeatWhenEmpty(
+                                empty ->
+                                        empty.concatMap(
+                                                ignored ->
+                                                        Mono.firstWithSignal(
+                                                                hints.asFlux()
+                                                                        .filter(
+                                                                                version ->
+                                                                                        version
+                                                                                                > observed
+                                                                                                        .get())
+                                                                        .next(),
+                                                                Mono.delay(
+                                                                        Duration.ofMillis(
+                                                                                Math.min(
+                                                                                        1000,
+                                                                                        25L
+                                                                                                << Math
+                                                                                                        .min(
+                                                                                                                6,
+                                                                                                                emptyPolls
+                                                                                                                        .getAndIncrement())))))))
+                        .doOnNext(QueuedModelRequest::validateReply)
+                        .doOnNext(
+                                s -> {
+                                    if (s.value().path("retryable").asBoolean()) {
+                                        var old = pendingRequest;
+                                        pendingRequest =
+                                                new QueuedModelRequest(
+                                                        old.thread(),
+                                                        old.turnId(),
+                                                        java.util.UUID.randomUUID().toString(),
+                                                        old.model(),
+                                                        old.messages(),
+                                                        old.tools(),
+                                                        old.options());
+                                        InvocationRecorder.from(context)
+                                                .checkpointedRecordNow(
+                                                        context.getAgentState(),
+                                                        "queued_model_retry",
+                                                        DurableEventSchemas.QUEUED_MODEL,
+                                                        Map.of(
+                                                                "request",
+                                                                pendingRequest,
+                                                                "iteration",
+                                                                pendingIteration,
+                                                                "fallback",
+                                                                queuedFallback));
+                                        throw new DurableException(
+                                                DurableException.Code.UNAVAILABLE,
+                                                "Retryable provider failure for call " + callId);
+                                    }
+                                    seq.incrementAndGet();
+                                })
+                        .repeat()
+                        .takeUntil(
+                                s -> s.value().path("last").asBoolean() || s.value().has("error"))
+                        .handle(
+                                (s, sink) -> {
+                                    var data = s.value();
+                                    if (data.has("error")) {
+                                        sink.error(
+                                                new RemoteModelFailure(
+                                                        "Remote model call "
+                                                                + callId
+                                                                + " failed: "
+                                                                + data.path("error").asText()));
+                                    } else if (data.hasNonNull("response"))
+                                        sink.next(
+                                                response(
+                                                        DurableJson.convert(
+                                                                data.get("response"), Map.class)));
+                                });
+        Flux<ChatResponse> notified =
+                Flux.using(
+                        () -> {
+                            try {
+                                return durable.wakeups()
+                                        .subscribe(
+                                                session -> {
+                                                    if (session.equals(durable.lease().session()))
+                                                        hints.tryEmitNext(
+                                                                changed.incrementAndGet());
+                                                });
+                            } catch (RuntimeException error) {
+                                System.getLogger(AgentScopeExecutionHost.class.getName())
+                                        .log(
+                                                System.Logger.Level.WARNING,
+                                                "Model wakeup subscription failed; polling callId="
+                                                        + callId,
+                                                error);
+                                return (AutoCloseable) () -> {};
+                            }
+                        },
+                        subscription -> replies,
+                        subscription -> {
+                            try {
+                                subscription.close();
+                            } catch (Exception error) {
+                                System.getLogger(AgentScopeExecutionHost.class.getName())
+                                        .log(
+                                                System.Logger.Level.WARNING,
+                                                "Model wakeup subscription close failed callId="
+                                                        + callId,
+                                                error);
+                            }
+                        });
+        return Flux.deferContextual(
+                reactorContext -> {
+                    io.agentscope.core.model.ModelRequestObserver observer =
+                            reactorContext.getOrDefault(
+                                    io.agentscope.core.model.ModelRequestObserver.class, null);
+                    return observer == null
+                            ? notified
+                            : observer.observe(notified, pendingRequest.model(), "queued");
+                });
+    }
+
+    private void checkReplyDeadline(long now, long sequence) {
+        if (now >= replyDeadline)
+            throw new DurableException(
+                    DurableException.Code.INVALID,
+                    "Model reply deadline exceeded for call "
+                            + pendingRequest.callId()
+                            + " at sequence "
+                            + sequence);
     }
 
     static String requestHash(

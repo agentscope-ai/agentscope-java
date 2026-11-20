@@ -18,14 +18,41 @@ package io.agentscope.core.journal;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.GenerateOptions;
+import io.agentscope.core.model.Model;
 import io.agentscope.core.model.ToolSchema;
 import java.util.List;
 import java.util.function.Function;
 import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
 
 /** Optional call-scoped host replay boundary. Invoking next preserves recording and model policy. */
 @FunctionalInterface
 public interface ModelInvocation {
+    /** Resume an already selected fallback without reporting another provider failure. */
+    default boolean resumingFallback(String purpose) {
+        return false;
+    }
+
+    /** Let the host distinguish a provider failure from a dispatch or reply protocol failure. */
+    default boolean beginFallback(String purpose, Throwable cause) {
+        return true;
+    }
+
+    /** Run admission before external dispatch. A host may yield here and resume an admitted call. */
+    default Mono<Void> admit(String callId, Mono<Void> admission) {
+        return admission;
+    }
+
+    /** Supplies responses inside the recorded call, including model policy and chunk accounting. */
+    default Flux<ChatResponse> responses(
+            String callId,
+            Model model,
+            List<Msg> messages,
+            List<ToolSchema> tools,
+            GenerateOptions options) {
+        return model.stream(messages, tools, options);
+    }
+
     Flux<ChatResponse> stream(
             String model,
             String purpose,
