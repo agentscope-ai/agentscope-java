@@ -38,6 +38,7 @@ import io.agentscope.extensions.model.ollama.formatter.OllamaMultiAgentFormatter
 import io.agentscope.extensions.model.ollama.options.OllamaOptions;
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Flux;
@@ -97,6 +98,22 @@ public class OllamaChatModel extends ChatModelBase {
             Formatter<OllamaMessage, OllamaResponse, OllamaRequest> formatter,
             HttpTransport httpTransport,
             boolean stream) {
+        this(modelName, baseUrl, defaultOptions, formatter, httpTransport, stream, null);
+    }
+
+    /**
+     * Creates a new OllamaChatModel with an explicit streaming mode and optional API key.
+     *
+     * @param apiKey The API key sent as {@code Authorization: Bearer} (null to omit).
+     */
+    public OllamaChatModel(
+            String modelName,
+            String baseUrl,
+            OllamaOptions defaultOptions,
+            Formatter<OllamaMessage, OllamaResponse, OllamaRequest> formatter,
+            HttpTransport httpTransport,
+            boolean stream,
+            String apiKey) {
         this.modelName = modelName;
         this.defaultOptions =
                 defaultOptions != null ? defaultOptions : OllamaOptions.builder().build();
@@ -107,7 +124,7 @@ public class OllamaChatModel extends ChatModelBase {
 
         HttpTransport transport =
                 httpTransport != null ? httpTransport : HttpTransportFactory.getDefault();
-        this.httpClient = new OllamaHttpClient(transport, baseUrl);
+        this.httpClient = new OllamaHttpClient(transport, baseUrl, apiKey);
     }
 
     /**
@@ -165,7 +182,14 @@ public class OllamaChatModel extends ChatModelBase {
      * @return The chat response.
      */
     public ChatResponse chat(List<Msg> messages, GenerateOptions options) {
-        return this.chat(messages, OllamaOptions.fromGenerateOptions(options));
+        return streamWithHttpClient(
+                        messages,
+                        null,
+                        null,
+                        OllamaOptions.fromGenerateOptions(options),
+                        false,
+                        additionalHeaders(options))
+                .blockLast();
     }
 
     @Override
@@ -178,7 +202,12 @@ public class OllamaChatModel extends ChatModelBase {
                 tools,
                 options != null ? options.getToolChoice() : null,
                 OllamaOptions.fromGenerateOptions(options),
-                effectiveStream);
+                effectiveStream,
+                additionalHeaders(options));
+    }
+
+    private Map<String, String> additionalHeaders(GenerateOptions options) {
+        return options != null ? options.getAdditionalHeaders() : null;
     }
 
     /**
@@ -190,6 +219,16 @@ public class OllamaChatModel extends ChatModelBase {
             ToolChoice toolChoice,
             OllamaOptions options,
             boolean stream) {
+        return streamWithHttpClient(messages, tools, toolChoice, options, stream, null);
+    }
+
+    private Flux<ChatResponse> streamWithHttpClient(
+            List<Msg> messages,
+            List<ToolSchema> tools,
+            ToolChoice toolChoice,
+            OllamaOptions options,
+            boolean stream,
+            Map<String, String> extraHeaders) {
 
         // Calculate merged options for ModelUtils.applyTimeoutAndRetry
         OllamaOptions mergedOptions = this.defaultOptions.merge(options);
@@ -229,7 +268,7 @@ public class OllamaChatModel extends ChatModelBase {
                             () -> {
                                 final String[] finalStableId = new String[1];
 
-                                return httpClient.stream(request)
+                                return httpClient.stream(request, extraHeaders)
                                         .map(
                                                 response -> {
                                                     ChatResponse parsedResponse =
@@ -250,7 +289,8 @@ public class OllamaChatModel extends ChatModelBase {
                                     () -> {
                                         Instant startTime = Instant.now();
                                         try {
-                                            OllamaResponse response = httpClient.chat(request);
+                                            OllamaResponse response =
+                                                    httpClient.chat(request, extraHeaders);
                                             return Flux.just(
                                                     formatter.parseResponse(response, startTime));
                                         } catch (Exception e) {
@@ -273,6 +313,7 @@ public class OllamaChatModel extends ChatModelBase {
     public static class Builder {
         private String modelName;
         private String baseUrl;
+        private String apiKey;
         private OllamaOptions defaultOptions;
         private Formatter<OllamaMessage, OllamaResponse, OllamaRequest> formatter;
         private HttpTransport httpTransport;
@@ -289,6 +330,17 @@ public class OllamaChatModel extends ChatModelBase {
 
         public Builder baseUrl(String baseUrl) {
             this.baseUrl = baseUrl;
+            return this;
+        }
+
+        /**
+         * Sets the API key sent as {@code Authorization: Bearer} for authenticated endpoints.
+         *
+         * @param apiKey the API key (null to omit)
+         * @return this builder instance
+         */
+        public Builder apiKey(String apiKey) {
+            this.apiKey = apiKey;
             return this;
         }
 
@@ -420,7 +472,7 @@ public class OllamaChatModel extends ChatModelBase {
 
             OllamaChatModel model =
                     new OllamaChatModel(
-                            modelName, baseUrl, finalOptions, formatter, transport, stream);
+                            modelName, baseUrl, finalOptions, formatter, transport, stream, apiKey);
             model.setNativeStructuredOutput(nativeStructuredOutput);
             model.setNativeStructuredOutputWithTools(nativeStructuredOutputWithTools);
             if (contextWindowSize >= 0) {

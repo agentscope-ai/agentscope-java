@@ -50,6 +50,11 @@ public class OllamaProperties {
      */
     private String baseUrl;
 
+    /**
+     * Optional API key for authenticated Ollama endpoints, sent as {@code Authorization: Bearer}.
+     */
+    private String apiKey;
+
     public boolean isEnabled() {
         return enabled;
     }
@@ -72,5 +77,13 @@ public class OllamaProperties {
 
     public void setBaseUrl(String baseUrl) {
         this.baseUrl = baseUrl;
+    }
+
+    public String getApiKey() {
+        return apiKey;
+    }
+
+    public void setApiKey(String apiKey) {
+        this.apiKey = apiKey;
     }
 }

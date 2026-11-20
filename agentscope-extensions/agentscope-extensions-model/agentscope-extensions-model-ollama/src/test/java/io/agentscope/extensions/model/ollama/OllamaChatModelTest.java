@@ -89,6 +89,51 @@ class OllamaChatModelTest {
                         .build();
     }
 
+    private static final String OK_RESPONSE_BODY =
+            "{"
+                    + "\"model\": \""
+                    + TEST_MODEL_NAME
+                    + "\","
+                    + "\"message\": {\"role\": \"assistant\", \"content\": \"Hello!\"},"
+                    + "\"done\": true"
+                    + "}";
+
+    @Test
+    @DisplayName("Builder apiKey is sent as bearer authorization")
+    void testBuilderApiKeySentAsBearer() {
+        OllamaChatModel securedModel =
+                OllamaChatModel.builder()
+                        .modelName(TEST_MODEL_NAME)
+                        .httpTransport(httpTransport)
+                        .apiKey("secret-key")
+                        .build();
+        when(httpTransport.execute(any(HttpRequest.class)))
+                .thenReturn(HttpResponse.builder().statusCode(200).body(OK_RESPONSE_BODY).build());
+
+        securedModel.chat(
+                List.of(Msg.builder().role(MsgRole.USER).textContent("Hi").build()),
+                GenerateOptions.builder().build());
+
+        ArgumentCaptor<HttpRequest> captor = ArgumentCaptor.forClass(HttpRequest.class);
+        verify(httpTransport).execute(captor.capture());
+        assertEquals("Bearer secret-key", captor.getValue().getHeaders().get("Authorization"));
+    }
+
+    @Test
+    @DisplayName("GenerateOptions additionalHeaders reach the request")
+    void testAdditionalHeadersReachRequest() {
+        when(httpTransport.execute(any(HttpRequest.class)))
+                .thenReturn(HttpResponse.builder().statusCode(200).body(OK_RESPONSE_BODY).build());
+
+        model.chat(
+                List.of(Msg.builder().role(MsgRole.USER).textContent("Hi").build()),
+                GenerateOptions.builder().additionalHeaders(Map.of("X-Custom", "value")).build());
+
+        ArgumentCaptor<HttpRequest> captor = ArgumentCaptor.forClass(HttpRequest.class);
+        verify(httpTransport).execute(captor.capture());
+        assertEquals("value", captor.getValue().getHeaders().get("X-Custom"));
+    }
+
     @Test
     @DisplayName("Should create model with valid configuration")
     void testBasicModelCreation() {

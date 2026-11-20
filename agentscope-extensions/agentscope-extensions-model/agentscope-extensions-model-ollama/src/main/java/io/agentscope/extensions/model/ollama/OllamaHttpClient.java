@@ -67,6 +67,7 @@ public class OllamaHttpClient {
 
     private final HttpTransport transport;
     private final String baseUrl;
+    private final String apiKey;
 
     /**
      * Create a new OllamaHttpClient.
@@ -75,8 +76,20 @@ public class OllamaHttpClient {
      * @param baseUrl the base URL (null for default)
      */
     public OllamaHttpClient(HttpTransport transport, String baseUrl) {
+        this(transport, baseUrl, null);
+    }
+
+    /**
+     * Create a new OllamaHttpClient with an optional API key.
+     *
+     * @param transport the HTTP transport to use
+     * @param baseUrl the base URL (null for default)
+     * @param apiKey the API key sent as {@code Authorization: Bearer} (null to omit)
+     */
+    public OllamaHttpClient(HttpTransport transport, String baseUrl, String apiKey) {
         this.transport = transport;
         this.baseUrl = baseUrl != null ? baseUrl : DEFAULT_BASE_URL;
+        this.apiKey = apiKey;
     }
 
     /**
@@ -87,6 +100,17 @@ public class OllamaHttpClient {
      */
     public OllamaResponse chat(OllamaRequest request) {
         return call(CHAT_ENDPOINT, request);
+    }
+
+    /**
+     * Make a synchronous Chat API call with extra request headers.
+     *
+     * @param request the Ollama request
+     * @param extraHeaders additional headers (null for none); client-owned headers win on conflict
+     * @return the Ollama response
+     */
+    public OllamaResponse chat(OllamaRequest request, Map<String, String> extraHeaders) {
+        return call(CHAT_ENDPOINT, request, OllamaResponse.class, extraHeaders);
     }
 
     /**
@@ -120,6 +144,24 @@ public class OllamaHttpClient {
      * @return the response object
      */
     public <T> T call(String endpoint, Object request, Class<T> responseType) {
+        return call(endpoint, request, responseType, null);
+    }
+
+    /**
+     * Make a synchronous API call to specific endpoint with custom response type and headers.
+     *
+     * @param endpoint the API endpoint
+     * @param request the request object
+     * @param responseType the response class
+     * @param extraHeaders additional headers (null for none); client-owned headers win on conflict
+     * @param <T> the response type
+     * @return the response object
+     */
+    public <T> T call(
+            String endpoint,
+            Object request,
+            Class<T> responseType,
+            Map<String, String> extraHeaders) {
         String url = baseUrl + endpoint;
 
         final String requestBody;
@@ -139,7 +181,7 @@ public class OllamaHttpClient {
                 HttpRequest.builder()
                         .url(url)
                         .method("POST")
-                        .header("Content-Type", "application/json")
+                        .headers(buildHeaders(extraHeaders, false))
                         .body(requestBody)
                         .build();
 
@@ -181,18 +223,24 @@ public class OllamaHttpClient {
      * @return a Flux of Ollama responses
      */
     public Flux<OllamaResponse> stream(OllamaRequest request) {
+        return stream(request, null);
+    }
+
+    /**
+     * Make a streaming Chat API call with extra request headers.
+     *
+     * @param request the Ollama request
+     * @param extraHeaders additional headers (null for none); client-owned headers win on conflict
+     * @return a Flux of Ollama responses
+     */
+    public Flux<OllamaResponse> stream(OllamaRequest request, Map<String, String> extraHeaders) {
         String url = baseUrl + CHAT_ENDPOINT;
 
         try {
             String requestBody = JsonUtils.getJsonCodec().toJson(request);
             log.debug("Ollama streaming request to {}: {}", url, requestBody);
 
-            Map<String, String> headers = new HashMap<>();
-            headers.put("Content-Type", "application/json");
-            // Enable NDJSON parsing in OkHttpTransport
-            headers.put(
-                    TransportConstants.STREAM_FORMAT_HEADER,
-                    TransportConstants.STREAM_FORMAT_NDJSON);
+            Map<String, String> headers = buildHeaders(extraHeaders, true);
 
             HttpRequest httpRequest =
                     HttpRequest.builder()
@@ -232,6 +280,28 @@ public class OllamaHttpClient {
     }
 
     /**
+     * Assembles request headers: user headers first, then client-owned headers (Content-Type, the
+     * NDJSON stream marker, and the bearer credential) so users cannot break transport behavior.
+     */
+    private Map<String, String> buildHeaders(Map<String, String> extraHeaders, boolean streaming) {
+        Map<String, String> headers = new HashMap<>();
+        if (extraHeaders != null) {
+            headers.putAll(extraHeaders);
+        }
+        headers.put("Content-Type", "application/json");
+        if (streaming) {
+            // Enable NDJSON parsing in OkHttpTransport
+            headers.put(
+                    TransportConstants.STREAM_FORMAT_HEADER,
+                    TransportConstants.STREAM_FORMAT_NDJSON);
+        }
+        if (apiKey != null && !apiKey.isBlank()) {
+            headers.put("Authorization", "Bearer " + apiKey);
+        }
+        return headers;
+    }
+
+    /**
      * Get the base URL.
      *
      * @return the base URL
@@ -262,6 +332,7 @@ public class OllamaHttpClient {
     public static class Builder {
         private HttpTransport transport;
         private String baseUrl;
+        private String apiKey;
 
         public Builder transport(HttpTransport transport) {
             this.transport = transport;
@@ -273,11 +344,16 @@ public class OllamaHttpClient {
             return this;
         }
 
+        public Builder apiKey(String apiKey) {
+            this.apiKey = apiKey;
+            return this;
+        }
+
         public OllamaHttpClient build() {
             if (transport == null) {
                 transport = HttpTransportFactory.getDefault();
             }
-            return new OllamaHttpClient(transport, baseUrl);
+            return new OllamaHttpClient(transport, baseUrl, apiKey);
         }
     }
 

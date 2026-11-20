@@ -19,14 +19,20 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.message.Msg;
+import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.Model;
 import io.agentscope.core.model.ToolSchema;
+import io.agentscope.core.model.transport.HttpRequest;
+import io.agentscope.core.model.transport.HttpResponse;
+import io.agentscope.core.model.transport.HttpTransport;
 import io.agentscope.extensions.model.ollama.OllamaChatModel;
 import io.agentscope.spring.boot.AgentscopeAutoConfiguration;
 import java.util.List;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
+import org.mockito.Mockito;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 import org.springframework.context.annotation.Bean;
@@ -168,6 +174,69 @@ class OllamaAutoConfigurationTest {
         customizer.accept(builder);
 
         assertThat(builder.build().getModelName()).isEqualTo("customized");
+    }
+
+    private static HttpTransport okTransport() {
+        HttpTransport transport = Mockito.mock(HttpTransport.class);
+        Mockito.when(transport.execute(Mockito.any(HttpRequest.class)))
+                .thenReturn(
+                        HttpResponse.builder()
+                                .statusCode(200)
+                                .body(
+                                        "{\"model\":\"llama3\",\"message\":{\"role\":\"assistant\","
+                                                + "\"content\":\"Hi\"},\"done\":true}")
+                                .build());
+        return transport;
+    }
+
+    private static void chatOnce(OllamaChatModel model) {
+        model.chat(
+                List.of(Msg.builder().role(MsgRole.USER).textContent("Hi").build()),
+                GenerateOptions.builder().build());
+    }
+
+    @Test
+    void shouldSendConfiguredApiKeyAsBearerAuthorization() {
+        HttpTransport transport = okTransport();
+        contextRunner
+                .withBean(
+                        OllamaChatModelBuilderCustomizer.class,
+                        () -> builder -> builder.httpTransport(transport))
+                .withPropertyValues(
+                        "agentscope.model.provider=ollama",
+                        "agentscope.ollama.model-name=llama3",
+                        "agentscope.ollama.api-key=secret-key")
+                .run(
+                        context -> {
+                            chatOnce(context.getBean(OllamaChatModel.class));
+                            ArgumentCaptor<HttpRequest> captor =
+                                    ArgumentCaptor.forClass(HttpRequest.class);
+                            Mockito.verify(transport).execute(captor.capture());
+                            assertThat(captor.getValue().getHeaders().get("Authorization"))
+                                    .isEqualTo("Bearer secret-key");
+                        });
+    }
+
+    @Test
+    void shouldTreatBlankApiKeyAsUnset() {
+        HttpTransport transport = okTransport();
+        contextRunner
+                .withBean(
+                        OllamaChatModelBuilderCustomizer.class,
+                        () -> builder -> builder.httpTransport(transport))
+                .withPropertyValues(
+                        "agentscope.model.provider=ollama",
+                        "agentscope.ollama.model-name=llama3",
+                        "agentscope.ollama.api-key=   ")
+                .run(
+                        context -> {
+                            chatOnce(context.getBean(OllamaChatModel.class));
+                            ArgumentCaptor<HttpRequest> captor =
+                                    ArgumentCaptor.forClass(HttpRequest.class);
+                            Mockito.verify(transport).execute(captor.capture());
+                            assertThat(captor.getValue().getHeaders().get("Authorization"))
+                                    .isNull();
+                        });
     }
 
     @Configuration(proxyBeanMethods = false)
