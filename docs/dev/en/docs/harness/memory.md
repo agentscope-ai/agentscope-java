@@ -24,7 +24,7 @@ The memory pipeline runs **three independent LLM calls**, each with its own prom
 
 | # | Operation | Writes to | Default prompt | Customize via |
 |---|------|----------|---------------|----------|
-| 1 | **Flush** — extracts long-term facts from a conversation window | `memory/YYYY-MM-DD.md` (append) | `MemoryFlushManager.DEFAULT_FLUSH_PROMPT` | `MemoryConfig.builder().flushPrompt(...)` |
+| 1 | **Flush** — extracts long-term facts from original messages | `memory/YYYY-MM-DD.md` (append) | `MemoryFlushManager.DEFAULT_FLUSH_PROMPT` | `MemoryConfig.builder().flushPrompt(...)` |
 | 2 | **Consolidation** — merges daily ledgers into `MEMORY.md` | `MEMORY.md` (full rewrite) | `MemoryConsolidator.DEFAULT_CONSOLIDATION_PROMPT` | `MemoryConfig.builder().consolidationPrompt(...)` |
 | 3 | **Compaction summary** — distills the conversation prefix into one summary message | Injected into the current context | `CompactionConfig.DEFAULT_SUMMARY_PROMPT` | `CompactionConfig.builder().summaryPrompt(...)` |
 
@@ -39,7 +39,7 @@ graph LR
     Flush -->|extract new facts| Daily["memory/YYYY-MM-DD.md"]
     Conv -->|over threshold| Compactor["conversation compaction"]
     Conv -->|commit execution facts| Sess["Native Thread journal"]
-    Compactor -->|flush again before summarizing| Flush
+    Sess -->|unconsumed original messages| Flush
     Daily -. throttled background consolidation .-> MEM["MEMORY.md"]
     MEM -->|loaded per call| SYS["HARNESS_CONTEXT reference message"]
 ```
@@ -50,17 +50,31 @@ Key points:
 - Layer 2 is the only one injected into the prompt; Layer 1 waits to be merged.
 - Native Thread journal already records messages and execution facts. Compaction changes working context only; `thread_history` / `thread_search` read full history without duplicate offloading.
 
-## When flush fires
+## Incremental extraction
 
-Flush (path 1) is triggered at three different moments:
+Native extraction reads up to 256 committed user, assistant or tool-result message events per eligible call. Checkpoints and telemetry do not count; summaries are excluded. Originals enter the journal before compaction or final-answer extraction.
 
-1. **End of every `call()`** — the default `MemoryFlushMiddleware` behaviour. Can be retuned to `NEVER` or `THROTTLED(Duration)` via `flushTrigger`.
-2. **Pre-compaction extraction** — when `CompactionConfig.flushBeforeCompact = true` (default), the conversation prefix is flushed once before being summarized.
-3. **Overflow safety net** — when the model actually returns `context_length_exceeded`, the framework runs an emergency compaction that includes a flush.
+`memory/.flush-state/<thread-hash>.json` stores a boundary event identity, completed sequence and split-message offset, keyed by user/agent/session/thread. Validation reads that boundary, not the journal's beginning. Recreated agents resume from the file; replicas must share the journal and workspace. A replaced journal or position beyond its head stops extraction.
 
-All three sites share the **same** `flushPrompt`, so customizing it changes all three.
+Deleting a Thread's progress file resets scanning; matching markers in today's ledger still restore recorded batch ends without re-extraction. To force re-extraction, pause extraction for that Thread on all replicas, reconcile the journal and ledger, and back up the ledger. Remove the corresponding markers while retaining fact text, then delete the progress file before resuming extraction. Repair or remove damaged markers before resetting progress too. If a flush ran after progress was deleted, remove the markers and delete progress again; the earlier flush may have restored the recorded end. Re-extraction can duplicate facts.
 
-Per-call long-term memory flush runs in the background; pre-compaction flush belongs to the compaction step. Native Thread journal commits at execution boundaries: it is not a background copy, and failure to commit required facts stops further execution.
+Each request allows at most 8,192 estimated input tokens, reduced for smaller windows. Output is capped at `min(1,024, window/8)` tokens (1,024 for unknown windows); window reserve follows the context compiler: `min(4,096, window/8)` output tokens plus 2% safety. Each deduplication reference takes at most `min(4,000, inputBudget/4)` characters: `MEMORY.md` head/tail and daily-ledger tail. Oversized messages continue in later batches without splitting Unicode code points. These bounds do not control total retention. The existing renderer truncates tool arguments to 500 characters and each tool-result text block to 1,000; extraction does not read the omitted text.
+
+Ledger append precedes progress confirmation. Conditional writes protect cooperating writers. Markers key each batch's start and record its actual end; a retry finding one in the same daily file confirms that end without rerunning extraction or admission, even when budgets change. Failures retain the batch for a later trigger, with no retry worker or automatic skipping. Concurrent attempts can repeat model calls, and cross-day retries can repeat facts; semantic deduplication still relies on the prompt and consolidation.
+
+`flushTimeout` defaults to two minutes across all extraction batches and serial admission calls in a trigger. Timeout releases the background queue or ends inline extraction with a warning; completed batches retain progress. Logs identify the Thread, selected range and last confirmed sequence/offset. For conservative sizing, use `flushTimeout > expected extraction time across all batches + total candidates × judge budget + IO margin`. The 256-message allowance does not bound model calls; split messages add batches. Judge budget is an upper bound on duration. A batch consistently exceeding the timeout repeats without committing; increase `flushTimeout` or reduce admission budget. Legacy retries have no saved position and re-extract the full current context.
+
+Standalone calls queue background extraction. Durable-hosted calls extract during finalization, recording the trigger and selected prefix for replay. Hosted workspaces must use `binding.workspace()` through `RemoteFilesystem` for Durable IO receipts; local file access does not receive them.
+
+`flushTrigger` controls native per-call extraction (`ALWAYS`, `NEVER`, `THROTTLED`). Native compaction only retains originals. `journalEnabled(false)` keeps current-context and pre-compaction extraction without persisted progress or equivalent recovery. Public `flushMemories(rc, messages)` retains explicit-input semantics.
+
+Custom filesystems must implement `atomicTextFile`. `RemoteFilesystem` uses the store's `supportsAtomicJournalStorage()` opt-in for text updates too. `CompositeFilesystem` routes the journal through `agents/`, and memory through `MEMORY.md` and `memory/`; each route needs the corresponding capability. `CosBaseStore` and `OssBaseStore` lack this opt-in: either memory route blocks native extraction even with an atomic journal elsewhere. COS/OSS-only workspaces require explicit `journalEnabled(false)` for legacy execution. External edits and archival are outside the conditional-write transaction.
+
+Unsupported extraction reports the backend, Thread and missing capability without advancing progress or falling back to context. Enable conditional writes, then trigger another call to consume pending originals. A process-local 256-entry cache reduces repeated failures of the same type per Thread to DEBUG. Success, a changed failure type, eviction or restart permits another warning.
+
+## Optional extraction admission
+
+`MemoryConfig.builder().admission(gate)` accepts a pluggable `MemoryAdmission` (default `null`) before ledger append. Rejections consume the source; errors retain the batch. JEV supplies `new JevMemoryGate(judge).admission()`; see [memory admission](/dev/en/docs/harness/jev/guides/memory-api#connect-to-harness-extraction) for policy and recovery limits.
 
 <span id="enable-compaction" />
 
@@ -89,7 +103,7 @@ Common options:
 | `triggerTokens` | `0` | Trigger by estimated tokens; `0` = dynamic, based on the budget left for conversation history in the final model request |
 | `keepMessages` | `20` | Number of tail messages to keep |
 | `keepTokens` | `-1` | `-1` = dynamic (based on the remaining conversation budget in the final model request); `0` = use `keepMessages`; `>0` = fixed token budget, overriding `keepMessages` |
-| `flushBeforeCompact` | `true` | Extract new facts to the daily log before compacting (path 2) |
+| `flushBeforeCompact` | `true` | Pre-compaction extraction in legacy mode; native mode retains originals in the journal |
 | `summaryPrompt` | see `DEFAULT_SUMMARY_PROMPT` | Path-3 summary prompt (must contain `{messages}`) |
 | `model` | `null` (uses the agent's primary model) | Dedicated model for the compaction summarization call |
 
@@ -111,13 +125,13 @@ CompactionConfig.builder()
 
 ## Customizing the memory pipeline: `MemoryConfig`
 
-`MemoryConfig` is the single place to configure flush / consolidation prompts, throttling, retention, and the per-call flush trigger. Every field has a default; not calling `.memory(...)` reproduces the historical behaviour bit-for-bit.
+`MemoryConfig` is the single place to configure flush / consolidation prompts, throttling, retention, and the per-call flush trigger. Every field has a default.
 
 Per-call flush and background consolidation have independent throttle windows. In both cases, the first eligible `call()` runs the work immediately; a minimum gap limits only subsequent runs and is not an initial delay.
 
 ### Example 1: throttle per-call flush to save tokens
 
-A flush LLM call after every agent invocation can add up on long sessions. Throttle it to at most once every 10 minutes:
+Each eligible invocation consumes unextracted messages, using multiple model calls when needed. Set the trigger interval to 10 minutes:
 
 ```java
 HarnessAgent.builder()
@@ -130,7 +144,7 @@ HarnessAgent.builder()
 
 Notes:
 
-- `THROTTLED` only affects **path 1** (per-call flush). The flush embedded in compaction (path 2) and the overflow flush (path 3) still fire on their own triggers — compaction is rare, so those two are infrequent by construction.
+- `THROTTLED` affects per-call extraction. Only legacy mode retains separate compaction and overflow flushes.
 - The first eligible call flushes immediately; `Duration.ofMinutes(10)` limits only later per-call flushes.
 - **Native history is unaffected**: flush throttling does not disable Thread journal, history search or checkpoint recovery.
 
@@ -142,7 +156,7 @@ Notes:
     .build())
 ```
 
-Now flush only happens when compaction does (same cost as raw compaction).
+Native mode stops automatic extraction while preserving source messages. Legacy mode can still flush before compaction.
 
 > To turn off flush **and** background maintenance use `.disableMemoryHooks()`; `flushTrigger(NEVER)` only stops the per-call flush — background consolidation still runs.
 
@@ -212,6 +226,7 @@ HarnessAgent.builder()
 | `consolidationMinGap` | `30 min` | Gap between background maintenance runs; the first eligible call runs immediately |
 | `dailyFileRetentionDays` | `90` | Days before a daily log moves to `memory/archive/` |
 | `flushTrigger` | `FlushTrigger.always()` | `ALWAYS` / `NEVER` / `THROTTLED(Duration)` |
+| `flushTimeout` | `2 min` | Total extraction and serial admission time per trigger; size for all batches |
 
 ## Large tool-result offloading
 

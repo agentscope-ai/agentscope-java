@@ -46,6 +46,22 @@ class MemoryFlushManagerTest {
     @TempDir Path workspace;
 
     @Test
+    void repeatedSubscriptionDoesNotTurnNoReplyIntoMemory() {
+        RecordingModel model = new RecordingModel();
+        RuntimeContext rc = RuntimeContext.empty();
+        try (WorkspaceManager manager = new WorkspaceManager(workspace)) {
+            var flush =
+                    new MemoryFlushManager(manager, model)
+                            .flushMemories(rc, List.of(message(MsgRole.USER, "source")));
+            flush.repeat(1).blockLast();
+            assertEquals(2, model.inputs.size());
+            assertEquals(
+                    "",
+                    manager.readMemoryFileUtf8(rc, "memory/" + java.time.LocalDate.now() + ".md"));
+        }
+    }
+
+    @Test
     void flushMemories_skipsCompactionSummariesWhenRealMessagesRemain() {
         RecordingModel model = new RecordingModel();
         RuntimeContext rc = RuntimeContext.builder().sessionId("session-1").build();

@@ -45,11 +45,11 @@ import java.util.Objects;
  * <p>Flush and consolidation use independent throttle windows. A throttled policy allows the
  * first eligible call immediately; its minimum gap applies only between subsequent runs and is
  * not an initial delay. {@link FlushTrigger#never()} disables only the per-call flush.
- *
- * <p>All fields have sensible defaults; {@link #defaults()} returns a config equivalent
- * to the harness's historical behavior so adopting this class is a no-op upgrade.
  */
 public final class MemoryConfig {
+
+    /** Total extraction time per trigger, including candidate admission. */
+    public static final Duration DEFAULT_FLUSH_TIMEOUT = Duration.ofMinutes(2);
 
     /** Default {@code consolidationMaxTokens}. */
     public static final int DEFAULT_CONSOLIDATION_MAX_TOKENS = 4_000;
@@ -151,6 +151,8 @@ public final class MemoryConfig {
     private final Duration consolidationMinGap;
     private final int dailyFileRetentionDays;
     private final FlushTrigger flushTrigger;
+    private final MemoryAdmission admission;
+    private final Duration flushTimeout;
 
     private MemoryConfig(Builder b) {
         this.model = b.model;
@@ -160,6 +162,8 @@ public final class MemoryConfig {
         this.consolidationMinGap = b.consolidationMinGap;
         this.dailyFileRetentionDays = b.dailyFileRetentionDays;
         this.flushTrigger = b.flushTrigger;
+        this.admission = b.admission;
+        this.flushTimeout = b.flushTimeout;
     }
 
     /**
@@ -210,7 +214,16 @@ public final class MemoryConfig {
         return flushTrigger;
     }
 
-    /** Returns a config equivalent to the harness's historical defaults. */
+    /** Optional candidate gate; {@code null} writes extracted text without admission. */
+    public MemoryAdmission admission() {
+        return admission;
+    }
+
+    public Duration flushTimeout() {
+        return flushTimeout;
+    }
+
+    /** Returns the default configuration. */
     public static MemoryConfig defaults() {
         return new Builder().build();
     }
@@ -228,6 +241,8 @@ public final class MemoryConfig {
         private Duration consolidationMinGap = DEFAULT_CONSOLIDATION_MIN_GAP;
         private int dailyFileRetentionDays = DEFAULT_DAILY_FILE_RETENTION_DAYS;
         private FlushTrigger flushTrigger = FlushTrigger.always();
+        private MemoryAdmission admission;
+        private Duration flushTimeout = DEFAULT_FLUSH_TIMEOUT;
 
         /**
          * Sets a dedicated model for memory operations (flush + consolidation),
@@ -326,6 +341,19 @@ public final class MemoryConfig {
                 throw new IllegalArgumentException("flushTrigger must not be null");
             }
             this.flushTrigger = flushTrigger;
+            return this;
+        }
+
+        public Builder admission(MemoryAdmission admission) {
+            this.admission = admission;
+            return this;
+        }
+
+        /** Total extraction time per trigger, including admission. Must be positive. */
+        public Builder flushTimeout(Duration flushTimeout) {
+            if (flushTimeout == null || flushTimeout.isZero() || flushTimeout.isNegative())
+                throw new IllegalArgumentException("flushTimeout must be positive");
+            this.flushTimeout = flushTimeout;
             return this;
         }
 

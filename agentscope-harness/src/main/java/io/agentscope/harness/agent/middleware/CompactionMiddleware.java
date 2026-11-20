@@ -33,6 +33,7 @@ import io.agentscope.core.state.AgentState;
 import io.agentscope.core.util.ExceptionUtils;
 import io.agentscope.core.util.JsonException;
 import io.agentscope.core.util.JsonUtils;
+import io.agentscope.harness.agent.memory.MemoryConfig;
 import io.agentscope.harness.agent.memory.MemoryFlushManager;
 import io.agentscope.harness.agent.memory.compaction.CompactionConfig;
 import io.agentscope.harness.agent.memory.compaction.ConversationCompactor;
@@ -87,12 +88,22 @@ public class CompactionMiddleware implements HarnessRuntimeMiddleware {
     private final WorkspaceManager workspaceManager;
     private final Model model;
     private final CompactionConfig config;
+    private final MemoryConfig memoryConfig;
 
     public CompactionMiddleware(
             WorkspaceManager workspaceManager, Model model, CompactionConfig config) {
+        this(workspaceManager, model, config, MemoryConfig.defaults());
+    }
+
+    public CompactionMiddleware(
+            WorkspaceManager workspaceManager,
+            Model model,
+            CompactionConfig config,
+            MemoryConfig memoryConfig) {
         this.workspaceManager = workspaceManager;
         this.model = model;
         this.config = config;
+        this.memoryConfig = memoryConfig;
     }
 
     /** Narrow declaration: subclasses overriding more hooks must extend this set. */
@@ -201,7 +212,8 @@ public class CompactionMiddleware implements HarnessRuntimeMiddleware {
                                                             .keepTokens(0)
                                                             .flushBeforeCompact(
                                                                     config.isFlushBeforeCompact())
-                                                            .build());
+                                                            .build(),
+                                                    memoryConfig);
                                     return forced.prepareCandidate(
                                                     agent,
                                                     ctx,
@@ -353,7 +365,12 @@ public class CompactionMiddleware implements HarnessRuntimeMiddleware {
                     ConversationCompactor compactor =
                             new ConversationCompactor(
                                     compactModel,
-                                    new MemoryFlushManager(workspaceManager, compactModel),
+                                    new MemoryFlushManager(
+                                            workspaceManager,
+                                            compactModel,
+                                            memoryConfig.flushPrompt(),
+                                            memoryConfig.admission(),
+                                            memoryConfig.flushTimeout()),
                                     tokenCounter,
                                     toolResultTokenCounter);
                     // Copies may retain message IDs. Only an unchanged view can become durable;

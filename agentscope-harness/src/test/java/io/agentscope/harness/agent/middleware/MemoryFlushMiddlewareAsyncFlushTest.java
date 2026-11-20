@@ -31,7 +31,12 @@ import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.Model;
 import io.agentscope.core.model.ToolSchema;
 import io.agentscope.core.state.AgentState;
+import io.agentscope.harness.agent.IsolationScope;
+import io.agentscope.harness.agent.coordination.LocalPeriodicGate;
 import io.agentscope.harness.agent.memory.MemoryBackgroundTasks;
+import io.agentscope.harness.agent.memory.MemoryConfig;
+import io.agentscope.harness.agent.workspace.WorkspaceManager;
+import java.nio.file.Path;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
@@ -40,6 +45,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 import reactor.core.publisher.Flux;
@@ -50,6 +56,70 @@ import reactor.core.publisher.Flux;
  * the caller — and that concurrent flushes for the same isolation key are serialised.
  */
 class MemoryFlushMiddlewareAsyncFlushTest {
+
+    @Test
+    void timeoutReleasesIsolationQueueForTheNextSession(@TempDir Path directory) throws Exception {
+        AtomicInteger calls = new AtomicInteger();
+        CountDownLatch started = new CountDownLatch(1);
+        AtomicInteger cancellations = new AtomicInteger();
+        Model hanging =
+                new Model() {
+                    public String getModelName() {
+                        return "timeout-queue";
+                    }
+
+                    public Flux<ChatResponse> stream(
+                            List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
+                        if (calls.incrementAndGet() == 1) {
+                            started.countDown();
+                            return Flux.<ChatResponse>never()
+                                    .doOnCancel(cancellations::incrementAndGet);
+                        }
+                        return Flux.just(
+                                ChatResponse.builder()
+                                        .content(
+                                                List.of(
+                                                        TextBlock.builder()
+                                                                .text("NO_REPLY")
+                                                                .build()))
+                                        .build());
+                    }
+                };
+        Msg source = Msg.builder().role(MsgRole.USER).textContent("remember this rule").build();
+        String user = "timeout-queue-" + java.util.UUID.randomUUID();
+        try (WorkspaceManager workspace = new WorkspaceManager(directory)) {
+            var middleware =
+                    new MemoryFlushMiddleware(
+                            workspace,
+                            hanging,
+                            null,
+                            MemoryConfig.FlushTrigger.always(),
+                            IsolationScope.USER,
+                            new LocalPeriodicGate(),
+                            null,
+                            Duration.ofMillis(300));
+            for (String session : List.of("first", "next")) {
+                var rc =
+                        RuntimeContext.builder()
+                                .userId(user)
+                                .sessionId(session)
+                                .agentState(AgentState.builder().addMessage(source).build())
+                                .build();
+                middleware
+                        .onAgent(
+                                null,
+                                rc,
+                                new AgentInput(List.of(source)),
+                                input -> Flux.just(new AgentEndEvent("reply")))
+                        .collectList()
+                        .block();
+                if (session.equals("first")) assertTrue(started.await(5, TimeUnit.SECONDS));
+            }
+            assertTrue(MemoryBackgroundTasks.awaitQuiescence(5, TimeUnit.SECONDS));
+            assertEquals(2, calls.get());
+            assertEquals(1, cancellations.get());
+        }
+    }
 
     @Test
     void onCompleteFiresBeforeAsyncFlushCompletes() throws Exception {
