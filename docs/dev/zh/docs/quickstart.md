@@ -143,7 +143,7 @@ return Mono.using(
 
 后台任务的 Agent 由应用的会话管理器或任务 worker 持有，在任务停止或应用退出后再关闭；不要在提交任务的 HTTP 请求返回时关闭它。这里的生命周期覆盖整个后台执行，不只覆盖一次提交请求。
 
-下一步阅读[会话操作、事件与恢复](/dev/zh/docs/harness/session-log)，或运行[可恢复聊天示例](/v2/zh/blogs/best-practices/session-chat)。
+下一步阅读[会话操作、事件与恢复](/dev/zh/docs/harness/session-log)，或运行[可恢复聊天示例](/dev/zh/blogs/best-practices/session-chat)。
 
 ## 接下来
 

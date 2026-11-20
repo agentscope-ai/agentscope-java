@@ -593,9 +593,13 @@ public class SubAgentTool implements AgentTool {
         }
 
         String resolvedName = prefix + safePart;
-        boolean isInformationLost = lowerOriginal.matches("^[a-z0-9_\\-\\s]+$");
+        // A derived name is collision-free only when sanitizing this name lost nothing.
+        // Case folding, whitespace/punctuation replacement and underscore collapsing can map
+        // two distinct agent names onto the same safePart, so only an already-canonical name
+        // (identical to its sanitized form) may skip the hash.
+        boolean lossless = originalName.equals(safePart);
 
-        boolean needsHash = !isInformationLost || resolvedName.length() > 64;
+        boolean needsHash = !lossless || resolvedName.length() > 64;
 
         if (needsHash) {
             // Generate deterministic hash
@@ -604,10 +608,10 @@ public class SubAgentTool implements AgentTool {
             String suffix = "_" + shortHash;
 
             logger.warn(
-                    "Agent name '{}' contains unsupported characters or is too long. Appended hash"
-                        + " '{}' to prevent collisions. Only alphanumeric characters, underscores,"
-                        + " and hyphens are supported in generated names. Recommended to configure"
-                        + " an explicit English 'toolName' via SubAgentConfig.",
+                    "Agent name '{}' is not a canonical tool name (unsupported characters, a case"
+                            + " or spacing difference, or excessive length). Appended hash '{}' to"
+                            + " prevent collisions. Use lowercase alphanumerics, underscores and"
+                            + " hyphens, or configure an explicit 'toolName' via SubAgentConfig.",
                     originalName,
                     shortHash);
 

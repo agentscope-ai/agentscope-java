@@ -162,7 +162,7 @@ class AgentSpawnToolForceSyncTest {
 
         String result =
                 assertText(
-                        tool.agentSpawn(ctx, null, "fast_agent", "go", null, 0, null)
+                        tool.agentSpawn(ctx, null, "fast_agent", "go", true, null, 0, null)
                                 .block(Duration.ofSeconds(15)),
                         ToolResultState.SUCCESS);
 
@@ -200,7 +200,15 @@ class AgentSpawnToolForceSyncTest {
         for (String name : List.of("agent_spawn", "agent_send")) {
             Map<String, Object> input =
                     "agent_spawn".equals(name)
-                            ? Map.of("agent_id", "slow_agent", "task", "go", "label", "slow")
+                            ? Map.of(
+                                    "agent_id",
+                                    "slow_agent",
+                                    "task",
+                                    "go",
+                                    "label",
+                                    "slow",
+                                    "reusable",
+                                    true)
                             : Map.of("label", "slow", "message", "continue");
             String result =
                     assertText(
@@ -353,6 +361,8 @@ class AgentSpawnToolForceSyncTest {
                                                 "slow_agent",
                                                 "task",
                                                 "go",
+                                                "reusable",
+                                                true,
                                                 "timeout_seconds",
                                                 1),
                                         ctx,
