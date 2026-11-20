@@ -26,6 +26,7 @@ import io.agentscope.core.middleware.ActingInput;
 import io.agentscope.core.middleware.AgentInput;
 import io.agentscope.core.middleware.MiddlewareBase;
 import io.agentscope.core.middleware.ModelCallInput;
+import io.agentscope.core.middleware.ModelRequestPreparer;
 import io.agentscope.core.model.Model;
 import io.opentelemetry.api.GlobalOpenTelemetry;
 import io.opentelemetry.api.OpenTelemetry;
@@ -263,6 +264,7 @@ public class OtelTracingMiddleware implements MiddlewareBase {
                                             event -> {
                                                 if (event instanceof ModelCallEndEvent mce) {
                                                     setModelResponseAttributes(span, mce);
+                                                    attributePostPreparationView(span, ctx, mce);
                                                 }
                                             })
                                     .doOnComplete(
@@ -290,6 +292,33 @@ public class OtelTracingMiddleware implements MiddlewareBase {
                                             }),
                             otelCtx);
                 });
+    }
+
+    /**
+     * Overwrites the pre-preparation request attributes with the as-sent view: {@code
+     * gen_ai.request.messages.count} set at span entry reflects the caller-side snapshot, while
+     * compaction/eviction rewrite the conversation inside the preparer after this middleware
+     * runs (#4269). When the preparer published a {@link ModelRequestPreparer.PreparedRequestView}
+     * under the end event's {@code callId}, the span ends up reporting the post-compaction truth
+     * — last attribute write wins — plus the estimate and applied transforms, so operators can
+     * verify compaction effectiveness from the trace alone.
+     */
+    private void attributePostPreparationView(
+            Span span, RuntimeContext ctx, ModelCallEndEvent mce) {
+        String callId = mce.getCallId();
+        if (callId == null || ctx == null) {
+            return;
+        }
+        Object view = ctx.get(ModelRequestPreparer.PREPARED_VIEW_ATTRIBUTE_PREFIX + callId);
+        if (view instanceof ModelRequestPreparer.PreparedRequestView prepared) {
+            span.setAttribute("gen_ai.request.messages.count", (long) prepared.messageCount());
+            span.setAttribute(
+                    "agentscope.context.estimated_input_tokens", prepared.estimatedInputTokens());
+            if (prepared.transforms() != null && !prepared.transforms().isEmpty()) {
+                span.setAttribute(
+                        "agentscope.context.transforms", String.join(",", prepared.transforms()));
+            }
+        }
     }
 
     // ------------------------------------------------------------------

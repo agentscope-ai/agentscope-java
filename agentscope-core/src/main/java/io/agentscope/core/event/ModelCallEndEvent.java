@@ -21,26 +21,40 @@ import io.agentscope.core.model.ChatUsage;
 
 /**
  * Emitted when the agent finishes a model (LLM) call.
+ *
+ * <p>{@code callId} identifies the prepared request this call consumed — the same id the
+ * {@link io.agentscope.core.middleware.ModelRequestPreparer} uses to publish its {@code
+ * ContextManifest} into the {@link io.agentscope.core.agent.RuntimeContext}. Observers can
+ * therefore correlate the call with the post-compaction request shape; null on events emitted
+ * before this field existed (older serialized payloads deserialize as null) (#4269).
  */
 public class ModelCallEndEvent extends AgentEvent {
 
     private final String replyId;
     private final ChatUsage usage;
+    private final String callId;
 
     @JsonCreator
     public ModelCallEndEvent(
             @JsonProperty("id") String id,
             @JsonProperty("createdAt") String createdAt,
             @JsonProperty("replyId") String replyId,
-            @JsonProperty("usage") ChatUsage usage) {
+            @JsonProperty("usage") ChatUsage usage,
+            @JsonProperty("callId") String callId) {
         super(id, createdAt);
         this.replyId = replyId;
         this.usage = usage;
+        this.callId = callId;
     }
 
     public ModelCallEndEvent(String replyId, ChatUsage usage) {
+        this(replyId, usage, null);
+    }
+
+    public ModelCallEndEvent(String replyId, ChatUsage usage, String callId) {
         this.replyId = replyId;
         this.usage = usage;
+        this.callId = callId;
     }
 
     @Override
@@ -54,5 +68,10 @@ public class ModelCallEndEvent extends AgentEvent {
 
     public ChatUsage getUsage() {
         return usage;
+    }
+
+    /** Returns the prepared-request id, or null on legacy events. */
+    public String getCallId() {
+        return callId;
     }
 }
