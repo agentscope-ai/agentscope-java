@@ -17,7 +17,15 @@ package io.agentscope.harness.agent.context;
 
 import java.util.List;
 
-/** Metadata only; observers must apply their own access/retention policy. No prompt bodies. */
+/**
+ * Metadata only; observers must apply their own access/retention policy. No prompt bodies.
+ *
+ * <p>Each {@link Item} carries a per-item {@code estimatedTokens} figure produced by the same
+ * estimator as {@link #estimatedInputTokens()}, so observers can attribute what fills the
+ * context window (system prompt, memory, history, tool schemas, skill instructions). Per-item
+ * figures are independent marginal estimates — each item measured alone against the request's
+ * shared overhead — and therefore need not sum to {@link #estimatedInputTokens()}.
+ */
 public record ContextManifest(
         String callId,
         String purpose,
@@ -59,9 +67,21 @@ public record ContextManifest(
             String revision,
             String placement,
             boolean required,
-            int priority) {
+            int priority,
+            long estimatedTokens) {
         public Item(String sourceType, String sourceId, String contentHash) {
-            this(sourceType, sourceId, contentHash, null, null, false, 0);
+            this(sourceType, sourceId, contentHash, null, null, false, 0, 0);
+        }
+
+        public Item(
+                String sourceType,
+                String sourceId,
+                String contentHash,
+                String revision,
+                String placement,
+                boolean required,
+                int priority) {
+            this(sourceType, sourceId, contentHash, revision, placement, required, priority, 0);
         }
     }
 }
