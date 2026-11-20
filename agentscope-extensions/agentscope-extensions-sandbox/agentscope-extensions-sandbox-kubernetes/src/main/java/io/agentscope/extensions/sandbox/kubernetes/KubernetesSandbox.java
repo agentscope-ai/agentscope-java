@@ -224,7 +224,7 @@ public class KubernetesSandbox extends AbstractBaseSandbox implements SandboxFil
     }
 
     private void extractArchive(String tarPath, String root) throws Exception {
-        String extractCmd = "tar -xf " + shellQuote(tarPath) + " -C " + shellQuote(root);
+        String extractCmd = "tar -xpf " + shellQuote(tarPath) + " -C " + shellQuote(root);
         ExecutionResult extractResult = sdkSandbox.commands().run(extractCmd);
         if (extractResult.getExitCode() != 0) {
             throw new SandboxException.SandboxRuntimeException(
@@ -385,7 +385,7 @@ public class KubernetesSandbox extends AbstractBaseSandbox implements SandboxFil
     /**
      * Temp archive name unique per transfer. Concurrent hydrate/persist calls on the same
      * sandbox must not share a name: with a deterministic name, one call's {@code rm -f}
-     * cleanup deletes another call's archive between its upload and {@code tar -xf},
+     * cleanup deletes another call's archive between its upload and {@code tar -xpf},
      * failing the extraction with "Cannot open: No such file or directory".
      */
     private String tempArchiveName(String prefix) {
