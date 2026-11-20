@@ -106,3 +106,4 @@ HarnessAgent.builder()
 - **Turn gate + `ConflictPolicy.FAIL`** 为可选：多副本下减少重复 LLM turn；正确性仍靠 CAS（当后端支持 versioning 时）。
 - 当前鉴权为集群内共享 internal token；租户（`agentName` / `namespace`）取自请求体——**不适用于**同一控制面上互不信任的多租户。
 - `MessageBus.queueDrain` 为 **destructive**（读即 ack）；租户/key 弄错会丢消息。
+- 对于基于文件系统的 `WorkspaceMessageBus`，后端报告写入失败时，回放日志追加（包括 `sessionPublishEvent`）会返回错误，不再返回成功游标、裁剪日志或发布实时事件。确认失败仍可能留下已持久化的条目，因此消息总线不会自动重试或删除该条目。
