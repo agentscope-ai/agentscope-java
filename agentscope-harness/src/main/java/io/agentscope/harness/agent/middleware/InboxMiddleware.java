@@ -140,11 +140,15 @@ public class InboxMiddleware implements HarnessRuntimeMiddleware {
                                                                         + rec.toolName()
                                                                         + "' (id="
                                                                         + rec.toolCallId()
-                                                                        + ") did not complete"
-                                                                        + " (process crash or"
-                                                                        + " timeout). You may"
-                                                                        + " retry or proceed"
-                                                                        + " without the result."
+                                                                        + ") has not completed"
+                                                                        + " within "
+                                                                        + staleTtl.toMinutes()
+                                                                        + " minutes. It may"
+                                                                        + " still be running,"
+                                                                        + " or its process may"
+                                                                        + " have died. Check"
+                                                                        + " for its result"
+                                                                        + " before retrying."
                                                                         + "</system-reminder>",
                                                                 "system"));
                                             }
