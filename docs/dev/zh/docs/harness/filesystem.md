@@ -468,7 +468,7 @@ workspace/
 
 ### 技能（Skills）
 
-`DynamicSkillMiddleware` 在每轮推理前从技能仓库列表合并技能，渲染到 system prompt 里。技能文件的加载走 `AbstractFilesystem` 接口，所以在三种模式下透明工作：
+Harness 把仓库中当前可见的技能渲染成仅供本轮请求使用的 `<available_skills>` 块。三种模式均通过 `AbstractFilesystem` 接口加载技能文件：
 
 | 模式 | 技能加载方式 |
 |------|------------|

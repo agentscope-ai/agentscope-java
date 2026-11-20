@@ -23,6 +23,7 @@ import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -56,6 +57,7 @@ public class ToolCallsAccumulator implements ContentAccumulator<ToolUseBlock> {
     /** Builder for a single tool call. */
     private static class ToolCallBuilder {
         String toolId;
+        private String generatedId;
         String name;
         Map<String, Object> args = new HashMap<>();
         StringBuilder rawContent = new StringBuilder();
@@ -177,7 +179,7 @@ public class ToolCallsAccumulator implements ContentAccumulator<ToolUseBlock> {
             }
 
             return ToolUseBlock.builder()
-                    .id(toolId != null ? toolId : generateId())
+                    .id(resolveId())
                     .name(name)
                     .input(finalArgs)
                     .content(contentStr)
@@ -221,8 +223,15 @@ public class ToolCallsAccumulator implements ContentAccumulator<ToolUseBlock> {
                     || (name != null && name.startsWith("__"));
         }
 
-        private String generateId() {
-            return "tool_call_" + System.currentTimeMillis();
+        private String resolveId() {
+            if (toolId != null) {
+                return toolId;
+            }
+            // Stream events and the final message can build the same call more than once.
+            if (generatedId == null) {
+                generatedId = "tool_call_" + UUID.randomUUID();
+            }
+            return generatedId;
         }
     }
 

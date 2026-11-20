@@ -58,12 +58,15 @@ import io.agentscope.core.skill.SkillFilter;
 import io.agentscope.core.state.AgentState;
 import io.agentscope.core.state.AgentStateStore;
 import io.agentscope.core.state.ConflictPolicy;
+import io.agentscope.core.state.InMemoryAgentStateStore;
 import io.agentscope.core.tool.AgentTool;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.core.tool.ToolkitConfig;
 import io.agentscope.harness.agent.artifact.ArtifactDeliveryResult;
+import io.agentscope.harness.agent.context.ContextBlock;
 import io.agentscope.harness.agent.context.ContextPolicy;
 import io.agentscope.harness.agent.context.ContextSelectionPolicy;
+import io.agentscope.harness.agent.context.ContextSource;
 import io.agentscope.harness.agent.context.ContextSources;
 import io.agentscope.harness.agent.context.HarnessContextBuilder;
 import io.agentscope.harness.agent.context.TaskContextOptions;
@@ -544,6 +547,116 @@ class HarnessAgentTest {
         assertFalse(
                 combined.contains(marker),
                 "AGENTS.md should not be injected when context hook is disabled");
+    }
+
+    @Test
+    void skillCatalogPrecedesGrowingHistoryAndChangingRuntimeState() throws IOException {
+        writeWorkspaceSkill("Catalog entry");
+        RecordingModel model = new RecordingModel();
+        AtomicInteger buildNumber = new AtomicInteger();
+        ContextSource buildStatus =
+                request ->
+                        Mono.just(
+                                List.of(
+                                        ContextBlock.runtime(
+                                                "status",
+                                                "Build " + buildNumber.incrementAndGet())));
+        RuntimeContext context = RuntimeContext.builder().sessionId("skill-prefix").build();
+        Msg firstTurn = userText("first turn");
+        Msg secondTurn = userText("second turn");
+        try (HarnessAgent agent =
+                HarnessAgent.builder()
+                        .name("catalog-test")
+                        .sysPrompt("Help with the build.")
+                        .model(model)
+                        .workspace(workspace)
+                        .journalEnabled(false)
+                        .stateStore(new InMemoryAgentStateStore())
+                        .disableMemoryHooks()
+                        .disableSubagents()
+                        .disableCompaction()
+                        .contextSource("build", buildStatus)
+                        .build()) {
+            agent.call(firstTurn, context).block(Duration.ofSeconds(20));
+            agent.call(secondTurn, context).block(Duration.ofSeconds(20));
+            writeWorkspaceSkill("Updated catalog entry");
+            agent.call(userText("third turn"), context).block(Duration.ofSeconds(20));
+        }
+
+        assertEquals(3, model.inputs().size());
+        List<Msg> first = model.inputs().get(0);
+        List<Msg> second = model.inputs().get(1);
+        List<Msg> third = model.inputs().get(2);
+        assertEquals(MsgRole.SYSTEM, first.get(0).getRole());
+        assertFalse(first.get(0).getTextContent().contains("<available_skills>"));
+        assertEquals(MsgRole.USER, first.get(1).getRole());
+        assertTrue(
+                first.get(1).getTextContent().contains("<available_skills>"),
+                "the catalog should precede the conversation");
+        assertTrue(first.get(1).getTextContent().contains("Catalog entry"));
+        assertFalse(
+                first.get(1).getTextContent().contains("Build 1"),
+                "changing business state should follow the conversation");
+        assertEquals(firstTurn.getId(), first.get(2).getId());
+        assertEquals(firstTurn.getId(), second.get(2).getId());
+        assertEquals(MsgRole.ASSISTANT, second.get(3).getRole());
+        assertEquals(secondTurn.getId(), second.get(4).getId());
+        assertTrue(first.get(3).getTextContent().contains("Build 1"));
+        assertTrue(second.get(5).getTextContent().contains("Build 2"));
+        assertTrue(second.get(5).getTextContent().contains("harness:session-state"));
+        assertEquals(first.get(0).getTextContent(), second.get(0).getTextContent());
+        assertEquals(first.get(1).getTextContent(), second.get(1).getTextContent());
+        assertEquals(first.get(0).getTextContent(), third.get(0).getTextContent());
+        assertTrue(third.get(1).getTextContent().contains("Updated catalog entry"));
+        assertEquals(
+                second.subList(2, 5).stream().map(Msg::getId).toList(),
+                third.subList(2, 5).stream().map(Msg::getId).toList(),
+                "a changed catalog must not disturb the conversation prefix");
+    }
+
+    @Test
+    void emptyContinuationKeepsSkillCatalogAfterAssistantHistory() throws IOException {
+        writeWorkspaceSkill("Catalog entry");
+        RecordingModel model = new RecordingModel();
+        RuntimeContext context = RuntimeContext.builder().sessionId("skill-continuation").build();
+        try (HarnessAgent agent =
+                HarnessAgent.builder()
+                        .name("catalog-test")
+                        .sysPrompt("Help with the build.")
+                        .model(model)
+                        .workspace(workspace)
+                        .journalEnabled(false)
+                        .stateStore(new InMemoryAgentStateStore())
+                        .disableMemoryHooks()
+                        .disableSubagents()
+                        .disableWorkspaceContext()
+                        .build()) {
+            agent.call(userText("start"), context).block(Duration.ofSeconds(20));
+            agent.call(List.of(), context).block(Duration.ofSeconds(20));
+        }
+
+        assertEquals(2, model.inputs().size());
+        List<Msg> continuation = model.inputs().get(1);
+        assertEquals(
+                List.of(MsgRole.SYSTEM, MsgRole.USER, MsgRole.ASSISTANT, MsgRole.USER),
+                continuation.stream().map(Msg::getRole).toList());
+        assertTrue(continuation.get(3).getTextContent().contains("<available_skills>"));
+    }
+
+    private void writeWorkspaceSkill(String description) throws IOException {
+        Path skill = workspace.resolve("skills").resolve("catalog-entry");
+        Files.createDirectories(skill);
+        Files.writeString(
+                skill.resolve("SKILL.md"),
+                """
+                ---
+                name: catalog-entry
+                description: %s
+                ---
+
+                Use this skill for the catalog test.
+                """
+                        .formatted(description));
     }
 
     @ParameterizedTest
