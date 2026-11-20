@@ -130,6 +130,8 @@ With the default converter, annotated tools returning `void` or `Void`, includin
 
 Return `ToolResultBlock.success(text)` for a successful call and `ToolResultBlock.error(message)` for a failure. Both are supported directly and inside `Mono<ToolResultBlock>`. Do not infer failure from text prefixes. `ToolResultBlock.text(text)` defaults to `RUNNING`; use `withState(...)` to set a terminal state when preserving an existing JSON or multiline output.
 
+A tool may also return a `ContentBlock` (for example an `ImageBlock` with inline Base64 data) or a `List<ContentBlock>`; the default converter wraps such a return as the result's typed output instead of JSON-serializing it into text. A list qualifies only when it is non-empty and every element is a `ContentBlock` other than a nested `ToolResultBlock`; mixed or empty lists keep the JSON path. This makes the conversion a closed loop: the blocks a tool returns are the blocks its result carries, wrapped without reinterpretation — the developer stays in full control of a tool's blocks.
+
 For ordinary client tools, the Anthropic formatter maps `ERROR`, `DENIED`, and `INTERRUPTED` to `is_error: true`, preserving the tool-call ID and output blocks. `SUCCESS`, `RUNNING`, and `SUSPENDED` are not classified as errors by the formatter. Provider-executed server-tool payloads retain their separate conversion path.
 
 Built-in tools now return structured results. Direct callers should inspect `getState()` and read the text blocks from `getOutput()`; `Toolkit` registration is unchanged.

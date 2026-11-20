@@ -130,6 +130,8 @@ toolkit.registerTool(new SimpleTools());
 
 工具调用成功时返回 `ToolResultBlock.success(text)`，失败时返回 `ToolResultBlock.error(message)`；两者既可直接返回，也可包装在 `Mono<ToolResultBlock>` 中。不要通过文本前缀判断失败。`ToolResultBlock.text(text)` 默认是 `RUNNING`；如需保留既有 JSON 或多行输出，请用 `withState(...)` 明确终态。
 
+工具也可以直接返回 `ContentBlock`（例如携带内联 Base64 数据的 `ImageBlock`）或 `List<ContentBlock>`；默认 converter 会把这类返回包装为结果的类型化 output，而不是 JSON 序列化成文本。列表仅在非空且每个元素都是 `ContentBlock`（嵌套的 `ToolResultBlock` 除外）时按此处理；混合列表和空列表仍走 JSON 路径。对框架而言这条转换是闭环的：工具返回的块就是结果携带的块，框架只做包装、不做再解释——tool 的 block 完全由开发者自主控制。
+
 对于普通客户端工具，Anthropic formatter 将 `ERROR`、`DENIED`、`INTERRUPTED` 映射为 `is_error: true`，同时保留调用 ID 和输出内容块。`SUCCESS`、`RUNNING`、`SUSPENDED` 不会被 formatter 判为错误。供应商执行的 server tool 仍使用独立的转换路径。
 
 内置工具已改为结构化结果。直接调用时用 `getState()` 判断状态，用 `getOutput()` 读取文本；`Toolkit` 注册方式不变。

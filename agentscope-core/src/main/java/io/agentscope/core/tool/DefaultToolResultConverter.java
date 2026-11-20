@@ -15,6 +15,7 @@
  */
 package io.agentscope.core.tool;
 
+import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.util.JsonUtils;
@@ -32,9 +33,15 @@ import org.slf4j.LoggerFactory;
  *   <li>Converts null results to "null" text</li>
  *   <li>Converts void results to "(completed with no output)" text</li>
  *   <li>Passes through ToolResultBlock instances unchanged</li>
+ *   <li>Wraps a returned ContentBlock, or a non-empty list of only ContentBlocks, unchanged</li>
  *   <li>Serializes objects to JSON with schema information</li>
  *   <li>Falls back to toString() if serialization fails</li>
  * </ul>
+ *
+ * <p>Block returns close the loop: the blocks a tool returns are the blocks its result carries.
+ * The framework wraps them without reinterpretation — no JSON round trip, no re-typing — so what
+ * the model formatters and protocol boundaries receive is exactly what the developer constructed.
+ * Developers stay in full control of a tool's blocks.
  */
 public class DefaultToolResultConverter implements ToolResultConverter {
 
@@ -55,7 +62,39 @@ public class DefaultToolResultConverter implements ToolResultConverter {
             return (ToolResultBlock) result;
         }
 
+        // A returned ContentBlock (or a list of them) is the tool's typed output, such as a
+        // generated image; wrap it as the result's output instead of JSON-serializing to text
+        if (result instanceof ContentBlock block) {
+            return ToolResultBlock.of(List.of(block));
+        }
+        if (isContentBlockList(result)) {
+            List<ContentBlock> blocks =
+                    ((List<?>) result).stream().map(ContentBlock.class::cast).toList();
+            return ToolResultBlock.of(blocks);
+        }
+
         return serialize(result, returnType);
+    }
+
+    /**
+     * Determines whether the result is a non-empty list whose elements are all {@link
+     * ContentBlock}s and none is itself a {@link ToolResultBlock}: a nested tool result would
+     * embed result metadata inside an output, so such lists keep the JSON serialization path
+     * alongside mixed or empty lists.
+     *
+     * @param result the tool result value
+     * @return true when the list qualifies for block wrapping
+     */
+    private static boolean isContentBlockList(Object result) {
+        if (!(result instanceof List<?> list) || list.isEmpty()) {
+            return false;
+        }
+        for (Object element : list) {
+            if (!(element instanceof ContentBlock) || element instanceof ToolResultBlock) {
+                return false;
+            }
+        }
+        return true;
     }
 
     /**

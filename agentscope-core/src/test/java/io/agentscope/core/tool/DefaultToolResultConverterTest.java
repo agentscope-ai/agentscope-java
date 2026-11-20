@@ -17,9 +17,13 @@ package io.agentscope.core.tool;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.agentscope.core.message.Base64Source;
+import io.agentscope.core.message.ContentBlock;
+import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.tool.test.ToolTestUtils;
@@ -87,6 +91,72 @@ class DefaultToolResultConverterTest {
         assertNotNull(result);
         assertEquals(original, result);
         assertEquals("test result", ToolTestUtils.extractContent(result));
+    }
+
+    @Test
+    void testConvert_ContentBlockResultIsWrappedUnchanged() {
+        ImageBlock image =
+                ImageBlock.builder().source(new Base64Source("image/png", "iVBORw0KGgo=")).build();
+
+        ToolResultBlock result = converter.convert(image, ImageBlock.class);
+
+        assertNotNull(result);
+        assertFalse(ToolTestUtils.isErrorResponse(result));
+        assertEquals(List.of(image), result.getOutput());
+    }
+
+    @Test
+    void testConvert_ContentBlockListResultIsWrappedUnchanged() {
+        List<ContentBlock> blocks =
+                List.of(
+                        TextBlock.builder().text("chart ready").build(),
+                        ImageBlock.builder()
+                                .source(new Base64Source("image/png", "iVBORw0KGgo="))
+                                .build());
+
+        ToolResultBlock result = converter.convert(blocks, List.class);
+
+        assertNotNull(result);
+        assertFalse(ToolTestUtils.isErrorResponse(result));
+        assertEquals(blocks, result.getOutput());
+    }
+
+    @Test
+    void testConvert_MixedListResultStillSerializesToJson() {
+        List<Object> mixed = List.of(TextBlock.builder().text("text").build(), "plain string");
+
+        ToolResultBlock result = converter.convert(mixed, List.class);
+
+        assertNotNull(result);
+        assertEquals(1, result.getOutput().size());
+        assertInstanceOf(TextBlock.class, result.getOutput().get(0));
+        String content = ToolTestUtils.extractContent(result);
+        assertTrue(content.contains("plain string"));
+    }
+
+    @Test
+    void testConvert_EmptyListResultStillSerializesToJson() {
+        ToolResultBlock result = converter.convert(List.of(), List.class);
+
+        assertNotNull(result);
+        assertEquals(1, result.getOutput().size());
+        assertInstanceOf(TextBlock.class, result.getOutput().get(0));
+        assertEquals("[]", ToolTestUtils.extractContent(result));
+    }
+
+    @Test
+    void testConvert_ListContainingToolResultBlockStillSerializesToJson() {
+        ToolResultBlock nested =
+                ToolResultBlock.of(List.of(TextBlock.builder().text("nested result").build()));
+        List<ContentBlock> list = List.of(TextBlock.builder().text("text").build(), nested);
+
+        ToolResultBlock result = converter.convert(list, List.class);
+
+        assertNotNull(result);
+        assertEquals(1, result.getOutput().size());
+        assertInstanceOf(TextBlock.class, result.getOutput().get(0));
+        String content = ToolTestUtils.extractContent(result);
+        assertTrue(content.contains("nested result"));
     }
 
     @Test
