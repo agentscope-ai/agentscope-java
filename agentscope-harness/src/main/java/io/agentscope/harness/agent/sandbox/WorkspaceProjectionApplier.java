@@ -120,12 +120,21 @@ public final class WorkspaceProjectionApplier {
                 String rel = file.getKey();
                 Path src = file.getValue();
                 byte[] content = Files.readAllBytes(src);
+                // The backend extracts the payload with tar, so this is the permission the
+                // file ends up with inside the sandbox: a 0755 script has to arrive
+                // executable, otherwise ./run.sh fails with "Permission denied".
+                int mode = TarFileModes.modeOf(src);
 
-                digest.update(rel.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+                digest.update(rel.getBytes(StandardCharsets.UTF_8));
                 digest.update((byte) 0);
+                // The mode takes part in the hash: a chmod that leaves the bytes alone must
+                // still re-project, or the sandbox keeps serving the previous permissions.
+                digest.update((byte) (mode >>> 8));
+                digest.update((byte) mode);
                 digest.update(content);
 
                 TarArchiveEntry entry = new TarArchiveEntry(rel);
+                entry.setMode(mode);
                 entry.setSize(content.length);
                 tar.putArchiveEntry(entry);
                 tar.write(content);
@@ -200,7 +209,7 @@ public final class WorkspaceProjectionApplier {
     /**
      * Projection result used at sandbox start.
      *
-     * @param hash deterministic hash over projected file paths and bytes
+     * @param hash deterministic hash over projected file paths, modes and bytes
      * @param tarBytes tar archive containing projected files
      * @param fileCount number of projected files
      * @param paths workspace-relative POSIX paths of the projected files; the sandbox keeps
@@ -215,7 +224,7 @@ public final class WorkspaceProjectionApplier {
          * recorded path list defaults to empty (nothing revocable). Prefer the canonical
          * constructor.
          *
-         * @param hash deterministic hash over projected file paths and bytes
+         * @param hash deterministic hash over projected file paths, modes and bytes
          * @param tarBytes tar archive containing projected files
          * @param fileCount number of projected files
          */

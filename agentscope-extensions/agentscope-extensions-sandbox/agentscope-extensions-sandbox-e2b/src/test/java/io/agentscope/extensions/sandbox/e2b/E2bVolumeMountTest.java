@@ -308,6 +308,7 @@ class E2bVolumeMountTest {
                 script.contains("'--exclude=./my data'"),
                 "exclude with spaces must be shell-quoted, got: " + script);
         String extract = (String) m.invoke(sandbox, false, "/tmp/ws.tar", "/home/user");
+        assertTrue(extract.contains("-xpf "), "extract must preserve archive modes: " + extract);
         assertTrue(
                 extract.contains("'--exclude=./my data'"),
                 "volume excludes must apply to the -xf branch too, got: " + extract);
