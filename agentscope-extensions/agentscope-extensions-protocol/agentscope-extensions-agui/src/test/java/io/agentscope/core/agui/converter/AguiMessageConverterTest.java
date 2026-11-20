@@ -43,6 +43,7 @@ import io.agentscope.core.agui.model.VideoInputContent;
 import io.agentscope.core.event.ConfirmResult;
 import io.agentscope.core.message.AudioBlock;
 import io.agentscope.core.message.Base64Source;
+import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.DataBlock;
 import io.agentscope.core.message.DocumentBlock;
 import io.agentscope.core.message.FileIdSource;
@@ -455,6 +456,112 @@ class AguiMessageConverterTest {
         TextInputContent text = assertInstanceOf(TextInputContent.class, parts.get(1));
         assertEquals("generated report", text.text());
         assertNull(wire.getError());
+    }
+
+    @Test
+    void testToolResultMediaBlocksSerializeAsBlocks() {
+        Msg msg =
+                Msg.builder()
+                        .id("msg-t22")
+                        .role(MsgRole.TOOL)
+                        .content(
+                                ToolResultBlock.builder()
+                                        .id("tc-2")
+                                        .output(
+                                                List.of(
+                                                        TextBlock.builder()
+                                                                .text("chart ready")
+                                                                .build(),
+                                                        ImageBlock.builder()
+                                                                .source(
+                                                                        new Base64Source(
+                                                                                "image/png",
+                                                                                "iVBORw0KGgo="))
+                                                                .build(),
+                                                        AudioBlock.builder()
+                                                                .source(
+                                                                        URLSource.builder()
+                                                                                .url(
+                                                                                        "https://example.com/audio.mp3")
+                                                                                .mimeType(
+                                                                                        "audio/mpeg")
+                                                                                .build())
+                                                                .build(),
+                                                        VideoBlock.builder()
+                                                                .source(
+                                                                        new FileIdSource(
+                                                                                "openai",
+                                                                                "vid-file-1"))
+                                                                .build()))
+                                        .build())
+                        .build();
+
+        AguiMessage wire = converter.toAguiMessages(msg).get(0);
+
+        assertTrue(wire.getContent() instanceof MessageContent.Blocks);
+        List<InputContent> parts = ((MessageContent.Blocks) wire.getContent()).parts();
+        assertEquals(4, parts.size());
+
+        ImageInputContent image = assertInstanceOf(ImageInputContent.class, parts.get(0));
+        InputContentDataSource imageSource =
+                assertInstanceOf(InputContentDataSource.class, image.source());
+        assertEquals("iVBORw0KGgo=", imageSource.value());
+        assertEquals("image/png", imageSource.mimeType());
+
+        AudioInputContent audio = assertInstanceOf(AudioInputContent.class, parts.get(1));
+        InputContentUrlSource audioSource =
+                assertInstanceOf(InputContentUrlSource.class, audio.source());
+        assertEquals("https://example.com/audio.mp3", audioSource.value());
+        assertEquals("audio/mpeg", audioSource.mimeType());
+
+        VideoInputContent video = assertInstanceOf(VideoInputContent.class, parts.get(2));
+        InputContentFileSource videoSource =
+                assertInstanceOf(InputContentFileSource.class, video.source());
+        assertEquals("vid-file-1", videoSource.value());
+        assertEquals("openai", videoSource.provider());
+
+        TextInputContent trailingText = assertInstanceOf(TextInputContent.class, parts.get(3));
+        assertEquals("chart ready", trailingText.text());
+        assertEquals("tc-2", wire.getToolCallId());
+        assertNull(wire.getError());
+    }
+
+    @Test
+    void testToolResultMediaRoundTripPreservesBlocks() {
+        Msg original =
+                Msg.builder()
+                        .id("msg-t23")
+                        .role(MsgRole.TOOL)
+                        .content(
+                                ToolResultBlock.builder()
+                                        .id("tc-3")
+                                        .output(
+                                                List.of(
+                                                        ImageBlock.builder()
+                                                                .source(
+                                                                        new Base64Source(
+                                                                                "image/png",
+                                                                                "iVBORw0KGgo="))
+                                                                .build(),
+                                                        TextBlock.builder()
+                                                                .text("chart ready")
+                                                                .build()))
+                                        .build())
+                        .build();
+
+        Msg restored = converter.toMsg(converter.toAguiMessages(original).get(0));
+
+        ToolResultBlock result = restored.getFirstContentBlock(ToolResultBlock.class);
+        assertNotNull(result);
+        assertEquals("tc-3", result.getId());
+        assertEquals(ToolResultState.SUCCESS, result.getState());
+        List<ContentBlock> output = result.getOutput();
+        assertEquals(2, output.size());
+        ImageBlock image = assertInstanceOf(ImageBlock.class, output.get(0));
+        Base64Source source = (Base64Source) image.getSource();
+        assertEquals("image/png", source.getMediaType());
+        assertEquals("iVBORw0KGgo=", source.getData());
+        assertInstanceOf(TextBlock.class, output.get(1));
     }
 
     @Test

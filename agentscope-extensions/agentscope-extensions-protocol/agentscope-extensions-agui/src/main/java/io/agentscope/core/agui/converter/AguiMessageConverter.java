@@ -71,6 +71,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
+import java.util.function.BiFunction;
 import java.util.stream.Collectors;
 
 /**
@@ -549,6 +550,15 @@ public class AguiMessageConverter {
                     appendContent(text, DocumentReferenceRenderer.render(document));
                 }
             }
+            if (output instanceof ImageBlock image) {
+                addMediaInputContent(parts, image.getSource(), ImageInputContent::new);
+            }
+            if (output instanceof AudioBlock audio) {
+                addMediaInputContent(parts, audio.getSource(), AudioInputContent::new);
+            }
+            if (output instanceof VideoBlock video) {
+                addMediaInputContent(parts, video.getSource(), VideoInputContent::new);
+            }
         }
         MessageContent content;
         if (parts.isEmpty()) {
@@ -566,6 +576,53 @@ public class AguiMessageConverter {
                 null,
                 result.getId(),
                 error ? text.toString() : null);
+    }
+
+    /**
+     * Appends an AG-UI input content for a media block source, when the source can be expressed.
+     *
+     * <p>A media block in a tool result only exists because the tool explicitly constructed it,
+     * so every source the protocol can express is delivered; there is nothing to fall back to.
+     *
+     * @param target the target input content list
+     * @param source the AgentScope media source
+     * @param factory builds the typed AG-UI input content for the block kind
+     */
+    private static void addMediaInputContent(
+            List<InputContent> target,
+            Source source,
+            BiFunction<InputContentSource, Map<String, Object>, InputContent> factory) {
+        InputContentSource inputSource = toInputContentSource(source);
+        if (inputSource != null) {
+            target.add(factory.apply(inputSource, Collections.emptyMap()));
+        }
+    }
+
+    /**
+     * Maps an AgentScope media {@link Source} onto the AG-UI protocol source model.
+     *
+     * <p>Mapping:
+     * <ul>
+     *   <li>{@link URLSource} &rarr; {@link InputContentUrlSource} (type {@code url})</li>
+     *   <li>{@link Base64Source} &rarr; {@link InputContentDataSource} (type {@code data})</li>
+     *   <li>{@link FileIdSource} &rarr; {@link InputContentFileSource} (type {@code file}),
+     *       preserving the provider that issued the handle</li>
+     * </ul>
+     *
+     * @param source the AgentScope media source
+     * @return the AG-UI protocol source, or {@code null} when the source cannot be expressed
+     */
+    private static InputContentSource toInputContentSource(Source source) {
+        if (source instanceof URLSource url) {
+            return new InputContentUrlSource(url.getUrl(), url.getMimeType());
+        }
+        if (source instanceof Base64Source base64) {
+            return new InputContentDataSource(base64.getData(), base64.getMediaType());
+        }
+        if (source instanceof FileIdSource fileId) {
+            return new InputContentFileSource(fileId.getFileId(), fileId.getProvider(), null);
+        }
+        return null;
     }
 
     private static String generatedMessageId(Msg msg) {

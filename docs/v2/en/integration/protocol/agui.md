@@ -11,9 +11,9 @@ zh_link: /v2/zh/integration/protocol/agui
 
 `AguiMessage.content` is represented as typed message content. For text-only code paths, use `getTextContent()`.
 
-Multimodal input is supported, but document types are not supported yet.
+Multimodal input supports image/audio/video/document. Document parts are converted to `DocumentBlock`; model providers that cannot consume a document report an error instead of silently dropping the content.
 
-`AguiMessageConverter.toAguiMessage()` currently preserves text and tool-call fields only; image, audio, video, and document content blocks are not serialized back into AG-UI message content.
+Tool results serialize media blocks into the tool message's `MessageContent.Blocks` for all three protocol source types: URL sources map to `url`, inline Base64 maps to `data`, and provider file handles map to `file`. A media block in a tool result only exists because the tool explicitly constructed it, so it is delivered rather than dropped.
 
 ## When To Use
 
