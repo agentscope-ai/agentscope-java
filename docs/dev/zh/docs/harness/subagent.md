@@ -28,7 +28,7 @@ description: 代码审查专家。当用户需要 review PR、找代码问题、
 然后主 agent 就能在推理时调用：
 
 ```
-agent_spawn agent_id="reviewer" task="review 这次 PR 的所有改动"
+agent_spawn agent_id="reviewer" task="review 这次 PR 的所有改动" reusable=false
 ```
 
 不需要做任何注册。
@@ -165,6 +165,7 @@ RuntimeContext ctx = RuntimeContext.builder()
 | `agent_spawn` | 创建子 agent，可选地执行任务（同步或后台） |
 | `agent_send` | 向已存在的子 agent 追加消息 |
 | `agent_list` | 列出当前活跃的子 agent 实例 |
+| `agent_release` | 释放空闲的可复用子 agent，并使其句柄失效 |
 | `task_output` | 通过 `task_id` 获取后台任务结果（阻塞或非阻塞） |
 | `wait_async_results` | 等待后台结果到达；可按 `task_ids` 等指定任务全部完成，或用 `wait_all=true` 等待当前 session 未完成任务快照全部完成 |
 | `task_cancel` | 取消正在运行的后台任务 |
@@ -193,11 +194,22 @@ agent_send agent_key="agent:reviewer:abc-123" message="顺便也看下 schema �
 如果 spawn 时设了 `label`，也可以用 label 来寻址：
 
 ```
-agent_spawn agent_id="reviewer" task="review 这次 PR" label="pr-reviewer"
+agent_spawn agent_id="reviewer" task="review 这次 PR" label="pr-reviewer" reusable=true
 agent_send label="pr-reviewer" message="顺便也看下 schema 变更"
 ```
 
 要列当前活跃的子 agent：`agent_list`。
+
+## 复用与一次性子 Agent
+
+`agent_spawn` 必须传入 `reusable`。如果父 agent 后续可能用 `agent_send` 继续追问，传
+`reusable=true`；实例会保持可寻址，直到调用 `agent_release` 或父 agent 关闭。如果只是一
+次性任务，传 `reusable=false`：任务完成、失败、取消，或超时提升为后台任务并进入终态后，
+Harness 会关闭子 agent，并删除它的 `agent_key`、label 和持久化 spawn entry。
+
+`reusable=false` 必须携带 `task`，且不能与 `label`、`persistSession` 或 `expose_to_user`
+组合；这些选项都意味着后续寻址或复用。对于没有正在执行工作的可复用实例，不再需要时
+调用 `agent_release`。有任务在执行时，释放会被拒绝。
 
 ## 持久会话
 
@@ -222,7 +234,7 @@ agent_send label="pr-reviewer" message="顺便也看下 schema 变更"
 通常子 agent 对用户是不可见的——它们在幕后作为父 agent 的内部工具运行。通过 `expose_to_user=true`，父 agent 可以把子 agent 暴露为**用户可直接交互的入口**：
 
 ```
-agent_spawn agent_id="researcher" task="调研 AI 趋势" expose_to_user=true
+agent_spawn agent_id="researcher" task="调研 AI 趋势" expose_to_user=true reusable=true
 ```
 
 这做了两件事：

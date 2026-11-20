@@ -1,7 +1,7 @@
 ---
 title: Capability Grant
 description: Trim the agent's capability surface to what the current user is authorized for
-zh_link: /v2/zh/docs/building-blocks/capability-grant
+zh_link: /dev/zh/docs/building-blocks/capability-grant
 ---
 
 ## Overview

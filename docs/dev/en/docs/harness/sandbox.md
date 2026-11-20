@@ -276,7 +276,7 @@ spec:
           storage: 1Gi
 ```
 
-2. **Mind the claim lifecycle boundary.** Once `shutdownTime` / `shutdownPolicy: Delete` removes the Sandbox, PVC-based warm recovery is over — the next resume won't find the claim, and the framework creates a fresh sandbox (with an empty new PVC). Whether the workspace comes back depends on point 3.
+2. **Mind the claim lifecycle boundary.** Once `shutdownTime` / `shutdownPolicy: Delete` removes the Sandbox, PVC-based warm recovery is over — the next resume won't find the claim, and the framework creates a fresh sandbox (with an empty new PVC). Whether the workspace comes back depends on point 3. Set `shutdownAfterSeconds(...)` to write this lifecycle so the cluster can reclaim claims after an abnormal exit. It defaults to unset; when set, the lifetime starts at creation and resume does not renew it, so allow enough time for the whole sandbox session.
 
 3. **Pick `snapshotSpec` accordingly.** PVC + `NoopSnapshotSpec` (default): skips the tar-and-upload at the end of every call, at the cost of a cold start once the claim is gone. PVC + OSS / Redis snapshot: belt and suspenders — claim expiry, PVC loss, and cross-cluster migration all recover from the snapshot, at the cost of a full archive per call.
 

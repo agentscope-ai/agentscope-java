@@ -71,7 +71,7 @@ To insert custom behaviour without bypassing Harness's plumbing:
 ## Related pages
 
 - [Session operations, events and recovery](/dev/en/docs/harness/session-log) — background tasks, queues, interaction and continuation
-- [Recoverable chat example](/v2/en/blogs/best-practices/session-chat) — a complete application from submission to frontend reconnection
+- [Recoverable chat example](/dev/en/blogs/best-practices/session-chat) — a complete application from submission to frontend reconnection
 - [Workspace](/dev/en/docs/harness/workspace) — directory layout, instruction and reference sources, `tools.json`
 - [Context & AgentState](/dev/en/docs/building-blocks/context) — `AgentState`, `RuntimeContext`, `AgentStateStore` persistence, multi-user isolation
 - [Memory](/dev/en/docs/harness/memory) — two-layer memory
@@ -85,4 +85,4 @@ To insert custom behaviour without bypassing Harness's plumbing:
 
 ## Final model input construction
 
-Harness organizes System, conversation, task state and references at the final model-call boundary. Supply dynamic business information through contextSource. See [Context management](/dev/en/docs/harness/context) for configuration, defaults and limits.
+Harness organizes System instructions, the skill catalog, conversation, transient state, and references at the final model-call boundary. Supply dynamic business information through `contextSource`. See [Context management](/dev/en/docs/harness/context) for configuration, defaults and limits.

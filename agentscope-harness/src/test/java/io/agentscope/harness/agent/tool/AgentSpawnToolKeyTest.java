@@ -85,6 +85,7 @@ class AgentSpawnToolKeyTest {
                                         null,
                                         "default-agent",
                                         "ignored",
+                                        true,
                                         null,
                                         1,
                                         null)
@@ -117,6 +118,7 @@ class AgentSpawnToolKeyTest {
                                 null,
                                 "primary-agent",
                                 "ignored",
+                                true,
                                 null,
                                 1,
                                 null)
@@ -130,6 +132,7 @@ class AgentSpawnToolKeyTest {
                                 null,
                                 "unknown-agent",
                                 "ignored",
+                                true,
                                 null,
                                 1,
                                 null)
@@ -147,6 +150,7 @@ class AgentSpawnToolKeyTest {
                                         null,
                                         "scoped-agent",
                                         "first task",
+                                        true,
                                         "scoped",
                                         0,
                                         null)
@@ -177,7 +181,7 @@ class AgentSpawnToolKeyTest {
                 .putSpawnEntry(
                         restoredKey,
                         new ToolContextState.SpawnEntry(
-                                restoredKey, "scoped-agent", "sub-restored", null, 1));
+                                restoredKey, "scoped-agent", "sub-restored", null, 1, true));
         AgentSpawnTool restoreTool = new AgentSpawnTool(defaultManager, repository, 0);
         String restored =
                 assertText(

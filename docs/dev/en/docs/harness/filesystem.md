@@ -178,6 +178,7 @@ Main `KubernetesFilesystemSpec` options:
 | `serverPort(int)` | runtime HTTP API port | `8888` |
 | `kubernetesClient(KubernetesClient)` | custom fabric8 client | kubeconfig auto-loaded |
 | `snapshotSpec(SandboxSnapshotSpec)` | snapshot strategy (see the sandbox page for the PVC trade-off) | `NoopSnapshotSpec` |
+| `shutdownAfterSeconds(Long)` | Positive lifetime in seconds for new SandboxClaims; `null` inherits client defaults. Resume does not renew it. | `null` (no lifecycle by default) |
 
 When neither `apiUrl` nor `gateway*` is set, a local tunnel via `kubectl port-forward` is used (good for development). The runtime image must satisfy the [runtime image contract](/dev/en/docs/harness/sandbox#runtime-image-contract); **workspace persistence depends on the PVC configured in the template** — see [Sandbox - Kubernetes state persistence](/dev/en/docs/harness/sandbox#kubernetes-state-persistence-pvc-is-the-first-layer).
 
@@ -468,7 +469,7 @@ workspace/
 
 ### Skills
 
-`DynamicSkillMiddleware` merges skills from the repository list before each reasoning turn and renders them into the system prompt. Skill file loading goes through the `AbstractFilesystem` interface, so it works transparently across all three modes:
+Harness renders the visible repository skills as a request-only `<available_skills>` block. Skill file loading goes through the `AbstractFilesystem` interface in all three modes:
 
 | Mode | How skills load |
 |------|----------------|
