@@ -16,6 +16,7 @@
 package io.agentscope.harness.agent.middleware;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -154,6 +155,29 @@ class SubagentDeliveryTest {
         assertTrue(text.contains("state=\"error\""));
         assertTrue(text.contains("<task_error>"));
         assertTrue(text.contains("boom"));
+    }
+
+    @Test
+    void reminder_failedErrorIsSanitizedToASingleTruncatedLine() {
+        Msg msg =
+                SubagentsMiddleware.buildDeliveryReminder(
+                        List.of(
+                                delivery(
+                                        "tx",
+                                        TaskStatus.FAILED,
+                                        null,
+                                        "first line "
+                                                + "x".repeat(300)
+                                                + "\n\tat leaked.Frame(internal/File.java:42)")));
+        String text = textOf(msg);
+        assertTrue(text.contains("first line"), text);
+        int summaryStart = text.indexOf("<task_error>\n") + "<task_error>\n".length();
+        int summaryEnd = text.indexOf("\n</task_error>");
+        String summary = text.substring(summaryStart, summaryEnd);
+        assertEquals(
+                SubagentsMiddleware.ERROR_SUMMARY_MAX_LENGTH + "...".length(), summary.length());
+        assertFalse(summary.contains("\n"));
+        assertFalse(text.contains("leaked.Frame"), text);
     }
 
     @Test

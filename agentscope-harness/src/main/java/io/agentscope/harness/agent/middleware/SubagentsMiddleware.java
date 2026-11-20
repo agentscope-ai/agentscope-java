@@ -92,6 +92,9 @@ public class SubagentsMiddleware implements HarnessRuntimeMiddleware {
      */
     static final int MAX_DELIVERIES_PER_REMINDER = 10;
 
+    /** Cap for the error summary embedded in a settled-task hint; details stay in the task record. */
+    static final int ERROR_SUMMARY_MAX_LENGTH = 200;
+
     // @formatter:off
     private static final String SUBAGENT_SECTION_TEMPLATE =
             """
@@ -302,6 +305,10 @@ public class SubagentsMiddleware implements HarnessRuntimeMiddleware {
      * <p>Failed tasks must not be announced with completion wording: the parent model would treat
      * the run as a delivered (empty) business result instead of an infrastructure failure to retry
      * or escalate. Mirrors the task-delivery reminder's {@code <task_error>} semantics.</p>
+     *
+     * <p>The hint carries only a short, sanitized error summary — raw exception messages can be
+     * long and may leak internals (paths, endpoints, credentials) into the conversation. The full
+     * message stays in the durable task record, reachable via {@code task_output}.</p>
      */
     public static String taskSettledHintContent(
             String taskId,
@@ -312,16 +319,35 @@ public class SubagentsMiddleware implements HarnessRuntimeMiddleware {
         if (status == TaskStatus.FAILED) {
             return String.format(
                     "<system-reminder>Background subagent task '%s' (agent=%s) FAILED and"
-                            + " produced no result.\n\nError:\n\n%s\n\nThis is an execution"
+                            + " produced no result.\n\nError summary: %s\n\nThis is an execution"
                             + " failure, not a business conclusion. Use task_output(task_id=...,"
-                            + " block=false) or task_list() if you need the task"
-                            + " record.</system-reminder>",
-                    taskId, subAgentId, errorMessage != null ? errorMessage : "(no error message)");
+                            + " block=false) or task_list() for the full task record and error"
+                            + " details.</system-reminder>",
+                    taskId, subAgentId, sanitizeErrorSummary(errorMessage));
         }
         return String.format(
                 "<system-reminder>Background subagent task '%s' (agent=%s) has completed."
                         + "\n\nResult:\n\n%s</system-reminder>",
                 taskId, subAgentId, result != null ? result : "(no output)");
+    }
+
+    /**
+     * Reduces a raw exception message to a single-line summary capped at {@value
+     * #ERROR_SUMMARY_MAX_LENGTH} characters, so stack traces and long internal dumps never reach
+     * the conversation prompt.
+     */
+    static String sanitizeErrorSummary(String errorMessage) {
+        if (errorMessage == null || errorMessage.isBlank()) {
+            return "(no error message)";
+        }
+        String firstLine = errorMessage.strip().split("\\R", 2)[0].strip();
+        if (firstLine.isEmpty()) {
+            return "(no error message)";
+        }
+        if (firstLine.length() > ERROR_SUMMARY_MAX_LENGTH) {
+            firstLine = firstLine.substring(0, ERROR_SUMMARY_MAX_LENGTH) + "...";
+        }
+        return firstLine;
     }
 
     /**
@@ -577,7 +603,7 @@ public class SubagentsMiddleware implements HarnessRuntimeMiddleware {
                 }
                 case FAILED -> {
                     sb.append("<task_error>\n");
-                    sb.append(d.errorMessage() != null ? d.errorMessage() : "(no error message)");
+                    sb.append(sanitizeErrorSummary(d.errorMessage()));
                     sb.append("\n</task_error>\n");
                 }
                 case CANCELLED -> sb.append("Task was cancelled before producing a result.\n");

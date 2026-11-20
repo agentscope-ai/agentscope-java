@@ -91,9 +91,32 @@ class SubagentTaskSettledHintTest {
 
         assertTrue(hint.contains("FAILED"), hint);
         assertTrue(hint.contains("boom: rate limited"), hint);
+        assertTrue(hint.contains("Error summary: boom: rate limited"), hint);
         assertTrue(hint.contains("execution failure, not a business conclusion"), hint);
         assertFalse(hint.contains("has completed"), hint);
         assertFalse(hint.contains("Result:"), hint);
+    }
+
+    @Test
+    void multilineErrorIsReducedToASingleTruncatedLine() {
+        String message =
+                "first line with the cause "
+                        + "x".repeat(300)
+                        + "\n\tat internal.stack.Frame1(internal/File.java:42)\n"
+                        + "secret-token-from-later-frame";
+        String hint =
+                SubagentsMiddleware.taskSettledHintContent(
+                        "task_1", "worker", TaskStatus.FAILED, null, message);
+
+        assertTrue(hint.contains("first line with the cause"), hint);
+        String summary =
+                hint.substring(
+                        hint.indexOf("Error summary: ") + "Error summary: ".length(),
+                        hint.indexOf("\n\nThis is an execution failure"));
+        assertEquals(SubagentsMiddleware.ERROR_SUMMARY_MAX_LENGTH + "...".length(), summary.length());
+        assertFalse(summary.contains("\n"), summary);
+        assertFalse(hint.contains("internal.stack.Frame1"), hint);
+        assertFalse(hint.contains("secret-token-from-later-frame"), hint);
     }
 
     @Test
