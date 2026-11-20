@@ -865,7 +865,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
      * @return response message with structured data in metadata
      */
     public Mono<Msg> call(String text, Class<?> structuredModel, RuntimeContext ctx) {
-        return call(new UserMessage(text), structuredModel, ctx);
+        return call(List.of(new UserMessage(text)), structuredModel, ctx);
     }
 
     /**
