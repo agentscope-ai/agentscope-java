@@ -16,11 +16,14 @@
 package io.agentscope.extensions.sandbox.agentrun;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import java.io.IOException;
+import java.util.List;
 import java.util.concurrent.TimeUnit;
 import okhttp3.OkHttpClient;
 import okhttp3.mockwebserver.MockResponse;
@@ -73,7 +76,9 @@ class AgentRunDataPlaneHttpTest {
         assertEquals("/sandboxes", createReq.getPath());
         assertEquals("test-key", createReq.getHeader("X-API-Key"));
         assertEquals("1234567890", createReq.getHeader("X-Acs-Parent-Id"));
-        assertTrue(createReq.getBody().readUtf8().contains("\"sandboxId\":\"sb-1\""));
+        String createBody = createReq.getBody().readUtf8();
+        assertTrue(createBody.contains("\"sandboxId\":\"sb-1\""));
+        assertFalse(new ObjectMapper().readTree(createBody).has("nasMountConfig"));
 
         mockServer.enqueue(
                 new MockResponse().setResponseCode(200).setBody("{\"status\":\"READY\"}"));
@@ -91,5 +96,72 @@ class AgentRunDataPlaneHttpTest {
         assertNotNull(deleteReq);
         assertEquals("DELETE", deleteReq.getMethod());
         assertEquals("/sandboxes/sb-1", deleteReq.getPath());
+    }
+
+    @Test
+    void createsSandboxWithAllNasMounts() throws Exception {
+        AgentRunSandboxClientOptions opt =
+                new AgentRunSandboxClientOptions()
+                        .setApiKey("test-key")
+                        .setTemplateName("agentscope-default")
+                        .setDataPlaneBaseUrl(mockServer.url("/").toString())
+                        .setNasMountConfigs(
+                                List.of(
+                                        new AgentRunNasMountConfig()
+                                                .setServerAddr("user-nas.example.com")
+                                                .setMountDir("/mnt/workspace")
+                                                .setRemotePath("/users/alice"),
+                                        new AgentRunNasMountConfig()
+                                                .setServerAddr("shared-nas.example.com")
+                                                .setMountDir("/mnt/skills")
+                                                .setRemotePath("/skills")
+                                                .setEnableTLS(true)));
+        mockServer.enqueue(new MockResponse().setResponseCode(200).setBody("{\"id\":\"sb-1\"}"));
+
+        new AgentRunDataPlaneHttp(opt).createSandbox("sb-1");
+
+        RecordedRequest request = mockServer.takeRequest(1, TimeUnit.SECONDS);
+        assertNotNull(request);
+        ObjectMapper json = new ObjectMapper();
+        JsonNode body = json.readTree(request.getBody().readUtf8());
+        assertEquals(
+                json.readTree(
+                        """
+                        [
+                          {"serverAddr":"user-nas.example.com","mountDir":"/mnt/workspace",
+                           "remotePath":"/users/alice","enableTLS":false},
+                          {"serverAddr":"shared-nas.example.com","mountDir":"/mnt/skills",
+                           "remotePath":"/skills","enableTLS":true}
+                        ]
+                        """),
+                body.path("nasMountConfig").path("mountPoints"));
+    }
+
+    @Test
+    void createsSandboxWithLegacyNasConfig() throws Exception {
+        AgentRunSandboxClientOptions opt =
+                new AgentRunSandboxClientOptions()
+                        .setApiKey("test-key")
+                        .setTemplateName("agentscope-default")
+                        .setDataPlaneBaseUrl(mockServer.url("/").toString())
+                        .setNasConfig(
+                                new AgentRunNasMountConfig()
+                                        .setServerAddr("nas.example.com")
+                                        .setMountDir("/mnt/workspace"));
+        mockServer.enqueue(new MockResponse().setResponseCode(200).setBody("{\"id\":\"sb-1\"}"));
+
+        new AgentRunDataPlaneHttp(opt).createSandbox("sb-1");
+
+        RecordedRequest request = mockServer.takeRequest(1, TimeUnit.SECONDS);
+        assertNotNull(request);
+        ObjectMapper json = new ObjectMapper();
+        JsonNode body = json.readTree(request.getBody().readUtf8());
+        assertEquals(
+                json.readTree(
+                        """
+                        [{"serverAddr":"nas.example.com","mountDir":"/mnt/workspace",
+                          "remotePath":"/","enableTLS":false}]
+                        """),
+                body.path("nasMountConfig").path("mountPoints"));
     }
 }

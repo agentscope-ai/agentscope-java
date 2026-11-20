@@ -174,9 +174,10 @@ public class AgentRunSandboxClient implements SandboxClient<AgentRunSandboxClien
         if (root == null || root.isBlank()) {
             return false;
         }
-        AgentRunNasMountConfig nas = opt.getNasConfig();
-        if (nas != null && nas.getMountDir() != null && root.startsWith(nas.getMountDir())) {
-            return true;
+        for (AgentRunNasMountConfig nas : opt.getNasMountConfigs()) {
+            if (nas != null && nas.getMountDir() != null && root.startsWith(nas.getMountDir())) {
+                return true;
+            }
         }
         if (opt.getOssMountConfigs() != null) {
             for (AgentRunOssMountConfig m : opt.getOssMountConfigs()) {
@@ -224,8 +225,8 @@ public class AgentRunSandboxClient implements SandboxClient<AgentRunSandboxClien
         if (call.getMcpEndpoint() != null) {
             o.setMcpEndpoint(call.getMcpEndpoint());
         }
-        if (call.getNasConfig() != null) {
-            o.setNasConfig(call.getNasConfig());
+        if (!call.getNasMountConfigs().isEmpty()) {
+            o.setNasMountConfigs(call.getNasMountConfigs());
         }
         if (call.getOssMountConfigs() != null && !call.getOssMountConfigs().isEmpty()) {
             o.setOssMountConfigs(call.getOssMountConfigs());
@@ -253,7 +254,7 @@ public class AgentRunSandboxClient implements SandboxClient<AgentRunSandboxClien
         o.setMcpServerUrl(src.getMcpServerUrl());
         o.setMcpEndpoint(src.getMcpEndpoint());
         o.setSandboxIdleTimeoutSeconds(src.getSandboxIdleTimeoutSeconds());
-        o.setNasConfig(src.getNasConfig());
+        o.setNasMountConfigs(src.getNasMountConfigs());
         o.setOssMountConfigs(src.getOssMountConfigs());
         o.setWorkspaceRoot(src.getWorkspaceRoot());
         o.setHttpClient(src.getHttpClient());

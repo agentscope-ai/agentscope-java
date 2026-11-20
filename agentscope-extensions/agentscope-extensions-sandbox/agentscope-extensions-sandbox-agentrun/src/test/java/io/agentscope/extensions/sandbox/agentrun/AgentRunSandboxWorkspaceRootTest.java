@@ -23,7 +23,10 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import io.agentscope.harness.agent.sandbox.Sandbox;
 import io.agentscope.harness.agent.sandbox.SandboxContext;
 import io.agentscope.harness.agent.sandbox.WorkspaceSpec;
+import java.util.List;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 class AgentRunSandboxWorkspaceRootTest {
 
@@ -117,6 +120,37 @@ class AgentRunSandboxWorkspaceRootTest {
         assertTrue(state.isWorkspaceOnNas());
     }
 
+    @ParameterizedTest
+    @ValueSource(booleans = {true, false})
+    void createMarksWorkspaceUnderSecondNasMount(boolean useDefaultMounts) {
+        AgentRunSandboxClientOptions defaults = options();
+        AgentRunSandboxClientOptions call = options();
+        (useDefaultMounts ? defaults : call)
+                .setNasMountConfigs(List.of(nasMount("/mnt/skills"), nasMount("/mnt/data")));
+        AgentRunSandboxClient client = new AgentRunSandboxClient(defaults, null);
+
+        Sandbox sandbox = client.create(workspaceSpec("/mnt/data/ws"), null, call);
+
+        AgentRunSandboxState state = (AgentRunSandboxState) sandbox.getState();
+        assertTrue(state.isWorkspaceOnNas());
+    }
+
+    @Test
+    void perCallNasMountsReplaceDefaults() {
+        AgentRunSandboxClientOptions defaults =
+                options().setNasMountConfigs(List.of(nasMount("/mnt/default")));
+        AgentRunSandboxClientOptions call =
+                options()
+                        .setNasMountConfigs(
+                                List.of(nasMount("/mnt/skills"), nasMount("/mnt/data")));
+        AgentRunSandboxClient client = new AgentRunSandboxClient(defaults, null);
+
+        Sandbox sandbox = client.create(workspaceSpec("/mnt/default/ws"), null, call);
+
+        AgentRunSandboxState state = (AgentRunSandboxState) sandbox.getState();
+        assertFalse(state.isWorkspaceOnNas());
+    }
+
     @Test
     void filesystemSpecWorkspaceRootDrivesEffectiveWorkspaceSpec() {
         AgentRunFilesystemSpec spec =
@@ -138,6 +172,22 @@ class AgentRunSandboxWorkspaceRootTest {
         AgentRunSandboxState state = (AgentRunSandboxState) sandbox.getState();
         assertEquals("/mnt/data/ws", state.getWorkspaceRoot());
         assertTrue(state.isWorkspaceOnNas());
+    }
+
+    @Test
+    void filesystemSpecCarriesMultipleNasMounts() {
+        AgentRunNasMountConfig skills = nasMount("/mnt/skills");
+        AgentRunNasMountConfig workspace = nasMount("/mnt/data");
+        AgentRunFilesystemSpec spec =
+                new AgentRunFilesystemSpec()
+                        .nasMountConfigs(List.of(skills))
+                        .addNasMount(workspace);
+
+        AgentRunSandboxClientOptions opts =
+                (AgentRunSandboxClientOptions) spec.toSandboxContext().getClientOptions();
+
+        assertEquals(List.of(skills, workspace), opts.getNasMountConfigs());
+        assertEquals(skills, opts.getNasConfig());
     }
 
     private static AgentRunNasMountConfig nasMount(String mountDir) {
