@@ -339,6 +339,12 @@ public final class HarnessContextBuilder implements ModelRequestPreparer {
                                 new ContextBudgetExceededException(estimate.tokens(), finalLimit);
                         validation = "budget_exceeded";
                     }
+                    // Per-item token attribution (#4198): each item is measured alone against
+                    // this request's shared overhead with the same estimator that produced
+                    // `estimate`, so observers can attribute what fills the window. Marginal
+                    // figures need not sum to the whole-request estimate.
+                    long messageOverhead =
+                            policy.estimator().estimate(copy(prepared, List.of())).tokens();
                     List<ContextManifest.Item> items = new ArrayList<>();
                     for (Msg msg : prepared.messages()) {
                         String kind =
@@ -347,21 +353,72 @@ public final class HarnessContextBuilder implements ModelRequestPreparer {
                                         : msg.isRequestProjection(candidate.history())
                                                 ? "runtime_projection"
                                                 : "message";
+                        long tokens =
+                                Math.max(
+                                        0,
+                                        policy.estimator()
+                                                        .estimate(copy(prepared, List.of(msg)))
+                                                        .tokens()
+                                                - messageOverhead);
                         items.add(
                                 new ContextManifest.Item(
                                         kind,
                                         msg.getId(),
-                                        hash(JsonUtils.getJsonCodec().toJson(msg.getContent()))));
+                                        hash(JsonUtils.getJsonCodec().toJson(msg.getContent())),
+                                        null,
+                                        null,
+                                        false,
+                                        0,
+                                        tokens));
                     }
                     for (var tool : prepared.tools()) {
+                        // Tool schemas ride the request overhead, not the message list; estimators
+                        // may assert the request shape, so attribute each schema by measuring its
+                        // serialized form as a standalone system message instead of altering the
+                        // tool list.
+                        Msg schema =
+                                Msg.builder()
+                                        .role(MsgRole.SYSTEM)
+                                        .textContent(JsonUtils.getJsonCodec().toJson(tool))
+                                        .build();
+                        long tokens =
+                                Math.max(
+                                        0,
+                                        policy.estimator()
+                                                        .estimate(copy(prepared, List.of(schema)))
+                                                        .tokens()
+                                                - messageOverhead);
                         items.add(
                                 new ContextManifest.Item(
                                         "tool_schema",
                                         tool.getName(),
-                                        hash(JsonUtils.getJsonCodec().toJson(tool))));
+                                        hash(JsonUtils.getJsonCodec().toJson(tool)),
+                                        null,
+                                        null,
+                                        false,
+                                        0,
+                                        tokens));
                     }
                     for (ContextItem item : selected) {
-                        if (!item.content().isBlank())
+                        if (!item.content().isBlank()) {
+                            // Context-source content is rendered inside the messages above; the
+                            // per-item figure here attributes the source's own contribution by
+                            // measuring it as a standalone system message.
+                            Msg carried =
+                                    Msg.builder()
+                                            .role(MsgRole.SYSTEM)
+                                            .textContent(item.content())
+                                            .build();
+                            long tokens =
+                                    Math.max(
+                                            0,
+                                            policy.estimator()
+                                                            .estimate(
+                                                                    copy(
+                                                                            prepared,
+                                                                            List.of(carried)))
+                                                            .tokens()
+                                                    - messageOverhead);
                             items.add(
                                     new ContextManifest.Item(
                                             item.kind(),
@@ -370,8 +427,11 @@ public final class HarnessContextBuilder implements ModelRequestPreparer {
                                             item.revision(),
                                             item.placement().name(),
                                             item.required(),
-                                            item.priority()));
+                                            item.priority(),
+                                            tokens));
+                        }
                     }
+
                     ContextManifest manifest =
                             new ContextManifest(
                                     callId,
