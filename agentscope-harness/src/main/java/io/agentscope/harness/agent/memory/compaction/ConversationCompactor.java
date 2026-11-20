@@ -424,7 +424,13 @@ public class ConversationCompactor {
                             findTokenBasedCutoff(messages, totalTokens, config.getKeepTokens()),
                             messages.size() - 1);
         } else {
-            rawCutoff = findMessageBasedCutoff(messages, config.getKeepMessages());
+            // However small keepMessages is, the newest message always survives verbatim:
+            // a request reduced to a summary alone leaves the model no actionable message
+            // (and would swallow the iteration-limit fallback's closing instruction).
+            rawCutoff =
+                    Math.min(
+                            findMessageBasedCutoff(messages, config.getKeepMessages()),
+                            messages.size() - 1);
         }
         return findSafeCutoffPoint(messages, rawCutoff);
     }
