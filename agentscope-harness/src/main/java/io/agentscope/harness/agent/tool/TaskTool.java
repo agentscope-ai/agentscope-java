@@ -54,6 +54,7 @@ public class TaskTool {
 
     @Tool(
             name = "task_output",
+            timeoutManaged = true,
             description =
                     "Retrieve a background task created by agent_spawn/agent_send or"
                         + " sessions_spawn/sessions_send with timeout_seconds=0. Prefer block=false"
