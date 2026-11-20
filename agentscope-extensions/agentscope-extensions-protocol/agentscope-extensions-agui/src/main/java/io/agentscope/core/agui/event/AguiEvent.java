@@ -1638,10 +1638,13 @@ public sealed interface AguiEvent
     @JsonTypeInfo(use = JsonTypeInfo.Id.NAME, include = JsonTypeInfo.As.PROPERTY, property = "type")
     @JsonSubTypes({
         @JsonSubTypes.Type(value = RunFinishedSuccessOutcome.class, name = "success"),
-        @JsonSubTypes.Type(value = RunFinishedInterruptOutcome.class, name = "interrupt")
+        @JsonSubTypes.Type(value = RunFinishedInterruptOutcome.class, name = "interrupt"),
+        @JsonSubTypes.Type(value = RunFinishedCancelledOutcome.class, name = "cancelled")
     })
     sealed interface RunFinishedOutcome
-            permits RunFinishedSuccessOutcome, RunFinishedInterruptOutcome {}
+            permits RunFinishedSuccessOutcome,
+                    RunFinishedInterruptOutcome,
+                    RunFinishedCancelledOutcome {}
 
     /**
      * Successful run outcome.
@@ -1650,6 +1653,16 @@ public sealed interface AguiEvent
 
         @JsonCreator
         public RunFinishedSuccessOutcome {}
+    }
+
+    /**
+     * Run outcome indicating the run was stopped before completion, for a reason that is not a
+     * failure. The run waits for nothing, so the next run on the thread is an ordinary new run.
+     */
+    record RunFinishedCancelledOutcome() implements RunFinishedOutcome {
+
+        @JsonCreator
+        public RunFinishedCancelledOutcome {}
     }
 
     /**
