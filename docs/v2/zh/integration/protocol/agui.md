@@ -15,6 +15,8 @@ en_link: /v2/en/integration/protocol/agui
 
 `AguiMessageConverter.toAguiMessage()` 目前只保留文本和工具调用字段；image、audio、video、document 内容块不会被序列化回 AG-UI message content。
 
+包含文档的工具结果在 AG-UI JSON 往返转换后仍保留 `ERROR` 状态，即使文本输出为空或只有空白。此时使用文档引用生成非空的协议错误字段，不把内联文档字节复制到错误中。回退文字在序列化前加入内容，使多次往返转换保持相同的内容块顺序。若失败结果既无文本也无文档引用，则使用 `Tool execution failed` 标记。若错误文字已存在于结构化文本部分中，则不再次前置追加；与输出不同的前端错误仍会保留。
+
 ## 何时使用
 
 - 需要把 AgentScope agent 接入 AG-UI 兼容前端或自研 Chat UI。
