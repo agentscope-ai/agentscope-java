@@ -16,8 +16,10 @@
 package io.agentscope.core.agent;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -169,6 +171,40 @@ class AgentBaseTest {
         assertTrue(
                 exception.getMessage().contains(String.valueOf(MAX_AGENT_ID_LENGTH)),
                 "Error message should state the max length");
+    }
+
+    @Test
+    @DisplayName("sanitizeAgentId maps external-namespace ids to values normalizeAgentId accepts")
+    void testSanitizeAgentIdProducesAcceptableIds() {
+        // Console-style composed id with colons — the #3937 shape ("ns:default:uuid-sess_x").
+        String composed = "dpa-namespace:default:default-c5633029-sess_f684e5366474";
+        String sanitized = AgentBase.sanitizeAgentId(composed);
+        assertEquals(
+                AgentBase.normalizeAgentId(sanitized),
+                sanitized,
+                "sanitized output must pass the strict validator unchanged");
+        assertFalse(sanitized.contains(":"), "colons must be replaced");
+
+        // Deterministic.
+        assertEquals(sanitized, AgentBase.sanitizeAgentId(composed));
+
+        // All-dots pathological input still yields a usable id.
+        String dots = AgentBase.sanitizeAgentId("...");
+        assertNotNull(dots);
+        assertEquals(dots, AgentBase.normalizeAgentId(dots));
+
+        // Blank input matches normalizeAgentId's null contract.
+        assertNull(AgentBase.sanitizeAgentId("  "));
+        assertNull(AgentBase.sanitizeAgentId(null));
+
+        // Over-length input truncates to the limit and still validates.
+        String longInput = ("x".repeat(300) + ":y");
+        String truncated = AgentBase.sanitizeAgentId(longInput);
+        assertTrue(truncated.length() <= MAX_AGENT_ID_LENGTH);
+        assertEquals(truncated, AgentBase.normalizeAgentId(truncated));
+
+        // Clean input passes through unchanged.
+        assertEquals("already-clean_1.2", AgentBase.sanitizeAgentId("  already-clean_1.2 "));
     }
 
     @Test

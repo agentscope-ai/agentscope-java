@@ -211,6 +211,49 @@ public abstract class AgentBase implements Agent {
         return normalized;
     }
 
+    /**
+     * Maps an arbitrary identifier to a value {@link #normalizeAgentId} accepts: trims, replaces
+     * every character outside {@code [A-Za-z0-9._-]} with {@code _}, and truncates to {@value
+     * #MAX_AGENT_ID_LENGTH} characters.
+     *
+     * <p>Use this when an id is composed from external namespaces that allow richer characters —
+     * e.g. console-managed agents whose owner id is {@code namespace:default:<uuid>} — before
+     * handing the composed value to {@link #normalizeAgentId}. The mapping is deterministic but
+     * not injective: distinct inputs ({@code "a:b"}, {@code "a_b"}) can map to the same id, so
+     * callers that need to recover the original must keep it in their own storage rather than
+     * derive it from the sanitized form. Blank input returns {@code null}, matching {@link
+     * #normalizeAgentId}'s blank contract.
+     *
+     * @param agentId raw identifier, may be null
+     * @return a safe id, or {@code null} when the input is blank
+     */
+    public static String sanitizeAgentId(String agentId) {
+        String normalized = agentId != null ? agentId.trim() : "";
+        if (normalized.isEmpty()) {
+            return null;
+        }
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < normalized.length() && sb.length() < MAX_AGENT_ID_LENGTH; i++) {
+            char c = normalized.charAt(i);
+            sb.append(
+                    (c >= 'a' && c <= 'z')
+                                    || (c >= 'A' && c <= 'Z')
+                                    || (c >= '0' && c <= '9')
+                                    || c == '.'
+                                    || c == '_'
+                                    || c == '-'
+                            ? c
+                            : '_');
+        }
+        String sanitized = sb.toString();
+        if (sanitized.chars().allMatch(c -> c == '.')) {
+            // All-dots ids are rejected by normalizeAgentId; anchor the result so a pathological
+            // input like "..." still yields a usable id.
+            sanitized = "agent";
+        }
+        return sanitized;
+    }
+
     @Override
     public final String getAgentId() {
         return agentId;
