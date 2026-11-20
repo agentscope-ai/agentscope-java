@@ -53,7 +53,7 @@ All sandbox configuration lives on the `SandboxFilesystemSpec` (e.g. `DockerFile
     .isolationScope(IsolationScope.SESSION))
 ```
 
-`SESSION` is naturally concurrency-safe (each session has its own slot). `USER` / `AGENT` / `GLOBAL` in multi-replica deployments should pair with a mutex (see "Concurrency control" below).
+`SESSION` is naturally concurrency-safe (each session has its own slot). `USER` buckets by **user** — concurrent sessions of the same user share one slot and **overwrite each other even on a single instance**, so `USER` (like `AGENT` / `GLOBAL`) should pair with a mutex (see "Concurrency control" below); the same applies across replicas.
 
 **USER-scope fallback:** when `IsolationScope.USER` is active (either explicitly or by default) but `RuntimeContext.userId` is absent, the framework automatically falls back to `SESSION` scope using `sessionId`. This means you don't need to guard against missing userId — the sandbox degrades gracefully.
 
@@ -115,7 +115,7 @@ If you're using a local `AgentStateStore` (the default `JsonFileAgentStateStore`
 
 ## Concurrency control (multi-replica)
 
-In `USER` / `AGENT` / `GLOBAL` modes across replicas, two replicas serving the same user concurrently both write to the same slot — last writer wins. If that's not OK, you need a distributed lock.
+`USER` / `AGENT` / `GLOBAL` modes share slots: under `USER`, concurrent sessions of the same user (this happens **on a single instance too**), and across replicas, two replicas serving the same user concurrently, both write to the same slot — last writer wins. If that's not OK, you need a mutex (a local one suffices for a single instance).
 
 **Recommended**: use `distributedStore(...)` — snapshot and execution guard are auto-injected:
 
