@@ -288,10 +288,16 @@ class CommandExecutorTest {
     @Test
     void missingExitCodeIsUnknown() {
         response = "{\"stdout\":\"partial\",\"stderr\":\"\"}";
+        // The 2s network budget used elsewhere is plumbed for the instant fake transport, but a
+        // starved -T2C/-T1C runner can burn it on scheduling before the response is processed,
+        // which classifies the failure as a deadline miss instead of a missing exit code
+        // (observed locally under -T2C full-repo stress: isExecutionOutcomeUnknown() was false
+        // after 2.97s). A 30s budget cannot preempt the instant response; the classification
+        // under test is unchanged.
         SandboxRequestException error =
                 assertThrows(
                         SandboxRequestException.class,
-                        () -> executor(Duration.ofSeconds(2)).run("side-effect"));
+                        () -> executor(Duration.ofSeconds(30)).run("side-effect"));
         assertTrue(error.isExecutionOutcomeUnknown());
         assertEquals(1, executions.get());
     }
