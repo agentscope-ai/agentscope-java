@@ -18,10 +18,13 @@ package io.agentscope.core.skill.repository;
 import io.agentscope.core.skill.AgentSkill;
 import io.agentscope.core.skill.util.SkillFileSystemHelper;
 import java.io.IOException;
+import java.nio.file.FileVisitOption;
 import java.nio.file.Files;
+import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -76,7 +79,7 @@ public class FileSystemSkillRepository implements AgentSkillRepository {
 
     /**
      * Memoises (skillDirAbsolutePath → snapshot) so that repeated {@link #getAllSkills()} calls
-     * skip the {@code readString} of any SKILL.md whose mtime + size are unchanged.
+     * skip reloading while SKILL.md and, in eager mode, every resource keep their mtime and size.
      */
     private final Map<Path, Snapshot> skillCache = new ConcurrentHashMap<>();
 
@@ -191,21 +194,19 @@ public class FileSystemSkillRepository implements AgentSkillRepository {
                 Path key = dir.toAbsolutePath().normalize();
                 seenDirs.add(key);
                 try {
-                    BasicFileAttributes attrs =
-                            Files.readAttributes(skillFile, BasicFileAttributes.class);
-                    long mtime = attrs.lastModifiedTime().toMillis();
-                    long size = attrs.size();
+                    Map<Path, FileStamp> files = fileStamps(dir, skillFile);
                     Snapshot cached = skillCache.get(key);
-                    if (cached != null && cached.mtime == mtime && cached.size == size) {
+                    if (cached != null && cached.files.equals(files)) {
                         out.add(cached.skill);
                         continue;
                     }
                     AgentSkill skill =
                             SkillFileSystemHelper.loadSkillFromDirectory(dir, getSource(), !lazy);
-                    skillCache.put(key, new Snapshot(mtime, size, skill));
+                    skillCache.put(key, new Snapshot(files, skill));
                     out.add(skill);
                 } catch (IOException e) {
-                    logger.warn("Failed to stat SKILL.md for '{}': {}", dir, e.getMessage(), e);
+                    logger.warn(
+                            "Failed to inspect skill files for '{}': {}", dir, e.getMessage(), e);
                 } catch (Exception e) {
                     logger.warn("Failed to load skill from '{}': {}", dir, e.getMessage(), e);
                 }
@@ -219,8 +220,32 @@ public class FileSystemSkillRepository implements AgentSkillRepository {
         return out;
     }
 
-    /** Cache entry pairing the SKILL.md mtime/size with the parsed AgentSkill. */
-    private record Snapshot(long mtime, long size, AgentSkill skill) {}
+    private Map<Path, FileStamp> fileStamps(Path dir, Path skillFile) throws IOException {
+        if (lazy) {
+            return Map.of(dir.relativize(skillFile), FileStamp.from(skillFile));
+        }
+        Map<Path, FileStamp> stamps = new HashMap<>();
+        try (Stream<Path> paths = Files.walk(dir, FileVisitOption.FOLLOW_LINKS)) {
+            for (Path file : (Iterable<Path>) paths.filter(Files::isRegularFile)::iterator) {
+                try {
+                    stamps.put(dir.relativize(file), FileStamp.from(file));
+                } catch (NoSuchFileException ignored) {
+                    // A concurrent update removed the file after traversal.
+                }
+            }
+        }
+        return Map.copyOf(stamps);
+    }
+
+    private record FileStamp(long mtime, long size) {
+        static FileStamp from(Path file) throws IOException {
+            BasicFileAttributes attrs = Files.readAttributes(file, BasicFileAttributes.class);
+            return new FileStamp(attrs.lastModifiedTime().toMillis(), attrs.size());
+        }
+    }
+
+    /** Cache entry pairing the skill's file fingerprints with the parsed AgentSkill. */
+    private record Snapshot(Map<Path, FileStamp> files, AgentSkill skill) {}
 
     @Override
     public boolean save(List<AgentSkill> skills, boolean force) {

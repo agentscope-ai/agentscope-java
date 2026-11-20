@@ -29,6 +29,7 @@ import java.nio.file.Path;
 import java.nio.file.attribute.FileTime;
 import java.time.Instant;
 import java.util.List;
+import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -128,6 +129,64 @@ class FileSystemSkillRepositoryLazyTest {
         assertFalse(
                 alphaFirst == alphaSecond,
                 "mtime change should invalidate cache and produce a fresh AgentSkill");
+    }
+
+    @Test
+    @DisplayName("eager cache invalidates when a resource changes without SKILL.md changes")
+    void eagerCacheInvalidatesOnResourceChange() throws IOException {
+        FileSystemSkillRepository repo = new FileSystemSkillRepository(baseDir);
+        AgentSkill alphaFirst = pick(repo.getAllSkills(), "alpha");
+        Path resource = baseDir.resolve("alpha/scripts/run.sh");
+        Files.writeString(resource, "echo updated\n", StandardCharsets.UTF_8);
+        Files.setLastModifiedTime(resource, FileTime.from(Instant.now().plusSeconds(5)));
+
+        AgentSkill alphaSecond = pick(repo.getAllSkills(), "alpha");
+
+        assertFalse(alphaFirst == alphaSecond, "resource mtime change must reload the skill");
+        assertEquals("echo updated\n", alphaSecond.getResources().get("scripts/run.sh"));
+    }
+
+    @Test
+    @DisplayName("eager cache invalidates when resources are added or removed")
+    void eagerCacheInvalidatesOnResourceSetChange() throws IOException {
+        FileSystemSkillRepository repo = new FileSystemSkillRepository(baseDir);
+        AgentSkill initial = pick(repo.getAllSkills(), "alpha");
+        Path added = baseDir.resolve("alpha/references/new.md");
+        Files.createDirectories(added.getParent());
+        Files.writeString(added, "new reference\n", StandardCharsets.UTF_8);
+
+        AgentSkill withAdded = pick(repo.getAllSkills(), "alpha");
+
+        assertFalse(initial == withAdded, "a new resource must reload the skill");
+        assertEquals("new reference\n", withAdded.getResources().get("references/new.md"));
+
+        Files.delete(baseDir.resolve("alpha/scripts/run.sh"));
+        AgentSkill withRemoved = pick(repo.getAllSkills(), "alpha");
+
+        assertFalse(withAdded == withRemoved, "a removed resource must reload the skill");
+        assertFalse(withRemoved.getResources().containsKey("scripts/run.sh"));
+    }
+
+    @Test
+    @DisplayName("eager cache tracks resource changes through a skill directory symlink")
+    void eagerCacheTracksResourcesThroughSkillSymlink() throws IOException {
+        Path linkedBase = tempDir.resolve("workspace-skills");
+        Files.createDirectories(linkedBase);
+        try {
+            Files.createSymbolicLink(linkedBase.resolve("alpha"), baseDir.resolve("alpha"));
+        } catch (IOException | UnsupportedOperationException unsupported) {
+            Assumptions.abort("symbolic links not supported here: " + unsupported.getMessage());
+        }
+        FileSystemSkillRepository repo = new FileSystemSkillRepository(linkedBase);
+        AgentSkill alphaFirst = pick(repo.getAllSkills(), "alpha");
+        Path resource = baseDir.resolve("alpha/scripts/run.sh");
+        Files.writeString(resource, "echo through link\n", StandardCharsets.UTF_8);
+        Files.setLastModifiedTime(resource, FileTime.from(Instant.now().plusSeconds(5)));
+
+        AgentSkill alphaSecond = pick(repo.getAllSkills(), "alpha");
+
+        assertFalse(alphaFirst == alphaSecond, "linked resource changes must reload the skill");
+        assertEquals("echo through link\n", alphaSecond.getResources().get("scripts/run.sh"));
     }
 
     @Test
