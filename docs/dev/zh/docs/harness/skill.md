@@ -274,7 +274,7 @@ agent.promoteSkill("notes-taker", "alice")                   // 手动晋升一�
 
 ## Agent 是怎么读取和执行 skill 的
 
-每轮推理时，agent 会在 system prompt 里看到一个 `<available_skills>` 块，列出当前可见的所有 skill：
+Harness 把本轮可见的技能渲染成 `<available_skills>` 块，放在临时 User 消息里。技能目录通常位于对话历史之前。随着历史增长，内容未变的系统指令和技能目录可以构成共享前缀。是否命中缓存取决于模型提供方及其缓存配置。历史压缩后的第一次推理请求仍会包含技能目录。
 
 ```xml
 <available_skills>
