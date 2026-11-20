@@ -26,10 +26,12 @@ import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.FileTime;
 import java.util.ArrayList;
+import java.util.Base64;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
@@ -175,6 +177,59 @@ class JsonFileAgentStateStoreTest {
         store.save(null, "session1", "memory_messages", conversation("hi there, again"));
 
         assertNotEquals(untouched, Files.getLastModifiedTime(listFile));
+    }
+
+    @Test
+    @DisplayName("Should keep state keys inside the configured root")
+    void stateKeyCannotEscapeRoot(@TempDir Path tempDir) throws IOException {
+        JsonFileAgentStateStore store = new JsonFileAgentStateStore(tempDir);
+        String name = "escape-" + System.nanoTime();
+        String key = "../../../" + name;
+        Path outside = tempDir.getParent().resolve(name + ".json");
+        Path outsideList = tempDir.getParent().resolve(name + ".jsonl");
+        Path outsideHash = tempDir.getParent().resolve(name + ".hash");
+
+        store.save("user", "session", key, new TestState("single", 1));
+        store.save("user", "session", key, List.of(new TestState("list", 2)));
+
+        assertFalse(Files.exists(outside));
+        assertFalse(Files.exists(outsideList));
+        assertFalse(Files.exists(outsideHash));
+        assertEquals(
+                Optional.of(new TestState("single", 1)),
+                store.get("user", "session", key, TestState.class));
+        assertEquals(
+                List.of(new TestState("list", 2)),
+                store.getList("user", "session", key, TestState.class));
+
+        Files.writeString(outside, "marker");
+        Files.writeString(outsideList, "marker");
+        Files.writeString(outsideHash, "marker");
+        store.delete("user", "session", key);
+
+        assertTrue(Files.exists(outside));
+        assertTrue(Files.exists(outsideList));
+        assertTrue(Files.exists(outsideHash));
+    }
+
+    @Test
+    @DisplayName("Should keep encoded state keys distinct from literal keys")
+    void encodedStateKeyDoesNotCollideWithLiteralKey(@TempDir Path tempDir) {
+        JsonFileAgentStateStore store = new JsonFileAgentStateStore(tempDir);
+        String encoded =
+                Base64.getUrlEncoder()
+                        .withoutPadding()
+                        .encodeToString("a/b".getBytes(StandardCharsets.UTF_8));
+
+        store.save(null, "session1", "a/b", new TestState("encoded", 1));
+        store.save(null, "session1", encoded, new TestState("literal", 2));
+
+        assertEquals(
+                Optional.of(new TestState("encoded", 1)),
+                store.get(null, "session1", "a/b", TestState.class));
+        assertEquals(
+                Optional.of(new TestState("literal", 2)),
+                store.get(null, "session1", encoded, TestState.class));
     }
 
     @Test
