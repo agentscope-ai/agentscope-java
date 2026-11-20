@@ -1,7 +1,7 @@
 ---
 title: OpenAI Decisions
 description: 通过独立的 judge 扩展，对文本和图片进行类型化决策。
-en_link: /v2/en/integration/judge/openai-decisions
+en_link: /dev/en/integration/judge/openai-decisions
 ---
 
 OpenAI Decisions 对共享输入进行判断，返回概率、固定选项或基于量表的评分。扩展使用 OpenAI 官方 Java SDK，位于 `agentscope-extensions-judge` 下，与 JEV 同级，通过独立于聊天模型 API 的 `OpenAIDecisionsClient` 使用。应用可以根据结果分类请求或决定下一步动作。

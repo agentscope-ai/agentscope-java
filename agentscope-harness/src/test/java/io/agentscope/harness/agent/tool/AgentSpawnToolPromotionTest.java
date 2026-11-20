@@ -186,7 +186,7 @@ class AgentSpawnToolPromotionTest {
         // ---- Call agentSpawn with 1s timeout — agent takes ~2s+ to finish naturally ----
         String result =
                 assertText(
-                        tool.agentSpawn(ctx, null, "slow_agent", "go", null, 1, null)
+                        tool.agentSpawn(ctx, null, "slow_agent", "go", true, null, 1, null)
                                 .block(Duration.ofSeconds(10)),
                         ToolResultState.SUCCESS);
 

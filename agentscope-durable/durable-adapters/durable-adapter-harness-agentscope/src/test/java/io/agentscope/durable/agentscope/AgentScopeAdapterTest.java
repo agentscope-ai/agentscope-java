@@ -134,6 +134,15 @@ class AgentScopeAdapterTest {
     @TempDir Path directory;
     private final SessionKey key = new SessionKey("user", "session");
 
+    /**
+     * Turn-completion budget for resume/recovery awaits. 5s was breached on loaded -T1C runners
+     * while the turn kept progressing: #4204 (confirmed by a green same-commit re-run), #4191 and
+     * #4246 all failed `turn.await(5s)` after 6.7–8.5s with the turn one step from terminal.
+     * 30s is the repo's established deflake tier (#3726/#3774); happy path returns as soon as the
+     * turn completes.
+     */
+    private static final Duration TURN_DEADLINE = Duration.ofSeconds(30);
+
     static final class ScriptedModel implements Model {
         final List<List<Msg>> inputs = new CopyOnWriteArrayList<>();
         final boolean tool;
@@ -1130,9 +1139,10 @@ class AgentScopeAdapterTest {
                 var turn = first.createSession(key, "agent").submit("task", "job");
                 turnId = turn.turnId();
                 first.start();
-                assertTrue(started.await(5, TimeUnit.SECONDS));
+                assertTrue(started.await(30, TimeUnit.SECONDS));
                 turn.pause("pause");
-                long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+                long deadline =
+                        System.nanoTime() + TimeUnit.SECONDS.toNanos(TURN_DEADLINE.toSeconds());
                 while (turn.status().status() != TurnStatus.PAUSED && System.nanoTime() < deadline)
                     Thread.sleep(5);
                 assertEquals(TurnStatus.PAUSED, turn.status().status());
@@ -1156,9 +1166,9 @@ class AgentScopeAdapterTest {
                 turn.resume("resume", turn.status().revision());
                 assertEquals(
                         TurnStatus.SUCCEEDED,
-                        turn.await(Duration.ofSeconds(5))
+                        turn.await(TURN_DEADLINE)
                                 .toCompletableFuture()
-                                .get(10, TimeUnit.SECONDS)
+                                .get(TURN_DEADLINE.plusSeconds(5).toMillis(), TimeUnit.MILLISECONDS)
                                 .status());
                 assertEquals(1, starts.get());
                 assertEquals(2, model.inputs.size());
@@ -1264,9 +1274,9 @@ class AgentScopeAdapterTest {
                 replacement
                         .getSession(key)
                         .getTurn(turnId)
-                        .await(Duration.ofSeconds(5))
+                        .await(TURN_DEADLINE)
                         .toCompletableFuture()
-                        .get(5, TimeUnit.SECONDS);
+                        .get(TURN_DEADLINE.plusSeconds(5).toMillis(), TimeUnit.MILLISECONDS);
                 assertNull(replacement.lastFailure(new ThreadKey(key, "main")));
                 assertEquals(
                         TurnStatus.SUCCEEDED,
@@ -1398,7 +1408,7 @@ class AgentScopeAdapterTest {
                 replacement
                         .getSession(key)
                         .getTurn(turnId)
-                        .await(Duration.ofSeconds(5))
+                        .await(TURN_DEADLINE)
                         .toCompletableFuture()
                         .join();
                 assertNull(replacement.lastFailure(new ThreadKey(key, "main")));
@@ -2061,16 +2071,17 @@ class AgentScopeAdapterTest {
                                     snapshot -> {
                                         entered.countDown();
                                         try {
-                                            assertTrue(release.await(5, TimeUnit.SECONDS));
+                                            assertTrue(release.await(30, TimeUnit.SECONDS));
                                         } catch (InterruptedException error) {
                                             throw new IllegalStateException(error);
                                         }
                                     },
                                     event -> {})) {
-                assertTrue(entered.await(5, TimeUnit.SECONDS));
+                assertTrue(entered.await(30, TimeUnit.SECONDS));
                 var receipt = runtime.getSession(key).submit("request", "hello");
                 runtime.start();
-                long until = System.nanoTime() + TimeUnit.SECONDS.toNanos(4);
+                long until =
+                        System.nanoTime() + TimeUnit.SECONDS.toNanos(TURN_DEADLINE.toSeconds());
                 while (!runtime.getSession(key)
                                 .getTurn(receipt.turnId())
                                 .status()

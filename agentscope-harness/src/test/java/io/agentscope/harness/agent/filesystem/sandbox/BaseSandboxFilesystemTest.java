@@ -15,6 +15,7 @@
  */
 package io.agentscope.harness.agent.filesystem.sandbox;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -325,6 +326,32 @@ class BaseSandboxFilesystemTest {
             assertTrue(
                     result.error().contains("timed out"),
                     "a timeout must not be mislabeled as file_not_found");
+        }
+
+        @Test
+        void read_binary_wrappedBase64Output_strippedToSingleLinePayload() {
+            // POSIX base64 wraps output at 76 columns with \n separators; the payload surfaced
+            // through FileData must be single-line so the strict Base64 decoder accepts it and
+            // it matches what the local/remote backends emit (#3966).
+            byte[] binary = new byte[80];
+            for (int i = 0; i < binary.length; i++) {
+                binary[i] = (byte) (i + 1);
+            }
+            String wrapped =
+                    java.util.Base64.getMimeEncoder(76, "\n".getBytes()).encodeToString(binary);
+            assertTrue(wrapped.contains("\n"), "fixture must actually wrap to exercise the bug");
+
+            ReadResult result =
+                    new FixedResponseFilesystem(new ExecuteResponse(wrapped + "\n", 0, false))
+                            .read(RT, "/workspace/logo.png", 0, 10);
+
+            assertTrue(result.isSuccess());
+            String content = result.fileData().content();
+            assertFalse(content.contains("\n"), "payload must be single-line");
+            assertArrayEquals(
+                    binary,
+                    java.util.Base64.getDecoder().decode(content),
+                    "payload must round-trip through the strict decoder");
         }
 
         @Test

@@ -59,6 +59,6 @@ AgentScope 通过模型扩展接入不同供应商，你可以按任务选择模
 | --- | --- |
 | 在 Java 应用中获得回复，或把 Agent 作为工作流节点 | 从[快速开始](/dev/zh/docs/quickstart)使用 `agent.call` |
 | 在当前请求中展示回答和工具执行进度 | 使用 `agent.streamEvents`，参考[消息与事件](/dev/zh/docs/building-blocks/message-and-event) |
-| 构建能后台执行、排队、交互和恢复的聊天应用 | 通过 `runtime` 操作 Durable Session/Thread/Turn，运行[可恢复聊天示例](/v2/zh/blogs/best-practices/session-chat) |
+| 构建能后台执行、排队、交互和恢复的聊天应用 | 通过 `runtime` 操作 Durable Session/Thread/Turn，运行[可恢复聊天示例](/dev/zh/blogs/best-practices/session-chat) |
 
 从 1.x 升级请阅读 [V1 迁移指南](/dev/zh/docs/change-log)；各版本的具体变化见 [Release Notes](/dev/zh/docs/others/release-notes)。
