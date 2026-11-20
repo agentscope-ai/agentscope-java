@@ -59,6 +59,6 @@ Choose the entry point closest to your current needs, then add capabilities as t
 | --- | --- |
 | Get a reply in a Java application, or use an Agent as a workflow step | Use `agent.call` in the [Quickstart](/dev/en/docs/quickstart) |
 | Show responses and tool progress within the current request | Use `agent.streamEvents`; see [messages and events](/dev/en/docs/building-blocks/message-and-event) |
-| Build a chat application with background work, queues, interactions, and recovery | Use Durable Session/Thread/Turn through `runtime` and run the [resumable chat example](/v2/en/blogs/best-practices/session-chat) |
+| Build a chat application with background work, queues, interactions, and recovery | Use Durable Session/Thread/Turn through `runtime` and run the [resumable chat example](/dev/en/blogs/best-practices/session-chat) |
 
 For upgrades from 1.x, read the [V1 Migration Guide](/dev/en/docs/change-log). See [Release Notes](/dev/en/docs/others/release-notes) for individual versions.

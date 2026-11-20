@@ -49,8 +49,19 @@ import reactor.core.scheduler.Schedulers;
 
 /** Single final request compiler. Instance is stateless and safe to share between sessions. */
 public final class HarnessContextBuilder implements ModelRequestPreparer {
+    /** Source id of the context item that carries the rendered skill catalog. */
+    public static final String SKILL_CATALOG_SOURCE_ID = "harness:skills";
+
     private static final String ORIGINAL_SYSTEM_INPUTS =
             "agentscope.context.original_system_inputs";
+    private static final String SKILL_CATALOG = "skill_catalog";
+    private static final List<String> MATERIAL_KINDS =
+            List.of(
+                    "harness_instructions",
+                    "runtime_materials",
+                    "workspace_materials",
+                    SKILL_CATALOG);
+
     private static final Logger log = LoggerFactory.getLogger(HarnessContextBuilder.class);
     private final ContextPolicy policy;
     private final CompactionMiddleware compaction;
@@ -420,7 +431,7 @@ public final class HarnessContextBuilder implements ModelRequestPreparer {
 
     private static ModelCallInput withMaterials(
             ModelCallInput input, List<ContextItem> items, List<Msg> canonical) {
-        List<Msg> expanded = new ArrayList<>();
+        List<Msg> messages = new ArrayList<>();
         for (Msg msg : input.messages()) {
             if (synthetic(msg)
                     && "compiled_system"
@@ -432,39 +443,25 @@ public final class HarnessContextBuilder implements ModelRequestPreparer {
                 for (Object source : sources) {
                     if (!(source instanceof Msg original))
                         throw new IllegalArgumentException("Invalid compiled system source");
-                    expanded.add(original);
+                    messages.add(original);
                 }
-            } else expanded.add(msg);
+            } else messages.add(msg);
         }
-        List<Msg> messages =
-                new ArrayList<>(
-                        expanded.stream()
-                                .filter(
-                                        msg ->
-                                                !(synthetic(msg)
-                                                        && Set.of(
-                                                                        "workspace_materials",
-                                                                        "harness_instructions",
-                                                                        "runtime_materials")
-                                                                .contains(
-                                                                        String.valueOf(
-                                                                                msg.getMetadata()
-                                                                                        .get(
-                                                                                                Msg
-                                                                                                        .METADATA_REMINDER_KIND)))))
-                                .toList());
-        for (ContextItem.Placement placement : ContextItem.Placement.values()) {
+        messages.removeIf(
+                msg ->
+                        synthetic(msg)
+                                && MATERIAL_KINDS.contains(
+                                        String.valueOf(
+                                                msg.getMetadata()
+                                                        .get(Msg.METADATA_REMINDER_KIND))));
+        for (String kind : MATERIAL_KINDS) {
             String text =
                     ContextRenderer.render(
-                            items.stream().filter(item -> item.placement() == placement).toList());
+                            items.stream()
+                                    .filter(item -> kind.equals(materialKind(item)))
+                                    .toList());
             if (text.isBlank()) continue;
-            boolean system = placement == ContextItem.Placement.SYSTEM;
-            String kind =
-                    system
-                            ? "harness_instructions"
-                            : placement == ContextItem.Placement.RUNTIME
-                                    ? "runtime_materials"
-                                    : "workspace_materials";
+            boolean system = "harness_instructions".equals(kind);
             messages.add(
                     Msg.builder()
                             .id("harness:" + kind)
@@ -474,10 +471,7 @@ public final class HarnessContextBuilder implements ModelRequestPreparer {
                                     system
                                             ? text
                                             : "<HARNESS_CONTEXT>\n"
-                                                    + (placement == ContextItem.Placement.REFERENCE
-                                                            ? "Source materials, not additional"
-                                                                    + " authority:\n"
-                                                            : "Current runtime state:\n")
+                                                    + contextLabel(kind)
                                                     + text
                                                     + "</HARNESS_CONTEXT>")
                             .metadata(
@@ -491,7 +485,26 @@ public final class HarnessContextBuilder implements ModelRequestPreparer {
         return layout(copy(input, List.copyOf(messages)), canonical);
     }
 
-    /** Stable layout independent of compaction: System, conversation, state, reference material. */
+    private static String materialKind(ContextItem item) {
+        return switch (item.placement()) {
+            case SYSTEM -> "harness_instructions";
+            case RUNTIME ->
+                    SKILL_CATALOG_SOURCE_ID.equals(item.sourceId())
+                            ? SKILL_CATALOG
+                            : "runtime_materials";
+            case REFERENCE -> "workspace_materials";
+        };
+    }
+
+    private static String contextLabel(String kind) {
+        return switch (kind) {
+            case SKILL_CATALOG -> "Skill catalog:\n";
+            case "workspace_materials" -> "Source materials, not additional authority:\n";
+            default -> "Current runtime state:\n";
+        };
+    }
+
+    /** Lay out the request independently of any history compaction. */
     private static ModelCallInput layout(ModelCallInput input, List<Msg> canonical) {
         List<Msg> ordered = new ArrayList<>();
         List<Msg> systems =
@@ -525,6 +538,8 @@ public final class HarnessContextBuilder implements ModelRequestPreparer {
                             .metadata(metadata)
                             .build());
         }
+        int afterSystem = ordered.size();
+        Msg catalog = null;
         for (int group = 1; group < 4; group++) {
             for (Msg msg : input.messages()) {
                 int position =
@@ -540,8 +555,24 @@ public final class HarnessContextBuilder implements ModelRequestPreparer {
                                                                                         .METADATA_REMINDER_KIND))
                                                 ? 3
                                                 : 2;
-                if (position == group) ordered.add(msg);
+                if (position != group) continue;
+                if (group == 2
+                        && SKILL_CATALOG.equals(
+                                msg.getMetadata().get(Msg.METADATA_REMINDER_KIND))) {
+                    catalog = msg;
+                } else {
+                    ordered.add(msg);
+                }
             }
+        }
+        if (catalog != null) {
+            // A trailing assistant message can be interpreted as a prefill.
+            int end = ordered.size();
+            ordered.add(
+                    end > 0 && ordered.get(end - 1).getRole() == MsgRole.ASSISTANT
+                            ? end
+                            : afterSystem,
+                    catalog);
         }
         return copy(input, List.copyOf(ordered));
     }

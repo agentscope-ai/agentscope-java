@@ -398,15 +398,32 @@ class ChatSessionsTest {
     }
 
     static Snapshot await(ChatSessions sessions, Predicate<Snapshot> ready) throws Exception {
-        long deadline = System.nanoTime() + Duration.ofSeconds(30).toNanos();
-        Snapshot snapshot;
+        // 120s is this file's historical starvation tier: #3726 measured one demo call starved
+        // for 56.6s while sibling modules compiled and used block(120s) here until #4154's
+        // rewrite removed that helper; stuck-RUNNING turns also burned the former 30s budget at
+        // 40.8s/46.4s elapsed on windows-latest -T1C runs (#4233, #4182). Happy path still
+        // returns as soon as the predicate holds.
+        long deadline = System.nanoTime() + Duration.ofSeconds(120).toNanos();
+        Snapshot snapshot = null;
+        DurableException storeFailure = null;
         do {
-            snapshot = sessions.snapshot("conversation");
-            if (ready.test(snapshot)) return snapshot;
-            if (snapshot.turns().stream().anyMatch(t -> t.status() == TurnStatus.FAILED))
-                throw new AssertionError(DurableJson.value(snapshot.turns()).toString());
+            try {
+                snapshot = sessions.snapshot("conversation");
+                storeFailure = null;
+                if (ready.test(snapshot)) return snapshot;
+                if (snapshot.turns().stream().anyMatch(t -> t.status() == TurnStatus.FAILED))
+                    throw new AssertionError(DurableJson.value(snapshot.turns()).toString());
+            } catch (DurableException contention) {
+                // Each snapshot poll opens a writing sqlite transaction, so under -T1C it can
+                // lose a lock race with the runtime's own writes and surface as UNAVAILABLE
+                // (#4268, #4163: "Durable database transaction failed" from JdbcRecordStore).
+                // Retry within the deadline; a persistent failure rethrows below.
+                if (contention.code() != DurableException.Code.UNAVAILABLE) throw contention;
+                storeFailure = contention;
+            }
             Thread.sleep(30);
         } while (System.nanoTime() < deadline);
+        if (storeFailure != null) throw storeFailure;
         throw new AssertionError("Timed out: " + snapshot.turns());
     }
 }
