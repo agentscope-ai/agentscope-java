@@ -74,12 +74,15 @@ public abstract class BaseReActAgentRunner implements AgentRunner {
             throw new IllegalStateException("Agent already exists for taskId: " + taskId);
         }
         try {
+            // Release before downstream sees the end; a client may resume the task from there.
+            Runnable release =
+                    () -> {
+                        agentCache.remove(taskId, task);
+                        task.release();
+                    };
             return agent.streamEvents(requestMessages, task.context)
-                    .doFinally(
-                            signal -> {
-                                agentCache.remove(taskId, task);
-                                task.release();
-                            });
+                    .doOnTerminate(release)
+                    .doOnCancel(release);
         } catch (RuntimeException | Error e) {
             agentCache.remove(taskId, task);
             task.release();
