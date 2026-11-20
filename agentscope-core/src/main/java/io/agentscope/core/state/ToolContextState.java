@@ -223,7 +223,9 @@ public final class ToolContextState {
 
     @JsonProperty("spawn_registry")
     public Map<String, SpawnEntry> getSpawnRegistry() {
-        return Map.copyOf(spawnRegistry);
+        synchronized (spawnRegistry) {
+            return Map.copyOf(spawnRegistry);
+        }
     }
 
     /**
@@ -234,7 +236,9 @@ public final class ToolContextState {
      */
     public void putSpawnEntry(String key, SpawnEntry entry) {
         if (key != null && entry != null) {
-            this.spawnRegistry.put(key, entry);
+            synchronized (spawnRegistry) {
+                this.spawnRegistry.put(key, entry);
+            }
         }
     }
 
@@ -243,7 +247,9 @@ public final class ToolContextState {
      */
     public void removeSpawnEntry(String key) {
         if (key != null) {
-            this.spawnRegistry.remove(key);
+            synchronized (spawnRegistry) {
+                this.spawnRegistry.remove(key);
+            }
         }
     }
 
@@ -257,7 +263,13 @@ public final class ToolContextState {
             @JsonProperty("agent_id") String agentId,
             @JsonProperty("session_id") String sessionId,
             @JsonProperty("label") String label,
-            @JsonProperty("depth") int depth) {
+            @JsonProperty("depth") int depth,
+            @JsonProperty("reusable") boolean reusable) {
+
+        /** Pre-2.x entries had no reusable flag and retained the agent for follow-up sends. */
+        public SpawnEntry(String key, String agentId, String sessionId, String label, int depth) {
+            this(key, agentId, sessionId, label, depth, true);
+        }
 
         @JsonCreator
         public SpawnEntry(
@@ -265,12 +277,9 @@ public final class ToolContextState {
                 @JsonProperty("agent_id") String agentId,
                 @JsonProperty("session_id") String sessionId,
                 @JsonProperty("label") String label,
-                @JsonProperty("depth") int depth) {
-            this.key = key;
-            this.agentId = agentId;
-            this.sessionId = sessionId;
-            this.label = label;
-            this.depth = depth;
+                @JsonProperty("depth") int depth,
+                @JsonProperty("reusable") Boolean reusable) {
+            this(key, agentId, sessionId, label, depth, reusable == null || reusable);
         }
     }
 

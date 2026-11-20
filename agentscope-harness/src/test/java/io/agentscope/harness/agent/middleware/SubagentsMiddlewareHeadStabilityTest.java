@@ -245,6 +245,16 @@ class SubagentsMiddlewareHeadStabilityTest {
                 "the guidance section must stay catalog-free");
     }
 
+    @Test
+    void guidanceAdvertisesReleaseOnlyInDefaultMode() {
+        String defaultGuidance = SubagentsMiddleware.renderSubagentSection(List.of(), false);
+        String sessionGuidance = SubagentsMiddleware.renderSubagentSection(List.of(), true);
+
+        assertTrue(defaultGuidance.contains("`agent_release`"));
+        assertFalse(sessionGuidance.contains("agent_release"));
+        assertFalse(sessionGuidance.contains("sessions_release"));
+    }
+
     private static Object kindOf(Msg msg) {
         return msg.getMetadata() != null ? msg.getMetadata().get(Msg.METADATA_REMINDER_KIND) : null;
     }

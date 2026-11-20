@@ -16,6 +16,7 @@
 package io.agentscope.core.state;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -209,6 +210,7 @@ class ToolContextStateTest {
         assertEquals("sub-abc", got.sessionId());
         assertEquals("researcher", got.label());
         assertEquals(1, got.depth());
+        assertTrue(got.reusable());
     }
 
     @Test
@@ -261,12 +263,29 @@ class ToolContextStateTest {
         assertEquals("sub-abc", e1.sessionId());
         assertEquals("researcher", e1.label());
         assertEquals(1, e1.depth());
+        assertTrue(e1.reusable());
 
         ToolContextState.SpawnEntry e2 = registry.get("agent:coder:def");
         assertNotNull(e2);
         assertEquals("coder", e2.agentId());
         assertNull(e2.label());
         assertEquals(2, e2.depth());
+        assertTrue(e2.reusable());
+    }
+
+    @Test
+    void legacySpawnEntryWithoutReusableDefaultsToReusable() {
+        String legacyJson =
+                "{\"max_cache_files\":100,\"max_cache_bytes\":25000.0,\"activated_groups\":[],"
+                        + "\"spawn_registry\":{\"agent:gp:abc\":{\"key\":\"agent:gp:abc\","
+                        + "\"agent_id\":\"general-purpose\",\"session_id\":\"sub-abc\","
+                        + "\"label\":\"researcher\",\"depth\":1}}}";
+        ToolContextState restored =
+                JsonUtils.getJsonCodec().fromJson(legacyJson, ToolContextState.class);
+
+        ToolContextState.SpawnEntry entry = restored.getSpawnRegistry().get("agent:gp:abc");
+        assertNotNull(entry);
+        assertTrue(entry.reusable());
     }
 
     @Test
@@ -278,5 +297,18 @@ class ToolContextStateTest {
         assertNotNull(restored);
         assertNotNull(restored.getSpawnRegistry());
         assertTrue(restored.getSpawnRegistry().isEmpty());
+    }
+
+    @Test
+    void spawnEntryReusableFalseRoundTrips() {
+        ToolContextState.SpawnEntry entry =
+                new ToolContextState.SpawnEntry(
+                        "agent:gp:abc", "general-purpose", "sub-abc", null, 1, false);
+        String json = JsonUtils.getJsonCodec().toJson(entry);
+
+        ToolContextState.SpawnEntry restored =
+                JsonUtils.getJsonCodec().fromJson(json, ToolContextState.SpawnEntry.class);
+
+        assertFalse(restored.reusable());
     }
 }
