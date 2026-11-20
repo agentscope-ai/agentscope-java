@@ -340,6 +340,7 @@ final class HarnessAgentBuilderSupport {
         final boolean capturedDisableShellTool = b.disableShellTool;
         final boolean capturedDisableMemoryTools = b.disableMemoryTools;
         final boolean capturedDisableMemoryHooks = b.disableMemoryHooks;
+        final boolean capturedProgressiveToolLoading = b.progressiveToolLoading;
         final var capturedWebHttpClient = b.webHttpClient;
         final boolean capturedDisableWorkspaceContext = b.disableWorkspaceContext;
         final boolean capturedPlanModeEnabled = b.planModeEnabled;
@@ -397,6 +398,7 @@ final class HarnessAgentBuilderSupport {
             if (capturedDisableShellTool) sub.disableShellTool();
             if (capturedDisableMemoryTools) sub.disableMemoryTools();
             if (capturedDisableMemoryHooks) sub.disableMemoryHooks();
+            if (capturedProgressiveToolLoading) sub.enableProgressiveToolLoading();
             if (capturedWebHttpClient != null) sub.webHttpClient(capturedWebHttpClient);
             if (capturedDisableWorkspaceContext) sub.disableWorkspaceContext();
             configurePlanMode(
@@ -464,6 +466,7 @@ final class HarnessAgentBuilderSupport {
         final boolean capturedDisableShellTool = b.disableShellTool;
         final boolean capturedDisableMemoryTools = b.disableMemoryTools;
         final boolean capturedDisableMemoryHooks = b.disableMemoryHooks;
+        final boolean capturedProgressiveToolLoading = b.progressiveToolLoading;
         final var capturedWebHttpClient = b.webHttpClient;
         final boolean capturedPlanModeEnabled = b.planModeEnabled;
         final boolean capturedPlanModeAllowShell = b.planModeAllowShell;
@@ -583,6 +586,7 @@ final class HarnessAgentBuilderSupport {
             if (capturedDisableShellTool) sub.disableShellTool();
             if (capturedDisableMemoryTools) sub.disableMemoryTools();
             if (capturedDisableMemoryHooks) sub.disableMemoryHooks();
+            if (capturedProgressiveToolLoading) sub.enableProgressiveToolLoading();
             if (capturedWebHttpClient != null) sub.webHttpClient(capturedWebHttpClient);
             configurePlanMode(
                     sub, capturedPlanModeEnabled, capturedPlanModeAllowShell, capturedPlanFileDir);
