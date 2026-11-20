@@ -469,7 +469,7 @@ workspace/
 
 ### Skills
 
-`DynamicSkillMiddleware` merges skills from the repository list before each reasoning turn and renders them into the system prompt. Skill file loading goes through the `AbstractFilesystem` interface, so it works transparently across all three modes:
+Harness renders the visible repository skills as a request-only `<available_skills>` block. Skill file loading goes through the `AbstractFilesystem` interface in all three modes:
 
 | Mode | How skills load |
 |------|----------------|

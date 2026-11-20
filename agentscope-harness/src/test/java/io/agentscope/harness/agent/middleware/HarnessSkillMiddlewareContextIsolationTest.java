@@ -77,8 +77,7 @@ class HarnessSkillMiddlewareContextIsolationTest {
 
         String prompt = middleware.onSystemPrompt(null, alice, "").block();
 
-        // The system prompt stays untouched: the skills block rides a tail runtime material so
-        // the head keeps byte-stable across catalog changes.
+        // The context builder receives the catalog separately from system instructions.
         assertEquals("", prompt);
         WorkspaceContextMaterials materials = alice.get(WorkspaceContextMaterials.class);
         assertNotNull(materials);
@@ -172,11 +171,11 @@ class HarnessSkillMiddlewareContextIsolationTest {
                         .block();
 
         assertTrue(manifests.get(0).transforms().contains("history_compaction"));
+        Msg catalog = prepared.messages().get(0);
+        assertEquals(MsgRole.USER, catalog.getRole());
         assertTrue(
-                prepared.messages().stream()
-                        .anyMatch(
-                                msg -> msg.getTextContent().contains("Alice private description")),
-                "the first request after compaction must still advertise the available skill");
+                catalog.getTextContent().contains("Alice private description"),
+                "the first request after compaction should start with the catalog before history");
     }
 
     private void writeSkill(String tenant, String name, String description, String body)

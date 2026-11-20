@@ -85,4 +85,4 @@ To insert custom behaviour without bypassing Harness's plumbing:
 
 ## Final model input construction
 
-Harness organizes System, conversation, task state and references at the final model-call boundary. Supply dynamic business information through contextSource. See [Context management](/dev/en/docs/harness/context) for configuration, defaults and limits.
+Harness organizes System instructions, the skill catalog, conversation, transient state, and references at the final model-call boundary. Supply dynamic business information through `contextSource`. See [Context management](/dev/en/docs/harness/context) for configuration, defaults and limits.
