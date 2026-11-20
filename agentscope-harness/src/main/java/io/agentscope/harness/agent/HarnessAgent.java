@@ -83,6 +83,7 @@ import io.agentscope.harness.agent.filesystem.spec.SandboxFilesystemSpec;
 import io.agentscope.harness.agent.gateway.HarnessGateway;
 import io.agentscope.harness.agent.gateway.SubagentGatewayBridge;
 import io.agentscope.harness.agent.gateway.channel.Channel;
+import io.agentscope.harness.agent.gateway.channel.OutboundAddress;
 import io.agentscope.harness.agent.journal.WorkspaceThreadJournalStore;
 import io.agentscope.harness.agent.memory.MemoryConfig;
 import io.agentscope.harness.agent.memory.MemoryConsolidator;
@@ -533,7 +534,11 @@ public class HarnessAgent implements Agent, AutoCloseable {
             // race with resource cleanup (e.g., temp workspace deletion in tests).
             io.agentscope.harness.agent.memory.MemoryBackgroundTasks.awaitQuiescence(
                     5, java.util.concurrent.TimeUnit.SECONDS);
-            shutdownTaskRepository();
+            try {
+                shutdownTaskRepository();
+            } finally {
+                closeOwnedAgentSpawnTool();
+            }
         } finally {
             try {
                 if (ownedWorkspaceIndex != null) {
@@ -555,6 +560,14 @@ public class HarnessAgent implements Agent, AutoCloseable {
         }
         if (taskRepo != null) {
             taskRepo.shutdown();
+        }
+    }
+
+    private void closeOwnedAgentSpawnTool() {
+        if (subagentMiddleware instanceof SubagentsMiddleware sm) {
+            sm.closeOwnedAgentSpawnTool();
+        } else if (subagentMiddleware instanceof DynamicSubagentsMiddleware dsm) {
+            dsm.closeOwnedAgentSpawnTool();
         }
     }
 
@@ -749,9 +762,21 @@ public class HarnessAgent implements Agent, AutoCloseable {
         gw.bindMainAgent(this);
 
         SubagentGatewayBridge bridge =
-                (agentId, sessionId, agent, replyTo) -> {
-                    String subagentId = gw.exposeSubagent(agentId, sessionId, agent, replyTo);
-                    return new SubagentGatewayBridge.ExposeResult(subagentId);
+                new SubagentGatewayBridge() {
+                    @Override
+                    public ExposeResult expose(
+                            String agentId,
+                            String sessionId,
+                            Agent agent,
+                            OutboundAddress replyTo) {
+                        String subagentId = gw.exposeSubagent(agentId, sessionId, agent, replyTo);
+                        return new ExposeResult(subagentId);
+                    }
+
+                    @Override
+                    public boolean revokeBySessionId(String sessionId) {
+                        return gw.revokeSubagentsBySession(sessionId);
+                    }
                 };
         io.agentscope.harness.agent.subagent.DefaultAgentManager agentManager = null;
         if (subagentMiddleware instanceof SubagentsMiddleware sm) {
