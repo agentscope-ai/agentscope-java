@@ -143,7 +143,7 @@ Use [Durable](/dev/en/docs/harness/durable) when work must continue after page c
 
 For background work, the application session manager or task worker owns the Agent until its work stops or the application shuts down. Do not close it when the submission HTTP request returns: its lifetime covers background execution, not just admission.
 
-Continue with [Session operations, events and recovery](/dev/en/docs/harness/session-log), or run the [recoverable chat example](/v2/en/blogs/best-practices/session-chat).
+Continue with [Session operations, events and recovery](/dev/en/docs/harness/session-log), or run the [recoverable chat example](/dev/en/blogs/best-practices/session-chat).
 
 ## Next steps
 

@@ -105,6 +105,8 @@ public class SubagentsMiddleware implements HarnessRuntimeMiddleware {
             subagent keeps its own history across follow-up sends; remote backends may start a new
             conversation for each send. Session persistence and later resumption depend on the
             declaration (`persistSession`) and the backend, so don't rely on resuming it later.
+            Spawned subagents remain retained and addressable until explicitly released or until
+            the parent agent shuts down.
 
             ### Agent Tools
 
@@ -121,7 +123,9 @@ public class SubagentsMiddleware implements HarnessRuntimeMiddleware {
             - `message` (required): content to send
             - `timeout_seconds`: 0=fire-and-forget, >0=wait for reply (default: 30)
 
-            **`%s`** — List active subagents
+            **`%s`** — List retained, addressable subagents
+
+            %s
 
             ### Task Tools (for async/background operations)
 
@@ -172,7 +176,9 @@ public class SubagentsMiddleware implements HarnessRuntimeMiddleware {
             - **Parallel sync delegation**: Multiple sync `agent_spawn` / `agent_send` calls in one turn run concurrently by default (Toolkit parallel=true); the parent waits for that batch of tool results before continuing. Pass a Toolkit with parallel=false to opt out.
             - **Mixed short/long work**: Wait for short prerequisite tasks first, continue reasoning with those results, and merge long-running async results later through `task_output` or `wait_async_results`
             - **Sync delegation**: Use default timeout for simple one-shot delegation when one result is needed before the next reasoning step
-            - **Persistent session**: Spawn without a task, then use send for multi-turn interaction with the live subagent
+            - **Persistent session**: Spawn without a task, then use send for multi-turn
+              interaction with the live subagent
+            %s
             - **Cancel stale work**: Use task_cancel to stop background tasks that are no longer needed
             - Subagent results are NOT visible to the user — always summarize them in your response
             """;
@@ -180,6 +186,7 @@ public class SubagentsMiddleware implements HarnessRuntimeMiddleware {
 
     private final List<SubagentEntry> baseEntries;
     private volatile Object subagentTool;
+    private volatile AgentSpawnTool ownedAgentSpawnTool;
     private final TaskTool taskTool;
     private final TaskRepository taskRepository;
     private final boolean isSessionMode;
@@ -217,7 +224,9 @@ public class SubagentsMiddleware implements HarnessRuntimeMiddleware {
         this.workspaceManager = workspaceManager;
         java.util.Objects.requireNonNull(taskRepository, "taskRepository");
         this.taskRepository = taskRepository;
-        this.subagentTool = new AgentSpawnTool(dam, taskRepository, 0);
+        AgentSpawnTool spawnTool = new AgentSpawnTool(dam, taskRepository, 0);
+        this.subagentTool = spawnTool;
+        this.ownedAgentSpawnTool = spawnTool;
         this.taskTool = new TaskTool(taskRepository);
         this.filesystem = filesystem;
         this.mainWorkspace = mainWorkspace;
@@ -246,6 +255,7 @@ public class SubagentsMiddleware implements HarnessRuntimeMiddleware {
         this.agentManager = null;
         this.workspaceManager = null;
         this.subagentTool = externalSubagentTool;
+        this.ownedAgentSpawnTool = null;
         java.util.Objects.requireNonNull(taskRepository, "taskRepository");
         this.taskRepository = taskRepository;
         this.taskTool = new TaskTool(taskRepository);
@@ -368,9 +378,20 @@ public class SubagentsMiddleware implements HarnessRuntimeMiddleware {
         if (this.subagentTool instanceof AgentSpawnTool ast) {
             ast.setGatewayBridge(bridge);
         } else {
-            this.subagentTool = new AgentSpawnTool(agentManager, taskRepository, 0, bridge);
+            AgentSpawnTool spawnTool = new AgentSpawnTool(agentManager, taskRepository, 0, bridge);
+            this.subagentTool = spawnTool;
+            this.ownedAgentSpawnTool = spawnTool;
         }
         return this;
+    }
+
+    /** Closes the internally-created spawn tool without touching an injected external tool. */
+    public synchronized void closeOwnedAgentSpawnTool() {
+        AgentSpawnTool spawnTool = ownedAgentSpawnTool;
+        if (spawnTool != null) {
+            ownedAgentSpawnTool = null;
+            spawnTool.close();
+        }
     }
 
     /**
@@ -664,7 +685,28 @@ public class SubagentsMiddleware implements HarnessRuntimeMiddleware {
         String spawnName = isSessionMode ? "sessions_spawn" : "agent_spawn";
         String sendName = isSessionMode ? "sessions_send" : "agent_send";
         String listName = isSessionMode ? "sessions_list" : "agent_list";
-        return String.format(SUBAGENT_SECTION_TEMPLATE, spawnName, sendName, listName);
+        String releaseSection =
+                isSessionMode
+                        ? ""
+                        : """
+                        **`agent_release`** — Release a retained subagent that is no longer needed
+                        - `agent_key`: copy the full opaque handle returned by `agent_spawn`
+                        - Release is rejected while the subagent has running work; wait for or cancel that work, then retry
+                        - Success invalidates the `agent_key` and revokes any user-addressable Gateway handle
+                        """;
+        String releaseUsage =
+                isSessionMode
+                        ? ""
+                        : "- **Release retained agents**: Once a subagent is no longer needed and"
+                                + " has no running work, call `agent_release`; a successful release"
+                                + " permanently invalidates its `agent_key`";
+        return String.format(
+                SUBAGENT_SECTION_TEMPLATE,
+                spawnName,
+                sendName,
+                listName,
+                releaseSection,
+                releaseUsage);
     }
 
     /**

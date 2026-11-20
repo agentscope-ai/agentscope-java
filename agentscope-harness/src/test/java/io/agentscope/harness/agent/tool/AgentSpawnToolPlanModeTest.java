@@ -58,6 +58,7 @@ class AgentSpawnToolPlanModeTest {
                         fixture.parentState(),
                         "worker",
                         null,
+                        true,
                         "persistent-worker",
                         null,
                         null)
@@ -79,6 +80,7 @@ class AgentSpawnToolPlanModeTest {
                         fixture.parentState(),
                         "worker",
                         null,
+                        true,
                         "persistent-worker",
                         null,
                         null)
@@ -101,6 +103,7 @@ class AgentSpawnToolPlanModeTest {
                                         fixture.parentState(),
                                         "worker",
                                         null,
+                                        true,
                                         "persistent-worker",
                                         null,
                                         null)

@@ -2060,6 +2060,13 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
     /**
      * Remove structured-output-related messages from the conversation context and append
      * the final response.
+     *
+     * <p>A model may emit a business tool call and the synthetic {@code generate_response} call in
+     * the same assistant message. Dropping such a message wholesale would delete the business
+     * {@link ToolUseBlock} while its {@link ToolResultBlock} stays in the context, breaking the
+     * tool-use/result pairing that providers require. Mixed messages are therefore rebuilt with
+     * only the internal structured-output blocks removed. Pure structured-output messages keep
+     * the original whole-message removal.
      */
     private void compressStructuredOutputContext(AgentState agentState) {
         List<Msg> contextMutable = agentState.contextMutable();

@@ -46,7 +46,7 @@ var events = journal.readAfter(0, 100);
 
 读取不认领 writer，不修复状态，也不启动模型。Harness 也提供 `threadTranscript(ctx)` 和 `inspectThread(ctx)`。原生查询与存储 SPI 是阻塞接口，WebFlux 应将它们调度到适当的阻塞工作线程，不占用网络事件线程。
 
-`ThreadHistory.Transcript` 包含完整消息和 `asOfSeq`，不是包含任务控制、流式片段和工具进度的公共页面快照。Durable 应用通过 Session/Thread/Turn 的 `snapshot()`、`history()` 和事件接口恢复页面；不要由业务层解析原生日志来推断 Turn 状态。可运行示例见[可恢复聊天](/v2/zh/blogs/best-practices/session-chat)。
+`ThreadHistory.Transcript` 包含完整消息和 `asOfSeq`，不是包含任务控制、流式片段和工具进度的公共页面快照。Durable 应用通过 Session/Thread/Turn 的 `snapshot()`、`history()` 和事件接口恢复页面；不要由业务层解析原生日志来推断 Turn 状态。可运行示例见[可恢复聊天](/dev/zh/blogs/best-practices/session-chat)。
 
 ## 事件结构与读取
 
@@ -80,6 +80,8 @@ var events = journal.readAfter(0, 100);
 ## 存储位置与后端配置
 
 Harness 默认使用 `WorkspaceThreadJournalStore`，跟随 Workspace Filesystem 的作用域。POSIX 本地实现使用 `.agentscope-runtime/` 中的原子文件提交；Windows 使用该目录中的 `journal.sqlite3`。远程实现复用 BaseStore 保留分区。不要手工修改内部文件或键。
+
+使用 `RemoteFilesystemSpec` 时，原生 Thread 日志写入远程 `sessions` 后端，并遵循配置的隔离范围。自行装配 `CompositeFilesystem` 时，可通过构造器的第三个参数显式指定日志后端，文件路径路由仍独立工作。已有的本地 journal 不会自动迁移。
 
 可以通过 `.threadJournalStore(store)` 指定实现。自定义后端实现 `ThreadJournalStore`；已有原子存储可实现 `AtomicJournalStorage` 并复用 `AtomicThreadJournal`。必须保持 CAS、writer fencing、提交顺序、幂等批次和导出游标。Filesystem 通过 `journalStorage(context)` 提供此能力，普通文件读写不足以实现原子日志。
 

@@ -59,6 +59,14 @@ public final class InMemorySubagentRegistry implements SubagentRegistry {
     }
 
     @Override
+    public boolean revokeBySessionId(String sessionId) {
+        if (sessionId == null) {
+            return false;
+        }
+        return records.values().removeIf(r -> sessionId.equals(r.sessionId()));
+    }
+
+    @Override
     public void revokeByParentSession(String parentSessionId) {
         if (parentSessionId == null) {
             return;
