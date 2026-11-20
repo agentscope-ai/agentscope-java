@@ -20,6 +20,7 @@ import io.agentscope.harness.agent.filesystem.local.LocalFilesystem;
 import io.agentscope.harness.agent.filesystem.local.LocalFilesystemWithShell;
 import io.agentscope.harness.agent.filesystem.model.EditResult;
 import io.agentscope.harness.agent.filesystem.model.FileDownloadResponse;
+import io.agentscope.harness.agent.filesystem.model.FileInfo;
 import io.agentscope.harness.agent.filesystem.model.FileUploadResponse;
 import io.agentscope.harness.agent.filesystem.model.GlobResult;
 import io.agentscope.harness.agent.filesystem.model.GrepResult;
@@ -28,6 +29,7 @@ import io.agentscope.harness.agent.filesystem.model.ReadResult;
 import io.agentscope.harness.agent.filesystem.model.WriteResult;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 /**
  * Abstract filesystem API for agents: list, read, write, edit, grep, glob, upload, download.
@@ -173,6 +175,20 @@ public interface AbstractFilesystem {
      * @return {@code true} if the path exists, {@code false} otherwise
      */
     boolean exists(RuntimeContext runtimeContext, String path);
+
+    /**
+     * Metadata for one existing path: size, directory flag and modification time.
+     *
+     * <p>Layers that only stream bytes can let the default answer empty, which callers treat as
+     * "this layer has no opinion" rather than "the path is absent".
+     *
+     * @param runtimeContext per-call agent runtime; {@link RuntimeContext#empty()} when none
+     * @param path path to describe, in the same spelling {@link #ls} accepts
+     * @return metadata, or empty when the layer has no such path or cannot report it
+     */
+    default Optional<FileInfo> stat(RuntimeContext runtimeContext, String path) {
+        return Optional.empty();
+    }
 
     // ==================== Path validation utility ====================
 
