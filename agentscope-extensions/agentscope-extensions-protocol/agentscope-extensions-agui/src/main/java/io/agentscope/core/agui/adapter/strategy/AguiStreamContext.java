@@ -132,7 +132,8 @@ public class AguiStreamContext {
     }
 
     public void startTextMessage(String messageId) {
-        if (startedTextMessages.add(messageId)) {
+        boolean reopening = endedTextMessages.remove(messageId);
+        if (reopening || startedTextMessages.add(messageId)) {
             emit(new AguiEvent.TextMessageStart(threadId, runId, messageId, "assistant"));
         }
         currentTextMessageId = messageId;
