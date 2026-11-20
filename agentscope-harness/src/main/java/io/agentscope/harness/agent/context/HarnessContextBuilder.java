@@ -164,6 +164,9 @@ public final class HarnessContextBuilder implements ModelRequestPreparer {
 
     private Mono<ModelCallInput> compile(
             Agent agent, RuntimeContext rc, ModelCallInput input, String callId, Purpose purpose) {
+        if (policy.estimator() instanceof CalibratedTokenEstimator calibrated) {
+            calibrated.calibrateFromHistory(input.messages());
+        }
         AgentState state = RuntimeContext.resolveAgentState(rc, agent);
         List<Msg> original = state == null ? List.of() : List.copyOf(state.contextMutable());
         ProjectionSnapshot snapshot =
@@ -390,6 +393,10 @@ public final class HarnessContextBuilder implements ModelRequestPreparer {
                                     transforms,
                                     validation);
                     rc.put(ModelRequestPreparer.MANIFEST_ATTRIBUTE_PREFIX + callId, manifest);
+                    if (validationError == null
+                            && policy.estimator() instanceof CalibratedTokenEstimator calibrated) {
+                        calibrated.recordPreparedRequest(prepared);
+                    }
                     if (validationError != null) throw validationError;
                     // Agent calls serialize access to state. Recheck the snapshot after
                     // asynchronous work;
@@ -666,7 +673,7 @@ public final class HarnessContextBuilder implements ModelRequestPreparer {
                 : text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;");
     }
 
-    private static String hash(String text) {
+    static String hash(String text) {
         try {
             return HexFormat.of()
                     .formatHex(

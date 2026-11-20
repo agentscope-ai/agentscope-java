@@ -5742,6 +5742,11 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         AtomicReference<Model> activeModel = new AtomicReference<>(callModel);
         return new RecordedModels.ManagedModel() {
             @Override
+            public Model modelIdentity() {
+                return activeModel.get();
+            }
+
+            @Override
             public Flux<ChatResponse> stream(
                     List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
                 // Route synchronous model setup failures through the same first-signal fallback.
