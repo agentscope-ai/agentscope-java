@@ -22,8 +22,8 @@ import io.agentscope.core.agui.model.RunAgentInput;
  *
  * <p>The message keeps the {@link RunAgentInput} that a client submits to the regular run endpoint.
  * A queued message carries the body as accepted; a claimed message carries a copy whose run id was
- * minted for the replay. Whether a message is still waiting or was delivered is tracked by the
- * queue ledger, so the message itself is immutable.
+ * minted for the replay. Whether a message is still waiting, was delivered, or was withdrawn is
+ * tracked by the queue ledger, so the message itself is immutable.
  */
 public final class QueuedMessage {
 
@@ -32,7 +32,9 @@ public final class QueuedMessage {
         /** Waiting in the queue. */
         QUEUED,
         /** Claimed by a client and removed from the queue. */
-        CLAIMED
+        CLAIMED,
+        /** Withdrawn by a client before it was claimed; the id stays protected while retained. */
+        WITHDRAWN
     }
 
     private final String messageId;

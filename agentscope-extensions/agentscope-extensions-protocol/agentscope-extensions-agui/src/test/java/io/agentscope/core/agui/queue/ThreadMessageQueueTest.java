@@ -127,6 +127,83 @@ class ThreadMessageQueueTest {
     }
 
     @Test
+    void shouldKeepTheIdentifierProtectedAfterWithdraw() {
+        ThreadMessageQueue queue = new ThreadMessageQueue(16, 64);
+        RunAgentInput input = input("t1", "r1", "m1", "a");
+        queue.offer("m1", input);
+
+        assertEquals(WithdrawStatus.WITHDRAWN, queue.withdraw("m1"));
+
+        // A retry that arrives after a lost withdrawal response must not enqueue the message
+        // again, or the withdrawal the user already sent would be undone. Only the trailing
+        // message is compared, so the retry may carry a different run id.
+        QueueAcceptance retry = queue.offer("m1", input("t1", "r-retry", "m1", "a"));
+        assertEquals(QueueAcceptance.Status.DUPLICATE, retry.status());
+        assertEquals("WITHDRAWN", retry.state());
+        assertEquals(-1, retry.position());
+        assertTrue(queue.claim(true).isEmpty());
+
+        // The retained identifier stays bound to the body that was withdrawn.
+        QueueAcceptance reused = queue.offer("m1", input("t1", "r2", "m1", "different"));
+        assertEquals(QueueAcceptance.Status.CONFLICT, reused.status());
+    }
+
+    @Test
+    void shouldNotEvictAQueuedIdentifierWhenWithdrawalsFillTheLedger() {
+        // A withdrawal keeps its identifier in the ledger. When the ledger is full, the oldest
+        // entry is evicted, but never one that is still queued: that would let the retry in
+        // under a new body instead of rejecting it as a conflict.
+        ThreadMessageQueue queue = new ThreadMessageQueue(2, 2);
+        RunAgentInput waiting = input("t1", "r1", "m1", "a");
+        queue.offer("m1", waiting);
+        queue.offer("m2", input("t1", "r2", "m2", "b"));
+        assertEquals(WithdrawStatus.WITHDRAWN, queue.withdraw("m2"));
+
+        queue.offer("m3", input("t1", "r3", "m3", "c"));
+
+        // The withdrawn id was the only entry that could be evicted, so the ledger no longer
+        // protects it: reusing the id is not a conflict, and the queue is full anyway.
+        assertEquals(
+                QueueAcceptance.Status.FULL,
+                queue.offer("m2", input("t1", "r5", "m2", "changed")).status());
+        assertEquals(QueueAcceptance.Status.DUPLICATE, queue.offer("m1", waiting).status());
+        assertEquals(
+                QueueAcceptance.Status.CONFLICT,
+                queue.offer("m1", input("t1", "r4", "m1", "different")).status());
+    }
+
+    @Test
+    void shouldCompareOnlyTheTrailingMessageForDuplicates() {
+        ThreadMessageQueue queue = new ThreadMessageQueue(16, 64);
+        queue.offer(
+                "m1",
+                RunAgentInput.builder()
+                        .threadId("t1")
+                        .runId("r1")
+                        .messages(
+                                List.of(
+                                        AguiMessage.userMessage("m0", "earlier"),
+                                        AguiMessage.userMessage("m1", "a")))
+                        .build());
+
+        // Everything but the trailing message may differ and still count as a retry.
+        QueueAcceptance retry =
+                queue.offer(
+                        "m1",
+                        RunAgentInput.builder()
+                                .threadId("t1")
+                                .runId("r2")
+                                .messages(
+                                        List.of(
+                                                AguiMessage.userMessage("m0b", "changed"),
+                                                AguiMessage.userMessage("m1", "a")))
+                                .build());
+
+        assertEquals(QueueAcceptance.Status.DUPLICATE, retry.status());
+        assertEquals(1, retry.position());
+    }
+
+    @Test
     void shouldReportAlreadyClaimedOnWithdraw() {
         ThreadMessageQueue queue = new ThreadMessageQueue(16, 64);
         queue.offer("m1", input("t1", "r1", "m1", "a"));

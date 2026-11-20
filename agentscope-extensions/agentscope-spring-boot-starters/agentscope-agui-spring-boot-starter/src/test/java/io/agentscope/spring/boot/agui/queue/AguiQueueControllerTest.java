@@ -507,20 +507,23 @@ class AguiQueueControllerTest {
     }
 
     @Test
-    void shouldAcceptAMessageAgainAfterItHasBeenWithdrawn() throws Exception {
+    void shouldAcknowledgeARetryAfterWithdrawAsADuplicate() throws Exception {
         mockMvc.perform(
                 post("/agui/queue/t1")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(body("t1", "m1", "hello")));
         mockMvc.perform(delete("/agui/queue/t1/m1")).andExpect(status().isNoContent());
 
-        // Withdrawing forgets the identifier, so the very same body can be submitted again.
+        // A retry that reaches the server after a lost withdrawal response is acknowledged as a
+        // duplicate of the withdrawn message instead of being queued and executed again.
         mockMvc.perform(
                         post("/agui/queue/t1")
                                 .contentType(MediaType.APPLICATION_JSON)
                                 .content(body("t1", "m1", "hello")))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.status").value("ACCEPTED"));
+                .andExpect(jsonPath("$.status").value("DUPLICATE"))
+                .andExpect(jsonPath("$.state").value("WITHDRAWN"))
+                .andExpect(jsonPath("$.position").value(-1));
     }
 
     @Test

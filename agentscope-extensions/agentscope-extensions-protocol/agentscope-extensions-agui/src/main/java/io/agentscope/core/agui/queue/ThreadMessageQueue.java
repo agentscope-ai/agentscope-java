@@ -128,7 +128,7 @@ public final class ThreadMessageQueue {
      * @param idle whether the thread currently has no active run and no unresolved interrupt
      * @return the claimed message, or empty when nothing can be claimed
      */
-    public synchronized Optional<QueuedMessage> claim(boolean idle) {
+    synchronized Optional<QueuedMessage> claim(boolean idle) {
         return claim(idle, System.currentTimeMillis());
     }
 
@@ -143,7 +143,7 @@ public final class ThreadMessageQueue {
      * @param observedAtMillis when {@code idle} was determined, in epoch milliseconds
      * @return the claimed message, or empty when nothing can be claimed
      */
-    public synchronized Optional<QueuedMessage> claim(boolean idle, long observedAtMillis) {
+    synchronized Optional<QueuedMessage> claim(boolean idle, long observedAtMillis) {
         return claim(idle, observedAtMillis, null);
     }
 
@@ -215,9 +215,11 @@ public final class ThreadMessageQueue {
     /**
      * Withdraws a queued message.
      *
-     * <p>Withdrawing a message that is still queued forgets it entirely, including its
-     * deduplication entry, so the same identifier may be submitted again later. A message that was
-     * already claimed is consumed and can no longer be withdrawn.
+     * <p>The identifier stays in the ledger as {@link QueuedMessage.State#WITHDRAWN} for the
+     * retention window, so a retry of the original submission that arrives after the withdrawal
+     * response was lost is acknowledged as a duplicate instead of being queued and executed again.
+     * The same identifier with a different trailing message is rejected while it is retained. A
+     * message that was already claimed is consumed and can no longer be withdrawn.
      *
      * @param messageId the message identifier
      * @return the withdraw outcome
@@ -225,7 +227,10 @@ public final class ThreadMessageQueue {
     public synchronized WithdrawStatus withdraw(String messageId) {
         QueuedMessage message = pending.remove(messageId);
         if (message != null) {
-            ledger.remove(messageId);
+            remember(
+                    messageId,
+                    trailingMessage(message.getInput().getMessages()),
+                    QueuedMessage.State.WITHDRAWN);
             return WithdrawStatus.WITHDRAWN;
         }
         LedgerEntry entry = ledger.get(messageId);
@@ -267,9 +272,19 @@ public final class ThreadMessageQueue {
             String messageId, AguiMessage trailingMessage, QueuedMessage.State state) {
         ledger.put(messageId, new LedgerEntry(trailingMessage, state));
         while (ledger.size() > retention) {
-            Iterator<String> iterator = ledger.keySet().iterator();
-            iterator.next();
-            iterator.remove();
+            String evicted = null;
+            for (String id : ledger.keySet()) {
+                if (!pending.containsKey(id)) {
+                    evicted = id;
+                    break;
+                }
+            }
+            if (evicted == null) {
+                // Every retained identifier is still queued, so the ledger cannot exceed capacity,
+                // and capacity is never greater than retention.
+                return;
+            }
+            ledger.remove(evicted);
         }
     }
 

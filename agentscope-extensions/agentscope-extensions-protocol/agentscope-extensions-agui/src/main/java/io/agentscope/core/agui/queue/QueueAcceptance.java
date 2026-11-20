@@ -54,7 +54,8 @@ public record QueueAcceptance(Status status, String messageId, int position, Str
      * Creates an acceptance for an already known message.
      *
      * @param messageId the message identifier
-     * @param position the one-based queue position, or {@code -1} when already consumed
+     * @param position the one-based queue position, or {@code -1} when the message was already
+     *     consumed or withdrawn
      * @param state the known state
      * @return the acceptance
      */

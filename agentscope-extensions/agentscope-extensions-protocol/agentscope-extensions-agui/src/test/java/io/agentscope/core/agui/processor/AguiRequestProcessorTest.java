@@ -16,6 +16,7 @@
 package io.agentscope.core.agui.processor;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -401,6 +402,53 @@ class AguiRequestProcessorTest {
 
         assertEquals(1, adapterCount.get());
         assertResumeContractErrorLifecycle(events);
+    }
+
+    @Test
+    void threadIsNotIdleWhileAnInterruptAwaitsItsAnswer() {
+        AgentResolver resolver = mock(AgentResolver.class);
+        ReActAgent agent = mock(ReActAgent.class);
+        when(resolver.resolveAgent(eq("default"), eq("thread-1"), nullable(String.class)))
+                .thenReturn(agent);
+        when(agent.streamEvents(anyList(), any(RuntimeContext.class)))
+                .thenReturn(Flux.just(new AgentEndEvent("reply-2")));
+        AtomicInteger runCount = new AtomicInteger();
+        AguiRequestProcessor processor =
+                AguiRequestProcessor.builder()
+                        .agentResolver(resolver)
+                        .adapterFactory(
+                                (resolvedAgent, config) ->
+                                        runCount.getAndIncrement() == 0
+                                                ? new InterruptingAdapter(resolvedAgent, config)
+                                                : new AguiAgentAdapter(resolvedAgent, config))
+                        .build();
+
+        assertTrue(processor.isThreadIdle("thread-1"));
+        processor.process(request(input("run-1"))).events().collectList().block();
+
+        // The run itself is over, yet the unanswered confirmation keeps the thread from starting
+        // a new one, so no queued message may be claimed in this window.
+        assertFalse(processor.isRunActive("thread-1"));
+        assertFalse(processor.isThreadIdle("thread-1"));
+
+        processor
+                .process(
+                        request(
+                                RunAgentInput.builder()
+                                        .threadId("thread-1")
+                                        .runId("run-2")
+                                        .resume(
+                                                List.of(
+                                                        new AguiResume(
+                                                                "interrupt-from-server",
+                                                                AguiResume.STATUS_RESOLVED,
+                                                                Map.of("approved", true))))
+                                        .build()))
+                .events()
+                .collectList()
+                .block();
+
+        assertTrue(processor.isThreadIdle("thread-1"));
     }
 
     @Test

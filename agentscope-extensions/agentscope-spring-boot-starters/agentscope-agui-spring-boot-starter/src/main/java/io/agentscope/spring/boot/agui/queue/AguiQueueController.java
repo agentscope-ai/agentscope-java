@@ -158,7 +158,8 @@ public class AguiQueueController {
      *
      * @param threadId the AG-UI thread id
      * @param messageId the message identifier
-     * @return 204 when withdrawn, 404 when unknown, 409 when already claimed
+     * @return 204 when withdrawn, 404 when the id is unknown, was already withdrawn, or was
+     *     forgotten by the ledger, 409 when already claimed
      */
     @DeleteMapping("${agentscope.agui.path-prefix:/agui}/queue/{threadId}/{messageId}")
     public ResponseEntity<Void> withdraw(

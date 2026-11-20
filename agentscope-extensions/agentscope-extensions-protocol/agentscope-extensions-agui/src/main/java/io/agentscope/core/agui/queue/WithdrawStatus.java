@@ -19,7 +19,7 @@ package io.agentscope.core.agui.queue;
 public enum WithdrawStatus {
     /** The message was removed from the queue. */
     WITHDRAWN,
-    /** No such message in this queue. */
+    /** No message is waiting under this id: it is unknown, already withdrawn, or forgotten. */
     NOT_FOUND,
     /** The message was already claimed, so it can no longer be withdrawn. */
     ALREADY_CLAIMED
