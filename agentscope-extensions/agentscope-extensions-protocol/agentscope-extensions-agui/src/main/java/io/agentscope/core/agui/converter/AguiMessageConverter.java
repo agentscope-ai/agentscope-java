@@ -71,6 +71,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
+import java.util.function.BiFunction;
 import java.util.stream.Collectors;
 
 /**
@@ -170,24 +171,14 @@ public class AguiMessageConverter {
                     error = toolResultText(trb);
                 }
                 appendContent(content, toolResultText(trb));
-            } else if (block instanceof ImageBlock ib
-                    && ib.getSource() instanceof URLSource urlSource) {
-                inputContents.add(
-                        new ImageInputContent(
-                                toInputContentUrlSource(urlSource), Collections.emptyMap()));
-            } else if (block instanceof AudioBlock ab
-                    && ab.getSource() instanceof URLSource urlSource) {
-                inputContents.add(
-                        new AudioInputContent(
-                                toInputContentUrlSource(urlSource), Collections.emptyMap()));
-            } else if (block instanceof VideoBlock vb
-                    && vb.getSource() instanceof URLSource urlSource) {
-                inputContents.add(
-                        new VideoInputContent(
-                                toInputContentUrlSource(urlSource), Collections.emptyMap()));
-            } else if (block instanceof DataBlock db
-                    && db.getSource() instanceof URLSource urlSource) {
-                InputContent inputContent = dataBlockInputContent(urlSource);
+            } else if (block instanceof ImageBlock ib) {
+                addMediaInputContent(inputContents, ib.getSource(), ImageInputContent::new);
+            } else if (block instanceof AudioBlock ab) {
+                addMediaInputContent(inputContents, ab.getSource(), AudioInputContent::new);
+            } else if (block instanceof VideoBlock vb) {
+                addMediaInputContent(inputContents, vb.getSource(), VideoInputContent::new);
+            } else if (block instanceof DataBlock db) {
+                InputContent inputContent = dataBlockInputContent(db.getSource());
                 if (inputContent != null) {
                     inputContents.add(inputContent);
                 }
@@ -658,19 +649,86 @@ public class AguiMessageConverter {
         throw new IllegalStateException("Unhandled InputContentSource type: " + inputSource);
     }
 
-    private static InputContentUrlSource toInputContentUrlSource(URLSource source) {
-        return new InputContentUrlSource(source.getUrl(), source.getMimeType());
+    /**
+     * Appends an AG-UI input content for a media block source, when the source can be expressed.
+     *
+     * @param target the target input content list
+     * @param source the AgentScope media source
+     * @param factory builds the typed AG-UI input content for the block kind
+     */
+    private static void addMediaInputContent(
+            List<InputContent> target,
+            Source source,
+            BiFunction<InputContentSource, Map<String, Object>, InputContent> factory) {
+        InputContentSource inputSource = toInputContentSource(source);
+        if (inputSource != null) {
+            target.add(factory.apply(inputSource, Collections.emptyMap()));
+        }
     }
 
-    private static InputContent dataBlockInputContent(URLSource source) {
+    /**
+     * Maps an AgentScope media {@link Source} onto the AG-UI protocol source model.
+     *
+     * <p>Mapping:
+     * <ul>
+     *   <li>{@link URLSource} &rarr; {@link InputContentUrlSource} (type {@code url})</li>
+     *   <li>{@link Base64Source} &rarr; {@link InputContentDataSource} (type {@code data})</li>
+     *   <li>{@link FileIdSource} &rarr; {@link InputContentFileSource} (type {@code file}),
+     *       preserving the provider that issued the handle</li>
+     * </ul>
+     *
+     * @param source the AgentScope media source
+     * @return the AG-UI protocol source, or {@code null} when the source cannot be expressed
+     */
+    private static InputContentSource toInputContentSource(Source source) {
+        if (source instanceof URLSource url) {
+            return new InputContentUrlSource(url.getUrl(), url.getMimeType());
+        }
+        if (source instanceof Base64Source base64) {
+            return new InputContentDataSource(base64.getData(), base64.getMediaType());
+        }
+        if (source instanceof FileIdSource fileId) {
+            return new InputContentFileSource(fileId.getFileId(), fileId.getProvider(), null);
+        }
+        return null;
+    }
+
+    /**
+     * Builds the AG-UI input content for a {@link DataBlock}, routing by MIME type.
+     *
+     * <p>URL sources keep resolving the MIME type from the URL; inline data uses its declared
+     * media type; a provider file handle, whose bytes are not inspectable here, maps to the
+     * document part as the protocol's generic carrier for opaque data.
+     *
+     * @param source the data block source
+     * @return the AG-UI input content, or {@code null} when the MIME type cannot be resolved
+     */
+    private static InputContent dataBlockInputContent(Source source) {
+        if (source instanceof Base64Source base64) {
+            String mediaType = base64.getMediaType();
+            return typedDataBlockInputContent(
+                    new InputContentDataSource(base64.getData(), mediaType), mediaType);
+        }
+        if (source instanceof FileIdSource fileId) {
+            return new DocumentInputContent(
+                    new InputContentFileSource(fileId.getFileId(), fileId.getProvider(), null),
+                    Collections.emptyMap());
+        }
+        if (!(source instanceof URLSource url)) {
+            return null;
+        }
         String mimeType;
         try {
-            mimeType = MediaUtils.resolveMimeType(source);
+            mimeType = MediaUtils.resolveMimeType(url);
         } catch (IllegalArgumentException unreadableMimeType) {
             return null;
         }
+        return typedDataBlockInputContent(
+                new InputContentUrlSource(url.getUrl(), mimeType), mimeType);
+    }
 
-        InputContentUrlSource inputSource = new InputContentUrlSource(source.getUrl(), mimeType);
+    private static InputContent typedDataBlockInputContent(
+            InputContentSource inputSource, String mimeType) {
         if (mimeType.startsWith("image/")) {
             return new ImageInputContent(inputSource, Collections.emptyMap());
         }
