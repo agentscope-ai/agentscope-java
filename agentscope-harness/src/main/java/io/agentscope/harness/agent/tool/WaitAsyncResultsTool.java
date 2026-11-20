@@ -148,6 +148,7 @@ public class WaitAsyncResultsTool {
 
     @Tool(
             name = "wait_async_results",
+            timeoutManaged = true,
             description =
                     "Wait for background async tool, subagent, or teammate results. "
                             + "Prefer barrier mode: task_ids waits until those specific tasks are "
