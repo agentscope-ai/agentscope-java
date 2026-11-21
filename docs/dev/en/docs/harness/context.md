@@ -313,7 +313,7 @@ Source names start with a letter or digit and contain only letters, digits, `_`,
 
 <Accordion title="Budget and compaction defaults">
 
-Default estimation includes messages, tool schemas, and multimodal placeholders. With a known model window, the default output reservation is one eighth of the window, capped at 4,096; the safety margin is 2%, with each at least one token. A larger explicit output request reserves more space. Unknown windows use a 64,000-token input fallback. Workspace `maxContextTokens` (default 8,000) limits material preparation; it is not the final request budget.
+Default estimation includes messages, tool schemas, and multimodal placeholders. Text counts 2.5 characters per token, and CJK ideographs (U+4E00–U+9FFF) carry double weight because each typically costs close to one token. With a known model window, the default output reservation is one eighth of the window, capped at 4,096; the safety margin is 2%, with each at least one token. A larger explicit output request reserves more space. Unknown windows use a 64,000-token input fallback. Workspace `maxContextTokens` (default 8,000) limits material preparation; it is not the final request budget.
 
 Harness enables compaction and tool-result offloading by default. Use `disableCompaction()` or `disableToolResultEviction()` to disable them independently. Default compaction triggers at 50 messages or the conversation token allowance calculated from the final request. `triggerTokens(0)` selects that dynamic allowance; a positive value can lower the trigger. The dynamic tail targets 25% of the allowance, bounded to 2,000–8,000 tokens and capped at half the available conversation budget. Set `keepTokens(0)` to use `keepMessages` instead.
 
