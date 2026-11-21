@@ -40,6 +40,31 @@ AnthropicChatModel model = AnthropicChatModel.builder()
     .build();
 ```
 
+## Extended thinking
+
+`GenerateOptions.thinkingBudget` and `GenerateOptions.includeThoughts` map to the Anthropic
+thinking configuration:
+
+| Options | Request |
+| --- | --- |
+| `includeThoughts(false)` | Thinking disabled (takes precedence over a budget) |
+| `thinkingBudget(n)` | Thinking enabled with `budget_tokens = n` |
+| `includeThoughts(true)` without a budget | Thinking enabled with the API minimum budget (1024) |
+| None set | Thinking omitted (model default) |
+
+```java
+GenerateOptions options = GenerateOptions.builder()
+    .thinkingBudget(8192)
+    .build();
+```
+
+The Anthropic API validates the constraints, not the framework: extended thinking requires a
+thinking-capable model, `temperature` must be 1 while thinking is enabled, and `budget_tokens`
+must be at least 1024 and below `maxTokens`. `reasoningEffort` is not mapped for Anthropic yet;
+use `additionalBodyParams` for provider-specific parameters. Typed effort support will be
+revisited once the Anthropic SDK exposes it. An `additionalBodyParams("thinking", ...)` entry
+overrides the typed mapping, for example to send an adaptive thinking configuration.
+
 ## Server-side tools
 
 Anthropic built-in tools run on Anthropic's infrastructure instead of the local AgentScope toolkit.
