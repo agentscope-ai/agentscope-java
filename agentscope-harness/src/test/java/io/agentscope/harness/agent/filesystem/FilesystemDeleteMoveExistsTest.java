@@ -15,6 +15,7 @@
  */
 package io.agentscope.harness.agent.filesystem;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -25,10 +26,12 @@ import io.agentscope.harness.agent.filesystem.local.LocalFilesystem;
 import io.agentscope.harness.agent.filesystem.model.WriteResult;
 import io.agentscope.harness.agent.filesystem.remote.RemoteFilesystem;
 import io.agentscope.harness.agent.filesystem.remote.store.InMemoryStore;
+import io.agentscope.harness.agent.filesystem.remote.store.StoreItem;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -130,6 +133,46 @@ class FilesystemDeleteMoveExistsTest {
     void store_exists_false() {
         RemoteFilesystem fs = new RemoteFilesystem(new InMemoryStore(), List.of("ns"));
         assertFalse(fs.exists(RT, "/nope.txt"));
+    }
+
+    /** Counts pages read by {@code exists()} so a full-namespace scan is visible in tests. */
+    private static final class PagedStore extends InMemoryStore {
+        private final AtomicInteger searches = new AtomicInteger();
+
+        @Override
+        public List<StoreItem> search(List<String> namespace, int limit, int offset) {
+            searches.incrementAndGet();
+            return super.search(namespace, limit, offset);
+        }
+    }
+
+    private static PagedStore storeWithChildren(String prefix, int count) {
+        PagedStore store = new PagedStore();
+        for (int i = 0; i < count; i++) {
+            store.put(
+                    List.of("ns"),
+                    prefix + "/file-" + i + ".txt",
+                    Map.of("content", "x", "encoding", "utf-8"));
+        }
+        return store;
+    }
+
+    @Test
+    void store_exists_directoryStopsAtFirstMatchingPage() {
+        PagedStore s = storeWithChildren("/sessions", 150);
+        RemoteFilesystem fs = new RemoteFilesystem(s, List.of("ns"));
+
+        assertTrue(fs.exists(RT, "/sessions"));
+        assertEquals(1, s.searches.get(), "exists() must not read past the first matching page");
+    }
+
+    @Test
+    void store_exists_absentPathScansUntilTheLastPage() {
+        PagedStore s = storeWithChildren("/sessions", 150);
+        RemoteFilesystem fs = new RemoteFilesystem(s, List.of("ns"));
+
+        assertFalse(fs.exists(RT, "/missing"));
+        assertEquals(2, s.searches.get());
     }
 
     @Test

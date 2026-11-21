@@ -659,14 +659,24 @@ public class RemoteFilesystem implements AbstractFilesystem {
         if (store.get(ns, normalized) != null) {
             return true;
         }
-        // Also check if any child exists (directory-like)
-        List<StoreItem> items = searchAllItems(runtimeContext);
-        for (StoreItem item : items) {
-            if (item.key().startsWith(normalized + "/")) {
-                return true;
+        // Also check if any child exists (directory-like). Scan page by page and stop at the
+        // first match instead of accumulating the whole namespace: a large namespace otherwise
+        // materialises every value and can exhaust the heap on hot paths such as session restore.
+        int pageSize = 100;
+        for (int offset = 0; ; offset += pageSize) {
+            List<StoreItem> page = store.search(ns, pageSize, offset);
+            if (page.isEmpty()) {
+                return false;
+            }
+            for (StoreItem item : page) {
+                if (normalizeItemKey(item).key().startsWith(normalized + "/")) {
+                    return true;
+                }
+            }
+            if (page.size() < pageSize) {
+                return false;
             }
         }
-        return false;
     }
 
     // Also update index on delete/move so entries don't linger
