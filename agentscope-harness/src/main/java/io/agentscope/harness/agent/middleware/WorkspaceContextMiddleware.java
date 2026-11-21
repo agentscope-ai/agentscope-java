@@ -133,6 +133,7 @@ public class WorkspaceContextMiddleware implements HarnessRuntimeMiddleware {
     private final int maxContextTokens;
     private final boolean disableMemoryTools;
     private final boolean disableMemoryHooks;
+    private boolean disableKnowledgeContext = false;
     private List<String> additionalContextFiles = List.of();
     private boolean artifactDeliveryEnabled = false;
 
@@ -177,6 +178,10 @@ public class WorkspaceContextMiddleware implements HarnessRuntimeMiddleware {
         this.additionalContextFiles = files != null ? files : List.of();
     }
 
+    public void setDisableKnowledgeContext(boolean disableKnowledgeContext) {
+        this.disableKnowledgeContext = disableKnowledgeContext;
+    }
+
     /**
      * Whether memory tools are disabled for this middleware (affects prompt guidance).
      */
@@ -189,6 +194,14 @@ public class WorkspaceContextMiddleware implements HarnessRuntimeMiddleware {
      */
     public boolean isDisableMemoryHooks() {
         return disableMemoryHooks;
+    }
+
+    /**
+     * Whether knowledge context injection is disabled for this middleware (affects prompt
+     * guidance and knowledge file loading).
+     */
+    public boolean isDisableKnowledgeContext() {
+        return disableKnowledgeContext;
     }
 
     /**
@@ -218,8 +231,10 @@ public class WorkspaceContextMiddleware implements HarnessRuntimeMiddleware {
         boolean includeMemoryContext = includeMemoryContext();
         String memoryContent =
                 includeMemoryContext ? workspaceManager.readMemoryMd(rc).strip() : "";
-        String knowledgeContent = workspaceManager.readKnowledgeMd(rc).strip();
-        List<Path> knowledgeFiles = workspaceManager.listKnowledgeFiles(rc);
+        String knowledgeContent =
+                disableKnowledgeContext ? "" : workspaceManager.readKnowledgeMd(rc).strip();
+        List<Path> knowledgeFiles =
+                disableKnowledgeContext ? List.of() : workspaceManager.listKnowledgeFiles(rc);
         Path workspace = workspaceManager.getWorkspace();
         AbstractFilesystem filesystem = workspaceManager.getFilesystem();
         Path effectiveWorkspace =
@@ -316,7 +331,8 @@ public class WorkspaceContextMiddleware implements HarnessRuntimeMiddleware {
 
     private String buildGuidance(String knowledgeContent, List<Path> knowledgeFiles) {
         StringBuilder sb = new StringBuilder();
-        if (!knowledgeContent.isBlank() || !knowledgeFiles.isEmpty()) {
+        if (!disableKnowledgeContext
+                && (!knowledgeContent.isBlank() || !knowledgeFiles.isEmpty())) {
             sb.append(DOMAIN_KNOWLEDGE_GUIDANCE.strip()).append("\n\n");
             if (!knowledgeFiles.isEmpty()) {
                 sb.append(KNOWLEDGE_FILES_GUIDANCE.strip()).append("\n\n");
@@ -328,6 +344,9 @@ public class WorkspaceContextMiddleware implements HarnessRuntimeMiddleware {
         String persistence = buildMemoryPersistenceGuidance();
         if (!persistence.isBlank()) {
             sb.append(persistence.strip()).append("\n\n");
+        }
+        if (sb.isEmpty()) {
+            return "";
         }
         return sb.toString().stripTrailing() + "\n";
     }
