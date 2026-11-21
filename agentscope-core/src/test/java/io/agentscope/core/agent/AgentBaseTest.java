@@ -28,15 +28,19 @@ import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import reactor.core.publisher.Mono;
+import reactor.core.publisher.Sinks;
 import reactor.core.scheduler.Schedulers;
+import reactor.test.StepVerifier;
 
 /**
  * Unit tests for AgentBase class.
@@ -265,6 +269,41 @@ class AgentBaseTest {
 
         // Observe should complete without error
         agent.observe(messages).block(Duration.ofMillis(TestConstants.DEFAULT_TEST_TIMEOUT_MS));
+    }
+
+    @Test
+    void observesEachMessageOnlyAfterThePreviousObservationCompletes() {
+        List<Msg> messages =
+                List.of(
+                        TestUtils.createUserMessage("User", "Message 1"),
+                        TestUtils.createUserMessage("User", "Message 2"));
+        Sinks.Empty<Void> firstCompleted = Sinks.empty();
+        AtomicInteger started = new AtomicInteger();
+        List<Msg> observed = new ArrayList<>();
+        TestAgent observer =
+                new TestAgent("ordered-observer") {
+                    @Override
+                    protected Mono<Void> doObserve(Msg msg) {
+                        return Mono.defer(
+                                () -> {
+                                    started.incrementAndGet();
+                                    Mono<Void> completion =
+                                            msg == messages.get(0)
+                                                    ? firstCompleted.asMono()
+                                                    : Mono.empty();
+                                    return completion.doOnSuccess(ignored -> observed.add(msg));
+                                });
+                    }
+                };
+
+        StepVerifier.create(observer.observe(messages))
+                .then(
+                        () -> {
+                            assertEquals(1, started.get());
+                            firstCompleted.tryEmitEmpty();
+                        })
+                .verifyComplete();
+        assertEquals(messages, observed);
     }
 
     @Test
