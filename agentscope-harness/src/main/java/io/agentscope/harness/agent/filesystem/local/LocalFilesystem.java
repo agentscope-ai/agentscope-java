@@ -27,6 +27,7 @@ import io.agentscope.harness.agent.filesystem.model.GrepMatch;
 import io.agentscope.harness.agent.filesystem.model.GrepResult;
 import io.agentscope.harness.agent.filesystem.model.LsResult;
 import io.agentscope.harness.agent.filesystem.model.ReadResult;
+import io.agentscope.harness.agent.filesystem.model.UploadMode;
 import io.agentscope.harness.agent.filesystem.model.WriteResult;
 import io.agentscope.harness.agent.filesystem.remote.store.NamespaceFactory;
 import io.agentscope.harness.agent.filesystem.util.FilesystemUtils;
@@ -54,6 +55,7 @@ import java.util.Base64;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.regex.Pattern;
@@ -560,6 +562,37 @@ public class LocalFilesystem implements AbstractFilesystem {
                     Files.createDirectories(resolved.getParent());
                 }
                 Files.write(resolved, content);
+                responses.add(FileUploadResponse.success(filePath));
+            } catch (IOException e) {
+                responses.add(FileUploadResponse.fail(filePath, e.getMessage()));
+            } catch (SecurityException | IllegalArgumentException e) {
+                responses.add(FileUploadResponse.fail(filePath, "permission_denied"));
+            }
+        }
+        return responses;
+    }
+
+    @Override
+    public List<FileUploadResponse> uploadFiles(
+            RuntimeContext runtimeContext, List<Map.Entry<String, byte[]>> files, UploadMode mode) {
+        Objects.requireNonNull(mode, "mode must not be null");
+        if (mode == UploadMode.OVERWRITE) {
+            return uploadFiles(runtimeContext, files);
+        }
+        List<FileUploadResponse> responses = new ArrayList<>();
+        for (Map.Entry<String, byte[]> entry : files) {
+            String filePath = entry.getKey();
+            byte[] content = entry.getValue();
+            if (content == null) {
+                responses.add(FileUploadResponse.fail(filePath, "content must not be null"));
+                continue;
+            }
+            try {
+                Path resolved = resolvePath(runtimeContext, filePath);
+                if (resolved.getParent() != null) {
+                    Files.createDirectories(resolved.getParent());
+                }
+                Files.write(resolved, content, StandardOpenOption.CREATE_NEW);
                 responses.add(FileUploadResponse.success(filePath));
             } catch (IOException e) {
                 responses.add(FileUploadResponse.fail(filePath, e.getMessage()));
