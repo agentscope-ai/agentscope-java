@@ -24,6 +24,7 @@ import io.agentscope.core.model.ExecutionConfig;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.util.JsonUtils;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 
@@ -393,8 +394,12 @@ public class OllamaOptions {
             builder.seed(genOptions.getSeed().intValue());
         }
 
-        // Map thinking budget to enable thinking if budget > 0
-        if (genOptions.getThinkingBudget() != null && genOptions.getThinkingBudget() > 0) {
+        // Single-valued think field: an explicit effort level wins over the budget toggle
+        String reasoningEffort = genOptions.getReasoningEffort();
+        if (reasoningEffort != null) {
+            builder.thinkOption(
+                    new ThinkOption.ThinkLevel(reasoningEffort.trim().toLowerCase(Locale.ROOT)));
+        } else if (genOptions.getThinkingBudget() != null && genOptions.getThinkingBudget() > 0) {
             builder.thinkOption(ThinkOption.ThinkBoolean.ENABLED);
         }
 

@@ -20,6 +20,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.formatter.JsonSchema;
@@ -398,5 +399,76 @@ class OllamaOptionsTest {
         // toBuilder().build() round-trip
         OllamaOptions rebuilt = original.toBuilder().build();
         assertEquals(executionConfig, rebuilt.getExecutionConfig());
+    }
+
+    @Test
+    @DisplayName("Should map reasoningEffort to a ThinkLevel")
+    void testReasoningEffortMappedToThinkLevel() {
+        GenerateOptions genOptions = GenerateOptions.builder().reasoningEffort("high").build();
+        OllamaOptions options = OllamaOptions.fromGenerateOptions(genOptions);
+        assertEquals(ThinkOption.ThinkLevel.HIGH, options.getThinkOption());
+    }
+
+    @Test
+    @DisplayName("Should normalize reasoningEffort case and whitespace")
+    void testReasoningEffortNormalized() {
+        GenerateOptions genOptions = GenerateOptions.builder().reasoningEffort(" HIGH ").build();
+        OllamaOptions options = OllamaOptions.fromGenerateOptions(genOptions);
+        assertEquals(ThinkOption.ThinkLevel.HIGH, options.getThinkOption());
+    }
+
+    @Test
+    @DisplayName("reasoningEffort takes precedence over thinkingBudget")
+    void testReasoningEffortPrecedesThinkingBudget() {
+        GenerateOptions genOptions =
+                GenerateOptions.builder().reasoningEffort("low").thinkingBudget(4096).build();
+        OllamaOptions options = OllamaOptions.fromGenerateOptions(genOptions);
+        assertEquals(ThinkOption.ThinkLevel.LOW, options.getThinkOption());
+    }
+
+    @Test
+    @DisplayName("Should keep mapping thinkingBudget to enabled thinking")
+    void testThinkingBudgetStillEnablesThinking() {
+        GenerateOptions genOptions = GenerateOptions.builder().thinkingBudget(4096).build();
+        OllamaOptions options = OllamaOptions.fromGenerateOptions(genOptions);
+        assertEquals(ThinkOption.ThinkBoolean.ENABLED, options.getThinkOption());
+    }
+
+    @Test
+    @DisplayName("Should leave thinkOption unset without thinking options")
+    void testNoThinkingOptionsLeavesThinkUnset() {
+        OllamaOptions options =
+                OllamaOptions.fromGenerateOptions(GenerateOptions.builder().build());
+        assertNull(options.getThinkOption());
+    }
+
+    @Test
+    @DisplayName("Unsupported reasoningEffort fails fast via ThinkLevel validation")
+    void testUnsupportedReasoningEffortFailsFast() {
+        GenerateOptions genOptions = GenerateOptions.builder().reasoningEffort("minimal").build();
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> OllamaOptions.fromGenerateOptions(genOptions));
+    }
+
+    @Test
+    @DisplayName("Empty reasoningEffort fails fast via ThinkLevel validation")
+    void testEmptyReasoningEffortFailsFast() {
+        GenerateOptions genOptions = GenerateOptions.builder().reasoningEffort("").build();
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> OllamaOptions.fromGenerateOptions(genOptions));
+    }
+
+    @Test
+    @DisplayName("Additional think body param overrides reasoningEffort mapping")
+    void testAdditionalThinkParamOverridesEffort() {
+        GenerateOptions genOptions =
+                GenerateOptions.builder()
+                        .reasoningEffort("high")
+                        .additionalBodyParams(Map.of("think", false))
+                        .build();
+        OllamaOptions options = OllamaOptions.fromGenerateOptions(genOptions);
+        assertEquals(ThinkOption.ThinkBoolean.DISABLED, options.getThinkOption());
     }
 }
