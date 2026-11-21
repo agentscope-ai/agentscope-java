@@ -2352,8 +2352,8 @@ public class HarnessAgent implements Agent, AutoCloseable {
         }
 
         /**
-         * Overrides the long-term memory pipeline configuration (flush + consolidation +
-         * maintenance). When not called, {@link MemoryConfig#defaults()} is used and behaviour
+         * Configures workspace-memory recall guidance and the long-term memory pipeline
+         * (flush + consolidation + maintenance). When not called, {@link MemoryConfig#defaults()} is used and behaviour
          * matches the harness's historical defaults.
          *
          * <p>For the compaction (in-context summarization) pipeline, see
@@ -3127,6 +3127,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
                                 disableMemoryTools,
                                 disableMemoryHooks);
                 markdownMw.setAdditionalContextFiles(additionalContextFiles);
+                markdownMw.setMemoryRecallInstructions(memoryConfig.recallInstructions());
                 markdownMw.setArtifactDeliveryEnabled(artifactDeliveryEnabled);
                 inner.middleware(markdownMw);
             }

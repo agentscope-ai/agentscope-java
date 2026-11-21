@@ -156,6 +156,22 @@ class WorkspaceContextMiddlewareMemoryPromptTest {
     }
 
     @Test
+    void recallOverrideCanRestoreDefaultWithoutChangingOtherMiddlewareInstances() {
+        WorkspaceManager wm = track(new WorkspaceManager(workspace));
+        WorkspaceContextMiddleware custom = new WorkspaceContextMiddleware(wm);
+        WorkspaceContextMiddleware defaults = new WorkspaceContextMiddleware(wm);
+        custom.setMemoryRecallInstructions("Only recall missing historical facts.");
+        String overridden = WorkspacePromptTestSupport.render(custom, RuntimeContext.empty(), "");
+        assertTrue(overridden.contains("Only recall missing historical facts."));
+        assertFalse(overridden.contains("Before answering questions about prior work"));
+        String original = WorkspacePromptTestSupport.render(defaults, RuntimeContext.empty(), "");
+        assertFalse(original.contains("Only recall missing historical facts."));
+        custom.setMemoryRecallInstructions(null);
+        assertEquals(
+                original, WorkspacePromptTestSupport.render(custom, RuntimeContext.empty(), ""));
+    }
+
+    @Test
     void memoryWithinBudgetIsKeptVerbatim() throws Exception {
         Files.writeString(workspace.resolve("MEMORY.md"), "# Memory\n\nprefers tabs\n");
         var wm = track(new WorkspaceManager(workspace));

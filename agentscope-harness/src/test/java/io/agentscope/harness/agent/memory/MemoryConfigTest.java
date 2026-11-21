@@ -30,6 +30,7 @@ class MemoryConfigTest {
     void defaults_matchHistoricalBehaviour() {
         MemoryConfig cfg = MemoryConfig.defaults();
 
+        assertNull(cfg.recallInstructions());
         assertNull(cfg.flushPrompt(), "flushPrompt default = null (use DEFAULT_FLUSH_PROMPT)");
         assertNull(
                 cfg.consolidationPrompt(),
@@ -141,15 +142,20 @@ class MemoryConfigTest {
         // Two builds from the same builder produce equal-but-distinct configs;
         // mutating the builder afterwards does not affect prior builds.
         MemoryConfig.Builder b =
-                MemoryConfig.builder().flushPrompt("v1").consolidationMaxTokens(1000);
+                MemoryConfig.builder()
+                        .flushPrompt("v1")
+                        .recallInstructions("recall-v1")
+                        .consolidationMaxTokens(1000);
 
         MemoryConfig first = b.build();
-        b.flushPrompt("v2").consolidationMaxTokens(2000);
+        b.flushPrompt("v2").recallInstructions("").consolidationMaxTokens(2000);
         MemoryConfig second = b.build();
 
         assertEquals("v1", first.flushPrompt());
+        assertEquals("recall-v1", first.recallInstructions());
         assertEquals(1000, first.consolidationMaxTokens());
         assertEquals("v2", second.flushPrompt());
+        assertEquals("", second.recallInstructions());
         assertEquals(2000, second.consolidationMaxTokens());
     }
 }
