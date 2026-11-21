@@ -650,6 +650,53 @@ Agent 如何在 ReAct 循环中编排 tool 调用
 </CardGroup>
 
 
+## 复用 LangChain4j 工具
+
+可选模块 `agentscope-extensions-langchain4j` 让 Toolkit 直接复用带有 LangChain4j `@Tool` 注解的对象。模块注册原有的绑定执行器，因此工具名称、继承的注解以及 LangChain4j 的参数转换逻辑仍然生效。依赖版本应与项目中的 AgentScope 版本一致：
+
+```xml
+<dependency>
+    <groupId>io.agentscope</groupId>
+    <artifactId>agentscope-extensions-langchain4j</artifactId>
+    <version>${agentscope.version}</version>
+</dependency>
+```
+
+同步工具应使用有界调度器执行，并显式映射当前调用的上下文。下面将 AgentScope 会话 ID 映射为 LangChain4j 的 chat memory ID，原工具可以通过 `@ToolMemoryId` 接收它：
+
+```java
+import dev.langchain4j.agent.tool.Tool;
+import dev.langchain4j.agent.tool.ToolMemoryId;
+import dev.langchain4j.invocation.InvocationContext;
+import io.agentscope.core.tool.Toolkit;
+import io.agentscope.extensions.langchain4j.LangChain4jTools;
+import reactor.core.scheduler.Scheduler;
+import reactor.core.scheduler.Schedulers;
+
+class SessionTools {
+    @Tool("Return the current session ID")
+    public String currentSession(@ToolMemoryId String sessionId) {
+        return sessionId;
+    }
+}
+
+Scheduler toolWorkers = Schedulers.newBoundedElastic(4, 64, "langchain4j-tools");
+Toolkit toolkit = new Toolkit();
+LangChain4jTools.registerAnnotated(
+        toolkit, new SessionTools(), toolWorkers,
+        param -> InvocationContext.builder()
+                .chatMemoryId(param.getRuntimeContext().getSessionId())
+                .build());
+```
+
+将此 Toolkit 传给 AgentScope Agent，并在每次调用的 `RuntimeContext` 中提供会话 ID。映射函数每次执行时都会运行，不应捕获上一次调用者的会话；其他 LangChain4j invocation parameters 也可以从同一上下文映射。应用负责管理 `toolWorkers`：调用期间保持调度器存活，在应用关闭时释放。取消订阅可以中断同步执行，但无法撤销工具已经产生的副作用。
+
+适配后的工具继承 `ToolBase`，因此会经过 Agent 的权限引擎。外部注解不会自动获得只读权限，工具也默认标记为不支持批次内并行执行。Toolkit 的参数校验、中间件和错误处理继续生效。这些标记不能保证原对象在多个 Agent 或独立并发调用之间的线程安全，应用仍需保护共享状态。应在共享 Toolkit 前完成注册；工具列表内部或与现有注册重名时，会在修改注册表之前拒绝整次注册，不支持并发修改注册表。
+
+模块使用 LangChain4j 1.22.0 验证。注解发现依赖 `ToolService.findTools`，该 API 在 LangChain4j 中标记为 `Internal`，因此升级依赖后需要重新验证兼容性。如果应用已经持有绑定好的 `AiServiceTool` 列表，可使用 `LangChain4jTools.register(toolkit, tools, toolWorkers, contextMapper)`，避免调用注解发现入口。`adapt` 则返回一个尚未注册的工具。
+
+适配器保留 JSON Schema 约束与引用、工具调用 ID、有序文本结果块及结构化成功或错误状态。当前仅支持 `ReturnBehavior.TO_LLM`；两种立即返回模式在混合工具批次中的语义与 AgentScope `returnDirect` 不同，因此注册时会拒绝。非文本结果会明确失败，不会静默转换为文本。本模块只复用工具，不负责打通两个框架的 Agent 循环、记忆存储或凭据。
+
 ## 请求级工具视图与会话隔离
 
 Agent 构建时复制工具注册表和注册元数据；已有工具实例仍按引用共享，因此自定义工具需要自行保证并发安全。构建某个 Agent 时添加的 Hook、知识库等工具不会覆盖其他 Agent 的注册。
