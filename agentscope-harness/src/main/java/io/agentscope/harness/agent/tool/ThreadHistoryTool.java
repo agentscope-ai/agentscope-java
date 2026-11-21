@@ -19,7 +19,14 @@ import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.agent.ThreadKey;
 import io.agentscope.core.journal.ThreadHistory;
 import io.agentscope.core.journal.ThreadJournalStore;
+import io.agentscope.core.message.ContentBlock;
+import io.agentscope.core.message.DataBlock;
+import io.agentscope.core.message.DocumentBlock;
+import io.agentscope.core.message.HintBlock;
+import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.ThinkingBlock;
 import io.agentscope.core.message.ToolResultBlock;
+import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.tool.Tool;
 import io.agentscope.core.tool.ToolParam;
 import io.agentscope.core.util.JsonUtils;
@@ -91,7 +98,7 @@ public class ThreadHistoryTool {
         if (query == null || query.isBlank()) return ToolResultBlock.error("query is required");
         RuntimeContext rc = context(runtimeContext);
         int limit = positiveLimit(maxResults, 10);
-        Predicate<String> matcher;
+        Predicate<List<String>> matcher;
         try {
             matcher =
                     KeywordMatcher.compile(
@@ -99,7 +106,8 @@ public class ThreadHistoryTool {
                             matchMode,
                             term -> {
                                 String lowerTerm = term.toLowerCase(Locale.ROOT);
-                                return text -> text.contains(lowerTerm);
+                                return fields ->
+                                        fields.stream().anyMatch(text -> text.contains(lowerTerm));
                             });
         } catch (IllegalArgumentException error) {
             return ToolResultBlock.error(error.getMessage());
@@ -113,8 +121,11 @@ public class ThreadHistoryTool {
                             .build();
             var view = ThreadHistory.transcript(store.open(key, sessionContext));
             for (var message : view.messages()) {
-                String text = JsonUtils.getJsonCodec().toJson(message.getContent());
-                if (matcher.test(text.toLowerCase(Locale.ROOT))) {
+                var fields = new ArrayList<String>();
+                message.getContent().forEach(block -> addSearchableFields(block, fields));
+                fields.removeIf(Objects::isNull);
+                fields.replaceAll(text -> text.toLowerCase(Locale.ROOT));
+                if (matcher.test(fields)) {
                     matches.add(
                             Map.of(
                                     "agentId",
@@ -200,6 +211,44 @@ public class ThreadHistoryTool {
                                         messages.subList(
                                                 Math.max(0, messages.size() - limit),
                                                 messages.size()))));
+    }
+
+    private static void addSearchableFields(ContentBlock block, List<String> fields) {
+        if (block instanceof TextBlock text) {
+            fields.add(text.getText());
+        } else if (block instanceof ThinkingBlock thinking) {
+            fields.add(thinking.getThinking());
+        } else if (block instanceof HintBlock hint) {
+            fields.add(hint.getHint());
+        } else if (block instanceof DocumentBlock document) {
+            fields.add(document.getName());
+        } else if (block instanceof DataBlock data) {
+            fields.add(data.getName());
+        } else if (block instanceof ToolUseBlock call) {
+            fields.add(call.getName());
+            if (call.getInput().isEmpty()) {
+                fields.add(call.getContent());
+            } else {
+                addToolArgumentFields(call.getInput(), fields);
+            }
+        } else if (block instanceof ToolResultBlock result) {
+            fields.add(result.getName());
+            result.getOutput().forEach(output -> addSearchableFields(output, fields));
+        }
+    }
+
+    private static void addToolArgumentFields(Object value, List<String> fields) {
+        if (value instanceof Map<?, ?> arguments) {
+            arguments.forEach(
+                    (name, argument) -> {
+                        fields.add(String.valueOf(name));
+                        addToolArgumentFields(argument, fields);
+                    });
+        } else if (value instanceof Iterable<?> items) {
+            items.forEach(item -> addToolArgumentFields(item, fields));
+        } else if (value instanceof String || value instanceof Number || value instanceof Boolean) {
+            fields.add(value.toString());
+        }
     }
 
     private List<ThreadKey> threads(RuntimeContext rc, String agentId) {
