@@ -69,18 +69,37 @@ public class SessionFreshnessEvaluator {
         }
 
         if (dailyResetHour >= 0) {
-            ZonedDateTime lastActivity = lastActivityAt.atZone(timezone);
-            ZonedDateTime nowZoned = now.atZone(timezone);
-
-            LocalTime resetTime = LocalTime.of(dailyResetHour, 0);
-            ZonedDateTime todayReset = nowZoned.toLocalDate().atTime(resetTime).atZone(timezone);
-
-            if (nowZoned.isAfter(todayReset) && lastActivity.isBefore(todayReset)) {
-                return true;
-            }
+            return crossesDailyReset(
+                    now.atZone(timezone),
+                    lastActivityAt.atZone(timezone),
+                    LocalTime.of(dailyResetHour, 0));
         }
 
         return false;
+    }
+
+    /**
+     * Whether the most recent daily reset boundary falls between the last activity and now.
+     *
+     * <p>The boundary is this day's configured hour. Before that hour has been reached — the
+     * window between midnight and the reset hour — the most recent boundary is the previous day's,
+     * so a session whose last activity predates it is still stale. Only comparing against today's
+     * boundary would leave every session fresh for the first hours of each day, and would defer
+     * the reset of sessions that should have been reset at the previous day's boundary.
+     *
+     * @param nowZoned the current instant in the session timezone
+     * @param lastActivity the last activity instant in the session timezone
+     * @param resetTime the configured daily reset time of day
+     * @return true when a daily reset boundary has been crossed since the last activity
+     */
+    static boolean crossesDailyReset(
+            ZonedDateTime nowZoned, ZonedDateTime lastActivity, LocalTime resetTime) {
+        ZonedDateTime boundary =
+                nowZoned.toLocalDate().atTime(resetTime).atZone(nowZoned.getZone());
+        if (nowZoned.isBefore(boundary)) {
+            boundary = boundary.minusDays(1);
+        }
+        return lastActivity.isBefore(boundary);
     }
 
     public int getDailyResetHour() {
