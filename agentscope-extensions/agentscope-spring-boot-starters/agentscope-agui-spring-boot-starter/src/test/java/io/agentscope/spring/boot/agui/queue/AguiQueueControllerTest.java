@@ -17,8 +17,8 @@ package io.agentscope.spring.boot.agui.queue;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
@@ -31,11 +31,11 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import io.agentscope.core.agui.model.RunAgentInput;
 import io.agentscope.core.agui.processor.AguiRequestProcessor;
 import io.agentscope.core.agui.queue.MessageQueueRegistry;
+import io.agentscope.core.agui.queue.ThreadMessageQueue;
 import io.agentscope.core.agui.runtime.AguiRequestBodyParser;
 import io.agentscope.core.util.JsonUtils;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.mockito.InOrder;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
@@ -54,6 +54,16 @@ class AguiQueueControllerTest {
         when(requestProcessor.isAwaitingConfirmation(anyString())).thenReturn(false);
         // No run has started on the mocked threads unless a test says otherwise.
         when(requestProcessor.lastStartedRunId(anyString())).thenReturn(null);
+        when(requestProcessor.claimIfIdle(anyString(), any(ThreadMessageQueue.class)))
+                .thenAnswer(
+                        invocation -> {
+                            String threadId = invocation.getArgument(0);
+                            ThreadMessageQueue queue = invocation.getArgument(1);
+                            return queue.claim(
+                                    requestProcessor.isThreadIdle(threadId),
+                                    System.currentTimeMillis(),
+                                    requestProcessor.lastStartedRunId(threadId));
+                        });
 
         registry = new MessageQueueRegistry(2, 64);
         mockMvc =
@@ -354,12 +364,6 @@ class AguiQueueControllerTest {
                 .andExpect(jsonPath("$.input.threadId").value("t1"));
 
         mockMvc.perform(post("/agui/queue/t1/claim")).andExpect(status().isNoContent());
-
-        // The run evidence must be read before the idle state, so a replay that starts between
-        // the two reads shows up as busy instead of pairing new evidence with stale idleness.
-        InOrder inOrder = inOrder(requestProcessor);
-        inOrder.verify(requestProcessor).lastStartedRunId("t1");
-        inOrder.verify(requestProcessor).isThreadIdle("t1");
     }
 
     @Test

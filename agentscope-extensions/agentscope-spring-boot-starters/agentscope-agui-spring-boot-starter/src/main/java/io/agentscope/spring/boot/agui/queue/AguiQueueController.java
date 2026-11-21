@@ -188,14 +188,8 @@ public class AguiQueueController {
      */
     @PostMapping("${agentscope.agui.path-prefix:/agui}/queue/{threadId}/claim")
     public ResponseEntity<String> claim(@PathVariable String threadId) {
-        long observedAtMillis = System.currentTimeMillis();
-        // Read the run evidence before the idle state: a replay that starts between the two
-        // reads then shows up as idle == false, instead of pairing stale idleness with new
-        // evidence and delivering into an occupied thread.
-        String lastStartedRunId = requestProcessor.lastStartedRunId(threadId);
-        boolean idle = requestProcessor.isThreadIdle(threadId);
         return registry.find(threadId)
-                .flatMap(queue -> queue.claim(idle, observedAtMillis, lastStartedRunId))
+                .flatMap(queue -> requestProcessor.claimIfIdle(threadId, queue))
                 .map(message -> new ClaimResponse(message.getMessageId(), message.getInput()))
                 .map(AguiQueueController::claimResponse)
                 .orElseGet(() -> ResponseEntity.noContent().build());

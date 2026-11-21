@@ -25,12 +25,16 @@ import io.agentscope.core.agui.adapter.AguiAgentAdapterFactory;
 import io.agentscope.core.agui.event.AguiEvent;
 import io.agentscope.core.agui.model.AguiMessage;
 import io.agentscope.core.agui.model.RunAgentInput;
+import io.agentscope.core.agui.queue.QueuedMessage;
+import io.agentscope.core.agui.queue.ThreadMessageQueue;
 import io.agentscope.core.agui.runtime.AguiRuntimeContextRequest;
 import io.agentscope.core.agui.runtime.AguiRuntimeContextResolver;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.locks.ReentrantLock;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Flux;
@@ -277,6 +281,62 @@ public class AguiRequestProcessor {
      */
     public String lastStartedRunId(String threadId) {
         return resumeCoordinator.lastStartedRunId(threadId);
+    }
+
+    /**
+     * Returns the lock that serialises a run start with {@link #claimIfIdle(String,
+     * ThreadMessageQueue)}. Package-private so tests can hold it while they start a run.
+     *
+     * @param threadId The AG-UI thread id
+     * @return the lock for that thread's stripe
+     */
+    ReentrantLock threadStateLock(String threadId) {
+        return resumeCoordinator.threadStateLock(threadId);
+    }
+
+    /**
+     * Claims the head of a thread queue only when the thread is idle.
+     *
+     * <p>The idle observation is taken before the thread-state lock and repeated while holding it.
+     * {@link AguiResumeCoordinator#beginRun(RunAgentInput)} takes the same lock, so a run that
+     * starts after the first observation either makes the recheck fail or waits until the claim
+     * has removed its message. The queue therefore never hands a message to a client while
+     * another run has already started on the thread.
+     *
+     * <p>The check is client-triggered: this method never starts a run and never invokes a model.
+     * A client that is not connected cannot call it, so it also cannot be handed a message; there
+     * is no separate attached-client flag to recheck.
+     *
+     * <p>If a run starts after the claim returns, the message is already out of the queue. The
+     * queue's hand-off guard closes further claims for a short window, but a competing run can
+     * still win the replay race; delivery remains at most once.
+     *
+     * @param threadId The AG-UI thread id
+     * @param queue The thread's queue
+     * @return the claimed message, or empty when the thread is busy, the queue is empty, or the
+     *     hand-off guard is closed
+     */
+    public Optional<QueuedMessage> claimIfIdle(String threadId, ThreadMessageQueue queue) {
+        Objects.requireNonNull(threadId, "threadId cannot be null");
+        Objects.requireNonNull(queue, "queue cannot be null");
+        long observedAtMillis = System.currentTimeMillis();
+        String observedLastRunId = lastStartedRunId(threadId);
+        if (!isThreadIdle(threadId)) {
+            // Still pass the busy observation down: the queue releases its hand-off guard when it
+            // sees the thread busy after a delivery.
+            return queue.claim(false, observedAtMillis, observedLastRunId);
+        }
+        ReentrantLock lock = threadStateLock(threadId);
+        lock.lock();
+        try {
+            // A run may have started between the observation above and this lock. Recheck before
+            // removing a message, and read the run evidence under the same lock.
+            boolean idle = isThreadIdle(threadId);
+            String lastRunId = lastStartedRunId(threadId);
+            return queue.claim(idle, observedAtMillis, lastRunId);
+        } finally {
+            lock.unlock();
+        }
     }
 
     /**
