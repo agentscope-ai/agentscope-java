@@ -31,6 +31,19 @@ import java.util.Objects;
 
 /** Default log storage uses the workspace backend, including its distributed namespace routing. */
 public final class WorkspaceThreadJournalStore implements ThreadJournalStore {
+
+    private static final String HEAD_FILE_SUFFIX = "/head.json";
+    private static final String SESSION_KEY_PREFIX = "s_";
+
+    /** Layered shape of a discoverable thread journal path. */
+    private static final int THREAD_KEY_SEGMENTS = 8;
+
+    private static final int SESSIONS_INDEX = 2;
+    private static final int THREADS_INDEX = 5;
+
+    /** Segments that carry a base64url key and are therefore decoded into the {@link ThreadKey}. */
+    private static final int[] ENCODED_SEGMENTS = {1, 3, 4, 6};
+
     private final AbstractFilesystem filesystem;
 
     public WorkspaceThreadJournalStore(AbstractFilesystem filesystem) {
@@ -54,13 +67,9 @@ public final class WorkspaceThreadJournalStore implements ThreadJournalStore {
     public List<ThreadKey> list(RuntimeContext context) {
         RuntimeContext rc = context == null ? RuntimeContext.empty() : context;
         return filesystem.journalStorage(rc).listPaths("agents/").stream()
-                .filter(path -> path.endsWith("/head.json"))
+                .filter(path -> path.endsWith(HEAD_FILE_SUFFIX))
                 .map(path -> path.split("/"))
-                .filter(
-                        parts ->
-                                parts[2].equals("sessions")
-                                        && parts.length == 8
-                                        && parts[5].equals("threads"))
+                .filter(WorkspaceThreadJournalStore::isThreadKeyPath)
                 .map(
                         parts ->
                                 new ThreadKey(
@@ -77,6 +86,32 @@ public final class WorkspaceThreadJournalStore implements ThreadJournalStore {
                 .toList();
     }
 
+    /**
+     * Whether a split path addresses a thread journal, i.e.
+     * {@code agents/<agent>/sessions/<user>/<session>/threads/<thread>/head.json}.
+     *
+     * <p>Every segment is validated before any segment is indexed or decoded. A storage backend
+     * may also list {@code head.json} files that belong to other layouts, partially written
+     * trees, or foreign tenants; discovery must skip those instead of failing the whole listing
+     * with an index or decoding error.
+     *
+     * @param parts the path split on {@code /}
+     * @return true when the path is a thread journal of this namespace layout
+     */
+    private static boolean isThreadKeyPath(String[] parts) {
+        if (parts.length != THREAD_KEY_SEGMENTS
+                || !"sessions".equals(parts[SESSIONS_INDEX])
+                || !"threads".equals(parts[THREADS_INDEX])) {
+            return false;
+        }
+        for (int index : ENCODED_SEGMENTS) {
+            if (!parts[index].startsWith(SESSION_KEY_PREFIX)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
     private static String normalizeUser(String user) {
         return user == null || user.isEmpty() ? null : user;
     }
@@ -86,7 +121,8 @@ public final class WorkspaceThreadJournalStore implements ThreadJournalStore {
     }
 
     private static String decode(String segment) {
-        if (!segment.startsWith("s_")) throw new IllegalArgumentException("Invalid session key");
+        if (!segment.startsWith(SESSION_KEY_PREFIX))
+            throw new IllegalArgumentException("Invalid session key");
         return new String(
                 Base64.getUrlDecoder().decode(segment.substring(2)), StandardCharsets.UTF_8);
     }

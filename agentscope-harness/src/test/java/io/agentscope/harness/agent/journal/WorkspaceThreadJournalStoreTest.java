@@ -20,10 +20,13 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.agent.ThreadKey;
+import io.agentscope.core.journal.AtomicJournalStorage;
 import io.agentscope.core.journal.JournalEvent;
 import io.agentscope.core.journal.JournalException;
 import io.agentscope.core.message.Msg;
@@ -31,6 +34,7 @@ import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultState;
 import io.agentscope.core.util.JsonUtils;
+import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
 import io.agentscope.harness.agent.filesystem.BakedContextFilesystem;
 import io.agentscope.harness.agent.filesystem.RoutedSandboxFilesystem;
 import io.agentscope.harness.agent.filesystem.local.LocalFilesystem;
@@ -38,8 +42,10 @@ import io.agentscope.harness.agent.filesystem.remote.RemoteFilesystem;
 import io.agentscope.harness.agent.filesystem.remote.store.InMemoryStore;
 import io.agentscope.harness.agent.filesystem.sandbox.AbstractSandboxFilesystem;
 import io.agentscope.harness.agent.tool.ThreadHistoryTool;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.util.Base64;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
@@ -52,6 +58,51 @@ class WorkspaceThreadJournalStoreTest {
     private JournalEvent event() {
         return new JournalEvent(
                 JournalEvent.SCHEMA_VERSION, "e", 1, 1, "run/start", "r", "t", true, "{}");
+    }
+
+    @Test
+    void discoverySkipsForeignHeadFilesInsteadOfFailingTheListing() {
+        var filesystem = mock(AbstractFilesystem.class);
+        var storage = mock(AtomicJournalStorage.class);
+        when(filesystem.journalStorage(any())).thenReturn(storage);
+        when(storage.listPaths("agents/"))
+                .thenReturn(
+                        List.of(
+                                // Short tree: an agent-level or otherwise truncated head file.
+                                "agents/head.json",
+                                "agents/s_YWdlbnQ/head.json",
+                                // Longer than a thread journal path.
+                                "agents/s_YWdlbnQ/sessions/s_dS/s_c2Vzc2lvbg/threads/s_bWFpbg"
+                                        + "/head.json/extra",
+                                // Eight segments, but neither the sessions nor the threads level.
+                                "agents/s_YWdlbnQ/state/s_dS/s_c2Vzc2lvbg/threads/s_bWFpbg/head.json",
+                                // Eight segments with the right levels, unencoded key segments.
+                                "agents/agent/sessions/u/session/threads/main/head.json",
+                                // The single thread journal this namespace may expose.
+                                journalPath("agent", "u", "session", "main")));
+
+        var store = new WorkspaceThreadJournalStore(filesystem);
+
+        assertEquals(List.of(key), store.list(RuntimeContext.builder().userId("u").build()));
+    }
+
+    private static String journalPath(String agent, String user, String session, String thread) {
+        return "agents/"
+                + encode(agent)
+                + "/sessions/"
+                + encode(user)
+                + "/"
+                + encode(session)
+                + "/threads/"
+                + encode(thread)
+                + "/head.json";
+    }
+
+    private static String encode(String value) {
+        return "s_"
+                + Base64.getUrlEncoder()
+                        .withoutPadding()
+                        .encodeToString(value.getBytes(StandardCharsets.UTF_8));
     }
 
     @Test
