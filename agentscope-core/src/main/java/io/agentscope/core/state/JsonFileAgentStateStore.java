@@ -382,15 +382,15 @@ public class JsonFileAgentStateStore implements AgentStateStore {
     }
 
     private static Path getStatePath(Path sessionDir, String key) {
-        return sessionDir.resolve(key + ".json");
+        return sessionDir.resolve(safeStateKey(key) + ".json");
     }
 
     private static Path getListPath(Path sessionDir, String key) {
-        return sessionDir.resolve(key + ".jsonl");
+        return sessionDir.resolve(safeStateKey(key) + ".jsonl");
     }
 
     private static Path getHashPath(Path sessionDir, String key) {
-        return sessionDir.resolve(key + ".hash");
+        return sessionDir.resolve(safeStateKey(key) + ".hash");
     }
 
     private String readHashFile(Path hashFile) {
@@ -531,6 +531,27 @@ public class JsonFileAgentStateStore implements AgentStateStore {
         return Base64.getUrlEncoder()
                 .withoutPadding()
                 .encodeToString(value.getBytes(StandardCharsets.UTF_8));
+    }
+
+    /**
+     * Encode a state key as one file-name segment.
+     *
+     * <p>The marker keeps an encoded key distinct from a caller-provided safe key whose value
+     * happens to be the same Base64-URL string. This also prevents separators and absolute paths
+     * from being interpreted by {@link Path#resolve(Path)}.
+     */
+    private static String safeStateKey(String key) {
+        Objects.requireNonNull(key, "state key must not be null");
+        if (key.isBlank()) {
+            throw new IllegalArgumentException("state key must not be blank");
+        }
+        if (SAFE_FILENAME_PATTERN.matcher(key).matches()) {
+            return key;
+        }
+        return "~"
+                + Base64.getUrlEncoder()
+                        .withoutPadding()
+                        .encodeToString(key.getBytes(StandardCharsets.UTF_8));
     }
 
     private static String decodeSegment(String segment) {
