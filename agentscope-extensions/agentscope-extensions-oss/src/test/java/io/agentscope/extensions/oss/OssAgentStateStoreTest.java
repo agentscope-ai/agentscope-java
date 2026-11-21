@@ -153,6 +153,23 @@ class OssAgentStateStoreTest {
     }
 
     @Test
+    void listSessionIds_keepsIdsContainingSlashes() {
+        // Harness sandbox slots pack the isolation key into the session id
+        // (SessionSandboxStateStore.slotSessionId), so stored ids legitimately contain '/'.
+        OSSObjectSummary nested = new OSSObjectSummary();
+        nested.setKey("test/state/__anon__/sandbox/user/agent-a/slot-1/_sandbox_state.json");
+        OSSObjectSummary plain = new OSSObjectSummary();
+        plain.setKey("test/state/__anon__/sess-a/agent_state.json");
+
+        ListObjectsV2Result result = mock(ListObjectsV2Result.class);
+        when(result.getObjectSummaries()).thenReturn(List.of(nested, plain));
+        when(result.isTruncated()).thenReturn(false);
+        when(mockOss.listObjectsV2(any(ListObjectsV2Request.class))).thenReturn(result);
+
+        assertEquals(Set.of("sandbox/user/agent-a/slot-1", "sess-a"), store.listSessionIds(null));
+    }
+
+    @Test
     void close_shutsDownClient() {
         store.close();
         verify(mockOss).shutdown();
