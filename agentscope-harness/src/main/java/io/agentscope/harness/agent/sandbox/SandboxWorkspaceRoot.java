@@ -22,7 +22,7 @@ public final class SandboxWorkspaceRoot {
     private SandboxWorkspaceRoot() {}
 
     /**
-     * Returns the active sandbox's root, or the configured fallback before acquisition.
+     * Returns the call's sandbox root, acquiring a deferred sandbox when necessary.
      * Restored sandbox state takes precedence over new-call configuration.
      *
      * @param context current call context, or null before acquisition
@@ -30,8 +30,12 @@ public final class SandboxWorkspaceRoot {
      * @return the active workspace root or fallback
      */
     public static String resolve(RuntimeContext context, String fallback) {
+        if (context == null) {
+            return fallback;
+        }
+        LazySandboxBinding lazy = context.get(LazySandboxBinding.class);
         SandboxAcquireResult acquired =
-                context != null ? context.get(SandboxAcquireResult.class) : null;
+                lazy != null ? lazy.get() : context.get(SandboxAcquireResult.class);
         if (acquired != null) {
             if (acquired.isReleased()) {
                 throw new SandboxException.SandboxConfigurationException(
