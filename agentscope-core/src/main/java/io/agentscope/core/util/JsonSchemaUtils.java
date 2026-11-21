@@ -106,12 +106,12 @@ public class JsonSchemaUtils {
      */
     public static Map<String, Object> generateSchemaFromClass(Class<?> clazz) {
         try {
-            JsonNode schemaNode;
+            String schemaJson;
             synchronized (SCHEMA_LOCK) {
-                schemaNode = schemaGenerator.generateSchema(clazz);
+                schemaJson = schemaGenerator.generateSchema(clazz).toString();
             }
             return JsonUtils.getJsonCodec()
-                    .convertValue(schemaNode, new TypeReference<Map<String, Object>>() {});
+                    .fromJson(schemaJson, new TypeReference<Map<String, Object>>() {});
         } catch (Exception e) {
             throw new RuntimeException("Failed to generate JSON schema for " + clazz.getName(), e);
         }
@@ -144,12 +144,12 @@ public class JsonSchemaUtils {
      */
     public static Map<String, Object> generateSchemaFromType(Type type) {
         try {
-            JsonNode schemaNode;
+            String schemaJson;
             synchronized (SCHEMA_LOCK) {
-                schemaNode = schemaGenerator.generateSchema(type);
+                schemaJson = schemaGenerator.generateSchema(type).toString();
             }
             return JsonUtils.getJsonCodec()
-                    .convertValue(schemaNode, new TypeReference<Map<String, Object>>() {});
+                    .fromJson(schemaJson, new TypeReference<Map<String, Object>>() {});
         } catch (Exception e) {
             throw new RuntimeException(
                     "Failed to generate JSON schema for " + type.getTypeName(), e);
