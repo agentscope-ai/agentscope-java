@@ -252,7 +252,7 @@ func (r *orchestrationRepo) ListRuns(ctx context.Context, f store.OrchestrationR
 				}
 			}
 		}
-		if (f.ParentNodeID == uuid.Nil || (v.ParentNodeID != nil && *v.ParentNodeID == f.ParentNodeID)) && (f.DefinitionID == uuid.Nil || (v.DefinitionRevisionID != nil && r.s.revisions[*v.DefinitionRevisionID] != nil && r.s.revisions[*v.DefinitionRevisionID].DefinitionID == f.DefinitionID)) && (f.Tenant == "" || v.Tenant == f.Tenant) && (f.Namespace == "" || v.Namespace == f.Namespace) && (f.RootIssueID == uuid.Nil || v.RootIssueID == f.RootIssueID) && matchesIssue && (f.State == "" || v.State == f.State) && (!f.ActiveOnly || !controlmodel.IsOrchestrationRunTerminal(v.State)) {
+		if (f.ParentNodeID == uuid.Nil || (v.ParentNodeID != nil && *v.ParentNodeID == f.ParentNodeID)) && (f.DefinitionID == uuid.Nil || (v.DefinitionRevisionID != nil && r.s.revisions[*v.DefinitionRevisionID] != nil && r.s.revisions[*v.DefinitionRevisionID].DefinitionID == f.DefinitionID)) && (f.Tenant == "" || v.Tenant == f.Tenant) && (f.Namespace == "" || v.Namespace == f.Namespace) && (f.RootIssueID == uuid.Nil || v.RootIssueID == f.RootIssueID) && matchesIssue && (f.State == "" || v.State == f.State) && (f.Mode == "" || v.Mode == f.Mode) && (!f.ActiveOnly || !controlmodel.IsOrchestrationRunTerminal(v.State)) {
 			out = append(out, cloneRun(v))
 		}
 	}
