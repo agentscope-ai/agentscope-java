@@ -38,6 +38,8 @@ public class MemoryGetTool {
     @Tool(
             name = "memory_get",
             readOnly = true,
+            evictable = false,
+            prunable = false,
             description =
                     "Read specific lines from a memory file. Use after memory_search to pull"
                             + " full context around matched lines. Path is relative to the"

@@ -118,6 +118,8 @@ Common `@Tool` attributes:
 | `description` | `String` | Description shown to the agent |
 | `readOnly` | `boolean` | Whether the tool is read-only (default `false`) |
 | `concurrencySafe` | `boolean` | Whether the tool is safe for concurrent calls (default `true`) |
+| `evictable` | `boolean` | Whether oversized-result offloading may replace this tool's results (default `true`) |
+| `prunable` | `boolean` | Whether conversation pruning may trim this tool's older results (default `true`) |
 | `stateInjected` | `boolean` | Inject `AgentState` as an extra parameter (default `false`) |
 | `dangerousFiles` / `dangerousDirectories` | `String[]` | Append custom dangerous paths |
 | `converter` | `Class<? extends ToolResultConverter>` | Custom conversion of return values into `ToolResultBlock` |
