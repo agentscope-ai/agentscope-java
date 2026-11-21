@@ -30,6 +30,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.locks.ReentrantLock;
 
 /**
  * Coordinates AG-UI interrupt resume contract state for request processing.
@@ -43,9 +44,49 @@ final class AguiResumeCoordinator {
 
     static final String CONTRACT_ERROR_CODE = "AGUI_INTERRUPT_CONTRACT_ERROR";
 
+    private static final int THREAD_STATE_LOCK_STRIPES = 64;
+
     private final ConcurrentMap<String, Map<String, AguiEvent.Interrupt>>
             pendingInterruptsByThread = new ConcurrentHashMap<>();
     private final ConcurrentMap<String, String> activeRunsByThread = new ConcurrentHashMap<>();
+    private final ConcurrentMap<String, String> lastRunIdByThread = new ConcurrentHashMap<>();
+    private final ReentrantLock[] threadStateLocks = new ReentrantLock[THREAD_STATE_LOCK_STRIPES];
+    private final boolean recordLastRunId;
+
+    AguiResumeCoordinator() {
+        this(true);
+    }
+
+    /**
+     * Creates a coordinator that optionally remembers the run id each thread last started.
+     *
+     * <p>That memory backs the message-queue hand-off guard and costs one map entry per thread
+     * that ever started a run, so callers that never use the queue can disable the recording.
+     *
+     * @param recordLastRunId whether a successfully started run is remembered for its thread
+     */
+    AguiResumeCoordinator(boolean recordLastRunId) {
+        this.recordLastRunId = recordLastRunId;
+        for (int i = 0; i < threadStateLocks.length; i++) {
+            threadStateLocks[i] = new ReentrantLock();
+        }
+    }
+
+    /**
+     * Returns the lock that serialises a run start with the queue claim-time idle check.
+     *
+     * <p>Both {@link #beginRun(RunAgentInput)} and the claiming side take this lock, so a run
+     * cannot become active between the claim's idle check and the moment it removes the head of
+     * the queue. Locks are striped by thread id instead of allocated per thread: a collision only
+     * makes two unrelated threads wait briefly, because they never share run state.
+     *
+     * @param threadId The AG-UI thread ID, may be {@code null}
+     * @return the lock for that thread's stripe
+     */
+    ReentrantLock threadStateLock(String threadId) {
+        int hash = threadId == null ? 0 : threadId.hashCode();
+        return threadStateLocks[Math.floorMod(hash, THREAD_STATE_LOCK_STRIPES)];
+    }
 
     /**
      * Validate whether the input satisfies the currently supported AG-UI resume contract.
@@ -111,6 +152,16 @@ final class AguiResumeCoordinator {
      * @return A validation result describing whether the run can start
      */
     ResumeContractResult beginRun(RunAgentInput input) {
+        ReentrantLock lock = threadStateLock(input.getThreadId());
+        lock.lock();
+        try {
+            return beginRunLocked(input);
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    private ResumeContractResult beginRunLocked(RunAgentInput input) {
         ResumeContractResult resumeContract = validate(input);
         if (resumeContract.isError()) {
             return resumeContract;
@@ -118,6 +169,9 @@ final class AguiResumeCoordinator {
         String previousRunId =
                 activeRunsByThread.putIfAbsent(input.getThreadId(), input.getRunId());
         if (previousRunId == null) {
+            if (recordLastRunId) {
+                lastRunIdByThread.put(input.getThreadId(), input.getRunId());
+            }
             return ResumeContractResult.proceed();
         }
         return ResumeContractResult.error(
@@ -133,7 +187,52 @@ final class AguiResumeCoordinator {
      * @param runId The finishing run ID
      */
     void finishRun(String threadId, String runId) {
-        activeRunsByThread.remove(threadId, runId);
+        ReentrantLock lock = threadStateLock(threadId);
+        lock.lock();
+        try {
+            activeRunsByThread.remove(threadId, runId);
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    /**
+     * Returns the run id the thread most recently started, by identity.
+     *
+     * <p>Callers compare this against the run id a delivery handed out: equality indicates that
+     * the delivered message itself reached the run endpoint, while any other run (another
+     * client's direct request, or a resume answer) does not. The id deliberately survives {@link
+     * #finishRun(String, String)}, because a finished run is exactly when the next decision needs
+     * that evidence.
+     *
+     * @param threadId The AG-UI thread ID
+     * @return the run id of the most recently started run, or {@code null} when the thread never
+     *     started a run here or when recording is disabled - the queue then falls back to its
+     *     busy-observation and grace-period release rules
+     */
+    String lastStartedRunId(String threadId) {
+        return lastRunIdByThread.get(threadId);
+    }
+
+    /**
+     * Returns whether the thread currently has an active run.
+     *
+     * @param threadId The AG-UI thread ID
+     * @return true when a run is in flight for this thread
+     */
+    boolean hasActiveRun(String threadId) {
+        return activeRunsByThread.containsKey(threadId);
+    }
+
+    /**
+     * Returns whether the thread has interrupts that no resume has resolved yet.
+     *
+     * @param threadId The AG-UI thread ID
+     * @return true when the thread is waiting for a client resume
+     */
+    boolean hasUnresolvedInterrupts(String threadId) {
+        Map<String, AguiEvent.Interrupt> pending = pendingInterruptsByThread.get(threadId);
+        return pending != null && !pending.isEmpty();
     }
 
     /**
@@ -185,18 +284,25 @@ final class AguiResumeCoordinator {
         if (!(event instanceof AguiEvent.RunFinished runFinished)) {
             return;
         }
-        if (!runId.equals(activeRunsByThread.get(threadId))) {
-            return;
-        }
-        if (runFinished.outcome() instanceof AguiEvent.RunFinishedInterruptOutcome interruptOutcome
-                && !interruptOutcome.interrupts().isEmpty()) {
-            Map<String, AguiEvent.Interrupt> interrupts = new ConcurrentHashMap<>();
-            for (AguiEvent.Interrupt interrupt : interruptOutcome.interrupts()) {
-                interrupts.put(interrupt.id(), interrupt);
+        ReentrantLock lock = threadStateLock(threadId);
+        lock.lock();
+        try {
+            if (!runId.equals(activeRunsByThread.get(threadId))) {
+                return;
             }
-            pendingInterruptsByThread.put(threadId, Map.copyOf(interrupts));
-        } else if (!runErrorSeen) {
-            pendingInterruptsByThread.remove(threadId);
+            if (runFinished.outcome()
+                            instanceof AguiEvent.RunFinishedInterruptOutcome interruptOutcome
+                    && !interruptOutcome.interrupts().isEmpty()) {
+                Map<String, AguiEvent.Interrupt> interrupts = new ConcurrentHashMap<>();
+                for (AguiEvent.Interrupt interrupt : interruptOutcome.interrupts()) {
+                    interrupts.put(interrupt.id(), interrupt);
+                }
+                pendingInterruptsByThread.put(threadId, Map.copyOf(interrupts));
+            } else if (!runErrorSeen) {
+                pendingInterruptsByThread.remove(threadId);
+            }
+        } finally {
+            lock.unlock();
         }
     }
 

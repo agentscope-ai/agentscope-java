@@ -25,12 +25,16 @@ import io.agentscope.core.agui.adapter.AguiAgentAdapterFactory;
 import io.agentscope.core.agui.event.AguiEvent;
 import io.agentscope.core.agui.model.AguiMessage;
 import io.agentscope.core.agui.model.RunAgentInput;
+import io.agentscope.core.agui.queue.QueuedMessage;
+import io.agentscope.core.agui.queue.ThreadMessageQueue;
 import io.agentscope.core.agui.runtime.AguiRuntimeContextRequest;
 import io.agentscope.core.agui.runtime.AguiRuntimeContextResolver;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.locks.ReentrantLock;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Flux;
@@ -81,7 +85,7 @@ public class AguiRequestProcessor {
                 builder.adapterFactory != null
                         ? builder.adapterFactory
                         : AguiAgentAdapterFactory.defaultFactory();
-        this.resumeCoordinator = new AguiResumeCoordinator();
+        this.resumeCoordinator = new AguiResumeCoordinator(builder.recordLastRunId);
         this.runtimeContextResolver = builder.runtimeContextResolver;
     }
 
@@ -223,6 +227,128 @@ public class AguiRequestProcessor {
                             }
                         });
         return new ProcessResult(agent, events, runtimeContext);
+    }
+
+    /**
+     * Returns whether the thread can start a new run now.
+     *
+     * <p>A thread is idle when it has no active run and no unresolved interrupt. Queued messages
+     * may only be claimed while the thread is idle.
+     *
+     * @param threadId The AG-UI thread id
+     * @return true when the thread can start a new run
+     */
+    public boolean isThreadIdle(String threadId) {
+        return !resumeCoordinator.hasActiveRun(threadId)
+                && !resumeCoordinator.hasUnresolvedInterrupts(threadId);
+    }
+
+    /**
+     * Returns whether the thread currently has a run in progress.
+     *
+     * <p>Unlike {@link #isThreadIdle(String)} this stays {@code false} while the thread only waits
+     * for an interrupt to be resolved.
+     *
+     * @param threadId The AG-UI thread id
+     * @return true when a run is in progress on the thread
+     */
+    public boolean isRunActive(String threadId) {
+        return resumeCoordinator.hasActiveRun(threadId);
+    }
+
+    /**
+     * Returns whether the thread is waiting for a client to resolve interrupts.
+     *
+     * @param threadId The AG-UI thread id
+     * @return true when the thread has unresolved interrupts
+     */
+    public boolean isAwaitingConfirmation(String threadId) {
+        return resumeCoordinator.hasUnresolvedInterrupts(threadId);
+    }
+
+    /**
+     * Returns the run id the thread most recently started.
+     *
+     * <p>The queue compares this against the run id a claim handed out: equality indicates the
+     * claimed message itself was replayed, which opens the next delivery window immediately, so a
+     * client that does not poll the queue during the replay still receives the next message as
+     * soon as the replayed run has finished. Any other run does not open the window. Returns
+     * {@code null} when the thread has never started a run here.
+     *
+     * @param threadId The AG-UI thread id
+     * @return the run id of the most recently started run, or {@code null} when the thread never
+     *     started a run
+     */
+    public String lastStartedRunId(String threadId) {
+        return resumeCoordinator.lastStartedRunId(threadId);
+    }
+
+    /**
+     * Returns the lock that serialises a run start with {@link #claimIfIdle(String,
+     * ThreadMessageQueue)}. Package-private so tests can hold it while they start a run.
+     *
+     * @param threadId The AG-UI thread id
+     * @return the lock for that thread's stripe
+     */
+    ReentrantLock threadStateLock(String threadId) {
+        return resumeCoordinator.threadStateLock(threadId);
+    }
+
+    /**
+     * Claims the head of a thread queue only when the thread is idle.
+     *
+     * <p>The claim observes the thread once without the lock so that a busy thread does not take
+     * the lock at all. When that observation says idle, the claim takes the thread-state lock and
+     * repeats the observation before dequeuing. {@link
+     * AguiResumeCoordinator#beginRun(RunAgentInput)} takes the same lock, so a run that is still
+     * active when the recheck runs either makes it fail or waits until the message has been
+     * removed. A run that started and finished while the claim waited leaves the thread idle, so
+     * the recheck does not refuse the claim on that ground. The busy fast path passes {@code
+     * idle = false} to the queue, which only releases the hand-off guard and never removes a
+     * message.
+     *
+     * <p>The check is client-triggered: this method never starts a run and never invokes a model.
+     * Delivery happens only in response to a claim request, so a client that does not claim is
+     * never handed a message, and there is no separate attached-client flag to recheck. A claim
+     * that is already in flight when the client disconnects can still remove and return a message,
+     * which is the at-most-once hand-off boundary described below.
+     *
+     * <p>If a run starts after the claim returns, the message is already out of the queue. The
+     * queue's hand-off guard closes further claims for a short window, but a competing run can
+     * still win the replay race; delivery remains at most once.
+     *
+     * <p>{@code queue} must be the queue registered for {@code threadId}. This method cannot
+     * verify that, because a queue does not carry its thread id.
+     *
+     * @param threadId The AG-UI thread id
+     * @param queue The queue registered for that thread
+     * @return the claimed message, or empty when the thread is busy, the queue is empty, or the
+     *     hand-off guard is closed
+     */
+    public Optional<QueuedMessage> claimIfIdle(String threadId, ThreadMessageQueue queue) {
+        Objects.requireNonNull(threadId, "threadId cannot be null");
+        Objects.requireNonNull(queue, "queue cannot be null");
+        long observedAtMillis = System.currentTimeMillis();
+        String observedLastRunId = lastStartedRunId(threadId);
+        if (!isThreadIdle(threadId)) {
+            // Still pass the busy observation down: the queue releases its hand-off guard when it
+            // sees the thread busy after a delivery.
+            return queue.claim(false, observedAtMillis, observedLastRunId);
+        }
+        ReentrantLock lock = threadStateLock(threadId);
+        lock.lock();
+        try {
+            // The lock wait can be long enough for another claim to deliver a message, so anchor
+            // the hand-off window to this observation instead of the one taken before the lock.
+            long lockedAtMillis = System.currentTimeMillis();
+            // Read the run evidence before the idle state, as the queue documents; the lock makes
+            // the pair a consistent snapshot either way.
+            String lastRunId = lastStartedRunId(threadId);
+            boolean idle = isThreadIdle(threadId);
+            return queue.claim(idle, lockedAtMillis, lastRunId);
+        } finally {
+            lock.unlock();
+        }
     }
 
     /**
@@ -415,6 +541,7 @@ public class AguiRequestProcessor {
         private AguiAdapterConfig config;
         private AguiAgentAdapterFactory adapterFactory;
         private AguiRuntimeContextResolver runtimeContextResolver;
+        private boolean recordLastRunId = true;
 
         /**
          * Set the agent resolver.
@@ -458,6 +585,22 @@ public class AguiRequestProcessor {
          */
         public Builder runtimeContextResolver(AguiRuntimeContextResolver runtimeContextResolver) {
             this.runtimeContextResolver = runtimeContextResolver;
+            return this;
+        }
+
+        /**
+         * Set whether the processor remembers the run id each thread last started.
+         *
+         * <p>That memory backs the queue hand-off guard exposed by {@link
+         * #lastStartedRunId(String)} and costs one map entry per thread that ever started a
+         * run, so the Spring starters disable it when the queue is disabled. The default {@code
+         * true} keeps the guard working for processors built outside the starters.
+         *
+         * @param recordLastRunId whether a successfully started run is remembered per thread
+         * @return This builder
+         */
+        public Builder recordLastRunId(boolean recordLastRunId) {
+            this.recordLastRunId = recordLastRunId;
             return this;
         }
 
