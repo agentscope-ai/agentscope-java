@@ -22,12 +22,15 @@ import io.agentscope.core.model.transport.HttpResponse;
 import io.agentscope.core.model.transport.HttpTransport;
 import io.agentscope.core.model.transport.HttpTransportException;
 import io.agentscope.core.model.transport.HttpTransportFactory;
+import io.agentscope.core.model.transport.StreamTerminationException;
+import io.agentscope.core.model.transport.TransportConstants;
 import io.agentscope.core.util.JsonException;
 import io.agentscope.core.util.JsonUtils;
 import io.agentscope.extensions.model.openai.dto.OpenAIChoice;
 import io.agentscope.extensions.model.openai.dto.OpenAIRequest;
 import io.agentscope.extensions.model.openai.dto.OpenAIResponse;
 import io.agentscope.extensions.model.openai.exception.OpenAIException;
+import java.io.EOFException;
 import java.net.URI;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
@@ -394,20 +397,28 @@ public class OpenAIClient {
             String requestBody = JsonUtils.getJsonCodec().toJson(request);
             log.debug("OpenAI streaming request to {}: {}", url, requestBody);
 
+            AtomicBoolean seenChunk = new AtomicBoolean(false);
+            AtomicBoolean sawFinishReason = new AtomicBoolean(false);
+            Map<String, String> headers = buildHeaders(effectiveApiKey, options);
+            // Ask the transport to fail the stream if the body ends before [DONE]: a clean
+            // connection close is not proof of complete content (transports that do not honor
+            // the header keep their lenient behavior).
+            headers.put(TransportConstants.STREAM_TERMINATOR_HEADER, SSE_DONE_MARKER);
             HttpRequest httpRequest =
                     HttpRequest.builder()
                             .url(url)
                             .method("POST")
-                            .headers(buildHeaders(effectiveApiKey, options))
+                            .headers(headers)
                             .body(requestBody)
                             .build();
 
-            AtomicBoolean seenChunk = new AtomicBoolean(false);
             return transport.stream(httpRequest)
                     // The SSE `[DONE]` sentinel terminates the stream: complete the Flux here
                     // rather than merely filtering it out, otherwise completion is deferred until
                     // the underlying connection closes (keep-alive gateways may stall this for the
-                    // full idle timeout even though the model has finished responding).
+                    // full idle timeout even though the model has finished responding). Only
+                    // visible with transports that pass the marker through; the built-in
+                    // transports stop at the marker themselves.
                     .takeWhile(data -> !SSE_DONE_MARKER.equals(data))
                     .<OpenAIResponse>handle(
                             (data, sink) -> {
@@ -440,12 +451,38 @@ public class OpenAIClient {
                                             summaryChoice.setMessage(null);
                                         }
                                     }
+                                    if (response.getChoices() != null
+                                            && response.getChoices().stream()
+                                                    .anyMatch(
+                                                            choice ->
+                                                                    choice != null
+                                                                            && choice
+                                                                                            .getFinishReason()
+                                                                                    != null)) {
+                                        sawFinishReason.set(true);
+                                    }
                                     sink.next(response);
                                 }
                                 // If response is null (malformed chunk), skip it silently
                             })
+                    .onErrorResume(
+                            StreamTerminationException.class,
+                            ex -> sawFinishReason.get() ? Flux.empty() : Flux.error(ex))
                     .onErrorMap(
                             ex -> {
+                                if (ex instanceof StreamTerminationException) {
+                                    // The enforcing transport proved the body ended before
+                                    // [DONE]: the aggregated response is truncated.
+                                    OpenAIException mapped =
+                                            OpenAIException.create(
+                                                    null,
+                                                    "OpenAI stream ended before [DONE]; the"
+                                                            + " response may be truncated",
+                                                    "stream_terminated_early",
+                                                    null);
+                                    mapped.initCause(new EOFException(ex.getMessage()));
+                                    return mapped;
+                                }
                                 if (ex instanceof HttpTransportException hte) {
                                     Integer code = hte.getStatusCode();
                                     String msg =
