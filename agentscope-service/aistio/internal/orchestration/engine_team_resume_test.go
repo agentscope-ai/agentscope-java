@@ -140,6 +140,51 @@ func TestAdaptiveTeamRunResumesBlockedRootDespiteNewerDirectRuns(t *testing.T) {
 	}
 }
 
+// A terminal Run may be reconciled again, but its old result must not override
+// a human decision to block the root for a new approval.
+func TestCompletedAdaptiveRunDoesNotResumeRootBlockedAgainByHuman(t *testing.T) {
+	ctx := context.Background()
+	st, err := store.Open(ctx, store.Config{Driver: store.DriverMemory})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+	issue, leader := setupBlockedTeamRoot(t, st, true)
+	completeTeamCoordinator(t, st, leader)
+	if err = (&Engine{Store: st}).ReconcileRun(ctx, leader.OrchestrationRunID); err != nil {
+		t.Fatal(err)
+	}
+	current, err := st.Collaboration().GetIssue(ctx, issue.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if current.Status != controlmodel.IssueInReview {
+		t.Fatalf("Team completion did not request review: status=%s", current.Status)
+	}
+	if _, err = (&collaboration.Service{Store: st}).TransitionIssue(ctx, issue.ID, current.Version,
+		controlmodel.IssueBlocked, controlmodel.Actor{Type: controlmodel.ActorHuman, Ref: "owner"}, "new approval required"); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(5 * time.Millisecond)
+	if _, err = st.Orchestration().CreateRun(ctx, &controlmodel.OrchestrationRun{
+		Tenant: "tenant-a", Namespace: "ns-a", RootIssueID: issue.ID,
+		Mode: controlmodel.RunModeDirect, State: controlmodel.RunSucceeded,
+		TriggerType: "comment", CreatedBy: controlmodel.Actor{Type: controlmodel.ActorHuman, Ref: "owner"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err = (&Engine{Store: st}).ReconcileRun(ctx, leader.OrchestrationRunID); err != nil {
+		t.Fatal(err)
+	}
+	current, err = st.Collaboration().GetIssue(ctx, issue.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if current.Status != controlmodel.IssueBlocked {
+		t.Fatalf("old Team Run overrode a newer human block: status=%s", current.Status)
+	}
+}
+
 // The freshness guard still protects a newer Team Run: an older adaptive Run
 // must not advance a root that a newer adaptive Run has taken over.
 func TestOlderAdaptiveRunDoesNotResumeRootOwnedByNewerTeamRun(t *testing.T) {
