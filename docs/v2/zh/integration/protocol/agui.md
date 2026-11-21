@@ -11,9 +11,9 @@ en_link: /v2/en/integration/protocol/agui
 
 `AguiMessage.content` 现在使用类型化消息内容表示。仅处理纯文本时，请使用 `getTextContent()`。
 
-多模态输入支持 image/audio/video/document。document part 会转换为 `DocumentBlock`；无法消费文档的模型提供方会返回错误，而不是静默丢弃内容。
+多模态输入支持 image/audio/video/document。document part 会转换为 `DocumentBlock`；不同模型提供方的支持情况不同。
 
-工具结果中的媒体块会按三种协议 source 类型序列化进 tool message 的 `MessageContent.Blocks`：URL 来源映射为 `url`，内联 Base64 映射为 `data`，provider 文件句柄映射为 `file`。工具结果中的媒体块只可能来自工具的显式构造，因此会被送达而不是丢弃。
+只有 AG-UI user 和 tool 消息会输出结构化 blocks，其它角色使用文本引用。ASJ 到 AGUI 的消息出站转换官方后续不再保障，请各位开发者自行实现。
 
 ## 何时使用
 
