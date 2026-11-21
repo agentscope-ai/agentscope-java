@@ -21,6 +21,7 @@ import java.nio.charset.CharacterCodingException;
 import java.nio.charset.CharsetDecoder;
 import java.nio.charset.CodingErrorAction;
 import java.nio.charset.StandardCharsets;
+import java.util.Locale;
 import java.util.Set;
 
 /**
@@ -50,6 +51,9 @@ public final class FilesystemUtils {
 
     /**
      * Classify a file as "text" or "binary" based on extension.
+     *
+     * <p>Extension matching is case-insensitive and locale-independent: {@code "photo.GIF"} is
+     * binary regardless of the JVM default locale.
      */
     public static String getFileType(String path) {
         if (path == null) {
@@ -59,7 +63,7 @@ public final class FilesystemUtils {
         if (dot < 0) {
             return "text";
         }
-        String ext = path.substring(dot).toLowerCase();
+        String ext = path.substring(dot).toLowerCase(Locale.ROOT);
         return BINARY_EXTENSIONS.contains(ext) ? "binary" : "text";
     }
 
