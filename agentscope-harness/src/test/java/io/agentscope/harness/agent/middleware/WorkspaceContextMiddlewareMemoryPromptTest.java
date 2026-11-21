@@ -244,6 +244,64 @@ class WorkspaceContextMiddlewareMemoryPromptTest {
     }
 
     @Test
+    void customRecallInstructions_replaceOnlyTheRecallSection() throws Exception {
+        Files.writeString(workspace.resolve("MEMORY.md"), "remember: deploy freeze");
+        WorkspaceManager wm = track(new WorkspaceManager(workspace));
+        WorkspaceContextMiddleware mw = new WorkspaceContextMiddleware(wm);
+        mw.setMemoryRecallInstructions(
+                "Use the injected MEMORY.md first; run memory_search only for prior-session"
+                        + " facts.");
+
+        RuntimeContext rc = RuntimeContext.empty();
+        String prompt = WorkspacePromptTestSupport.render(mw, rc, "BASE\n");
+        assertNotNull(prompt);
+        assertTrue(prompt.contains("## Memory Recall"));
+        assertTrue(prompt.contains("Use the injected MEMORY.md first"));
+        assertFalse(prompt.contains("Before answering questions about prior work"));
+        assertTrue(prompt.contains("## Memory Persistence"));
+        assertTrue(prompt.contains("memory_save"));
+        assertTrue(prompt.contains("automatically extracted"));
+        assertTrue(
+                rc.get(WorkspaceContextMaterials.class).items().stream()
+                        .anyMatch(item -> item.content().contains("deploy freeze")));
+    }
+
+    @Test
+    void blankRecallInstructions_omitOnlyTheRecallSection() throws Exception {
+        Files.writeString(workspace.resolve("MEMORY.md"), "prefer dark mode");
+        WorkspaceManager wm = track(new WorkspaceManager(workspace));
+        WorkspaceContextMiddleware mw = new WorkspaceContextMiddleware(wm);
+        mw.setMemoryRecallInstructions("  \n\t");
+
+        RuntimeContext rc = RuntimeContext.empty();
+        String prompt = WorkspacePromptTestSupport.render(mw, rc, "BASE\n");
+        assertNotNull(prompt);
+        assertFalse(prompt.contains("## Memory Recall"));
+        assertFalse(prompt.contains("Before answering questions about prior work"));
+        assertTrue(prompt.contains("## Memory Persistence"));
+        assertTrue(prompt.contains("memory_save"));
+        assertTrue(prompt.contains("automatically extracted"));
+        assertTrue(
+                rc.get(WorkspaceContextMaterials.class).items().stream()
+                        .anyMatch(item -> item.content().contains("prefer dark mode")));
+    }
+
+    @Test
+    void recallInstructionsStaySuppressedWhenMemoryToolsAreDisabled() throws Exception {
+        WorkspaceManager wm = track(new WorkspaceManager(workspace));
+        WorkspaceContextMiddleware mw =
+                new WorkspaceContextMiddleware(wm, "agent", null, 8000, true, false);
+        mw.setMemoryRecallInstructions("## Memory Recall\nnever shown");
+
+        String prompt = WorkspacePromptTestSupport.render(mw, RuntimeContext.empty(), "BASE\n");
+        assertNotNull(prompt);
+        assertFalse(prompt.contains("## Memory Recall"));
+        assertFalse(prompt.contains("never shown"));
+        assertTrue(prompt.contains("## Memory Persistence"));
+        assertTrue(prompt.contains("automatically extracted"));
+    }
+
+    @Test
     void bothDisabled_omitsMemoryGuidanceAndMemoryContext() throws Exception {
         Files.writeString(workspace.resolve("MEMORY.md"), "should not appear in prompt");
         WorkspaceManager wm = track(new WorkspaceManager(workspace));

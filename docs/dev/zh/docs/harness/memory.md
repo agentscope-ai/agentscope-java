@@ -200,11 +200,37 @@ HarnessAgent.builder()
 
 `model(String)` 走 `ModelRegistry.resolve()`，也可以传 `Model` 实例。不设则 fallback 到 agent 主模型。
 
+### 例 7：收窄或去掉 Memory Recall 引导
+
+默认工作区 system prompt 会要求模型在回答「关于过往工作、决定、日期、人物或偏好」的问题前先跑 `memory_search`。这条指令比某些应用需要的更宽，可能在首轮问题（约束已经全部给出）时触发一次不必要的工具往返。`recallInstructions` 只改这条引导：memory 工具、`MEMORY.md` 注入和 flush/consolidation 都保持原配置。
+
+```java
+// 去掉 Memory Recall 段；memory_search / memory_get / memory_save 仍然可用
+HarnessAgent.builder()
+    .memory(MemoryConfig.builder().recallInstructions("").build())
+    .build();
+
+// 或者换成更窄的策略。文本会成为该段正文。
+HarnessAgent.builder()
+    .memory(MemoryConfig.builder()
+        .recallInstructions("""
+            Use the MEMORY.md material already provided. Run memory_search only when the
+            request depends on facts from past sessions that are not in the current context.
+            """)
+        .build())
+    .build();
+```
+
+- `null`（默认）保留内置引导；空白文本去掉该段；非空文本替换 `## Memory Recall` 标题下的正文，不再追加原策略。
+- 调用 `.disableMemoryTools()` 时仍会去掉 recall 引导（包括自定义文本），因为引导要调用的工具已不存在。
+- 这只是引导，不是强制检索策略：不保证每轮只调一次模型，也不配置抽取 / 合并所用的模型。
+
 ### `MemoryConfig` 字段速查
 
 | 字段 | 默认 | 作用 |
 |------|------|------|
 | `model` | `null`（使用 agent 主模型） | flush / consolidation 使用的独立模型；支持 `Model` 实例或 `"provider:model"` 字符串 |
+| `recallInstructions` | `null`（使用内置 Memory Recall 引导） | 替换回答模型的 Memory Recall 引导；空白文本去掉该段。不改变工具和记忆注入 |
 | `flushPrompt` | `null`（使用 `DEFAULT_FLUSH_PROMPT`） | 路径 1 的 SYSTEM prompt |
 | `consolidationPrompt` | `null`（使用 `DEFAULT_CONSOLIDATION_PROMPT`） | 路径 2 的 prompt 模板（必须含两个 `%d`） |
 | `consolidationMaxTokens` | `4_000` | `MEMORY.md` token 上限 |
@@ -282,7 +308,7 @@ HarnessAgent.builder()
 
 两者一起用时，还会跳过 `HARNESS_CONTEXT` 中的 memory 材料（`MEMORY.md`）注入，但保留 Domain Knowledge / AGENTS / knowledge 上下文。
 
-`disableMemoryHooks()` 是核选项；只想节流不想关，用 `.memory(MemoryConfig.builder().flushTrigger(...).build())`。
+`disableMemoryHooks()` 是核选项；只想节流不想关，用 `.memory(MemoryConfig.builder().flushTrigger(...).build())`。只想去掉 recall 引导而保留工具和 `MEMORY.md`，用 `.memory(MemoryConfig.builder().recallInstructions("").build())`。
 
 ## 相关文档
 

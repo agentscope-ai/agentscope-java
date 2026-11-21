@@ -2352,9 +2352,11 @@ public class HarnessAgent implements Agent, AutoCloseable {
         }
 
         /**
-         * Overrides the long-term memory pipeline configuration (flush + consolidation +
-         * maintenance). When not called, {@link MemoryConfig#defaults()} is used and behaviour
-         * matches the harness's historical defaults.
+         * Configures the workspace-memory recall guidance and the long-term memory pipeline
+         * (flush + consolidation + maintenance). When not called, {@link
+         * MemoryConfig#defaults()} is used and behaviour matches the harness's historical
+         * defaults. Use {@link MemoryConfig.Builder#recallInstructions(String)} to replace or
+         * omit the Memory Recall guidance without disabling memory tools.
          *
          * <p>For the compaction (in-context summarization) pipeline, see
          * {@link #compaction(CompactionConfig)}.
@@ -2771,7 +2773,9 @@ public class HarnessAgent implements Agent, AutoCloseable {
         /**
          * Skips registration of {@code memory_search} / {@code memory_get} / {@code memory_save} /
          * {@code thread_search}, and omits matching Memory Recall / tool-based Persistence
-         * guidance from the workspace system prompt.
+         * guidance from the workspace system prompt. To omit only the Memory Recall guidance
+         * while keeping the tools, use {@link MemoryConfig.Builder#recallInstructions(String)}
+         * with blank text instead.
          */
         public Builder disableMemoryTools() {
             this.disableMemoryTools = true;
@@ -3127,6 +3131,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
                                 disableMemoryTools,
                                 disableMemoryHooks);
                 markdownMw.setAdditionalContextFiles(additionalContextFiles);
+                markdownMw.setMemoryRecallInstructions(memoryConfig.recallInstructions());
                 markdownMw.setArtifactDeliveryEnabled(artifactDeliveryEnabled);
                 inner.middleware(markdownMw);
             }
