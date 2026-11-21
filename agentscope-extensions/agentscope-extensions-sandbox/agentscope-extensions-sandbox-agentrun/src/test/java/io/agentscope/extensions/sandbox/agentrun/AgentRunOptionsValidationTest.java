@@ -89,6 +89,51 @@ class AgentRunOptionsValidationTest {
     }
 
     @Test
+    void validatesEveryNasMountDir() {
+        AgentRunSandboxClientOptions opt =
+                baseValid()
+                        .setNasMountConfigs(
+                                List.of(
+                                        new AgentRunNasMountConfig().setMountDir("/mnt/workspace"),
+                                        new AgentRunNasMountConfig().setMountDir("/opt/skills")));
+
+        SandboxException.SandboxConfigurationException ex =
+                Assertions.assertThrows(
+                        SandboxException.SandboxConfigurationException.class, opt::validate);
+        Assertions.assertTrue(ex.getMessage().contains("nasMountConfigs[1].mountDir"));
+        Assertions.assertTrue(ex.getMessage().contains("/opt/skills"));
+    }
+
+    @Test
+    void legacyNasConfigReplacesAndClearsMountList() {
+        AgentRunNasMountConfig workspace = new AgentRunNasMountConfig().setMountDir("/mnt/data");
+        AgentRunSandboxClientOptions opt =
+                baseValid()
+                        .setNasMountConfigs(
+                                List.of(
+                                        new AgentRunNasMountConfig().setMountDir("/mnt/old"),
+                                        new AgentRunNasMountConfig().setMountDir("/mnt/skills")))
+                        .setNasConfig(workspace);
+
+        Assertions.assertEquals(List.of(workspace), opt.getNasMountConfigs());
+        Assertions.assertEquals(workspace, opt.getNasConfig());
+        opt.setNasConfig(null);
+        Assertions.assertTrue(opt.getNasMountConfigs().isEmpty());
+        Assertions.assertNull(opt.getNasConfig());
+    }
+
+    @Test
+    void nullNasMountListClearsMountsAndAllowsAppending() {
+        AgentRunNasMountConfig workspace = new AgentRunNasMountConfig().setMountDir("/mnt/data");
+        AgentRunSandboxClientOptions opt =
+                baseValid().setNasConfig(workspace).setNasMountConfigs(null).addNasMount(null);
+
+        Assertions.assertTrue(opt.getNasMountConfigs().isEmpty());
+        opt.addNasMount(workspace);
+        Assertions.assertEquals(List.of(workspace), opt.getNasMountConfigs());
+    }
+
+    @Test
     void disallowedOssMountDirFails() {
         AgentRunSandboxClientOptions opt =
                 baseValid()

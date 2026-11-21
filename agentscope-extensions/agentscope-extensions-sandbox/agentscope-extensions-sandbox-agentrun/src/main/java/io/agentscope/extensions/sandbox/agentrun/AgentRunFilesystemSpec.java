@@ -21,6 +21,7 @@ import io.agentscope.harness.agent.sandbox.SandboxClientOptions;
 import io.agentscope.harness.agent.sandbox.WorkspaceSpec;
 import io.agentscope.harness.agent.sandbox.snapshot.NoopSnapshotSpec;
 import io.agentscope.harness.agent.sandbox.snapshot.SandboxSnapshotSpec;
+import java.util.List;
 
 /** {@link SandboxFilesystemSpec} for the Alibaba Cloud AgentRun store. */
 public class AgentRunFilesystemSpec extends SandboxFilesystemSpec {
@@ -77,6 +78,16 @@ public class AgentRunFilesystemSpec extends SandboxFilesystemSpec {
 
     public AgentRunFilesystemSpec nasConfig(AgentRunNasMountConfig nas) {
         options.setNasConfig(nas);
+        return this;
+    }
+
+    public AgentRunFilesystemSpec nasMountConfigs(List<AgentRunNasMountConfig> mounts) {
+        options.setNasMountConfigs(mounts);
+        return this;
+    }
+
+    public AgentRunFilesystemSpec addNasMount(AgentRunNasMountConfig mount) {
+        options.addNasMount(mount);
         return this;
     }
 

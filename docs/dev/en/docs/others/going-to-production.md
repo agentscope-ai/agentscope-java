@@ -180,7 +180,7 @@ DistributedStore jdbcStore = JdbcDistributedStore.create(dataSource);
 |------------|---------|-------|
 | High-frequency small KV (memory, session snapshots, task records) | Redis / MySQL (`BaseStore`) | `RemoteFilesystemSpec` |
 | Large objects (whole sandbox workspace tar, tens of MB) | OSS / S3 | `OssSnapshotSpec` / custom `RemoteSnapshotSpec` |
-| Cross-node shared volume (multiple sandbox instances mounting the same dir) | NAS / EFS | `AgentRunFilesystemSpec.nasConfig(...)` (only AgentRun natively supports this) |
+| Cross-node shared volume (multiple sandbox instances mounting the same dir) | NAS / EFS | `AgentRunFilesystemSpec.nasMountConfigs(...)` / `addNasMount(...)` (only AgentRun natively supports this) |
 
 ### `RemoteFilesystemSpec` routing table
 
@@ -379,11 +379,28 @@ You can also implement `SandboxExecutionGuard` yourself to plug in Zookeeper, et
         .accountId(System.getenv("ALI_ACCOUNT_ID"))
         .region("cn-hangzhou")
         .templateName("python-3.12")
-        .nasConfig(new AgentRunNasMountConfig().fileSystemId("...").mountTargetDomain("...").mountDir("/workspace"))
-        .addOssMount(new AgentRunOssMountConfig().bucketName("data").mountDir("/mnt/oss")))
+        .mcpServerUrl("https://your-template-host/mcp")
+        .nasMountConfigs(List.of(
+                new AgentRunNasMountConfig()
+                        .setServerAddr("user-nas.cn-hangzhou.nas.aliyuncs.com")
+                        .setRemotePath("/users/alice")
+                        .setMountDir("/mnt/workspace"),
+                new AgentRunNasMountConfig()
+                        .setServerAddr("shared-nas.cn-hangzhou.nas.aliyuncs.com")
+                        .setRemotePath("/skills")
+                        .setMountDir("/mnt/skills")))
+        .workspaceRoot("/mnt/workspace")
+        .addOssMount(new AgentRunOssMountConfig()
+                .setBucketName("data")
+                .setEndpoint("oss-cn-hangzhou.aliyuncs.com")
+                .setMountDir("/mnt/oss")))
 ```
 
-Full fields in the `AgentRunNasMountConfig` / `AgentRunOssMountConfig` source.
+Use a separate NAS path for each user's workspace and another mount for shared skills. The NAS mount API has no `readOnly` option, so configure read-only access to shared skills on the NAS side. Each mount directory must be under `/home/`, `/mnt/` or `/data/`. A workspace under any configured NAS mount is treated as persistent.
+
+`nasMountConfigs(List<AgentRunNasMountConfig>)` replaces the mount list, and `addNasMount(...)` appends a mount. Direct client configuration uses `AgentRunSandboxClientOptions.setNasMountConfigs(...)` and `addNasMount(...)`. The existing `nasConfig(...)` / `setNasConfig(...)` methods remain compatible: they replace the list with one mount, or clear it when passed `null`. `getNasConfig()` returns the first mount; use `getNasMountConfigs()` for the full list. Non-empty per-call NAS mounts replace the client's defaults; otherwise the defaults are retained.
+
+Full fields are in the `AgentRunNasMountConfig` / `AgentRunOssMountConfig` source. The Alibaba Cloud [NASConfig reference](https://help.aliyun.com/zh/agentrun/api-agentrun-2025-09-10-struct-nasconfig) describes the `mountPoints` list.
 
 ## 6. Multi-replica deployment checklist (combined)
 
