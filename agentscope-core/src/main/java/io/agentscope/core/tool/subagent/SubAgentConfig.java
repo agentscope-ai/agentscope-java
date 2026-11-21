@@ -65,6 +65,7 @@ public class SubAgentConfig {
     private final boolean forwardEvents;
     private final StreamOptions streamOptions;
     private final AgentStateStore stateStore;
+    private final SubAgentSessionStrategy sessionStrategy;
 
     private SubAgentConfig(Builder builder) {
         this.toolName = builder.toolName;
@@ -73,6 +74,10 @@ public class SubAgentConfig {
         this.streamOptions = builder.streamOptions;
         this.stateStore =
                 builder.stateStore != null ? builder.stateStore : new InMemoryAgentStateStore();
+        this.sessionStrategy =
+                builder.sessionStrategy != null
+                        ? builder.sessionStrategy
+                        : SubAgentSessionStrategy.MODEL_CONTROLLED;
     }
 
     /**
@@ -149,6 +154,16 @@ public class SubAgentConfig {
         return stateStore;
     }
 
+    /**
+     * Gets how the tool chooses the child session for each delegation.
+     *
+     * @return The session strategy (never null, default: {@link
+     *     SubAgentSessionStrategy#MODEL_CONTROLLED})
+     */
+    public SubAgentSessionStrategy getSessionStrategy() {
+        return sessionStrategy;
+    }
+
     /** Builder for SubAgentConfig. */
     public static class Builder {
         private String toolName;
@@ -156,6 +171,7 @@ public class SubAgentConfig {
         private boolean forwardEvents = true;
         private StreamOptions streamOptions;
         private AgentStateStore stateStore;
+        private SubAgentSessionStrategy sessionStrategy;
 
         private Builder() {}
 
@@ -227,6 +243,22 @@ public class SubAgentConfig {
          */
         public Builder stateStore(AgentStateStore stateStore) {
             this.stateStore = stateStore;
+            return this;
+        }
+
+        /**
+         * Sets how the tool chooses the child session for each delegation.
+         *
+         * <p>Defaults to {@link SubAgentSessionStrategy#MODEL_CONTROLLED}: the model continues a
+         * child session by echoing the returned {@code session_id}. Use {@link
+         * SubAgentSessionStrategy#PER_PARENT_SESSION} to keep one child history per caller session
+         * without relying on the model.
+         *
+         * @param sessionStrategy The session strategy (null for the default)
+         * @return This builder
+         */
+        public Builder sessionStrategy(SubAgentSessionStrategy sessionStrategy) {
+            this.sessionStrategy = sessionStrategy;
             return this;
         }
 
