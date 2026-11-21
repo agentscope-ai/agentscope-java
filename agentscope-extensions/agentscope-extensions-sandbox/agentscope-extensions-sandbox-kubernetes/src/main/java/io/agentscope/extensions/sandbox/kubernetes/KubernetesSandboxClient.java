@@ -289,6 +289,11 @@ public class KubernetesSandboxClient
         if (callOptions.getServerPort() > 0) {
             o.setServerPort(callOptions.getServerPort());
         }
+        o.setSandboxReadyTimeoutSeconds(callOptions.getSandboxReadyTimeoutSeconds());
+        o.setCleanupTimeoutSeconds(callOptions.getCleanupTimeoutSeconds());
+        o.setRequestTimeoutSeconds(callOptions.getRequestTimeoutSeconds());
+        o.setPerAttemptTimeoutSeconds(callOptions.getPerAttemptTimeoutSeconds());
+        o.setPortForwardTimeoutSeconds(callOptions.getPortForwardTimeoutSeconds());
         if (callOptions.getShutdownAfterSeconds() != null) {
             o.setShutdownAfterSeconds(callOptions.getShutdownAfterSeconds());
         }
