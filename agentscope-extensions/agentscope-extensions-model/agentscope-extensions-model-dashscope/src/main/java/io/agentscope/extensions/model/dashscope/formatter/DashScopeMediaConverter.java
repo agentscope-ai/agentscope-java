@@ -24,6 +24,9 @@ import io.agentscope.core.message.Source;
 import io.agentscope.core.message.URLSource;
 import io.agentscope.core.message.VideoBlock;
 import io.agentscope.extensions.model.dashscope.dto.DashScopeContentPart;
+import java.util.Base64;
+import java.util.Locale;
+import java.util.Set;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -31,16 +34,26 @@ import org.slf4j.LoggerFactory;
  * Handles media content conversion for DashScope API.
  * Converts ImageBlock/VideoBlock/AudioBlock to DashScope-compatible formats.
  *
- * <p>DashScope uses file:// protocol for local files, which differs from OpenAI's base64 approach.
+ * <p>Local images are embedded as data URLs for HTTP transport; audio and video preserve their
+ * existing URL handling.
  */
 public class DashScopeMediaConverter {
 
     private static final Logger log = LoggerFactory.getLogger(DashScopeMediaConverter.class);
+    private static final Set<String> SUPPORTED_IMAGE_MIME_TYPES =
+            Set.of(
+                    "image/png",
+                    "image/jpeg",
+                    "image/gif",
+                    "image/webp",
+                    "image/heic",
+                    "image/heif");
 
     /**
      * Convert ImageBlock to URL string for DashScope API.
      *
      * <p>Embeds local images as data URLs because the HTTP API cannot read local files.
+     * Honors an explicit {@link URLSource#getMimeType()} hint, including for extension-less URLs.
      *
      * <p>Handles:
      * <ul>
@@ -58,13 +71,14 @@ public class DashScopeMediaConverter {
 
         if (source instanceof URLSource urlSource) {
             String url = urlSource.getUrl();
-            MediaUtils.validateImageExtension(url);
-            if (url.startsWith("file:")) {
-                return MediaUtils.urlToBase64DataUrl(
-                        java.nio.file.Path.of(java.net.URI.create(url)).toString());
+            String mimeType = MediaUtils.resolveMimeType(urlSource).toLowerCase(Locale.ROOT);
+            if (!SUPPORTED_IMAGE_MIME_TYPES.contains(mimeType)) {
+                throw new IllegalArgumentException("Unsupported image MIME type: " + mimeType);
             }
-            if (MediaUtils.isLocalFile(url)) {
-                return MediaUtils.urlToBase64DataUrl(url);
+            if (url.regionMatches(true, 0, "file:", 0, 5) || MediaUtils.isLocalFile(url)) {
+                byte[] bytes = MediaUtils.readUrlAsBytes(url);
+                return String.format(
+                        "data:%s;base64,%s", mimeType, Base64.getEncoder().encodeToString(bytes));
             }
             return url;
 
