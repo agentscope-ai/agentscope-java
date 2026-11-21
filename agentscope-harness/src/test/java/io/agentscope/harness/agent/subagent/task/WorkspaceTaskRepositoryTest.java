@@ -29,6 +29,8 @@ import io.agentscope.harness.agent.filesystem.remote.store.InMemoryStore;
 import io.agentscope.harness.agent.filesystem.remote.store.NamespaceFactory;
 import io.agentscope.harness.agent.filesystem.spec.RemoteFilesystemSpec;
 import io.agentscope.harness.agent.workspace.WorkspaceManager;
+import java.net.URL;
+import java.net.URLClassLoader;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
@@ -37,9 +39,13 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
+import javax.tools.ToolProvider;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -170,6 +176,260 @@ class WorkspaceTaskRepositoryTest {
         assertTrue(record.isPresent());
         assertEquals(TaskStatus.FAILED, record.get().getStatus());
         assertTrue(record.get().getErrorMessage().contains("intentional failure"));
+    }
+
+    @Test
+    @DisplayName("completion callback receives FAILED status and error message when task throws")
+    void completionCallback_receivesFailedStatusAndError() throws Exception {
+        CompletableFuture<TaskDelivery> callback = new CompletableFuture<>();
+        repo.setCompletionCallback(
+                (TaskRepository.TaskSettledCallback)
+                        (rc, taskId, subAgentId, sessionId, status, result, errorMessage) ->
+                                callback.complete(
+                                        new TaskDelivery(
+                                                taskId,
+                                                subAgentId,
+                                                status,
+                                                result,
+                                                errorMessage,
+                                                null)));
+
+        repo.putTask(
+                RuntimeContext.empty(),
+                "task-callback-fail",
+                "sub-agent-fail",
+                "sess-callback",
+                new TaskRunSpec.LocalTaskRunSpec(
+                        () -> {
+                            throw new RuntimeException("callback failure detail");
+                        }));
+
+        TaskDelivery delivery = callback.get(5, TimeUnit.SECONDS);
+        assertEquals(TaskStatus.FAILED, delivery.status());
+        assertNull(delivery.result());
+        assertEquals("callback failure detail", delivery.errorMessage());
+    }
+
+    @Test
+    @DisplayName("completion callback receives COMPLETED status and result on success")
+    void completionCallback_receivesCompletedStatusAndResult() throws Exception {
+        CompletableFuture<TaskDelivery> callback = new CompletableFuture<>();
+        repo.setCompletionCallback(
+                (TaskRepository.TaskSettledCallback)
+                        (rc, taskId, subAgentId, sessionId, status, result, errorMessage) ->
+                                callback.complete(
+                                        new TaskDelivery(
+                                                taskId,
+                                                subAgentId,
+                                                status,
+                                                result,
+                                                errorMessage,
+                                                null)));
+
+        repo.putTask(
+                RuntimeContext.empty(),
+                "task-callback-ok",
+                "sub-agent-ok",
+                "sess-callback",
+                new TaskRunSpec.LocalTaskRunSpec(() -> "delivered"));
+
+        TaskDelivery delivery = callback.get(5, TimeUnit.SECONDS);
+        assertEquals(TaskStatus.COMPLETED, delivery.status());
+        assertEquals("delivered", delivery.result());
+        assertNull(delivery.errorMessage());
+    }
+
+    @Test
+    void legacyCallbackReceivesSuccessAndFailure() throws Exception {
+        CompletableFuture<String> callback = new CompletableFuture<>();
+        repo.setCompletionCallback(
+                (rc, taskId, subAgentId, sessionId, result) -> callback.complete(result));
+        repo.putTask(
+                RuntimeContext.empty(),
+                "legacy-success",
+                "worker",
+                "session",
+                new TaskRunSpec.LocalTaskRunSpec(() -> "legacy result"));
+        assertEquals("legacy result", callback.get(5, TimeUnit.SECONDS));
+
+        CompletableFuture<String> failure = new CompletableFuture<>();
+        repo.setCompletionCallback(
+                (rc, taskId, subAgentId, sessionId, result) -> failure.complete(result));
+        repo.putTask(
+                RuntimeContext.empty(),
+                "legacy-failure",
+                "worker",
+                "session",
+                new TaskRunSpec.LocalTaskRunSpec(
+                        () -> {
+                            throw new IllegalStateException("legacy error");
+                        }));
+        assertNull(failure.get(5, TimeUnit.SECONDS));
+    }
+
+    @Test
+    void callbacksCompiledAgainstFiveArgumentApiRemainBinaryCompatible() throws Exception {
+        Path source = Files.createDirectories(tempDir.resolve("legacy-source"));
+        Path output = Files.createDirectories(tempDir.resolve("legacy-classes"));
+        Path api = source.resolve("TaskRepository.java");
+        Files.writeString(
+                api,
+                """
+                package io.agentscope.harness.agent.subagent.task;
+                import io.agentscope.core.agent.RuntimeContext;
+                public interface TaskRepository {
+                    @FunctionalInterface
+                    interface TaskCompletionCallback {
+                        void onCompleted(RuntimeContext rc, String taskId, String subAgentId,
+                                String sessionId, String result);
+                    }
+                }
+                """);
+        Path client = source.resolve("LegacyCallbacks.java");
+        Files.writeString(
+                client,
+                """
+                package compat;
+                import io.agentscope.core.agent.RuntimeContext;
+                import io.agentscope.harness.agent.subagent.task.TaskRepository.TaskCompletionCallback;
+                public class LegacyCallbacks {
+                    public static String result;
+                    public static TaskCompletionCallback callback() {
+                        return (rc, taskId, agentId, sessionId, value) -> result = value;
+                    }
+                    public static void invoke(TaskCompletionCallback callback, String value) {
+                        callback.onCompleted(RuntimeContext.empty(), "task", "worker", "session", value);
+                    }
+                }
+                """);
+        assertEquals(
+                0,
+                ToolProvider.getSystemJavaCompiler()
+                        .run(
+                                null,
+                                null,
+                                null,
+                                "--release",
+                                "17",
+                                "-classpath",
+                                System.getProperty("java.class.path"),
+                                "-d",
+                                output.toString(),
+                                api.toString(),
+                                client.toString()));
+        try (var loader =
+                new URLClassLoader(
+                        new URL[] {output.toUri().toURL()}, getClass().getClassLoader())) {
+            Class<?> legacy = loader.loadClass("compat.LegacyCallbacks");
+            var callback =
+                    (TaskRepository.TaskCompletionCallback)
+                            legacy.getMethod("callback").invoke(null);
+            callback.onSettled(
+                    RuntimeContext.empty(),
+                    "task",
+                    "worker",
+                    "session",
+                    TaskStatus.COMPLETED,
+                    "new result",
+                    null);
+            assertEquals("new result", legacy.getField("result").get(null));
+            callback.onSettled(
+                    RuntimeContext.empty(),
+                    "task",
+                    "worker",
+                    "session",
+                    TaskStatus.FAILED,
+                    null,
+                    "new error");
+            assertNull(legacy.getField("result").get(null));
+
+            AtomicReference<TaskStatus> status = new AtomicReference<>();
+            TaskRepository.TaskSettledCallback settled =
+                    (rc, taskId, agentId, sessionId, state, result, error) -> status.set(state);
+            var invoke =
+                    legacy.getMethod(
+                            "invoke", TaskRepository.TaskCompletionCallback.class, String.class);
+            invoke.invoke(null, settled, "old result");
+            assertEquals(TaskStatus.COMPLETED, status.get());
+            invoke.invoke(null, settled, null);
+            assertEquals(TaskStatus.FAILED, status.get());
+        }
+    }
+
+    @Test
+    void adoptedFutureDeliversAuthoritativeFailureAndEmptySuccess() throws Exception {
+        for (boolean fails : List.of(false, true)) {
+            CompletableFuture<TaskDelivery> callback = new CompletableFuture<>();
+            repo.setCompletionCallback(
+                    (TaskRepository.TaskSettledCallback)
+                            (rc, taskId, subAgentId, sessionId, status, result, errorMessage) ->
+                                    callback.complete(
+                                            new TaskDelivery(
+                                                    taskId,
+                                                    subAgentId,
+                                                    status,
+                                                    result,
+                                                    errorMessage,
+                                                    null)));
+            CompletableFuture<String> future = new CompletableFuture<>();
+            repo.putTask(
+                    RuntimeContext.empty(),
+                    "adopted-" + fails,
+                    "worker",
+                    "session",
+                    new TaskRunSpec.AdoptedTaskRunSpec(future));
+            if (fails) {
+                future.completeExceptionally(new IllegalStateException("adopted error"));
+            } else {
+                future.complete(null);
+            }
+            TaskDelivery delivery = callback.get(5, TimeUnit.SECONDS);
+            assertEquals(fails ? TaskStatus.FAILED : TaskStatus.COMPLETED, delivery.status());
+            assertNull(delivery.result());
+            assertEquals(fails ? "adopted error" : null, delivery.errorMessage());
+        }
+    }
+
+    @Test
+    void suppressedSettledFailuresRetainDurableErrors() throws Exception {
+        AtomicInteger callbacks = new AtomicInteger();
+        repo.setCompletionCallback(
+                (TaskRepository.TaskSettledCallback)
+                        (rc, taskId, agentId, sessionId, status, result, error) ->
+                                callbacks.incrementAndGet());
+        for (boolean adopted : List.of(false, true)) {
+            String sessionId = "suppressed-failure-" + adopted;
+            RuntimeContext context =
+                    RuntimeContext.builder()
+                            .sessionId(sessionId)
+                            .put(TaskRepository.SUPPRESS_COMPLETION_CALLBACK, true)
+                            .build();
+            CompletableFuture<String> future = new CompletableFuture<>();
+            TaskRunSpec spec =
+                    adopted
+                            ? new TaskRunSpec.AdoptedTaskRunSpec(future)
+                            : new TaskRunSpec.LocalTaskRunSpec(
+                                    () -> {
+                                        throw new IllegalStateException(
+                                                "suppressed execution error");
+                                    });
+            BackgroundTask task =
+                    repo.putTask(context, "suppressed-task", "worker", sessionId, spec);
+            if (adopted) {
+                future.completeExceptionally(
+                        new IllegalStateException("suppressed execution error"));
+            }
+            assertTrue(task.waitForCompletion(5000));
+            assertEquals(0, callbacks.get());
+            List<TaskDelivery> deliveries = repo.findPendingDeliveries(context, sessionId);
+            assertEquals(1, deliveries.size());
+            TaskDelivery delivery = deliveries.get(0);
+            assertEquals("suppressed-task", delivery.taskId());
+            assertEquals("worker", delivery.agentId());
+            assertEquals(TaskStatus.FAILED, delivery.status());
+            assertNull(delivery.result());
+            assertEquals("suppressed execution error", delivery.errorMessage());
+        }
     }
 
     // ------------------------------------------------------------------
