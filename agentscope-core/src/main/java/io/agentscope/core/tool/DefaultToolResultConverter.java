@@ -18,6 +18,7 @@ package io.agentscope.core.tool;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
+import io.agentscope.core.message.ToolResultState;
 import io.agentscope.core.util.JsonUtils;
 import java.lang.reflect.Type;
 import java.util.List;
@@ -33,15 +34,11 @@ import org.slf4j.LoggerFactory;
  *   <li>Converts null results to "null" text</li>
  *   <li>Converts void results to "(completed with no output)" text</li>
  *   <li>Passes through ToolResultBlock instances unchanged</li>
- *   <li>Wraps a returned ContentBlock, or a non-empty list of only ContentBlocks, unchanged</li>
+ *   <li>Wraps a returned ContentBlock, or a non-empty list of only ContentBlocks, as a successful
+ *       result</li>
  *   <li>Serializes objects to JSON with schema information</li>
  *   <li>Falls back to toString() if serialization fails</li>
  * </ul>
- *
- * <p>Block returns close the loop: the blocks a tool returns are the blocks its result carries.
- * The framework wraps them without reinterpretation — no JSON round trip, no re-typing — so what
- * the model formatters and protocol boundaries receive is exactly what the developer constructed.
- * Developers stay in full control of a tool's blocks.
  */
 public class DefaultToolResultConverter implements ToolResultConverter {
 
@@ -60,17 +57,6 @@ public class DefaultToolResultConverter implements ToolResultConverter {
         // If result is already a ToolResultBlock, return it directly
         if (result instanceof ToolResultBlock) {
             return (ToolResultBlock) result;
-        }
-
-        // A returned ContentBlock (or a list of them) is the tool's typed output, such as a
-        // generated image; wrap it as the result's output instead of JSON-serializing to text
-        if (result instanceof ContentBlock block) {
-            return ToolResultBlock.of(List.of(block));
-        }
-        if (isContentBlockList(result)) {
-            List<ContentBlock> blocks =
-                    ((List<?>) result).stream().map(ContentBlock.class::cast).toList();
-            return ToolResultBlock.of(blocks);
         }
 
         return serialize(result, returnType);
@@ -118,13 +104,23 @@ public class DefaultToolResultConverter implements ToolResultConverter {
     }
 
     /**
-     * Serialize result to JSON string with schema.
+     * Converts a non-null result that is not already a ToolResultBlock. Typed block returns are
+     * wrapped as successful output; other values are serialized to JSON.
      *
      * @param result the result to serialize
      * @param returnType the return type
      * @return ToolResultBlock with JSON string and schema
      */
     protected ToolResultBlock serialize(Object result, Type returnType) {
+        if (result instanceof ContentBlock block) {
+            return successfulOutput(List.of(block));
+        }
+        if (isContentBlockList(result)) {
+            List<ContentBlock> blocks =
+                    ((List<?>) result).stream().map(ContentBlock.class::cast).toList();
+            return successfulOutput(blocks);
+        }
+
         try {
             String json = JsonUtils.getJsonCodec().toJson(result);
             return ToolResultBlock.of(List.of(TextBlock.builder().text(json).build()));
@@ -134,5 +130,9 @@ public class DefaultToolResultConverter implements ToolResultConverter {
             return ToolResultBlock.of(
                     List.of(TextBlock.builder().text(String.valueOf(result)).build()));
         }
+    }
+
+    private static ToolResultBlock successfulOutput(List<ContentBlock> output) {
+        return ToolResultBlock.builder().output(output).state(ToolResultState.SUCCESS).build();
     }
 }
