@@ -88,5 +88,8 @@ public enum GenerateReason {
     MAX_ITERATIONS,
 
     /** Tool result returned directly to the caller without a follow-up model call. */
-    TOOL_RETURN_DIRECT
+    TOOL_RETURN_DIRECT,
+
+    /** The opt-in repetition guard stopped a batch before dispatch. */
+    REPEATED_TOOL_CALL
 }
