@@ -19,11 +19,15 @@ import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ChatResponse;
+import io.agentscope.core.model.ToolChoice;
 import io.agentscope.core.model.ToolSchema;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.function.UnaryOperator;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -37,15 +41,21 @@ import org.slf4j.LoggerFactory;
  * tool calls in history messages) and restores the original names on parsed responses so
  * that tool dispatch keeps working against the original registration.
  *
- * <p>Encoding is deterministic and identity for already-valid names. Decoding uses a
- * per-request map built from the request's tool list, so no shared state is required and
- * concurrent requests cannot interfere.
+ * <p>All request-side rewriting is done once by {@link Request}, which is built per request in
+ * the model and handed to the formatter. Formatter subclasses (including the compat providers
+ * that override {@code applyToolChoice}) therefore see already-encoded names and need no
+ * changes. Decoding uses the same per-request map, so no shared state is required and
+ * concurrent requests cannot interfere. Encoding is identity for already-compliant names.
+ *
+ * <p>Decoding is applied to each parsed response, including streaming chunks. OpenAI-compatible
+ * APIs send the complete function name in the first tool-call delta; if a gateway splits the
+ * name itself across deltas, the accumulated name is assembled downstream by the agent's
+ * tool-call accumulator and cannot be restored here. Such a name is left as-is rather than
+ * being decoded to a wrong tool.
  */
 public final class OpenAIToolNameCodec {
 
     private static final Logger log = LoggerFactory.getLogger(OpenAIToolNameCodec.class);
-
-    private static final int MAX_NAME_LENGTH = 64;
 
     private OpenAIToolNameCodec() {}
 
@@ -56,20 +66,12 @@ public final class OpenAIToolNameCodec {
      * @return true if the name can be sent as-is
      */
     public static boolean isValid(String name) {
-        if (name == null || name.isEmpty() || name.length() > MAX_NAME_LENGTH) {
-            return false;
-        }
-        for (int i = 0; i < name.length(); i++) {
-            if (!isValidChar(name.charAt(i))) {
-                return false;
-            }
-        }
-        return true;
+        return OpenAINameRules.isValid(name);
     }
 
     /**
-     * Encodes a tool name for the wire. Names already matching the OpenAI pattern are returned
-     * unchanged; any other character is replaced with {@code '_'}. Names exceeding 64
+     * Encodes a single tool name for the wire. Names already matching the OpenAI pattern are
+     * returned unchanged; any other character is replaced with {@code '_'}. Names exceeding 64
      * characters are truncated and given a deterministic hash suffix.
      *
      * @param name the original tool name
@@ -79,17 +81,41 @@ public final class OpenAIToolNameCodec {
         if (name == null || isValid(name)) {
             return name;
         }
-        StringBuilder sb = new StringBuilder(name.length());
-        for (int i = 0; i < name.length(); i++) {
-            char c = name.charAt(i);
-            sb.append(isValidChar(c) ? c : '_');
-        }
-        String encoded = sb.toString();
-        if (encoded.length() > MAX_NAME_LENGTH) {
-            String suffix = String.format("%08x", name.hashCode());
-            encoded = encoded.substring(0, MAX_NAME_LENGTH - suffix.length() - 1) + "_" + suffix;
+        String encoded = OpenAINameRules.replaceIllegalChars(name);
+        if (encoded.length() > OpenAINameRules.MAX_LENGTH) {
+            encoded = OpenAINameRules.truncateWithHash(encoded, name);
         }
         return encoded;
+    }
+
+    /**
+     * Builds the per-request mapping for a tool list. Wire names are made unique across the
+     * whole list, including names that were already compliant: without this, {@code task.get}
+     * and {@code task_get} would collide on {@code task_get} and the second tool could never be
+     * dispatched.
+     *
+     * @param tools the tool schemas of one request
+     * @return the request mapping (never null)
+     */
+    public static Request forTools(List<ToolSchema> tools) {
+        if (tools == null || tools.isEmpty()) {
+            return new Request(null, Map.of(), Map.of());
+        }
+        Map<String, String> originalToWire = new LinkedHashMap<>();
+        Map<String, String> wireToOriginal = new LinkedHashMap<>();
+        Set<String> usedWireNames = new HashSet<>();
+        List<ToolSchema> encodedTools = new ArrayList<>(tools.size());
+        for (ToolSchema tool : tools) {
+            String original = tool.getName();
+            String wire = disambiguate(encode(original), usedWireNames, original);
+            usedWireNames.add(wire);
+            if (!wire.equals(original)) {
+                wireToOriginal.put(wire, original);
+            }
+            originalToWire.putIfAbsent(original, wire);
+            encodedTools.add(wire.equals(original) ? tool : renameSchema(tool, wire));
+        }
+        return new Request(encodedTools, originalToWire, wireToOriginal);
     }
 
     /**
@@ -100,27 +126,7 @@ public final class OpenAIToolNameCodec {
      * @return wire name to original name map (never null)
      */
     public static Map<String, String> buildDecodeMap(List<ToolSchema> tools) {
-        if (tools == null || tools.isEmpty()) {
-            return Map.of();
-        }
-        Map<String, String> map = new LinkedHashMap<>();
-        for (ToolSchema tool : tools) {
-            String original = tool.getName();
-            String encoded = encode(original);
-            if (encoded != null && !encoded.equals(original)) {
-                String previous = map.putIfAbsent(encoded, original);
-                if (previous != null && !previous.equals(original)) {
-                    log.warn(
-                            "Tool name encoding collision: '{}' and '{}' both encode to '{}';"
-                                    + " returned calls will be decoded to '{}'",
-                            previous,
-                            original,
-                            encoded,
-                            previous);
-                }
-            }
-        }
-        return map;
+        return forTools(tools).decodeMap();
     }
 
     /**
@@ -132,39 +138,12 @@ public final class OpenAIToolNameCodec {
      * @return messages with encoded tool call names
      */
     public static List<Msg> encodeToolNames(List<Msg> messages) {
-        if (messages == null) {
-            return null;
-        }
-        List<Msg> result = messages;
-        for (int i = 0; i < messages.size(); i++) {
-            Msg msg = messages.get(i);
-            List<ContentBlock> content = msg.getContent();
-            List<ContentBlock> updated = null;
-            for (int j = 0; j < content.size(); j++) {
-                if (content.get(j) instanceof ToolUseBlock toolUse) {
-                    String encoded = encode(toolUse.getName());
-                    if (encoded != null && !encoded.equals(toolUse.getName())) {
-                        if (updated == null) {
-                            updated = new ArrayList<>(content);
-                        }
-                        updated.set(j, rename(toolUse, encoded));
-                    }
-                }
-            }
-            if (updated != null) {
-                if (result == messages) {
-                    result = new ArrayList<>(messages);
-                }
-                result.set(i, msg.withContent(updated));
-            }
-        }
-        return result;
+        return encodeToolNames(messages, OpenAIToolNameCodec::encode);
     }
 
     /**
-     * Restores original tool names on a parsed response using a decode map built by {@link
-     * #buildDecodeMap(List)}. Names not present in the map are left untouched, so responses
-     * pass through unchanged when no encoding happened.
+     * Restores original tool names on a parsed response. Names not present in the decode map
+     * are left untouched, so responses pass through unchanged when no encoding happened.
      *
      * @param response the parsed chat response (may be null)
      * @param decodeMap wire name to original name map
@@ -203,6 +182,69 @@ public final class OpenAIToolNameCodec {
                 .build();
     }
 
+    private static List<Msg> encodeToolNames(List<Msg> messages, UnaryOperator<String> encoder) {
+        if (messages == null) {
+            return null;
+        }
+        List<Msg> result = messages;
+        for (int i = 0; i < messages.size(); i++) {
+            Msg msg = messages.get(i);
+            List<ContentBlock> content = msg.getContent();
+            List<ContentBlock> updated = null;
+            for (int j = 0; j < content.size(); j++) {
+                if (content.get(j) instanceof ToolUseBlock toolUse) {
+                    String encoded = encoder.apply(toolUse.getName());
+                    if (encoded != null && !encoded.equals(toolUse.getName())) {
+                        if (updated == null) {
+                            updated = new ArrayList<>(content);
+                        }
+                        updated.set(j, rename(toolUse, encoded));
+                    }
+                }
+            }
+            if (updated != null) {
+                if (result == messages) {
+                    result = new ArrayList<>(messages);
+                }
+                result.set(i, msg.withContent(updated));
+            }
+        }
+        return result;
+    }
+
+    private static String disambiguate(
+            String candidate, Set<String> usedWireNames, String original) {
+        if (!usedWireNames.contains(candidate)) {
+            return candidate;
+        }
+        log.warn(
+                "Tool name '{}' encodes to '{}', which is already used by another tool in this"
+                        + " request; appending a suffix to keep wire names unique",
+                original,
+                candidate);
+        for (int n = 2; ; n++) {
+            String suffix = "_" + n;
+            int prefixLength =
+                    Math.min(candidate.length(), OpenAINameRules.MAX_LENGTH - suffix.length());
+            String alternative = candidate.substring(0, prefixLength) + suffix;
+            if (!usedWireNames.contains(alternative)) {
+                return alternative;
+            }
+        }
+    }
+
+    private static ToolSchema renameSchema(ToolSchema schema, String name) {
+        return ToolSchema.builder()
+                .name(name)
+                .description(schema.getDescription())
+                .parameters(schema.getParameters())
+                .outputSchema(schema.getOutputSchema())
+                .strict(schema.getStrict())
+                .deferLoading(schema.getDeferLoading())
+                .toolSearch(schema.isToolSearch())
+                .build();
+    }
+
     private static ToolUseBlock rename(ToolUseBlock block, String name) {
         return ToolUseBlock.builder()
                 .id(block.getId())
@@ -214,11 +256,60 @@ public final class OpenAIToolNameCodec {
                 .build();
     }
 
-    private static boolean isValidChar(char c) {
-        return (c >= 'a' && c <= 'z')
-                || (c >= 'A' && c <= 'Z')
-                || (c >= '0' && c <= '9')
-                || c == '_'
-                || c == '-';
+    /** Immutable per-request tool name mapping built from one request's tool list. */
+    public static final class Request {
+
+        private final List<ToolSchema> tools;
+        private final Map<String, String> originalToWire;
+        private final Map<String, String> wireToOriginal;
+
+        private Request(
+                List<ToolSchema> tools,
+                Map<String, String> originalToWire,
+                Map<String, String> wireToOriginal) {
+            this.tools = tools;
+            this.originalToWire = originalToWire;
+            this.wireToOriginal = wireToOriginal;
+        }
+
+        /** Whether the request carries tools. */
+        public boolean hasTools() {
+            return tools != null;
+        }
+
+        /** Tool schemas with wire names, ready for the formatter. */
+        public List<ToolSchema> tools() {
+            return tools;
+        }
+
+        /** Wire name for an original name, falling back to the stateless encoder. */
+        public String encodeName(String original) {
+            String wire = originalToWire.get(original);
+            return wire != null ? wire : encode(original);
+        }
+
+        /** Encodes a {@link ToolChoice.Specific} name; other choices are returned unchanged. */
+        public ToolChoice toolChoice(ToolChoice choice) {
+            if (choice instanceof ToolChoice.Specific specific) {
+                String wire = encodeName(specific.toolName());
+                return wire.equals(specific.toolName()) ? choice : new ToolChoice.Specific(wire);
+            }
+            return choice;
+        }
+
+        /** Encodes tool call names in history messages using this request's mapping. */
+        public List<Msg> encodeHistory(List<Msg> messages) {
+            return encodeToolNames(messages, this::encodeName);
+        }
+
+        /** Restores original tool names on a parsed response. */
+        public ChatResponse decode(ChatResponse response) {
+            return decodeToolNames(response, wireToOriginal);
+        }
+
+        /** Wire name to original name map (empty when no encoding was needed). */
+        public Map<String, String> decodeMap() {
+            return wireToOriginal;
+        }
     }
 }

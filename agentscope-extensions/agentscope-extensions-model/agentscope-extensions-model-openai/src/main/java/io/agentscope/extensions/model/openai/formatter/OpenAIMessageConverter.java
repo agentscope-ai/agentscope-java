@@ -45,7 +45,6 @@ import java.util.Base64;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
-import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -595,14 +594,8 @@ public class OpenAIMessageConverter {
 
     /** Sanitizes a message name to satisfy OpenAI's {@code ^[a-zA-Z0-9_-]{1,64}$} constraint. */
     static String sanitizeName(String name) {
-        String sanitized = OPENAI_NAME_ILLEGAL_CHARS.matcher(name).replaceAll("_");
-        if (sanitized.length() > 64) {
-            sanitized = sanitized.substring(0, 64);
-        }
-        return sanitized.isEmpty() ? "agent" : sanitized;
+        return OpenAINameRules.truncate(OpenAINameRules.replaceIllegalChars(name));
     }
-
-    private static final Pattern OPENAI_NAME_ILLEGAL_CHARS = Pattern.compile("[^a-zA-Z0-9_-]");
 
     /**
      * Apply cache_control from Msg metadata to the converted OpenAIMessage.

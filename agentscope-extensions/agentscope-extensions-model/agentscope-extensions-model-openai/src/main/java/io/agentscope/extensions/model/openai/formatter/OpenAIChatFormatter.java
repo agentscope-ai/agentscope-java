@@ -194,7 +194,7 @@ public class OpenAIChatFormatter extends OpenAIBaseFormatter {
             for (ToolSchema toolSchema : tools) {
                 OpenAIToolFunction.Builder functionBuilder =
                         OpenAIToolFunction.builder()
-                                .name(OpenAIToolNameCodec.encode(toolSchema.getName()))
+                                .name(toolSchema.getName())
                                 .description(toolSchema.getDescription())
                                 .parameters(toolSchema.getParameters());
 
@@ -250,7 +250,7 @@ public class OpenAIChatFormatter extends OpenAIBaseFormatter {
             Map<String, Object> namedToolChoice = new HashMap<>();
             namedToolChoice.put("type", "function");
             Map<String, Object> function = new HashMap<>();
-            function.put("name", OpenAIToolNameCodec.encode(specific.toolName()));
+            function.put("name", specific.toolName());
             namedToolChoice.put("function", function);
             request.setToolChoice(namedToolChoice);
         } else {

@@ -16,6 +16,7 @@
 package io.agentscope.extensions.model.openai.formatter;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -25,6 +26,7 @@ import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ChatResponse;
+import io.agentscope.core.model.ToolChoice;
 import io.agentscope.core.model.ToolSchema;
 import java.util.List;
 import java.util.Map;
@@ -87,7 +89,7 @@ class OpenAIToolNameCodecTest {
     }
 
     @Test
-    @DisplayName("Decode map keeps first registration on encoding collision")
+    @DisplayName("Encoding collision keeps both tools reachable")
     void testBuildDecodeMapCollision() {
         List<ToolSchema> tools =
                 List.of(
@@ -96,8 +98,100 @@ class OpenAIToolNameCodecTest {
 
         Map<String, String> map = OpenAIToolNameCodec.buildDecodeMap(tools);
 
-        assertEquals(1, map.size());
+        assertEquals(2, map.size());
         assertEquals("task.get", map.get("task_get"));
+        assertEquals("task/get", map.get("task_get_2"));
+        assertTrue(map.keySet().stream().allMatch(OpenAIToolNameCodec::isValid));
+    }
+
+    @Test
+    @DisplayName("An encoded name never collides with an already-compliant name")
+    void testForToolsDisambiguatesMixedCollision() {
+        List<ToolSchema> tools =
+                List.of(
+                        ToolSchema.builder().name("task.get").description("d").build(),
+                        ToolSchema.builder().name("task_get").description("d").build());
+
+        OpenAIToolNameCodec.Request request = OpenAIToolNameCodec.forTools(tools);
+
+        assertEquals("task_get", request.tools().get(0).getName());
+        assertEquals("task_get_2", request.tools().get(1).getName());
+        assertEquals("task.get", request.decodeMap().get("task_get"));
+        assertEquals("task_get", request.decodeMap().get("task_get_2"));
+    }
+
+    @Test
+    @DisplayName("Disambiguation also works when the compliant name is registered first")
+    void testForToolsDisambiguatesMixedCollisionReversed() {
+        List<ToolSchema> tools =
+                List.of(
+                        ToolSchema.builder().name("task_get").description("d").build(),
+                        ToolSchema.builder().name("task.get").description("d").build());
+
+        OpenAIToolNameCodec.Request request = OpenAIToolNameCodec.forTools(tools);
+
+        assertEquals("task_get", request.tools().get(0).getName());
+        assertEquals("task_get_2", request.tools().get(1).getName());
+        assertEquals("task.get", request.decodeMap().get("task_get_2"));
+    }
+
+    @Test
+    @DisplayName("Empty names are replaced with a compliant fallback")
+    void testEncodeEmptyName() {
+        assertTrue(OpenAIToolNameCodec.isValid(OpenAIToolNameCodec.encode("")));
+    }
+
+    @Test
+    @DisplayName("Request mapping encodes tool choice and history consistently")
+    void testRequestMapping() {
+        List<ToolSchema> tools =
+                List.of(
+                        ToolSchema.builder().name("task.get").description("d").build(),
+                        ToolSchema.builder().name("task_get").description("d").build());
+        OpenAIToolNameCodec.Request request = OpenAIToolNameCodec.forTools(tools);
+
+        assertTrue(request.hasTools());
+        assertEquals(
+                new ToolChoice.Specific("task_get"),
+                request.toolChoice(new ToolChoice.Specific("task.get")));
+        assertEquals(
+                new ToolChoice.Specific("task_get_2"),
+                request.toolChoice(new ToolChoice.Specific("task_get")));
+        assertEquals(new ToolChoice.Required(), request.toolChoice(new ToolChoice.Required()));
+        assertNull(request.toolChoice(null));
+
+        Msg history =
+                Msg.builder()
+                        .role(MsgRole.ASSISTANT)
+                        .content(
+                                List.of(
+                                        ToolUseBlock.builder()
+                                                .id("call-1")
+                                                .name("task.get")
+                                                .input(Map.of())
+                                                .build(),
+                                        ToolUseBlock.builder()
+                                                .id("call-2")
+                                                .name("task_get")
+                                                .input(Map.of())
+                                                .build()))
+                        .build();
+        List<Msg> encoded = request.encodeHistory(List.of(history));
+
+        assertEquals("task_get", ((ToolUseBlock) encoded.get(0).getContent().get(0)).getName());
+        assertEquals("task_get_2", ((ToolUseBlock) encoded.get(0).getContent().get(1)).getName());
+        // The original message is not mutated.
+        assertEquals("task.get", ((ToolUseBlock) history.getContent().get(0)).getName());
+    }
+
+    @Test
+    @DisplayName("Request with no tools is an identity mapping")
+    void testForToolsEmpty() {
+        OpenAIToolNameCodec.Request request = OpenAIToolNameCodec.forTools(null);
+
+        assertFalse(request.hasTools());
+        assertTrue(request.decodeMap().isEmpty());
+        assertNull(request.toolChoice(null));
     }
 
     @Test
