@@ -120,6 +120,17 @@ public final class DurableRuntime implements AutoCloseable {
         final AtomicBoolean stopped = new AtomicBoolean();
         volatile Thread thread;
         volatile boolean invoking;
+        private boolean settled;
+
+        // A heartbeat run can outlive process(); it must not interrupt what the thread runs next.
+        synchronized void stop() {
+            stopped.set(true);
+            if (!settled) thread.interrupt();
+        }
+
+        synchronized void settle() {
+            settled = true;
+        }
     }
 
     private DurableRuntime(Builder b) {
@@ -606,12 +617,10 @@ public final class DurableRuntime implements AutoCloseable {
                                 if (activeCall.invoking
                                         && backend.turn(key, lease.turnId())
                                                 .cancellationRequested()) {
-                                    activeCall.stopped.set(true);
-                                    activeCall.thread.interrupt();
+                                    activeCall.stop();
                                 }
                             } catch (RuntimeException e) {
-                                activeCall.stopped.set(true);
-                                activeCall.thread.interrupt();
+                                activeCall.stop();
                             }
                         },
                         Math.max(25, leaseDuration.toMillis() / 3),
@@ -698,6 +707,7 @@ public final class DurableRuntime implements AutoCloseable {
                 }
             }
         } finally {
+            activeCall.settle();
             heartbeat.cancel(false);
             try {
                 backend.release(lease, pollInterval);
