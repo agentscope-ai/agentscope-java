@@ -19,6 +19,8 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.harness.agent.filesystem.local.LocalFilesystem;
+import io.agentscope.harness.agent.filesystem.remote.RemoteFilesystem;
+import io.agentscope.harness.agent.filesystem.remote.store.InMemoryStore;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.time.Instant;
@@ -149,5 +151,47 @@ class WorkspaceAsyncToolRegistryTest {
         List<AsyncToolRecord> stale = registry2.findStale("s1", Duration.ofMinutes(5)).block();
         assertEquals(1, stale.size());
         assertEquals("r1", stale.get(0).id());
+    }
+
+    @Test
+    void byIdTerminalUpdatesReachRecordsOnRemoteBackends() {
+        // RemoteFilesystem's ls emits directory entries with a trailing slash; the record path
+        // composed from such an entry must not gain an interior double slash, or every by-id
+        // terminal update silently no-ops (#3975).
+        RemoteFilesystem remoteFs = new RemoteFilesystem(new InMemoryStore(), List.of("async-ns"));
+        WorkspaceAsyncToolRegistry remoteRegistry =
+                new WorkspaceAsyncToolRegistry(remoteFs, "/async-tools");
+
+        AsyncToolRecord running =
+                new AsyncToolRecord(
+                        "r1",
+                        "s1",
+                        "tool",
+                        "tc1",
+                        AsyncToolRecord.RUNNING,
+                        Instant.now().minus(Duration.ofMinutes(10)));
+        remoteRegistry.register(running).block();
+
+        remoteRegistry.complete("r1", "done").block();
+
+        List<AsyncToolRecord> stale = remoteRegistry.findStale("s1", Duration.ofMinutes(5)).block();
+        assertTrue(
+                stale.isEmpty(),
+                "complete() must update the record by id on a remote backend, not silently no-op");
+
+        remoteRegistry
+                .register(
+                        new AsyncToolRecord(
+                                "r2",
+                                "s2",
+                                "tool",
+                                "tc2",
+                                AsyncToolRecord.RUNNING,
+                                Instant.now().minus(Duration.ofMinutes(10))))
+                .block();
+        remoteRegistry.markTimeout("r2").block();
+        assertTrue(
+                remoteRegistry.findStale("s2", Duration.ofMinutes(5)).block().isEmpty(),
+                "markTimeout() must update the record by id on a remote backend");
     }
 }
