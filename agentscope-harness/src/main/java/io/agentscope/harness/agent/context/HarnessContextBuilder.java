@@ -390,6 +390,13 @@ public final class HarnessContextBuilder implements ModelRequestPreparer {
                                     transforms,
                                     validation);
                     rc.put(ModelRequestPreparer.MANIFEST_ATTRIBUTE_PREFIX + callId, manifest);
+                    // Core-side prepared-view summary: lets observers without access to this
+                    // manifest type (model-call middleware such as OTEL tracing) attribute the
+                    // post-compaction request via the callId carried on ModelCallEndEvent.
+                    rc.put(
+                            ModelRequestPreparer.PREPARED_VIEW_ATTRIBUTE_PREFIX + callId,
+                            new ModelRequestPreparer.PreparedRequestView(
+                                    prepared.messages().size(), estimate.tokens(), transforms));
                     if (validationError != null) throw validationError;
                     // Agent calls serialize access to state. Recheck the snapshot after
                     // asynchronous work;

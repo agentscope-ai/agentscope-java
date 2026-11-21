@@ -27,7 +27,25 @@ import java.util.List;
 import java.util.UUID;
 import reactor.core.publisher.Flux;
 
-/** Budget-only auxiliary call boundary: never recursively compacts or injects task state. */
+/**
+ * Budget-only auxiliary call boundary: never recursively compacts or injects task state.
+ *
+ * <p><b>Observability contract (#4269):</b> {@link #auxiliary} deliberately does <em>not</em> run
+ * the agent's {@code ON_MODEL_CALL} middleware chain — that chain may itself trigger compaction
+ * (or arbitrary user middleware), and a summary call spawned from inside compaction must stay
+ * free of such recursion. Consequences callers should know:
+ *
+ * <ul>
+ *   <li>model-call middleware (OTEL tracing, Langfuse, cost accounting) does <b>not</b> see these
+ *       calls — auxiliary model cost is invisible to them by design, not by accident;
+ *   <li>the calls <b>are</b> recorded at the durable boundary: {@code RecordedModels.wrap} with
+ *       purpose {@code SUMMARY} journals usage, latency and failures into the invocation record,
+ *       so replay and audit paths retain the full picture;
+ *   <li>a supported middleware-routing seam for auxiliary calls is a deliberate follow-up: it
+ *       needs a chain contract that cannot recurse into compaction, and should be designed with
+ *       the maintainers rather than grown ad hoc here.
+ * </ul>
+ */
 public final class ContextModelCalls {
     private ContextModelCalls() {}
 

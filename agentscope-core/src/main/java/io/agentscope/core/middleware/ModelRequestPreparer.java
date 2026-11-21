@@ -20,6 +20,7 @@ import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.event.CustomEvent;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.function.Consumer;
 import reactor.core.publisher.Mono;
 
@@ -27,7 +28,24 @@ import reactor.core.publisher.Mono;
 @FunctionalInterface
 public interface ModelRequestPreparer {
     String MANIFEST_ATTRIBUTE_PREFIX = "agentscope.model_request_manifest.";
+    String PREPARED_VIEW_ATTRIBUTE_PREFIX = "agentscope.model_request_prepared_view.";
     String BUILD_EVENT_NAME = "context_build";
+
+    /**
+     * Core-side summary of the request as it was actually prepared — after compaction, eviction
+     * and any other preparer rewrite. Preparers publish it under {@code
+     * PREPARED_VIEW_ATTRIBUTE_PREFIX + callId} so observers without access to the richer
+     * (harness-owned) manifest — model-call middleware such as tracing — can still attribute
+     * what was actually sent.
+     *
+     * @param messageCount message count of the prepared request
+     * @param estimatedInputTokens the prepared request's whole-request estimate
+     * @param transforms rewrites applied during preparation (e.g. {@code history_compaction})
+     */
+    record PreparedRequestView(
+            long messageCount, long estimatedInputTokens, List<String> transforms) {}
+
+    /** Emit one independent build outcome, including rejection before any provider call. */
 
     /** Emit one independent build outcome, including rejection before any provider call. */
     default Mono<ModelCallInput> prepareObserved(
