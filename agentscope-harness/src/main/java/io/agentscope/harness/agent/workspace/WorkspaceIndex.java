@@ -262,6 +262,19 @@ public class WorkspaceIndex implements AutoCloseable {
     }
 
     /**
+     * Snapshot of an indexed file row stored in {@link WorkspaceIndex}.
+     *
+     * @param path workspace-relative (or indexed) file path
+     * @param sizeBytes file size in bytes ({@code -1} if unknown when indexed)
+     * @param modifiedAt ISO-8601 modification timestamp, or empty string if absent
+     */
+    public record FileEntry(String path, long sizeBytes, String modifiedAt) {
+        public FileEntry {
+            modifiedAt = modifiedAt != null ? modifiedAt : "";
+        }
+    }
+
+    /**
      * Returns all locally-present paths that start with the given prefix.
      *
      * @param prefix workspace-relative directory prefix (e.g. {@code agents/a1/sessions/})
@@ -284,6 +297,43 @@ public class WorkspaceIndex implements AutoCloseable {
             }
         } catch (Exception e) {
             log.debug("Index listByPrefix failed for '{}' (non-fatal): {}", prefix, e.getMessage());
+        }
+        return result;
+    }
+
+    /**
+     * Returns all locally-present file entries (path, size, modifiedAt) that start with the given
+     * prefix.
+     *
+     * @param prefix workspace-relative directory prefix (e.g. {@code agents/a1/sessions/})
+     * @return list of matching entries, may be empty
+     */
+    public List<FileEntry> listFileEntriesByPrefix(String prefix) {
+        List<FileEntry> result = new ArrayList<>();
+        if (prefix == null) {
+            return result;
+        }
+        try (PreparedStatement ps =
+                conn.prepareStatement(
+                        "SELECT path, size_bytes, modified_at FROM files WHERE path LIKE ? ESCAPE"
+                                + " '\\' AND present_local=1")) {
+            ps.setString(1, likePrefix(prefix));
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    String path = rs.getString(1);
+                    long sizeBytes = rs.getLong(2);
+                    if (rs.wasNull()) {
+                        sizeBytes = -1L;
+                    }
+                    String modifiedAt = rs.getString(3);
+                    result.add(new FileEntry(path, sizeBytes, modifiedAt));
+                }
+            }
+        } catch (Exception e) {
+            log.debug(
+                    "Index listFileEntriesByPrefix failed for '{}' (non-fatal): {}",
+                    prefix,
+                    e.getMessage());
         }
         return result;
     }
