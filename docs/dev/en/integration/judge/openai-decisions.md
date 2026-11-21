@@ -1,7 +1,7 @@
 ---
 title: OpenAI Decisions
 description: Typed decisions over text and images using a dedicated judge extension.
-zh_link: /v2/zh/integration/judge/openai-decisions
+zh_link: /dev/zh/integration/judge/openai-decisions
 ---
 
 OpenAI Decisions evaluates shared evidence and returns a probability, a fixed choice, or a rubric score. The extension uses the official OpenAI Java SDK and lives under `agentscope-extensions-judge`, alongside JEV, and exposes `OpenAIDecisionsClient` independently of the chat model APIs. Applications can use its results to classify requests or choose their next action.

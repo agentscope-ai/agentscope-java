@@ -401,6 +401,29 @@ public final class HarnessGateway implements Gateway, WakeupDispatcher.WakeupTar
     }
 
     /**
+     * Revokes every public handle routed to the given child session.
+     *
+     * @param sessionId the child session whose exposed handles should be revoked
+     * @return whether a live handle or durable exposure record was revoked
+     */
+    public boolean revokeSubagentsBySession(String sessionId) {
+        if (sessionId == null) {
+            return false;
+        }
+        boolean revokedLive =
+                exposedSessions.values().removeIf(s -> sessionId.equals(s.sessionId()));
+        try {
+            return subagentRegistry.revokeBySessionId(sessionId) || revokedLive;
+        } catch (RuntimeException e) {
+            log.warn(
+                    "Failed to revoke durable exposed subagents for session {}: {}",
+                    sessionId,
+                    e.getMessage());
+            return revokedLive;
+        }
+    }
+
+    /**
      * Installs the durable {@link SubagentRegistry}. Called during gateway wiring; defaults to an
      * in-memory registry when not set.
      */

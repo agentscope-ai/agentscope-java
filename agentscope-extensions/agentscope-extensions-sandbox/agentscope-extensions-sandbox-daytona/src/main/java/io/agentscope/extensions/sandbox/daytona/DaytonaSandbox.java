@@ -140,7 +140,7 @@ public class DaytonaSandbox extends AbstractBaseSandbox {
                 "import base64,pathlib,subprocess; d="
                         + om.writeValueAsString(root)
                         + "; raw=base64.standard_b64decode(pathlib.Path('/tmp/agentscope-ws.b64').read_text());"
-                        + " subprocess.run(['tar','xf','-','-C',d],input=raw,check=True)";
+                        + " subprocess.run(['tar','xpf','-','-C',d],input=raw,check=True)";
         JsonNode fin =
                 http.execute(
                         daytonaState.getSandboxId(),

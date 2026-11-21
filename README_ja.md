@@ -113,7 +113,7 @@ AgentScope Java 2.0 は、分散型でエンタープライズ品質のエージ
 
 その他の選択肢：`agentscope-extensions-model-openai`、`agentscope-extensions-model-anthropic`、`agentscope-extensions-model-gemini`、`agentscope-extensions-model-ollama`。詳しくは[モデルのドキュメント](https://java.agentscope.io/v2/en/docs/building-blocks/model.html)をご覧ください。
 
-型付きのテキストと画像の分類については、[OpenAI Decisions](docs/v2/en/integration/judge/openai-decisions.md) をご覧ください。この拡張機能を含む `2.1.0-SNAPSHOT` のビルドで利用できます。
+型付きのテキストと画像の分類については、[OpenAI Decisions](docs/dev/en/integration/judge/openai-decisions.md) をご覧ください。この拡張機能を含む `2.1.0-SNAPSHOT` のビルドで利用できます。
 
 `ReActAgent` の推論とツールの API を使い、アプリケーションの機能を自分で組み立てるには、`agentscope-core` とモデルの拡張機能に依存してください。
 

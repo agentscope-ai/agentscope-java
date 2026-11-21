@@ -60,6 +60,16 @@ public interface SubagentRegistry {
     void revoke(String subagentId);
 
     /**
+     * Removes all exposure records for the given child session.
+     *
+     * @param sessionId the child session whose exposed handles should be revoked
+     * @return whether at least one record was removed
+     */
+    default boolean revokeBySessionId(String sessionId) {
+        return false;
+    }
+
+    /**
      * Removes all exposure records associated with the given parent session. Used to clean up when a
      * parent conversation ends. Implementations that cannot enumerate by parent may no-op.
      *

@@ -93,6 +93,11 @@ public class KubernetesFilesystemSpec extends SandboxFilesystemSpec {
         return this;
     }
 
+    public KubernetesFilesystemSpec shutdownAfterSeconds(Long seconds) {
+        options.setShutdownAfterSeconds(seconds);
+        return this;
+    }
+
     public KubernetesFilesystemSpec snapshotSpec(SandboxSnapshotSpec snapshotSpec) {
         this.snapshotSpec = snapshotSpec;
         return this;

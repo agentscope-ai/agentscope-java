@@ -40,6 +40,20 @@ GeminiChatModel model = GeminiChatModel.builder()
     .build();
 ```
 
+## Thinking
+
+Gemini maps `includeThoughts` to thought-summary output, `reasoningEffort` to the model's
+thinking level, and `thinkingBudget` to the thinking token budget:
+
+```java
+GenerateOptions.builder()
+    .includeThoughts(true)
+    .reasoningEffort("high")
+    .build();
+```
+
+Unsupported values and combinations are rejected by the Gemini API.
+
 ## Server-side tools
 
 Gemini built-in tools run on the model provider instead of the local AgentScope toolkit. Build a

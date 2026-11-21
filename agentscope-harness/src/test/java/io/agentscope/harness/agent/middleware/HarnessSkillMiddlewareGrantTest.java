@@ -136,8 +136,7 @@ class HarnessSkillMiddlewareGrantTest {
     }
 
     /**
-     * The rendered skills block as registered by {@code onSystemPrompt}: a tail runtime material
-     * (keyed {@code harness:skills}), not part of the system prompt.
+     * Reads the request-only skill catalog registered by {@code onSystemPrompt}.
      */
     private static String skillsMaterial(RuntimeContext ctx) {
         WorkspaceContextMaterials materials = ctx.get(WorkspaceContextMaterials.class);

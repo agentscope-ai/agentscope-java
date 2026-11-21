@@ -1386,6 +1386,19 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
     }
 
     /**
+     * Calls the agent with a plain text input, structured output JSON schema, and per-call
+     * {@link RuntimeContext}.
+     *
+     * @param text         input text (wrapped into a {@link UserMessage})
+     * @param outputSchema JSON schema defining the structure
+     * @param context      per-call runtime context
+     * @return response message with structured data in metadata
+     */
+    public Mono<Msg> call(String text, JsonNode outputSchema, RuntimeContext context) {
+        return call(List.of(new UserMessage(text)), outputSchema, context);
+    }
+
+    /**
      * Attaches the caller-supplied {@link RuntimeContext} to the Reactor Context of the given
      * publisher under {@link AgentBase#RUNTIME_CONTEXT_KEY}, so the call lifecycle reads it
      * per-subscription (concurrency-safe) rather than from a shared instance field.
@@ -1741,6 +1754,49 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
     }
 
     /**
+     * Stream fine-grained {@link AgentEvent}s with structured output driven by a target class.
+     *
+     * <p>Semantically equivalent to {@code call(List, Class, RuntimeContext)}: the model's native
+     * {@code response_format} path is preferred when supported, otherwise the synthetic
+     * {@code generate_response} tool is used as a fallback. The final {@link AgentResultEvent}
+     * carries a {@link Msg} whose {@code hasStructuredData()} is {@code true}.
+     *
+     * <p>A bare {@code null} for {@code structuredOutputClass} is ambiguous between this overload
+     * and its {@code JsonNode} sibling — use an explicit cast (e.g. {@code (Class<?>) null}) or the
+     * plain {@link #streamEvents(List, RuntimeContext)} overload instead.
+     *
+     * @param msgs input messages
+     * @param structuredOutputClass class defining the expected structure
+     * @param context runtime context to propagate into the call
+     * @return event stream covering the full agent invocation lifecycle
+     */
+    public Flux<AgentEvent> streamEvents(
+            List<Msg> msgs, Class<?> structuredOutputClass, RuntimeContext context) {
+        return buildAgentStream(msgs, context, m -> doCall(m, structuredOutputClass));
+    }
+
+    /**
+     * Stream fine-grained {@link AgentEvent}s with structured output driven by a JSON schema.
+     *
+     * <p>Semantically equivalent to {@code call(List, JsonNode, RuntimeContext)}: the model's
+     * native {@code response_format} path is preferred when supported, otherwise the synthetic
+     * {@code generate_response} tool is used as a fallback.
+     *
+     * <p>A bare {@code null} for {@code outputSchema} is ambiguous between this overload and its
+     * {@code Class} sibling — use an explicit cast (e.g. {@code (JsonNode) null}) or the plain
+     * {@link #streamEvents(List, RuntimeContext)} overload instead.
+     *
+     * @param msgs input messages
+     * @param outputSchema JSON schema defining the expected structure
+     * @param context runtime context to propagate into the call
+     * @return event stream covering the full agent invocation lifecycle
+     */
+    public Flux<AgentEvent> streamEvents(
+            List<Msg> msgs, JsonNode outputSchema, RuntimeContext context) {
+        return buildAgentStream(msgs, context, m -> doCall(m, outputSchema));
+    }
+
+    /**
      * Stream fine-grained {@link AgentEvent}s for a single input message with a caller-supplied
      * {@link RuntimeContext}.
      *
@@ -1750,6 +1806,33 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
      */
     public Flux<AgentEvent> streamEvents(Msg msg, RuntimeContext context) {
         return streamEvents(List.of(msg), context);
+    }
+
+    /**
+     * Stream fine-grained {@link AgentEvent}s for a single input message with structured output
+     * (class-driven) and a caller-supplied {@link RuntimeContext}.
+     *
+     * @param msg input message
+     * @param structuredOutputClass class defining the expected structure
+     * @param context runtime context to propagate into the call
+     * @return event stream covering the full agent invocation lifecycle
+     */
+    public Flux<AgentEvent> streamEvents(
+            Msg msg, Class<?> structuredOutputClass, RuntimeContext context) {
+        return streamEvents(List.of(msg), structuredOutputClass, context);
+    }
+
+    /**
+     * Stream fine-grained {@link AgentEvent}s for a single input message with structured output
+     * (JSON-schema-driven) and a caller-supplied {@link RuntimeContext}.
+     *
+     * @param msg input message
+     * @param outputSchema JSON schema defining the expected structure
+     * @param context runtime context to propagate into the call
+     * @return event stream covering the full agent invocation lifecycle
+     */
+    public Flux<AgentEvent> streamEvents(Msg msg, JsonNode outputSchema, RuntimeContext context) {
+        return streamEvents(List.of(msg), outputSchema, context);
     }
 
     /**
@@ -1772,6 +1855,34 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
      */
     public Flux<AgentEvent> streamEvents(String text, RuntimeContext context) {
         return streamEvents(new UserMessage(text), context);
+    }
+
+    /**
+     * Stream fine-grained {@link AgentEvent}s for a plain text input with structured output
+     * (class-driven) and a caller-supplied {@link RuntimeContext}.
+     *
+     * @param text input text (wrapped into a {@link UserMessage})
+     * @param structuredOutputClass class defining the expected structure
+     * @param context runtime context to propagate into the call
+     * @return event stream covering the full agent invocation lifecycle
+     */
+    public Flux<AgentEvent> streamEvents(
+            String text, Class<?> structuredOutputClass, RuntimeContext context) {
+        return streamEvents(new UserMessage(text), structuredOutputClass, context);
+    }
+
+    /**
+     * Stream fine-grained {@link AgentEvent}s for a plain text input with structured output
+     * (JSON-schema-driven) and a caller-supplied {@link RuntimeContext}.
+     *
+     * @param text input text (wrapped into a {@link UserMessage})
+     * @param outputSchema JSON schema defining the expected structure
+     * @param context runtime context to propagate into the call
+     * @return event stream covering the full agent invocation lifecycle
+     */
+    public Flux<AgentEvent> streamEvents(
+            String text, JsonNode outputSchema, RuntimeContext context) {
+        return streamEvents(new UserMessage(text), outputSchema, context);
     }
 
     // ==================== Protected API ====================
@@ -2060,6 +2171,13 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
     /**
      * Remove structured-output-related messages from the conversation context and append
      * the final response.
+     *
+     * <p>A model may emit a business tool call and the synthetic {@code generate_response} call in
+     * the same assistant message. Dropping such a message wholesale would delete the business
+     * {@link ToolUseBlock} while its {@link ToolResultBlock} stays in the context, breaking the
+     * tool-use/result pairing that providers require. Mixed messages are therefore rebuilt with
+     * only the internal structured-output blocks removed. Pure structured-output messages keep
+     * the original whole-message removal.
      */
     private void compressStructuredOutputContext(AgentState agentState) {
         List<Msg> contextMutable = agentState.contextMutable();
