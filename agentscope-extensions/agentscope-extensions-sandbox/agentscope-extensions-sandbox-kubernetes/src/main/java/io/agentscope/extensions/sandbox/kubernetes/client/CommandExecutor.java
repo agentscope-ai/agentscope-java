@@ -57,19 +57,30 @@ public class CommandExecutor {
     private static final Duration CAPABILITY_PROBE_MIN_ATTEMPT_TIMEOUT = Duration.ofSeconds(2);
 
     private final SandboxConnector connector;
+    private final Duration defaultTimeout;
 
     public CommandExecutor(SandboxConnector connector) {
-        this.connector = connector;
+        this(connector, DEFAULT_TIMEOUT);
     }
 
     /**
-     * Runs a command with the default timeout of 60 seconds.
+     * @param connector transport used to reach the sandbox runtime
+     * @param defaultTimeout timeout applied by {@link #run(String)} and by a null timeout; null
+     *     falls back to 60 seconds
+     */
+    public CommandExecutor(SandboxConnector connector, Duration defaultTimeout) {
+        this.connector = connector;
+        this.defaultTimeout = defaultTimeout != null ? defaultTimeout : DEFAULT_TIMEOUT;
+    }
+
+    /**
+     * Runs a command with the configured default timeout (60 seconds unless overridden).
      *
      * @param command shell command
      * @return execution result
      */
     public ExecutionResult run(String command) {
-        return run(command, DEFAULT_TIMEOUT);
+        return run(command, defaultTimeout);
     }
 
     /**
@@ -83,7 +94,7 @@ public class CommandExecutor {
      * @return execution result
      */
     public ExecutionResult run(String command, Duration timeout) {
-        Duration effectiveTimeout = timeout != null ? timeout : DEFAULT_TIMEOUT;
+        Duration effectiveTimeout = timeout != null ? timeout : defaultTimeout;
         validateTimeout(effectiveTimeout);
 
         Duration requestTimeout = executionRequestTimeout(effectiveTimeout);
