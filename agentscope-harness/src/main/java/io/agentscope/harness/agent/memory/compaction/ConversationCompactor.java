@@ -1002,7 +1002,9 @@ public class ConversationCompactor {
         Map<String, Object> newInput = new HashMap<>(input);
         for (Map.Entry<String, Object> entry : input.entrySet()) {
             if (entry.getValue() instanceof String s && s.length() > cfg.getMaxArgLength()) {
-                newInput.put(entry.getKey(), s.substring(0, 20) + cfg.getTruncationText());
+                newInput.put(
+                        entry.getKey(),
+                        s.substring(0, cfg.getMaxArgLength()) + cfg.getTruncationText());
                 anyModified = true;
             }
         }

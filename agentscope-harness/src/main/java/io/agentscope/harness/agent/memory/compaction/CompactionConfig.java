@@ -525,7 +525,10 @@ public class CompactionConfig {
             return maxArgLength;
         }
 
-        /** Suffix appended after the first 20 characters of a truncated argument. */
+        /**
+         * Suffix appended after a truncated argument value, which is clipped to {@link
+         * #getMaxArgLength()} characters.
+         */
         public String getTruncationText() {
             return truncationText;
         }
