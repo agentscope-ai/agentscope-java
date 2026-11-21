@@ -51,7 +51,19 @@ public class McpSyncClientWrapper extends McpClientWrapper {
      * @param client the underlying sync MCP client
      */
     public McpSyncClientWrapper(String name, McpSyncClient client) {
-        super(name);
+        this(name, client, List.of());
+    }
+
+    /**
+     * Constructs a new synchronous MCP client wrapper with result metadata customizers.
+     *
+     * @param name unique identifier for this client
+     * @param client the underlying sync MCP client
+     * @param resultCustomizers ordered customizers applied to every tool result
+     */
+    public McpSyncClientWrapper(
+            String name, McpSyncClient client, List<McpToolResultCustomizer> resultCustomizers) {
+        super(name, resultCustomizers);
         this.client = client;
     }
 
