@@ -15,6 +15,7 @@
  */
 package io.agentscope.core.formatter;
 
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -27,6 +28,7 @@ import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Base64;
+import java.util.Locale;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -198,6 +200,23 @@ class MediaUtilsTest {
         assertEquals("application/octet-stream", MediaUtils.determineMediaType("file"));
         assertEquals("application/octet-stream", MediaUtils.determineMediaType(null));
         assertEquals("application/octet-stream", MediaUtils.determineMediaType(""));
+    }
+
+    @Test
+    @DisplayName("Extension matching must be locale-independent (Turkish default locale)")
+    void testExtensionMatchingUnderTurkishLocale() {
+        // Under tr-TR, "I".toLowerCase() is the dotless "ı": "GIF" -> "gıf", "AIFF" -> "aıff",
+        // "AVI" -> "avı". Extension folding must not depend on the JVM default locale.
+        Locale previous = Locale.getDefault();
+        try {
+            Locale.setDefault(Locale.forLanguageTag("tr-TR"));
+            assertEquals("image/gif", MediaUtils.determineMediaType("photo.GIF"));
+            assertEquals("video/x-msvideo", MediaUtils.determineMediaType("clip.AVI"));
+            assertDoesNotThrow(() -> MediaUtils.validateImageExtension("photo.GIF"));
+            assertDoesNotThrow(() -> MediaUtils.validateVideoExtension("clip.AVI"));
+        } finally {
+            Locale.setDefault(previous);
+        }
     }
 
     @Test
