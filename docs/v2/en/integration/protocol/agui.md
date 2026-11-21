@@ -11,9 +11,9 @@ zh_link: /v2/zh/integration/protocol/agui
 
 `AguiMessage.content` is represented as typed message content. For text-only code paths, use `getTextContent()`.
 
-Multimodal input supports image/audio/video/document. Document parts are converted to `DocumentBlock`; model providers that cannot consume a document report an error instead of silently dropping the content.
+Multimodal input supports image/audio/video/document. Document parts are converted to `DocumentBlock`; provider support varies.
 
-On the outbound path, media and document content blocks are serialized back into AG-UI `MessageContent.Blocks` for all three protocol source types: URL sources map to `url`, inline Base64 maps to `data`, and provider file handles map to `file`. `DataBlock` is routed by its resolved MIME type (URL) or declared media type (inline data), and a provider file handle is carried as a document part.
+Structured blocks are emitted only for AG-UI user and tool messages; other roles use text references. ASJ-to-AGUI outbound message conversion is no longer officially guaranteed. Implement it yourself if your application needs it.
 
 ## When To Use
 

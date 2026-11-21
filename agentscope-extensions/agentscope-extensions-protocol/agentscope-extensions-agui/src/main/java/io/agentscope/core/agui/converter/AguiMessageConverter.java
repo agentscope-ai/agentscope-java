@@ -157,6 +157,8 @@ public class AguiMessageConverter {
         String toolCallId = null;
         String error = null;
         boolean toolMessage = msg.getRole() == MsgRole.TOOL;
+        boolean structuredContentAllowed =
+                msg.getRole() == MsgRole.USER || msg.getRole() == MsgRole.TOOL;
 
         for (ContentBlock block : msg.getContent()) {
             if (block instanceof ThinkingBlock tb) {
@@ -172,20 +174,40 @@ public class AguiMessageConverter {
                 }
                 appendContent(content, toolResultText(trb));
             } else if (block instanceof ImageBlock ib) {
-                addMediaInputContent(inputContents, ib.getSource(), ImageInputContent::new);
+                if (structuredContentAllowed) {
+                    addMediaInputContent(inputContents, ib.getSource(), ImageInputContent::new);
+                } else {
+                    appendContent(content, mediaReference("image", ib.getSource()));
+                }
             } else if (block instanceof AudioBlock ab) {
-                addMediaInputContent(inputContents, ab.getSource(), AudioInputContent::new);
+                if (structuredContentAllowed) {
+                    addMediaInputContent(inputContents, ab.getSource(), AudioInputContent::new);
+                } else {
+                    appendContent(content, mediaReference("audio", ab.getSource()));
+                }
             } else if (block instanceof VideoBlock vb) {
-                addMediaInputContent(inputContents, vb.getSource(), VideoInputContent::new);
+                if (structuredContentAllowed) {
+                    addMediaInputContent(inputContents, vb.getSource(), VideoInputContent::new);
+                } else {
+                    appendContent(content, mediaReference("video", vb.getSource()));
+                }
             } else if (block instanceof DataBlock db) {
-                InputContent inputContent = dataBlockInputContent(db.getSource());
-                if (inputContent != null) {
-                    inputContents.add(inputContent);
+                if (structuredContentAllowed) {
+                    InputContent inputContent = dataBlockInputContent(db.getSource());
+                    if (inputContent != null) {
+                        inputContents.add(inputContent);
+                    }
+                } else {
+                    appendContent(content, mediaReference("data", db.getSource()));
                 }
             } else if (block instanceof DocumentBlock db) {
-                InputContent attachment = toDocumentInputContent(db);
-                if (attachment != null) {
-                    inputContents.add(attachment);
+                if (structuredContentAllowed) {
+                    InputContent attachment = toDocumentInputContent(db);
+                    if (attachment != null) {
+                        inputContents.add(attachment);
+                    } else {
+                        appendContent(content, DocumentReferenceRenderer.render(db));
+                    }
                 } else {
                     appendContent(content, DocumentReferenceRenderer.render(db));
                 }
@@ -505,6 +527,25 @@ public class AguiMessageConverter {
         target.append(value);
     }
 
+    private static String mediaReference(String kind, Source source) {
+        if (source instanceof URLSource url) {
+            String mimeType = url.getMimeType();
+            return "["
+                    + kind
+                    + ": "
+                    + url.getUrl()
+                    + (mimeType == null || mimeType.isBlank() ? "" : ", " + mimeType)
+                    + "]";
+        }
+        if (source instanceof Base64Source base64) {
+            return "[" + kind + ": inline " + base64.getMediaType() + "]";
+        }
+        if (source instanceof FileIdSource fileId) {
+            return "[" + kind + ": " + fileId.getProvider() + "/" + fileId.getFileId() + "]";
+        }
+        return "[" + kind + ": unsupported source]";
+    }
+
     /**
      * Join the text and document-reference parts of a tool result into a single string.
      */
@@ -531,8 +572,18 @@ public class AguiMessageConverter {
         for (ContentBlock output : result.getOutput()) {
             if (output instanceof TextBlock textBlock) {
                 appendContent(text, textBlock.getText());
-            }
-            if (output instanceof DocumentBlock document) {
+            } else if (output instanceof ImageBlock image) {
+                addMediaInputContent(parts, image.getSource(), ImageInputContent::new);
+            } else if (output instanceof AudioBlock audio) {
+                addMediaInputContent(parts, audio.getSource(), AudioInputContent::new);
+            } else if (output instanceof VideoBlock video) {
+                addMediaInputContent(parts, video.getSource(), VideoInputContent::new);
+            } else if (output instanceof DataBlock data) {
+                InputContent inputContent = dataBlockInputContent(data.getSource());
+                if (inputContent != null) {
+                    parts.add(inputContent);
+                }
+            } else if (output instanceof DocumentBlock document) {
                 InputContent documentContent = toDocumentInputContent(document);
                 if (documentContent != null) {
                     parts.add(documentContent);

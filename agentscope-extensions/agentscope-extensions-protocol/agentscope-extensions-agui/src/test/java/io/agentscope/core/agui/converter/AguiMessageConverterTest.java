@@ -327,6 +327,63 @@ class AguiMessageConverterTest {
     }
 
     @Test
+    void testConvertToolResultWithMediaBlocks() {
+        ToolResultBlock result =
+                ToolResultBlock.builder()
+                        .id("tc-media")
+                        .state(ToolResultState.SUCCESS)
+                        .output(
+                                List.of(
+                                        ImageBlock.builder()
+                                                .source(
+                                                        new Base64Source(
+                                                                "image/png", "iVBORw0KGgo="))
+                                                .build(),
+                                        AudioBlock.builder()
+                                                .source(new FileIdSource("openai", "audio-1"))
+                                                .build(),
+                                        VideoBlock.builder()
+                                                .source(new FileIdSource("openai", "video-1"))
+                                                .build(),
+                                        DataBlock.builder()
+                                                .source(
+                                                        new Base64Source(
+                                                                "image/png", "iVBORw0KGgo="))
+                                                .build(),
+                                        TextBlock.builder().text("generated").build()))
+                        .build();
+        Msg msg = Msg.builder().id("msg-tool-media").role(MsgRole.TOOL).content(result).build();
+
+        AguiMessage wire = converter.toAguiMessages(msg).get(0);
+
+        assertTrue(wire.hasBlocks());
+        List<InputContent> parts = ((MessageContent.Blocks) wire.getContent()).parts();
+        assertEquals(5, parts.size());
+        ImageInputContent image = assertInstanceOf(ImageInputContent.class, parts.get(0));
+        InputContentDataSource imageSource =
+                assertInstanceOf(InputContentDataSource.class, image.source());
+        assertEquals("iVBORw0KGgo=", imageSource.value());
+        AudioInputContent audio = assertInstanceOf(AudioInputContent.class, parts.get(1));
+        InputContentFileSource audioSource =
+                assertInstanceOf(InputContentFileSource.class, audio.source());
+        assertEquals("audio-1", audioSource.value());
+        VideoInputContent video = assertInstanceOf(VideoInputContent.class, parts.get(2));
+        InputContentFileSource videoSource =
+                assertInstanceOf(InputContentFileSource.class, video.source());
+        assertEquals("video-1", videoSource.value());
+        ImageInputContent data = assertInstanceOf(ImageInputContent.class, parts.get(3));
+        assertEquals("iVBORw0KGgo=", ((InputContentDataSource) data.source()).value());
+
+        ToolResultBlock restored =
+                converter.toMsg(wire).getFirstContentBlock(ToolResultBlock.class);
+        assertNotNull(restored);
+        assertEquals(5, restored.getOutput().size());
+        assertEquals(
+                "iVBORw0KGgo=",
+                ((Base64Source) ((ImageBlock) restored.getOutput().get(0)).getSource()).getData());
+    }
+
+    @Test
     void testConvertToolMessageWithDocumentBlocks() {
         AguiMessage aguiMsg =
                 AguiMessage.blocksMessage(
