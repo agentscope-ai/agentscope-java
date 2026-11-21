@@ -40,6 +40,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -81,6 +82,9 @@ public class DockerSandbox extends AbstractBaseSandbox implements SandboxFileTra
     private static final int TAR_TIMEOUT_SECONDS = 120;
 
     private final DockerSandboxState dockerState;
+    // Once shutdown queues for the write lock, later uploads must not overtake it.
+    private final ReentrantReadWriteLock uploadLifecycle = new ReentrantReadWriteLock(true);
+    private boolean uploadsClosed;
 
     public DockerSandbox(DockerSandboxState state) {
         super(state);
@@ -95,8 +99,14 @@ public class DockerSandbox extends AbstractBaseSandbox implements SandboxFileTra
      */
     @Override
     public void start() throws Exception {
-        doEnsureContainerRunning();
-        super.start();
+        uploadLifecycle.writeLock().lock();
+        try {
+            doEnsureContainerRunning();
+            super.start();
+            uploadsClosed = false;
+        } finally {
+            uploadLifecycle.writeLock().unlock();
+        }
     }
 
     /**
@@ -106,16 +116,26 @@ public class DockerSandbox extends AbstractBaseSandbox implements SandboxFileTra
      */
     @Override
     public void shutdown() throws Exception {
-        String containerId = dockerState.getContainerId();
-        if (containerId == null || containerId.isBlank()) {
-            return;
+        uploadLifecycle.writeLock().lock();
+        try {
+            String containerId = dockerState.getContainerId();
+            if (containerId == null || containerId.isBlank()) {
+                return;
+            }
+            if (!dockerState.isContainerOwned()) {
+                log.debug(
+                        "[sandbox-docker] Skipping shutdown: container is user-managed: {}",
+                        containerId);
+                return;
+            }
+            uploadsClosed = true;
+            stopAndRemoveContainer(containerId);
+        } finally {
+            uploadLifecycle.writeLock().unlock();
         }
-        if (!dockerState.isContainerOwned()) {
-            log.debug(
-                    "[sandbox-docker] Skipping shutdown: container is user-managed: {}",
-                    containerId);
-            return;
-        }
+    }
+
+    private void stopAndRemoveContainer(String containerId) {
         try {
             runDockerCliBlocking(
                     CONTAINER_STOP_TIMEOUT_SECONDS * 2,
@@ -380,6 +400,18 @@ public class DockerSandbox extends AbstractBaseSandbox implements SandboxFileTra
         if (content == null) {
             throw new IllegalArgumentException("File content must not be null");
         }
+        uploadLifecycle.readLock().lockInterruptibly();
+        try {
+            if (uploadsClosed) {
+                throw new IOException("Docker sandbox is shutting down");
+            }
+            uploadToContainer(path, content);
+        } finally {
+            uploadLifecycle.readLock().unlock();
+        }
+    }
+
+    private void uploadToContainer(String path, byte[] content) throws Exception {
         String containerPath = requireTransferPath(path);
         Path temp = Files.createTempFile("agentscope-docker-upload-", ".bin");
         applyUploadFileMode(temp);
@@ -731,20 +763,26 @@ public class DockerSandbox extends AbstractBaseSandbox implements SandboxFileTra
         drainer.submit(() -> readStream(process.getInputStream(), 64 * 1024));
         drainer.shutdown();
 
-        boolean exited = process.waitFor(timeoutSeconds, TimeUnit.SECONDS);
-        if (!exited) {
-            process.destroyForcibly();
+        try {
+            if (!process.waitFor(timeoutSeconds, TimeUnit.SECONDS)) {
+                throw new SandboxException.SandboxRuntimeException(
+                        SandboxErrorCode.WORKSPACE_START_ERROR,
+                        "docker command timed out: " + command[0] + " " + command[1]);
+            }
+            int exitCode = process.exitValue();
+            if (exitCode != 0) {
+                String stderr = stderrFuture.get();
+                throw new SandboxException.SandboxRuntimeException(
+                        SandboxErrorCode.WORKSPACE_START_ERROR,
+                        "docker command failed (exit=" + exitCode + "): " + stderr);
+            }
+        } finally {
+            if (process.isAlive()) {
+                // On timeout or interrupt, wait for the CLI to exit before relinquishing
+                // the caller's upload lock. destroyForcibly() alone is asynchronous.
+                process.destroyForcibly().onExit().join();
+            }
             drainer.shutdownNow();
-            throw new SandboxException.SandboxRuntimeException(
-                    SandboxErrorCode.WORKSPACE_START_ERROR,
-                    "docker command timed out: " + command[0] + " " + command[1]);
-        }
-        int exitCode = process.exitValue();
-        if (exitCode != 0) {
-            String stderr = stderrFuture.get();
-            throw new SandboxException.SandboxRuntimeException(
-                    SandboxErrorCode.WORKSPACE_START_ERROR,
-                    "docker command failed (exit=" + exitCode + "): " + stderr);
         }
     }
 

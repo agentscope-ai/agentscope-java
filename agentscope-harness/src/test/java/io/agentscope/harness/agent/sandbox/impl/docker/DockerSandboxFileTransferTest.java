@@ -23,10 +23,16 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.harness.agent.sandbox.WorkspaceSpec;
+import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -203,6 +209,62 @@ class DockerSandboxFileTransferTest {
 
         assertNotNull(recording.lastCpSource);
         assertFalse(Files.exists(Path.of(recording.lastCpSource)));
+    }
+
+    @Test
+    void shutdownWaitsForActiveUploadBeforeStoppingContainer() throws Exception {
+        DockerSandboxState state = stateWithWorkspace("/workspace", "container-1");
+        state.setContainerOwned(true);
+        CountDownLatch copying = new CountDownLatch(1);
+        CountDownLatch finishCopy = new CountDownLatch(1);
+        CountDownLatch callingShutdown = new CountDownLatch(1);
+        CountDownLatch stopping = new CountDownLatch(1);
+        DockerSandbox managed =
+                new DockerSandbox(state) {
+                    @Override
+                    void runDockerCliBlocking(int timeoutSeconds, String... command)
+                            throws Exception {
+                        if ("cp".equals(command[1])) {
+                            copying.countDown();
+                            assertTrue(finishCopy.await(5, TimeUnit.SECONDS));
+                        } else if ("stop".equals(command[1])) {
+                            stopping.countDown();
+                        }
+                    }
+                };
+
+        ExecutorService workers = Executors.newFixedThreadPool(2);
+        try {
+            Future<?> upload =
+                    workers.submit(
+                            () -> {
+                                managed.uploadFile("session.jsonl", new byte[] {1});
+                                return null;
+                            });
+            assertTrue(copying.await(5, TimeUnit.SECONDS));
+            Future<?> shutdown =
+                    workers.submit(
+                            () -> {
+                                callingShutdown.countDown();
+                                managed.shutdown();
+                                return null;
+                            });
+            assertTrue(callingShutdown.await(5, TimeUnit.SECONDS));
+            assertFalse(
+                    stopping.await(250, TimeUnit.MILLISECONDS),
+                    "docker stop must not run while docker cp is active");
+
+            finishCopy.countDown();
+            upload.get(5, TimeUnit.SECONDS);
+            shutdown.get(5, TimeUnit.SECONDS);
+            assertEquals(0, stopping.getCount());
+            assertThrows(
+                    IOException.class,
+                    () -> managed.uploadFile("after-shutdown.jsonl", new byte[] {1}));
+        } finally {
+            finishCopy.countDown();
+            workers.shutdownNow();
+        }
     }
 
     private static DockerSandboxState stateWithWorkspace(String root, String containerId) {

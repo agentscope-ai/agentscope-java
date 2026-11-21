@@ -177,6 +177,8 @@ SandboxContext callCtx = SandboxContext.builder()
 
 Pass the same `externalSandbox` to each agent's `call()`, then `shutdown()` it yourself when done.
 
+For framework-managed sandboxes, `agentscope.sandbox.mirror.release-timeout-millis` is the time in milliseconds that release waits for active session mirrors before moving on to sandbox cleanup. It defaults to 1000, and zero skips this initial wait. Docker cleanup also waits for any active upload command to exit before stopping and removing the container, so cleanup can take longer than the mirror wait.
+
 ## Choosing a sandbox store
 
 | Store | Best for |
