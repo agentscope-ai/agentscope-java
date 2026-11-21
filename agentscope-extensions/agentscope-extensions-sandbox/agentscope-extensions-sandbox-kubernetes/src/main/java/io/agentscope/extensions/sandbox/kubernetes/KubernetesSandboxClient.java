@@ -214,7 +214,10 @@ public class KubernetesSandboxClient
                 connectionConfig,
                 kc,
                 Duration.ofSeconds(opts.getRequestTimeoutSeconds()),
-                Duration.ofSeconds(opts.getPerAttemptTimeoutSeconds()));
+                Duration.ofSeconds(opts.getPerAttemptTimeoutSeconds()),
+                opts.getCommandTimeoutSeconds() != null
+                        ? Duration.ofSeconds(opts.getCommandTimeoutSeconds())
+                        : null);
     }
 
     /**
@@ -292,6 +295,9 @@ public class KubernetesSandboxClient
         if (callOptions.getShutdownAfterSeconds() != null) {
             o.setShutdownAfterSeconds(callOptions.getShutdownAfterSeconds());
         }
+        if (callOptions.getCommandTimeoutSeconds() != null) {
+            o.setCommandTimeoutSeconds(callOptions.getCommandTimeoutSeconds());
+        }
         return o;
     }
 
@@ -314,6 +320,7 @@ public class KubernetesSandboxClient
         o.setRequestTimeoutSeconds(src.getRequestTimeoutSeconds());
         o.setPerAttemptTimeoutSeconds(src.getPerAttemptTimeoutSeconds());
         o.setPortForwardTimeoutSeconds(src.getPortForwardTimeoutSeconds());
+        o.setCommandTimeoutSeconds(src.getCommandTimeoutSeconds());
         o.setShutdownAfterSeconds(src.getShutdownAfterSeconds());
         return o;
     }

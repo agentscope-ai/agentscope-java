@@ -57,6 +57,13 @@ public class KubernetesSandboxClientOptions extends SandboxClientOptions {
     private long perAttemptTimeoutSeconds = 60;
     private long portForwardTimeoutSeconds = 30;
 
+    /**
+     * Default timeout, in seconds, for sandbox commands that do not pass an explicit timeout
+     * (workspace archive, hydration, mkdir and cleanup commands issued by the sandbox
+     * implementation). Null inherits the client default of 60 seconds.
+     */
+    private Long commandTimeoutSeconds;
+
     private Long shutdownAfterSeconds;
 
     @Override
@@ -204,6 +211,18 @@ public class KubernetesSandboxClientOptions extends SandboxClientOptions {
 
     public void setPortForwardTimeoutSeconds(long portForwardTimeoutSeconds) {
         this.portForwardTimeoutSeconds = portForwardTimeoutSeconds;
+    }
+
+    /** Null means the client default of 60 seconds is used. */
+    public Long getCommandTimeoutSeconds() {
+        return commandTimeoutSeconds;
+    }
+
+    public void setCommandTimeoutSeconds(Long commandTimeoutSeconds) {
+        if (commandTimeoutSeconds != null && commandTimeoutSeconds <= 0) {
+            throw new IllegalArgumentException("commandTimeoutSeconds must be positive or null");
+        }
+        this.commandTimeoutSeconds = commandTimeoutSeconds;
     }
 
     public Long getShutdownAfterSeconds() {

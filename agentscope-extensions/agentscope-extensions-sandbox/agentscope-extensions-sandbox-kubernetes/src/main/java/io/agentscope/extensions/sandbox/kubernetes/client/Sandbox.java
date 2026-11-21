@@ -55,7 +55,7 @@ public class Sandbox {
             String namespace,
             SandboxConnectionConfig connectionConfig,
             K8sHelper k8sHelper) {
-        this(claimName, sandboxId, namespace, connectionConfig, k8sHelper, null, null);
+        this(claimName, sandboxId, namespace, connectionConfig, k8sHelper, null, null, null);
     }
 
     public Sandbox(
@@ -66,6 +66,36 @@ public class Sandbox {
             K8sHelper k8sHelper,
             Duration requestTimeout,
             Duration perAttemptTimeout) {
+        this(
+                claimName,
+                sandboxId,
+                namespace,
+                connectionConfig,
+                k8sHelper,
+                requestTimeout,
+                perAttemptTimeout,
+                null);
+    }
+
+    /**
+     * @param claimName sandbox claim name
+     * @param sandboxId sandbox id
+     * @param namespace namespace
+     * @param connectionConfig connection strategy
+     * @param k8sHelper Kubernetes helper
+     * @param requestTimeout HTTP request timeout; null uses the connector default
+     * @param perAttemptTimeout per-attempt HTTP timeout; null uses the connector default
+     * @param commandTimeout default command timeout; null uses 60 seconds
+     */
+    public Sandbox(
+            String claimName,
+            String sandboxId,
+            String namespace,
+            SandboxConnectionConfig connectionConfig,
+            K8sHelper k8sHelper,
+            Duration requestTimeout,
+            Duration perAttemptTimeout,
+            Duration commandTimeout) {
         this.claimName = claimName;
         this.sandboxId = sandboxId;
         this.namespace = namespace != null ? namespace : "default";
@@ -81,7 +111,7 @@ public class Sandbox {
                         this::getPodIp,
                         requestTimeout,
                         perAttemptTimeout);
-        this.commands = new CommandExecutor(connector);
+        this.commands = new CommandExecutor(connector, commandTimeout);
         this.files = new Filesystem(connector);
     }
 
