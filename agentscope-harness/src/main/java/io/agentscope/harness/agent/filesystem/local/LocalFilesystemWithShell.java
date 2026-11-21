@@ -16,6 +16,7 @@
 package io.agentscope.harness.agent.filesystem.local;
 
 import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.harness.agent.filesystem.ShellSyntax;
 import io.agentscope.harness.agent.filesystem.model.ExecuteResponse;
 import io.agentscope.harness.agent.filesystem.remote.store.NamespaceFactory;
 import io.agentscope.harness.agent.filesystem.sandbox.AbstractSandboxFilesystem;
@@ -25,11 +26,10 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.Charset;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.HashMap;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
@@ -42,6 +42,8 @@ import org.slf4j.LoggerFactory;
  * <p>This implementation extends {@link LocalFilesystem} to add shell command execution
  * capabilities. Commands are executed directly on the host system without any
  * sandboxing, process isolation, or security restrictions.
+ *
+ * <p>The shell is the host default ({@code sh -c} / {@code cmd.exe /c}) unless one is configured.
  *
  * <p><b>WARNING:</b> This implementation grants agents BOTH direct filesystem access AND unrestricted
  * shell execution on your local machine. Use with extreme caution and only in
@@ -63,10 +65,38 @@ public class LocalFilesystemWithShell extends LocalFilesystem implements Abstrac
      */
     private static final long DRAIN_JOIN_TIMEOUT_MILLIS = 5000;
 
+    /**
+     * Variables a child process needs to start and resolve its own commands. A caller-supplied
+     * {@link #env} replaces the inherited environment, and dropping these along with it leaves the
+     * shell unable to find anything (#1396); {@code inheritEnv(true)} keeps the rest.
+     */
+    private static final List<String> WINDOWS_BOOTSTRAP_VARIABLES =
+            List.of(
+                    "PATH",
+                    "PATHEXT",
+                    "SystemRoot",
+                    "SystemDrive",
+                    "windir",
+                    "COMSPEC",
+                    "TEMP",
+                    "TMP");
+
+    private static final List<String> POSIX_BOOTSTRAP_VARIABLES =
+            List.of("PATH", "TMPDIR", "LANG", "LC_ALL");
+
+    private static final Map<String, String> WINDOWS_BOOTSTRAP =
+            bootstrapOf(WINDOWS_BOOTSTRAP_VARIABLES);
+
+    private static final Map<String, String> POSIX_BOOTSTRAP =
+            bootstrapOf(POSIX_BOOTSTRAP_VARIABLES);
+
     private final String sandboxId;
     private final int defaultTimeout;
     private final int maxOutputBytes;
     private final Map<String, String> env;
+
+    /** Shell {@code execute()} launches; see {@link ShellResolver}. */
+    private final ShellResolver.ResolvedShell resolvedShell;
 
     /**
      * Working directory passed to {@link ProcessBuilder#directory(java.io.File)} for shell
@@ -233,20 +263,7 @@ public class LocalFilesystemWithShell extends LocalFilesystem implements Abstrac
     }
 
     /**
-     * Most-complete constructor: filesystem operations follow {@code mode} and {@code pathPolicy}
-     * (see {@link LocalFilesystem#LocalFilesystem(Path, LocalFsMode, PathPolicy, int, NamespaceFactory)});
-     * shell commands run with {@code pwd = shellCwd} when set, otherwise the filesystem root.
-     *
-     * @param rootDir filesystem root for relative-path operations
-     * @param mode path-resolution policy ({@code null} treated as {@link LocalFsMode#UNRESTRICTED})
-     * @param pathPolicy allow-list for {@link LocalFsMode#ROOTED}; ignored otherwise
-     * @param timeout default shell timeout (seconds, must be positive)
-     * @param maxOutputBytes byte cap for captured shell output
-     * @param env environment variables for shell commands ({@code null} for empty)
-     * @param inheritEnv whether to inherit the parent process environment
-     * @param namespaceFactory optional per-user/session namespace factory
-     * @param shellCwd shell {@code pwd}; {@code null} falls back to {@code rootDir} (with
-     *     namespace prefix when configured)
+     * Same as the ten-argument constructor, with the shell resolved for the host.
      */
     public LocalFilesystemWithShell(
             Path rootDir,
@@ -258,6 +275,52 @@ public class LocalFilesystemWithShell extends LocalFilesystem implements Abstrac
             boolean inheritEnv,
             NamespaceFactory namespaceFactory,
             Path shellCwd) {
+        this(
+                rootDir,
+                mode,
+                pathPolicy,
+                timeout,
+                maxOutputBytes,
+                env,
+                inheritEnv,
+                namespaceFactory,
+                shellCwd,
+                null);
+    }
+
+    /**
+     * Most-complete constructor: filesystem operations follow {@code mode} and {@code pathPolicy}
+     * (see {@link LocalFilesystem#LocalFilesystem(Path, LocalFsMode, PathPolicy, int, NamespaceFactory)});
+     * shell commands run with {@code pwd = shellCwd} when set, otherwise the filesystem root.
+     *
+     * <p>{@code env} replaces the inherited environment, but the variables a child process needs to
+     * start are always present; {@code env} overrides them when it names them.
+     *
+     * @param rootDir filesystem root for relative-path operations
+     * @param mode path-resolution policy ({@code null} treated as {@link LocalFsMode#UNRESTRICTED})
+     * @param pathPolicy allow-list for {@link LocalFsMode#ROOTED}; ignored otherwise
+     * @param timeout default shell timeout (seconds, must be positive)
+     * @param maxOutputBytes byte cap for captured shell output
+     * @param env environment variables for shell commands ({@code null} for empty)
+     * @param inheritEnv whether to inherit the parent process environment
+     * @param namespaceFactory optional per-user/session namespace factory
+     * @param shellCwd shell {@code pwd}; {@code null} falls back to {@code rootDir} (with
+     *     namespace prefix when configured)
+     * @param shellPath shell to launch, as a path or an executable name on {@code PATH};
+     *     {@code null} keeps the host default ({@code sh} on POSIX, {@code cmd.exe} on Windows).
+     *     See {@link ShellResolver}
+     */
+    public LocalFilesystemWithShell(
+            Path rootDir,
+            LocalFsMode mode,
+            PathPolicy pathPolicy,
+            int timeout,
+            int maxOutputBytes,
+            Map<String, String> env,
+            boolean inheritEnv,
+            NamespaceFactory namespaceFactory,
+            Path shellCwd,
+            String shellPath) {
         super(rootDir, mode, pathPolicy, 10, namespaceFactory);
 
         if (timeout <= 0) {
@@ -270,13 +333,20 @@ public class LocalFilesystemWithShell extends LocalFilesystem implements Abstrac
         this.shellCwd = shellCwd != null ? shellCwd.toAbsolutePath().normalize() : null;
 
         if (inheritEnv) {
-            Map<String, String> merged = new java.util.HashMap<>(System.getenv());
+            Map<String, String> merged = new HashMap<>(System.getenv());
             if (env != null) {
                 merged.putAll(env);
             }
             this.env = Map.copyOf(merged);
         } else {
             this.env = env != null ? Map.copyOf(env) : Map.of();
+        }
+
+        // Resolved here so a typo in shellPath fails where the agent is built, not on the first
+        // command; the host default costs no lookup.
+        this.resolvedShell = ShellResolver.resolve(shellPath, shellLookupEnvironment(env));
+        if (shellPath != null && !shellPath.isBlank()) {
+            log.info("execute() runs commands with {}", resolvedShell.description());
         }
     }
 
@@ -333,14 +403,17 @@ public class LocalFilesystemWithShell extends LocalFilesystem implements Abstrac
             Path workDir = resolveExecuteCwd(runtimeContext);
             String osName = System.getProperty("os.name").toLowerCase();
             ProcessBuilder pb =
-                    (osName.contains("win")
-                                    ? new ProcessBuilder("cmd.exe", "/c", command)
-                                    : new ProcessBuilder("sh", "-c", command))
+                    new ProcessBuilder(resolvedShell.commandLine(command))
                             .directory(workDir.toFile())
                             .redirectErrorStream(false);
 
             if (!env.isEmpty()) {
                 pb.environment().clear();
+                pb.environment()
+                        .putAll(
+                                ShellResolver.isWindows(osName)
+                                        ? WINDOWS_BOOTSTRAP
+                                        : POSIX_BOOTSTRAP);
                 pb.environment().putAll(env);
             }
 
@@ -362,7 +435,8 @@ public class LocalFilesystemWithShell extends LocalFilesystem implements Abstrac
             joinQuietly(stdoutDrainer);
             joinQuietly(stderrDrainer);
 
-            Charset outputCharset = outputCharset(osName);
+            Charset outputCharset =
+                    resolvedShell.outputCharset(osName, System.getProperty("native.encoding"));
             String stdout = stdoutBuf.toString(outputCharset);
             String stderr = stderrBuf.toString(outputCharset);
 
@@ -432,6 +506,33 @@ public class LocalFilesystemWithShell extends LocalFilesystem implements Abstrac
         }
     }
 
+    @Override
+    public ShellSyntax shellSyntax() {
+        return resolvedShell.syntax();
+    }
+
+    /** Parent environment plus the caller's variables, so a shell on their {@code PATH} is found. */
+    private static Map<String, String> shellLookupEnvironment(Map<String, String> callerEnv) {
+        if (callerEnv == null || callerEnv.isEmpty()) {
+            return System.getenv();
+        }
+        Map<String, String> merged = new HashMap<>(System.getenv());
+        merged.putAll(callerEnv);
+        return merged;
+    }
+
+    /** {@code System.getenv(name)} matches case-insensitively on Windows, exactly on POSIX. */
+    private static Map<String, String> bootstrapOf(List<String> names) {
+        Map<String, String> bootstrap = new HashMap<>();
+        for (String name : names) {
+            String value = System.getenv(name);
+            if (value != null) {
+                bootstrap.put(name, value);
+            }
+        }
+        return Map.copyOf(bootstrap);
+    }
+
     private Path resolveExecuteCwd(RuntimeContext rc) {
         if (shellCwd != null) {
             return shellCwd;
@@ -486,20 +587,5 @@ public class LocalFilesystemWithShell extends LocalFilesystem implements Abstrac
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
         }
-    }
-
-    static Charset outputCharset(String osName) {
-        return outputCharset(osName, System.getProperty("native.encoding"));
-    }
-
-    static Charset outputCharset(String osName, String nativeEncoding) {
-        if (!osName.toLowerCase(Locale.ROOT).contains("win")) {
-            return StandardCharsets.UTF_8;
-        }
-
-        if (nativeEncoding != null && Charset.isSupported(nativeEncoding)) {
-            return Charset.forName(nativeEncoding);
-        }
-        return Charset.defaultCharset();
     }
 }

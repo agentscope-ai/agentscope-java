@@ -21,10 +21,7 @@ import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolResultState;
 import io.agentscope.core.tool.Tool;
 import io.agentscope.core.tool.ToolParam;
-import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
-import io.agentscope.harness.agent.filesystem.OverlayFilesystem;
-import io.agentscope.harness.agent.filesystem.RoutedSandboxFilesystem;
-import io.agentscope.harness.agent.filesystem.local.LocalFilesystemWithShell;
+import io.agentscope.harness.agent.filesystem.ShellSyntax;
 import io.agentscope.harness.agent.filesystem.model.ExecuteResponse;
 import io.agentscope.harness.agent.filesystem.sandbox.AbstractSandboxFilesystem;
 
@@ -81,13 +78,7 @@ public class ShellExecuteTool {
                         "working_directory must be a relative path within the workspace"
                                 + " (absolute paths, '~', and '..' are not allowed).");
             }
-            effectiveCommand =
-                    commandWithWorkingDirectory(
-                            wd,
-                            command,
-                            usesWindowsShell(
-                                    sandbox,
-                                    System.getProperty("os.name").toLowerCase().contains("win")));
+            effectiveCommand = commandWithWorkingDirectory(wd, command, ShellSyntax.of(sandbox));
         }
 
         if (timeout != null && timeout <= 0) {
@@ -120,21 +111,25 @@ public class ShellExecuteTool {
                 .withState(result.isSuccess() ? ToolResultState.SUCCESS : ToolResultState.ERROR);
     }
 
-    static boolean usesWindowsShell(AbstractFilesystem filesystem, boolean windowsHost) {
-        if (filesystem instanceof OverlayFilesystem overlay) {
-            return usesWindowsShell(overlay.getUpper(), windowsHost);
-        }
-        if (filesystem instanceof RoutedSandboxFilesystem routed) {
-            return usesWindowsShell(routed.primary(), windowsHost);
-        }
-        return windowsHost && filesystem instanceof LocalFilesystemWithShell;
-    }
-
+    /**
+     * Prefixes a command with a change of directory in the syntax the executing shell parses.
+     *
+     * @param workingDirectory directory, relative to the shell's starting directory
+     * @param command command to run afterwards
+     * @param syntax shell that will parse the result
+     * @return the prefixed command
+     */
     static String commandWithWorkingDirectory(
-            String workingDirectory, String command, boolean windows) {
-        if (windows) {
-            return "cd /d \"" + workingDirectory.replace("\"", "\"\"") + "\" && " + command;
-        }
-        return "cd '" + workingDirectory.replace("'", "'\\''") + "' && " + command;
+            String workingDirectory, String command, ShellSyntax syntax) {
+        return switch (syntax) {
+            case CMD -> "cd /d \"" + workingDirectory.replace("\"", "\"\"") + "\" && " + command;
+            // PowerShell 5.1 has no &&, and [ ] in a path would be read as a wildcard.
+            case POWERSHELL ->
+                    "Set-Location -LiteralPath '"
+                            + workingDirectory.replace("'", "''")
+                            + "' -ErrorAction Stop; "
+                            + command;
+            case POSIX -> "cd '" + workingDirectory.replace("'", "'\\''") + "' && " + command;
+        };
     }
 }
