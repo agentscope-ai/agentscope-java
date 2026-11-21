@@ -15,6 +15,7 @@
  */
 package io.agentscope.core.model.transport;
 
+import io.agentscope.core.model.ModelSchedulers;
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
@@ -30,11 +31,14 @@ import java.security.cert.X509Certificate;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import javax.net.ssl.SSLContext;
 import javax.net.ssl.SSLSocketFactory;
 import javax.net.ssl.TrustManager;
 import javax.net.ssl.X509TrustManager;
+import okhttp3.Call;
 import okhttp3.ConnectionPool;
 import okhttp3.Credentials;
 import okhttp3.MediaType;
@@ -46,7 +50,7 @@ import okhttp3.ResponseBody;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Flux;
-import reactor.core.scheduler.Schedulers;
+import reactor.core.scheduler.Scheduler;
 
 /**
  * OkHttp implementation of the HttpTransport interface.
@@ -69,6 +73,8 @@ public class OkHttpTransport implements HttpTransport {
 
     private final OkHttpClient client;
     private final HttpTransportConfig config;
+    private final Scheduler streamScheduler;
+    private final Scheduler responseScheduler;
 
     /**
      * Create a new OkHttpTransport with default configuration.
@@ -83,8 +89,7 @@ public class OkHttpTransport implements HttpTransport {
      * @param config the transport configuration
      */
     public OkHttpTransport(HttpTransportConfig config) {
-        this.config = config;
-        this.client = buildClient(config);
+        this(buildClient(config), config);
     }
 
     /**
@@ -97,11 +102,21 @@ public class OkHttpTransport implements HttpTransport {
      * @param config the transport configuration (used for reference only)
      */
     public OkHttpTransport(OkHttpClient client, HttpTransportConfig config) {
-        this.client = client;
-        this.config = config;
+        this(client, config, ModelSchedulers.streams(), ModelSchedulers.responses());
     }
 
-    private OkHttpClient buildClient(HttpTransportConfig config) {
+    private OkHttpTransport(
+            OkHttpClient client,
+            HttpTransportConfig config,
+            Scheduler streamScheduler,
+            Scheduler responseScheduler) {
+        this.client = Objects.requireNonNull(client, "client");
+        this.config = Objects.requireNonNull(config, "config");
+        this.streamScheduler = Objects.requireNonNull(streamScheduler, "streamScheduler");
+        this.responseScheduler = Objects.requireNonNull(responseScheduler, "responseScheduler");
+    }
+
+    private static OkHttpClient buildClient(HttpTransportConfig config) {
         OkHttpClient.Builder builder =
                 new OkHttpClient.Builder()
                         .connectTimeout(
@@ -227,101 +242,83 @@ public class OkHttpTransport implements HttpTransport {
                 isNdjson
                         ? null
                         : request.getHeaders().get(TransportConstants.STREAM_TERMINATOR_HEADER);
-        return Flux.<String>create(
-                        sink -> {
-                            Response response = null;
-                            BufferedReader reader = null;
-                            try {
-                                response = client.newCall(okHttpRequest).execute();
-
-                                if (!response.isSuccessful()) {
-                                    String errorBody = getResponseBodyString(response);
-                                    log.error(
-                                            "HTTP error: status={}, body={}",
-                                            response.code(),
-                                            errorBody);
-                                    sink.error(
-                                            new HttpTransportException(
-                                                    "HTTP request failed with status "
-                                                            + response.code(),
-                                                    response.code(),
-                                                    errorBody));
-                                    return;
-                                }
-
-                                ResponseBody body = response.body();
-                                if (body == null) {
-                                    sink.complete();
-                                    return;
-                                }
-
-                                reader =
-                                        new BufferedReader(
-                                                new InputStreamReader(
-                                                        body.byteStream(), StandardCharsets.UTF_8));
-
-                                String line;
-                                boolean sawMarker = false;
-                                String marker = terminator != null ? terminator : SSE_DONE_MARKER;
-                                while ((line = reader.readLine()) != null) {
-                                    if (sink.isCancelled()) {
-                                        break;
-                                    }
-
-                                    // Skip empty lines
-                                    if (line.isEmpty()) {
-                                        continue;
-                                    }
-
-                                    // Handle NDJSON format
-                                    if (isNdjson) {
-                                        sink.next(line);
-                                        continue;
-                                    }
-
-                                    // Parse SSE data lines
-                                    if (line.startsWith(SSE_DATA_PREFIX)) {
-                                        String data =
-                                                line.substring(SSE_DATA_PREFIX.length()).trim();
-
-                                        // Check for stream end marker
-                                        if (marker.equals(data)) {
-                                            sawMarker = true;
-                                            log.debug("Received SSE {} marker", marker);
-                                            break;
-                                        }
-
-                                        if (!data.isEmpty()) {
-                                            sink.next(data);
-                                        }
-                                    }
-                                    // Skip other SSE fields (event:, id:, retry:, comments)
-                                }
-
-                                // A body that ends before the caller-declared terminator was cut
-                                // short; a clean close is not proof of complete content. Skip the
-                                // check on cancellation: an aborted read sees no marker by design.
-                                if (terminator != null && !sawMarker && !sink.isCancelled()) {
-                                    sink.error(new StreamTerminationException(terminator));
-                                } else {
-                                    sink.complete();
-                                }
-                            } catch (IOException e) {
-                                if (!sink.isCancelled()) {
-                                    sink.error(
-                                            new HttpTransportException(
-                                                    "SSE stream read failed: " + e.getMessage(),
-                                                    e));
-                                }
-                            } finally {
-                                closeQuietly(reader);
-                                if (response != null) {
-                                    closeQuietly(response.body());
-                                }
-                                closeQuietly(response);
-                            }
+        return Flux.defer(
+                        () -> {
+                            Call call = client.newCall(okHttpRequest);
+                            return Flux.using(
+                                            call::execute,
+                                            response -> {
+                                                if (!response.isSuccessful()) {
+                                                    String errorBody =
+                                                            getResponseBodyString(response);
+                                                    return Flux.<String>error(
+                                                            new HttpTransportException(
+                                                                    "HTTP request failed with"
+                                                                            + " status "
+                                                                            + response.code(),
+                                                                    response.code(),
+                                                                    errorBody));
+                                                }
+                                                ResponseBody body = response.body();
+                                                if (body == null) return Flux.empty();
+                                                BufferedReader reader =
+                                                        new BufferedReader(
+                                                                new InputStreamReader(
+                                                                        body.byteStream(),
+                                                                        StandardCharsets.UTF_8));
+                                                Flux<String> lines =
+                                                        Flux.fromStream(reader.lines());
+                                                if (isNdjson)
+                                                    return lines.filter(line -> !line.isEmpty());
+                                                String marker =
+                                                        terminator != null
+                                                                ? terminator
+                                                                : SSE_DONE_MARKER;
+                                                AtomicBoolean sawMarker = new AtomicBoolean(false);
+                                                lines =
+                                                        lines.filter(
+                                                                        line ->
+                                                                                line.startsWith(
+                                                                                        SSE_DATA_PREFIX))
+                                                                .map(
+                                                                        line ->
+                                                                                line.substring(
+                                                                                                SSE_DATA_PREFIX
+                                                                                                        .length())
+                                                                                        .trim())
+                                                                .doOnNext(
+                                                                        data -> {
+                                                                            if (marker.equals(
+                                                                                    data)) {
+                                                                                sawMarker.set(true);
+                                                                            }
+                                                                        })
+                                                                .takeWhile(
+                                                                        data ->
+                                                                                !marker.equals(data))
+                                                                .filter(data -> !data.isEmpty());
+                                                if (terminator == null) return lines;
+                                                return lines.concatWith(
+                                                        Flux.defer(
+                                                                () ->
+                                                                        sawMarker.get()
+                                                                                ? Flux.<String>empty()
+                                                                                : Flux.<String>error(
+                                                                                        new StreamTerminationException(
+                                                                                                terminator))));
+                                            },
+                                            this::closeQuietly)
+                                    .doOnCancel(call::cancel);
                         })
-                .subscribeOn(Schedulers.boundedElastic(), false);
+                .subscribeOn(streamScheduler)
+                .onErrorMap(
+                        error ->
+                                error instanceof HttpTransportException
+                                        ? error
+                                        : new HttpTransportException(
+                                                "SSE stream read failed: " + error.getMessage(),
+                                                error))
+                .publishOn(responseScheduler, config.getResponsePrefetch());
     }
 
     @Override
@@ -442,6 +439,32 @@ public class OkHttpTransport implements HttpTransport {
     public static class Builder {
         private HttpTransportConfig config = HttpTransportConfig.defaults();
         private OkHttpClient existingClient = null;
+        private Scheduler streamScheduler;
+        private Scheduler responseScheduler;
+
+        /**
+         * Use a caller-owned scheduler for blocking connection and stream reads. It is never
+         * disposed by the transport. Defaults to {@link ModelSchedulers#streams()}.
+         *
+         * @param scheduler the stream scheduler
+         * @return this builder
+         */
+        public Builder streamScheduler(Scheduler scheduler) {
+            this.streamScheduler = Objects.requireNonNull(scheduler, "scheduler");
+            return this;
+        }
+
+        /**
+         * Use a caller-owned scheduler for ordered response delivery. It is never disposed by the
+         * transport. Defaults to {@link ModelSchedulers#responses()}.
+         *
+         * @param scheduler the response scheduler
+         * @return this builder
+         */
+        public Builder responseScheduler(Scheduler scheduler) {
+            this.responseScheduler = Objects.requireNonNull(scheduler, "scheduler");
+            return this;
+        }
 
         /**
          * Set the transport configuration.
@@ -474,10 +497,12 @@ public class OkHttpTransport implements HttpTransport {
          * @return a new OkHttpTransport instance
          */
         public OkHttpTransport build() {
-            if (existingClient != null) {
-                return new OkHttpTransport(existingClient, config);
-            }
-            return new OkHttpTransport(config);
+            Objects.requireNonNull(config, "config");
+            return new OkHttpTransport(
+                    existingClient != null ? existingClient : buildClient(config),
+                    config,
+                    streamScheduler != null ? streamScheduler : ModelSchedulers.streams(),
+                    responseScheduler != null ? responseScheduler : ModelSchedulers.responses());
         }
     }
 

@@ -18,7 +18,7 @@ package io.agentscope.harness.agent.verification;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.event.AgentEventEmitter;
 import io.agentscope.core.event.CustomEvent;
-import io.agentscope.core.session.SessionRecorder;
+import io.agentscope.core.journal.InvocationRecorder;
 import io.agentscope.core.state.AgentStateStore;
 import io.agentscope.core.state.TaskRequirement;
 import io.agentscope.core.state.TaskVerification;
@@ -108,7 +108,7 @@ public final class VerificationService {
                                             throw new IllegalStateException(
                                                     "Pin the task subject version before"
                                                             + " execution");
-                                        var recorder = SessionRecorder.from(context);
+                                        var recorder = InvocationRecorder.from(context);
                                         var evidence =
                                                 recorder == null
                                                         ? observations

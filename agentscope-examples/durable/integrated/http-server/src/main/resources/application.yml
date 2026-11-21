@@ -1,0 +1,12 @@
+spring:
+  application:
+    name: agentscope-durable-http-server-example
+  main:
+    banner-mode: "off"
+server:
+  address: 127.0.0.1
+  port: 8080
+durable:
+  http-server:
+    data-directory: durable-http-server-data
+    namespace: demo

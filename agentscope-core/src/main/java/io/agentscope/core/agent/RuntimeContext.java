@@ -26,7 +26,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 
 /**
- * Per-call metadata for an agent run: session-scoped fields plus a thread-safe attribute bag and
+ * Per-call metadata for an agent run: Session/Thread/Turn identity, a thread-safe attribute bag and
  * an optional {@link ToolExecutionContext} (tool-POJO / DI layer).
  *
  * <p>Attributes are not persisted. Hooks and tools may read and update the same instance for the
@@ -34,15 +34,19 @@ import java.util.concurrent.ConcurrentMap;
  */
 public class RuntimeContext {
 
+    public static final String PRIMARY_THREAD_ID = "main";
+
     private static final String TYPED_DEFAULT_KEY = "";
 
     private final String sessionId;
     private final String userId;
+    private final String threadId;
+    private final String turnId;
 
     /**
-     * Per-call correlation id: explicit via {@link Builder#runId(String)} (uniqueness is the
-     * caller's) or auto-generated; copied by {@link Builder#from} so derived contexts (subagent
-     * chains) stay correlated. Never {@code null}.
+     * Optional host-supplied invocation identity. An unbound request context has no Run yet;
+     * the execution entry allocates one and binds it to the invocation's context. Hosts supplying
+     * an identity must use a fresh value for each invocation.
      */
     private final String runId;
 
@@ -75,9 +79,13 @@ public class RuntimeContext {
     private RuntimeContext(Builder builder) {
         this.sessionId = builder.sessionId;
         this.userId = builder.userId;
-        // Generated here (not cached on the builder) so reusing one Builder yields distinct ids.
-        this.runId =
-                builder.runId == null || builder.runId.isBlank() ? generateRunId() : builder.runId;
+        this.threadId = builder.threadId == null ? PRIMARY_THREAD_ID : builder.threadId;
+        this.turnId = builder.turnId;
+        if (threadId.isBlank() || (turnId != null && turnId.isBlank()))
+            throw new IllegalArgumentException("Thread and turn identities must not be blank");
+        this.runId = builder.runId;
+        if (runId != null && runId.isBlank())
+            throw new IllegalArgumentException("Run identity must not be blank");
         this.stringAttributes = new ConcurrentHashMap<>();
         this.typedAttributes = new ConcurrentHashMap<>();
         this.toolExecutionContext = builder.toolExecutionContext;
@@ -104,7 +112,7 @@ public class RuntimeContext {
     }
 
     /**
-     * Shallow, mutable empty context (null session fields, empty attribute maps, no tool context).
+     * Shallow, mutable context with the primary Thread, no Session/Turn/Run, and no tool context.
      */
     public static RuntimeContext empty() {
         return new Builder().build();
@@ -118,10 +126,19 @@ public class RuntimeContext {
         return userId;
     }
 
+    /** Continuing Agent context within the business Session; never a Java thread identity. */
+    public String getThreadId() {
+        return threadId;
+    }
+
+    /** Optional host-supplied logical task identity; direct calls leave this null. */
+    public String getTurnId() {
+        return turnId;
+    }
+
     /**
-     * Returns the stable per-call correlation id for logs, events, and tracing — including
-     * subagent chains derived from this context — aligned with {@link AgentRun#runId()} for
-     * handles created via {@code prepareRun}/{@code prepareCall}. Never {@code null}.
+     * Returns the invocation identity for logs and events. Null before execution unless a host
+     * supplied it. Inside the Agent invocation it matches {@link AgentRun#runId()}.
      */
     public String getRunId() {
         return runId;
@@ -376,6 +393,8 @@ public class RuntimeContext {
     public static class Builder {
         private String sessionId;
         private String userId;
+        private String threadId;
+        private String turnId;
         private String runId;
         private Map<String, Object> stringExtras;
         private final Map<Class<?>, Map<String, Object>> typedValues = new HashMap<>();
@@ -393,10 +412,22 @@ public class RuntimeContext {
             return this;
         }
 
+        /** Selects a continuing context. Null selects the primary Thread. */
+        public Builder threadId(String threadId) {
+            this.threadId = threadId;
+            return this;
+        }
+
+        /** Pins a logical task across invocations. Null clears an inherited task identity. */
+        public Builder turnId(String turnId) {
+            this.turnId = turnId;
+            return this;
+        }
+
         /**
-         * Sets an explicit per-call correlation id (e.g. an orchestration trace id); uniqueness
-         * is the caller's. Overrides a value copied by {@link #from(RuntimeContext)}. Unset or
-         * blank generates one at {@code build()} time.
+         * Sets an explicit invocation identity; uniqueness is the caller's. This is not a trace or
+         * task identity. Overrides a value copied by {@link #from(RuntimeContext)}. Unset or null
+         * lets the execution entry allocate a new identity for each invocation.
          */
         public Builder runId(String runId) {
             this.runId = runId;
@@ -445,8 +476,10 @@ public class RuntimeContext {
             }
             this.sessionId = source.sessionId;
             this.userId = source.userId;
-            // Derived contexts intentionally share the source's runId (agent_spawn chains); a
-            // later runId(x) overrides it.
+            this.threadId = source.threadId;
+            this.turnId = source.turnId;
+            // Derivation within an invocation preserves identity. New invocations explicitly
+            // replace runId; independent child tasks also replace Thread/Turn identity.
             this.runId = source.runId;
             this.agentState = source.agentState;
             this.toolExecutionContext = source.toolExecutionContext;

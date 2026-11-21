@@ -183,7 +183,7 @@ class KubernetesSandboxTest {
         verify(files).write(path.capture(), content.capture());
         assertTrue(path.getValue().startsWith(".agentscope-tmp/ws-hydrate-"));
         assertArrayEquals(tar, content.getValue());
-        verify(commands).run(eq("tar -xf '/workspace/" + path.getValue() + "' -C '/workspace'"));
+        verify(commands).run(eq("tar -xpf '/workspace/" + path.getValue() + "' -C '/workspace'"));
     }
 
     @Test
@@ -207,7 +207,7 @@ class KubernetesSandboxTest {
         sandbox.doHydrateWorkspace(new ByteArrayInputStream("tar-two".getBytes()));
 
         // Concurrent transfers must never share a temp archive: a deterministic name lets
-        // one call's rm -f cleanup delete another call's archive before tar -xf runs.
+        // one call's rm -f cleanup delete another call's archive before tar -xpf runs.
         ArgumentCaptor<String> path = ArgumentCaptor.forClass(String.class);
         verify(files, org.mockito.Mockito.times(2)).write(path.capture(), any(byte[].class));
         String first = path.getAllValues().get(0);

@@ -416,9 +416,9 @@ class ToolResultEvictionMiddlewareTest {
     }
 
     @Test
-    void defaultConfigEvictsOversizedSessionSearchButNotReadFile() {
+    void defaultConfigEvictsOversizedThreadSearchButNotReadFile() {
         ToolResultEvictionConfig config = ToolResultEvictionConfig.defaults();
-        assertFalse(config.getExcludedToolNames().contains("session_search"));
+        assertFalse(config.getExcludedToolNames().contains("thread_search"));
         assertTrue(config.getExcludedToolNames().contains("read_file"));
 
         RecordingFilesystem filesystem = new RecordingFilesystem(tempDir, WriteResult.ok("stored"));
@@ -428,7 +428,7 @@ class ToolResultEvictionMiddlewareTest {
         ReasoningInput input =
                 new ReasoningInput(
                         List.of(
-                                toolMessage(namedToolResult("session_search", largeOutput)),
+                                toolMessage(namedToolResult("thread_search", largeOutput)),
                                 toolMessage(namedToolResult("read_file", largeOutput))),
                         List.of(),
                         null);

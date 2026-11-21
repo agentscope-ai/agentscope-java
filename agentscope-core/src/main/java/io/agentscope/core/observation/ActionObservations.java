@@ -18,9 +18,9 @@ package io.agentscope.core.observation;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.event.AgentEventEmitter;
 import io.agentscope.core.event.CustomEvent;
+import io.agentscope.core.journal.InvocationRecorder;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolResultState;
-import io.agentscope.core.session.SessionRecorder;
 import io.agentscope.core.tool.ToolCallParam;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -43,15 +43,21 @@ public final class ActionObservations {
                     RuntimeContext context = param.getRuntimeContext();
                     Object configured =
                             context == null ? null : context.get(ActionObserver.CONTEXT_KEY);
-                    SessionRecorder recorder = SessionRecorder.from(context);
+                    InvocationRecorder recorder = InvocationRecorder.from(context);
                     ActionObserver observer;
                     if (recorder != null) {
                         observer =
                                 (observation, result) -> {
                                     var payload = new LinkedHashMap<String, Object>();
-                                    if (observation.status() == ActionObservation.Status.STARTED)
+                                    if (observation.status() == ActionObservation.Status.STARTED) {
+                                        var current =
+                                                RuntimeContext.resolveAgentState(
+                                                        context, param.getAgent());
+                                        if (current != null)
+                                            recorder.captureState(current, "before_tool");
                                         recorder.actionStarted(
                                                 observation.toolCallId(), observation.actionId());
+                                    }
                                     if (result != null
                                             && (result.isSuspended()
                                                     || result.getState() == ToolResultState.DENIED))
