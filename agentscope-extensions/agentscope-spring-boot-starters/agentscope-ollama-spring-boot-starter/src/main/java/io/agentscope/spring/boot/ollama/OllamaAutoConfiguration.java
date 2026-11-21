@@ -56,6 +56,10 @@ public class OllamaAutoConfiguration {
         if (baseUrl != null) {
             builder.baseUrl(baseUrl);
         }
+        String apiKey = trimToNull(properties.getApiKey());
+        if (apiKey != null) {
+            builder.apiKey(apiKey);
+        }
         customizerObjectProvider
                 .orderedStream()
                 .forEach(customizer -> customizer.customize(builder));
