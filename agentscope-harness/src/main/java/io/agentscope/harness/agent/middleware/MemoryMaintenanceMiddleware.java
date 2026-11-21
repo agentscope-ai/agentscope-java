@@ -27,9 +27,7 @@ import io.agentscope.core.middleware.AgentInput;
 import io.agentscope.harness.agent.IsolationScope;
 import io.agentscope.harness.agent.coordination.LocalPeriodicGate;
 import io.agentscope.harness.agent.coordination.PeriodicGate;
-import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
 import io.agentscope.harness.agent.filesystem.model.FileInfo;
-import io.agentscope.harness.agent.filesystem.model.GlobResult;
 import io.agentscope.harness.agent.memory.MemoryBackgroundTasks;
 import io.agentscope.harness.agent.memory.MemoryConsolidator;
 import io.agentscope.harness.agent.workspace.WorkspaceConstants;
@@ -244,41 +242,40 @@ public class MemoryMaintenanceMiddleware implements HarnessRuntimeMiddleware {
     }
 
     private void expireDailyFiles(RuntimeContext rc) {
-        AbstractFilesystem fs = workspaceManager.getFilesystem();
-        if (fs == null) {
-            return;
-        }
-        GlobResult glob = fs.glob(rc, "*.md", WorkspaceConstants.MEMORY_DIR);
-        if (glob == null || glob.matches() == null) {
-            return;
-        }
-
         Clock clock = rc == null ? null : rc.get(Clock.class);
         LocalDate cutoff =
                 LocalDate.now(clock == null ? Clock.systemDefaultZone() : clock)
                         .minusDays(dailyFileRetentionDays);
-        for (FileInfo fi : glob.matches()) {
+        for (FileInfo fi : workspaceManager.listMemoryFileInfos(rc)) {
             if (fi.isDirectory()) {
                 continue;
             }
-            String fileName = fileName(fi.path());
-            if (fileName.startsWith(".")) {
-                continue;
-            }
-            String baseName =
-                    fileName.endsWith(".md")
-                            ? fileName.substring(0, fileName.length() - 3)
-                            : fileName;
             try {
-                LocalDate fileDate = LocalDate.parse(baseName);
+                String listedPath = WorkspaceManager.requireSafeRelativePath(fi.path());
+                String fileName = fileName(listedPath);
+                String fromPath = WorkspaceConstants.MEMORY_DIR + "/" + fileName;
+                String namespacedPath =
+                        workspaceManager.toWorkspaceRelativeString(
+                                workspaceManager.resolveRuntimeDataPath(rc, fromPath));
+                // Virtual local listings may retain the current namespace; other backends strip it.
+                // Some backends glob recursively, so accept only these two direct ledger paths.
+                if ((!listedPath.equals(fromPath) && !listedPath.equals(namespacedPath))
+                        || fileName.startsWith(".")
+                        || !fileName.endsWith(".md")) {
+                    continue;
+                }
+                LocalDate fileDate = LocalDate.parse(fileName.substring(0, fileName.length() - 3));
                 if (fileDate.isBefore(cutoff)) {
-                    String fromPath = WorkspaceConstants.MEMORY_DIR + "/" + fileName;
                     String toPath = WorkspaceConstants.MEMORY_DIR + "/archive/" + fileName;
-                    fs.move(rc, fromPath, toPath);
-                    log.debug("Archived expired daily file: {}", fileName);
+                    var moved = workspaceManager.moveMemoryFile(rc, fromPath, toPath);
+                    if (moved.isSuccess()) {
+                        log.debug("Archived expired daily file: {}", fileName);
+                    } else {
+                        log.warn("Failed to archive daily file {}: {}", fileName, moved.error());
+                    }
                 }
             } catch (Exception e) {
-                // not a date-named file, skip
+                // Invalid date or per-file failure: preserve best-effort processing of other files.
             }
         }
     }
