@@ -59,10 +59,10 @@ class AguiQueueControllerTest {
                         invocation -> {
                             String threadId = invocation.getArgument(0);
                             ThreadMessageQueue queue = invocation.getArgument(1);
+                            String lastRunId = requestProcessor.lastStartedRunId(threadId);
+                            long observedAt = System.currentTimeMillis();
                             return queue.claim(
-                                    requestProcessor.isThreadIdle(threadId),
-                                    System.currentTimeMillis(),
-                                    requestProcessor.lastStartedRunId(threadId));
+                                    requestProcessor.isThreadIdle(threadId), observedAt, lastRunId);
                         });
 
         registry = new MessageQueueRegistry(2, 64);

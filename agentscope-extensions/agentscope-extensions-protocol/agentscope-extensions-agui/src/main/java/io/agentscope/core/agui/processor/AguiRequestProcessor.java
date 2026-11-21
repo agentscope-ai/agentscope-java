@@ -297,22 +297,31 @@ public class AguiRequestProcessor {
     /**
      * Claims the head of a thread queue only when the thread is idle.
      *
-     * <p>The idle observation is taken before the thread-state lock and repeated while holding it.
-     * {@link AguiResumeCoordinator#beginRun(RunAgentInput)} takes the same lock, so a run that
-     * starts after the first observation either makes the recheck fail or waits until the claim
-     * has removed its message. The queue therefore never hands a message to a client while
-     * another run has already started on the thread.
+     * <p>The claim observes the thread once without the lock so that a busy thread does not take
+     * the lock at all. When that observation says idle, the claim takes the thread-state lock and
+     * repeats the observation before dequeuing. {@link
+     * AguiResumeCoordinator#beginRun(RunAgentInput)} takes the same lock, so a run that is still
+     * active when the recheck runs either makes it fail or waits until the message has been
+     * removed. A run that started and finished while the claim waited leaves the thread idle, so
+     * the recheck does not refuse the claim on that ground. The busy fast path passes {@code
+     * idle = false} to the queue, which only releases the hand-off guard and never removes a
+     * message.
      *
      * <p>The check is client-triggered: this method never starts a run and never invokes a model.
-     * A client that is not connected cannot call it, so it also cannot be handed a message; there
-     * is no separate attached-client flag to recheck.
+     * Delivery happens only in response to a claim request, so a client that does not claim is
+     * never handed a message, and there is no separate attached-client flag to recheck. A claim
+     * that is already in flight when the client disconnects can still remove and return a message,
+     * which is the at-most-once hand-off boundary described below.
      *
      * <p>If a run starts after the claim returns, the message is already out of the queue. The
      * queue's hand-off guard closes further claims for a short window, but a competing run can
      * still win the replay race; delivery remains at most once.
      *
+     * <p>{@code queue} must be the queue registered for {@code threadId}. This method cannot
+     * verify that, because a queue does not carry its thread id.
+     *
      * @param threadId The AG-UI thread id
-     * @param queue The thread's queue
+     * @param queue The queue registered for that thread
      * @return the claimed message, or empty when the thread is busy, the queue is empty, or the
      *     hand-off guard is closed
      */
@@ -329,11 +338,14 @@ public class AguiRequestProcessor {
         ReentrantLock lock = threadStateLock(threadId);
         lock.lock();
         try {
-            // A run may have started between the observation above and this lock. Recheck before
-            // removing a message, and read the run evidence under the same lock.
-            boolean idle = isThreadIdle(threadId);
+            // The lock wait can be long enough for another claim to deliver a message, so anchor
+            // the hand-off window to this observation instead of the one taken before the lock.
+            long lockedAtMillis = System.currentTimeMillis();
+            // Read the run evidence before the idle state, as the queue documents; the lock makes
+            // the pair a consistent snapshot either way.
             String lastRunId = lastStartedRunId(threadId);
-            return queue.claim(idle, observedAtMillis, lastRunId);
+            boolean idle = isThreadIdle(threadId);
+            return queue.claim(idle, lockedAtMillis, lastRunId);
         } finally {
             lock.unlock();
         }
