@@ -78,6 +78,17 @@ class KubernetesSandboxTest {
     }
 
     @Test
+    void shutdownClosesConnectionWithoutDeletingClaim() throws Exception {
+        state.setClaimName("claim-1");
+        state.setNamespace("default");
+
+        sandbox.shutdown();
+
+        verify(sdkSandbox).closeConnection();
+        verify(sdkSandbox, never()).terminate();
+    }
+
+    @Test
     void doExecWrapsCommandWithWorkspaceCd() throws Exception {
         when(commands.run(anyString(), any(Duration.class)))
                 .thenReturn(new ExecutionResult("out", "", 0));

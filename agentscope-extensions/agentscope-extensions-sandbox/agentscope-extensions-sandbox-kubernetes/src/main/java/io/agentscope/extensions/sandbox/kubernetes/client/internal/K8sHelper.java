@@ -228,16 +228,18 @@ public class K8sHelper {
                         .inNamespace(namespace)
                         .withName(claimName)
                         .get();
-        if (current != null) {
-            checkClaimFailureConditions(current, claimName);
-            String resolved = extractSandboxName(current);
-            if (resolved != null) {
-                log.debug(
-                        "[sandbox-client] Sandbox name already resolved: {} -> {}",
-                        claimName,
-                        resolved);
-                return resolved;
-            }
+        if (current == null) {
+            throw new SandboxNotFoundException(
+                    "SandboxClaim '" + claimName + "' not found in namespace '" + namespace + "'.");
+        }
+        checkClaimFailureConditions(current, claimName);
+        String resolved = extractSandboxName(current);
+        if (resolved != null) {
+            log.debug(
+                    "[sandbox-client] Sandbox name already resolved: {} -> {}",
+                    claimName,
+                    resolved);
+            return resolved;
         }
 
         CompletableFuture<String> future = new CompletableFuture<>();
