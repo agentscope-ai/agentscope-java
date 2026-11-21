@@ -295,17 +295,22 @@ public class OkHttpTransport implements HttpTransport {
                                                                         })
                                                                 .takeWhile(
                                                                         data ->
-                                                                                !marker.equals(data))
+                                                                                !marker.equals(
+                                                                                        data))
                                                                 .filter(data -> !data.isEmpty());
                                                 if (terminator == null) return lines;
                                                 return lines.concatWith(
                                                         Flux.defer(
                                                                 () ->
                                                                         sawMarker.get()
-                                                                                ? Flux.<String>empty()
-                                                                                : Flux.<String>error(
-                                                                                        new StreamTerminationException(
-                                                                                                terminator))));
+                                                                                ? Flux
+                                                                                        .<String>
+                                                                                                empty()
+                                                                                : Flux
+                                                                                        .<String>
+                                                                                                error(
+                                                                                                        new StreamTerminationException(
+                                                                                                                terminator))));
                                             },
                                             this::closeQuietly)
                                     .doOnCancel(call::cancel);

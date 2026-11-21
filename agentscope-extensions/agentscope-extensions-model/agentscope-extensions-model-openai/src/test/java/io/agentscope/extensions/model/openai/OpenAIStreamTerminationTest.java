@@ -18,6 +18,7 @@ package io.agentscope.extensions.model.openai;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import com.sun.net.httpserver.HttpServer;
+import io.agentscope.core.model.ExecutionConfig;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.transport.HttpRequest;
 import io.agentscope.core.model.transport.HttpResponse;
@@ -191,7 +192,8 @@ class OpenAIStreamTerminationTest {
                         e ->
                                 e instanceof OpenAIException
                                         && "stream_terminated_early"
-                                                .equals(((OpenAIException) e).getErrorCode()))
+                                                .equals(((OpenAIException) e).getErrorCode())
+                                        && ExecutionConfig.RETRYABLE_ERRORS.test(e))
                 .verify(Duration.ofSeconds(5));
     }
 

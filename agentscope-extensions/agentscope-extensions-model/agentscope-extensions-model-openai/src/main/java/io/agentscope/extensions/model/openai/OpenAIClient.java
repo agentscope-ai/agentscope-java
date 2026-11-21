@@ -30,6 +30,7 @@ import io.agentscope.extensions.model.openai.dto.OpenAIChoice;
 import io.agentscope.extensions.model.openai.dto.OpenAIRequest;
 import io.agentscope.extensions.model.openai.dto.OpenAIResponse;
 import io.agentscope.extensions.model.openai.exception.OpenAIException;
+import java.io.EOFException;
 import java.net.URI;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
@@ -472,12 +473,15 @@ public class OpenAIClient {
                                 if (ex instanceof StreamTerminationException) {
                                     // The enforcing transport proved the body ended before
                                     // [DONE]: the aggregated response is truncated.
-                                    return OpenAIException.create(
-                                            null,
-                                            "OpenAI stream ended before [DONE]; the response may"
-                                                    + " be truncated",
-                                            "stream_terminated_early",
-                                            null);
+                                    OpenAIException mapped =
+                                            OpenAIException.create(
+                                                    null,
+                                                    "OpenAI stream ended before [DONE]; the"
+                                                            + " response may be truncated",
+                                                    "stream_terminated_early",
+                                                    null);
+                                    mapped.initCause(new EOFException(ex.getMessage()));
+                                    return mapped;
                                 }
                                 if (ex instanceof HttpTransportException hte) {
                                     Integer code = hte.getStatusCode();
