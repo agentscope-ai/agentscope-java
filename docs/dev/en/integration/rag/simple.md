@@ -5,6 +5,8 @@ zh_link: /dev/zh/integration/rag/simple
 
 `agentscope-extensions-rag-simple` is the "DIY end-to-end" RAG implementation: it bundles document readers, chunking strategies, embedding adapters, and five out-of-the-box vector store adapters.
 
+The `SimpleKnowledge`/RAG Builder path below belongs to the deprecated compatibility layer. Existing integrations can continue using it on current `main`; new applications should start with [application-layer retrieval or a custom retrieval tool](/dev/en/integration/rag/migration). Wrapping an existing adapter does not remove its own deprecation.
+
 Use it when: you're happy to run embeddings + vector store yourself and don't want a third-party RAG platform.
 
 ## Add the dependency
@@ -100,7 +102,9 @@ Switching stores is a one-line change: pass a different `VDBStoreBase` to `Simpl
 | `scoreThreshold` | Minimum score (0–1) |
 | `metadata` | Filter by document metadata |
 
-## Wire into an Agent
+## Legacy Agent wiring
+
+For an existing compatibility-layer integration:
 
 ```java
 ReActAgent agent = ReActAgent.builder()

@@ -3,6 +3,8 @@ title: Simple
 en_link: /dev/en/integration/rag/simple
 ---
 
+下面的 `SimpleKnowledge` 和 RAG Builder 接法属于已废弃的兼容层。当前 `main` 中的已有接法仍能使用；新应用应先了解[应用层检索或自定义检索工具](/dev/zh/integration/rag/migration)。外层增加封装不会消除适配器自身的废弃状态。
+
 `agentscope-extensions-rag-simple` 提供一个"自己掌控全部链路"的 RAG 实现：自带文档读取器、分块策略、Embedding 模型适配、以及 5 个开箱即用的向量库适配器。
 
 适合：你愿意自己跑 embedding + 向量库，不想接入第三方 RAG 平台。
@@ -100,7 +102,9 @@ List<Document> hits = knowledge.retrieve(
 | `scoreThreshold` | 最低分数阈值（0~1） |
 | `metadata` | 按文档 metadata 做过滤 |
 
-## 与 Agent 集成
+## 旧版 Agent 接法
+
+以下用于维护兼容层上的已有应用：
 
 ```java
 ReActAgent agent = ReActAgent.builder()

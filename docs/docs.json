@@ -633,6 +633,7 @@
                         "pages": [
                           "dev/en/integration/rag/index",
                           "dev/en/integration/rag/overview",
+                          "dev/en/integration/rag/migration",
                           "dev/en/integration/rag/simple",
                           "dev/en/integration/rag/bailian",
                           "dev/en/integration/rag/dify",
@@ -1474,6 +1475,7 @@
                         "pages": [
                           "dev/zh/integration/rag/index",
                           "dev/zh/integration/rag/overview",
+                          "dev/zh/integration/rag/migration",
                           "dev/zh/integration/rag/simple",
                           "dev/zh/integration/rag/bailian",
                           "dev/zh/integration/rag/dify",
