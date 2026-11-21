@@ -36,6 +36,7 @@ import io.agentscope.harness.agent.filesystem.OverlayFilesystem;
 import io.agentscope.harness.agent.filesystem.RoutedSandboxFilesystem;
 import io.agentscope.harness.agent.filesystem.local.LocalFilesystem;
 import io.agentscope.harness.agent.filesystem.model.FileInfo;
+import io.agentscope.harness.agent.filesystem.model.FileUploadResponse;
 import io.agentscope.harness.agent.filesystem.model.GlobResult;
 import io.agentscope.harness.agent.filesystem.model.ReadResult;
 import io.agentscope.harness.agent.filesystem.model.WriteResult;
@@ -742,8 +743,7 @@ public class WorkspaceManager implements AutoCloseable {
                     if (!mutation.apply(map)) {
                         return false;
                     }
-                    persistTaskMap(rc, rel, map);
-                    return true;
+                    return persistTaskMap(rc, rel, map);
                 }
                 // Read through the route so prefix remapping and overlays remain intact.
                 ReadResult read = filesystem.read(rc, rel, 0, 0);
@@ -949,18 +949,33 @@ public class WorkspaceManager implements AutoCloseable {
         return map != null ? new LinkedHashMap<>(map) : new LinkedHashMap<>();
     }
 
-    private void persistTaskMap(RuntimeContext rc, String rel, Map<String, TaskRecord> map) {
-        try {
-            String serialized =
-                    TASK_RECORD_JSON.writerWithDefaultPrettyPrinter().writeValueAsString(map);
-            if (taskRecordsRouteToLiveSandbox(rel)) {
-                writeLocalFile(rel, serialized);
-                return;
-            }
-            writeUtf8WorkspaceRelative(rc, rel, serialized);
-        } catch (IOException e) {
-            log.warn("Failed to write task record store {}: {}", rel, e.getMessage());
+    private boolean persistTaskMap(RuntimeContext rc, String rel, Map<String, TaskRecord> map)
+            throws IOException {
+        String serialized =
+                TASK_RECORD_JSON.writerWithDefaultPrettyPrinter().writeValueAsString(map);
+        String normalized = requireSafeRelativePath(rel);
+        if (normalized.isEmpty()) {
+            return false;
         }
+        if (filesystem == null || taskRecordsRouteToLiveSandbox(rel)) {
+            return writeLocalPath(
+                    workspace.resolve(normalized).normalize(), normalized, serialized);
+        }
+        byte[] bytes = serialized.getBytes(StandardCharsets.UTF_8);
+        List<FileUploadResponse> responses =
+                filesystem.uploadFiles(rc, List.of(Map.entry(normalized, bytes)));
+        FileUploadResponse response = responses.size() == 1 ? responses.get(0) : null;
+        if (response == null || !response.isSuccess()) {
+            log.warn(
+                    "Failed to write task record store {}: {}",
+                    normalized,
+                    response != null ? response.error() : "unexpected upload response");
+            return false;
+        }
+        if (index != null) {
+            index.upsert(normalized, bytes.length, null);
+        }
+        return true;
     }
 
     /** Reads a workspace-relative file whose writes are namespaced, so its fallback stays there. */
@@ -1187,10 +1202,10 @@ public class WorkspaceManager implements AutoCloseable {
         writeLocalPath(workspace.resolve(relativePath).normalize(), relativePath, content);
     }
 
-    private void writeLocalPath(Path local, String relativePath, String content) {
+    private boolean writeLocalPath(Path local, String relativePath, String content) {
         if (!local.startsWith(workspace)) {
             log.warn("Refusing to write outside workspace: {}", relativePath);
-            return;
+            return false;
         }
         Path temp = local.resolveSibling(local.getFileName() + ".tmp." + UUID.randomUUID());
         try {
@@ -1210,12 +1225,14 @@ public class WorkspaceManager implements AutoCloseable {
             if (index != null) {
                 index.upsertFromLocalFile(relativePath, local);
             }
+            return true;
         } catch (IOException e) {
             log.warn("Failed to write {}: {}", local, e.getMessage());
             try {
                 Files.deleteIfExists(temp);
             } catch (IOException ignored) {
             }
+            return false;
         }
     }
 
