@@ -28,6 +28,7 @@ import io.agentscope.harness.agent.filesystem.model.LsResult;
 import io.agentscope.harness.agent.filesystem.model.ReadResult;
 import io.agentscope.harness.agent.filesystem.model.WriteResult;
 import io.agentscope.harness.agent.filesystem.sandbox.AbstractSandboxFilesystem;
+import io.agentscope.harness.agent.filesystem.util.FilesystemUtils;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -44,7 +45,9 @@ import java.util.Map;
  * <p>Merge semantics:
  *
  * <ul>
- *   <li>{@code ls} — union of both layers; upper entries take precedence on path collision
+ *   <li>{@code ls} — union of both layers; upper entries take precedence on path collision, which
+ *       {@link FilesystemUtils#entryKey} decides because the layers spell one entry differently (a
+ *       leading {@code /}, a trailing {@code /} on directories)
  *   <li>{@code read} — upper first, then lower
  *   <li>{@code write}/{@code edit} — always to upper (copy-on-write)
  *   <li>{@code delete} — removes from upper only; shared-layer files cannot be deleted
@@ -52,6 +55,7 @@ import java.util.Map;
  *       collision
  *   <li>{@code exists} — true if present in either layer
  * </ul>
+ *
  */
 public class OverlayFilesystem implements AbstractFilesystem {
 
@@ -140,24 +144,65 @@ public class OverlayFilesystem implements AbstractFilesystem {
         }
     }
 
+    /*
+     * Enumeration answers from a layer that refuses the path outright are treated as "nothing to
+     * contribute". This view is a mount over its layers, so a path one layer does not let the
+     * caller see is absent from that layer rather than an error for the caller: read, exists and
+     * grep already answer that way, and only the listing ops let the refusal escape, where the
+     * same location then listed as an exception but read as not found.
+     */
+
+    private static LsResult lsOrNothing(
+            AbstractFilesystem layer, RuntimeContext runtimeContext, String path) {
+        try {
+            return layer.ls(runtimeContext, path);
+        } catch (SecurityException invisible) {
+            return LsResult.success(List.of());
+        }
+    }
+
+    private static GrepResult grepOrNothing(
+            AbstractFilesystem layer,
+            RuntimeContext runtimeContext,
+            String pattern,
+            String path,
+            String glob) {
+        try {
+            return layer.grep(runtimeContext, pattern, path, glob);
+        } catch (SecurityException invisible) {
+            return GrepResult.success(List.of());
+        }
+    }
+
+    private static GlobResult globOrNothing(
+            AbstractFilesystem layer, RuntimeContext runtimeContext, String pattern, String path) {
+        try {
+            return layer.glob(runtimeContext, pattern, path);
+        } catch (SecurityException invisible) {
+            return GlobResult.success(List.of());
+        }
+    }
+
     @Override
     public LsResult ls(RuntimeContext runtimeContext, String path) {
-        LsResult upperResult = upper.ls(runtimeContext, path);
-        LsResult lowerResult = lower.ls(runtimeContext, path);
+        LsResult upperResult = lsOrNothing(upper, runtimeContext, path);
+        LsResult lowerResult = lsOrNothing(lower, runtimeContext, path);
 
         if (!upperResult.isSuccess() && !lowerResult.isSuccess()) {
             return lowerResult;
         }
 
+        // Keyed by entry, not by spelling: the layers disagree on the leading slash, so the raw
+        // path listed one entry twice and the upper layer never took precedence.
         Map<String, FileInfo> merged = new LinkedHashMap<>();
         if (lowerResult.isSuccess() && lowerResult.entries() != null) {
             for (FileInfo fi : lowerResult.entries()) {
-                merged.put(fi.path(), fi);
+                merged.put(FilesystemUtils.entryKey(fi.path()), fi);
             }
         }
         if (upperResult.isSuccess() && upperResult.entries() != null) {
             for (FileInfo fi : upperResult.entries()) {
-                merged.put(fi.path(), fi);
+                merged.put(FilesystemUtils.entryKey(fi.path()), fi);
             }
         }
         return LsResult.success(new ArrayList<>(merged.values()));
@@ -200,8 +245,8 @@ public class OverlayFilesystem implements AbstractFilesystem {
     @Override
     public GrepResult grep(
             RuntimeContext runtimeContext, String pattern, String path, String glob) {
-        GrepResult upperResult = upper.grep(runtimeContext, pattern, path, glob);
-        GrepResult lowerResult = lower.grep(runtimeContext, pattern, path, glob);
+        GrepResult upperResult = grepOrNothing(upper, runtimeContext, pattern, path, glob);
+        GrepResult lowerResult = grepOrNothing(lower, runtimeContext, pattern, path, glob);
 
         if (!upperResult.isSuccess() && !lowerResult.isSuccess()) {
             return lowerResult;
@@ -210,12 +255,12 @@ public class OverlayFilesystem implements AbstractFilesystem {
         Map<String, GrepMatch> merged = new LinkedHashMap<>();
         if (lowerResult.isSuccess() && lowerResult.matches() != null) {
             for (GrepMatch m : lowerResult.matches()) {
-                merged.put(m.path() + ":" + m.line(), m);
+                merged.put(FilesystemUtils.entryKey(m.path()) + ":" + m.line(), m);
             }
         }
         if (upperResult.isSuccess() && upperResult.matches() != null) {
             for (GrepMatch m : upperResult.matches()) {
-                merged.put(m.path() + ":" + m.line(), m);
+                merged.put(FilesystemUtils.entryKey(m.path()) + ":" + m.line(), m);
             }
         }
         return GrepResult.success(new ArrayList<>(merged.values()));
@@ -223,8 +268,8 @@ public class OverlayFilesystem implements AbstractFilesystem {
 
     @Override
     public GlobResult glob(RuntimeContext runtimeContext, String pattern, String path) {
-        GlobResult upperResult = upper.glob(runtimeContext, pattern, path);
-        GlobResult lowerResult = lower.glob(runtimeContext, pattern, path);
+        GlobResult upperResult = globOrNothing(upper, runtimeContext, pattern, path);
+        GlobResult lowerResult = globOrNothing(lower, runtimeContext, pattern, path);
 
         if (!upperResult.isSuccess() && !lowerResult.isSuccess()) {
             return lowerResult;
@@ -233,12 +278,12 @@ public class OverlayFilesystem implements AbstractFilesystem {
         Map<String, FileInfo> merged = new LinkedHashMap<>();
         if (lowerResult.isSuccess() && lowerResult.matches() != null) {
             for (FileInfo fi : lowerResult.matches()) {
-                merged.put(fi.path(), fi);
+                merged.put(FilesystemUtils.entryKey(fi.path()), fi);
             }
         }
         if (upperResult.isSuccess() && upperResult.matches() != null) {
             for (FileInfo fi : upperResult.matches()) {
-                merged.put(fi.path(), fi);
+                merged.put(FilesystemUtils.entryKey(fi.path()), fi);
             }
         }
         return GlobResult.success(new ArrayList<>(merged.values()));

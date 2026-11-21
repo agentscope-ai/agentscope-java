@@ -346,7 +346,7 @@ HarnessAgent agent = HarnessAgent.builder()
 - **上层**（读写）：`LocalFilesystemWithShell`，根在 `workspace`，提供 shell；
 - **下层**（只读）：`LocalFilesystem`，根在 `project`。
 
-读取时先看 workspace，没有再退到 project（copy-on-write 语义）。shell 的 `pwd` 是 project 目录，所以 agent 执行 `ls` 看到的是项目文件。
+读取时先看 workspace，没有再退到 project（copy-on-write 语义）。多用户且 workspace 是 project 的子目录时，project 层看不到 workspace 子树：`ls`/`grep`/`glob` 不列出它，直接拼物理路径也读不到。shell 的 `pwd` 是 project 目录，所以 agent 执行 `ls` 看到的是项目文件；shell 与硬链接不受这层边界约束。
 
 #### 项目可写模式（`projectWritable`）
 
@@ -365,7 +365,7 @@ HarnessAgent agent = HarnessAgent.builder()
     .inheritEnv(true))
 ```
 
-读取行为不变——仍然是 workspace 优先、project 兜底。
+读链是 workspace → 项目写层 → 共享项目。上层已有同名副本时它会遮蔽项目写层，所以 `write`/`edit`/`upload`/`move` 会拒绝并报出该副本的时间戳与大小；`delete` 会先删除上层副本，之后即可恢复写入。
 
 #### 示例场景：本地开发助手
 

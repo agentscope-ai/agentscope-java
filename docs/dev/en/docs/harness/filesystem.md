@@ -347,7 +347,7 @@ Local mode actually produces an `OverlayFilesystem`:
 - **Upper** (read-write): `LocalFilesystemWithShell`, rooted at `workspace`, provides shell;
 - **Lower** (read-only): `LocalFilesystem`, rooted at `project`.
 
-Reads check workspace first, then fall back to project (copy-on-write semantics). Shell `pwd` is the project directory, so `ls` shows project files.
+Reads check workspace first, then fall back to project (copy-on-write semantics). With namespaces enabled and the workspace nested inside the project, the project layer cannot see the workspace subtree: `ls`, `grep` and `glob` skip it, and spelling its physical path reads nothing. Shell `pwd` is the project directory, so `ls` shows project files; the shell and hard links are not bound by this boundary.
 
 #### Project-writable mode (`projectWritable`)
 
@@ -366,7 +366,7 @@ Enable `projectWritable(true)` and the framework routes writes by path:
     .inheritEnv(true))
 ```
 
-Read behavior is unchanged — workspace first, project fallback.
+Reads go workspace, then the project write layer, then the shared project. A workspace copy of the same key shadows the project write, so `write`/`edit`/`upload`/`move` refuse and report its timestamp and size; `delete` removes the workspace copy first, which restores writes through.
 
 #### Example: local development assistant
 
