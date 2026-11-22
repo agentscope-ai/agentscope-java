@@ -11,11 +11,9 @@ en_link: /dev/en/integration/protocol/agui
 
 `AguiMessage.content` 现在使用类型化消息内容表示。仅处理纯文本时，请使用 `getTextContent()`。
 
-多模态输入支持 text、image、audio 和 video。暂不支持 document 输入：adapter 会通过 `RUN_ERROR` 拒绝请求，错误码为 `INVALID_INPUT_ERROR`，错误信息不包含文档来源或 metadata。
+多模态输入支持 image/audio/video/document。document part 会转换为 `DocumentBlock`；不同模型提供方的支持情况不同。
 
-这一保护仅针对 `RUN_ERROR` 的错误消息，不针对整个事件流。此前的 `RUN_STARTED.input` 保留原始请求，包括被拒绝的文档内容。记录日志或转发事件的使用方需要自行对敏感输入脱敏。
-
-`AguiMessageConverter.toAguiMessage()` 目前只保留文本和工具调用字段；image、audio、video、document 内容块不会被序列化回 AG-UI message content。
+只有 AG-UI user 和 tool 消息会输出结构化 blocks，其它角色使用文本引用。ASJ 到 AGUI 的消息出站转换官方后续不再保障，请各位开发者自行实现。
 
 ## 何时使用
 

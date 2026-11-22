@@ -20,11 +20,15 @@ import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 import io.agentscope.harness.agent.sandbox.layout.WorkspaceProjectionEntry;
 import java.io.ByteArrayInputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.attribute.PosixFilePermissions;
+import org.apache.commons.compress.archivers.tar.TarArchiveEntry;
+import org.apache.commons.compress.archivers.tar.TarArchiveInputStream;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -72,6 +76,16 @@ class WorkspaceProjectionApplierTest {
         assertEquals(p1.hash(), p2.hash());
         assertEquals(2, p1.fileCount());
 
+        // The entry mode follows the source file instead of a constant: a plain file must not
+        // arrive executable in the sandbox on any host, and where the filesystem carries POSIX
+        // permissions the entry reproduces them.
+        assertEquals(
+                supportsPosix(source)
+                        ? TarFileModes.toMode(
+                                Files.getPosixFilePermissions(source.resolve("AGENTS.md")))
+                        : TarFileModes.DEFAULT_FILE_MODE,
+                firstEntryMode(p1) & 0777);
+
         Path dest = tempDir.resolve("dest");
         Files.createDirectories(dest);
         WorkspaceArchiveExtractor.extractTarArchive(dest, new ByteArrayInputStream(p1.tarBytes()));
@@ -118,6 +132,67 @@ class WorkspaceProjectionApplierTest {
     }
 
     @Test
+    void build_keepsTheExecutableBitOnProjectedFiles() throws Exception {
+        // A projected shell script has to stay executable inside the sandbox: the backend
+        // extracts the payload with tar, so the entry mode is what the file ends up with.
+        Path source = tempDir.resolve("source-bin");
+        Files.createDirectories(source.resolve("bin"));
+        Path script = source.resolve("bin/run.sh");
+        Files.writeString(script, "#!/bin/sh\necho hi\n");
+        assumeTrue(
+                supportsPosix(source),
+                "the executable bit can only be expressed on a POSIX filesystem");
+        Files.setPosixFilePermissions(script, PosixFilePermissions.fromString("rwxr-xr-x"));
+
+        WorkspaceProjectionApplier.ProjectionPayload payload =
+                WorkspaceProjectionApplier.build(projectionOf(source, "bin"));
+        assertNotNull(payload);
+
+        try (TarArchiveInputStream tar =
+                new TarArchiveInputStream(new ByteArrayInputStream(payload.tarBytes()))) {
+            TarArchiveEntry entry = tar.getNextEntry();
+            assertNotNull(entry);
+            assertEquals("bin/run.sh", entry.getName());
+            assertEquals(
+                    0755,
+                    entry.getMode() & 0777,
+                    "the payload must carry the source permissions, not the tar default");
+        }
+
+        Path dest = tempDir.resolve("dest-bin");
+        Files.createDirectories(dest);
+        WorkspaceArchiveExtractor.extractTarArchive(
+                dest, new ByteArrayInputStream(payload.tarBytes()));
+        assertTrue(
+                Files.isExecutable(dest.resolve("bin/run.sh")),
+                "the hydrated file must still be executable");
+    }
+
+    @Test
+    void build_hashChangesWhenOnlyTheModeChanges() throws Exception {
+        // The projection hash gates re-hydration. A chmod that leaves the bytes alone still
+        // has to re-project, otherwise the sandbox keeps serving the stale mode.
+        Path source = tempDir.resolve("source-chmod");
+        Files.createDirectories(source);
+        Path script = source.resolve("run.sh");
+        Files.writeString(script, "#!/bin/sh\n");
+        assumeTrue(
+                supportsPosix(source),
+                "the executable bit can only be expressed on a POSIX filesystem");
+        Files.setPosixFilePermissions(script, PosixFilePermissions.fromString("rw-r--r--"));
+
+        WorkspaceProjectionApplier.ProjectionPayload before =
+                WorkspaceProjectionApplier.build(projectionOf(source, "run.sh"));
+        Files.setPosixFilePermissions(script, PosixFilePermissions.fromString("rwxr-xr-x"));
+        WorkspaceProjectionApplier.ProjectionPayload after =
+                WorkspaceProjectionApplier.build(projectionOf(source, "run.sh"));
+
+        assertNotNull(before);
+        assertNotNull(after);
+        assertNotEquals(before.hash(), after.hash());
+    }
+
+    @Test
     void build_hashChangesWhenProjectedContentChanges() throws Exception {
         Path source = tempDir.resolve("source2");
         Files.createDirectories(source);
@@ -137,5 +212,27 @@ class WorkspaceProjectionApplierTest {
         assertNotNull(p1);
         assertNotNull(p2);
         assertNotEquals(p1.hash(), p2.hash());
+    }
+
+    private static WorkspaceSpec projectionOf(Path source, String... includeRoots) {
+        WorkspaceProjectionEntry projection = new WorkspaceProjectionEntry();
+        projection.setSourceRoot(source.toString());
+        projection.setIncludeRoots(java.util.List.of(includeRoots));
+
+        WorkspaceSpec spec = new WorkspaceSpec();
+        spec.getEntries().put("__workspace_projection__", projection);
+        return spec;
+    }
+
+    private static boolean supportsPosix(Path path) {
+        return path.getFileSystem().supportedFileAttributeViews().contains("posix");
+    }
+
+    private static int firstEntryMode(WorkspaceProjectionApplier.ProjectionPayload payload)
+            throws Exception {
+        try (TarArchiveInputStream tar =
+                new TarArchiveInputStream(new ByteArrayInputStream(payload.tarBytes()))) {
+            return tar.getNextEntry().getMode();
+        }
     }
 }
