@@ -144,6 +144,9 @@ public final class FeishuOutboundClient {
                 .bodyValue(body)
                 .retrieve()
                 .bodyToMono(String.class)
+                // A 200 with an empty body completes bodyToMono empty; default it into the
+                // validation below instead of reporting an unvalidated send as delivered.
+                .defaultIfEmpty("")
                 .timeout(responseTimeout)
                 .map(this::checkSendResponse);
     }
