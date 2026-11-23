@@ -44,8 +44,6 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.regex.Pattern;
 import java.util.stream.Stream;
-import reactor.core.publisher.Mono;
-import reactor.core.scheduler.Schedulers;
 
 /**
  * JSON file-based {@link AgentStateStore} implementation.
@@ -334,41 +332,6 @@ public class JsonFileAgentStateStore implements AgentStateStore {
     /** Returns the real root directory (for diagnostics). */
     public Path getRootDirectory() {
         return rootDirectory;
-    }
-
-    /**
-     * Clear every session under every user. Returns the number of session directories removed.
-     */
-    public Mono<Integer> clearAllSessions() {
-        return Mono.fromSupplier(
-                        () -> {
-                            try {
-                                if (!Files.exists(rootDirectory)) {
-                                    return 0;
-                                }
-                                int deletedCount = 0;
-                                try (Stream<Path> userDirs = Files.list(rootDirectory)) {
-                                    for (Path userDir :
-                                            (Iterable<Path>)
-                                                    userDirs.filter(Files::isDirectory)::iterator) {
-                                        try (Stream<Path> sessionDirs = Files.list(userDir)) {
-                                            for (Path sessionDir :
-                                                    (Iterable<Path>)
-                                                            sessionDirs.filter(Files::isDirectory)
-                                                                    ::iterator) {
-                                                if (deleteSession(sessionDir)) {
-                                                    deletedCount++;
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                                return deletedCount;
-                            } catch (IOException e) {
-                                throw new RuntimeException("Failed to clear sessions", e);
-                            }
-                        })
-                .subscribeOn(Schedulers.boundedElastic());
     }
 
     /**

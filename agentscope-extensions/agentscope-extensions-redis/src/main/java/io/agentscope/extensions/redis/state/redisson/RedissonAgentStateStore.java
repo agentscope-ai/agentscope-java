@@ -33,8 +33,6 @@ import org.redisson.api.RScript;
 import org.redisson.api.RSet;
 import org.redisson.api.RedissonClient;
 import org.redisson.client.codec.StringCodec;
-import reactor.core.publisher.Mono;
-import reactor.core.scheduler.Schedulers;
 
 /**
  * Redis-based session implementation using Redisson.
@@ -318,36 +316,6 @@ public class RedissonAgentStateStore implements AgentStateStore {
             throw new IllegalArgumentException("sessionId must not be blank");
         }
         return normalizeUser(userId) + "/" + sessionId;
-    }
-
-    /**
-     * Clear all sessions stored in Redis (for testing or cleanup).
-     *
-     * @return Mono that completes with the number of deleted session keys
-     */
-    public Mono<Integer> clearAllSessions() {
-        return Mono.fromSupplier(
-                        () -> {
-                            try {
-                                RKeys keys = redissonClient.getKeys();
-                                Iterable<String> keyIterable =
-                                        keys.getKeysByPattern(keyPrefix + "*");
-
-                                List<String> keysToDelete = new ArrayList<>();
-                                for (String key : keyIterable) {
-                                    keysToDelete.add(key);
-                                }
-
-                                if (!keysToDelete.isEmpty()) {
-                                    keys.delete(keysToDelete.toArray(new String[0]));
-                                }
-
-                                return keysToDelete.size();
-                            } catch (Exception e) {
-                                throw new RuntimeException("Failed to clear sessions", e);
-                            }
-                        })
-                .subscribeOn(Schedulers.boundedElastic());
     }
 
     /**

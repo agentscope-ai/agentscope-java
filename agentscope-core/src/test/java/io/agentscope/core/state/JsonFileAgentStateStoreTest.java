@@ -446,8 +446,7 @@ class JsonFileAgentStateStoreTest {
                                         List.of(new TestState("m1", 1)))),
                 Named.of("delete key", s -> s.delete(null, "session1", "memory_messages")),
                 Named.of("delete session", s -> s.delete(null, "session1")),
-                Named.of("exists", s -> s.exists(null, "session1")),
-                Named.of("clearAllSessions", s -> s.clearAllSessions().block()));
+                Named.of("exists", s -> s.exists(null, "session1")));
     }
 
     @Test
@@ -555,7 +554,6 @@ class JsonFileAgentStateStoreTest {
         assertEquals(Set.of(), store.listSessionIds("user1"));
         assertEquals(Optional.empty(), store.get("user1", "session1", "k", TestState.class));
         assertEquals(List.of(), store.getList("user1", "session1", "k", TestState.class));
-        assertEquals(0, store.clearAllSessions().block());
         store.delete("user1", "session1", "k");
     }
 
@@ -574,7 +572,6 @@ class JsonFileAgentStateStoreTest {
         assertTrue(store.exists(null, "session1"));
         assertEquals(Set.of("session1"), store.listSessionIds(null));
         assertEquals(List.of(value), store.getList(null, "session1", "k", TestState.class));
-        assertEquals(1, store.clearAllSessions().block());
     }
 
     // Two instances on one root, the second spelled differently: they must share session locks.
