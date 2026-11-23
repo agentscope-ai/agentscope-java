@@ -869,7 +869,7 @@ public class MysqlAgentStateStore implements AgentStateStore {
         try (Connection conn = dataSource.getConnection();
                 PreparedStatement stmt = conn.prepareStatement(listSql)) {
 
-            stmt.setString(1, prefix + "%");
+            stmt.setString(1, likePrefixPattern(prefix) + "%");
             try (ResultSet rs = stmt.executeQuery()) {
                 Set<String> sessionIds = new HashSet<>();
                 while (rs.next()) {
@@ -882,6 +882,24 @@ public class MysqlAgentStateStore implements AgentStateStore {
         } catch (SQLException e) {
             throw new RuntimeException("Failed to list sessions", e);
         }
+    }
+
+    /**
+     * Escapes MySQL LIKE wildcards ('%' and '_') and the LIKE escape character ('\',
+     * MySQL's default) in a prefix bound as a LIKE pattern, so user-provided ids containing
+     * wildcard characters cannot widen the prefix match across users (e.g. the anonymous
+     * user {@code "__anon__"}).
+     */
+    private static String likePrefixPattern(String prefix) {
+        StringBuilder sb = new StringBuilder(prefix.length());
+        for (int i = 0; i < prefix.length(); i++) {
+            char ch = prefix.charAt(i);
+            if (ch == '\\' || ch == '%' || ch == '_') {
+                sb.append('\\');
+            }
+            sb.append(ch);
+        }
+        return sb.toString();
     }
 
     private static final String ANON_USER = "__anon__";
