@@ -24,18 +24,20 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
-import io.a2a.spec.Message;
-import io.a2a.spec.Part;
-import io.a2a.spec.TextPart;
 import io.agentscope.core.a2a.agent.message.MessageConstants;
 import io.agentscope.core.message.ContentBlock;
+import io.agentscope.core.message.MessageMetadataKeys;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ThinkingBlock;
+import io.agentscope.core.model.ChatUsage;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import org.a2aproject.sdk.spec.Message;
+import org.a2aproject.sdk.spec.Part;
+import org.a2aproject.sdk.spec.TextPart;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -77,11 +79,31 @@ class MessageConvertUtilTest {
         Message result = MessageConvertUtil.convertFromMsgToMessage(msg, taskId, contextId);
 
         assertNotNull(result);
-        assertEquals(Message.Role.AGENT, result.getRole());
-        assertEquals(taskId, result.getTaskId());
-        assertEquals(contextId, result.getContextId());
-        assertNotNull(result.getMetadata());
-        assertTrue(result.getMetadata().isEmpty());
+        assertEquals(Message.Role.ROLE_AGENT, result.role());
+        assertEquals(taskId, result.taskId());
+        assertEquals(contextId, result.contextId());
+        assertNotNull(result.metadata());
+        assertTrue(result.metadata().isEmpty());
+    }
+
+    @Test
+    @DisplayName("Should send Msg metadata objects as JSON values")
+    void testConvertFromMsgToMessageWithObjectMetadata() {
+        ChatUsage usage = ChatUsage.builder().inputTokens(3).outputTokens(5).build();
+        Msg source =
+                Msg.builder()
+                        .id("msg-id")
+                        .name("test-agent")
+                        .content(List.of(TextBlock.builder().text("done").build()))
+                        .metadata(Map.of(MessageMetadataKeys.CHAT_USAGE, usage))
+                        .build();
+
+        Message result = MessageConvertUtil.convertFromMsgToMessage(source, taskId, contextId);
+
+        Map<?, ?> metadata = assertInstanceOf(Map.class, result.metadata().get("msg-id"));
+        Map<?, ?> json = assertInstanceOf(Map.class, metadata.get(MessageMetadataKeys.CHAT_USAGE));
+        assertEquals(3, json.get("inputTokens"));
+        assertEquals(5, json.get("outputTokens"));
     }
 
     @Test
@@ -99,11 +121,11 @@ class MessageConvertUtilTest {
         Message result = MessageConvertUtil.convertFromMsgToMessage(msg, taskId, contextId);
 
         assertNotNull(result);
-        assertEquals(Message.Role.AGENT, result.getRole());
-        assertEquals(taskId, result.getTaskId());
-        assertEquals(contextId, result.getContextId());
-        assertNotNull(result.getMetadata());
-        assertEquals(metadata, result.getMetadata().get("msg-id"));
+        assertEquals(Message.Role.ROLE_AGENT, result.role());
+        assertEquals(taskId, result.taskId());
+        assertEquals(contextId, result.contextId());
+        assertNotNull(result.metadata());
+        assertEquals(metadata, result.metadata().get("msg-id"));
     }
 
     @Test
@@ -143,7 +165,9 @@ class MessageConvertUtilTest {
         assertEquals(1, parts.size());
         assertEquals(
                 Boolean.TRUE,
-                parts.get(0).getMetadata().get(MessageConstants.STREAM_CHUNK_METADATA_KEY));
+                ((TextPart) parts.get(0))
+                        .metadata()
+                        .get(MessageConstants.STREAM_CHUNK_METADATA_KEY));
     }
 
     @Test
@@ -285,8 +309,8 @@ class MessageConvertUtilTest {
         TextPart part1 = new TextPart("text1", part1Metadata);
         TextPart part2 = new TextPart("text2", part2Metadata);
 
-        when(message.getMetadata()).thenReturn(messageMetadata);
-        when(message.getParts()).thenReturn(List.of(part1, part2));
+        when(message.metadata()).thenReturn(messageMetadata);
+        when(message.parts()).thenReturn(List.of(part1, part2));
 
         // When
         List<Msg> result = MessageConvertUtil.convertFromMessageToMsgs(message);
@@ -328,8 +352,8 @@ class MessageConvertUtilTest {
         TextPart part1 = new TextPart("text1", part1Metadata);
         TextPart part2 = new TextPart("text2", part2Metadata);
 
-        when(message.getMetadata()).thenReturn(null);
-        when(message.getParts()).thenReturn(List.of(part1, part2));
+        when(message.metadata()).thenReturn(null);
+        when(message.parts()).thenReturn(List.of(part1, part2));
 
         // When
         List<Msg> result = MessageConvertUtil.convertFromMessageToMsgs(message);
@@ -368,9 +392,9 @@ class MessageConvertUtilTest {
 
         TextPart part = new TextPart("thinking content", partMetadata);
 
-        when(message.getMetadata()).thenReturn(null);
-        when(message.getRole()).thenReturn(Message.Role.USER);
-        when(message.getParts()).thenReturn(List.of(part));
+        when(message.metadata()).thenReturn(null);
+        when(message.role()).thenReturn(Message.Role.ROLE_USER);
+        when(message.parts()).thenReturn(List.of(part));
 
         // When
         List<Msg> result = MessageConvertUtil.convertFromMessageToMsgs(message);
@@ -407,7 +431,7 @@ class MessageConvertUtilTest {
                         List.of(userMsg, assistantMsg), taskId, contextId);
         List<Msg> result = MessageConvertUtil.convertFromMessageToMsgs(message);
 
-        assertEquals(Message.Role.USER, message.getRole());
+        assertEquals(Message.Role.ROLE_USER, message.role());
         assertEquals(2, result.size());
         assertEquals(MsgRole.USER, result.get(0).getRole());
         assertEquals(MsgRole.ASSISTANT, result.get(1).getRole());
@@ -429,8 +453,8 @@ class MessageConvertUtilTest {
 
         TextPart part = new TextPart("text content", partMetadata);
 
-        when(message.getMetadata()).thenReturn(null);
-        when(message.getParts()).thenReturn(List.of(part));
+        when(message.metadata()).thenReturn(null);
+        when(message.parts()).thenReturn(List.of(part));
 
         // When
         List<Msg> result = MessageConvertUtil.convertFromMessageToMsgs(message);
@@ -454,8 +478,8 @@ class MessageConvertUtilTest {
 
         TextPart part = new TextPart("text content", null);
 
-        when(message.getMetadata()).thenReturn(null);
-        when(message.getParts()).thenReturn(List.of(part));
+        when(message.metadata()).thenReturn(null);
+        when(message.parts()).thenReturn(List.of(part));
 
         // When
         List<Msg> result = MessageConvertUtil.convertFromMessageToMsgs(message);
@@ -487,8 +511,8 @@ class MessageConvertUtilTest {
 
         TextPart part = new TextPart("text content", partMetadata);
 
-        when(message.getMetadata()).thenReturn(null); // No message metadata
-        when(message.getParts()).thenReturn(List.of(part));
+        when(message.metadata()).thenReturn(null); // No message metadata
+        when(message.parts()).thenReturn(List.of(part));
 
         // When
         List<Msg> result = MessageConvertUtil.convertFromMessageToMsgs(message);
@@ -526,8 +550,8 @@ class MessageConvertUtilTest {
 
         TextPart part = new TextPart("text content", partMetadata);
 
-        when(message.getMetadata()).thenReturn(messageMetadata);
-        when(message.getParts()).thenReturn(List.of(part));
+        when(message.metadata()).thenReturn(messageMetadata);
+        when(message.parts()).thenReturn(List.of(part));
 
         // When
         List<Msg> result = MessageConvertUtil.convertFromMessageToMsgs(message);
@@ -560,8 +584,8 @@ class MessageConvertUtilTest {
 
         TextPart part = new TextPart("text content", partMetadata);
 
-        when(message.getMetadata()).thenReturn(null);
-        when(message.getParts()).thenReturn(List.of(part));
+        when(message.metadata()).thenReturn(null);
+        when(message.parts()).thenReturn(List.of(part));
 
         // When
         List<Msg> result = MessageConvertUtil.convertFromMessageToMsgs(message);
@@ -597,8 +621,8 @@ class MessageConvertUtilTest {
 
         TextPart part = new TextPart("text content", partMetadata);
 
-        when(message.getMetadata()).thenReturn(messageMetadata);
-        when(message.getParts()).thenReturn(List.of(part));
+        when(message.metadata()).thenReturn(messageMetadata);
+        when(message.parts()).thenReturn(List.of(part));
 
         // When
         List<Msg> result = MessageConvertUtil.convertFromMessageToMsgs(message);

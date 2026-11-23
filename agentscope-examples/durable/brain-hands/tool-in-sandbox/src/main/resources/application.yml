@@ -1,0 +1,17 @@
+spring:
+  application:
+    name: agentscope-durable-example-brain-hands-tool-in-sandbox
+  main:
+    banner-mode: "off"
+    log-startup-info: false
+logging:
+  level:
+    root: warn
+durable:
+  brain-hands-tool-in-sandbox:
+    endpoint: localhost:8081
+    namespace: demo
+    session-id: conversation
+    request-id: request-1
+    timeout: 60s
+    mq-namespace: durable-sandbox

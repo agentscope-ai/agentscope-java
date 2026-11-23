@@ -24,6 +24,7 @@ import java.beans.Transient;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 
 /**
  * Represents the result of a tool execution.
@@ -440,6 +441,28 @@ public final class ToolResultBlock extends ContentBlock {
      */
     public static Builder builder() {
         return new Builder();
+    }
+
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) {
+            return true;
+        }
+        if (!(o instanceof ToolResultBlock other)) {
+            return false;
+        }
+        return Objects.equals(id, other.id)
+                && Objects.equals(name, other.name)
+                && Objects.equals(output, other.output)
+                && ValueEquality.equal(metadata, other.metadata)
+                && state == other.state
+                && Objects.equals(executionDetails, other.executionDetails);
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(
+                id, name, output, ValueEquality.hash(metadata), state, executionDetails);
     }
 
     /**

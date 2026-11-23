@@ -20,6 +20,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.agentscope.core.agent.accumulator.ToolCallsAccumulator;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ThinkingBlock;
@@ -500,5 +501,60 @@ class DashScopeResponseParserTest {
         ToolUseBlock toolUse = (ToolUseBlock) blocks.get(0);
         assertNotNull(toolUse.getId());
         assertTrue(toolUse.getId().startsWith("tool_call_"));
+    }
+
+    @Test
+    void testFragmentChunkWithoutIdCarriesNoSynthesizedId() {
+        // Continuation chunks carry neither a name nor an id (see addToolCallsFromMessage).
+        DashScopeFunction fragmentFunction = new DashScopeFunction();
+        fragmentFunction.setArguments("\"}");
+        DashScopeToolCall fragment =
+                DashScopeToolCall.builder().type("function").function(fragmentFunction).build();
+
+        List<ContentBlock> blocks = new ArrayList<>();
+        parser.addToolCallsFromMessage(
+                DashScopeMessage.builder().role("assistant").toolCalls(List.of(fragment)).build(),
+                blocks);
+
+        assertEquals(1, blocks.size());
+        ToolUseBlock toolUse = (ToolUseBlock) blocks.get(0);
+        assertEquals(DashScopeResponseParser.FRAGMENT_PLACEHOLDER, toolUse.getName());
+        assertTrue(
+                toolUse.getId() == null || toolUse.getId().isEmpty(),
+                "Fragment must not carry a synthesized id, found: " + toolUse.getId());
+    }
+
+    @Test
+    void testFragmentChunkWithoutIdMergesIntoParentToolCall() {
+        // First chunk carries id and name, the continuation fragment carries neither -
+        // both must accumulate into a single tool call.
+        DashScopeToolCall firstChunk =
+                DashScopeToolCall.builder()
+                        .id("call_abc")
+                        .type("function")
+                        .function(DashScopeFunction.of("get_weather", "{\"city\":\"SF\""))
+                        .build();
+        DashScopeFunction fragmentFunction = new DashScopeFunction();
+        fragmentFunction.setArguments("\"}");
+        DashScopeToolCall fragment =
+                DashScopeToolCall.builder().type("function").function(fragmentFunction).build();
+
+        List<ContentBlock> blocks = new ArrayList<>();
+        parser.addToolCallsFromMessage(
+                DashScopeMessage.builder().role("assistant").toolCalls(List.of(firstChunk)).build(),
+                blocks);
+        parser.addToolCallsFromMessage(
+                DashScopeMessage.builder().role("assistant").toolCalls(List.of(fragment)).build(),
+                blocks);
+
+        ToolCallsAccumulator accumulator = new ToolCallsAccumulator();
+        for (ContentBlock block : blocks) {
+            accumulator.add((ToolUseBlock) block);
+        }
+
+        List<ToolUseBlock> toolCalls = accumulator.getAllAccumulatedToolCalls();
+        assertEquals(1, toolCalls.size(), "Fragment must merge into its parent tool call");
+        assertEquals("call_abc", toolCalls.get(0).getId());
+        assertEquals("get_weather", toolCalls.get(0).getName());
     }
 }

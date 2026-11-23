@@ -52,17 +52,17 @@ class AgentSkillPromptProviderTest {
     @DisplayName("Should render metadata as XML for single skill")
     void testSingleSkill() {
         AgentSkill skill =
-                new AgentSkill("test_skill", "Test Skill Description", "# Content", null);
-        skillRegistry.registerSkill("test_skill_custom", skill);
+                new AgentSkill("test-skill", "Test Skill Description", "# Content", null);
+        skillRegistry.registerSkill("test-skill_custom", skill);
 
         String prompt = provider.getSkillSystemPrompt();
 
         assertTrue(prompt.contains("## Available Skills"));
         assertTrue(prompt.contains("<available_skills>"));
         assertTrue(prompt.contains("<skill>"));
-        assertTrue(prompt.contains("<name>test_skill</name>"));
+        assertTrue(prompt.contains("<name>test-skill</name>"));
         assertTrue(prompt.contains("<description>Test Skill Description</description>"));
-        assertTrue(prompt.contains("<skill-id>test_skill_custom</skill-id>"));
+        assertTrue(prompt.contains("<skill-id>test-skill_custom</skill-id>"));
         assertTrue(prompt.contains("</skill>"));
         assertTrue(prompt.contains("</available_skills>"));
     }
@@ -168,10 +168,10 @@ class AgentSkillPromptProviderTest {
     @DisplayName("Should escape special characters in XML")
     void testXmlEscaping() {
         Map<String, Object> metadata = new LinkedHashMap<>();
-        metadata.put("name", "test_skill");
+        metadata.put("name", "test-skill");
         metadata.put("description", "Description with <xml> & \"quotes\" and 'apostrophes'");
         AgentSkill skill = new AgentSkill(metadata, "# Content", null, null);
-        skillRegistry.registerSkill("test_skill_custom", skill);
+        skillRegistry.registerSkill("test-skill_custom", skill);
 
         String prompt = provider.getSkillSystemPrompt();
 
@@ -185,11 +185,11 @@ class AgentSkillPromptProviderTest {
     @DisplayName("Should fallback to entry tag for invalid metadata keys")
     void testInvalidMetadataKeyFallback() {
         Map<String, Object> metadata = new LinkedHashMap<>();
-        metadata.put("name", "test_skill");
+        metadata.put("name", "test-skill");
         metadata.put("description", "desc");
         metadata.put("tool:config", "enabled");
         AgentSkill skill = new AgentSkill(metadata, "# Content", null, null);
-        skillRegistry.registerSkill("test_skill_custom", skill);
+        skillRegistry.registerSkill("test-skill_custom", skill);
 
         String prompt = provider.getSkillSystemPrompt();
 
@@ -199,8 +199,8 @@ class AgentSkillPromptProviderTest {
     @Test
     @DisplayName("Should not include code execution section when not enabled")
     void testNoCodeExecutionSectionByDefault() {
-        AgentSkill skill = new AgentSkill("test_skill", "Test Skill", "# Content", null);
-        skillRegistry.registerSkill("test_skill_custom", skill);
+        AgentSkill skill = new AgentSkill("test-skill", "Test Skill", "# Content", null);
+        skillRegistry.registerSkill("test-skill_custom", skill);
 
         String prompt = provider.getSkillSystemPrompt();
 
@@ -211,8 +211,8 @@ class AgentSkillPromptProviderTest {
     @Test
     @DisplayName("Should not include code execution section when enabled but uploadDir not set")
     void testNoCodeExecutionSectionWhenEnabledButNoUploadDir() {
-        AgentSkill skill = new AgentSkill("test_skill", "Test Skill", "# Content", null);
-        skillRegistry.registerSkill("test_skill_custom", skill);
+        AgentSkill skill = new AgentSkill("test-skill", "Test Skill", "# Content", null);
+        skillRegistry.registerSkill("test-skill_custom", skill);
 
         provider.setCodeExecutionEnable(true);
 
@@ -225,8 +225,8 @@ class AgentSkillPromptProviderTest {
     @Test
     @DisplayName("Should include code execution section with uploadDir when enabled")
     void testCodeExecutionSectionIncludedWhenEnabled(@TempDir Path tempDir) {
-        AgentSkill skill = new AgentSkill("test_skill", "Test Skill", "# Content", null);
-        skillRegistry.registerSkill("test_skill_custom", skill);
+        AgentSkill skill = new AgentSkill("test-skill", "Test Skill", "# Content", null);
+        skillRegistry.registerSkill("test-skill_custom", skill);
 
         provider.setCodeExecutionEnable(true);
         provider.setUploadDir(tempDir);
@@ -242,8 +242,8 @@ class AgentSkillPromptProviderTest {
     @Test
     @DisplayName("Code execution section should appear after </available_skills>")
     void testCodeExecutionSectionAppearsAfterAvailableSkills(@TempDir Path tempDir) {
-        AgentSkill skill = new AgentSkill("test_skill", "Test Skill", "# Content", null);
-        skillRegistry.registerSkill("test_skill_custom", skill);
+        AgentSkill skill = new AgentSkill("test-skill", "Test Skill", "# Content", null);
+        skillRegistry.registerSkill("test-skill_custom", skill);
 
         provider.setCodeExecutionEnable(true);
         provider.setUploadDir(tempDir);
@@ -258,8 +258,8 @@ class AgentSkillPromptProviderTest {
     @Test
     @DisplayName("Should use custom code execution instruction when set")
     void testCustomCodeExecutionInstruction(@TempDir Path tempDir) {
-        AgentSkill skill = new AgentSkill("test_skill", "Test Skill", "# Content", null);
-        skillRegistry.registerSkill("test_skill_custom", skill);
+        AgentSkill skill = new AgentSkill("test-skill", "Test Skill", "# Content", null);
+        skillRegistry.registerSkill("test-skill_custom", skill);
 
         provider.setCodeExecutionEnable(true);
         provider.setUploadDir(tempDir);

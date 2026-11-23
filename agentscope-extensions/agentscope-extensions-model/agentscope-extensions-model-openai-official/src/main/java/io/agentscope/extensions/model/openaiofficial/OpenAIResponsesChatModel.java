@@ -32,9 +32,11 @@ import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.ModelContextWindows;
 import io.agentscope.core.model.ModelHttpException;
 import io.agentscope.core.model.ModelProviderSupport;
+import io.agentscope.core.model.ModelSchedulers;
 import io.agentscope.core.model.ModelUtils;
 import io.agentscope.core.model.ToolSchema;
 import io.agentscope.core.model.transport.ProxyConfig;
+import io.agentscope.core.tool.search.ToolSearchMode;
 import io.agentscope.extensions.model.openaiofficial.tool.OpenAIServerTool;
 import java.io.IOException;
 import java.time.Instant;
@@ -47,7 +49,6 @@ import java.util.function.Predicate;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Flux;
-import reactor.core.scheduler.Schedulers;
 
 /**
  * OpenAI Responses chat model using the official OpenAI Java SDK.
@@ -121,32 +122,38 @@ public class OpenAIResponsesChatModel extends ChatModelBase {
             List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
 
         GenerateOptions effectiveOptions = GenerateOptions.mergeOptions(options, configuredOptions);
+        return Flux.defer(
+                        () -> {
+                            validateConnectionFields(effectiveOptions);
 
-        validateConnectionFields(effectiveOptions);
+                            boolean stream =
+                                    effectiveOptions.getStream() != null
+                                            ? effectiveOptions.getStream()
+                                            : true;
 
-        boolean stream = effectiveOptions.getStream() != null ? effectiveOptions.getStream() : true;
+                            String modelName = effectiveOptions.getModelName();
+                            log.debug("OpenAI API call: model={}", modelName);
 
-        String modelName = effectiveOptions.getModelName();
-        log.debug("OpenAI API call: model={}", modelName);
+                            Function<List<Msg>, List<ResponseInputItem>> historyMapper =
+                                    formatter != null
+                                            ? formatter::formatHistory
+                                            : ResponsesRequestMapper::mapHistory;
 
-        Function<List<Msg>, List<ResponseInputItem>> historyMapper =
-                formatter != null ? formatter::formatHistory : ResponsesRequestMapper::mapHistory;
+                            ResponseCreateParams params =
+                                    ResponsesRequestMapper.map(
+                                            messages,
+                                            tools,
+                                            serverTools,
+                                            effectiveOptions,
+                                            strictTools,
+                                            strictJsonSchema,
+                                            historyMapper);
 
-        ResponseCreateParams params =
-                ResponsesRequestMapper.map(
-                        messages,
-                        tools,
-                        serverTools,
-                        effectiveOptions,
-                        strictTools,
-                        strictJsonSchema,
-                        historyMapper);
-
-        if (stream) {
-            return buildStreamingFlux(params, modelName);
-        } else {
-            return buildNonStreamingFlux(params, modelName);
-        }
+                            return stream
+                                    ? buildStreamingFlux(params, modelName)
+                                    : buildNonStreamingFlux(params, modelName);
+                        })
+                .subscribeOn(ModelSchedulers.requests());
     }
 
     private Flux<ChatResponse> buildNonStreamingFlux(
@@ -162,7 +169,7 @@ public class OpenAIResponsesChatModel extends ChatModelBase {
                                 return Flux.error(OpenAIErrorTranslator.translate(e, modelName));
                             }
                         })
-                .subscribeOn(Schedulers.boundedElastic());
+                .subscribeOn(ModelSchedulers.requests());
     }
 
     private Flux<ChatResponse> buildStreamingFlux(ResponseCreateParams params, String modelName) {
@@ -181,7 +188,8 @@ public class OpenAIResponsesChatModel extends ChatModelBase {
                                 return Flux.error(OpenAIErrorTranslator.translate(e, modelName));
                             }
                         })
-                .subscribeOn(Schedulers.boundedElastic());
+                .subscribeOn(ModelSchedulers.streams())
+                .publishOn(ModelSchedulers.responses(), 32);
     }
 
     private void validateConnectionFields(GenerateOptions effectiveOptions) {
@@ -265,6 +273,11 @@ public class OpenAIResponsesChatModel extends ChatModelBase {
     }
 
     // Builder
+
+    @Override
+    public ToolSearchMode getToolSearchMode() {
+        return ToolSearchMode.CLIENT;
+    }
 
     public static Builder builder() {
         return new Builder();

@@ -20,15 +20,17 @@ import java.util.List;
 /**
  * Utility class for computing hash values of state lists.
  *
- * <p>This class provides hash computation for change detection in AgentStateStore implementations. The hash
- * is used to detect if a list has been modified (not just appended) since the last save operation.
+ * <p>This class provides hash computation for change detection in AgentStateStore implementations.
+ * The hash is used to detect if a list has been modified (not just appended) since the last save
+ * operation.
  *
- * <p>The hash computation uses a sampling strategy to avoid iterating over large lists:
+ * <p>The hash covers every element so that replacing any element changes it. Full iteration is
+ * both necessary and cheap: a sample of positions would miss edits outside the sampled indices,
+ * and a save already serializes the whole list to JSON and commits it to storage, which costs
+ * orders of magnitude more than reading one {@code hashCode()} per element.
  *
- * <ul>
- *   <li>For small lists (≤5 elements): all elements are included
- *   <li>For large lists: samples at positions 0, 1/4, 1/2, 3/4, and last
- * </ul>
+ * <p>Stability of the hash depends on the elements comparing by content, which {@link State}
+ * requires of implementations stored in lists.
  *
  * <p>Usage in AgentStateStore implementations:
  *
@@ -50,9 +52,6 @@ public final class ListHashUtil {
     /** Empty list hash constant. */
     private static final String EMPTY_HASH = "empty:0";
 
-    /** Threshold for using sampling strategy. */
-    private static final int SAMPLING_THRESHOLD = 5;
-
     private ListHashUtil() {
         // Utility class, prevent instantiation
     }
@@ -60,15 +59,9 @@ public final class ListHashUtil {
     /**
      * Compute a hash value for a list of state objects.
      *
-     * <p>The hash includes:
-     *
-     * <ul>
-     *   <li>List size
-     *   <li>Hash codes of sampled elements
-     * </ul>
-     *
-     * <p>This method is designed to be lightweight and fast, using sampling for large lists to
-     * avoid O(n) iteration.
+     * <p>The hash includes the list size and the hash code of every element, so replacing any
+     * element changes it. Its stability depends on the elements comparing by content, which
+     * {@link State} requires of implementations stored in lists.
      *
      * @param values the list of state objects to hash
      * @return a hex string hash representing the list content
@@ -82,43 +75,13 @@ public final class ListHashUtil {
         StringBuilder sb = new StringBuilder();
         sb.append("size:").append(size).append(";");
 
-        // Get sample indices based on list size
-        int[] sampleIndices = getSampleIndices(size);
-
-        for (int idx : sampleIndices) {
+        for (int idx = 0; idx < size; idx++) {
             State item = values.get(idx);
             int itemHash = item != null ? item.hashCode() : 0;
             sb.append(idx).append(":").append(itemHash).append(",");
         }
 
         return Integer.toHexString(sb.toString().hashCode());
-    }
-
-    /**
-     * Get the indices to sample from a list of given size.
-     *
-     * <p>Sampling strategy:
-     *
-     * <ul>
-     *   <li>For size ≤ 5: returns all indices [0, 1, 2, ..., size-1]
-     *   <li>For size > 5: returns [0, size/4, size/2, size*3/4, size-1]
-     * </ul>
-     *
-     * @param size the size of the list
-     * @return array of indices to sample
-     */
-    private static int[] getSampleIndices(int size) {
-        if (size <= SAMPLING_THRESHOLD) {
-            // Small list: sample all elements
-            int[] indices = new int[size];
-            for (int i = 0; i < size; i++) {
-                indices[i] = i;
-            }
-            return indices;
-        }
-
-        // Large list: sample at key positions
-        return new int[] {0, size / 4, size / 2, size * 3 / 4, size - 1};
     }
 
     /**

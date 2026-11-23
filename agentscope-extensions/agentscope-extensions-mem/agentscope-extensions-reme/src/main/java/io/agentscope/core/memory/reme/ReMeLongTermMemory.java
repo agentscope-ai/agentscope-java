@@ -15,6 +15,7 @@
  */
 package io.agentscope.core.memory.reme;
 
+import io.agentscope.core.formatter.DocumentReferenceRenderer;
 import io.agentscope.core.memory.LongTermMemory;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
@@ -131,9 +132,11 @@ public class ReMeLongTermMemory implements LongTermMemory {
                                         return false;
                                     }
 
-                                    // Check for non-empty text content
-                                    String textContent = msg.getTextContent();
-                                    if (textContent == null || textContent.isEmpty()) {
+                                    // An attachment-only turn still carries a document; render
+                                    // it so the turn is not dropped before the backend sees it.
+                                    String textContent =
+                                            DocumentReferenceRenderer.renderMessageText(msg);
+                                    if (textContent.isEmpty()) {
                                         return false;
                                     }
 
@@ -191,7 +194,10 @@ public class ReMeLongTermMemory implements LongTermMemory {
             return null;
         }
 
-        return ReMeMessage.builder().role(role).content(msg.getTextContent()).build();
+        return ReMeMessage.builder()
+                .role(role)
+                .content(DocumentReferenceRenderer.renderMessageText(msg))
+                .build();
     }
 
     /**

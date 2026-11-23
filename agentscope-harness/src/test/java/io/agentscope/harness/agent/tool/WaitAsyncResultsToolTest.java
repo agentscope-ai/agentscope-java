@@ -23,12 +23,18 @@ import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolResultState;
+import io.agentscope.core.message.ToolUseBlock;
+import io.agentscope.core.model.ExecutionConfig;
+import io.agentscope.core.tool.ToolCallParam;
+import io.agentscope.core.tool.Toolkit;
+import io.agentscope.core.tool.ToolkitConfig;
 import io.agentscope.harness.agent.bus.BusEntry;
 import io.agentscope.harness.agent.bus.MessageBus;
 import io.agentscope.harness.agent.subagent.task.BackgroundTask;
 import io.agentscope.harness.agent.subagent.task.TaskRepository;
 import io.agentscope.harness.agent.subagent.task.TaskRunSpec;
 import io.agentscope.harness.agent.subagent.task.TaskStatus;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
@@ -41,6 +47,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
@@ -197,7 +204,8 @@ class WaitAsyncResultsToolTest {
     void budgetExhaustedButResultsArrivedRecovers() throws Exception {
         AtomicBoolean hasMessages = new AtomicBoolean(false);
         MessageBus toggleBus = new StubMessageBus(hasMessages);
-        WaitAsyncResultsTool tool = new WaitAsyncResultsTool(toggleBus);
+        VirtualTime time = new VirtualTime();
+        WaitAsyncResultsTool tool = time.tool(toggleBus, null);
 
         // Exhaust the budget with 2 empty waits
         tool.waitForResults(1, ctx());
@@ -226,7 +234,8 @@ class WaitAsyncResultsToolTest {
         AtomicBoolean hasMessages = new AtomicBoolean(false);
         MessageBus toggleBus = new StubMessageBus(hasMessages);
 
-        WaitAsyncResultsTool tool = new WaitAsyncResultsTool(toggleBus);
+        VirtualTime time = new VirtualTime();
+        WaitAsyncResultsTool tool = time.tool(toggleBus, null);
 
         // First call — empty, timeout
         String r1 = text(tool.waitForResults(1, ctx()));
@@ -256,7 +265,8 @@ class WaitAsyncResultsToolTest {
     @Test
     @DisplayName("timeout message suggests non-blocking alternatives, not retry")
     void timeoutMessageDoesNotEncourageRetry() throws Exception {
-        WaitAsyncResultsTool tool = new WaitAsyncResultsTool(emptyBus());
+        VirtualTime time = new VirtualTime();
+        WaitAsyncResultsTool tool = time.tool(emptyBus(), null);
         String result = text(tool.waitForResults(1, ctx()));
 
         assertFalse(result.contains("try waiting again"), "should not encourage retry");
@@ -289,6 +299,50 @@ class WaitAsyncResultsToolTest {
     }
 
     @Test
+    @Timeout(5)
+    @DisplayName("ordinary tool timeout does not cut short the managed async wait")
+    void managedWaitIsNotCutShortByOrdinaryToolTimeout() {
+        BackgroundTask task =
+                new BackgroundTask(
+                        "late",
+                        "agent",
+                        CompletableFuture.supplyAsync(
+                                () -> "late result",
+                                CompletableFuture.delayedExecutor(100, TimeUnit.MILLISECONDS)));
+        TaskRepository repo = new StubTaskRepository(List.of(task));
+        WaitAsyncResultsTool tool = new WaitAsyncResultsTool(emptyBus(), repo, 20L);
+        Toolkit toolkit =
+                new Toolkit(
+                        ToolkitConfig.builder()
+                                .executionConfig(
+                                        ExecutionConfig.builder()
+                                                .timeout(Duration.ofMillis(20))
+                                                .build())
+                                .build());
+        toolkit.registerTool(tool);
+        Map<String, Object> input =
+                Map.of("timeout_seconds", 1, "task_ids", "late", "wait_all", false);
+        ToolUseBlock toolCall =
+                ToolUseBlock.builder()
+                        .id("wait-async-results")
+                        .name("wait_async_results")
+                        .input(input)
+                        .build();
+
+        ToolResultBlock result =
+                toolkit.callTool(
+                                ToolCallParam.builder()
+                                        .toolUseBlock(toolCall)
+                                        .input(input)
+                                        .runtimeContext(ctx())
+                                        .build())
+                        .block(Duration.ofSeconds(4));
+
+        String output = text(result);
+        assertTrue(output.contains("late result"), "got: " + output);
+    }
+
+    @Test
     @DisplayName("cancelled task barrier returns INTERRUPTED")
     void cancelledTaskBarrierIsInterrupted() {
         CompletableFuture<String> cancelled = new CompletableFuture<>();
@@ -310,7 +364,8 @@ class WaitAsyncResultsToolTest {
         BackgroundTask runningTask = new BackgroundTask("t1", "agent-1", running);
 
         TaskRepository repo = new StubTaskRepository(List.of(runningTask));
-        WaitAsyncResultsTool tool = new WaitAsyncResultsTool(emptyBus(), repo);
+        VirtualTime time = new VirtualTime();
+        WaitAsyncResultsTool tool = time.tool(emptyBus(), repo);
 
         String result = text(tool.waitForResults(1, ctx()));
         assertTrue(result.contains("Timeout"), "should proceed to wait and timeout");
@@ -326,7 +381,7 @@ class WaitAsyncResultsToolTest {
                         List.of(
                                 new BackgroundTask("t1", "agent-1", t1),
                                 new BackgroundTask("t2", "agent-2", t2)));
-        WaitAsyncResultsTool tool = new WaitAsyncResultsTool(emptyBus(), repo);
+        WaitAsyncResultsTool tool = new WaitAsyncResultsTool(emptyBus(), repo, 50L);
 
         Thread completer =
                 new Thread(
@@ -398,7 +453,7 @@ class WaitAsyncResultsToolTest {
         CompletableFuture<String> running = new CompletableFuture<>();
         MutableTaskRepository repo =
                 new MutableTaskRepository(List.of(new BackgroundTask("t1", "agent-1", running)));
-        WaitAsyncResultsTool tool = new WaitAsyncResultsTool(emptyBus(), repo);
+        WaitAsyncResultsTool tool = new WaitAsyncResultsTool(emptyBus(), repo, 50L);
 
         Thread completer =
                 new Thread(
@@ -465,7 +520,8 @@ class WaitAsyncResultsToolTest {
     @Test
     @DisplayName("no TaskRepository (null) → falls through to normal wait")
     void nullTaskRepositoryFallsThrough() throws Exception {
-        WaitAsyncResultsTool tool = new WaitAsyncResultsTool(emptyBus(), null);
+        VirtualTime time = new VirtualTime();
+        WaitAsyncResultsTool tool = time.tool(emptyBus(), null);
         String result = text(tool.waitForResults(1, ctx()));
         assertTrue(result.contains("Timeout"), "should proceed to wait and timeout");
     }

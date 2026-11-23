@@ -146,7 +146,7 @@ public class RedisStore implements BaseStore {
     }
 
     @Override
-    public boolean supportsAtomicSessionStorage() {
+    public boolean supportsAtomicJournalStorage() {
         return true;
     }
 

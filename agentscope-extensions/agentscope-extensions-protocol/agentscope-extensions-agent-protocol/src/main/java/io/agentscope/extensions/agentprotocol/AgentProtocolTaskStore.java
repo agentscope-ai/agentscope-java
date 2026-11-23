@@ -21,6 +21,7 @@ import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.event.AgentResultEvent;
 import io.agentscope.core.event.ConfirmResult;
+import io.agentscope.core.formatter.DocumentReferenceRenderer;
 import io.agentscope.core.message.GenerateReason;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
@@ -36,6 +37,7 @@ import io.agentscope.harness.agent.subagent.task.TaskRecord;
 import io.agentscope.harness.agent.subagent.task.TaskStatus;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -67,6 +69,7 @@ public final class AgentProtocolTaskStore {
 
     private static final Logger log = LoggerFactory.getLogger(AgentProtocolTaskStore.class);
     private static final ObjectMapper JSON = new ObjectMapper();
+    static final int TASK_LOCK_STRIPE_COUNT = 64;
 
     /** Sentinel returned when the agent paused for HITL confirmation. */
     static final String AWAITING_CONFIRM_SENTINEL = "__awaiting_confirm__";
@@ -87,6 +90,9 @@ public final class AgentProtocolTaskStore {
 
     private final Map<String, CompletableFuture<String>> futures = new ConcurrentHashMap<>();
     private final Map<String, SubmitContext> submitContexts = new ConcurrentHashMap<>();
+
+    /** Fixed stripes bound lock storage while serializing submit and resume transitions. */
+    private final Object[] taskLocks = createTaskLockStripes();
 
     public AgentProtocolTaskStore(
             AgentFactory agentFactory,
@@ -141,37 +147,47 @@ public final class AgentProtocolTaskStore {
     }
 
     public void submit(String taskId, String agentId, String input, Map<String, Object> context) {
-        Optional<TaskRecord> existing = taskRepository.find(taskId);
-        if (existing.isPresent() && existing.get().getStatus().isTerminal()) {
-            throw new IllegalStateException("task_id already finished: " + taskId);
+        Object lock = taskLockFor(taskId);
+        synchronized (lock) {
+            Optional<TaskRecord> existing = taskRepository.find(taskId);
+            if (existing.isPresent() && existing.get().getStatus().isTerminal()) {
+                throw new IllegalStateException("task_id already finished: " + taskId);
+            }
+            CompletableFuture<String> prior = futures.get(taskId);
+            if (prior != null && !prior.isDone()) {
+                return;
+            }
+
+            SubmitContext ctx = SubmitContext.from(context);
+            submitContexts.put(taskId, ctx);
+
+            TaskRecord pending =
+                    new TaskRecord(
+                            taskId,
+                            agentId != null ? agentId : "default",
+                            AgentProtocolConstants.PROTOCOL_AGENT_ID,
+                            AgentProtocolConstants.PROTOCOL_SESSION_ID,
+                            null);
+            pending.setStatus(TaskStatus.PENDING);
+            persist(pending);
+
+            CompletableFuture<String> f =
+                    CompletableFuture.supplyAsync(
+                            () -> runAgent(taskId, agentId, input, ctx, null), executor);
+            futures.put(taskId, f);
+            f.whenComplete((r, ex) -> futures.remove(taskId, f));
         }
-        CompletableFuture<String> prior = futures.get(taskId);
-        if (prior != null && !prior.isDone()) {
-            return;
-        }
-
-        SubmitContext ctx = SubmitContext.from(context);
-        submitContexts.put(taskId, ctx);
-
-        TaskRecord pending =
-                new TaskRecord(
-                        taskId,
-                        agentId != null ? agentId : "default",
-                        AgentProtocolConstants.PROTOCOL_AGENT_ID,
-                        AgentProtocolConstants.PROTOCOL_SESSION_ID,
-                        null);
-        pending.setStatus(TaskStatus.PENDING);
-        persist(pending);
-
-        CompletableFuture<String> f =
-                CompletableFuture.supplyAsync(
-                        () -> runAgent(taskId, agentId, input, ctx, null), executor);
-        futures.put(taskId, f);
-        f.whenComplete((r, ex) -> futures.remove(taskId));
     }
 
     /**
      * Resumes a task paused for HITL confirmation with the given decisions.
+     *
+     * <p>The {@code awaiting_confirm} record is the pause signal: the paused run persists it
+     * before its future completes and performs no further agent work afterwards, so a client may
+     * legitimately call this while that future is still unwinding (a fast poll of {@link
+     * #snapshot} or the REQUIRE_CONFIRM event lands in that window). The record, re-validated
+     * under a per-task lock, is therefore what decides — the lock also keeps concurrent resumes
+     * from double-starting the next run.
      *
      * @throws IllegalStateException if the task is not awaiting confirmation
      */
@@ -179,33 +195,43 @@ public final class AgentProtocolTaskStore {
         if (!properties.isHitlEnabled()) {
             throw new IllegalStateException("HITL is disabled on this server");
         }
-        Optional<TaskRecord> existing = taskRepository.find(taskId);
-        if (existing.isEmpty() || !existing.get().isAwaitingConfirm()) {
-            throw new IllegalStateException("task is not awaiting confirmation: " + taskId);
+        Object lock = taskLockFor(taskId);
+        synchronized (lock) {
+            Optional<TaskRecord> existing = taskRepository.find(taskId);
+            if (existing.isEmpty() || !existing.get().isAwaitingConfirm()) {
+                throw new IllegalStateException("task is not awaiting confirmation: " + taskId);
+            }
+            TaskRecord rec = existing.get();
+
+            List<RemotePendingConfirm> pending =
+                    rec.getPendingConfirms() != null ? rec.getPendingConfirms() : List.of();
+            List<ConfirmResult> confirmResults = toConfirmResults(pending, decisions);
+
+            rec.setAwaitingConfirm(false);
+            rec.setPendingConfirms(null);
+            rec.setStatus(TaskStatus.RUNNING);
+            persist(rec);
+
+            SubmitContext ctx = submitContexts.getOrDefault(taskId, SubmitContext.empty());
+            String agentId = rec.getSubAgentId();
+            String dummyInput = ""; // resume uses confirm metadata, not a new user prompt
+            CompletableFuture<String> f =
+                    CompletableFuture.supplyAsync(
+                            () -> runAgent(taskId, agentId, dummyInput, ctx, confirmResults),
+                            executor);
+            futures.put(taskId, f);
+            f.whenComplete((r, ex) -> futures.remove(taskId, f));
         }
-        TaskRecord rec = existing.get();
-        CompletableFuture<String> prior = futures.get(taskId);
-        if (prior != null && !prior.isDone()) {
-            throw new IllegalStateException("task is already running: " + taskId);
-        }
+    }
 
-        List<RemotePendingConfirm> pending =
-                rec.getPendingConfirms() != null ? rec.getPendingConfirms() : List.of();
-        List<ConfirmResult> confirmResults = toConfirmResults(pending, decisions);
+    private Object taskLockFor(String taskId) {
+        return taskLocks[Math.floorMod(taskId.hashCode(), taskLocks.length)];
+    }
 
-        rec.setAwaitingConfirm(false);
-        rec.setPendingConfirms(null);
-        rec.setStatus(TaskStatus.RUNNING);
-        persist(rec);
-
-        SubmitContext ctx = submitContexts.getOrDefault(taskId, SubmitContext.empty());
-        String agentId = rec.getSubAgentId();
-        String dummyInput = ""; // resume uses confirm metadata, not a new user prompt
-        CompletableFuture<String> f =
-                CompletableFuture.supplyAsync(
-                        () -> runAgent(taskId, agentId, dummyInput, ctx, confirmResults), executor);
-        futures.put(taskId, f);
-        f.whenComplete((r, ex) -> futures.remove(taskId));
+    private static Object[] createTaskLockStripes() {
+        Object[] locks = new Object[TASK_LOCK_STRIPE_COUNT];
+        Arrays.setAll(locks, ignored -> new Object());
+        return locks;
     }
 
     private String runAgent(
@@ -278,7 +304,9 @@ public final class AgentProtocolTaskStore {
                 return AWAITING_CONFIRM_SENTINEL;
             }
 
-            String text = reply != null ? reply.getTextContent() : "";
+            // The task result is a string, so a delivered document cannot travel as a block;
+            // render a reference instead of storing an empty reply.
+            String text = DocumentReferenceRenderer.renderMessageText(reply);
             clearSubmitContext(taskId);
             update(taskId, TaskStatus.COMPLETED, text, null, agentId, false, null);
             publishStatus(taskId, agentId, "success", null);

@@ -192,7 +192,10 @@ class SubAgentToolTimeoutRetryIntegrationTest {
         // Since sink.onCancel(lifecycleDisposable) properly disposes the inner
         // subscription, slow_tool's Thread.sleep is interrupted before it can
         // write to the file. Wait briefly to confirm nothing was written.
-        Thread.sleep(2_000);
+        // slow_tool started at ~0s and sleeps 4s, so an un-interrupted run would write at
+        // ~4s — one second after the 3s timeout fired. 1.5s from now covers that write point
+        // with margin; the previous 2s was overkill.
+        Thread.sleep(1_500);
 
         // ---- proof #3: slow_tool wrote 0 lines (properly cancelled) ----
         long fileLines = Files.readAllLines(tmpFile).size();
@@ -203,7 +206,9 @@ class SubAgentToolTimeoutRetryIntegrationTest {
                         .formatted(fileLines));
 
         // ---- proof #4: wait more → still no lines (loop is dead) ----
-        Thread.sleep(2_000);
+        // A resurrected loop would re-invoke the model within milliseconds (MockModel is
+        // in-memory), so 750ms is ample to observe it.
+        Thread.sleep(750);
         long fileLinesAfter = Files.readAllLines(tmpFile).size();
         assertEquals(0, fileLinesAfter, "File should remain empty. Agent loop did not restart.");
 

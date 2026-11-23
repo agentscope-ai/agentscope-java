@@ -26,6 +26,7 @@ import io.agentscope.harness.agent.workspace.WorkspaceManager;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.util.Map;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -139,6 +140,40 @@ class ToolsConfigLoaderTest {
         McpServerConfig sse = cfg.getMcpServers().get("sse");
         assertEquals("sse", sse.getTransport());
         assertNull(sse.getHeaders());
+    }
+
+    @Test
+    void load_parsesMcpServers_propagateMetaPolicy() throws Exception {
+        String json =
+                """
+                {
+                  "mcpServers": {
+                    "untrusted": {
+                      "transport": "http",
+                      "url": "https://third-party.example.com/mcp",
+                      "propagateMeta": false
+                    },
+                    "semi-trusted": {
+                      "transport": "http",
+                      "url": "https://internal.example.com/mcp",
+                      "propagateMetaDefault": false,
+                      "propagateMetaOverrides": { "send_callback": true }
+                    }
+                  }
+                }
+                """;
+        Files.writeString(workspace.resolve(WorkspaceConstants.TOOLS_JSON), json);
+        ToolsConfig cfg = ToolsConfigLoader.load(new WorkspaceManager(workspace)).orElseThrow();
+
+        McpServerConfig untrusted = cfg.getMcpServers().get("untrusted");
+        assertEquals(Boolean.FALSE, untrusted.getPropagateMeta());
+        assertNull(untrusted.getPropagateMetaDefault());
+        assertNull(untrusted.getPropagateMetaOverrides());
+
+        McpServerConfig semiTrusted = cfg.getMcpServers().get("semi-trusted");
+        assertNull(semiTrusted.getPropagateMeta());
+        assertEquals(Boolean.FALSE, semiTrusted.getPropagateMetaDefault());
+        assertEquals(Map.of("send_callback", true), semiTrusted.getPropagateMetaOverrides());
     }
 
     @Test

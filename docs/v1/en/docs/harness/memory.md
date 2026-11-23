@@ -24,7 +24,7 @@ Enable the agent to "remember facts across sessions" while preventing conversati
 ```mermaid
 graph LR
     Conv[conversation messages] -->|over threshold| Compactor[ConversationCompactor]
-    Compactor -->|offload| Sess[sessions/&lt;id&gt;.log.jsonl]
+    Compactor -. full history stays in .-> Sess[native session journal<br/>.agentscope-runtime/]
     Compactor -->|flushMemories| Flush[MemoryFlushManager]
     Flush -->|append + index| Daily[memory/YYYY-MM-DD.md]
     Daily -. background processing .-> Cons[MemoryConsolidator]
@@ -45,7 +45,7 @@ graph LR
 ```
 check thresholds → find cutoff (don't split ASSISTANT/TOOL pairs)
         → (optional) flushMemories(prefix)
-        → (optional) offloadMessages(messages → sessions/.../<id>.jsonl)
+        → full history already committed to the native session journal
         → LLM distills summary
         → [summaryUserMsg] + tail returned to hook to reload memory
 ```
@@ -59,7 +59,6 @@ Default values (all configurable):
 | `keepMessages` | `20` | Number of tail messages to retain |
 | `keepTokens` | `0` | Non-zero: scan from back by token budget, overrides `keepMessages` |
 | `flushBeforeCompact` | **`true`** | Extract memory to daily log before compacting |
-| `offloadBeforeCompact` | **`true`** | Append raw messages to session `.log.jsonl` before compacting |
 | `summaryPrompt` | Built-in template | Four-section format: SESSION INTENT / SUMMARY / ARTIFACTS / NEXT STEPS |
 
 ```java
@@ -151,5 +150,5 @@ List<MemoryIndex.SearchHit> hits = index.search("database migration", 10);
 
 - [Tool](/v1/en/docs/harness/tool) — `memory_search` / `memory_get` parameters and call examples
 - [Workspace](/v1/en/docs/harness/workspace) — `MEMORY.md` / `memory/*.md` location in the workspace
-- [Session](/v1/en/docs/harness/session) — how `.log.jsonl` / `.jsonl` feeds back into memory extraction
+- [Session](/v1/en/docs/harness/session) — how the native session journal relates to memory extraction
 - [Architecture](/v1/en/docs/harness/architecture) — `CompactionHook` / `MemoryFlushHook` / `ToolResultEvictionHook` position in the lifecycle

@@ -26,9 +26,8 @@ import java.util.Objects;
  * Type-namespace marker for MCP (Model Context Protocol) request metadata.
  *
  * <p>Register an instance of this class in a {@link RuntimeContext} (via
- * {@link RuntimeContext} or {@code RuntimeContext}) to have its
- * entries automatically included as the {@code meta} field of every MCP
- * {@link McpSchema.CallToolRequest} sent through {@link McpTool}.
+ * {@link RuntimeContext}) to have its entries automatically included as the
+ * {@code meta} field of every MCP {@link McpSchema.CallToolRequest} sent through {@link McpTool}.
  *
  * <p>Only objects registered under the {@code McpMeta.class} type key are extracted — other
  * context objects (DI beans, configs, etc.) are never leaked into MCP meta.

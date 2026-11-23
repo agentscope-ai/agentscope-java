@@ -17,6 +17,7 @@ package io.agentscope.claw2.marketplace;
 
 import com.alibaba.nacos.api.PropertyKeyConst;
 import com.alibaba.nacos.api.ai.model.skills.Skill;
+import com.alibaba.nacos.api.ai.model.skills.SkillMeta;
 import com.alibaba.nacos.api.ai.model.skills.SkillResource;
 import com.alibaba.nacos.api.ai.model.skills.SkillSummary;
 import com.alibaba.nacos.api.exception.NacosException;
@@ -33,13 +34,14 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * Nacos-backed marketplace. Uses the maintainer client (not the regular AiService client,
- * which only exposes downloads) to drive the paged {@code listSkills} API and pull SKILL.md
- * via {@code getSkillVersionDetail(..., "LATEST")}.
+ * Provides a Nacos skill marketplace for browsing and downloading published skill content.
  *
- * <p>Pagination: claw is a single-user tool — listing 1000 skills is fine. We page through
- * the upstream result in batches of {@link #PAGE_SIZE} until the server reports we have all
- * pages, capping at {@link #MAX_PAGES} to keep a misbehaving server from hanging the UI.
+ * <p>Listing uses the maintainer client's paginated Skill API, limited to {@link #MAX_PAGES}
+ * pages of {@link #PAGE_SIZE} entries. Downloads resolve the {@code latest} metadata label to an
+ * exact published version and include both SKILL.md and supporting text resources. A skill without
+ * that label has no downloadable content, even if it has a draft version.
+ *
+ * <p>Credentials are passed to the maintainer client and are excluded from the display location.
  */
 public class NacosClawMarketplace implements ClawMarketplace {
 
@@ -47,7 +49,7 @@ public class NacosClawMarketplace implements ClawMarketplace {
 
     private static final int PAGE_SIZE = 100;
     private static final int MAX_PAGES = 50;
-    private static final String LATEST_VERSION = "LATEST";
+    private static final String LATEST_LABEL = "latest";
 
     private final String id;
     private final String serverAddr;
@@ -56,6 +58,19 @@ public class NacosClawMarketplace implements ClawMarketplace {
     private final String accessKey;
     private final AiMaintainerService service;
 
+    /**
+     * Creates a marketplace backed by a Nacos maintainer client.
+     *
+     * @param id stable marketplace identifier
+     * @param serverAddr Nacos server address
+     * @param namespaceId namespace identifier; null or blank selects {@code public}
+     * @param username optional authentication username
+     * @param password password used when a username is supplied
+     * @param accessKey optional access key for a compatible authentication plugin
+     * @param secretKey secret key used when an access key is supplied
+     * @throws IllegalArgumentException if the identifier or server address is null or blank
+     * @throws IllegalStateException if the Nacos maintainer client cannot be created
+     */
     public NacosClawMarketplace(
             String id,
             String serverAddr,
@@ -104,21 +119,30 @@ public class NacosClawMarketplace implements ClawMarketplace {
         }
     }
 
+    /** {@inheritDoc} */
     @Override
     public String id() {
         return id;
     }
 
+    /** {@inheritDoc} */
     @Override
     public String type() {
         return "nacos";
     }
 
+    /** {@inheritDoc} */
     @Override
     public String displayLocation() {
         return serverAddr + " / ns=" + namespaceId;
     }
 
+    /**
+     * Lists skill summaries, stopping at the server's last page or the local page limit.
+     *
+     * @return skill summaries in server order, with the editing or reviewing version when present
+     * @throws IllegalStateException if listing fails, retaining the Nacos exception as its cause
+     */
     @Override
     public List<MarketSkillSummary> list() {
         SkillMaintainerService skillService = service.skill();
@@ -150,14 +174,28 @@ public class NacosClawMarketplace implements ClawMarketplace {
         return all;
     }
 
+    /**
+     * Downloads the skill version selected by its published {@code latest} label.
+     *
+     * @param name skill name; surrounding whitespace is ignored
+     * @return the published content and resources, or {@code null} if the name is blank, the label
+     *     is absent, the skill or version was deleted, or the selected version has no SKILL.md content
+     * @throws IllegalStateException if metadata or content retrieval fails, retaining the Nacos cause
+     */
     @Override
     public MarketSkillContent fetch(String name) {
         if (name == null || name.isBlank()) {
             return null;
         }
         try {
-            Skill skill =
-                    service.skill().getSkillVersionDetail(namespaceId, name.trim(), LATEST_VERSION);
+            SkillMaintainerService skills = service.skill();
+            SkillMeta metadata = skills.getSkillMeta(namespaceId, name.trim());
+            String version =
+                    metadata == null || metadata.getLabels() == null
+                            ? null
+                            : metadata.getLabels().get(LATEST_LABEL);
+            if (version == null || version.isBlank()) return null;
+            Skill skill = skills.getSkillVersionDetail(namespaceId, name.trim(), version);
             if (skill == null || skill.getSkillMd() == null || skill.getSkillMd().isEmpty()) {
                 return null;
             }
@@ -181,6 +219,7 @@ public class NacosClawMarketplace implements ClawMarketplace {
             return new MarketSkillContent(
                     skill.getName(), skill.getDescription(), skill.getSkillMd(), resources);
         } catch (NacosException e) {
+            if (e.getErrCode() == NacosException.NOT_FOUND) return null;
             throw new IllegalStateException(
                     "Nacos getSkillVersionDetail failed for "
                             + serverAddr
@@ -192,6 +231,12 @@ public class NacosClawMarketplace implements ClawMarketplace {
         }
     }
 
+    /**
+     * Completes the marketplace lifecycle.
+     *
+     * <p>The Nacos maintainer service exposes no shutdown operation. This method logs closure
+     * and can be called repeatedly.
+     */
     @Override
     public void close() {
         // AiMaintainerService does not expose a close(); the underlying HTTP client is reaped

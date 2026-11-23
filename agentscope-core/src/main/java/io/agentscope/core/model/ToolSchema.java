@@ -32,6 +32,7 @@ public class ToolSchema {
     private final Map<String, Object> outputSchema;
     private final Boolean strict;
     private final Boolean deferLoading;
+    private final boolean toolSearch;
 
     /**
      * Creates a new ToolSchema instance using the builder pattern.
@@ -51,6 +52,7 @@ public class ToolSchema {
                         : null;
         this.strict = builder.strict;
         this.deferLoading = builder.deferLoading;
+        this.toolSearch = builder.toolSearch;
     }
 
     /**
@@ -98,6 +100,11 @@ public class ToolSchema {
         return strict;
     }
 
+    /** Whether this schema represents native client-executed tool search rather than a function. */
+    public boolean isToolSearch() {
+        return toolSearch;
+    }
+
     /**
      * Gets the deferred tool definition loading flag.
      *
@@ -130,6 +137,7 @@ public class ToolSchema {
         private Map<String, Object> outputSchema;
         private Boolean strict;
         private Boolean deferLoading;
+        private boolean toolSearch;
 
         /**
          * Sets the tool name.
@@ -183,6 +191,12 @@ public class ToolSchema {
          */
         public Builder strict(Boolean strict) {
             this.strict = strict;
+            return this;
+        }
+
+        /** Mark a native client-executed tool-search declaration. */
+        public Builder toolSearch(boolean toolSearch) {
+            this.toolSearch = toolSearch;
             return this;
         }
 

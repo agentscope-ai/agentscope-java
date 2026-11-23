@@ -104,6 +104,7 @@ class KubernetesSandboxColdRestoreTest {
         RuntimeContext runtime = RuntimeContext.builder().sessionId("conversation").build();
 
         var sdkSandbox = mock(io.agentscope.extensions.sandbox.kubernetes.client.Sandbox.class);
+        when(sdkSandbox.isActive()).thenReturn(true);
         CommandExecutor commands = mock(CommandExecutor.class);
         Filesystem files = mock(Filesystem.class);
         when(sdkSandbox.commands()).thenReturn(commands);
@@ -150,7 +151,7 @@ class KubernetesSandboxColdRestoreTest {
                     verify(storage).download(snapshotId);
                     verify(files)
                             .write(startsWith(".agentscope-tmp/ws-hydrate-"), eq(previousArchive));
-                    verify(commands).run(startsWith("tar -xf "));
+                    verify(commands).run(startsWith("tar -xpf "));
                 } else {
                     verify(storage, never()).download(anyString());
                 }
