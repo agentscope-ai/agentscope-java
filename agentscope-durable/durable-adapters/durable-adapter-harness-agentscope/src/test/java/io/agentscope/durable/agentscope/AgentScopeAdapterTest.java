@@ -26,6 +26,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doReturn;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.spy;
 
 import io.agentscope.core.ReActAgent;
@@ -2331,6 +2332,103 @@ class AgentScopeAdapterTest {
                 .id("remote")
                 .content(List.of(TextBlock.builder().text(text).build()))
                 .build();
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void completedQueuedFallbackRecoversAcrossModelApplication(boolean afterApplication)
+            throws Exception {
+        var requests = new ArrayList<QueuedModelRequest>();
+        var primary = new ScriptedModel(false);
+        var fallback = mock(Model.class);
+        doReturn("secondary").when(fallback).getModelName();
+        var adapter =
+                AgentScopeAdapter.forReAct(
+                                binding ->
+                                        ReActAgent.builder()
+                                                .name("agent")
+                                                .model(primary)
+                                                .fallbackModel(fallback),
+                                Map.of())
+                        .withQueuedModel(requests::add);
+        var thread = new ThreadKey(key, "main");
+        try (var storage = LocalBackend.open(directory.resolve("queued-fallback"))) {
+            var backend = spy(storage);
+            var armed = new AtomicBoolean();
+            var crashed = new AtomicBoolean();
+            doAnswer(
+                            invocation -> {
+                                Commit command = invocation.getArgument(1);
+                                if (command.journal() == null) return invocation.callRealMethod();
+                                if (armed.get()) {
+                                    crashed.set(true);
+                                    throw new DurableException(
+                                            DurableException.Code.UNAVAILABLE, "Simulated restart");
+                                }
+                                boolean cut =
+                                        command.journal().entries().stream()
+                                                .map(
+                                                        value ->
+                                                                DurableJson.convert(
+                                                                        value, JournalEvent.class))
+                                                .anyMatch(
+                                                        event ->
+                                                                afterApplication
+                                                                        ? "state/checkpoint"
+                                                                                        .equals(
+                                                                                                event
+                                                                                                        .type())
+                                                                                && "model_result_applied"
+                                                                                        .equals(
+                                                                                                event.data()
+                                                                                                        .get(
+                                                                                                                "reason"))
+                                                                        : "model/end"
+                                                                                        .equals(
+                                                                                                event
+                                                                                                        .type())
+                                                                                && "completed"
+                                                                                        .equals(
+                                                                                                event.data()
+                                                                                                        .get(
+                                                                                                                "status")));
+                                Object result = invocation.callRealMethod();
+                                if (cut) armed.set(true);
+                                return result;
+                            })
+                    .when(backend)
+                    .commit(any(), any());
+            String turnId;
+            try (var first = runtime(backend, adapter, null)) {
+                var turn = first.createSession(key, "agent").submit("queued-fallback", "hello");
+                turnId = turn.turnId();
+                first.tick(thread);
+                var failed =
+                        QueuedModelRequest.failure(requests.get(0).callId(), 0, "provider failure");
+                turn.signal(failed.id(), failed.key(), failed.value());
+                first.tick(thread);
+                assertEquals("secondary", requests.get(1).model());
+                var result =
+                        QueuedModelRequest.reply(
+                                requests.get(1).callId(), 0, queuedText("fallback answer"), true);
+                turn.signal(result.id(), result.key(), result.value());
+                first.tick(thread);
+                assertTrue(crashed.get());
+                assertFalse(turn.status().status().terminal());
+            }
+            Thread.sleep(5);
+            try (var replacement = runtime(storage, adapter, null)) {
+                replacement.tick(thread);
+                assertNull(replacement.lastFailure(thread));
+                var resumed = storage.turn(thread, turnId);
+                assertEquals(TurnStatus.SUCCEEDED, resumed.status(), resumed::toString);
+                assertEquals(
+                        "fallback answer",
+                        resumed.output().path("content").get(0).path("text").asText());
+                assertEquals(2, requests.size());
+                assertTrue(primary.inputs.isEmpty());
+            }
+        }
     }
 
     @Test

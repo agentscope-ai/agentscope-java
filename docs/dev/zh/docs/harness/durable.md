@@ -92,7 +92,9 @@ namespace 映射为 `RuntimeContext.userId`，身份限定在每次调用内。
 发布方应在队列确认接收后返回。如果发送成功但确认丢失，恢复时可能按原调用 ID 重投，并导致额外模型请求。
 Worker 使用自身配置的模型凭据。Harness 的记忆和收尾阶段沿用各自的模型调用路径。
 
-投递完成后，Turn 进入等待并释放本次 Runtime 执行。回包消费者通过原请求定位 Turn：
+适配器在投递前保存已准备好的请求和 Agent 恢复位置。投递完成后，Turn 进入等待并释放本次 Runtime 执行。
+共享同一后端的兼容 Runtime 可以接续原 Turn。同一 Thread 的后续 Turn 可以提交，但仍会在等待中的 Turn 之后排队。
+回包消费者通过原请求定位等待中的 Turn：
 
 ```java
 var turn = runtime.getSession(request.thread().session())

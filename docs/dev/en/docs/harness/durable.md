@@ -107,8 +107,11 @@ request. Recovery can repeat a send whose acknowledgement was lost, using the sa
 and may trigger another provider request. Workers use their configured provider credentials.
 Harness memory and finalization model calls keep their own execution path.
 
-Once dispatched, the Turn waits without holding its Runtime invocation. To wake it,
-the reply consumer uses the original request's Thread and Turn:
+The adapter commits the prepared request and Agent recovery position before dispatch. Once
+dispatched, the Turn waits without holding its Runtime invocation. Replies resume the same
+Turn on any compatible Runtime that shares the backend. Later Turns on the same Thread
+can be submitted and remain queued behind it. To wake the waiting Turn, the reply consumer
+uses the original request's Thread and Turn:
 
 ```java
 var turn = runtime.getSession(request.thread().session())

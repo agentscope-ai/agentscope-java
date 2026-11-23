@@ -16,11 +16,12 @@
 package io.agentscope.core.journal;
 
 import io.agentscope.core.message.Msg;
+import io.agentscope.core.middleware.ModelCallInput;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.GenerateOptions;
-import io.agentscope.core.model.Model;
 import io.agentscope.core.model.ToolSchema;
 import java.util.List;
+import java.util.Objects;
 import java.util.function.Function;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
@@ -38,19 +39,30 @@ public interface ModelInvocation {
         return true;
     }
 
-    /** Run admission before external dispatch. A host may yield here and resume an admitted call. */
-    default Mono<Void> admit(String callId, Mono<Void> admission) {
-        return admission;
+    /** Prepared input and stable identity for this model invocation. */
+    record Call(String callId, String purpose, ModelCallInput input) {}
+
+    sealed interface Route permits Direct, Suspend, Resume {}
+
+    record Direct() implements Route {}
+
+    /** The handoff must be cold. Core subscribes only after admission and checkpoint commit. */
+    record Suspend(Mono<Void> handoff) implements Route {
+        public Suspend {
+            Objects.requireNonNull(handoff, "handoff");
+        }
     }
 
-    /** Supplies responses inside the recorded call, including model policy and chunk accounting. */
-    default Flux<ChatResponse> responses(
-            String callId,
-            Model model,
-            List<Msg> messages,
-            List<ToolSchema> tools,
-            GenerateOptions options) {
-        return model.stream(messages, tools, options);
+    /** Responses for the admitted call, supplied by the host on reentry. */
+    record Resume(Flux<ChatResponse> responses) implements Route {
+        public Resume {
+            Objects.requireNonNull(responses, "responses");
+        }
+    }
+
+    /** Select an execution path without starting a provider request or handing off work. */
+    default Route route(Call call) {
+        return new Direct();
     }
 
     Flux<ChatResponse> stream(

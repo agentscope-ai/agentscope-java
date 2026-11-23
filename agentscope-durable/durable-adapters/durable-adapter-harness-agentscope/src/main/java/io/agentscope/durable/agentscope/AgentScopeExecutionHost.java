@@ -28,7 +28,6 @@ import io.agentscope.core.message.Msg;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.ChatUsage;
 import io.agentscope.core.model.GenerateOptions;
-import io.agentscope.core.model.Model;
 import io.agentscope.core.model.ToolSchema;
 import io.agentscope.core.state.AgentState;
 import io.agentscope.core.util.JsonUtils;
@@ -111,6 +110,11 @@ final class AgentScopeExecutionHost implements AgentExecutionHost, ModelInvocati
                             checkControl();
                             if (boundary == Boundary.REASONING) {
                                 context = runtime;
+                                if (pendingRequest != null
+                                        && InvocationRecorder.from(runtime)
+                                                        .executionPosition()
+                                                        .reasoningIteration()
+                                                > pendingIteration) pendingRequest = null;
                                 if (pendingRequest == null) {
                                     queuedFallback = false;
                                     applyInputs(runtime, state);
@@ -205,9 +209,13 @@ final class AgentScopeExecutionHost implements AgentExecutionHost, ModelInvocati
                     replyProgress = ((Number) data.getOrDefault("sequence", -1L)).longValue();
                     replyProgressAttempt = String.valueOf(data.getOrDefault("workerAttempt", "0"));
                 }
-                if ("model/end".equals(event.type()) && "completed".equals(data.get("status")))
-                    pendingRequest = null;
             }
+            // A completed response is still pending until the native state has applied it.
+            if (pendingRequest != null
+                    && "state/checkpoint".equals(event.type())
+                    && data.get("executionPosition") instanceof Map<?, ?> position
+                    && position.get("reasoningIteration") instanceof Number iteration
+                    && iteration.intValue() > pendingIteration) pendingRequest = null;
             if (DurableEventSchemas.START.equals(event.type())) {
                 frame =
                         new Frame(
@@ -387,11 +395,21 @@ final class AgentScopeExecutionHost implements AgentExecutionHost, ModelInvocati
                                 var data = event.data();
                                 if (!(data.get(ModelCapture.OUTCOME) instanceof Map<?, ?> outcome))
                                     continue;
-                                if (hash.equals(outcome.get("replayHash"))
-                                        && (active
-                                                ? id.equals(data.get("modelCallId"))
-                                                : event.seq() > checkpoint
-                                                        && !replayed.contains(event.eventId()))) {
+                                boolean pendingReasoning =
+                                        !active
+                                                && "REASONING".equals(purpose)
+                                                && isQueued(data.get("modelCallId"))
+                                                && model.equals(pendingRequest.model())
+                                                && InvocationRecorder.from(context)
+                                                                .executionPosition()
+                                                                .reasoningIteration()
+                                                        == pendingIteration;
+                                if (!replayed.contains(event.eventId())
+                                        && (pendingReasoning
+                                                || hash.equals(outcome.get("replayHash"))
+                                                        && (active
+                                                                ? id.equals(data.get("modelCallId"))
+                                                                : event.seq() > checkpoint))) {
                                     replayed.add(event.eventId());
                                     return Flux.fromIterable((List<?>) outcome.get("responses"))
                                             .map(value -> response((Map<?, ?>) value));
@@ -409,11 +427,7 @@ final class AgentScopeExecutionHost implements AgentExecutionHost, ModelInvocati
                                     new ModelCapture(
                                             model, purpose, messages, tools, options, hash));
                             return Flux.defer(() -> next.apply(call))
-                                    .doOnNext(chunk -> log.modelChunk(call, chunk))
-                                    .doOnComplete(
-                                            () -> {
-                                                if (isQueued(call)) pendingRequest = null;
-                                            });
+                                    .doOnNext(chunk -> log.modelChunk(call, chunk));
                         })
                 .subscribeOn(Schedulers.boundedElastic());
     }
@@ -491,10 +505,11 @@ final class AgentScopeExecutionHost implements AgentExecutionHost, ModelInvocati
     }
 
     @Override
-    public Mono<Void> admit(String callId, Mono<Void> admission) {
-        if (!isQueued(callId)) return admission;
-        if (replyDeadline > 0) return Mono.empty();
-        return admission.then(
+    public Route route(Call call) {
+        String callId = call.callId();
+        if (!isQueued(callId)) return new Direct();
+        if (replyDeadline > 0) return new Resume(Flux.defer(() -> responses(callId)));
+        return new Suspend(
                 Mono.<Void>fromRunnable(
                                 () -> {
                                     if (publisher == null)
@@ -530,19 +545,11 @@ final class AgentScopeExecutionHost implements AgentExecutionHost, ModelInvocati
                                             new WaitCondition(
                                                     QueuedModelRequest.key(callId, 0),
                                                     replyDeadline);
-                                    throw new AgentExecutionHost.Paused();
                                 })
                         .subscribeOn(Schedulers.boundedElastic()));
     }
 
-    @Override
-    public Flux<ChatResponse> responses(
-            String callId,
-            Model model,
-            List<Msg> messages,
-            List<ToolSchema> tools,
-            GenerateOptions options) {
-        if (!isQueued(callId)) return model.stream(messages, tools, options);
+    private Flux<ChatResponse> responses(String callId) {
         workerAttempt = ModelReplyProtocol.active(durable.frame().signals(), callId);
         if (!workerAttempt.equals(replyProgressAttempt)) {
             replyProgress = -1;
