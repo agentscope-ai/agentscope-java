@@ -16,9 +16,11 @@
 package io.agentscope.core.agent;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.event.AgentEndEvent;
 import io.agentscope.core.event.AgentEvent;
@@ -41,6 +43,8 @@ import io.agentscope.core.event.ToolCallStartEvent;
 import io.agentscope.core.event.ToolResultEndEvent;
 import io.agentscope.core.event.ToolResultStartEvent;
 import io.agentscope.core.event.ToolResultTextDeltaEvent;
+import io.agentscope.core.journal.InMemoryThreadJournalStore;
+import io.agentscope.core.journal.ThreadInteractions;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.GenerateReason;
 import io.agentscope.core.message.MessageMetadataKeys;
@@ -59,8 +63,13 @@ import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.ToolSchema;
 import io.agentscope.core.state.AgentState;
 import io.agentscope.core.tool.AgentTool;
+import io.agentscope.core.tool.ExternalExecutionForm;
+import io.agentscope.core.tool.Tool;
 import io.agentscope.core.tool.ToolCallParam;
+import io.agentscope.core.tool.ToolParam;
+import io.agentscope.core.tool.ToolSuspendException;
 import io.agentscope.core.tool.Toolkit;
+import io.agentscope.core.util.JsonUtils;
 import java.time.Duration;
 import java.util.EnumSet;
 import java.util.HashMap;
@@ -115,17 +124,15 @@ class ReActAgentNewLoopReplyTest {
     }
 
     private static ChatResponse toolUseResponse(String toolId, String toolName, String inputJson) {
+        return ChatResponse.builder()
+                .content(List.of(toolUse(toolId, toolName, inputJson)))
+                .build();
+    }
+
+    private static ToolUseBlock toolUse(String toolId, String toolName, String inputJson) {
         Map<String, Object> input = new HashMap<>();
         input.put("query", inputJson);
-        return ChatResponse.builder()
-                .content(
-                        List.<ContentBlock>of(
-                                ToolUseBlock.builder()
-                                        .id(toolId)
-                                        .name(toolName)
-                                        .input(input)
-                                        .build()))
-                .build();
+        return ToolUseBlock.builder().id(toolId).name(toolName).input(input).build();
     }
 
     private static Toolkit toolkitWith(AgentTool tool) {
@@ -421,6 +428,123 @@ class ReActAgentNewLoopReplyTest {
         assertEquals(1, event.getToolCalls().size());
         assertEquals("ext1", event.getToolCalls().get(0).getId());
         assertEquals("external_api", event.getToolCalls().get(0).getName());
+        assertTrue(event.getInputForms().isEmpty());
+        assertFalse(JsonUtils.getJsonCodec().toJson(event).contains("\"inputForms\""));
+    }
+
+    @Test
+    void suspendedCallsExposeAndPersistDifferentFormsInOneSession() {
+        var questions = JsonNodeFactory.instance.objectNode().put("type", "object");
+        questions
+                .putObject("properties")
+                .putObject("region")
+                .putArray("enum")
+                .add("north")
+                .add("south");
+        questions.putArray("required").add("region");
+        var credential = JsonNodeFactory.instance.objectNode().put("type", "object");
+        credential
+                .putObject("properties")
+                .putObject("apiKey")
+                .put("type", "string")
+                .put("writeOnly", true);
+        credential.putArray("required").add("apiKey");
+        var forms =
+                Map.of(
+                        "questionnaire", new ExternalExecutionForm("questionnaire", questions),
+                        "credential_input",
+                                new ExternalExecutionForm("credential_input", credential));
+
+        String toolName = "collect_input";
+        Toolkit toolkit = new Toolkit();
+        toolkit.registerTool(
+                new Object() {
+                    @Tool(name = "collect_input", description = "Wait for input from the host")
+                    public ToolResultBlock collectInput(@ToolParam(name = "query") String query) {
+                        throw new ToolSuspendException("Awaiting input", forms.get(query));
+                    }
+                });
+        var requestForms =
+                ChatResponse.builder()
+                        .content(
+                                List.of(
+                                        toolUse("question-call", toolName, "questionnaire"),
+                                        toolUse("credential-call", toolName, "credential_input")))
+                        .build();
+        var model =
+                new ScriptedModel(
+                        List.of(
+                                () -> Flux.just(requestForms),
+                                () -> Flux.just(textResponse("done"))));
+        var journalStore = new InMemoryThreadJournalStore();
+        var context = RuntimeContext.builder().userId("user").sessionId("form-session").build();
+        try (var agent =
+                ReActAgent.builder()
+                        .name("form-agent")
+                        .model(model)
+                        .toolkit(toolkit)
+                        .threadJournalStore(journalStore)
+                        .build()) {
+            List<AgentEvent> events =
+                    agent.streamEvents(List.of(), context)
+                            .collectList()
+                            .block(Duration.ofSeconds(10));
+            var request =
+                    (RequireExternalExecutionEvent)
+                            events.get(indexOf(events, RequireExternalExecutionEvent.class));
+            var expected =
+                    Map.of(
+                            "question-call", forms.get("questionnaire"),
+                            "credential-call", forms.get("credential_input"));
+            assertEquals(expected, request.getInputForms());
+
+            var codec = JsonUtils.getJsonCodec();
+            var decoded =
+                    (RequireExternalExecutionEvent)
+                            codec.fromJson(codec.toJson(request), AgentEvent.class);
+            assertEquals(expected, decoded.getInputForms());
+            var suspended =
+                    ((AgentResultEvent) events.get(indexOf(events, AgentResultEvent.class)))
+                            .getResult();
+            assertEquals(GenerateReason.TOOL_SUSPENDED, suspended.getGenerateReason());
+            var restored = codec.fromJson(codec.toJson(suspended), Msg.class);
+            var suspendedBlocks = restored.getContentBlocks(ToolResultBlock.class);
+            assertEquals(expected.size(), suspendedBlocks.size());
+            for (ToolResultBlock block : suspendedBlocks) {
+                assertEquals(expected.get(block.getId()), block.getInputForm());
+                assertTrue(block.getOutput().isEmpty());
+            }
+
+            var journal = journalStore.open(agent.threadKey(context), context);
+            var pending = ThreadInteractions.pending(journal);
+            assertEquals(expected.keySet(), pending.keySet());
+            expected.forEach(
+                    (callId, form) ->
+                            assertEquals(
+                                    form,
+                                    codec.convertValue(
+                                            pending.get(callId).data().get("inputForm"),
+                                            ExternalExecutionForm.class)));
+
+            var resume =
+                    Msg.builder()
+                            .role(MsgRole.TOOL)
+                            .content(
+                                    List.of(
+                                            ToolResultBlock.text("north")
+                                                    .withIdAndName("question-call", toolName)
+                                                    .withState(ToolResultState.SUCCESS),
+                                            ToolResultBlock.text("credential saved")
+                                                    .withIdAndName("credential-call", toolName)
+                                                    .withState(ToolResultState.SUCCESS)))
+                            .build();
+            assertEquals(
+                    "done",
+                    agent.call(List.of(resume), context)
+                            .block(Duration.ofSeconds(10))
+                            .getTextContent());
+            assertTrue(ThreadInteractions.pending(journal).isEmpty());
+        }
     }
 
     @Test

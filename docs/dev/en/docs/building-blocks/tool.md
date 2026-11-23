@@ -220,6 +220,33 @@ public class HumanApprovalTool extends ToolBase {
 
 Runnable examples: `agentscope-examples/documentation/.../tool/ToolBaseExample.java`, `tool/ToolExecutionContextExample.java`.
 
+### Requesting form input from the application
+
+A local tool can suspend with an application-defined form type and a JSON Schema for the values it
+needs. For example, a tool can request a required credential field when the application has no
+credential for the current user.
+
+```java
+import com.fasterxml.jackson.databind.node.JsonNodeFactory;
+import io.agentscope.core.tool.ExternalExecutionForm;
+import io.agentscope.core.tool.ToolSuspendException;
+
+var schema = JsonNodeFactory.instance.objectNode().put("type", "object");
+schema.putObject("properties").putObject("apiKey").put("type", "string").put("writeOnly", true);
+schema.putArray("required").add("apiKey");
+throw new ToolSuspendException(
+        "Credential required", new ExternalExecutionForm("credential_input", schema));
+```
+
+Read the form from `RequireExternalExecutionEvent#getInputForms()` by tool call ID or from
+`ToolResultBlock#getInputForm()` on a suspended result. When a thread journal is configured,
+`ThreadInteractions.pending(journal)` includes the same descriptor in the request's `inputForm` data
+after reconnecting.
+
+The application validates the submission and saves the credential. Return only a status or an
+opaque reference as the matching tool result to continue the agent. The schema describes fields and
+validation rules. Keep submitted credentials in the application's credential store.
+
 ## Receiving context
 
 The [`RuntimeContext`](/dev/en/docs/building-blocks/agent#runtimecontext-per-call-context) passed to `agent.call(msgs, runtimeContext)` is forwarded to every tool invocation in that reply. Tools can read it in two ways: annotation-based tools through automatic injection, and `ToolBase.callAsync` through `ToolCallParam`.

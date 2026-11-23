@@ -16,9 +16,12 @@
 package io.agentscope.core.event;
 
 import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import io.agentscope.core.message.ToolUseBlock;
+import io.agentscope.core.tool.ExternalExecutionForm;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Emitted when tool calls require external (out-of-process) execution.
@@ -27,21 +30,37 @@ public class RequireExternalExecutionEvent extends AgentEvent {
 
     private final String replyId;
     private final List<ToolUseBlock> toolCalls;
+    private final Map<String, ExternalExecutionForm> inputForms;
 
     @JsonCreator
     public RequireExternalExecutionEvent(
             @JsonProperty("id") String id,
             @JsonProperty("createdAt") String createdAt,
             @JsonProperty("replyId") String replyId,
-            @JsonProperty("toolCalls") List<ToolUseBlock> toolCalls) {
+            @JsonProperty("toolCalls") List<ToolUseBlock> toolCalls,
+            @JsonProperty("inputForms") Map<String, ExternalExecutionForm> inputForms) {
         super(id, createdAt);
         this.replyId = replyId;
         this.toolCalls = toolCalls != null ? List.copyOf(toolCalls) : List.of();
+        this.inputForms = inputForms != null ? Map.copyOf(inputForms) : Map.of();
+    }
+
+    public RequireExternalExecutionEvent(
+            String id, String createdAt, String replyId, List<ToolUseBlock> toolCalls) {
+        this(id, createdAt, replyId, toolCalls, null);
     }
 
     public RequireExternalExecutionEvent(String replyId, List<ToolUseBlock> toolCalls) {
+        this(replyId, toolCalls, null);
+    }
+
+    public RequireExternalExecutionEvent(
+            String replyId,
+            List<ToolUseBlock> toolCalls,
+            Map<String, ExternalExecutionForm> inputForms) {
         this.replyId = replyId;
         this.toolCalls = toolCalls != null ? List.copyOf(toolCalls) : List.of();
+        this.inputForms = inputForms != null ? Map.copyOf(inputForms) : Map.of();
     }
 
     @Override
@@ -55,5 +74,15 @@ public class RequireExternalExecutionEvent extends AgentEvent {
 
     public List<ToolUseBlock> getToolCalls() {
         return toolCalls;
+    }
+
+    /**
+     * Gets the optional input forms by tool call ID.
+     *
+     * @return form descriptors for the calls that supplied one
+     */
+    @JsonInclude(JsonInclude.Include.NON_EMPTY)
+    public Map<String, ExternalExecutionForm> getInputForms() {
+        return inputForms;
     }
 }

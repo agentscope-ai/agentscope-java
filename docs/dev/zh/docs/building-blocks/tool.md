@@ -220,6 +220,26 @@ public class HumanApprovalTool extends ToolBase {
 
 完整可运行示例：`agentscope-examples/documentation/.../tool/ToolBaseExample.java`、`tool/ToolExecutionContextExample.java`。
 
+### 通过应用收集表单输入
+
+本地工具可以在暂停时附带应用自定义的表单类型和 JSON Schema。例如，当当前用户尚未配置凭据时，工具可以请求填写必填的凭据字段。
+
+```java
+import com.fasterxml.jackson.databind.node.JsonNodeFactory;
+import io.agentscope.core.tool.ExternalExecutionForm;
+import io.agentscope.core.tool.ToolSuspendException;
+
+var schema = JsonNodeFactory.instance.objectNode().put("type", "object");
+schema.putObject("properties").putObject("apiKey").put("type", "string").put("writeOnly", true);
+schema.putArray("required").add("apiKey");
+throw new ToolSuspendException(
+        "Credential required", new ExternalExecutionForm("credential_input", schema));
+```
+
+应用可以按工具调用 ID 从 `RequireExternalExecutionEvent#getInputForms()` 读取表单，也可以从暂停结果的 `ToolResultBlock#getInputForm()` 读取。配置线程日志后，重连时可从 `ThreadInteractions.pending(journal)` 取回待处理请求，其中的 `inputForm` 数据包含同一份表单描述。
+
+由应用校验提交内容并保存凭据，再把处理状态或不透明引用作为对应的工具结果返回，继续执行智能体任务。表单描述携带字段和校验规则，用户提交的凭据由应用的凭据存储保管。
+
 ## 接收 Context
 
 每次 `agent.call(msgs, runtimeContext)` 传入的 [`RuntimeContext`](/dev/zh/docs/building-blocks/agent#runtimecontext-per-call-上下文) 会自动透传到所在 reply 内每一次工具调用。Tool 可以用两种方式拿到它：注解式 tool 走自动注入，`ToolBase.callAsync` 走 `ToolCallParam`。

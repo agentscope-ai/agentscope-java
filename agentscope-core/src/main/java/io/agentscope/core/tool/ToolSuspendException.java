@@ -40,6 +40,7 @@ package io.agentscope.core.tool;
 public class ToolSuspendException extends RuntimeException {
 
     private final String reason;
+    private final ExternalExecutionForm inputForm;
 
     /**
      * Creates a new ToolSuspendException with default message.
@@ -54,8 +55,19 @@ public class ToolSuspendException extends RuntimeException {
      * @param reason the reason for suspension, will be included in the pending ToolResultBlock
      */
     public ToolSuspendException(String reason) {
+        this(reason, null);
+    }
+
+    /**
+     * Creates a suspension with an optional application-defined input form.
+     *
+     * @param reason the reason for suspension
+     * @param inputForm the form descriptor to attach to this suspended call
+     */
+    public ToolSuspendException(String reason, ExternalExecutionForm inputForm) {
         super(reason != null ? reason : "Tool execution suspended");
         this.reason = reason;
+        this.inputForm = inputForm;
     }
 
     /**
@@ -65,5 +77,14 @@ public class ToolSuspendException extends RuntimeException {
      */
     public String getReason() {
         return reason;
+    }
+
+    /**
+     * Gets the input form for this suspension.
+     *
+     * @return the form descriptor, or null if not specified
+     */
+    public ExternalExecutionForm getInputForm() {
+        return inputForm;
     }
 }
