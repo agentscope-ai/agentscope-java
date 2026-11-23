@@ -249,6 +249,16 @@ class DashScopeHttpClientTest {
     }
 
     @ParameterizedTest
+    @ValueSource(strings = {"qwen4-max", "Qwen4-Max", "qwen4-max-2026-11-01", "qwen4-max-preview"})
+    void testQwen4MultimodalRouting(String modelName) {
+        assertTrue(DashScopeHttpClient.isMultimodalModel(modelName));
+        assertTrue(client.requiresMultimodalApi(modelName, EndpointType.AUTO));
+        assertEquals(
+                DashScopeHttpClient.MULTIMODAL_GENERATION_ENDPOINT,
+                client.selectEndpoint(modelName, EndpointType.AUTO));
+    }
+
+    @ParameterizedTest
     @ValueSource(
             strings = {"qwen3.8-2.4t-a95b", "Qwen3.8-2.4T-A95B", "qwen3.8-2.4t-a95b-2026-09-01"})
     void testQwen38TextOnlyRouting(String modelName) {
