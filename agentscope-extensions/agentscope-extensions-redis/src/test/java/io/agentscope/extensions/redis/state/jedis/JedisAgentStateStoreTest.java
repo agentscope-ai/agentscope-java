@@ -16,8 +16,10 @@
 package io.agentscope.extensions.redis.state.jedis;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -25,11 +27,15 @@ import static org.mockito.Mockito.when;
 
 import io.agentscope.core.state.AgentStateStore;
 import io.agentscope.core.state.State;
+import java.util.List;
+import java.util.Set;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import redis.clients.jedis.Jedis;
 import redis.clients.jedis.JedisPool;
+import redis.clients.jedis.params.ScanParams;
+import redis.clients.jedis.resps.ScanResult;
 
 /**
  * Unit tests for {@link JedisAgentStateStore} optimistic-concurrency versioning.
@@ -73,5 +79,24 @@ class JedisAgentStateStoreTest {
         // Regression: the UNVERSIONED path must not call getVersioned (which reads back as
         // State.class — a marker interface Jackson cannot instantiate).
         verify(jedis, never()).get(anyString());
+    }
+
+    @Test
+    @DisplayName("listSessionIds uses SCAN and never the blocking KEYS command")
+    void listSessionIdsUsesScanInsteadOfKeys() {
+        JedisAgentStateStore store =
+                JedisAgentStateStore.builder().jedisPool(jedisPool).keyPrefix("test:").build();
+
+        ScanResult<String> firstPage = new ScanResult<>("17", List.of("test:__anon__/s1:_keys"));
+        ScanResult<String> lastPage =
+                new ScanResult<>(ScanParams.SCAN_POINTER_START, List.of("test:__anon__/s2:_keys"));
+        when(jedis.scan(anyString(), any(ScanParams.class))).thenReturn(firstPage, lastPage);
+
+        Set<String> sessions = store.listSessionIds(null);
+
+        assertEquals(Set.of("s1", "s2"), sessions);
+        // Blocking KEYS spans the whole keyspace on large/shared servers and must not be used.
+        verify(jedis, never()).keys(anyString());
+        verify(jedis, atLeastOnce()).scan(anyString(), any(ScanParams.class));
     }
 }
