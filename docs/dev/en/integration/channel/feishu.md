@@ -68,4 +68,4 @@ When `encryptKey` is configured, the callback body arrives as `{"encrypt":"<base
 
 **Inbound:** `FeishuCallbackController` → optional decryption → URL verification check → event_id dedup → `FeishuInboundMapper` (text messages only in MVP) → bot-loop guard → Gateway.
 
-**Outbound:** `FeishuOutboundClient` sends replies via `POST /open-apis/im/v1/messages` with a `tenant_access_token` from `FeishuAccessTokenProvider`. Tokens are cached and proactively refreshed at ~80% of TTL.
+**Outbound:** `FeishuOutboundClient` sends chat messages via `POST /open-apis/im/v1/messages`. When the outbound address includes a thread ID, it sends each message via `POST /open-apis/im/v1/messages/{threadId}/reply`. Both routes use a `tenant_access_token` from `FeishuAccessTokenProvider`. Tokens are cached and proactively refreshed at ~80% of TTL.

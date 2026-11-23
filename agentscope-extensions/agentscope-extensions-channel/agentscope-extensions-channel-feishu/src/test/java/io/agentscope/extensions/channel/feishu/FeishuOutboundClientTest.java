@@ -24,9 +24,11 @@ import io.agentscope.core.message.MsgRole;
 import io.agentscope.harness.agent.gateway.channel.OutboundAddress;
 import java.io.IOException;
 import java.net.InetSocketAddress;
+import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.List;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -40,6 +42,7 @@ class FeishuOutboundClientTest {
             "{\"code\":0,\"tenant_access_token\":\"token-1\",\"expire\":7200}";
 
     private final AtomicReference<String> sendResponse = new AtomicReference<>("");
+    private final List<URI> sendRequests = new CopyOnWriteArrayList<>();
     private HttpServer server;
     private FeishuOutboundClient client;
 
@@ -50,6 +53,9 @@ class FeishuOutboundClientTest {
                 "/",
                 exchange -> {
                     String path = exchange.getRequestURI().getPath();
+                    if (path.startsWith("/open-apis/im/v1/messages")) {
+                        sendRequests.add(exchange.getRequestURI());
+                    }
                     String body =
                             path.contains("tenant_access_token")
                                     ? TOKEN_RESPONSE
@@ -85,6 +91,26 @@ class FeishuOutboundClientTest {
                             assertTrue(e.getMessage().contains("code missing"), e.toString());
                         })
                 .verify();
+    }
+
+    @Test
+    void sendRoutesEachMessageToTheAddressedThread() {
+        sendResponse.set("{\"code\":0,\"data\":{\"message_id\":\"om-1\"}}");
+        OutboundAddress thread =
+                new OutboundAddress("feishu", null, "feishu:GROUP:chat-1", "om-root");
+        client.send(thread, List.of(text("one"), text("two"))).block(Duration.ofSeconds(10));
+
+        URI reply = URI.create("/open-apis/im/v1/messages/om-root/reply");
+        assertEquals(List.of(reply, reply), sendRequests);
+    }
+
+    @Test
+    void sendWithoutAThreadUsesChatAddressing() {
+        sendResponse.set("{\"code\":0,\"data\":{\"message_id\":\"om-1\"}}");
+        client.send(direct("chat-1"), List.of(text("hello"))).block(Duration.ofSeconds(10));
+        assertEquals(
+                List.of(URI.create("/open-apis/im/v1/messages?receive_id_type=chat_id")),
+                sendRequests);
     }
 
     @Test
