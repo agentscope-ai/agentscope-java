@@ -509,8 +509,12 @@ public class ProjectAwareOverlay extends OverlayFilesystem implements AbstractSa
         return key != null ? key : filePath;
     }
 
+    /**
+     * Separators unified, nothing else: a file name may begin or end with a space, and trimming
+     * it here made {@code " report.txt"} read {@code "report.txt"}.
+     */
     private static String normalizeSeparators(String filePath) {
-        return filePath.replace('\\', '/').strip();
+        return filePath.replace('\\', '/');
     }
 
     /**

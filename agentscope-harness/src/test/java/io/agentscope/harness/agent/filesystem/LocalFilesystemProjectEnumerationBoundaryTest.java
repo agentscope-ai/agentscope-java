@@ -261,6 +261,52 @@ class LocalFilesystemProjectEnumerationBoundaryTest {
     }
 
     /**
+     * A search started above the workspace stays closed even when the process directory and the
+     * search root are spelled differently -- on macOS a temp directory under {@code /var} reports
+     * its physical {@code /private/var} form, which no longer relativizes against the exclusion.
+     */
+    @Test
+    void aliasedAncestor_grepStaysClosed() throws Exception {
+        Path real = project.resolve("real");
+        Path projectRoot = real.resolve("p");
+        Path workspace = projectRoot.resolve("box/workspace");
+        Files.createDirectories(workspace.resolve("alice"));
+        Files.writeString(workspace.resolve("alice/MEMORY.md"), "alice-secret-memory");
+        Path link = project.resolve("link");
+        try {
+            Files.createSymbolicLink(link, real);
+        } catch (IOException | UnsupportedOperationException unsupported) {
+            Assumptions.abort("symbolic links not supported here: " + unsupported.getMessage());
+        }
+        Path spelledProject = link.resolve("p");
+        AbstractFilesystem fs =
+                new LocalFilesystemSpec()
+                        .project(spelledProject)
+                        .toFilesystem(
+                                spelledProject.resolve("box/workspace"),
+                                rc -> List.of(rc.getUserId()));
+
+        assertTrue(
+                fs.grep(
+                                caller("bob"),
+                                "alice-secret-memory",
+                                spelledProject.resolve("box").toString(),
+                                null)
+                        .matches()
+                        .isEmpty(),
+                "grep() read a sibling namespace through an aliased ancestor");
+        assertFalse(
+                fs.grep(
+                                caller("alice"),
+                                "alice-secret-memory",
+                                spelledProject.resolve("box/workspace/alice").toString(),
+                                null)
+                        .matches()
+                        .isEmpty(),
+                "the owner lost their own subtree to the filter");
+    }
+
+    /**
      * An absolute path above the workspace lies outside the workspace root but inside the
      * project, so the workspace layer resolves it. Recursive reads and writes there would walk
      * into the namespaces, while the project layer can answer around them.

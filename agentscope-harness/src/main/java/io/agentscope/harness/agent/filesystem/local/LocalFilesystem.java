@@ -1463,12 +1463,18 @@ public class LocalFilesystem implements AbstractFilesystem {
 
             List<GrepMatch> matches = new ArrayList<>();
             Map<Path, Path> resolvedDirs = new HashMap<>();
+            // Physical walk root: the spellings a platform reports for it need not match. Falling
+            // back to the spelling keeps a refused root closed when it cannot be resolved.
+            Path walkPhysical = realPath(basePath);
+            if (walkPhysical == null) {
+                walkPhysical = basePath.toAbsolutePath().normalize();
+            }
             try (BufferedReader reader =
                     new BufferedReader(
                             new InputStreamReader(proc.getInputStream(), StandardCharsets.UTF_8))) {
                 String line;
                 while ((line = reader.readLine()) != null) {
-                    GrepMatch match = parseRipgrepJsonLine(rc, line, resolvedDirs);
+                    GrepMatch match = parseRipgrepJsonLine(rc, line, resolvedDirs, walkPhysical);
                     if (match != null) {
                         matches.add(match);
                     }
@@ -1487,7 +1493,7 @@ public class LocalFilesystem implements AbstractFilesystem {
     }
 
     private GrepMatch parseRipgrepJsonLine(
-            RuntimeContext rc, String jsonLine, Map<Path, Path> resolvedDirs) {
+            RuntimeContext rc, String jsonLine, Map<Path, Path> resolvedDirs, Path walkPhysical) {
         try {
             if (!jsonLine.contains("\"type\":\"match\"")) {
                 return null;
@@ -1502,7 +1508,8 @@ public class LocalFilesystem implements AbstractFilesystem {
             Path reported = Path.of(pathText);
             // The exclusion globs are the fast path, not the boundary: a pattern that fails to
             // exclude a subtree must not surface its content.
-            if (isHiddenFromCaller(reported, resolvedDirs)) {
+            if (isHiddenFromCaller(reported, resolvedDirs)
+                    || closesRefusedRoot(reported, walkPhysical, resolvedDirs)) {
                 return null;
             }
             String filePath = resolveEntryPath(rc, reported);
@@ -1512,6 +1519,30 @@ public class LocalFilesystem implements AbstractFilesystem {
         } catch (Exception e) {
             return null;
         }
+    }
+
+    /**
+     * True for a hit inside a refused root while the search started outside it. The exclusion
+     * globs are a fast path, not the boundary: ripgrep relativizes them against the process
+     * directory, which on macOS is the physical {@code /private/var/...} while the search root is
+     * spelled {@code /var/...}, so a hit that slips through must still be dropped here.
+     */
+    private boolean closesRefusedRoot(
+            Path reported, Path walkPhysical, Map<Path, Path> resolvedDirs) {
+        if (walkPhysical == null || !hasBound(Bound.REFUSED)) {
+            return false;
+        }
+        Path absolute = reported.toAbsolutePath().normalize();
+        Path parent = absolute.getParent();
+        Path real =
+                parent == null ? realPath(absolute) : resolveCached(resolvedDirs, parent, absolute);
+        return real != null
+                && guardedSubtrees.stream()
+                        .anyMatch(
+                                root ->
+                                        root.bound() == Bound.REFUSED
+                                                && real.startsWith(root.realPath())
+                                                && !walkPhysical.startsWith(root.realPath()));
     }
 
     private static String extractJsonStringField(String json, String field, String parentField) {

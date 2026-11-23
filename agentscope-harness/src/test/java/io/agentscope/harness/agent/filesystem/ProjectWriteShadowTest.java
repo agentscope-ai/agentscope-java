@@ -176,6 +176,22 @@ class ProjectWriteShadowTest {
         assertEquals("project-other", Files.readString(other));
     }
 
+    /** A leading space is part of the name, not padding: the two files must stay distinct. */
+    @Test
+    void spacePrefixedFileName_readsItsOwnFile() throws Exception {
+        Files.writeString(project.resolve(" report.txt"), "spaced");
+        Files.writeString(project.resolve("report.txt"), "plain");
+
+        // projectWritable(true) is the path that routes through ProjectAwareOverlay's keys.
+        AbstractFilesystem fs = filesystem(true);
+        assertEquals("spaced", fs.read(alice(), " report.txt", 0, 100).fileData().content());
+        assertEquals("plain", fs.read(alice(), "report.txt", 0, 100).fileData().content());
+
+        assertTrue(fs.write(alice(), " report.txt", "written").isSuccess());
+        assertEquals("written", fs.read(alice(), " report.txt", 0, 100).fileData().content());
+        assertEquals("plain", fs.read(alice(), "report.txt", 0, 100).fileData().content());
+    }
+
     /** The layers spell one entry differently; it must still be listed once, from the upper copy. */
     @Test
     void ls_listsAnEntryOnceAndPrefersTheUpperCopy() throws Exception {
