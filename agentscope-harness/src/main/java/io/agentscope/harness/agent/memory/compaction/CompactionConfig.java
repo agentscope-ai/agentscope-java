@@ -17,6 +17,7 @@ package io.agentscope.harness.agent.memory.compaction;
 
 import io.agentscope.core.model.Model;
 import io.agentscope.core.model.ModelRegistry;
+import java.util.HashSet;
 import java.util.Set;
 
 /**
@@ -309,13 +310,14 @@ public class CompactionConfig {
      * Creates a resolved copy with effective trigger and keep values computed from a model's
      * context window. Used by {@code CompactionMiddleware} to resolve dynamic defaults.
      */
-    public CompactionConfig withEffective(int effectiveTriggerTokens, int effectiveKeepTokens) {
+    /** Copies every field into a fresh Builder so the withers cannot drift apart. */
+    private Builder copy() {
         Builder b = new Builder();
         b.triggerMessages = this.triggerMessages;
-        b.triggerTokens = effectiveTriggerTokens;
+        b.triggerTokens = this.triggerTokens;
         b.reserved = this.reserved;
         b.keepMessages = this.keepMessages;
-        b.keepTokens = effectiveKeepTokens;
+        b.keepTokens = this.keepTokens;
         b.keepTokensMin = this.keepTokensMin;
         b.keepTokensMax = this.keepTokensMax;
         b.keepTokensRatio = this.keepTokensRatio;
@@ -325,6 +327,36 @@ public class CompactionConfig {
         b.pruneConfig = this.pruneConfig;
         b.model = this.model;
         b.strategy = this.strategy;
+        return b;
+    }
+
+    public CompactionConfig withEffective(int effectiveTriggerTokens, int effectiveKeepTokens) {
+        Builder b = copy();
+        b.triggerTokens = effectiveTriggerTokens;
+        b.keepTokens = effectiveKeepTokens;
+        return new CompactionConfig(b);
+    }
+
+    /**
+     * Creates a copy whose prune exclusions additionally contain {@code declaredNonPrunable} —
+     * tool names whose registration declares them non-prunable. Used by {@code
+     * CompactionMiddleware} to fold per-tool declarations into the effective config; returns
+     * {@code this} when pruning is disabled or nothing is declared.
+     */
+    public CompactionConfig withPruneExclusions(Set<String> declaredNonPrunable) {
+        if (pruneConfig == null || declaredNonPrunable == null || declaredNonPrunable.isEmpty()) {
+            return this;
+        }
+        Set<String> excluded = new HashSet<>(pruneConfig.getExcludedTools());
+        excluded.addAll(declaredNonPrunable);
+        Builder b = copy();
+        b.pruneConfig =
+                PruneConfig.builder()
+                        .protectTokens(pruneConfig.getProtectTokens())
+                        .minimumTokens(pruneConfig.getMinimumTokens())
+                        .maxOutputChars(pruneConfig.getMaxOutputChars())
+                        .excludedTools(excluded)
+                        .build();
         return new CompactionConfig(b);
     }
 
@@ -631,7 +663,10 @@ public class CompactionConfig {
             return maxOutputChars;
         }
 
-        /** Tool names excluded from pruning (e.g. read_file, memory tools). */
+        /**
+         * User-configured tool names excluded from pruning, on top of tools declaring {@code
+         * @Tool(prunable = false)}.
+         */
         public Set<String> getExcludedTools() {
             return excludedTools;
         }
@@ -645,8 +680,7 @@ public class CompactionConfig {
             private int protectTokens = 40_000;
             private int minimumTokens = 20_000;
             private int maxOutputChars = 2_000;
-            private Set<String> excludedTools =
-                    Set.of("read_file", "memory_search", "memory_get", "thread_search");
+            private Set<String> excludedTools = Set.of();
 
             public PruneBuilder protectTokens(int protectTokens) {
                 this.protectTokens = protectTokens;
@@ -663,6 +697,10 @@ public class CompactionConfig {
                 return this;
             }
 
+            /**
+             * Sets tool names that are never pruned on top of the tools' own {@code
+             * @Tool(prunable = false)} declarations; replaces any previously configured names.
+             */
             public PruneBuilder excludedTools(Set<String> excludedTools) {
                 this.excludedTools = excludedTools;
                 return this;
