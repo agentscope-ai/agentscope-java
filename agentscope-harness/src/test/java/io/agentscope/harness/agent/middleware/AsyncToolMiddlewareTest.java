@@ -152,6 +152,74 @@ class AsyncToolMiddlewareTest {
         assertTrue(hint.contains("slow result"), "Inbox should contain the actual result");
     }
 
+    @Test
+    void backgroundCompletionKeepsEachToolCallResultAttributed() throws Exception {
+        AsyncToolMiddleware middleware = new AsyncToolMiddleware(bus, Duration.ofMillis(150));
+
+        ToolUseBlock search = ToolUseBlock.builder().id("t1").name("search_docs").build();
+        ToolUseBlock tests = ToolUseBlock.builder().id("t2").name("run_tests").build();
+        ActingInput input = new ActingInput(List.of(search, tests));
+
+        // Both calls are still running when the offload timer fires, and their output arrives
+        // interleaved: run_tests finishes first, search_docs second.
+        Flux<AgentEvent> slowDownstream =
+                Mono.delay(Duration.ofMillis(400))
+                        .thenMany(
+                                Flux.just(
+                                        new ToolResultStartEvent("r1", "t2", "run_tests"),
+                                        new ToolResultTextDeltaEvent(
+                                                "r1", "t2", "run_tests", "ALL TESTS PASSED"),
+                                        new ToolResultEndEvent(
+                                                "r1", "t2", "run_tests", ToolResultState.SUCCESS),
+                                        new ToolResultStartEvent("r1", "t1", "search_docs"),
+                                        new ToolResultTextDeltaEvent(
+                                                "r1", "t1", "search_docs", "DOC SNIPPET"),
+                                        new ToolResultEndEvent(
+                                                "r1",
+                                                "t1",
+                                                "search_docs",
+                                                ToolResultState.SUCCESS)));
+
+        middleware.onActing(stubAgent(), ctx, input, next -> slowDownstream).collectList().block();
+
+        List<BusEntry> inbox = drainEventually(2);
+        assertEquals(2, inbox.size(), "each offloaded tool call needs its own notification");
+
+        String testsHint = hintMentioning(inbox, "run_tests");
+        String searchHint = hintMentioning(inbox, "search_docs");
+        assertTrue(testsHint.contains("ALL TESTS PASSED"), testsHint);
+        assertFalse(testsHint.contains("DOC SNIPPET"), "run_tests hint carries search_docs output");
+        assertTrue(searchHint.contains("DOC SNIPPET"), searchHint);
+        assertFalse(
+                searchHint.contains("ALL TESTS PASSED"),
+                "search_docs hint carries run_tests output");
+    }
+
+    private List<BusEntry> drainEventually(int expected) throws InterruptedException {
+        List<BusEntry> collected = new java.util.ArrayList<>();
+        long deadline = System.currentTimeMillis() + 8_000;
+        while (collected.size() < expected && System.currentTimeMillis() < deadline) {
+            List<BusEntry> batch = bus.inboxDrain("session-1", 100).block();
+            if (batch != null) {
+                collected.addAll(batch);
+            }
+            if (collected.size() < expected) {
+                Thread.sleep(25);
+            }
+        }
+        return collected;
+    }
+
+    private static String hintMentioning(List<BusEntry> entries, String toolName) {
+        for (BusEntry entry : entries) {
+            String hint = String.valueOf(entry.payload().get("hint"));
+            if (hint.contains(toolName)) {
+                return hint;
+            }
+        }
+        throw new AssertionError("no notification mentions " + toolName + ": " + entries);
+    }
+
     private static io.agentscope.core.agent.Agent stubAgent() {
         return new io.agentscope.core.agent.Agent() {
             @Override
