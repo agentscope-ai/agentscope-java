@@ -42,6 +42,7 @@ import io.agentscope.durable.ModelExecutions.Key;
 import io.agentscope.durable.ModelExecutions.Status;
 import io.agentscope.durable.TransactionalModelExecutionStore;
 import io.agentscope.durable.TransactionalSessionBackend;
+import io.agentscope.durable.TransactionalSessionBackend.StoredContent;
 import io.agentscope.durable.Wakeups;
 import io.agentscope.durable.store.ModelOutputStore;
 import io.agentscope.durable.store.ObjectModelOutputStore;
@@ -49,6 +50,7 @@ import io.agentscope.durable.store.ObjectStore;
 import io.agentscope.durable.store.RecordObjectStore;
 import io.agentscope.extensions.durable.jdbc.FileObjectStore;
 import io.agentscope.extensions.durable.jdbc.JdbcRecordStore;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.List;
@@ -71,6 +73,43 @@ class ModelWorkerTest {
     private static final String ROUTE = "test-model";
 
     @TempDir Path directory;
+
+    @Test
+    void directModelUsesTheExistingJournalSizeThreshold() {
+        var longText = "x".repeat(17_000);
+        var model =
+                new Model() {
+                    @Override
+                    public String getModelName() {
+                        return "fixture";
+                    }
+
+                    @Override
+                    public Flux<ChatResponse> stream(
+                            List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
+                        return Flux.just(chunk("small-"), chunk(longText));
+                    }
+                };
+        var adapter =
+                AgentScopeAdapter.forReAct(
+                        binding -> ReActAgent.builder().name("agent").model(model), Map.of());
+        try (var records = JdbcRecordStore.sqlite(directory.resolve("direct.db"))) {
+            var objects = new FileObjectStore(directory.resolve("objects"));
+            try (var runtime =
+                    DurableRuntime.builder()
+                            .backend(new TransactionalSessionBackend(records, objects))
+                            .harness("agent", "v1", adapter)
+                            .build()) {
+                var turn = runtime.createSession(SESSION, "agent").submit("direct", "hello");
+                runtime.tick(THREAD);
+                assertEquals(TurnStatus.SUCCEEDED, turn.status().status(), turn.status()::toString);
+                assertEquals(
+                        "small-" + longText,
+                        turn.status().output().path("content").get(0).path("text").asText());
+                assertEquals(List.of(false, true), journalChunkReferences(records, objects));
+            }
+        }
+    }
 
     @ParameterizedTest
     @ValueSource(strings = {"sqlite", "objects", "offsets"})
@@ -206,6 +245,10 @@ class ModelWorkerTest {
                 assertNotNull(second);
                 assertEquals(1, providerCalls.get());
                 assertTrue(local.inputs.isEmpty());
+                var chunkReferences = journalChunkReferences(readerRecords, readerObjects);
+                assertTrue(chunkReferences.size() >= 2);
+                boolean external = !"sqlite".equals(outputBackend);
+                assertTrue(chunkReferences.stream().allMatch(reference -> reference == external));
                 if (!"sqlite".equals(outputBackend)) {
                     readerRecords.transaction(
                             SESSION.storageKey(),
@@ -260,6 +303,36 @@ class ModelWorkerTest {
                 assertEquals(TurnStatus.FAILED, turn.status().status());
             }
         }
+    }
+
+    private static List<Boolean> journalChunkReferences(
+            JdbcRecordStore records, ObjectStore objects) {
+        var prefix = "thread-data:" + DurableJson.hash(THREAD.threadId()) + ":journal:";
+        var journal =
+                records.transaction(
+                        SESSION.storageKey(),
+                        tx ->
+                                tx.keys(prefix, null, 1000).stream()
+                                        .map(tx::get)
+                                        .map(
+                                                value ->
+                                                        DurableJson.convert(
+                                                                value, StoredContent.class))
+                                        .toList());
+        return journal.stream()
+                .filter(
+                        stored -> {
+                            var event =
+                                    stored.reference() == null
+                                            ? stored.inline()
+                                            : DurableJson.parse(
+                                                    new String(
+                                                            objects.read(stored.reference()),
+                                                            StandardCharsets.UTF_8));
+                            return "model/chunk".equals(event.path("type").asText());
+                        })
+                .map(stored -> stored.reference() != null)
+                .toList();
     }
 
     private ObjectStore objects(String type, JdbcRecordStore records) {

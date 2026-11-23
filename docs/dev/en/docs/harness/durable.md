@@ -134,8 +134,9 @@ In a distributed deployment, share a transactional record database, such as
 PostgreSQL through `JdbcRecordStore`, across the Session backend, Agent and Worker.
 The database stores the execution state, output sequence and storage references.
 Supply a shared `S3ObjectStore` or `OssObjectStore` to both
-`TransactionalSessionBackend` and `ObjectModelOutputStore` so model chunks and
-their journal content live in object storage. Use `RocketMqWakeups` to notify
+`TransactionalSessionBackend` and `ObjectModelOutputStore` so handed-off model
+chunks and their journal content live in object storage. Direct calls use the
+Journal's size-based storage rule. Use `RocketMqWakeups` to notify
 Workers and Runtimes of changes. They also check durable state periodically to
 recover from delayed or lost notifications.
 

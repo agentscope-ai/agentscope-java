@@ -120,6 +120,7 @@ public final class RecordedModels {
                         }
                         Mono<Void> admission;
                         Flux<ChatResponse> responses;
+                        boolean handoff = route instanceof ModelInvocation.Resume;
                         if (route instanceof ModelInvocation.Resume resumed) {
                             if (!callId.equals(pending))
                                 return Flux.error(
@@ -156,15 +157,23 @@ public final class RecordedModels {
                                                             last.set(chunk);
                                                             if (chunk.getUsage() != null)
                                                                 usage.set(chunk.getUsage());
-                                                            recorder.append(
-                                                                    "model/chunk",
+                                                            Map<String, Object> payload =
                                                                     Map.of(
                                                                             "modelCallId",
                                                                             id,
                                                                             "purpose",
                                                                             purpose,
                                                                             "chunk",
-                                                                            chunk));
+                                                                            chunk);
+                                                            if (handoff) {
+                                                                var resumedPayload =
+                                                                        new LinkedHashMap<>(
+                                                                                payload);
+                                                                resumedPayload.put(
+                                                                        "modelHandoff", true);
+                                                                payload = resumedPayload;
+                                                            }
+                                                            recorder.append("model/chunk", payload);
                                                         })
                                                 .contextWrite(
                                                         context ->

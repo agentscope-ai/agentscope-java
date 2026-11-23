@@ -116,7 +116,8 @@ runtime.start();
 
 分布式部署时，Session 后端、Agent 和 Worker 共享事务数据库，例如通过 `JdbcRecordStore` 接入 PostgreSQL。
 数据库保存执行状态、分片序号和存储引用。为 `TransactionalSessionBackend` 和 `ObjectModelOutputStore`
-配置同一套 `S3ObjectStore` 或 `OssObjectStore`，将模型分片正文及其 Journal 内容保存到对象存储。
+配置同一套 `S3ObjectStore` 或 `OssObjectStore`，将交接调用的分片正文及其 Journal 内容保存到对象存储。
+直调的 Journal 分片继续按原有的大小阈值存储。
 通过 `RocketMqWakeups` 通知 Worker 和 Runtime。通知延迟或丢失时，轮询仍可从持久状态发现变化。
 
 自定义 `ModelOutputStore` 可以将正文写入支持回放的消息队列。`write` 返回稳定的引用，例如 topic、

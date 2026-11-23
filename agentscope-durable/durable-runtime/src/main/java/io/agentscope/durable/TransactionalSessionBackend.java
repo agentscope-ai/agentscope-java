@@ -134,15 +134,24 @@ public final class TransactionalSessionBackend implements SessionBackend {
     }
 
     private JsonNode storeContent(SessionKey session, JsonNode value) {
+        return storeContent(session, value, false);
+    }
+
+    private JsonNode storeContent(SessionKey session, JsonNode value, boolean journalEntry) {
         byte[] bytes = DurableJson.value(value).toString().getBytes(StandardCharsets.UTF_8);
-        boolean externalModelChunk =
-                value != null
-                        && !(objects instanceof RecordObjectStore)
-                        && "model/chunk".equals(value.path("type").asText());
-        return bytes.length > 16384 || externalModelChunk
+        return bytes.length > 16384 || journalEntry && externallyStoredHandoffChunk(value)
                 ? DurableJson.value(
                         new StoredContent(null, objects.put(objectScope(session), bytes)))
                 : DurableJson.value(new StoredContent(DurableJson.copy(value), null));
+    }
+
+    private boolean externallyStoredHandoffChunk(JsonNode value) {
+        if (value == null
+                || objects instanceof RecordObjectStore
+                || !"model/chunk".equals(value.path("type").asText())) return false;
+        var payload = value.path("payloadJson");
+        return payload.isTextual()
+                && DurableJson.parse(payload.textValue()).path("modelHandoff").booleanValue();
     }
 
     private JsonNode readContent(SessionKey session, JsonNode stored) {
@@ -1253,7 +1262,7 @@ public final class TransactionalSessionBackend implements SessionBackend {
                 command.journal() == null
                         ? List.of()
                         : command.journal().entries().stream()
-                                .map(entry -> storeContent(lease.session(), entry))
+                                .map(entry -> storeContent(lease.session(), entry, true))
                                 .toList();
         return change(
                 lease.thread(),
@@ -2466,7 +2475,9 @@ public final class TransactionalSessionBackend implements SessionBackend {
         String digest = DurableJson.hash(restore);
         var content = storeContent(session, restore.checkpoint());
         var journal =
-                restore.journal().stream().map(value -> storeContent(session, value)).toList();
+                restore.journal().stream()
+                        .map(entry -> storeContent(session, entry, true))
+                        .toList();
         var resources =
                 restore.resources().stream()
                         .map(
