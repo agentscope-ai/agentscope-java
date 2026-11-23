@@ -16,14 +16,15 @@
 package io.agentscope.core.tool;
 
 import io.agentscope.core.agent.Agent;
+import io.agentscope.core.agent.CapabilitySurface;
 import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.core.journal.InvocationRecorder;
+import io.agentscope.core.journal.JournalException;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ExecutionConfig;
 import io.agentscope.core.observation.ActionObservationException;
 import io.agentscope.core.observation.ActionObservations;
-import io.agentscope.core.session.SessionLogException;
-import io.agentscope.core.session.SessionRecorder;
 import io.agentscope.core.shutdown.GracefulShutdownManager;
 import io.agentscope.core.tracing.TracerRegistry;
 import io.agentscope.core.util.ExceptionUtils;
@@ -202,6 +203,41 @@ class ToolExecutor {
     }
 
     /**
+     * Grant gate (E1): backend tools must pass the call's capability surface. External tools
+     * (request-config overrides) are caller-controlled and skip the gate. A missing surface
+     * means this execution never entered an agent {@code call()} (whose funnel always writes
+     * one): treat it as unrestricted — direct execution is trusted assembler code (threat
+     * model: end user vs. capability surface).
+     *
+     * @return the denial result, or {@code null} when the call proceeds
+     */
+    private Mono<ToolResultBlock> requireToolGranted(
+            ToolCallParam param, AgentTool tool, boolean fromRequestConfig) {
+        if (fromRequestConfig) {
+            return null;
+        }
+        RuntimeContext gateRc = param.getRuntimeContext();
+        CapabilitySurface surface = gateRc != null ? gateRc.get(CapabilitySurface.class) : null;
+        if (surface == null) {
+            surface = CapabilitySurface.ALLOW_ALL;
+        }
+        String toolName = param.getToolUseBlock().getName();
+        if (surface.allowsTool(tool, groupManager.getGroupsOfTool(toolName))) {
+            return null;
+        }
+        logger.warn(
+                "Denied ungranted tool call (grant): tool='{}', userId='{}', sessionId='{}',"
+                        + " agentId='{}'",
+                toolName,
+                gateRc != null ? gateRc.getUserId() : null,
+                gateRc != null ? gateRc.getSessionId() : null,
+                param.getAgent() != null ? param.getAgent().getAgentId() : "unknown");
+        // Byte-identical to the resolveTool not-found wording: do not reveal existence (the
+        // model-facing channel must not distinguish "exists but ungranted" from "missing").
+        return Mono.just(ToolResultBlock.error("Tool not found: " + toolName));
+    }
+
+    /**
      * Core tool execution logic.
      *
      * <p>This method handles:
@@ -242,11 +278,17 @@ class ToolExecutor {
             return Mono.just(ToolResultBlock.error("Tool not found: " + toolCall.getName()));
         }
 
+        boolean fromRequestConfig = requestConfig.overrides(toolCall.getName());
+        Mono<ToolResultBlock> denial = requireToolGranted(param, tool, fromRequestConfig);
+        if (denial != null) {
+            return denial;
+        }
+
         // Check tool activation. This gate only applies to backend tools: an external tool injected
         // via the request config is ungrouped and always callable, so a same-named-but-inactive
         // backend tool must not reject it (the model was shown the external override and the call
-        // must be honoured).
-        boolean fromRequestConfig = requestConfig.overrides(toolCall.getName());
+        // must be honoured). The activation gate is orthogonal to the grant gate above: both must
+        // pass for a backend tool.
         RegisteredToolFunction registered = toolRegistry.getRegisteredTool(toolCall.getName());
         if (!fromRequestConfig
                 && registered != null
@@ -287,7 +329,8 @@ class ToolExecutor {
                                         config.getBeforeToolCall().accept(param);
                                         return ToolResultBlock.suspended(toolCall);
                                     }),
-                            toolCall)
+                            toolCall,
+                            param.isPropagateErrors())
                     .map(result -> result.withIdAndName(toolCall.getId(), toolCall.getName()));
         }
 
@@ -311,8 +354,8 @@ class ToolExecutor {
                 new DefaultToolEmitter(
                         toolCall,
                         (use, chunk) -> {
-                            SessionRecorder recorder =
-                                    SessionRecorder.from(param.getRuntimeContext());
+                            InvocationRecorder recorder =
+                                    InvocationRecorder.from(param.getRuntimeContext());
                             if (recorder != null)
                                 recorder.append(
                                         "tool/chunk",
@@ -342,6 +385,14 @@ class ToolExecutor {
             mergedInput.putAll(registered.getPresetParameters());
         }
 
+        // Hosts needing durable call identity opt in; ordinary tools keep their shared context.
+        if (runtimeContext != null
+                && Boolean.TRUE.equals(runtimeContext.get(ToolCallParam.CALL_CONTEXT_KEY)))
+            runtimeContext =
+                    RuntimeContext.builder(runtimeContext)
+                            .put(ToolUseBlock.class, toolCall)
+                            .build();
+
         // Build final execution param
         ToolCallParam executionParam =
                 ToolCallParam.builder()
@@ -350,16 +401,18 @@ class ToolExecutor {
                         .agent(param.getAgent())
                         .runtimeContext(runtimeContext)
                         .emitter(toolEmitter)
+                        .propagateErrors(param.isPropagateErrors())
                         .build();
 
-        SessionRecorder recorder = SessionRecorder.from(runtimeContext);
+        InvocationRecorder recorder = InvocationRecorder.from(runtimeContext);
 
         // Without interceptors, retain the dispatch path with an optional final check.
         if (interceptors.isEmpty()) {
             return applyResultErrorMapping(
                     dispatchRecord(recorder, executionParam, toolCall, mergedInput)
                             .then(Mono.defer(() -> invokeTool(tool, executionParam))),
-                    toolCall);
+                    toolCall,
+                    param.isPropagateErrors());
         }
 
         // The interceptor chain wraps dispatch logging + real execution: the dispatch record
@@ -394,7 +447,8 @@ class ToolExecutor {
                                                         agentId,
                                                         agentName),
                                                 terminal)),
-                        toolCall)
+                        toolCall,
+                        param.isPropagateErrors())
                 // Interceptor-produced results (e.g. denials) carry no id/name — backfill them;
                 // tool results already carry theirs. Error/empty-synthesized results also gain
                 // id/name here (direct path only; normalized on the batch path).
@@ -418,7 +472,7 @@ class ToolExecutor {
      * recorder.
      */
     private static Mono<Void> dispatchRecord(
-            SessionRecorder recorder,
+            InvocationRecorder recorder,
             ToolCallParam executionParam,
             ToolUseBlock toolCall,
             Map<String, Object> arguments) {
@@ -490,7 +544,7 @@ class ToolExecutor {
      * @return the pipeline with suspend/error/empty cases mapped to result blocks
      */
     private Mono<ToolResultBlock> applyResultErrorMapping(
-            Mono<ToolResultBlock> execution, ToolUseBlock toolCall) {
+            Mono<ToolResultBlock> execution, ToolUseBlock toolCall, boolean propagateErrors) {
         return execution
                 .onErrorResume(
                         ToolSuspendException.class,
@@ -504,8 +558,9 @@ class ToolExecutor {
                         })
                 .onErrorResume(
                         e -> {
-                            if (ActionObservationException.causedBy(e)
-                                    || SessionLogException.causedBy(e)) return Mono.error(e);
+                            if (propagateErrors
+                                    || ActionObservationException.causedBy(e)
+                                    || JournalException.causedBy(e)) return Mono.error(e);
                             String errorMsg =
                                     e.getMessage() != null
                                             ? e.getMessage()
@@ -514,10 +569,12 @@ class ToolExecutor {
                                     ToolResultBlock.error("Tool execution failed: " + errorMsg));
                         })
                 .switchIfEmpty(
-                        Mono.just(
-                                ToolResultBlock.error(
-                                        "Tool execution failed: Tool completed without returning a"
-                                                + " result")));
+                        propagateErrors
+                                ? Mono.empty()
+                                : Mono.just(
+                                        ToolResultBlock.error(
+                                                "Tool execution failed: Tool completed without"
+                                                        + " returning a result")));
     }
 
     /**
@@ -732,8 +789,9 @@ class ToolExecutor {
                 .map(result -> result.withIdAndName(toolCall.getId(), toolCall.getName()))
                 .onErrorResume(
                         e -> {
-                            if (ActionObservationException.causedBy(e)
-                                    || SessionLogException.causedBy(e)) return Mono.error(e);
+                            if (param.isPropagateErrors()
+                                    || ActionObservationException.causedBy(e)
+                                    || JournalException.causedBy(e)) return Mono.error(e);
                             logger.warn("Tool call failed: {}", toolCall.getName(), e);
                             String errorMsg = ExceptionUtils.getErrorMessage(e);
                             return Mono.just(
@@ -795,7 +853,7 @@ class ToolExecutor {
                         .filter(
                                 error ->
                                         !ActionObservationException.causedBy(error)
-                                                && !SessionLogException.causedBy(error)
+                                                && !JournalException.causedBy(error)
                                                 && retryOn.test(error))
                         .doBeforeRetry(
                                 signal ->

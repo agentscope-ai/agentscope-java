@@ -1,0 +1,858 @@
+{
+  "canonical": {
+    "value": {
+      "tiny": 1e-07,
+      "large": 100000000000000000000,
+      "zero": 0,
+      "fraction": 1.25
+    },
+    "sha256": "780a4cd409876bbdaddddeef6a8eb54380a0ef5f216555bc5776b3dd731b1a9c"
+  },
+  "executionCommand": {
+    "version": "durable.v1",
+    "commandId": "22a6b8e343b8329dea3b70fa0209faef8194cedbc07b2c0e100b7e54133af307",
+    "requestDigest": "3443a6cc808aae6c1279275aab3d9e5e38a5f26f09e511420dcf1b0155b411b5",
+    "kind": "QUERY",
+    "request": {
+      "executionId": "exec_849bf630a5ce46376717717d141ed2bc80c05ad250ca0a6a158726c7a8fd7d83",
+      "turnId": "turn-1",
+      "call": {
+        "callId": "call-1",
+        "executor": "hands",
+        "name": "job",
+        "arguments": {
+          "amount": "9223372036854775807",
+          "parts": [
+            1.25,
+            null,
+            "text"
+          ]
+        },
+        "binding": null,
+        "origin": {
+          "runId": "run-original",
+          "stepId": "step-original"
+        }
+      },
+      "thread": {
+        "session": {
+          "namespace": "tenant",
+          "sessionId": "session"
+        },
+        "threadId": "main"
+      }
+    },
+    "afterSequence": 37
+  },
+  "invalidJson": [
+    "{\"id\":1,\"id\":2}",
+    "{} {}",
+    ""
+  ],
+  "lossyNumbers": [
+    "9007199254740993",
+    "9223372036854775807",
+    "0.100000000000000001"
+  ],
+  "recovery": {
+    "request": {
+      "version": "durable.v1",
+      "operation": "recordFailure",
+      "payload": {
+        "lease": {
+          "thread": {
+            "session": {
+              "namespace": "tenant",
+              "sessionId": "session"
+            },
+            "threadId": "main"
+          },
+          "turnId": "turn-1",
+          "owner": "brain-1",
+          "epoch": 1,
+          "expiresAt": 5000
+        },
+        "failure": {
+          "retryable": true,
+          "message": "provider unavailable",
+          "policy": {
+            "maxRetries": 2,
+            "initialDelayMillis": 200,
+            "maxDelayMillis": 400
+          }
+        }
+      }
+    },
+    "response": {
+      "version": "durable.v1",
+      "result": {
+        "failures": 1,
+        "policy": {
+          "maxRetries": 2,
+          "initialDelayMillis": 200,
+          "maxDelayMillis": 400
+        },
+        "retryable": true,
+        "retryAt": 1200,
+        "message": "provider unavailable"
+      }
+    }
+  },
+  "eventFilters": {
+    "valid": [
+      {
+        "threadId": null,
+        "turnId": null,
+        "runId": null
+      },
+      {
+        "threadId": "main",
+        "turnId": null,
+        "runId": null
+      },
+      {
+        "threadId": "main",
+        "turnId": "turn-1",
+        "runId": null
+      },
+      {
+        "threadId": "main",
+        "turnId": "turn-1",
+        "runId": "run-1"
+      }
+    ],
+    "invalid": [
+      {
+        "threadId": null,
+        "turnId": "turn-1",
+        "runId": null
+      },
+      {
+        "threadId": "main",
+        "turnId": null,
+        "runId": "run-1"
+      },
+      {
+        "threadId": "",
+        "turnId": null,
+        "runId": null
+      },
+      {
+        "threadId": "main",
+        "turnId": null,
+        "runId": null,
+        "stepId": "step-1"
+      }
+    ]
+  },
+  "resourceEvents": {
+    "valid": [
+      {
+        "schemaVersion": "1",
+        "eventId": "session.created",
+        "session": {
+          "namespace": "tenant",
+          "sessionId": "session"
+        },
+        "threadId": null,
+        "turnId": null,
+        "runId": null,
+        "stepId": null,
+        "sequence": "1",
+        "cursor": "cursor-1",
+        "type": "session.created",
+        "data": {
+          "key": {
+            "namespace": "tenant",
+            "sessionId": "session"
+          },
+          "primaryThreadId": "main",
+          "status": "OPEN",
+          "metadata": null
+        }
+      },
+      {
+        "schemaVersion": "1",
+        "eventId": "session.closed",
+        "session": {
+          "namespace": "tenant",
+          "sessionId": "session"
+        },
+        "threadId": null,
+        "turnId": null,
+        "runId": null,
+        "stepId": null,
+        "sequence": "2",
+        "cursor": "cursor-2",
+        "type": "session.closed",
+        "data": {
+          "key": {
+            "namespace": "tenant",
+            "sessionId": "session"
+          },
+          "primaryThreadId": "main",
+          "status": "CLOSED",
+          "metadata": null
+        }
+      },
+      {
+        "schemaVersion": "1",
+        "eventId": "thread.created",
+        "session": {
+          "namespace": "tenant",
+          "sessionId": "session"
+        },
+        "threadId": "main",
+        "turnId": null,
+        "runId": null,
+        "stepId": null,
+        "sequence": "3",
+        "cursor": "cursor-3",
+        "type": "thread.created",
+        "data": {
+          "definition": {
+            "key": {
+              "session": {
+                "namespace": "tenant",
+                "sessionId": "session"
+              },
+              "threadId": "main"
+            },
+            "binding": {
+              "harness": "test",
+              "definitionVersion": "v1",
+              "stateVersion": "1"
+            }
+          },
+          "status": "OPEN"
+        }
+      },
+      {
+        "schemaVersion": "1",
+        "eventId": "thread.closed",
+        "session": {
+          "namespace": "tenant",
+          "sessionId": "session"
+        },
+        "threadId": "main",
+        "turnId": null,
+        "runId": null,
+        "stepId": null,
+        "sequence": "4",
+        "cursor": "cursor-4",
+        "type": "thread.closed",
+        "data": {
+          "definition": {
+            "key": {
+              "session": {
+                "namespace": "tenant",
+                "sessionId": "session"
+              },
+              "threadId": "main"
+            },
+            "binding": {
+              "harness": "test",
+              "definitionVersion": "v1",
+              "stateVersion": "1"
+            }
+          },
+          "status": "CLOSED"
+        }
+      }
+    ],
+    "invalid": [
+      {
+        "schemaVersion": "1",
+        "eventId": "session.created",
+        "session": {
+          "namespace": "tenant",
+          "sessionId": "session"
+        },
+        "threadId": "main",
+        "turnId": null,
+        "runId": null,
+        "stepId": null,
+        "sequence": "1",
+        "cursor": "cursor-1",
+        "type": "session.created",
+        "data": {
+          "key": {
+            "namespace": "tenant",
+            "sessionId": "session"
+          },
+          "primaryThreadId": "main",
+          "status": "OPEN",
+          "metadata": null
+        }
+      },
+      {
+        "schemaVersion": "1",
+        "eventId": "session.created",
+        "session": {
+          "namespace": "tenant",
+          "sessionId": "session"
+        },
+        "threadId": null,
+        "turnId": "task",
+        "runId": null,
+        "stepId": null,
+        "sequence": "1",
+        "cursor": "cursor-1",
+        "type": "session.created",
+        "data": {
+          "key": {
+            "namespace": "tenant",
+            "sessionId": "session"
+          },
+          "primaryThreadId": "main",
+          "status": "OPEN",
+          "metadata": null
+        }
+      },
+      {
+        "schemaVersion": "1",
+        "eventId": "thread.created",
+        "session": {
+          "namespace": "tenant",
+          "sessionId": "session"
+        },
+        "threadId": null,
+        "turnId": null,
+        "runId": null,
+        "stepId": null,
+        "sequence": "3",
+        "cursor": "cursor-3",
+        "type": "thread.created",
+        "data": {
+          "definition": {
+            "key": {
+              "session": {
+                "namespace": "tenant",
+                "sessionId": "session"
+              },
+              "threadId": "main"
+            },
+            "binding": {
+              "harness": "test",
+              "definitionVersion": "v1",
+              "stateVersion": "1"
+            }
+          },
+          "status": "OPEN"
+        }
+      },
+      {
+        "schemaVersion": "1",
+        "eventId": "thread.created",
+        "session": {
+          "namespace": "tenant",
+          "sessionId": "session"
+        },
+        "threadId": "main",
+        "turnId": null,
+        "runId": "run",
+        "stepId": null,
+        "sequence": "3",
+        "cursor": "cursor-3",
+        "type": "thread.created",
+        "data": {
+          "definition": {
+            "key": {
+              "session": {
+                "namespace": "tenant",
+                "sessionId": "session"
+              },
+              "threadId": "main"
+            },
+            "binding": {
+              "harness": "test",
+              "definitionVersion": "v1",
+              "stateVersion": "1"
+            }
+          },
+          "status": "OPEN"
+        }
+      },
+      {
+        "schemaVersion": "1",
+        "eventId": "session.created",
+        "session": {
+          "namespace": "tenant",
+          "sessionId": "session"
+        },
+        "threadId": null,
+        "turnId": null,
+        "runId": null,
+        "stepId": null,
+        "sequence": "1",
+        "cursor": "cursor-1",
+        "type": "session.created",
+        "data": {
+          "key": {
+            "namespace": "tenant",
+            "sessionId": "session"
+          },
+          "primaryThreadId": "main",
+          "status": "CLOSED",
+          "metadata": null
+        }
+      },
+      {
+        "schemaVersion": "1",
+        "eventId": "thread.created",
+        "session": {
+          "namespace": "tenant",
+          "sessionId": "session"
+        },
+        "threadId": "main",
+        "turnId": null,
+        "runId": null,
+        "stepId": null,
+        "sequence": "3",
+        "cursor": "cursor-3",
+        "type": "thread.created",
+        "data": {
+          "status": "OPEN"
+        }
+      }
+    ]
+  },
+  "modelFacts": {
+    "valid": [
+      {
+        "eventId": "model.call.started",
+        "type": "model.call.started",
+        "runId": "run",
+        "stepId": "step",
+        "data": {
+          "modelCallId": "call",
+          "model": "fixture",
+          "purpose": "REASONING",
+          "iteration": 0,
+          "startedAt": 100
+        }
+      },
+      {
+        "eventId": "model.call.ended",
+        "type": "model.call.ended",
+        "runId": "run",
+        "stepId": "step",
+        "data": {
+          "modelCallId": "call",
+          "status": "COMPLETED",
+          "endedAt": 120,
+          "usage": null
+        }
+      },
+      {
+        "eventId": "model.request.started",
+        "type": "model.request.started",
+        "runId": "run",
+        "stepId": "step",
+        "data": {
+          "modelCallId": "call",
+          "requestId": "request",
+          "attempt": 1,
+          "provider": "fixture",
+          "startedAt": 100
+        }
+      },
+      {
+        "eventId": "model.request.usage",
+        "type": "model.request.usage",
+        "runId": "run",
+        "stepId": "step",
+        "data": {
+          "modelCallId": "call",
+          "requestId": "request",
+          "usage": {
+            "inputTokens": 4,
+            "outputTokens": null,
+            "details": {}
+          }
+        }
+      },
+      {
+        "eventId": "model.request.ended",
+        "type": "model.request.ended",
+        "runId": "run",
+        "stepId": "step",
+        "data": {
+          "modelCallId": "call",
+          "requestId": "request",
+          "status": "COMPLETED",
+          "endedAt": 120,
+          "durationMillis": 20,
+          "usage": {
+            "inputTokens": 4,
+            "outputTokens": 2,
+            "details": {}
+          },
+          "usageComplete": true,
+          "errorType": null
+        }
+      }
+    ],
+    "invalid": [
+      {
+        "eventId": "model.request.ended",
+        "type": "model.request.ended",
+        "runId": null,
+        "stepId": "step",
+        "data": {
+          "modelCallId": "call",
+          "requestId": "request",
+          "status": "COMPLETED",
+          "endedAt": 120,
+          "durationMillis": 20,
+          "usage": {
+            "inputTokens": 4,
+            "outputTokens": 2,
+            "details": {}
+          },
+          "usageComplete": true,
+          "errorType": null
+        }
+      },
+      {
+        "eventId": "model.request.started",
+        "type": "model.request.started",
+        "runId": "run",
+        "stepId": "step",
+        "data": {
+          "modelCallId": "call",
+          "requestId": "request",
+          "attempt": 0,
+          "provider": "fixture",
+          "startedAt": 100
+        }
+      },
+      {
+        "eventId": "model.request.ended",
+        "type": "model.request.ended",
+        "runId": "run",
+        "stepId": "step",
+        "data": {
+          "modelCallId": "call",
+          "requestId": "request",
+          "status": "COMPLETED",
+          "endedAt": 120,
+          "durationMillis": 20,
+          "usage": {
+            "inputTokens": -1,
+            "outputTokens": 2,
+            "details": {}
+          },
+          "usageComplete": true,
+          "errorType": null
+        }
+      },
+      {
+        "eventId": "model.request.ended",
+        "type": "model.request.ended",
+        "runId": "run",
+        "stepId": "step",
+        "data": {
+          "modelCallId": "call",
+          "requestId": "request",
+          "status": "SUCCESS",
+          "endedAt": 120,
+          "durationMillis": 20,
+          "usage": {
+            "inputTokens": 4,
+            "outputTokens": 2,
+            "details": {}
+          },
+          "usageComplete": true,
+          "errorType": null
+        }
+      },
+      {
+        "eventId": "model.request.ended",
+        "type": "model.request.ended",
+        "runId": "run",
+        "stepId": "step",
+        "data": {
+          "modelCallId": "call",
+          "requestId": "request",
+          "status": "COMPLETED",
+          "endedAt": 120,
+          "durationMillis": 20,
+          "usage": {
+            "inputTokens": 4,
+            "outputTokens": 2,
+            "details": {}
+          },
+          "usageComplete": true,
+          "errorType": null,
+          "legacy": true
+        }
+      }
+    ]
+  },
+  "handsOrigins": {
+    "request": {
+      "executionId": "exec_849bf630a5ce46376717717d141ed2bc80c05ad250ca0a6a158726c7a8fd7d83",
+      "turnId": "turn-1",
+      "call": {
+        "callId": "call-1",
+        "executor": "hands",
+        "name": "job",
+        "arguments": {
+          "amount": "9223372036854775807",
+          "parts": [
+            1.25,
+            null,
+            "text"
+          ]
+        },
+        "binding": null,
+        "origin": {
+          "runId": "run-original",
+          "stepId": "step-original"
+        }
+      },
+      "thread": {
+        "session": {
+          "namespace": "tenant",
+          "sessionId": "session"
+        },
+        "threadId": "main"
+      }
+    },
+    "application": {
+      "executionId": "exec_849bf630a5ce46376717717d141ed2bc80c05ad250ca0a6a158726c7a8fd7d83",
+      "appliedAt": {
+        "runId": "run-next",
+        "stepId": "step-resumed"
+      }
+    },
+    "invalidRequests": [
+      {
+        "executionId": "exec_849bf630a5ce46376717717d141ed2bc80c05ad250ca0a6a158726c7a8fd7d83",
+        "turnId": "turn-1",
+        "call": {
+          "callId": "call-1",
+          "executor": "hands",
+          "name": "job",
+          "arguments": {
+            "amount": "9223372036854775807",
+            "parts": [
+              1.25,
+              null,
+              "text"
+            ]
+          },
+          "binding": null
+        },
+        "thread": {
+          "session": {
+            "namespace": "tenant",
+            "sessionId": "session"
+          },
+          "threadId": "main"
+        }
+      },
+      {
+        "executionId": "exec_849bf630a5ce46376717717d141ed2bc80c05ad250ca0a6a158726c7a8fd7d83",
+        "turnId": "turn-1",
+        "call": {
+          "callId": "call-1",
+          "executor": "hands",
+          "name": "job",
+          "arguments": {
+            "amount": "9223372036854775807",
+            "parts": [
+              1.25,
+              null,
+              "text"
+            ]
+          },
+          "binding": null,
+          "origin": {
+            "runId": null,
+            "stepId": "step"
+          }
+        },
+        "thread": {
+          "session": {
+            "namespace": "tenant",
+            "sessionId": "session"
+          },
+          "threadId": "main"
+        }
+      }
+    ]
+  },
+  "delegation": {
+    "request": {
+      "version": "durable.v1",
+      "operation": "delegate",
+      "payload": {
+        "thread": {
+          "session": {
+            "namespace": "tenant",
+            "sessionId": "session"
+          },
+          "threadId": "main"
+        },
+        "request": {
+          "executionId": "exec_849bf630a5ce46376717717d141ed2bc80c05ad250ca0a6a158726c7a8fd7d83",
+          "turnId": "turn-1",
+          "call": {
+            "callId": "call-1",
+            "executor": "hands",
+            "name": "job",
+            "arguments": {
+              "amount": "9223372036854775807",
+              "parts": [
+                1.25,
+                null,
+                "text"
+              ]
+            },
+            "binding": null,
+            "origin": {
+              "runId": "run-original",
+              "stepId": "step-original"
+            }
+          },
+          "thread": {
+            "session": {
+              "namespace": "tenant",
+              "sessionId": "session"
+            },
+            "threadId": "main"
+          }
+        },
+        "target": {
+          "child": {
+            "key": {
+              "session": {
+                "namespace": "tenant",
+                "sessionId": "session"
+              },
+              "threadId": "child"
+            },
+            "binding": {
+              "harness": "child",
+              "definitionVersion": "v1",
+              "stateVersion": "v1"
+            }
+          },
+          "input": {
+            "prompt": "work"
+          }
+        }
+      }
+    },
+    "view": {
+      "parent": {
+        "executionId": "exec_849bf630a5ce46376717717d141ed2bc80c05ad250ca0a6a158726c7a8fd7d83",
+        "turnId": "turn-1",
+        "call": {
+          "callId": "call-1",
+          "executor": "hands",
+          "name": "job",
+          "arguments": {
+            "amount": "9223372036854775807",
+            "parts": [
+              1.25,
+              null,
+              "text"
+            ]
+          },
+          "binding": null,
+          "origin": {
+            "runId": "run-original",
+            "stepId": "step-original"
+          }
+        },
+        "thread": {
+          "session": {
+            "namespace": "tenant",
+            "sessionId": "session"
+          },
+          "threadId": "main"
+        }
+      },
+      "child": {
+        "thread": {
+          "session": {
+            "namespace": "tenant",
+            "sessionId": "session"
+          },
+          "threadId": "child"
+        },
+        "turnId": "child-turn"
+      },
+      "cancelRequested": false
+    },
+    "cancelled": {
+      "parent": {
+        "executionId": "exec_849bf630a5ce46376717717d141ed2bc80c05ad250ca0a6a158726c7a8fd7d83",
+        "turnId": "turn-1",
+        "call": {
+          "callId": "call-1",
+          "executor": "hands",
+          "name": "job",
+          "arguments": {
+            "amount": "9223372036854775807",
+            "parts": [
+              1.25,
+              null,
+              "text"
+            ]
+          },
+          "binding": null,
+          "origin": {
+            "runId": "run-original",
+            "stepId": "step-original"
+          }
+        },
+        "thread": {
+          "session": {
+            "namespace": "tenant",
+            "sessionId": "session"
+          },
+          "threadId": "main"
+        }
+      },
+      "child": null,
+      "cancelRequested": true
+    },
+    "invalid": {
+      "parent": {
+        "executionId": "exec_849bf630a5ce46376717717d141ed2bc80c05ad250ca0a6a158726c7a8fd7d83",
+        "turnId": "turn-1",
+        "call": {
+          "callId": "call-1",
+          "executor": "hands",
+          "name": "job",
+          "arguments": {
+            "amount": "9223372036854775807",
+            "parts": [
+              1.25,
+              null,
+              "text"
+            ]
+          },
+          "binding": null,
+          "origin": {
+            "runId": "run-original",
+            "stepId": "step-original"
+          }
+        },
+        "thread": {
+          "session": {
+            "namespace": "tenant",
+            "sessionId": "session"
+          },
+          "threadId": "main"
+        }
+      },
+      "child": null,
+      "cancelRequested": false
+    }
+  }
+}

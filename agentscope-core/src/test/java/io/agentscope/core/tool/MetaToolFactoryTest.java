@@ -20,6 +20,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.agentscope.core.agent.CapabilitySurface;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
@@ -97,9 +98,13 @@ class MetaToolFactoryTest {
     }
 
     private static RuntimeContext runtimeContext(ToolContextState tcs) {
-        return RuntimeContext.builder()
-                .agentState(AgentState.builder().toolContext(tcs).build())
-                .build();
+        RuntimeContext rc =
+                RuntimeContext.builder()
+                        .agentState(AgentState.builder().toolContext(tcs).build())
+                        .build();
+        // Direct-execution tests bypass the agent call() entry; seed the grant surface.
+        rc.put(CapabilitySurface.class, CapabilitySurface.ALLOW_ALL);
+        return rc;
     }
 
     private static String text(ToolResultBlock result) {
@@ -610,15 +615,19 @@ class MetaToolFactoryTest {
         Map<String, Object> input = new HashMap<>();
         input.put("to_activate", List.of("analytics"));
 
-        // Act - no runtime context (rc == null → no per-session tool context)
+        // Act - no runtime context (rc == null → no per-session state to write to)
         ToolResultBlock result = callTool(metaTool, input, (RuntimeContext) null);
 
-        // Assert - fast fail, never mutate the shared group manager
+        // Assert - fast fail on the per-session guard, never mutate the shared group
+        // manager (a missing surface means unrestricted: the direct path is trusted)
         assertNotNull(result);
         assertEquals(ToolResultState.ERROR, result.getState());
         String resultText = text(result);
         assertTrue(resultText.contains("Error:"));
-        assertTrue(resultText.contains("requires a per-session runtime context"));
+        assertTrue(
+                resultText.contains("requires a per-session runtime context"),
+                "the per-session branch fails fast when no runtime context is present: "
+                        + resultText);
         assertFalse(groupManager.getToolGroup("analytics").isActive());
     }
 

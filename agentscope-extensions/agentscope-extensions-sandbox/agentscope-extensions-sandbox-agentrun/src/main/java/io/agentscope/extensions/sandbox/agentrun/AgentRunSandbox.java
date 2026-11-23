@@ -177,7 +177,7 @@ public class AgentRunSandbox extends AbstractBaseSandbox {
                 "import base64,pathlib,subprocess; d="
                         + jsonLiteral(root)
                         + "; raw=base64.standard_b64decode(pathlib.Path('/tmp/agentscope-ws.b64').read_text());"
-                        + " subprocess.run(['tar','xf','-','-C',d],input=raw,check=True)";
+                        + " subprocess.run(['tar','xpf','-','-C',d],input=raw,check=True)";
         AgentRunMcpChannel.ExecResult finRes =
                 mcp.exec("python3 -c " + shellSingleQuote(pyFin), null, TAR_TIMEOUT_SECONDS);
         if (finRes.exitCode != 0) {
