@@ -99,6 +99,7 @@ class AgentSpawnToolPermissionTest {
                                                         .build()),
                                         "worker",
                                         null,
+                                        true,
                                         null,
                                         null,
                                         null)
@@ -191,6 +192,7 @@ class AgentSpawnToolPermissionTest {
                                         parentState(parentPermissions),
                                         "worker",
                                         null,
+                                        true,
                                         null,
                                         null,
                                         null)
@@ -247,6 +249,7 @@ class AgentSpawnToolPermissionTest {
                                                         .build()),
                                         "worker",
                                         null,
+                                        true,
                                         null,
                                         null,
                                         null)
@@ -295,6 +298,7 @@ class AgentSpawnToolPermissionTest {
                                         parentState,
                                         "worker",
                                         null,
+                                        true,
                                         "persistent-worker",
                                         null,
                                         null)
@@ -313,6 +317,7 @@ class AgentSpawnToolPermissionTest {
                         parentState,
                         "worker",
                         null,
+                        true,
                         "persistent-worker",
                         null,
                         null)
@@ -322,6 +327,7 @@ class AgentSpawnToolPermissionTest {
                         parentState,
                         "worker",
                         null,
+                        true,
                         "persistent-worker",
                         null,
                         null)

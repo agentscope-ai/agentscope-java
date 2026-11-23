@@ -137,6 +137,9 @@ class RocketMqExecutionTest {
     /** Redelivery window for the fake broker; it has to stay well above consumer latency. */
     static final long ACK_TIMEOUT_MILLIS = 1000;
 
+    /** Shared await budget for every {@link #await} poll in this class; see {@link #waitUntil}. */
+    static final long AWAIT_DEADLINE_SECONDS = 30;
+
     static final ClientServiceProvider FACTORY = ClientServiceProvider.loadService();
     static final RocketMqExecutionTopology.Route TOPOLOGY =
             RocketMqExecutionTopology.route(RocketMqExecutionTopology.DEFAULT_NAMESPACE, "hands");
@@ -148,33 +151,31 @@ class RocketMqExecutionTest {
                     new ToolCall("call", "hands", "echo", DurableJson.value(Map.of("value", 7)))
                             .withOrigin(new RunStepRef("brain-run", "brain-step")));
 
-    /**
-     * Shared await budget. The failure-injection scenarios ride fixed one-second broker
-     * redelivery windows that stack serially (lost command response, lost event ack), and a
-     * loaded CI runner adds scheduling delay on top of every hop — convergence is the
-     * assertion, not the speed, so the budget stays far above the redelivery floor.
-     */
-    static final Duration WAIT = Duration.ofSeconds(30);
-
     static void await(BooleanSupplier condition) throws Exception {
-        assertTrue(waitFor(condition), "Condition did not become true");
+        assertTrue(waitUntil(condition), "Condition did not become true");
     }
 
     /** Waits as long as {@link #await(BooleanSupplier)}, then fails with the caller's snapshot. */
     static void await(String what, BooleanSupplier condition, Supplier<String> diagnostics)
             throws Exception {
         assertTrue(
-                waitFor(condition),
+                waitUntil(condition),
                 () ->
                         what
                                 + " did not become true within "
-                                + WAIT.toSeconds()
+                                + AWAIT_DEADLINE_SECONDS
                                 + "s: "
                                 + diagnostics.get());
     }
 
-    private static boolean waitFor(BooleanSupplier condition) throws Exception {
-        long deadline = System.nanoTime() + WAIT.toNanos();
+    /**
+     * Recovery with injected broker failures needs far more than 10s when the runner is starved
+     * under -T1C: the turn kept progressing (modelCalls complete, acks climbing) yet missed the
+     * former 10s deadline on #4182, #4192 and #4103, and main's own run 44516464414 (2026-11-19,
+     * ubuntu-only). 30s is the repo's established deflake tier (#3726/#3774).
+     */
+    private static boolean waitUntil(BooleanSupplier condition) throws Exception {
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(AWAIT_DEADLINE_SECONDS);
         while (!condition.getAsBoolean() && System.nanoTime() < deadline) Thread.sleep(10);
         return condition.getAsBoolean();
     }
