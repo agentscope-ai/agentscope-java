@@ -16,6 +16,7 @@
 package io.agentscope.core.model;
 
 import io.agentscope.core.message.Msg;
+import io.agentscope.core.tool.search.ToolSearchMode;
 import java.util.List;
 import reactor.core.publisher.Flux;
 
@@ -33,11 +34,17 @@ public interface Model {
     Flux<ChatResponse> stream(List<Msg> messages, List<ToolSchema> tools, GenerateOptions options);
 
     /**
-     * Get model name for logging and identification.
+     * Returns the bare model name without the provider prefix — the catalog name sent to the
+     * upstream API; distinct from the full modelId ({@code providerId:modelName}).
      *
      * @return model name
      */
     String getModelName();
+
+    /** Native client-side tool loading protocol; ordinary function calling is the default. */
+    default ToolSearchMode getToolSearchMode() {
+        return ToolSearchMode.FUNCTION;
+    }
 
     /**
      * Whether this model supports native structured output ({@code response_format} with

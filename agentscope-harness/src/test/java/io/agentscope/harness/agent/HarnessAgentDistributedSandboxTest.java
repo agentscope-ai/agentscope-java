@@ -112,7 +112,7 @@ class HarnessAgentDistributedSandboxTest {
                                         .model(stubModel("ok"))
                                         .workspace(workspace)
                                         .filesystem(new RemoteFilesystemSpec(store))
-                                        .legacySessionHistory(true)
+                                        .journalEnabled(false)
                                         .build());
         assertEquals(
                 true,

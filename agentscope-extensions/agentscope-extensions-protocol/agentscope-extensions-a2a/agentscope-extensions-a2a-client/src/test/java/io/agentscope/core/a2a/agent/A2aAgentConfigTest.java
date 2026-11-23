@@ -22,12 +22,12 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 
-import io.a2a.client.config.ClientConfig;
-import io.a2a.client.transport.jsonrpc.JSONRPCTransport;
-import io.a2a.client.transport.jsonrpc.JSONRPCTransportConfig;
-import io.a2a.client.transport.spi.ClientTransport;
-import io.a2a.client.transport.spi.ClientTransportConfig;
 import java.util.Map;
+import org.a2aproject.sdk.client.config.ClientConfig;
+import org.a2aproject.sdk.client.transport.jsonrpc.JSONRPCTransport;
+import org.a2aproject.sdk.client.transport.jsonrpc.JSONRPCTransportConfig;
+import org.a2aproject.sdk.client.transport.spi.ClientTransport;
+import org.a2aproject.sdk.client.transport.spi.ClientTransportConfig;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 

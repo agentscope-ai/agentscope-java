@@ -16,13 +16,18 @@
 package io.agentscope.harness.agent.middleware;
 
 import io.agentscope.core.agent.Agent;
+import io.agentscope.core.agent.CapabilitySurface;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.skill.AgentSkill;
 import io.agentscope.core.skill.SkillFilter;
 import io.agentscope.core.skill.repository.AgentSkillRepository;
 import io.agentscope.core.skill.repository.RuntimeContextSkillRepository;
+import io.agentscope.core.skill.util.SkillFileSystemHelper;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.harness.agent.IsolationScope;
+import io.agentscope.harness.agent.context.ContextItem;
+import io.agentscope.harness.agent.context.HarnessContextBuilder;
+import io.agentscope.harness.agent.context.WorkspaceContextMaterials;
 import io.agentscope.harness.agent.skill.LazyResourceCapable;
 import io.agentscope.harness.agent.skill.SkillResources;
 import io.agentscope.harness.agent.skill.curator.SkillVisibilityFilter;
@@ -33,6 +38,7 @@ import io.agentscope.harness.agent.skill.runtime.MarketplaceStager.StageResult;
 import io.agentscope.harness.agent.skill.runtime.ShellPathPolicy;
 import io.agentscope.harness.agent.skill.runtime.SkillCatalog;
 import io.agentscope.harness.agent.skill.runtime.SkillRuntime;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.EnumSet;
@@ -40,6 +46,7 @@ import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -62,8 +69,9 @@ import reactor.core.publisher.Mono;
  *       resolved {@code filesRoot}).
  *   <li>Bind the catalog to the current {@link RuntimeContext} through {@link SkillRuntime}, which
  *       also (idempotently) registers {@code load_skill_through_path} on the runtime toolkit.
- *   <li>Render the {@code <available_skills>} prompt block and append it to the current system
- *       prompt.
+ *   <li>Render the {@code <available_skills>} block as request-only material in
+ *       {@code WorkspaceContextMaterials}. The context builder places it independently of
+ *       system instructions and other runtime material.
  * </ol>
  *
  * <p><b>Toolkit note:</b> construction registers the load tool as ungrouped before {@link
@@ -244,26 +252,56 @@ public class HarnessSkillMiddleware implements HarnessRuntimeMiddleware {
      * Pre-stages marketplace skill resources to {@code .skills-cache/} on the host workspace.
      * Intended to be called <em>before</em> sandbox start so that workspace projection picks up
      * the staged content in the same call. Safe to call multiple times — staging is idempotent
-     * (content-hash guarded).
+     * (content-hash guarded). Delegates to {@link #prestageForProjection} and discards the
+     * returned projection roots.
      *
      * @param ctx the per-call runtime context
      */
     public void prestageMarketplaceSkills(RuntimeContext ctx) {
+        prestageForProjection(ctx);
+    }
+
+    /**
+     * Pre-stages exactly like {@link #prestageMarketplaceSkills} and additionally returns this
+     * call's {@code .skills-cache} projection roots: one explicit {@code
+     * .skills-cache/<scope>/<ns>/<skill>} subtree per staged skill.
+     *
+     * <p>The returned list is authoritative for the whole cache subtree in workspace projection:
+     * directories staged by earlier calls (e.g. under a since-shrunken grant) stay on disk — the
+     * shared cache is swept only by the grace-window orphan GC, never deleted mid-flight — but
+     * are no longer projected into this call's sandbox. An empty list means nothing of the cache
+     * may project for this call.
+     *
+     * @param ctx the per-call runtime context
+     * @return the per-call cache projection roots; {@code null} when this middleware has no
+     *     stager (nothing it manages lives on disk, so projection stays configured as-is)
+     */
+    public List<String> prestageForProjection(RuntimeContext ctx) {
         if (stager == null) {
-            return;
+            return null;
         }
         if (ctx == null) {
             ctx = RuntimeContext.empty();
         }
         Map<String, RepoBound> merged = skillsForCall(ctx);
         if (merged.isEmpty()) {
-            return;
+            return List.of();
         }
         List<RepoBound> visible = applyVisibility(merged.values(), ctx);
-        List<RepoBound> enabled = applySkillFilter(visible, effectiveFilter(ctx));
-        if (!enabled.isEmpty()) {
-            stager.stage(enabled, sourceNamespaces, scopeKeyFor(ctx));
+        List<RepoBound> enabled =
+                applyCapabilityFilter(applySkillFilter(visible, effectiveFilter(ctx)), ctx);
+        if (enabled.isEmpty()) {
+            return List.of();
         }
+        Map<String, StageResult> staged = stager.stage(enabled, sourceNamespaces, scopeKeyFor(ctx));
+        List<String> roots = new ArrayList<>(staged.size());
+        for (StageResult result : staged.values()) {
+            if (result instanceof StageResult.Cached cached) {
+                roots.add(MarketplaceStager.projectionRoot(cached));
+            }
+        }
+        Collections.sort(roots);
+        return roots;
     }
 
     @Override
@@ -277,13 +315,16 @@ public class HarnessSkillMiddleware implements HarnessRuntimeMiddleware {
         Map<String, RepoBound> merged = skillsForCall(ctx);
         if (merged.isEmpty()) {
             runtime.install(SkillCatalog.empty(), ctx, agentToolkit);
+            registerSkillsMaterial(ctx, "");
             return Mono.just(currentPrompt);
         }
 
         List<RepoBound> visible = applyVisibility(merged.values(), ctx);
-        List<RepoBound> enabled = applySkillFilter(visible, effectiveFilter(ctx));
+        List<RepoBound> enabled =
+                applyCapabilityFilter(applySkillFilter(visible, effectiveFilter(ctx)), ctx);
         if (enabled.isEmpty()) {
             runtime.install(SkillCatalog.empty(), ctx, agentToolkit);
+            registerSkillsMaterial(ctx, "");
             return Mono.just(currentPrompt);
         }
 
@@ -304,6 +345,8 @@ public class HarnessSkillMiddleware implements HarnessRuntimeMiddleware {
                             bound.skill().getName(),
                             e.getMessage());
                 }
+            } else if (bound.skill().getOriginDir().isPresent()) {
+                lazy = originResources(bound.skill().getOriginDir().get());
             }
             StageResult stage = staged.getOrDefault(bound.skill().getName(), StageResult.NONE);
             String filesRoot = shellPathPolicy.resolve(bound.skill().getName(), stage);
@@ -313,18 +356,47 @@ public class HarnessSkillMiddleware implements HarnessRuntimeMiddleware {
         SkillCatalog catalog = SkillCatalog.of(entries);
         runtime.install(catalog, ctx, agentToolkit);
 
-        String append = runtime.renderPrompt(catalog, SkillFilter.all());
-        if (append == null || append.isEmpty()) {
-            return Mono.just(currentPrompt);
-        }
-        String base = currentPrompt != null ? currentPrompt : "";
-        String separator = base.isEmpty() || base.endsWith("\n") ? "" : "\n";
-        return Mono.just(base + separator + append);
+        registerSkillsMaterial(ctx, runtime.renderPrompt(catalog, SkillFilter.all()));
+        return Mono.just(currentPrompt);
+    }
+
+    /**
+     * Register the catalog as required material so skill discovery survives history compaction.
+     * A blank item replaces the previous catalog when no skills are visible.
+     */
+    private static void registerSkillsMaterial(RuntimeContext ctx, String block) {
+        WorkspaceContextMaterials.register(
+                ctx,
+                List.of(
+                        ContextItem.runtimeState(
+                                "skills",
+                                HarnessContextBuilder.SKILL_CATALOG_SOURCE_ID,
+                                true,
+                                block)));
     }
 
     // ---------------------------------------------------------------------
     //  Internals
     // ---------------------------------------------------------------------
+
+    private static SkillResources originResources(Path originDir) {
+        return new SkillResources() {
+            @Override
+            public Optional<String> read(String relativePath) {
+                return SkillFileSystemHelper.readResource(originDir, relativePath);
+            }
+
+            @Override
+            public Optional<byte[]> readBinary(String relativePath) {
+                return SkillFileSystemHelper.readResourceBinary(originDir, relativePath);
+            }
+
+            @Override
+            public List<String> list() {
+                return SkillFileSystemHelper.listResourcePaths(originDir);
+            }
+        };
+    }
 
     private Map<String, RepoBound> skillsForCall(RuntimeContext ctx) {
         return frozenSkills != null ? frozenSkills : mergeRepositories(ctx);
@@ -332,6 +404,27 @@ public class HarnessSkillMiddleware implements HarnessRuntimeMiddleware {
 
     private SkillFilter effectiveFilter(RuntimeContext ctx) {
         return builderFilter.overlay(ctx != null ? ctx.get(SkillFilter.class) : null);
+    }
+
+    /**
+     * Grant-layer skill visibility. Runs after the subclass hooks so an override cannot drop
+     * authorization filtering; the returned list feeds the prompt, the per-call catalog (the
+     * load tool's authorization boundary) and marketplace staging.
+     *
+     * <p>A missing surface means this pass never entered an agent {@code call()} (whose funnel
+     * always writes one): treat it as unrestricted — direct middleware use is trusted assembler
+     * code, the same stance as the core execution gates.
+     *
+     * @param input the skills remaining after the visibility and skill filters
+     * @param ctx the per-call runtime context carrying the grant set
+     * @return the granted subset; the input unchanged when no surface is present
+     */
+    private List<RepoBound> applyCapabilityFilter(List<RepoBound> input, RuntimeContext ctx) {
+        CapabilitySurface surface = ctx != null ? ctx.get(CapabilitySurface.class) : null;
+        if (surface == null || input.isEmpty()) {
+            return input;
+        }
+        return input.stream().filter(bound -> surface.allowsSkill(bound.skill())).toList();
     }
 
     private List<RepoBound> applySkillFilter(
@@ -355,7 +448,7 @@ public class HarnessSkillMiddleware implements HarnessRuntimeMiddleware {
      * subsequent steps (lazy resources, marketplace stage) can act on it.
      */
     private LinkedHashMap<String, RepoBound> mergeRepositories(RuntimeContext ctx) {
-        LinkedHashMap<String, RepoBound> merged = new LinkedHashMap<>();
+        LinkedHashMap<String, RepoBound> merged = new LinkedHashMap<>(); // keyed by skill name
         for (AgentSkillRepository repo : repositories) {
             List<AgentSkill> skills;
             try {

@@ -175,11 +175,13 @@ public final class JevContextCompactionExample {
                                         .build())
                         .build()) {
             var ctx = RuntimeContext.builder().userId("demo").sessionId("context-demo").build();
+            // No wall-clock ceiling: the offline stream completes deterministically, while a
+            // fixed timeout flakes on CPU-starved parallel CI runners.
             var result =
                     agent.streamEvents(history(), ctx)
                             .ofType(AgentResultEvent.class)
                             .single()
-                            .block(Duration.ofSeconds(10));
+                            .block();
             var restored =
                     archive.restore(
                                     new JevContextArchive.Scope(

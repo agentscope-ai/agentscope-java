@@ -15,9 +15,14 @@
  */
 package io.agentscope.harness.agent.middleware;
 
+import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.Agent;
+import io.agentscope.core.agent.AgentBase;
+import io.agentscope.core.agent.RunOutcome;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.event.AgentEvent;
+import io.agentscope.core.journal.InvocationRecorder;
+import io.agentscope.core.journal.JournalException;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.middleware.AgentInput;
 import io.agentscope.core.model.Model;
@@ -42,16 +47,19 @@ import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
+import reactor.util.context.ContextView;
 
 /**
  * Middleware that triggers memory extraction at the end of each agent call.
  *
- * <p>Runs in {@link #onAgent}'s {@code doOnComplete} so long-term memories are extracted and
- * persisted after every call, even when conversation compaction was not triggered during that
- * call. The flush is <em>fire-and-forget</em>: the agent stream completes immediately while the
- * extraction runs on a background scheduler. When {@link CompactionMiddleware} is active, it
- * handles memory extraction for the messages it summarizes; this middleware covers the remaining
- * tail of messages that were kept verbatim.
+ * <p>Runs on the agent stream's completion signal ({@link #onAgent}) so long-term memories are
+ * extracted and persisted after every call, even when conversation compaction was not triggered
+ * during that call. The flush is <em>fire-and-forget</em>: the agent stream completes immediately
+ * while the extraction runs on a background scheduler. The completing subscription's Reactor
+ * context is replayed on that background subscription, so context-scoped instrumentation (token
+ * metering, tracing) on the model call sees the same context as the turn. When
+ * {@link CompactionMiddleware} is active, it handles memory extraction for the messages it
+ * summarizes; this middleware covers the remaining tail of messages that were kept verbatim.
  *
  * <p>Flush is gated by a {@link MemoryConfig.FlushTrigger}:
  * <ul>
@@ -84,6 +92,9 @@ import reactor.core.scheduler.Schedulers;
  * </ul>
  */
 public class MemoryFlushMiddleware implements HarnessRuntimeMiddleware {
+
+    /** Hosted executions finish extraction while their native writer and authorization remain valid. */
+    public static final String INLINE_CONTEXT_KEY = "agentscope.memory.inlineFlush";
 
     private static final Logger log = LoggerFactory.getLogger(MemoryFlushMiddleware.class);
 
@@ -153,7 +164,7 @@ public class MemoryFlushMiddleware implements HarnessRuntimeMiddleware {
     /** Narrow declaration: subclasses overriding more hooks must extend this set. */
     @Override
     public Set<ExtensionPoint> activePoints() {
-        return EnumSet.of(ExtensionPoint.ON_AGENT);
+        return EnumSet.of(ExtensionPoint.ON_AGENT, ExtensionPoint.ON_AGENT_FINISH);
     }
 
     @Override
@@ -163,10 +174,30 @@ public class MemoryFlushMiddleware implements HarnessRuntimeMiddleware {
             AgentInput input,
             Function<AgentInput, Flux<AgentEvent>> next) {
         final RuntimeContext rc = ctx != null ? ctx : RuntimeContext.empty();
-        return next.apply(input).doOnComplete(() -> scheduleFlush(agent, rc));
+        if (Boolean.TRUE.equals(rc.get(INLINE_CONTEXT_KEY))) return next.apply(input);
+        // Capture the completing subscription's context so the fire-and-forget flush can replay
+        // context-scoped instrumentation such as token usage and tracing.
+        return next.apply(input)
+                .doOnEach(
+                        signal -> {
+                            if (signal.isOnComplete()) {
+                                scheduleFlush(agent, rc, signal.getContextView());
+                            }
+                        });
     }
 
-    private void scheduleFlush(Agent agent, RuntimeContext rc) {
+    @Override
+    public Mono<Void> onAgentFinish(Agent agent, RuntimeContext rc, Msg result) {
+        if (!Boolean.TRUE.equals(rc.get(INLINE_CONTEXT_KEY))
+                || InvocationRecorder.from(rc) == null
+                || RunOutcome.fromResult(result).status() != RunOutcome.Status.COMPLETED)
+            return Mono.empty();
+        return Mono.defer(() -> doFlush(agent, rc))
+                .subscribeOn(Schedulers.boundedElastic())
+                .contextWrite(context -> context.put(AgentBase.RUNTIME_CONTEXT_KEY, rc));
+    }
+
+    private void scheduleFlush(Agent agent, RuntimeContext rc, ContextView contextView) {
         // The in-flight slot is acquired at dispatch rather than inside the task: a queued
         // flush must already be counted, or a quiescence check could observe an empty
         // in-flight set while work is still pending.
@@ -177,8 +208,11 @@ public class MemoryFlushMiddleware implements HarnessRuntimeMiddleware {
         // and session ids, whose flushes must not displace each other.
         ConversationKey conversationKey =
                 new ConversationKey(
-                        agent, blankToEmpty(rc.getUserId()), blankToEmpty(rc.getSessionId()));
-        Runnable task = () -> runFlush(key, agent, rc);
+                        agent,
+                        blankToEmpty(rc.getUserId()),
+                        blankToEmpty(rc.getSessionId()),
+                        rc.getThreadId());
+        Runnable task = () -> runFlush(key, agent, rc, contextView);
         Runnable[] starter = new Runnable[1];
         Runnable[] displaced = new Runnable[1];
         FLUSH_QUEUES.compute(
@@ -207,9 +241,10 @@ public class MemoryFlushMiddleware implements HarnessRuntimeMiddleware {
         }
     }
 
-    private void runFlush(String key, Agent agent, RuntimeContext rc) {
+    private void runFlush(String key, Agent agent, RuntimeContext rc, ContextView contextView) {
         Mono.defer(() -> doFlush(agent, rc))
                 .subscribeOn(Schedulers.boundedElastic())
+                .contextWrite(context -> context.putAll(contextView))
                 .doFinally(
                         signal -> {
                             MemoryBackgroundTasks.end();
@@ -272,16 +307,37 @@ public class MemoryFlushMiddleware implements HarnessRuntimeMiddleware {
             return Mono.empty();
         }
 
+        Model effective = effectiveFlushModel(agent, rc);
+        if (effective == null) {
+            // No dedicated model and the agent cannot resolve a per-call one (non-ReActAgent
+            // direct construction): nothing to extract memories with.
+            return Mono.empty();
+        }
         MemoryFlushManager flushManager =
-                new MemoryFlushManager(workspaceManager, model, flushPrompt);
+                new MemoryFlushManager(workspaceManager, effective, flushPrompt);
         return flushManager
                 .flushMemories(rc, messages)
                 .doOnSuccess(v -> log.debug("Memory flush completed"))
                 .onErrorResume(
                         e -> {
+                            if (Boolean.TRUE.equals(rc.get(INLINE_CONTEXT_KEY))
+                                    && JournalException.causedBy(e)) return Mono.error(e);
                             log.warn("Memory flush failed: {}", e.getMessage());
                             return Mono.empty();
                         });
+    }
+
+    /**
+     * Resolves the model used for memory extraction: a dedicated flush model when configured,
+     * else the executing {@link ReActAgent}'s per-call model (its {@link RuntimeContext} model id
+     * when set, else its build-time default), so flush follows the model actually serving the
+     * conversation. Package-private for unit testing.
+     */
+    Model effectiveFlushModel(Agent agent, RuntimeContext rc) {
+        if (model != null) {
+            return model;
+        }
+        return agent instanceof ReActAgent react ? react.getModel(rc) : null;
     }
 
     /**
@@ -318,8 +374,8 @@ public class MemoryFlushMiddleware implements HarnessRuntimeMiddleware {
         return "memory-flush:" + isolationScope.name() + ":" + timerKeyFor(rc);
     }
 
-    /** The conversation a queued flush reads when it executes: agent instance, user, session. */
-    private record ConversationKey(Agent agent, String userId, String sessionId) {}
+    /** Thread-private context; sibling Threads may share memory files but not queued flush work. */
+    private record ConversationKey(Agent agent, String userId, String sessionId, String threadId) {}
 
     /**
      * Normalises {@code null} and blank identifiers to {@code ""} so absent ids share one slot.

@@ -132,6 +132,85 @@ public final class PermissionContextState {
         return askRules;
     }
 
+    /**
+     * Returns a copy of this context with the given rules appended to the
+     * matching behavior tables. Used to persist runtime-accepted rules
+     * (e.g. from a {@link io.agentscope.core.event.ConfirmResult}) into the
+     * session's {@code AgentState} so they survive across calls. Null
+     * entries and PASSTHROUGH rules are ignored; this instance is never
+     * mutated.
+     *
+     * @param rules rules to append; may be null or empty
+     * @return a new context containing this context's rules plus {@code rules}
+     */
+    public PermissionContextState withAddedRules(List<PermissionRule> rules) {
+        if (rules == null || rules.isEmpty()) {
+            return this;
+        }
+        // Merge into mutable copies of the current tables, skipping rules
+        // already present — re-accepting an equivalent rule (including a
+        // null vs empty ruleContent, which ruleMatches treats the same)
+        // must not grow the persisted tables without bound.
+        Map<String, List<PermissionRule>> allow = mutableCopy(allowRules);
+        Map<String, List<PermissionRule>> deny = mutableCopy(denyRules);
+        Map<String, List<PermissionRule>> ask = mutableCopy(askRules);
+        for (PermissionRule rule : rules) {
+            if (rule == null) {
+                continue;
+            }
+            switch (rule.behavior()) {
+                case ALLOW -> addIfAbsent(allow, rule);
+                case DENY -> addIfAbsent(deny, rule);
+                case ASK -> addIfAbsent(ask, rule);
+                case PASSTHROUGH -> {
+                    // PASSTHROUGH rules are not persisted.
+                }
+            }
+        }
+        Builder b = builder().mode(mode);
+        workingDirectories.forEach(b::addWorkingDirectory);
+        copyInto(allow, b::addAllowRule);
+        copyInto(deny, b::addDenyRule);
+        copyInto(ask, b::addAskRule);
+        return b.build();
+    }
+
+    /**
+     * Appends the rule to its behavior table unless the table already
+     * contains an equivalent rule. Equivalence normalizes a null
+     * {@code ruleContent} to the empty string: the two are equivalent at
+     * evaluation time ({@code ruleMatches} treats both as unconditional),
+     * so the de-duplication bound must treat them as identical too.
+     */
+    static void addIfAbsent(Map<String, List<PermissionRule>> table, PermissionRule rule) {
+        List<PermissionRule> bucket =
+                table.computeIfAbsent(rule.toolName(), k -> new ArrayList<>());
+        for (PermissionRule existing : bucket) {
+            if (sameRule(existing, rule)) {
+                return;
+            }
+        }
+        bucket.add(rule);
+    }
+
+    private static boolean sameRule(PermissionRule a, PermissionRule b) {
+        return a.toolName().equals(b.toolName())
+                && a.behavior() == b.behavior()
+                && a.source().equals(b.source())
+                && normalizedContent(a).equals(normalizedContent(b));
+    }
+
+    private static String normalizedContent(PermissionRule rule) {
+        return rule.ruleContent() == null ? "" : rule.ruleContent();
+    }
+
+    private static Map<String, List<PermissionRule>> mutableCopy(
+            Map<String, List<PermissionRule>> source) {
+        Map<String, List<PermissionRule>> out = new LinkedHashMap<>();
+        source.forEach((k, v) -> out.put(k, new ArrayList<>(v)));
+        return out;
+    }
+
     public static Builder builder() {
         return new Builder();
     }

@@ -19,9 +19,14 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.mockConstruction;
+import static org.mockito.Mockito.mockStatic;
 import static org.mockito.Mockito.when;
 
 import com.google.common.util.concurrent.Futures;
@@ -47,7 +52,10 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.mockito.MockedConstruction;
+import org.mockito.MockedStatic;
 import reactor.test.StepVerifier;
 
 /**
@@ -125,6 +133,57 @@ class QdrantStoreTest {
                             .dimensions(TEST_DIMENSIONS)
                             .build();
                 });
+    }
+
+    @ParameterizedTest(name = "{0} -> {1}:{2}")
+    @CsvSource({
+        "http://localhost:6333, localhost, 6334",
+        "https://qdrant.example.com, qdrant.example.com, 6334",
+        "http://127.0.0.1:16334, 127.0.0.1, 16334",
+        "localhost:6334, localhost, 6334",
+        "localhost, localhost, 6334",
+        "qdrant-0.svc:7334, qdrant-0.svc, 7334",
+        "127.0.0.1:6334, 127.0.0.1, 6334",
+        "10.0.0.5:7334, 10.0.0.5, 7334",
+        "127.0.0.1, 127.0.0.1, 6334",
+        "'[::1]:6334', '[::1]', 6334",
+        "my_host:6334, my_host, 6334",
+    })
+    @DisplayName("Should connect to the host and port named by the location")
+    void testLocationParsing(String location, String expectedHost, int expectedPort)
+            throws Exception {
+        QdrantGrpcClient.Builder grpcBuilder = mock(QdrantGrpcClient.Builder.class);
+        when(grpcBuilder.build()).thenReturn(mock(QdrantGrpcClient.class));
+
+        try (MockedStatic<QdrantGrpcClient> grpcStatic = mockStatic(QdrantGrpcClient.class);
+                MockedConstruction<QdrantClient> ignoredClient =
+                        mockConstruction(
+                                QdrantClient.class,
+                                (mock, context) ->
+                                        when(mock.collectionExistsAsync(anyString()))
+                                                .thenReturn(Futures.immediateFuture(true)))) {
+            grpcStatic
+                    .when(
+                            () ->
+                                    QdrantGrpcClient.newBuilder(
+                                            anyString(), anyInt(), anyBoolean(), anyBoolean()))
+                    .thenReturn(grpcBuilder);
+
+            store =
+                    QdrantStore.builder()
+                            .location(location)
+                            .collectionName(TEST_COLLECTION)
+                            .dimensions(TEST_DIMENSIONS)
+                            .build();
+
+            grpcStatic.verify(
+                    () ->
+                            QdrantGrpcClient.newBuilder(
+                                    eq(expectedHost),
+                                    eq(expectedPort),
+                                    anyBoolean(),
+                                    anyBoolean()));
+        }
     }
 
     @Test

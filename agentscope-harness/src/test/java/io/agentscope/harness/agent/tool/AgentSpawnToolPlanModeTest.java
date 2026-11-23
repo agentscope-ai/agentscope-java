@@ -58,6 +58,7 @@ class AgentSpawnToolPlanModeTest {
                         fixture.parentState(),
                         "worker",
                         null,
+                        true,
                         "persistent-worker",
                         null,
                         null)
@@ -66,7 +67,10 @@ class AgentSpawnToolPlanModeTest {
         String childSessionId =
                 "sub-"
                         + AgentSpawnTool.deterministicHash(
-                                fixture.context().getSessionId(), "worker", "persistent-worker");
+                                fixture.context().getUserId(),
+                                fixture.context().getSessionId(),
+                                "worker",
+                                "persistent-worker");
         assertFalse(reused.isPlanModeActive(fixture.context().getUserId(), childSessionId));
 
         fixture.parentState().getPlanModeContext().setPlanActive(true);
@@ -76,6 +80,7 @@ class AgentSpawnToolPlanModeTest {
                         fixture.parentState(),
                         "worker",
                         null,
+                        true,
                         "persistent-worker",
                         null,
                         null)
@@ -98,6 +103,7 @@ class AgentSpawnToolPlanModeTest {
                                         fixture.parentState(),
                                         "worker",
                                         null,
+                                        true,
                                         "persistent-worker",
                                         null,
                                         null)

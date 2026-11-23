@@ -282,11 +282,12 @@ class ContextSourceTest {
                             .anyMatch(
                                     m ->
                                             m.getTextContent()
-                                                    .contains(session + "&lt;/context_item&gt;")));
+                                                    .contains(session + "<\\/context_item>")));
             assertFalse(
                     prepared.messages().stream()
                             .filter(m -> m.getRole() == MsgRole.SYSTEM)
-                            .anyMatch(m -> m.getTextContent().contains(session + "&lt;")));
+                            .anyMatch(
+                                    m -> m.getTextContent().contains(session + "</context_item>")));
         }
         assertEquals(2, calls.get());
         assertTrue(state.contextMutable().isEmpty());
