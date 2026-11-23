@@ -269,6 +269,8 @@ The estimator cannot exactly predict every provider's token accounting. When nat
 
 In snapshot mode (`journalEnabled(false)`), Harness saves the compacted context and retries the call once. Calls made with a structured output class or `JsonNode` schema retain that output format during recovery, so a successful response remains available through `Msg.getStructuredData(...)`.
 
+Snapshot overflow recovery uses the dedicated summary model configured with `CompactionConfig.model(...)`. When no summary model is configured, it uses the Agent's build-time default model rather than a model selected for the current call.
+
 <span id="letting-the-agent-inspect-its-own-history" />
 
 ## Continue the loop and retain the right state

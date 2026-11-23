@@ -311,6 +311,8 @@ builder.compaction(CompactionConfig.builder()
 
 在快照模式（`journalEnabled(false)`）下，Harness 会保存压缩后的上下文，再重试调用一次。使用结构化输出类型或 `JsonNode` schema 发起的调用会在恢复时保留该输出格式，成功返回后仍可通过 `Msg.getStructuredData(...)` 读取结果。
 
+快照模式的超限恢复会使用通过 `CompactionConfig.model(...)` 配置的专用摘要模型。未配置摘要模型时，它使用构建 Agent 时指定的默认模型，而不是为当前调用选择的模型。
+
 <span id="什么时候刷新" />
 
 ## 继续任务：哪些信息会重新读取

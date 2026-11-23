@@ -215,6 +215,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
     private final WorkspaceIndex ownedWorkspaceIndex;
     private final SandboxContext defaultSandboxContext;
     private final CompactionMiddleware compactionHook;
+    private final Model compactionModel;
     private final SandboxLifecycleMiddleware sandboxLifecycleMw;
 
     /** Per-user grant resolver; {@code null} = no trimming at the harness layer. */
@@ -252,6 +253,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
             WorkspaceIndex ownedWorkspaceIndex,
             SandboxContext defaultSandboxContext,
             CompactionMiddleware compactionHook,
+            Model compactionModel,
             SandboxLifecycleMiddleware sandboxLifecycleMw,
             CapabilityResolver capabilityResolver,
             List<AgentSkillRepository> skillRepositories,
@@ -272,6 +274,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
         this.ownedWorkspaceIndex = ownedWorkspaceIndex;
         this.defaultSandboxContext = defaultSandboxContext;
         this.compactionHook = compactionHook;
+        this.compactionModel = compactionModel;
         this.sandboxLifecycleMw = sandboxLifecycleMw;
         this.capabilityResolver = capabilityResolver;
         this.skillRepositories =
@@ -1395,11 +1398,11 @@ public class HarnessAgent implements Agent, AutoCloseable {
                 memoryConfig.flushPrompt() != null
                         ? memoryConfig.flushPrompt()
                         : MemoryFlushManager.DEFAULT_FLUSH_PROMPT;
-        // Overflow recovery summarizes through the agent's build-time default model, never the
-        // per-call model that just overflowed (same rule as CompactionMiddleware#overflowRecovery).
+        // Retain the dedicated summary model when configured; otherwise keep the build-time
+        // default rather than the per-call model that just overflowed.
         MemoryFlushManager fm =
-                new MemoryFlushManager(workspaceManager, getModel(), effectiveFlushPrompt);
-        ConversationCompactor compactor = new ConversationCompactor(getModel(), fm);
+                new MemoryFlushManager(workspaceManager, compactionModel, effectiveFlushPrompt);
+        ConversationCompactor compactor = new ConversationCompactor(compactionModel, fm);
 
         return compactor
                 .compactIfNeeded(ctx, allMsgs, forceConfig, agentId, sessionId)
@@ -3187,8 +3190,9 @@ public class HarnessAgent implements Agent, AutoCloseable {
                                 periodicGate));
             }
             CompactionMiddleware compactionHook = null;
+            Model compactionModel = null;
             if (!disableCompaction && compactionConfig != null) {
-                Model compactionModel =
+                compactionModel =
                         compactionConfig.getModel() != null ? compactionConfig.getModel() : model;
                 if (compactionModel != null) {
                     // The middleware receives the dedicated config model only (may be null):
@@ -3565,6 +3569,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
                     workspaceIndex,
                     defaultSandboxContext,
                     compactionHook,
+                    compactionModel,
                     sandboxLifecycleMw,
                     capabilityResolver,
                     orderedSkillRepos,
