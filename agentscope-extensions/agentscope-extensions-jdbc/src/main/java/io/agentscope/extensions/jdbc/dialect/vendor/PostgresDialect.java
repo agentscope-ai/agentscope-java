@@ -58,7 +58,7 @@ public class PostgresDialect extends AbstractJdbcDialect {
                         + storeTableName()
                         + " ("
                         + "  namespace_path VARCHAR(2048) NOT NULL,"
-                        + "  item_key       VARCHAR(255)  NOT NULL,"
+                        + "  item_key       VARCHAR(2048) NOT NULL,"
                         + "  value_json     TEXT          NOT NULL,"
                         + "  version        BIGINT        NOT NULL,"
                         + "  updated_at     BIGINT        NOT NULL,"

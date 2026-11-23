@@ -150,6 +150,11 @@ public class TaskUpdateEventHandler implements ClientEventHandler<TaskUpdateEven
                         "[{}] A2aAgent task status updated to: {}.",
                         currentRequestId,
                         taskStatus.state());
+                if (null != taskStatus.state() && taskStatus.state().isInterrupted()) {
+                    // The stream may stay open while the task waits, so end the call here.
+                    TaskEventHandler.completeWaiting(event.taskId(), taskStatus, context);
+                    return;
+                }
                 if (null == taskStatus.message()) {
                     return;
                 }

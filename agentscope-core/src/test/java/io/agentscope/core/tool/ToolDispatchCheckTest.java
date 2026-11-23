@@ -27,11 +27,11 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.core.journal.InvocationRecorder;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolResultState;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ExecutionConfig;
-import io.agentscope.core.session.SessionRecorder;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
@@ -194,13 +194,13 @@ class ToolDispatchCheckTest {
         AtomicBoolean stopped = new AtomicBoolean();
         AtomicInteger calls = new AtomicInteger();
         Sinks.Empty<Void> persisted = Sinks.empty();
-        SessionRecorder recorder = mock(SessionRecorder.class);
+        InvocationRecorder recorder = mock(InvocationRecorder.class);
         when(recorder.record(anyString(), any())).thenReturn(Mono.empty());
         when(recorder.record(eq("tool/dispatch"), any()))
                 .thenReturn(persisted.asMono().doOnSubscribe(subscription -> stopped.set(true)));
         when(recorder.actionId(anyString())).thenReturn("action");
         RuntimeContext context =
-                RuntimeContext.builder().put(SessionRecorder.CONTEXT_KEY, recorder).build();
+                RuntimeContext.builder().put(InvocationRecorder.CONTEXT_KEY, recorder).build();
         ToolkitConfig.Builder config =
                 ToolkitConfig.builder()
                         .beforeToolCall(

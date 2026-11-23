@@ -37,28 +37,36 @@ import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.AgentRun;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.event.AgentEvent;
+import io.agentscope.core.journal.InvocationRecorder;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.ToolResultBlock;
+import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.middleware.MiddlewareBase;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.ExecutionConfig;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.Model;
+import io.agentscope.core.model.ModelRegistry;
 import io.agentscope.core.model.ToolSchema;
-import io.agentscope.core.session.SessionHistoryMode;
-import io.agentscope.core.session.SessionRecorder;
+import io.agentscope.core.permission.PermissionBehavior;
+import io.agentscope.core.permission.PermissionContextState;
+import io.agentscope.core.permission.PermissionRule;
 import io.agentscope.core.shutdown.GracefulShutdownMiddleware;
 import io.agentscope.core.skill.SkillFilter;
 import io.agentscope.core.state.AgentState;
 import io.agentscope.core.state.AgentStateStore;
 import io.agentscope.core.state.ConflictPolicy;
+import io.agentscope.core.state.InMemoryAgentStateStore;
 import io.agentscope.core.tool.AgentTool;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.core.tool.ToolkitConfig;
 import io.agentscope.harness.agent.artifact.ArtifactDeliveryResult;
+import io.agentscope.harness.agent.context.ContextBlock;
 import io.agentscope.harness.agent.context.ContextPolicy;
 import io.agentscope.harness.agent.context.ContextSelectionPolicy;
+import io.agentscope.harness.agent.context.ContextSource;
 import io.agentscope.harness.agent.context.ContextSources;
 import io.agentscope.harness.agent.context.HarnessContextBuilder;
 import io.agentscope.harness.agent.context.TaskContextOptions;
@@ -69,6 +77,7 @@ import io.agentscope.harness.agent.filesystem.local.LocalFilesystem;
 import io.agentscope.harness.agent.filesystem.remote.store.InMemoryStore;
 import io.agentscope.harness.agent.filesystem.sandbox.SandboxBackedFilesystem;
 import io.agentscope.harness.agent.filesystem.spec.RemoteFilesystemSpec;
+import io.agentscope.harness.agent.journal.WorkspaceThreadJournalStore;
 import io.agentscope.harness.agent.memory.MemoryConfig;
 import io.agentscope.harness.agent.memory.compaction.CompactionConfig;
 import io.agentscope.harness.agent.middleware.AgentTraceMiddleware;
@@ -77,7 +86,6 @@ import io.agentscope.harness.agent.middleware.WorkspaceContextMiddleware;
 import io.agentscope.harness.agent.sandbox.SandboxAcquireResult;
 import io.agentscope.harness.agent.sandbox.SandboxContext;
 import io.agentscope.harness.agent.sandbox.SandboxException;
-import io.agentscope.harness.agent.session.WorkspaceSessionLogStore;
 import io.agentscope.harness.agent.subagent.AgentSpecLoader;
 import io.agentscope.harness.agent.subagent.SubagentDeclaration;
 import io.agentscope.harness.agent.subagent.WorkspaceMode;
@@ -89,8 +97,10 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.Comparator;
+import java.util.EnumSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -176,7 +186,7 @@ class HarnessAgentTest {
                         .toList();
         assertFalse(toolNames.contains("memory_search"));
         assertFalse(toolNames.contains("memory_get"));
-        assertFalse(toolNames.contains("session_search"));
+        assertFalse(toolNames.contains("thread_search"));
     }
 
     @Test
@@ -216,7 +226,7 @@ class HarnessAgentTest {
         try (HarnessAgent agent =
                 HarnessAgent.builder()
                         .name("t")
-                        .sessionHistoryMode(SessionHistoryMode.LEGACY)
+                        .journalEnabled(false)
                         .model(stubModel("ok"))
                         .workspace(workspace)
                         .abstractFilesystem(new LocalFilesystem(workspace))
@@ -229,6 +239,37 @@ class HarnessAgentTest {
 
             assertNotSame(target, delegate.getAgentState("u1", "sessA"));
             assertSame(other, delegate.getAgentState("u1", "sessB"));
+        }
+    }
+
+    @Test
+    void replacePermissionContext_delegatesTargetedSessionToReActAgent() throws Exception {
+        Files.createDirectories(workspace);
+        try (HarnessAgent agent =
+                HarnessAgent.builder()
+                        .name("t")
+                        .model(stubModel("ok"))
+                        .workspace(workspace)
+                        .abstractFilesystem(new LocalFilesystem(workspace))
+                        .build()) {
+            PermissionContextState replacement =
+                    PermissionContextState.builder()
+                            .addDenyRule(
+                                    "blocked_tool",
+                                    new PermissionRule(
+                                            "blocked_tool",
+                                            null,
+                                            PermissionBehavior.DENY,
+                                            "role-policy"))
+                            .build();
+
+            agent.replacePermissionContext("u1", "sessA", replacement);
+
+            ReActAgent delegate = agent.getDelegate();
+            assertEquals(replacement, delegate.getAgentState("u1", "sessA").getPermissionContext());
+            assertTrue(
+                    delegate.getAgentState("u2", "sessA").getPermissionContext().isTrivial(),
+                    "replacing one user's session must not alter another user's session");
         }
     }
 
@@ -351,8 +392,8 @@ class HarnessAgentTest {
                         .model(model)
                         .workspace(workspace)
                         .filesystem(spec)
-                        .sessionLogStore(
-                                new WorkspaceSessionLogStore(
+                        .threadJournalStore(
+                                new WorkspaceThreadJournalStore(
                                         new LocalFilesystem(workspace.resolve("journal"))))
                         .artifactDeliveryTarget((rc, request) -> ArtifactDeliveryResult.success())
                         .build();
@@ -377,8 +418,8 @@ class HarnessAgentTest {
                         .model(model)
                         .workspace(workspace)
                         .filesystem(spec)
-                        .sessionLogStore(
-                                new WorkspaceSessionLogStore(
+                        .threadJournalStore(
+                                new WorkspaceThreadJournalStore(
                                         new LocalFilesystem(workspace.resolve("journal"))))
                         .disableFilesystemTools()
                         .artifactDeliveryTarget((rc, request) -> ArtifactDeliveryResult.success())
@@ -508,6 +549,116 @@ class HarnessAgentTest {
                 "AGENTS.md should not be injected when context hook is disabled");
     }
 
+    @Test
+    void skillCatalogPrecedesGrowingHistoryAndChangingRuntimeState() throws IOException {
+        writeWorkspaceSkill("Catalog entry");
+        RecordingModel model = new RecordingModel();
+        AtomicInteger buildNumber = new AtomicInteger();
+        ContextSource buildStatus =
+                request ->
+                        Mono.just(
+                                List.of(
+                                        ContextBlock.runtime(
+                                                "status",
+                                                "Build " + buildNumber.incrementAndGet())));
+        RuntimeContext context = RuntimeContext.builder().sessionId("skill-prefix").build();
+        Msg firstTurn = userText("first turn");
+        Msg secondTurn = userText("second turn");
+        try (HarnessAgent agent =
+                HarnessAgent.builder()
+                        .name("catalog-test")
+                        .sysPrompt("Help with the build.")
+                        .model(model)
+                        .workspace(workspace)
+                        .journalEnabled(false)
+                        .stateStore(new InMemoryAgentStateStore())
+                        .disableMemoryHooks()
+                        .disableSubagents()
+                        .disableCompaction()
+                        .contextSource("build", buildStatus)
+                        .build()) {
+            agent.call(firstTurn, context).block(Duration.ofSeconds(20));
+            agent.call(secondTurn, context).block(Duration.ofSeconds(20));
+            writeWorkspaceSkill("Updated catalog entry");
+            agent.call(userText("third turn"), context).block(Duration.ofSeconds(20));
+        }
+
+        assertEquals(3, model.inputs().size());
+        List<Msg> first = model.inputs().get(0);
+        List<Msg> second = model.inputs().get(1);
+        List<Msg> third = model.inputs().get(2);
+        assertEquals(MsgRole.SYSTEM, first.get(0).getRole());
+        assertFalse(first.get(0).getTextContent().contains("<available_skills>"));
+        assertEquals(MsgRole.USER, first.get(1).getRole());
+        assertTrue(
+                first.get(1).getTextContent().contains("<available_skills>"),
+                "the catalog should precede the conversation");
+        assertTrue(first.get(1).getTextContent().contains("Catalog entry"));
+        assertFalse(
+                first.get(1).getTextContent().contains("Build 1"),
+                "changing business state should follow the conversation");
+        assertEquals(firstTurn.getId(), first.get(2).getId());
+        assertEquals(firstTurn.getId(), second.get(2).getId());
+        assertEquals(MsgRole.ASSISTANT, second.get(3).getRole());
+        assertEquals(secondTurn.getId(), second.get(4).getId());
+        assertTrue(first.get(3).getTextContent().contains("Build 1"));
+        assertTrue(second.get(5).getTextContent().contains("Build 2"));
+        assertTrue(second.get(5).getTextContent().contains("harness:session-state"));
+        assertEquals(first.get(0).getTextContent(), second.get(0).getTextContent());
+        assertEquals(first.get(1).getTextContent(), second.get(1).getTextContent());
+        assertEquals(first.get(0).getTextContent(), third.get(0).getTextContent());
+        assertTrue(third.get(1).getTextContent().contains("Updated catalog entry"));
+        assertEquals(
+                second.subList(2, 5).stream().map(Msg::getId).toList(),
+                third.subList(2, 5).stream().map(Msg::getId).toList(),
+                "a changed catalog must not disturb the conversation prefix");
+    }
+
+    @Test
+    void emptyContinuationKeepsSkillCatalogAfterAssistantHistory() throws IOException {
+        writeWorkspaceSkill("Catalog entry");
+        RecordingModel model = new RecordingModel();
+        RuntimeContext context = RuntimeContext.builder().sessionId("skill-continuation").build();
+        try (HarnessAgent agent =
+                HarnessAgent.builder()
+                        .name("catalog-test")
+                        .sysPrompt("Help with the build.")
+                        .model(model)
+                        .workspace(workspace)
+                        .journalEnabled(false)
+                        .stateStore(new InMemoryAgentStateStore())
+                        .disableMemoryHooks()
+                        .disableSubagents()
+                        .disableWorkspaceContext()
+                        .build()) {
+            agent.call(userText("start"), context).block(Duration.ofSeconds(20));
+            agent.call(List.of(), context).block(Duration.ofSeconds(20));
+        }
+
+        assertEquals(2, model.inputs().size());
+        List<Msg> continuation = model.inputs().get(1);
+        assertEquals(
+                List.of(MsgRole.SYSTEM, MsgRole.USER, MsgRole.ASSISTANT, MsgRole.USER),
+                continuation.stream().map(Msg::getRole).toList());
+        assertTrue(continuation.get(3).getTextContent().contains("<available_skills>"));
+    }
+
+    private void writeWorkspaceSkill(String description) throws IOException {
+        Path skill = workspace.resolve("skills").resolve("catalog-entry");
+        Files.createDirectories(skill);
+        Files.writeString(
+                skill.resolve("SKILL.md"),
+                """
+                ---
+                name: catalog-entry
+                description: %s
+                ---
+
+                Use this skill for the catalog test.
+                """
+                        .formatted(description));
+    }
+
     @ParameterizedTest
     @ValueSource(booleans = {false, true})
     void workspaceAgentsMdAndApplicabilityReachModelForCallAndStream(boolean streaming)
@@ -589,6 +740,11 @@ class HarnessAgentTest {
                         .middleware(
                                 new MiddlewareBase() {
                                     @Override
+                                    public Set<ExtensionPoint> activePoints() {
+                                        return EnumSet.of(ExtensionPoint.ON_SYSTEM_PROMPT);
+                                    }
+
+                                    @Override
                                     public Mono<String> onSystemPrompt(
                                             Agent agent, RuntimeContext ctx, String currentPrompt) {
                                         seen.set(ctx);
@@ -627,6 +783,11 @@ class HarnessAgentTest {
                         .abstractFilesystem(agentFilesystem)
                         .middleware(
                                 new MiddlewareBase() {
+                                    @Override
+                                    public Set<ExtensionPoint> activePoints() {
+                                        return EnumSet.of(ExtensionPoint.ON_SYSTEM_PROMPT);
+                                    }
+
                                     @Override
                                     public Mono<String> onSystemPrompt(
                                             Agent agent, RuntimeContext ctx, String currentPrompt) {
@@ -672,6 +833,11 @@ class HarnessAgentTest {
                         .middleware(
                                 new MiddlewareBase() {
                                     @Override
+                                    public Set<ExtensionPoint> activePoints() {
+                                        return EnumSet.of(ExtensionPoint.ON_SYSTEM_PROMPT);
+                                    }
+
+                                    @Override
                                     public Mono<String> onSystemPrompt(
                                             Agent agent, RuntimeContext ctx, String currentPrompt) {
                                         seen.set(ctx);
@@ -685,7 +851,7 @@ class HarnessAgentTest {
         assertEquals(source.getSessionId(), seen.get().getSessionId());
         assertSame(sandboxContext, seen.get().get(SandboxContext.class));
         assertSame(agentFilesystem, seen.get().get(AbstractFilesystem.class));
-        assertNotNull(SessionRecorder.from(seen.get()));
+        assertNotNull(InvocationRecorder.from(seen.get()));
     }
 
     @Test
@@ -702,11 +868,16 @@ class HarnessAgentTest {
                         .model(stubModel("done"))
                         .workspace(workspace)
                         .filesystem(spec)
-                        .sessionLogStore(
-                                new WorkspaceSessionLogStore(
+                        .threadJournalStore(
+                                new WorkspaceThreadJournalStore(
                                         new LocalFilesystem(workspace.resolve("journal"))))
                         .middleware(
                                 new MiddlewareBase() {
+                                    @Override
+                                    public Set<ExtensionPoint> activePoints() {
+                                        return EnumSet.of(ExtensionPoint.ON_SYSTEM_PROMPT);
+                                    }
+
                                     @Override
                                     public Mono<String> onSystemPrompt(
                                             Agent agent, RuntimeContext ctx, String prompt) {
@@ -740,7 +911,7 @@ class HarnessAgentTest {
                 assertEquals(AgentRun.Status.RUNNING, run.status());
                 assertNotNull(active.get().get(SandboxAcquireResult.class));
                 SandboxAcquireResult acquired = active.get().get(SandboxAcquireResult.class);
-                var log = agent.sessionLog(active.get());
+                var log = agent.threadJournal(active.get());
                 assertTrue(run.cancel());
                 Flux.interval(Duration.ofMillis(10))
                         .filter(ignored -> acquired.isReleased() && log.head().owner() == null)
@@ -780,11 +951,16 @@ class HarnessAgentTest {
                         .model(model)
                         .workspace(workspace.toAbsolutePath().normalize().toString())
                         .filesystem(spec)
-                        .sessionLogStore(
-                                new WorkspaceSessionLogStore(
+                        .threadJournalStore(
+                                new WorkspaceThreadJournalStore(
                                         new LocalFilesystem(workspace.resolve("journal"))))
                         .middleware(
                                 new MiddlewareBase() {
+                                    @Override
+                                    public Set<ExtensionPoint> activePoints() {
+                                        return EnumSet.of(ExtensionPoint.ON_SYSTEM_PROMPT);
+                                    }
+
                                     @Override
                                     public Mono<String> onSystemPrompt(
                                             Agent agent, RuntimeContext ctx, String currentPrompt) {
@@ -1049,6 +1225,11 @@ class HarnessAgentTest {
                         .middleware(
                                 new MiddlewareBase() {
                                     @Override
+                                    public Set<ExtensionPoint> activePoints() {
+                                        return EnumSet.of(ExtensionPoint.ON_AGENT);
+                                    }
+
+                                    @Override
                                     public Flux<AgentEvent> onAgent(
                                             Agent agent,
                                             RuntimeContext ctx,
@@ -1116,6 +1297,11 @@ class HarnessAgentTest {
         AtomicInteger userMiddlewareHits = new AtomicInteger();
         MiddlewareBase userMiddleware =
                 new MiddlewareBase() {
+                    @Override
+                    public Set<ExtensionPoint> activePoints() {
+                        return EnumSet.of(ExtensionPoint.ON_AGENT);
+                    }
+
                     @Override
                     public Flux<AgentEvent> onAgent(
                             Agent agent,
@@ -1250,6 +1436,33 @@ class HarnessAgentTest {
     }
 
     @Test
+    void fromAgent_modelStringRefSource_pinsCurrentInstance() {
+        Model registered = stubModel("ref-pinned");
+        ModelRegistry.register("from-agent-ref", registered);
+        try {
+            ReActAgent source =
+                    ReActAgent.builder()
+                            .name("source")
+                            .model("from-agent-ref")
+                            .toolkit(new Toolkit())
+                            .build();
+
+            HarnessAgent wrapped =
+                    HarnessAgent.Builder.fromAgent(source)
+                            .workspace(workspace)
+                            .abstractFilesystem(new LocalFilesystem(workspace))
+                            .build();
+
+            assertSame(
+                    registered,
+                    wrapped.getModel(),
+                    "a string-reference source must be pinned to its current instance");
+        } finally {
+            ModelRegistry.reset();
+        }
+    }
+
+    @Test
     void fromAgent_rebuildsHarnessPlatformToolsWithoutCollision() {
         // A HarnessAgent-built source carries harness platform tool instances in its toolkit.
         // fromAgent().build() must strip those and let buildInstance() re-register fresh ones:
@@ -1280,7 +1493,7 @@ class HarnessAgentTest {
                             "memory_search",
                             "memory_get",
                             "memory_save",
-                            "session_search",
+                            "thread_search",
                             "read_file",
                             "write_file",
                             "edit_file",
@@ -1977,6 +2190,65 @@ class HarnessAgentTest {
     // =========================================================================
     // general-purpose mirroring
     // =========================================================================
+
+    @ParameterizedTest
+    @ValueSource(strings = {"parent", "general-purpose", "read-worker"})
+    void configuredReadFileMaximumReachesParentAndBuiltInSubagents(String agentName)
+            throws Exception {
+        Files.createDirectories(workspace);
+        Files.writeString(workspace.resolve("large.txt"), "x".repeat(100_000));
+        HarnessAgent.Builder builder =
+                HarnessAgent.builder()
+                        .model(stubModel("ok"))
+                        .workspace(workspace)
+                        .abstractFilesystem(new LocalFilesystem(workspace))
+                        .readFileMaxChars(64_000)
+                        .subagent(
+                                SubagentDeclaration.builder()
+                                        .name("read-worker")
+                                        .description("Reads files")
+                                        .workspaceMode(WorkspaceMode.SHARED)
+                                        .inlineAgentsBody("Read the requested file.")
+                                        .build());
+        try (HarnessAgent agent =
+                "parent".equals(agentName)
+                        ? builder.build()
+                        : (HarnessAgent)
+                                builder.buildSubagentEntries(workspace).stream()
+                                        .filter(entry -> agentName.equals(entry.name()))
+                                        .findFirst()
+                                        .orElseThrow()
+                                        .factory()
+                                        .create(RuntimeContext.empty())) {
+            ToolUseBlock use =
+                    ToolUseBlock.builder()
+                            .id("configured-read")
+                            .name("read_file")
+                            .input(Map.of("path", "large.txt", "max_chars", Integer.MAX_VALUE))
+                            .build();
+            ToolResultBlock result =
+                    agent.getToolkit()
+                            .callTools(List.of(use), null, null, RuntimeContext.empty())
+                            .block(Duration.ofSeconds(5))
+                            .get(0);
+            String output =
+                    result.getOutput().stream()
+                            .filter(TextBlock.class::isInstance)
+                            .map(TextBlock.class::cast)
+                            .map(TextBlock::getText)
+                            .collect(Collectors.joining());
+            assertTrue(output.startsWith("x".repeat(64_000) + "\n[Output truncated."));
+            assertTrue(output.contains("char_offset=64000"));
+        }
+    }
+
+    @ParameterizedTest
+    @ValueSource(ints = {-1, 0, 15_999})
+    void readFileMaximumRejectsValuesBelowDefaultPageSize(int maximum) {
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> HarnessAgent.builder().readFileMaxChars(maximum));
+    }
 
     @Test
     void generalPurpose_mirrorDisableFilesystemTools() throws Exception {

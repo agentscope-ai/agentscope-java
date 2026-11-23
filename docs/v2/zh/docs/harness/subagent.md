@@ -198,6 +198,8 @@ RuntimeContext ctx = RuntimeContext.builder()
 
 `agent_spawn` 和 `agent_send` 使用自身的等待超时，不受 `ExecutionConfig` 中普通工具超时的限制。子 agent 内部调用的工具仍遵守普通工具超时。取消父调用仍会取消同步执行的子 agent。
 
+`task_output(block=true)` 和 `wait_async_results` 同样使用自身有界等待超时，不会被普通工具超时提前截断。如需非阻塞查询，请使用 `block=false`。
+
 如果一个目标可以拆成多个互不依赖、资源不冲突的子任务，主 agent 可以在同一轮 reasoning 里发起多个同步子 agent 调用。Toolkit 默认启用工具并行（`ToolkitConfig.parallel=true`），因此在 `ReActAgent` 与 `HarnessAgent` 上这些同步调用都会并行推进；主 agent 会等这一批工具结果都返回后再进入下一轮推理，相当于一次同步 fan-out / fan-in。若需串行执行工具，可传入 `ToolkitConfig.builder().parallel(false).build()` 构建的自定义 `Toolkit`。
 
 任务拆解时先画清楚独立性和依赖图：没有依赖边的节点适合交给多个子 agent 并行；有依赖关系的节点要等上游结果后再派发或合并。短任务、关键路径任务适合同步等待或先用 barrier 等齐，用于继续推理；长任务可以用后台模式先跑，主 agent 继续处理其他工作，后续再取结果合并。
@@ -224,7 +226,8 @@ RuntimeContext ctx = RuntimeContext.builder()
 |------|------|
 | `agent_spawn` | 创建子 agent，可选地执行任务（同步或后台） |
 | `agent_send` | 向已存在的子 agent 追加消息 |
-| `agent_list` | 列出当前活跃的子 agent 实例 |
+| `agent_list` | 列出当前保留且可寻址的子 agent 实例 |
+| `agent_release` | 释放空闲的已保留子 agent，并使其运行时句柄失效 |
 | `task_output` | 通过 `task_id` 获取后台任务结果（阻塞或非阻塞） |
 | `wait_async_results` | 等待后台结果到达；可按 `task_ids` 等指定任务全部完成，或用 `wait_all=true` 等待当前 session 未完成任务快照全部完成 |
 | `task_cancel` | 取消正在运行的后台任务 |
@@ -257,7 +260,19 @@ agent_spawn agent_id="reviewer" task="review 这次 PR" label="pr-reviewer"
 agent_send label="pr-reviewer" message="顺便也看下 schema 变更"
 ```
 
-要列当前活跃的子 agent：`agent_list`。
+要列出当前保留且可寻址的子 agent：`agent_list`。
+
+## 释放已保留的子 agent
+
+spawn 完成当前调用后，子 agent 实例仍会被保留，以便后续用 `agent_send` 寻址。不再需要该实例时，应显式释放：
+
+```
+agent_release agent_key="agent:reviewer:abc-123"
+```
+
+释放操作会保护正在执行的工作。如果子 agent 忙碌，`agent_release` 会返回 busy 结果，实例仍然可寻址；请等待工作完成，或取消对应后台任务后重试。释放成功后，已保留的运行时实例会被关闭，其 `agent_key` 永久失效，并且任何通过 Gateway 暴露的 `subagentId` 也会被撤销。后续使用旧 key 调用 `agent_send` 会失败，不会悄然创建或寻址其他实例。
+
+session mode 使用外部注入的 `sessions_*` 工具，不会虚构或额外注册 `sessions_release`。
 
 ## 持久会话
 
@@ -308,6 +323,8 @@ chat.sendStream(SendOptions.userId("user-1"), "派一个研究员调查 AI 趋�
 // 直接向暴露的子 agent 发消息
 chat.sendToSubagent(subagentId, "重点关注 LLM agent").block();
 ```
+
+通过 `agent_release` 释放该子 agent 时，已暴露的 `subagentId` 也会被撤销，Gateway 不再通过旧的公开句柄路由消息。
 
 适合"分支对话"场景：父 agent spawn 一个专家，用户独立地和那个专家继续交流。完整的 Channel 侧 API 见 [Channel — 与暴露的子 Agent 对话](/v2/zh/docs/harness/channel#与暴露的子-agent-对话)。
 
@@ -456,6 +473,11 @@ ChatUiChannel chat = agent.channel(ChatUiChannel.create());  // 恢复能力自�
 等待确认期间任务状态保持 `RUNNING`（`awaitingConfirm=true`）。因此 `wait_async_results` 等 barrier 会继续等待，直到任务被 resume 并进入终态。
 
 ## 异步任务的存储位置
+
+`WorkspaceTaskRepository` 按工作空间命名空间、父会话 ID 和任务 ID 隔离本地任务句柄。
+在按用户隔离的工作空间中，即使知道其他用户的任务 ID，也不能访问或取消其本地任务。
+共享范围（`AGENT`、`GLOBAL`）保留配置的共享行为。使用自定义文件系统和命名空间工厂时，
+应确保两者采用相同的隔离边界。
 
 后台任务的状态默认写到 `workspace/agents/<parentAgentId>/tasks/<sessionId>.json`。这意味着：
 

@@ -26,9 +26,11 @@ import com.fasterxml.jackson.annotation.JsonPropertyDescription;
 import io.agentscope.core.formatter.JsonSchema;
 import io.agentscope.core.formatter.ResponseFormat;
 import io.agentscope.core.message.ContentBlock;
+import io.agentscope.core.message.DocumentBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.URLSource;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.ToolChoice;
@@ -95,6 +97,36 @@ class OpenAIChatFormatterTest {
         assertEquals("Hello", result.get(0).getContentAsString());
         assertEquals("assistant", result.get(1).getRole());
         assertEquals("Hi there", result.get(1).getContentAsString());
+    }
+
+    @Test
+    @DisplayName("An assistant-carried document appears as exactly one reference line")
+    void assistantDocumentIsReferencedExactlyOnce() {
+        List<Msg> messages =
+                List.of(
+                        Msg.builder()
+                                .role(MsgRole.ASSISTANT)
+                                .content(
+                                        List.of(
+                                                TextBlock.builder().text("See attachment").build(),
+                                                DocumentBlock.builder()
+                                                        .source(
+                                                                URLSource.builder()
+                                                                        .url(
+                                                                                "https://example.com"
+                                                                                    + "/report.pdf")
+                                                                        .mimeType("application/pdf")
+                                                                        .build())
+                                                        .name("report.pdf")
+                                                        .build()))
+                                .build());
+
+        List<OpenAIMessage> result = formatter.format(messages);
+
+        assertEquals(
+                "See attachment\n[document: report.pdf, application/pdf, url:"
+                        + " https://example.com/report.pdf]",
+                result.get(0).getContentAsString());
     }
 
     @Test

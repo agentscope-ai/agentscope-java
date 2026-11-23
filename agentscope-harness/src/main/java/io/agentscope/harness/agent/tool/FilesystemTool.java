@@ -40,11 +40,16 @@ public class FilesystemTool {
     static final int DEFAULT_GREP_LIMIT = 100;
     static final int DEFAULT_GLOB_LIMIT = 200;
     static final int MAX_SEARCH_LIMIT = 1_000;
-    static final int DEFAULT_READ_CHARS = 16_000;
-    static final int MAX_READ_CHARS = 32_000;
+
+    /** Default read page size in Unicode code points. */
+    public static final int DEFAULT_READ_CHARS = 16_000;
+
+    /** Default application limit for a read page in Unicode code points. */
+    public static final int DEFAULT_MAX_READ_CHARS = 32_000;
 
     private final AbstractFilesystem abstractFilesystem;
     private final WorkspacePathNormalizer pathNormalizer;
+    private final int readFileMaxChars;
 
     public FilesystemTool(AbstractFilesystem abstractFilesystem) {
         this(abstractFilesystem, null);
@@ -52,8 +57,27 @@ public class FilesystemTool {
 
     public FilesystemTool(
             AbstractFilesystem abstractFilesystem, WorkspacePathNormalizer pathNormalizer) {
+        this(abstractFilesystem, pathNormalizer, DEFAULT_MAX_READ_CHARS);
+    }
+
+    /**
+     * Creates file tools with an application-defined read page limit.
+     *
+     * @param readFileMaxChars maximum Unicode code points per page, at least {@link
+     *     #DEFAULT_READ_CHARS}
+     * @throws IllegalArgumentException if the limit is smaller than the default page size
+     */
+    public FilesystemTool(
+            AbstractFilesystem abstractFilesystem,
+            WorkspacePathNormalizer pathNormalizer,
+            int readFileMaxChars) {
+        if (readFileMaxChars < DEFAULT_READ_CHARS) {
+            throw new IllegalArgumentException(
+                    "readFileMaxChars must be at least " + DEFAULT_READ_CHARS);
+        }
         this.abstractFilesystem = abstractFilesystem;
         this.pathNormalizer = pathNormalizer;
+        this.readFileMaxChars = readFileMaxChars;
     }
 
     static final int MAX_LISTING_ENTRIES = 200;
@@ -143,12 +167,12 @@ public class FilesystemTool {
             @ToolParam(
                             name = "max_chars",
                             description =
-                                    "Maximum Unicode code points per page. Default: 16000; hard"
-                                            + " maximum: 32000",
+                                    "Maximum Unicode code points per page. Default: 16000; clamped"
+                                        + " to the application-configured maximum (default: 32000)",
                             required = false)
                     Integer maxChars) {
         int start = charOffset != null ? charOffset : 0;
-        int size = maxChars != null ? Math.min(maxChars, MAX_READ_CHARS) : DEFAULT_READ_CHARS;
+        int size = maxChars != null ? Math.min(maxChars, readFileMaxChars) : DEFAULT_READ_CHARS;
         if (start < 0 || size < 1) {
             return ToolResultBlock.error(
                     "char_offset must be non-negative and max_chars must be greater than 0");
