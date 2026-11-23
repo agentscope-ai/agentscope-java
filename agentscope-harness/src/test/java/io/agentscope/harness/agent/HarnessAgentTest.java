@@ -570,6 +570,10 @@ class HarnessAgentTest {
                         .sysPrompt("Help with the build.")
                         .model(model)
                         .workspace(workspace)
+                        // Plain repositories (the shared workspace/skills layer) are served only
+                        // by explicit selection; an explicit filesystem routes the skill through
+                        // the context-scoped workspace repository instead.
+                        .abstractFilesystem(new LocalFilesystem(workspace))
                         .journalEnabled(false)
                         .stateStore(new InMemoryAgentStateStore())
                         .disableMemoryHooks()
@@ -625,6 +629,9 @@ class HarnessAgentTest {
                         .sysPrompt("Help with the build.")
                         .model(model)
                         .workspace(workspace)
+                        // Same serving rule as above: the explicit filesystem makes the skill
+                        // reach the context-scoped workspace repository.
+                        .abstractFilesystem(new LocalFilesystem(workspace))
                         .journalEnabled(false)
                         .stateStore(new InMemoryAgentStateStore())
                         .disableMemoryHooks()
