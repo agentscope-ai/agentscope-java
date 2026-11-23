@@ -136,6 +136,33 @@ public @interface Tool {
     boolean concurrencySafe() default true;
 
     /**
+     * Whether large-tool-result eviction may offload this tool's results to a workspace file,
+     * leaving a head+tail preview in the conversation.
+     *
+     * <p>This is an intrinsic declaration of how the tool's output degrades, read by
+     * context-management consumers — not a decision to be made by matching tool names. Declare
+     * {@code false}
+     * when the result is the requested content itself and a file pointer would defeat the call
+     * (e.g. tools whose results are already paginated); leave {@code true} for incidental or
+     * verbose output. Configured exclusion lists are user overrides on top of declarations.
+     *
+     * @return true if this tool's results may be offloaded by eviction
+     */
+    boolean evictable() default true;
+
+    /**
+     * Whether aggregate tool-result pruning may replace this tool's older results with a
+     * head+tail preview.
+     *
+     * <p>Same intrinsic-declaration contract as {@link #evictable()}, for the pruning pass:
+     * declare {@code false} when a preview is not enough to reconstruct the tool's value and the
+     * full text must survive in the conversation (retrieval tools whose matches are the content).
+     *
+     * @return true if this tool's results may be pruned to a preview
+     */
+    boolean prunable() default true;
+
+    /**
      * Whether the tool manages its own timeout instead of the ordinary tool execution timeout.
      * Parent cancellation still propagates to the tool.
      *

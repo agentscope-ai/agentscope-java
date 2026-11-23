@@ -39,6 +39,9 @@ import io.agentscope.core.message.ToolResultState;
 import io.agentscope.core.middleware.ReasoningInput;
 import io.agentscope.core.model.ChatUsage;
 import io.agentscope.core.state.AgentState;
+import io.agentscope.core.tool.Tool;
+import io.agentscope.core.tool.ToolParam;
+import io.agentscope.core.tool.Toolkit;
 import io.agentscope.harness.agent.filesystem.local.LocalFilesystem;
 import io.agentscope.harness.agent.filesystem.model.ReadResult;
 import io.agentscope.harness.agent.filesystem.model.WriteResult;
@@ -50,6 +53,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -416,10 +420,9 @@ class ToolResultEvictionMiddlewareTest {
     }
 
     @Test
-    void defaultConfigEvictsOversizedThreadSearchButNotReadFile() {
+    void defaultConfigHasNoNameExclusionsAndDeclarationsProtectResults() {
         ToolResultEvictionConfig config = ToolResultEvictionConfig.defaults();
-        assertFalse(config.getExcludedToolNames().contains("thread_search"));
-        assertTrue(config.getExcludedToolNames().contains("read_file"));
+        assertTrue(config.getExcludedToolNames().isEmpty(), "no name-based exclusions by default");
 
         RecordingFilesystem filesystem = new RecordingFilesystem(tempDir, WriteResult.ok("stored"));
         ToolResultEvictionMiddleware middleware =
@@ -433,15 +436,51 @@ class ToolResultEvictionMiddlewareTest {
                         List.of(),
                         null);
 
+        // With the tool registered and declaring evictable=false, only thread_search is
+        // offloaded; the declared tool's result survives verbatim.
+        ReasoningInput declared =
+                middleware.prepare(
+                        agentWithToolkit(new DeclaredNonEvictableTools()),
+                        RuntimeContext.empty(),
+                        input);
+        assertEquals(1, filesystem.writes);
+        assertEquals(largeOutput, filesystem.lastContent);
+        String searchOutput = toolOutput(declared.messages().get(0));
+        assertTrue(searchOutput.contains("Tool output was too large"));
+        assertTrue(searchOutput.length() < largeOutput.length());
+        assertEquals(largeOutput, toolOutput(declared.messages().get(1)));
+
+        // Same tool name, no declaration: now evicted too — exclusion follows the tool's own
+        // declaration, not its name, so a custom tool sharing a built-in name is not exempt.
+        ReasoningInput undeclared =
+                middleware.prepare(agent("Test Agent"), RuntimeContext.empty(), input);
+        assertEquals(3, filesystem.writes);
+        assertTrue(toolOutput(undeclared.messages().get(1)).contains("Tool output was too large"));
+        assertTrue(toolOutput(undeclared.messages().get(1)).length() < largeOutput.length());
+    }
+
+    @Test
+    void configuredNameExclusionsStillProtectWithoutDeclarations() {
+        RecordingFilesystem filesystem = new RecordingFilesystem(tempDir, WriteResult.ok("stored"));
+        ToolResultEvictionMiddleware middleware =
+                new ToolResultEvictionMiddleware(
+                        filesystem,
+                        ToolResultEvictionConfig.builder()
+                                .excludedToolNames(Set.of("read_file"))
+                                .build());
+        String largeOutput =
+                "x".repeat(ToolResultEvictionConfig.defaults().getMaxResultChars() + 1);
+        ReasoningInput input =
+                new ReasoningInput(
+                        List.of(toolMessage(namedToolResult("read_file", largeOutput))),
+                        List.of(),
+                        null);
+
         ReasoningInput compacted =
                 middleware.prepare(agent("Test Agent"), RuntimeContext.empty(), input);
 
-        assertEquals(1, filesystem.writes);
-        assertEquals(largeOutput, filesystem.lastContent);
-        String searchOutput = toolOutput(compacted.messages().get(0));
-        assertTrue(searchOutput.contains("Tool output was too large"));
-        assertTrue(searchOutput.length() < largeOutput.length());
-        assertEquals(largeOutput, toolOutput(compacted.messages().get(1)));
+        assertEquals(0, filesystem.writes);
+        assertEquals(largeOutput, toolOutput(compacted.messages().get(0)));
     }
 
     @Test
@@ -673,6 +712,34 @@ class ToolResultEvictionMiddlewareTest {
                 return Mono.empty();
             }
         };
+    }
+
+    private static Agent agentWithToolkit(Object tools) {
+        Toolkit toolkit = new Toolkit();
+        toolkit.registerTool(tools);
+        return new AgentBase("Test Agent") {
+            @Override
+            public Toolkit getToolkit() {
+                return toolkit;
+            }
+
+            @Override
+            protected Mono<Msg> doCall(List<Msg> msgs) {
+                return Mono.empty();
+            }
+
+            @Override
+            protected Mono<Msg> handleInterrupt(InterruptContext context, Msg... originalArgs) {
+                return Mono.empty();
+            }
+        };
+    }
+
+    static final class DeclaredNonEvictableTools {
+        @Tool(name = "read_file", description = "Read a file", evictable = false)
+        public String readFile(@ToolParam(name = "path", description = "File path") String path) {
+            return path;
+        }
     }
 
     private static final class RecordingFilesystem extends LocalFilesystem {

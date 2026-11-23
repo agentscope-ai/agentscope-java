@@ -30,6 +30,8 @@ import io.agentscope.core.middleware.ModelCallInput;
 import io.agentscope.core.middleware.ReasoningInput;
 import io.agentscope.core.model.Model;
 import io.agentscope.core.state.AgentState;
+import io.agentscope.core.tool.AgentTool;
+import io.agentscope.core.tool.Toolkit;
 import io.agentscope.core.util.ExceptionUtils;
 import io.agentscope.core.util.JsonException;
 import io.agentscope.core.util.JsonUtils;
@@ -40,6 +42,7 @@ import io.agentscope.harness.agent.memory.compaction.TokenCounterUtil;
 import io.agentscope.harness.agent.workspace.WorkspaceManager;
 import java.util.ArrayList;
 import java.util.EnumSet;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
@@ -340,6 +343,10 @@ public class CompactionMiddleware implements HarnessRuntimeMiddleware {
                             config.withEffective(
                                     Math.max(1, trigger),
                                     Math.min(keep, Math.max(0, conversationBudget / 2)));
+                    Set<String> nonPrunable = nonPrunableToolNames(agent);
+                    if (!nonPrunable.isEmpty()) {
+                        effective = effective.withPruneExclusions(nonPrunable);
+                    }
                     // Dedicated compaction model when configured; otherwise the executing
                     // agent's per-call model (context pin or identity resolution, else its
                     // default), so the summary follows the model serving the conversation.
@@ -393,6 +400,25 @@ public class CompactionMiddleware implements HarnessRuntimeMiddleware {
                                                 canCommit ? compacted : canonical);
                                     });
                 });
+    }
+
+    /** Names of tools in {@code toolkit} that declare themselves non-prunable. */
+    public static Set<String> nonPrunableToolNames(Toolkit toolkit) {
+        if (toolkit == null) {
+            return Set.of();
+        }
+        Set<String> names = new HashSet<>();
+        for (String name : toolkit.getToolNames()) {
+            AgentTool tool = toolkit.getTool(name);
+            if (tool != null && !tool.isPrunable()) {
+                names.add(name);
+            }
+        }
+        return names;
+    }
+
+    private static Set<String> nonPrunableToolNames(Agent agent) {
+        return nonPrunableToolNames(agent.getToolkit());
     }
 
     private static boolean sameSerializedHistory(List<Msg> canonical, List<Msg> conversation) {

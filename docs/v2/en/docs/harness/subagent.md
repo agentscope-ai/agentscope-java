@@ -205,6 +205,8 @@ When enabled:
 
 `agent_spawn` and `agent_send` manage their own wait timeout, independently of the ordinary tool timeout in `ExecutionConfig`. Tools called by the subagent still use their normal tool timeout. Cancelling the parent call still cancels synchronous subagent execution.
 
+`task_output(block=true)` and `wait_async_results` also use their own bounded wait timeouts; they are not cut short by the ordinary tool timeout. Use `block=false` to poll without waiting.
+
 If a goal can be split into independent subtasks that do not conflict on resources, the parent can issue multiple synchronous subagent calls in the same reasoning turn. Toolkit defaults to parallel tool execution (`ToolkitConfig.parallel=true`), so those synchronous calls advance in parallel on both `ReActAgent` and `HarnessAgent`; the parent enters the next reasoning step only after that batch of tool results has returned, forming a synchronous fan-out / fan-in barrier. To serialize tool calls, pass a custom `Toolkit` built with `ToolkitConfig.builder().parallel(false).build()`.
 
 Decompose work by independence and dependency graph first: nodes without dependency edges are good candidates for parallel subagents; dependent nodes should wait for upstream results before dispatch or merge. Short or critical-path tasks are good candidates for synchronous waiting or an explicit barrier so the parent can continue reasoning with their results. Long tasks can run in the background while the parent continues other work, then be collected and merged later.
@@ -231,7 +233,8 @@ Behind the scenes, subagent lifecycle is split across two groups of tools:
 |------|------|
 | `agent_spawn` | Create a subagent and optionally run a task (sync or background) |
 | `agent_send` | Send a follow-up message to an existing subagent |
-| `agent_list` | List active subagent instances |
+| `agent_list` | List retained, addressable subagent instances |
+| `agent_release` | Release an idle retained subagent and invalidate its runtime handles |
 | `task_output` | Retrieve the result of a background task by `task_id` (blocking or non-blocking) |
 | `wait_async_results` | Wait for background results; can wait for specific `task_ids` to all finish, or use `wait_all=true` for a snapshot of unfinished tasks in the current session |
 | `task_cancel` | Cancel a running background task |
@@ -264,7 +267,26 @@ agent_spawn agent_id="reviewer" task="review the PR" label="pr-reviewer"
 agent_send label="pr-reviewer" message="also check the schema changes"
 ```
 
-To list active subagents: `agent_list`.
+To list retained, addressable subagents: `agent_list`.
+
+## Release a retained subagent
+
+Spawning retains the subagent instance after its current call finishes so that `agent_send` can
+address it again. When that instance is no longer needed, release it explicitly:
+
+```
+agent_release agent_key="agent:reviewer:abc-123"
+```
+
+Release is safe against in-flight work. If the subagent is busy, `agent_release` returns a busy
+result and leaves the instance addressable; wait for the work to finish, or cancel the background
+task, and then retry. A successful release closes the retained runtime instance, permanently
+invalidates its `agent_key`, and revokes any `subagentId` that was exposed through the Gateway.
+Later `agent_send` calls with that key fail instead of silently creating or addressing another
+instance.
+
+Session mode uses externally supplied `sessions_*` tools and does not add a synthetic
+`sessions_release` tool.
 
 ## Persistent sessions
 
@@ -316,6 +338,9 @@ chat.sendStream(SendOptions.userId("user-1"), "Spawn a researcher to investigate
 // Send a message directly to the exposed subagent
 chat.sendToSubagent(subagentId, "Focus on LLM agents specifically").block();
 ```
+
+Releasing that subagent with `agent_release` also revokes its exposed `subagentId`, so the Gateway
+will no longer route messages through the old public handle.
 
 This is useful for "branch-off" scenarios: the parent spawns a specialist, and the user continues the conversation with that specialist independently. See [Channel — Talking to exposed subagents](/v2/en/docs/harness/channel#talking-to-exposed-subagents) for the full Channel-side API.
 
