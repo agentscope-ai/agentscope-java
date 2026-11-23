@@ -63,7 +63,7 @@ import org.slf4j.LoggerFactory;
  * <ul>
  *   <li>Exec: {@code docker exec -w <root> <containerId> sh -c <command>}</li>
  *   <li>PersistWorkspace: {@code docker exec <containerId> tar -cf - -C <root> .}</li>
- *   <li>HydrateWorkspace: {@code docker exec -i <containerId> tar -xf - -C <root>}</li>
+ *   <li>HydrateWorkspace: {@code docker exec -i <containerId> tar -xpf - -C <root>}</li>
  *   <li>UploadFile / DownloadFile ({@link SandboxFileTransfer}): a host temp file round-tripped
  *       through {@code docker cp}, so file bytes never pass through exec argv or the stdout
  *       capture cap. Scoped to the workspace subtree by lexical validation; uploads land with
@@ -267,17 +267,7 @@ public class DockerSandbox extends AbstractBaseSandbox implements SandboxFileTra
         runDockerCliBlocking(30, "docker", "exec", containerId, "mkdir", "-p", workspaceRoot);
 
         // Pipe the tar archive into the container via docker exec stdin
-        ProcessBuilder pb =
-                new ProcessBuilder(
-                        "docker",
-                        "exec",
-                        "-i",
-                        containerId,
-                        "tar",
-                        "-xf",
-                        "-",
-                        "-C",
-                        workspaceRoot);
+        ProcessBuilder pb = new ProcessBuilder(buildHydrateCommand());
 
         Process process = pb.start();
 
@@ -330,6 +320,20 @@ public class DockerSandbox extends AbstractBaseSandbox implements SandboxFileTra
                     SandboxErrorCode.WORKSPACE_ARCHIVE_READ_ERROR,
                     "docker tar extract failed (exit=" + exitCode + "): " + stderr);
         }
+    }
+
+    List<String> buildHydrateCommand() {
+        // -p preserves archive modes: ordinary-user tar extraction otherwise applies umask.
+        return List.of(
+                "docker",
+                "exec",
+                "-i",
+                dockerState.getContainerId(),
+                "tar",
+                "-xpf",
+                "-",
+                "-C",
+                dockerState.getWorkspaceRoot());
     }
 
     @Override

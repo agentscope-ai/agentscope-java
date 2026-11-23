@@ -198,6 +198,8 @@ RuntimeContext ctx = RuntimeContext.builder()
 
 `agent_spawn` 和 `agent_send` 使用自身的等待超时，不受 `ExecutionConfig` 中普通工具超时的限制。子 agent 内部调用的工具仍遵守普通工具超时。取消父调用仍会取消同步执行的子 agent。
 
+`task_output(block=true)` 和 `wait_async_results` 同样使用自身有界等待超时，不会被普通工具超时提前截断。如需非阻塞查询，请使用 `block=false`。
+
 如果一个目标可以拆成多个互不依赖、资源不冲突的子任务，主 agent 可以在同一轮 reasoning 里发起多个同步子 agent 调用。Toolkit 默认启用工具并行（`ToolkitConfig.parallel=true`），因此在 `ReActAgent` 与 `HarnessAgent` 上这些同步调用都会并行推进；主 agent 会等这一批工具结果都返回后再进入下一轮推理，相当于一次同步 fan-out / fan-in。若需串行执行工具，可传入 `ToolkitConfig.builder().parallel(false).build()` 构建的自定义 `Toolkit`。
 
 任务拆解时先画清楚独立性和依赖图：没有依赖边的节点适合交给多个子 agent 并行；有依赖关系的节点要等上游结果后再派发或合并。短任务、关键路径任务适合同步等待或先用 barrier 等齐，用于继续推理；长任务可以用后台模式先跑，主 agent 继续处理其他工作，后续再取结果合并。

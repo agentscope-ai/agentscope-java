@@ -205,6 +205,8 @@ When enabled:
 
 `agent_spawn` and `agent_send` manage their own wait timeout, independently of the ordinary tool timeout in `ExecutionConfig`. Tools called by the subagent still use their normal tool timeout. Cancelling the parent call still cancels synchronous subagent execution.
 
+`task_output(block=true)` and `wait_async_results` also use their own bounded wait timeouts; they are not cut short by the ordinary tool timeout. Use `block=false` to poll without waiting.
+
 If a goal can be split into independent subtasks that do not conflict on resources, the parent can issue multiple synchronous subagent calls in the same reasoning turn. Toolkit defaults to parallel tool execution (`ToolkitConfig.parallel=true`), so those synchronous calls advance in parallel on both `ReActAgent` and `HarnessAgent`; the parent enters the next reasoning step only after that batch of tool results has returned, forming a synchronous fan-out / fan-in barrier. To serialize tool calls, pass a custom `Toolkit` built with `ToolkitConfig.builder().parallel(false).build()`.
 
 Decompose work by independence and dependency graph first: nodes without dependency edges are good candidates for parallel subagents; dependent nodes should wait for upstream results before dispatch or merge. Short or critical-path tasks are good candidates for synchronous waiting or an explicit barrier so the parent can continue reasoning with their results. Long tasks can run in the background while the parent continues other work, then be collected and merged later.

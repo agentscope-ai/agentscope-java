@@ -151,7 +151,7 @@ class KubernetesSandboxColdRestoreTest {
                     verify(storage).download(snapshotId);
                     verify(files)
                             .write(startsWith(".agentscope-tmp/ws-hydrate-"), eq(previousArchive));
-                    verify(commands).run(startsWith("tar -xf "));
+                    verify(commands).run(startsWith("tar -xpf "));
                 } else {
                     verify(storage, never()).download(anyString());
                 }
