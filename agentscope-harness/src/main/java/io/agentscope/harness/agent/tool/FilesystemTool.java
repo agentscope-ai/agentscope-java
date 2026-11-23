@@ -143,45 +143,58 @@ public class FilesystemTool {
      */
     private static ToolResultBlock filesystemError(String message, String scope) {
         return ToolResultBlock.error(message)
-                .withMetadata(ToolErrorMetadata.of(classifyFilesystemError(message), scope));
+                .withMetadata(ToolErrorMetadata.of(classifyFilesystemError(message, scope), scope));
     }
 
-    private static ToolErrorKind classifyFilesystemError(String message) {
-        String lower = message == null ? "" : message.toLowerCase(java.util.Locale.ROOT);
-        if (lower.contains("string not found")) {
+    private static ToolErrorKind classifyFilesystemError(String message, String scope) {
+        String error = message == null ? "" : message;
+        if (error.startsWith("Error: ")) error = error.substring(7);
+        // Strip only a known operation envelope with this exact path. Never scan arbitrary
+        // path names, replacement text, or backend diagnostics for error keywords.
+        for (String operation : List.of("reading file", "writing file", "editing file")) {
+            String prefix = "Error " + operation + " '" + scope + "': ";
+            if (error.startsWith(prefix)) {
+                error = error.substring(prefix.length());
+                break;
+            }
+        }
+        String lower = error.toLowerCase(java.util.Locale.ROOT);
+        if (lower.startsWith("string not found in file:")
+                || lower.startsWith("oldstring must ")
+                || lower.startsWith("newstring must ")
+                || lower.matches(
+                        "(?s)string '.*' appears (?:[0-9]+ times in file|multiple times)\\. use"
+                                + " replaceall=true .*")) {
             return ToolErrorKind.INVALID_ARGUMENT;
         }
-        if (lower.contains("not found")
-                || lower.contains("does not exist")
-                || lower.contains("no such file")
-                || lower.contains("file_not_found")
-                || lower.contains("path does not exist")) {
+        if (error.equals("File '" + scope + "' not found")
+                || lower.startsWith("path does not exist:")
+                || lower.startsWith("source does not exist:")
+                || lower.equals("file_not_found")
+                || lower.equals("no such file")
+                || lower.equals("no such file or directory")
+                || lower.startsWith("file not found:")) {
             return ToolErrorKind.NOT_FOUND;
         }
-        if (lower.contains("already exists")) {
+        if (lower.equals("already exists")
+                || lower.startsWith("file already exists:")
+                || error.startsWith("Edit conflict on '" + scope + "' after ")) {
             return ToolErrorKind.CONFLICT;
         }
-        if (lower.contains("permission denied")
-                || lower.contains("access denied")
-                || lower.contains("not allowed")
-                || lower.contains("denied")
-                || lower.contains("outside")
-                || lower.contains("escape")
-                || lower.contains("read-only")
-                || lower.contains("cannot delete shared")
-                || lower.contains("cannot read shared")) {
+        if (lower.equals("permission denied")
+                || lower.startsWith("permission denied:")
+                || lower.equals("access denied")
+                || lower.startsWith("access denied:")
+                || lower.startsWith("cannot delete shared ")
+                || lower.startsWith("cannot read shared ")
+                || lower.startsWith("read-only filesystem:")) {
             return ToolErrorKind.PERMISSION_DENIED;
         }
-        if (lower.contains("not a directory")
-                || lower.contains("invalid")
-                || lower.contains("must")
-                || lower.contains("required")
-                || lower.contains("cannot be")
-                || lower.contains("empty")
-                || lower.contains("not unique")
-                || lower.contains("more than once")
-                || lower.contains("occurs")
-                || lower.contains("expected exactly")) {
+        if (lower.startsWith("not a directory:")
+                || lower.startsWith("invalid file data")
+                || lower.startsWith("line offset ")
+                || error.equals("File '" + scope + "' is empty")
+                || lower.equals("file is not valid utf-8")) {
             return ToolErrorKind.INVALID_ARGUMENT;
         }
         return ToolErrorKind.IO_ERROR;
@@ -288,7 +301,7 @@ public class FilesystemTool {
                         ToolErrorMetadata.of(
                                 r.isAlreadyExists()
                                         ? ToolErrorKind.CONFLICT
-                                        : classifyFilesystemError(r.error()),
+                                        : classifyFilesystemError(r.error(), normalizedPath),
                                 normalizedPath));
     }
 

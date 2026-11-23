@@ -57,7 +57,7 @@ Key points:
 Flush (path 1) is triggered at three different moments:
 
 1. **End of every `call()`** — the default `MemoryFlushMiddleware` behaviour. Can be retuned to `NEVER` or `THROTTLED(Duration)` via `flushTrigger`.
-2. **Pre-compaction extraction** — when `CompactionConfig.flushBeforeCompact = true` (default), the conversation prefix is flushed once before being summarized.
+2. **Pre-compaction extraction** — when long-term memory is enabled and `CompactionConfig.flushBeforeCompact = true` (default), the conversation prefix is flushed once before being summarized.
 3. **Overflow safety net** — when the model actually returns `context_length_exceeded`, the framework runs an emergency compaction that includes a flush.
 
 All three sites share the **same** `flushPrompt`, so customizing it changes all three.

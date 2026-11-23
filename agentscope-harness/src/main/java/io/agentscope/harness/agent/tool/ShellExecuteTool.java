@@ -113,9 +113,9 @@ public class ShellExecuteTool {
         }
         if (result.truncated()) {
             sb.append(
-                    "\n(Output was truncated; omitted content is not included here. If no"
-                            + " saved-output path is provided above, the missing content is"
-                            + " unavailable.)");
+                    "\n"
+                            + "(Output was truncated. Without a saved-output path above, omitted"
+                            + " content is unavailable.)");
         }
         ToolExecutionDetails.Outcome outcome =
                 result.exitCode() == null

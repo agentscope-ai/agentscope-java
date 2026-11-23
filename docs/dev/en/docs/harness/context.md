@@ -20,6 +20,14 @@ flowchart TD
     F -- no --> H[Return reply; retain committed state for the next call]
 ```
 
+### Bounded material views
+
+Small skill catalogs keep their complete view. Large default skill catalogs use a compact index (12,000-character target), shortening descriptions and deferring files-root details to `load_skill_through_path`. Use `load_skill_through_path(query="", offset=...)` to continue the index, or search names, IDs and descriptions with `query`. Discovery and loading use the same per-call catalog and skill grants. Code-execution guidance (including custom instructions) is retained in the compact index. If the per-call skill loader is hidden or replaced by an external tool, the complete catalog is retained. Explicit `exposeAllMetadata=true` retains the full metadata view.
+
+Default content-hash revisions stay in the manifest and internal state rather than model-facing tags. Explicit semantic revisions remain visible. Message roles and ordering are unchanged.
+
+Pre-compaction memory extraction requires long-term memory to be enabled, both for ordinary compaction and context-overflow recovery. `flushBeforeCompact=false` disables this extraction without disabling conversation summaries. `disableMemoryTools()` controls tool visibility independently and is inherited by general-purpose and declared subagents even when long-term memory is off.
+
 ## Start from the session's working state
 
 At call entry, the Agent restores the session's committed working state and accepts the new input. The conversation can contain earlier user and assistant messages, tool calls, tool results, and a summary from an earlier compaction. New tool results join this working context before the next reasoning step. A single `call()` can therefore prepare many model requests.

@@ -31,22 +31,73 @@ import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.ToolResultState;
 import io.agentscope.core.middleware.ReasoningInput;
+import io.agentscope.core.state.AgentState;
+import io.agentscope.core.tool.Toolkit;
 import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
 import io.agentscope.harness.agent.filesystem.model.FileData;
 import io.agentscope.harness.agent.filesystem.model.FileInfo;
 import io.agentscope.harness.agent.filesystem.model.GlobResult;
 import io.agentscope.harness.agent.filesystem.model.ReadResult;
 import io.agentscope.harness.agent.subagent.DefaultAgentManager;
+import io.agentscope.harness.agent.subagent.task.BackgroundTask;
 import io.agentscope.harness.agent.subagent.task.TaskRepository;
 import io.agentscope.harness.agent.tool.AgentSpawnTool;
+import io.agentscope.harness.agent.tool.TaskTool;
 import io.agentscope.harness.agent.workspace.WorkspaceManager;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
 import reactor.core.publisher.Flux;
 
 class DynamicSubagentsMiddlewareIsolationTest {
+    @Test
+    void terminalSummaryRequiresActualOutput() {
+        var repository = mock(TaskRepository.class);
+        when(repository.listTasks(any(), any(), any()))
+                .thenReturn(
+                        List.of(
+                                new BackgroundTask(
+                                        "done",
+                                        "worker",
+                                        CompletableFuture.completedFuture("result"))));
+        var middleware =
+                new DynamicSubagentsMiddleware(
+                        List.of(),
+                        null,
+                        null,
+                        null,
+                        new DefaultAgentManager(List.of(), mock(WorkspaceManager.class)),
+                        null,
+                        repository);
+        var toolkit = new Toolkit();
+        toolkit.registerTool(new TaskTool(repository));
+        Agent agent = mock(Agent.class);
+        when(agent.getToolkit()).thenReturn(toolkit);
+        var rc =
+                RuntimeContext.builder()
+                        .sessionId("test")
+                        .agentState(AgentState.builder().build())
+                        .build();
+        AtomicReference<ReasoningInput> seen = new AtomicReference<>();
+        middleware
+                .onReasoning(
+                        agent,
+                        rc,
+                        new ReasoningInput(List.of(), toolkit.getToolSchemas(), null),
+                        input -> {
+                            seen.set(input);
+                            return Flux.empty();
+                        })
+                .blockLast();
+        String summary = tail(seen.get());
+        assertTrue(summary.contains("status: completed"));
+        assertTrue(summary.contains("Status only, not task results"));
+        assertTrue(summary.contains("use task_output"));
+        assertFalse(summary.contains("no need to call task_output"));
+    }
+
     @Test
     void interleavedReasoningAndHostRefreshKeepEachDeclarationSnapshot() {
         var filesystem = mock(AbstractFilesystem.class);

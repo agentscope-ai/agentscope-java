@@ -150,7 +150,7 @@ RuntimeContext ctx = RuntimeContext.builder()
 
 ### 后台任务自动反向通知
 
-后台任务跑完了，**主 agent 不需要轮询**——下一次推理开始前，框架会把已完成的任务结果作为系统提醒注入对话末尾：
+接入自动交付时，后台任务完成后的结果可在下一轮推理前作为系统提醒注入对话末尾：
 
 ```
 <system-reminder>
@@ -160,7 +160,7 @@ RuntimeContext ctx = RuntimeContext.builder()
 </system-reminder>
 ```
 
-主 agent 看到这条 reminder 自然地回应或继续行动。这意味着你**不需要**在 prompt 里写"记得调 task_output 轮询"——那是旧版本的做法。
+交付方式取决于所配置的子 agent 路径及消息总线。如果当前只有状态摘要，应通过 `task_output` 读取实际结果。读取已有结果不会创建、恢复执行或重新运行任务。
 
 ### 后台任务工具
 
@@ -178,11 +178,15 @@ RuntimeContext ctx = RuntimeContext.builder()
 
 `agent_spawn` / `agent_send` 管理子 agent **实例**（创建、复用、通信）；`task_output` / `wait_async_results` / `task_cancel` / `task_list` 管理后台**任务结果**（查状态、取结果、等待、取消）。两者的桥梁是 `task_id`——在 `agent_spawn` 或 `agent_send` 使用 `timeout_seconds=0` 时返回。
 
-> 大多数情况下自动反向通知机制会把结果推回来，不需要显式调用任务工具。它们主要用作逃生口：在反向通知触发前主动检查进度、等待一组必须同时拿齐的结果、取消不再需要的任务、或者在对话压缩后恢复任务状态。
+> 自动交付已提供所需结果时，无需额外读取。它们主要用作逃生口：在反向通知触发前主动检查进度、等待一组必须同时拿齐的结果、取消不再需要的任务、或者在对话压缩后恢复任务状态。
+
+自动交付和等待工具会返回各结果的完整正文。任务状态摘要用于说明执行状态，需要实际结果时可通过 `task_output` 读取。
+
+`task_output` 返回已完成任务的完整结果。
 
 异步结果有三种常用收集方式：
 
-- **主动通知**：不阻塞等待时的默认路径。子任务完成后，下一轮 reasoning 前通过 `<system-reminder>` 注入。
+- **主动通知**：接入自动交付时，子任务完成后的结果可在后续 reasoning 前通过 `<system-reminder>` 注入。
 - **指定任务检查**：用 `task_output(task_id, block=false)` 主动查看某个任务的当前状态或终态结果。
 - **等待 barrier（必须等齐时优先）**：用 `wait_async_results(task_ids="id1,id2")` 或 `wait_async_results(wait_all=true)`。barrier 模式会等到集合终态，并**把各任务结果直接写进本次工具返回**，主 agent 可立刻继续推理。`wait_all=true` 以调用开始时的未完成任务快照为准，等待期间新创建的任务不会加入 wait set。
 

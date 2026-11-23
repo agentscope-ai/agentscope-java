@@ -56,7 +56,7 @@ graph LR
 Flush（路径 1）会在以下三个时机被触发：
 
 1. **每次 `call()` 结束** —— `MemoryFlushMiddleware` 的默认行为。可以用 `flushTrigger` 改成 `NEVER` 或 `THROTTLED(Duration)`。
-2. **压缩前的预提取** —— `CompactionConfig.flushBeforeCompact = true`（默认）时，压缩对话前缀前先 flush 一次。
+2. **压缩前的预提取** —— 已启用长期记忆且 `CompactionConfig.flushBeforeCompact = true`（默认）时，压缩对话前缀前先 flush 一次。
 3. **上下文溢出兜底** —— 模型真的报 `context_length_exceeded` 时，框架做一次紧急压缩，连带 flush。
 
 这三处用的是 **同一份** `flushPrompt`，定制后三处行为一致。

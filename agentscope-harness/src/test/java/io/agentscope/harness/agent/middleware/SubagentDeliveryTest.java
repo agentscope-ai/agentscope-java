@@ -34,6 +34,8 @@ import io.agentscope.harness.agent.subagent.task.TaskDelivery;
 import io.agentscope.harness.agent.subagent.task.TaskRepository;
 import io.agentscope.harness.agent.subagent.task.TaskRunSpec;
 import io.agentscope.harness.agent.subagent.task.TaskStatus;
+import io.agentscope.harness.agent.tool.TaskTool;
+import io.agentscope.harness.agent.workspace.WorkspaceManager;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -130,6 +132,42 @@ class SubagentDeliveryTest {
     }
 
     // ---- buildDeliveryReminder static formatting ---------------------------------------------
+
+    @Test
+    void deliveryPreservesLargeResultsAndErrorsWithTaskOutputAvailable() {
+        var repo = new StubRepo();
+        String payload = "status: max_iterations\n" + "evidence ".repeat(5000) + "REQUIRED_TAIL";
+        String failure = "details ".repeat(5000) + "FAILURE_TAIL";
+        repo.queue.add(delivery("full", TaskStatus.COMPLETED, payload, null));
+        repo.queue.add(delivery("failed", TaskStatus.FAILED, null, failure));
+        try (var agent = newReActAgent()) {
+            agent.getToolkit().registerTool(new TaskTool(repo));
+            var rc = RuntimeContext.builder().agentState(agent.getAgentState()).build();
+            var middleware =
+                    new SubagentsMiddleware(List.of(dummyEntry()), repo, (WorkspaceManager) null);
+            AtomicReference<ReasoningInput> seen = new AtomicReference<>();
+            middleware
+                    .onReasoning(
+                            agent,
+                            rc,
+                            new ReasoningInput(
+                                    List.of(), agent.getToolkit().getToolSchemas(), null),
+                            input -> {
+                                seen.set(input);
+                                return Flux.empty();
+                            })
+                    .blockLast();
+            String notification =
+                    seen.get().messages().stream()
+                            .map(Msg::getTextContent)
+                            .filter(t -> t.contains("<task_result>"))
+                            .findFirst()
+                            .orElseThrow();
+            assertTrue(notification.contains(payload));
+            assertTrue(notification.contains(failure));
+            assertEquals(List.of("full", "failed"), repo.markCalls);
+        }
+    }
 
     @Test
     void reminder_singleCompleted_rendersTaskResultBlock() {

@@ -98,83 +98,29 @@ public class SubagentsMiddleware implements HarnessRuntimeMiddleware {
 
             ## Subagents
 
-            You have access to subagent tools for spawning and coordinating isolated subagents.
-            Each subagent runs its own conversation, separate from yours. Every invocation — a spawn
-            with a task, or a follow-up send — produces one result: returned directly when you wait
-            synchronously, or pushed back to you when it runs in the background. A live local
-            subagent keeps its own history across follow-up sends; remote backends may start a new
-            conversation for each send. Session persistence and later resumption depend on the
-            declaration (`persistSession`) and the backend, so don't rely on resuming it later.
+            Delegate self-contained work when isolation or parallelism is useful. Each subagent
+            starts a fresh conversation: include the goal, needed paths/context, constraints,
+            and expected deliverable. It does not see your conversation. Do not re-spawn or
+            re-send a denied request to bypass permissions.
 
-            ### Agent Tools
+            Use `%s` to spawn, `%s` for follow-ups, and `%s` to list agents. Keep the full
+            agent_key for follow-ups; it is distinct from agent_id, session_id, and task_id.
+            Each invocation produces one result. A live local agent retains its history; remote backends may start a new conversation. Later resumption
+            depends on the declaration (persistSession) and backend, so do not assume persistence.
 
-            **`%s`** — Spawn an isolated subagent
-            - `agent_id` (required): which subagent to instantiate
-            - `task` (optional): initial prompt; omit to create a persistent session
-            - `label` (optional): human-readable name for referencing via send
-            - `timeout_seconds`: wait time; 0=fire-and-forget (returns task_id), default=30, max=600
-            - Response always includes `agent_key:` (opaque handle) — save it for follow-up sends
+            With timeout_seconds=0, work runs in the background. A sync timeout returns
+            status: timeout_promoted and task_id: the task is already running. Do NOT retry it.
+            Results may arrive as reminders in a later reasoning step. Continue independent work;
+            use task_output(block=false) when the actual result is missing or truncated.
 
-            **`%s`** — Send a follow-up message to an existing subagent
-            - `agent_key`: copy the **full value** after `agent_key:` from spawn output (starts with `agent:`). This is NOT `agent_id`, NOT `session_id`, and NOT `task_id`
-            - Or use `label` if you set one at spawn (mutually exclusive with agent_key)
-            - `message` (required): content to send
-            - `timeout_seconds`: 0=fire-and-forget, >0=wait for reply (default: 30)
+            When dependent work must wait, use wait_async_results(task_ids=...) for a known group,
+            or wait_async_results(wait_all=true) for the snapshot of current non-terminal tasks.
+            Both return results. With neither option, legacy inbox-any mode wakes on ANY inbox
+            message; it does NOT wait for every task. task_output(block=true) waits for one task.
+            task_list shows tracked tasks; task_cancel cancels running work.
 
-            **`%s`** — List active subagents
-
-            ### Task Tools (for async/background operations)
-
-            **`task_output`** — Retrieve the result of a background task by task_id.
-            - **You rarely need this.** Completed tasks are pushed back to you automatically as a `<system-reminder>` block before your next reasoning step.
-            - Use `task_output(block=false)` when you need a specific task's latest status/result, the pushed summary was truncated, or you intentionally want to check progress while continuing other reasoning.
-            - Use `task_output(block=true)` only for one specific task you are ready to wait for; for multiple tasks use `wait_async_results`.
-
-            **`wait_async_results`** — Wait for background-task results when the next step depends on them.
-            - Prefer `wait_async_results(task_ids=...)`: waits until those tasks are terminal and **returns their results in the tool output**.
-            - Prefer `wait_async_results(wait_all=true)`: waits for the snapshot of currently non-terminal background tasks (tasks started later are not added) and **returns their results**.
-            - Without `task_ids` and without `wait_all`: legacy **inbox-any** mode — returns when ANY inbox message arrives. This is NOT wait-all; use `task_ids` / `wait_all=true` when every task in a group must finish.
-
-            **`task_cancel`** — Cancel a running background task by task_id. No effect on already-completed tasks.
-
-            **`task_list`** — List all in-flight background tasks (durable, accurate across compaction and migration). Completed tasks fall off this list after they're pushed to you.
-
-            ### Background task flow
-            1. Spawn with `timeout_seconds=0` to fire-and-forget; the response gives you a task_id.
-            2. Continue with independent work. If you need fresh state, use `task_output(block=false)` for selected tasks.
-            3. If a later step must wait for a known group, call `wait_async_results(task_ids=...)`; if it must wait for every current background task, call `wait_async_results(wait_all=true)`.
-            4. If the agent has nothing useful to do, hand control back to the user — they'll prompt again when ready and the next reasoning round will surface any completions.
-
-            ### Timeout promotion
-            When a sync spawn/send exceeds its timeout, the task is **not lost** — it is automatically promoted to a background task. You receive `status: timeout_promoted` with a `task_id`. Treat it like any async task: the result will be pushed back to you automatically as a `<system-reminder>`. Do NOT retry the same task — it is already running in the background.
-
-            ### When to use subagents
-            - When a task is complex and multi-step, and can be fully delegated in isolation
-            - When a task is independent of other tasks and can run in parallel
-            - When a task requires focused reasoning or heavy context usage that would bloat the main thread
-            - When sandboxing improves reliability (e.g. code analysis, structured searches, data formatting)
-            - When you only care about the output, not the intermediate steps (e.g. research → synthesized report)
-
-            ### When NOT to use subagents
-            - If the task is trivial (a few tool calls or simple lookup)
-            - If you need to see intermediate reasoning or steps after completion
-            - If delegating does not reduce token usage, complexity, or context switching
-            - If splitting would add latency without benefit
-
-            ### Subagent lifecycle
-            1. **Spawn** → Write a self-contained task: goal, needed context and file paths, constraints, and the expected deliverable. The subagent starts from a fresh conversation and does not see yours
-            2. **Run** → The subagent completes the task autonomously
-            3. **Return** → The subagent's final message is delivered as that invocation's result (sync tool result, or pushed back for background tasks)
-            4. **Reconcile** → Incorporate or synthesize the result into the main thread
-
-            ### Usage patterns
-            - **Parallel async execution**: Split work by independence/dependency. Launch independent, non-conflicting tasks with `timeout_seconds=0`; continue reasoning, then use `task_output(block=false)` for selective progress checks or `wait_async_results(task_ids=...)` / `wait_async_results(wait_all=true)` when a barrier is required
-            - **Parallel sync delegation**: Multiple sync `agent_spawn` / `agent_send` calls in one turn run concurrently by default (Toolkit parallel=true); the parent waits for that batch of tool results before continuing. Pass a Toolkit with parallel=false to opt out.
-            - **Mixed short/long work**: Wait for short prerequisite tasks first, continue reasoning with those results, and merge long-running async results later through `task_output` or `wait_async_results`
-            - **Sync delegation**: Use default timeout for simple one-shot delegation when one result is needed before the next reasoning step
-            - **Persistent session**: Spawn without a task, then use send for multi-turn interaction with the live subagent
-            - **Cancel stale work**: Use task_cancel to stop background tasks that are no longer needed
-            - Subagent results are NOT visible to the user — always summarize them in your response
+            Reconcile results before declaring success. COMPLETED describes execution, not goal
+            acceptance; status: max_iterations / partial means unfinished work remains.
             """;
     // @formatter:on
 
@@ -545,9 +491,6 @@ public class SubagentsMiddleware implements HarnessRuntimeMiddleware {
                     .append(total - shown)
                     .append(" more — call task_list() to inspect.\n");
         }
-        sb.append(
-                "\nIf you need a single task's full output, call"
-                        + " task_output(task_id=..., block=false).\n");
         sb.append("</system-reminder>");
         return Msg.builder()
                 .role(MsgRole.USER)
@@ -730,7 +673,7 @@ public class SubagentsMiddleware implements HarnessRuntimeMiddleware {
     }
 
     /**
-     * Builds a concise summary of in-flight tasks for the current session, or {@code null} if
+     * Builds a concise summary of undelivered tasks for the current session, or {@code null} if
      * none. Shared with {@link DynamicSubagentsMiddleware}.
      *
      * <p>Phase B-3: already-delivered tasks are filtered out — they live in the conversation
@@ -776,9 +719,9 @@ public class SubagentsMiddleware implements HarnessRuntimeMiddleware {
             count++;
         }
         sb.append(
-                "(Completed/failed/cancelled tasks are pushed back to you as <system-reminder>"
-                        + " blocks, not listed here — no need to call task_output unless you need"
-                        + " the full payload.)\n");
+                "(Status only, not task results. For a terminal task, use task_output if its"
+                        + " actual output is missing or truncated in your context. A terminal"
+                        + " status alone does not establish acceptance.)\n");
         return sb.toString();
     }
 }

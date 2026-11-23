@@ -36,6 +36,7 @@ import io.agentscope.core.tool.AgentTool;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.harness.agent.IsolationScope;
 import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
+import io.agentscope.harness.agent.filesystem.local.LocalFilesystem;
 import io.agentscope.harness.agent.filesystem.model.EditResult;
 import io.agentscope.harness.agent.filesystem.model.FileData;
 import io.agentscope.harness.agent.filesystem.model.FileInfo;
@@ -156,6 +157,49 @@ class FilesystemToolTest {
                 assertText(
                         tool.readFile(runtimeContext, absolutePath.toString(), null, null),
                         ToolResultState.SUCCESS));
+    }
+
+    @Test
+    void editClassificationIgnoresReplacementTextAndPathKeywords(@TempDir Path root)
+            throws Exception {
+        var local = new LocalFilesystem(root);
+        var localTool = new FilesystemTool(local);
+        for (String keyword : List.of("permission denied", "not found", "outside", "read-only")) {
+            String path = keyword + ".txt";
+            Files.writeString(root.resolve(path), keyword + "\n" + keyword);
+            var result = localTool.editFile(RT, path, keyword, "fixed", false);
+            assertErrorKind(result, ToolErrorKind.INVALID_ARGUMENT, path);
+            assertTrue(textOf(result).contains(keyword));
+            assertErrorKind(
+                    localTool.editFile(RT, path, "missing " + keyword, "fixed", false),
+                    ToolErrorKind.INVALID_ARGUMENT,
+                    path);
+            assertErrorKind(
+                    localTool.readFile(RT, "missing-" + path, null, null),
+                    ToolErrorKind.NOT_FOUND,
+                    "missing-" + path);
+        }
+    }
+
+    @Test
+    void controlledBackendErrorsRetainKindsWithoutScanningPayload() {
+        String path = "permission denied not found.txt";
+        for (var entry :
+                Map.of(
+                                "Permission denied: " + path, ToolErrorKind.PERMISSION_DENIED,
+                                "Error editing file '" + path + "': Permission denied",
+                                        ToolErrorKind.PERMISSION_DENIED,
+                                "Edit conflict on '"
+                                                + path
+                                                + "' after 5 retries. Another writer is"
+                                                + " concurrently modifying this file.",
+                                        ToolErrorKind.CONFLICT,
+                                "backend failure for " + path, ToolErrorKind.IO_ERROR)
+                        .entrySet()) {
+            when(filesystem.edit(RT, path, "old", "new", false))
+                    .thenReturn(EditResult.fail(entry.getKey()));
+            assertErrorKind(tool.editFile(RT, path, "old", "new", false), entry.getValue(), path);
+        }
     }
 
     // ==================== Bug reproduction: listFiles ambiguous error message ====================

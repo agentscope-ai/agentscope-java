@@ -402,12 +402,9 @@ final class HarnessAgentBuilderSupport {
             if (capturedDisableFilesystemTools) sub.disableFilesystemTools();
             if (capturedDisableShellTool) sub.disableShellTool();
             if (capturedDisableWebTools) sub.disableWebTools();
-            // Long-term memory is opt-in: propagate an explicit opt-in, and only propagate
-            // disable flags alongside it (they are no-ops when memory stays off).
-            if (capturedMemoryEnabled) {
-                if (capturedDisableMemoryTools) sub.disableMemoryTools();
-                if (capturedDisableMemoryHooks) sub.disableMemoryHooks();
-            }
+            // Thread tools are independent of long-term memory; inherit their disable flag too.
+            if (capturedDisableMemoryTools) sub.disableMemoryTools();
+            if (capturedDisableMemoryHooks) sub.disableMemoryHooks();
             if (capturedWebHttpClient != null) sub.webHttpClient(capturedWebHttpClient);
             if (capturedDisableWorkspaceContext) sub.disableWorkspaceContext();
             configurePlanMode(
@@ -599,10 +596,8 @@ final class HarnessAgentBuilderSupport {
             if (capturedDisableShellTool) sub.disableShellTool();
             if (capturedDisableWebTools) sub.disableWebTools();
             if (capturedDisableRepeatedFailureGuard) sub.disableRepeatedFailureGuard();
-            if (capturedMemoryEnabled) {
-                if (capturedDisableMemoryTools) sub.disableMemoryTools();
-                if (capturedDisableMemoryHooks) sub.disableMemoryHooks();
-            }
+            if (capturedDisableMemoryTools) sub.disableMemoryTools();
+            if (capturedDisableMemoryHooks) sub.disableMemoryHooks();
             if (capturedWebHttpClient != null) sub.webHttpClient(capturedWebHttpClient);
             configurePlanMode(
                     sub, capturedPlanModeEnabled, capturedPlanModeAllowShell, capturedPlanFileDir);

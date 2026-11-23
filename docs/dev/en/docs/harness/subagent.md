@@ -152,7 +152,7 @@ Decompose work by independence and dependency graph first: nodes without depende
 
 ### Background tasks push back automatically
 
-When a background task finishes, the parent **does not need to poll** — before the parent's next reasoning step, the framework injects completed task results as a system reminder at the end of the conversation:
+When automatic delivery is wired, completed background results can be injected as a system reminder before the parent's next reasoning step:
 
 ```
 <system-reminder>
@@ -162,7 +162,11 @@ Background tasks delivered:
 </system-reminder>
 ```
 
-The parent naturally responds or continues. This means **you do not** write "remember to poll task_output" in your prompt — that was the old way.
+Delivery depends on the configured subagent path and message bus. If only a status summary is present, use `task_output` to retrieve the actual output. Reading an existing result does not start, resume, or re-run a task.
+
+Automatic delivery and wait barriers include the full output of each result they return. Task status summaries report execution state. Retrieve the task's output when the summary alone cannot answer your question.
+
+`task_output` returns the full result of a completed task.
 
 ### Background task tools
 
@@ -180,11 +184,11 @@ Behind the scenes, subagent lifecycle is split across two groups of tools:
 
 `agent_spawn` / `agent_send` manage subagent **instances** (create, reuse, communicate); `task_output` / `wait_async_results` / `task_cancel` / `task_list` manage background **task results** (check status, fetch output, wait, cancel). The bridge between them is the `task_id` — returned by `agent_spawn` or `agent_send` when `timeout_seconds=0`.
 
-> In most cases the auto push-back mechanism delivers results without any explicit tool call. The task tools are useful as escape hatches: checking progress before push-back fires, waiting for a set of results that must be available together, cancelling tasks that are no longer needed, or recovering task state after conversation compaction.
+> When automatic delivery supplies the required output, no explicit read is needed. The task tools are useful as escape hatches: checking progress before push-back fires, waiting for a set of results that must be available together, cancelling tasks that are no longer needed, or recovering task state after conversation compaction.
 
 There are three common ways to collect asynchronous results:
 
-- **Automatic push-back**: the default path when you do not block. Completed child tasks are injected as a `<system-reminder>` before the next reasoning step.
+- **Automatic push-back**: when delivery is wired, completed child results can arrive as a `<system-reminder>` before a later reasoning step.
 - **Targeted task check**: call `task_output(task_id, block=false)` to inspect one task's current state or final result.
 - **Wait barrier (preferred for must-collect-all)**: call `wait_async_results(task_ids="id1,id2")` or `wait_async_results(wait_all=true)`. Barrier mode waits until the set is terminal and **embeds each task's result in the tool return**, so you can continue immediately. `wait_all=true` uses a snapshot of unfinished tasks at call start and does not add tasks created while waiting.
 

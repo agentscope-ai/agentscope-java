@@ -298,7 +298,7 @@ public class ConversationCompactor {
 
         // Step 2: Flush long-term memories only from newly compacted raw messages (best-effort).
         Mono<Void> flushStep =
-                config.isFlushBeforeCompact()
+                config.isFlushBeforeCompact() && flushManager != null
                         ? flushManager
                                 .flushMemories(rc, flushInput)
                                 .doOnSuccess(v -> log.debug("Memory flush before compaction done"))

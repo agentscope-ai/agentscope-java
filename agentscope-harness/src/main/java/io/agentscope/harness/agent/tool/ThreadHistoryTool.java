@@ -490,10 +490,8 @@ public class ThreadHistoryTool {
             result.put("omittedFromWindow", omitted);
             result.put(
                     "note",
-                    "Result budget reached; continue thread_history with"
-                            + " beforeMessageId=nextBeforeMessageId. Pages read the latest"
-                            + " projection, not a snapshot. Recover a full message with"
-                            + " thread_search and thread_history messageId=<id>.");
+                    "Continue thread_history with beforeMessageId=nextBeforeMessageId."
+                            + " Pages read the latest projection, not a snapshot.");
         }
         return result;
     }

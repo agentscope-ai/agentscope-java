@@ -62,7 +62,7 @@ public record ContextItem(
                 kind, sourceId, versionOf(content), Placement.RUNTIME, required, 50, content);
     }
 
-    private static String versionOf(String content) {
+    static String versionOf(String content) {
         try {
             return HexFormat.of()
                     .formatHex(

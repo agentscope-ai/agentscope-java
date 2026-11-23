@@ -90,6 +90,7 @@ public class CompactionMiddleware implements HarnessRuntimeMiddleware {
     private final Model model;
     private final CompactionConfig config;
     private final LearnedContextWindows learnedWindows;
+    private final boolean memoryEnabled;
 
     public CompactionMiddleware(
             WorkspaceManager workspaceManager, Model model, CompactionConfig config) {
@@ -101,10 +102,21 @@ public class CompactionMiddleware implements HarnessRuntimeMiddleware {
             Model model,
             CompactionConfig config,
             LearnedContextWindows learnedWindows) {
+        this(workspaceManager, model, config, learnedWindows, true);
+    }
+
+    /** Allows Harness to gate memory extraction independently of conversation compaction. */
+    public CompactionMiddleware(
+            WorkspaceManager workspaceManager,
+            Model model,
+            CompactionConfig config,
+            LearnedContextWindows learnedWindows,
+            boolean memoryEnabled) {
         this.workspaceManager = workspaceManager;
         this.model = model;
         this.config = config;
         this.learnedWindows = learnedWindows;
+        this.memoryEnabled = memoryEnabled;
     }
 
     /** Narrow declaration: subclasses overriding more hooks must extend this set. */
@@ -239,7 +251,8 @@ public class CompactionMiddleware implements HarnessRuntimeMiddleware {
                                                             .flushBeforeCompact(
                                                                     config.isFlushBeforeCompact())
                                                             .build(),
-                                                    learnedWindows);
+                                                    learnedWindows,
+                                                    memoryEnabled);
                                     return forced.prepareCandidate(
                                                     agent,
                                                     ctx,
@@ -391,7 +404,9 @@ public class CompactionMiddleware implements HarnessRuntimeMiddleware {
                     ConversationCompactor compactor =
                             new ConversationCompactor(
                                     compactModel,
-                                    new MemoryFlushManager(workspaceManager, compactModel),
+                                    memoryEnabled
+                                            ? new MemoryFlushManager(workspaceManager, compactModel)
+                                            : null,
                                     tokenCounter,
                                     toolResultTokenCounter);
                     // Copies may retain message IDs. Only an unchanged view can become durable;

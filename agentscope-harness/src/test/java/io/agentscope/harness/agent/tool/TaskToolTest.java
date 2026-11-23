@@ -35,6 +35,21 @@ class TaskToolTest {
     private final TaskTool tool = new TaskTool(repository);
 
     @Test
+    void readsFullPartialResultAndMarksDelivered() {
+        String source =
+                "status: max_iterations\ngenerate_reason: MAX_ITERATIONS\nnote: partial\nreply:\n"
+                        + "测😀试".repeat(6000);
+        var task = new BackgroundTask("large", "agent", CompletableFuture.completedFuture(source));
+        when(repository.getTask(context, null, "large")).thenReturn(task);
+
+        String output =
+                assertText(tool.taskOutput(context, "large", false, null), ToolResultState.SUCCESS);
+
+        assertTrue(output.endsWith("\nResult:\n" + source));
+        verify(repository).markDelivered(context, null, "large");
+    }
+
+    @Test
     void invalidTaskIdsAreErrorsBeforeRepositoryAccess() {
         assertTrue(
                 assertText(tool.taskOutput(context, " ", false, null), ToolResultState.ERROR)
@@ -73,7 +88,9 @@ class TaskToolTest {
     @Test
     void failedTaskIsReportedAsError() {
         CompletableFuture<String> failed = new CompletableFuture<>();
-        failed.completeExceptionally(new IllegalStateException("child failed"));
+        failed.completeExceptionally(
+                new IllegalStateException(
+                        "child failed", new IllegalArgumentException("invalid field")));
         BackgroundTask task = new BackgroundTask("failed", "agent", failed);
         when(repository.getTask(context, context.getSessionId(), "failed")).thenReturn(task);
 
@@ -81,6 +98,7 @@ class TaskToolTest {
                 assertText(tool.taskOutput(context, "failed", false, null), ToolResultState.ERROR);
 
         assertTrue(output.contains("Failed: child failed"));
+        assertTrue(output.endsWith("\nError:\nchild failed\nCause: invalid field"));
     }
 
     @Test

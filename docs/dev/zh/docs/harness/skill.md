@@ -274,7 +274,7 @@ agent.promoteSkill("notes-taker", "alice")                   // 手动晋升一�
 
 ## Agent 是怎么读取和执行 skill 的
 
-每轮推理时，agent 会在 system prompt 里看到一个 `<available_skills>` 块，列出当前可见的所有 skill：
+每轮推理时，agent 会在运行时材料中看到一个 `<available_skills>` 块，列出当前可见的 skill；大目录使用精简分页索引：
 
 ```xml
 <available_skills>
@@ -294,7 +294,9 @@ agent.promoteSkill("notes-taker", "alice")                   // 手动晋升一�
 
 加载某个 skill 时 agent 会调用内置工具 `load_skill_through_path`：
 
-- `load_skill_through_path(skillId, path="SKILL.md")` 返回 markdown 正文
+通过 `load_skill_through_path(query="关键词", offset=0)` 可按名称、ID 或描述查找可见 Skills；空 query 列出全部目录，按返回的 offset 翻页。大目录使用精简索引，完整内容和 files-root 在加载 SKILL.md 时返回；发现与加载都遵循当前调用的目录和权限。精简目录保留默认或自定义执行约定；当前调用的加载工具被隐藏或替换为外部工具时，保留完整目录。
+
+- `load_skill_through_path(skillId, path="SKILL.md")` 返回完整 markdown 和 files-root
 - `load_skill_through_path(skillId, path="references/style-guide.md")` 返回该 skill 目录下的任意文件
 
 具体怎么取文件，取决于 skill 来自哪里：

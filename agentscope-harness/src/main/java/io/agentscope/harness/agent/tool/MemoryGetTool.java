@@ -68,11 +68,10 @@ public class MemoryGetTool {
             name = "memory_get",
             readOnly = true,
             description =
-                    "Read specific lines from a memory file. Use after memory_search to pull"
-                            + " full context around matched lines. Path is relative to the"
-                            + " caller's memory namespace. Output is bounded; continue with the"
-                            + " startLine given in the truncation notice. For a long line, use"
-                            + " startLine=endLine and charOffset to read consecutive segments.")
+                    "Read specific lines from a memory file. Use after memory_search to pull full"
+                        + " context around matched lines. Path is relative to the caller's memory"
+                        + " namespace. Follow returned continuation parameters. For a long line,"
+                        + " use startLine=endLine and charOffset to read consecutive segments.")
     public ToolResultBlock memoryGet(
             RuntimeContext runtimeContext,
             @ToolParam(
@@ -244,9 +243,7 @@ public class MemoryGetTool {
                 + start
                 + '-'
                 + end
-                + "; the "
-                + MAX_OUTPUT_CHARS
-                + "-character page budget was reached. Continue with memory_get "
+                + ". Continue with memory_get "
                 + path
                 + " startLine="
                 + (last + 1)

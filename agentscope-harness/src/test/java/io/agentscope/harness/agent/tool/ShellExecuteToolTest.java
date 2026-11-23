@@ -233,8 +233,10 @@ class ShellExecuteToolTest {
         ToolResultBlock result = new ShellExecuteTool(external).execute(RT, "test", null, null);
 
         String output = textOf(result);
-        assertTrue(output.contains("omitted content is not included here"));
-        assertTrue(output.contains("missing content is unavailable"));
+        assertTrue(output.contains("Output was truncated"));
+        assertTrue(
+                output.contains(
+                        "Without a saved-output path above, omitted content is unavailable"));
         assertFalse(output.contains("read_file"));
         assertFalse(output.contains("large_tool_results"));
         assertFalse(output.contains("saved to"));

@@ -20,6 +20,7 @@ import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.middleware.ReasoningInput;
+import io.agentscope.core.state.AgentState;
 import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
 import io.agentscope.harness.agent.filesystem.model.FileInfo;
 import io.agentscope.harness.agent.filesystem.model.GlobResult;
@@ -106,7 +107,15 @@ public class DynamicSubagentsMiddleware implements HarnessRuntimeMiddleware {
     /** Narrow declaration: subclasses overriding more hooks must extend this set. */
     @Override
     public Set<ExtensionPoint> activePoints() {
-        return EnumSet.of(ExtensionPoint.ON_REASONING);
+        return EnumSet.of(ExtensionPoint.ON_AGENT_STATE_READY, ExtensionPoint.ON_REASONING);
+    }
+
+    @Override
+    public void onAgentStateReady(
+            Agent agent, RuntimeContext ctx, AgentState state, List<Msg> inputMessages) {
+        // Permission confirmation can resume directly in acting with a fresh RuntimeContext.
+        // Install only after admission/state restoration, using this call's resolved identity.
+        refreshAgentManager(ctx);
     }
 
     /**

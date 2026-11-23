@@ -454,7 +454,9 @@ class SessionSearchToolCeilingTest {
         assertTrue(out.contains("\"truncated\":true"), out);
         assertTrue(out.contains("\"omittedFromWindow\":"), out);
         assertTrue(out.contains("Message truncated"), "per-message preview keeps identity");
-        assertTrue(out.contains("thread_search"), "note points at a recovery path");
+        assertTrue(
+                out.contains("thread_history(agentId="), "preview points at the original message");
+        assertTrue(out.contains("messageId="), "recovery includes the exact message ID");
         Map<?, ?> parsed = JsonUtils.getJsonCodec().fromJson(out, Map.class);
         assertTrue(((List<?>) parsed.get("messages")).size() < 100, "later messages are omitted");
     }

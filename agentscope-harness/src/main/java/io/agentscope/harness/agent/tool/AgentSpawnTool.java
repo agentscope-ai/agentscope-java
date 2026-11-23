@@ -313,19 +313,12 @@ public class AgentSpawnTool {
             timeoutManaged = true,
             description =
                     """
-                    Spawn an isolated subagent for delegated or background work. \
-                    Every response starts with three lines: agent_key (pass this verbatim to \
-                    agent_send as agent_key), agent_id (the subagent type name), and session_id \
-                    (internal; do not use as agent_key). Sync mode returns the reply below that; \
-                    async (timeout_seconds=0) adds task_id for task_output or wait_async_results; \
-                    task_id is NOT agent_key. Multiple sync tool calls in one turn run in parallel \
-                    by default; pass a Toolkit with parallel=false to serialize, \
-                    or use async tasks for fire-and-forget parallelism. \
-                    The subagent does not inherit the parent conversation, so include every \
-                    file path, constraint, and expected output format the task needs. New \
-                    sessions start from the supplied task; persistent sessions may retain their own history. \
-                    Do not re-spawn the same task reworded to bypass a permission denial; \
-                    report the limitation instead.\
+                    Spawn an isolated subagent. Returns agent_key (copy verbatim to agent_send), \
+                    agent_id (type), and session_id (internal). Sync mode includes the reply; \
+                    async or timeout promotion includes task_id for task_output / wait_async_results. \
+                    task_id is NOT agent_key. Omit task to create a session without starting work. \
+                    The child does not see your conversation; provide a self-contained task. \
+                    A persistent local agent retains its history. Do not rephrase a denied request to bypass permissions.\
                     """)
     public Mono<ToolResultBlock> agentSpawn(
             RuntimeContext runtimeContext,
@@ -635,13 +628,9 @@ public class AgentSpawnTool {
             timeoutManaged = true,
             description =
                     """
-                    Send a message to an existing subagent. Use the exact string from the \
-                    agent_key line of agent_spawn output (starts with agent:), or the label \
-                    you set at spawn. Do not pass agent_id, session_id, or task_id here. \
-                    timeout_seconds=0 returns task_id for task_output or wait_async_results. \
-                    Sends are follow-ups to a subagent that already holds the context you \
-                    gave it. Use follow-ups to steer the task or continue its work. Do not \
-                    re-send the same request reworded to bypass a permission denial.\
+                    Send a follow-up to an existing subagent using agent_key or label. \
+                    Returns the reply, or task_id for background work / timeout promotion. \
+                    Do not rephrase a denied request to bypass permissions.\
                     """)
     public Mono<ToolResultBlock> agentSend(
             RuntimeContext runtimeContext,
