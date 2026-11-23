@@ -211,12 +211,13 @@ PermissionContextState permCtx =
 ```java
 import io.agentscope.core.event.ConfirmResult;
 
-// ASK 决策会把建议规则挂在 PermissionDecision 上（权限钩子可见），而不是 ToolUseBlock 上。
-// 恢复层可以直接放行，也可以显式传入规则，让今后相同的调用自动放行：
+// ASK 决策中包含基于本次调用生成的 suggestedRules（位于 ToolUseBlock 上）。
+// 接受建议时，把它放入结果即可：
 ConfirmResult result =
         new ConfirmResult(
                 /* confirmed = */ true,
-                /* toolCall  = */ toolCall);
+                /* toolCall  = */ toolCall,
+                /* rules     = */ toolCall.getSuggestedRules());
 ```
 
 完整可运行示例：`agentscope-examples/documentation/.../tool/PermissionContextExample.java`、`hitl/PermissionHITLExample.java`。
@@ -390,6 +391,8 @@ if (result != null && result.getGenerateReason() == GenerateReason.PERMISSION_AS
 ### Streaming 模式
 
 使用 `streamEvents()` 时，不需要从返回的 `Msg` 提取 `ToolUseBlock` —— 通过事件流直接获得 `RequireUserConfirmEvent`，它携带了待确认的工具调用列表：
+
+配置状态存储或原生会话日志后，agent 会先保存待确认工具状态和确认请求的 replyId，再发布该事件；原生会话日志还会在同一边界提交待确认请求记录。如果保存失败，本次调用会报错，不发布授权提示。跨进程重启恢复需要持久化后端，内存后端不提供这一保证。此顺序不保证保存完成后订阅者断开连接时仍能收到提示。
 
 ```java
 import io.agentscope.core.event.AgentEvent;

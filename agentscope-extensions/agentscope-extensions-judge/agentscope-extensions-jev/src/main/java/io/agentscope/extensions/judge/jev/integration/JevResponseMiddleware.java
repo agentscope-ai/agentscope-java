@@ -36,10 +36,12 @@ import io.agentscope.extensions.judge.jev.JevJudge;
 import io.agentscope.extensions.judge.jev.evaluation.JevTrace;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.EnumSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.function.Function;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
@@ -91,6 +93,12 @@ public final class JevResponseMiddleware implements MiddlewareBase {
 
     public static Builder builder() {
         return new Builder();
+    }
+
+    /** Narrow declaration: subclasses overriding more hooks must extend this set. */
+    @Override
+    public Set<ExtensionPoint> activePoints() {
+        return EnumSet.of(ExtensionPoint.ON_MODEL_CALL);
     }
 
     @Override
