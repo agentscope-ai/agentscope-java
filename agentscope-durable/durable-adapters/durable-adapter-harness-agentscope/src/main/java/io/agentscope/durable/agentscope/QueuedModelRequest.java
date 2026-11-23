@@ -20,13 +20,17 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.GenerateOptions;
+import io.agentscope.core.model.ToolChoice;
 import io.agentscope.core.model.ToolSchema;
+import io.agentscope.core.util.JsonUtils;
 import io.agentscope.durable.DurableJson;
 import io.agentscope.durable.DurableTurn;
 import io.agentscope.durable.DurableTypes.Signal;
 import io.agentscope.durable.DurableTypes.ThreadKey;
+import io.agentscope.durable.ModelExecutions;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * A recoverable model dispatch. A publisher acknowledges only after durable MQ acceptance,
@@ -51,7 +55,7 @@ public record QueuedModelRequest(
             List<ToolSchema> tools,
             GenerateOptions options) {
         var generation = DurableJson.value(options);
-        if (generation instanceof ObjectNode fields)
+        if (generation instanceof ObjectNode fields) {
             fields.remove(
                     List.of(
                             "apiKey",
@@ -60,6 +64,9 @@ public record QueuedModelRequest(
                             "baseUrl",
                             "endpointPath",
                             "executionConfig"));
+            if (options.getToolChoice() != null)
+                fields.set("toolChoice", encodeChoice(options.getToolChoice()));
+        }
         return new QueuedModelRequest(
                 thread,
                 turnId,
@@ -68,6 +75,39 @@ public record QueuedModelRequest(
                 DurableJson.value(messages),
                 DurableJson.value(tools),
                 generation);
+    }
+
+    ModelExecutions.Key executionKey() {
+        return new ModelExecutions.Key(thread, turnId, callId);
+    }
+
+    private static JsonNode encodeChoice(ToolChoice choice) {
+        if (choice instanceof ToolChoice.Specific specific)
+            return DurableJson.value(Map.of("mode", "specific", "name", specific.toolName()));
+        String mode =
+                choice instanceof ToolChoice.None
+                        ? "none"
+                        : choice instanceof ToolChoice.Required ? "required" : "auto";
+        return DurableJson.value(Map.of("mode", mode));
+    }
+
+    /** Restore the prepared generation options with the Worker process's own connection settings. */
+    public GenerateOptions decodeOptions() {
+        if (options == null || options.isNull()) return GenerateOptions.builder().build();
+        var fields = (ObjectNode) options.deepCopy();
+        var choice = fields.remove("toolChoice");
+        var decoded = JsonUtils.getJsonCodec().convertValue(fields, GenerateOptions.class);
+        if (choice == null || choice.isNull()) return decoded;
+        ToolChoice value =
+                switch (choice.path("mode").asText()) {
+                    case "auto" -> new ToolChoice.Auto();
+                    case "none" -> new ToolChoice.None();
+                    case "required" -> new ToolChoice.Required();
+                    case "specific" -> new ToolChoice.Specific(choice.path("name").asText());
+                    default -> throw new IllegalArgumentException("Unsupported queued tool choice");
+                };
+        return GenerateOptions.mergeOptions(
+                GenerateOptions.builder().toolChoice(value).build(), decoded);
     }
 
     @FunctionalInterface

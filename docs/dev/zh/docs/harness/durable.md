@@ -85,6 +85,45 @@ runtime.start();
 ThreadJournal 负责 Agent 原生历史，Durable 调度仍由 Durable Runtime 负责。
 namespace 映射为 `RuntimeContext.userId`，身份限定在每次调用内。
 
+### 通过 Durable Worker 执行模型推理
+
+使用 `withModelExecutions` 将 ReAct 或 Harness Agent 的推理交给 `ModelWorker`。
+Agent 先保存恢复位置，再提交模型请求。Worker 按路由认领请求、持有租约、调用模型并按序提交分片批次。
+首批分片提交后，原 Turn 即可恢复。共享同一后端的兼容 Runtime 可用原 Session、Thread、Turn 和模型调用 ID，
+回放已提交批次并读取后续分片。同一 Thread 的后续 Turn 等当前 Turn 结束后再执行。
+
+本地部署可以用 SQLite 保存状态、索引和分片正文。
+
+```java
+var records = JdbcRecordStore.sqlite(Path.of("./durable.db"));
+var objects = new RecordObjectStore(records);
+var wakeups = Wakeups.local();
+var backend = new TransactionalSessionBackend(records, objects).withWakeups(wakeups);
+var executions = new TransactionalModelExecutionStore(
+        records, new ObjectModelOutputStore(objects), wakeups);
+var adapter = AgentScopeAdapter.forReAct(
+        binding -> ReActAgent.builder().name("assistant").model(model), Map.of())
+        .withModelExecutions(executions, "reasoning");
+var runtime = DurableRuntime.builder().backend(backend)
+        .harness("assistant", "definition-v1", adapter).build();
+var worker = new ModelWorker(executions, "reasoning", ModelExecutor.using(name -> model));
+worker.start();
+runtime.start();
+```
+
+在宿主运行期间保持 Worker 和 Runtime 运行，并在退出时关闭。
+`ModelExecutor.using` 根据请求中的模型名，从 Worker 自己的模型配置解析模型。
+
+分布式部署时，Session 后端、Agent 和 Worker 共享事务数据库，例如通过 `JdbcRecordStore` 接入 PostgreSQL。
+数据库保存执行状态、分片序号和存储引用。为 `TransactionalSessionBackend` 和 `ObjectModelOutputStore`
+配置同一套 `S3ObjectStore` 或 `OssObjectStore`，将模型分片正文及其 Journal 内容保存到对象存储。
+通过 `RocketMqWakeups` 通知 Worker 和 Runtime。通知延迟或丢失时，轮询仍可从持久状态发现变化。
+
+自定义 `ModelOutputStore` 可以将正文写入支持回放的消息队列。`write` 返回稳定的引用，例如 topic、
+partition 和 offset。`read` 必须允许任意实例按该引用读回同一批次，保留期应覆盖 Turn 的恢复窗口。
+写入成功后，Runtime 才提交引用。如果 Worker 在启动模型调用后丢失租约，执行状态会结束为 `UNKNOWN`，
+Runtime 可处理这一结果，避免自动发起第二次模型调用。
+
 ### 通过消息队列执行模型推理
 
 将 `adapter.withQueuedModel(publisher)` 注册为当前定义的 Harness。ReAct 和 Harness 工厂均支持。

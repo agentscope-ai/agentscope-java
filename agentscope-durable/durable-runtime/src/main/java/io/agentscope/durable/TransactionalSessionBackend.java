@@ -135,7 +135,11 @@ public final class TransactionalSessionBackend implements SessionBackend {
 
     private JsonNode storeContent(SessionKey session, JsonNode value) {
         byte[] bytes = DurableJson.value(value).toString().getBytes(StandardCharsets.UTF_8);
-        return bytes.length > 16384
+        boolean externalModelChunk =
+                value != null
+                        && !(objects instanceof RecordObjectStore)
+                        && "model/chunk".equals(value.path("type").asText());
+        return bytes.length > 16384 || externalModelChunk
                 ? DurableJson.value(
                         new StoredContent(null, objects.put(objectScope(session), bytes)))
                 : DurableJson.value(new StoredContent(DurableJson.copy(value), null));
@@ -295,10 +299,27 @@ public final class TransactionalSessionBackend implements SessionBackend {
         return String.format(Locale.ROOT, "%020d", value);
     }
 
-    private State load(RecordStore.Transaction tx) {
+    private static State load(RecordStore.Transaction tx) {
         State state = decode(tx.get(""));
         if (state == null) throw error(DurableException.Code.NOT_FOUND, "Session not found");
         return attach(state, tx);
+    }
+
+    static boolean modelTurnActive(RecordStore.Transaction tx, ModelExecutions.Key key) {
+        var state = load(tx);
+        selectThread(state, key.thread(), null);
+        var turn = requireTurn(state, key.turnId());
+        return !turn.cancel && !turn.status.terminal();
+    }
+
+    /** Commit readiness in the same transaction as the first recoverable output. */
+    static void modelOutputReady(RecordStore.Transaction tx, ModelExecutions.Key key) {
+        var state = load(tx);
+        selectThread(state, key.thread(), null);
+        var turn = requireTurn(state, key.turnId());
+        String wakeKey = key.wakeKey();
+        acceptSignal(state, turn, new Signal(wakeKey, wakeKey, DurableJson.value(true)));
+        save(state);
     }
 
     private static State attach(State state, RecordStore.Transaction tx) {

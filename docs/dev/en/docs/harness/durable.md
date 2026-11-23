@@ -97,6 +97,56 @@ runtime context and Durable workspace. The Runtime owns the durable lease and ta
 ThreadJournal owns native Agent history; Durable scheduling remains in the Durable Runtime.
 The namespace maps to `RuntimeContext.userId`; identity is invocation-scoped.
 
+### Run model reasoning in a Durable Worker
+
+Use `withModelExecutions` to hand off reasoning from a ReAct or Harness Agent to a
+`ModelWorker`. The Agent saves its recovery position before submitting a model
+request. The Worker claims a lease for the request's route, runs the provider and
+commits output in ordered batches. The first committed batch makes the original
+Turn runnable. Any compatible Runtime can replay committed batches and read
+subsequent ones using the same Session, Thread, Turn and model call IDs. Later
+Turns on the same Thread remain queued until the current Turn settles.
+
+For a local deployment, use SQLite for both records and output bytes:
+
+```java
+var records = JdbcRecordStore.sqlite(Path.of("./durable.db"));
+var objects = new RecordObjectStore(records);
+var wakeups = Wakeups.local();
+var backend = new TransactionalSessionBackend(records, objects).withWakeups(wakeups);
+var executions = new TransactionalModelExecutionStore(
+        records, new ObjectModelOutputStore(objects), wakeups);
+var adapter = AgentScopeAdapter.forReAct(
+        binding -> ReActAgent.builder().name("assistant").model(model), Map.of())
+        .withModelExecutions(executions, "reasoning");
+var runtime = DurableRuntime.builder().backend(backend)
+        .harness("assistant", "definition-v1", adapter).build();
+var worker = new ModelWorker(executions, "reasoning", ModelExecutor.using(name -> model));
+worker.start();
+runtime.start();
+```
+
+Keep the Worker and Runtime running for the lifetime of their hosts and close
+them at shutdown. The resolver passed to `ModelExecutor.using` resolves the
+requested model name using the Worker's provider configuration.
+
+In a distributed deployment, share a transactional record database, such as
+PostgreSQL through `JdbcRecordStore`, across the Session backend, Agent and Worker.
+The database stores the execution state, output sequence and storage references.
+Supply a shared `S3ObjectStore` or `OssObjectStore` to both
+`TransactionalSessionBackend` and `ObjectModelOutputStore` so model chunks and
+their journal content live in object storage. Use `RocketMqWakeups` to notify
+Workers and Runtimes of changes. They also check durable state periodically to
+recover from delayed or lost notifications.
+
+A custom `ModelOutputStore` can use a replayable message broker as its output
+store. Its `write` returns a stable locator, such as a topic, partition and offset.
+Its `read` must be able to retrieve that exact batch from another instance until
+the Turn no longer needs to resume. The runtime commits the locator only after
+the write succeeds. If a Worker loses its lease after starting a provider call,
+the execution settles as `UNKNOWN` and the Runtime can handle that outcome
+without automatically issuing a second provider call.
+
 ### Dispatch reasoning to a model queue
 
 Register `adapter.withQueuedModel(publisher)` as the harness for this definition. Both

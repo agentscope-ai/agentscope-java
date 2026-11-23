@@ -28,6 +28,7 @@ import io.agentscope.core.message.Msg;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.ChatUsage;
 import io.agentscope.core.model.GenerateOptions;
+import io.agentscope.core.model.ModelRequestObserver;
 import io.agentscope.core.model.ToolSchema;
 import io.agentscope.core.state.AgentState;
 import io.agentscope.core.util.JsonUtils;
@@ -38,6 +39,7 @@ import io.agentscope.durable.DurableTypes.TurnStatus;
 import io.agentscope.durable.DurableTypes.TurnView;
 import io.agentscope.durable.DurableTypes.WaitCondition;
 import io.agentscope.durable.HarnessContext;
+import io.agentscope.durable.ModelExecutions;
 import io.agentscope.durable.ModelReplyProtocol;
 import io.agentscope.durable.codec.agentscope.DurableEventSchemas;
 import java.time.Clock;
@@ -58,6 +60,7 @@ import java.util.function.Function;
 import java.util.function.Supplier;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
+import reactor.core.publisher.Sinks;
 import reactor.core.scheduler.Schedulers;
 
 /** Coordinates input/control, finalization and completed model replay within one fenced invocation. */
@@ -73,6 +76,8 @@ final class AgentScopeExecutionHost implements AgentExecutionHost, ModelInvocati
     private final HarnessContext durable;
     private final BackendThreadJournal log;
     private final QueuedModelRequest.Publisher publisher;
+    private final ModelExecutions modelExecutions;
+    private final String modelRoute;
     private QueuedModelRequest pendingRequest;
     private boolean queuedFallback;
 
@@ -184,10 +189,14 @@ final class AgentScopeExecutionHost implements AgentExecutionHost, ModelInvocati
             HarnessContext durable,
             BackendThreadJournal log,
             QueuedModelRequest.Publisher publisher,
+            ModelExecutions modelExecutions,
+            String modelRoute,
             Duration replyTimeout) {
         this.durable = durable;
         this.log = log;
         this.publisher = publisher;
+        this.modelExecutions = modelExecutions;
+        this.modelRoute = modelRoute;
         this.replyIdleMillis = replyTimeout.toMillis();
         for (var event : log.scan(0, log.head().seq())) {
             if ("state/checkpoint".equals(event.type())) replayAfter = event.seq();
@@ -418,7 +427,9 @@ final class AgentScopeExecutionHost implements AgentExecutionHost, ModelInvocati
                             String candidate = id == null ? UUID.randomUUID().toString() : id;
                             String call =
                                     "REASONING".equals(purpose)
-                                                    && (publisher != null || pendingRequest != null)
+                                                    && (publisher != null
+                                                            || modelExecutions != null
+                                                            || pendingRequest != null)
                                             ? prepareQueued(
                                                     candidate, model, messages, tools, options)
                                             : candidate;
@@ -469,7 +480,18 @@ final class AgentScopeExecutionHost implements AgentExecutionHost, ModelInvocati
             throw new DurableException(
                     DurableException.Code.CONFLICT,
                     "Recovered reasoning position changed for call " + pendingRequest.callId());
-        if (replyDeadline > 0) {
+        if (replyDeadline > 0 && modelExecutions != null) {
+            var key = pendingRequest.executionKey();
+            var view = modelExecutions.query(key);
+            if (view == null)
+                throw new DurableException(
+                        DurableException.Code.INCOMPATIBLE, "Admitted model execution is missing");
+            if (!view.available()) {
+                checkReplyDeadline(durable.frame().now(), 0);
+                waitingForModel = new WaitCondition(key.wakeKey(), replyDeadline);
+                throw new AgentExecutionHost.Paused();
+            }
+        } else if (replyDeadline > 0) {
             var frame = durable.frame();
             String first =
                     QueuedModelRequest.key(
@@ -496,7 +518,8 @@ final class AgentScopeExecutionHost implements AgentExecutionHost, ModelInvocati
 
     @Override
     public boolean beginFallback(String purpose, Throwable cause) {
-        if (!"REASONING".equals(purpose) || publisher == null && pendingRequest == null)
+        if (!"REASONING".equals(purpose)
+                || publisher == null && modelExecutions == null && pendingRequest == null)
             return true;
         if (pendingRequest != null && !(cause instanceof RemoteModelFailure)) return false;
         pendingRequest = null;
@@ -508,16 +531,26 @@ final class AgentScopeExecutionHost implements AgentExecutionHost, ModelInvocati
     public Route route(Call call) {
         String callId = call.callId();
         if (!isQueued(callId)) return new Direct();
-        if (replyDeadline > 0) return new Resume(Flux.defer(() -> responses(callId)));
+        if (replyDeadline > 0)
+            return new Resume(
+                    Flux.defer(
+                            () -> modelExecutions == null ? responses(callId) : storedResponses()));
         return new Suspend(
                 Mono.<Void>fromRunnable(
                                 () -> {
-                                    if (publisher == null)
+                                    if (publisher == null && modelExecutions == null)
                                         throw new DurableException(
                                                 DurableException.Code.INCOMPATIBLE,
                                                 "Model publisher missing");
                                     try {
-                                        publisher.publish(pendingRequest);
+                                        if (modelExecutions == null)
+                                            publisher.publish(pendingRequest);
+                                        else
+                                            modelExecutions.submit(
+                                                    new ModelExecutions.Request(
+                                                            pendingRequest.executionKey(),
+                                                            modelRoute,
+                                                            DurableJson.value(pendingRequest)));
                                     } catch (DurableException error) {
                                         throw error;
                                     } catch (RuntimeException error) {
@@ -543,7 +576,11 @@ final class AgentScopeExecutionHost implements AgentExecutionHost, ModelInvocati
                                     recorder.flushNow();
                                     waitingForModel =
                                             new WaitCondition(
-                                                    QueuedModelRequest.key(callId, 0),
+                                                    modelExecutions == null
+                                                            ? QueuedModelRequest.key(callId, 0)
+                                                            : pendingRequest
+                                                                    .executionKey()
+                                                                    .wakeKey(),
                                                     replyDeadline);
                                 })
                         .subscribeOn(Schedulers.boundedElastic()));
@@ -641,33 +678,8 @@ final class AgentScopeExecutionHost implements AgentExecutionHost, ModelInvocati
                         .doOnNext(QueuedModelRequest::validateReply)
                         .doOnNext(
                                 s -> {
-                                    if (s.value().path("retryable").asBoolean()) {
-                                        var old = pendingRequest;
-                                        pendingRequest =
-                                                new QueuedModelRequest(
-                                                        old.thread(),
-                                                        old.turnId(),
-                                                        java.util.UUID.randomUUID().toString(),
-                                                        old.model(),
-                                                        old.messages(),
-                                                        old.tools(),
-                                                        old.options());
-                                        InvocationRecorder.from(context)
-                                                .checkpointedRecordNow(
-                                                        context.getAgentState(),
-                                                        "queued_model_retry",
-                                                        DurableEventSchemas.QUEUED_MODEL,
-                                                        Map.of(
-                                                                "request",
-                                                                pendingRequest,
-                                                                "iteration",
-                                                                pendingIteration,
-                                                                "fallback",
-                                                                queuedFallback));
-                                        throw new DurableException(
-                                                DurableException.Code.UNAVAILABLE,
-                                                "Retryable provider failure for call " + callId);
-                                    }
+                                    if (s.value().path("retryable").asBoolean())
+                                        throw retryQueued(callId);
                                     seq.incrementAndGet();
                                 })
                         .repeat()
@@ -732,6 +744,193 @@ final class AgentScopeExecutionHost implements AgentExecutionHost, ModelInvocati
                             ? notified
                             : observer.observe(notified, pendingRequest.model(), "queued");
                 });
+    }
+
+    private record StoredReply(ModelExecutions.Batch batch, ModelExecutions.Outcome end) {}
+
+    private Flux<ChatResponse> storedResponses() {
+        var key = pendingRequest.executionKey();
+        var seq = new AtomicLong();
+        var version = new AtomicLong();
+        var generation = new AtomicLong();
+        Sinks.Many<Long> hints = Sinks.many().replay().latest();
+        var observed = new AtomicLong();
+        Flux<ChatResponse> replies =
+                Mono.defer(
+                                () -> {
+                                    observed.set(version.get());
+                                    var frame = durable.frame();
+                                    checkControl(frame.turn());
+                                    var view = modelExecutions.query(key);
+                                    if (view == null)
+                                        throw new DurableException(
+                                                DurableException.Code.INCOMPATIBLE,
+                                                "Model execution disappeared");
+                                    if (generation.get() == 0) generation.set(view.generation());
+                                    if (generation.get() != view.generation())
+                                        throw new DurableException(
+                                                DurableException.Code.UNAVAILABLE,
+                                                "Model generation changed");
+                                    if (seq.get() < view.nextSequence()) {
+                                        var batch =
+                                                modelExecutions.readOutput(
+                                                        key, generation.get(), seq.get());
+                                        if (batch == null)
+                                            throw new DurableException(
+                                                    DurableException.Code.INCOMPATIBLE,
+                                                    "Committed model batch is missing");
+                                        seq.set(batch.nextSequence());
+                                        noteStoredProgress(
+                                                key.callId(),
+                                                generation.get(),
+                                                seq.get() - 1,
+                                                frame.now());
+                                        return Mono.just(new StoredReply(batch, null));
+                                    }
+                                    if (view.outcome() != null)
+                                        return Mono.just(new StoredReply(null, view.outcome()));
+                                    checkReplyDeadline(frame.now(), seq.get());
+                                    return Mono.<StoredReply>empty();
+                                })
+                        .subscribeOn(Schedulers.boundedElastic())
+                        .repeatWhenEmpty(
+                                empty ->
+                                        empty.concatMap(
+                                                ignored ->
+                                                        Mono.firstWithSignal(
+                                                                hints.asFlux()
+                                                                        .filter(
+                                                                                value ->
+                                                                                        value
+                                                                                                > observed
+                                                                                                        .get())
+                                                                        .next(),
+                                                                Mono.delay(
+                                                                        Duration.ofMillis(250)))))
+                        .repeat()
+                        .takeUntil(reply -> reply.end() != null)
+                        .concatMap(
+                                reply -> {
+                                    if (reply.batch() != null)
+                                        return Flux.fromIterable(reply.batch().chunks())
+                                                .map(
+                                                        chunk ->
+                                                                response(
+                                                                        DurableJson.convert(
+                                                                                chunk, Map.class)));
+                                    var end = reply.end();
+                                    if (end.status() == ModelExecutions.Status.SUCCEEDED)
+                                        return Flux.empty();
+                                    if (end.retryable())
+                                        return Flux.error(retryQueued(key.callId()));
+                                    if (end.status() == ModelExecutions.Status.FAILED)
+                                        return Flux.error(
+                                                new RemoteModelFailure(
+                                                        "Remote model call "
+                                                                + key.callId()
+                                                                + " failed: "
+                                                                + end.error()));
+                                    return Flux.error(
+                                            new DurableException(
+                                                    DurableException.Code.INVALID,
+                                                    "Model execution "
+                                                            + end.status()
+                                                            + " for call "
+                                                            + key.callId()
+                                                            + ": "
+                                                            + end.error()));
+                                },
+                                1);
+        var notified =
+                Flux.using(
+                        () -> subscribeOutputHints(key, version, hints),
+                        ignored -> replies,
+                        subscription -> {
+                            try {
+                                subscription.close();
+                            } catch (Exception error) {
+                                System.getLogger(AgentScopeExecutionHost.class.getName())
+                                        .log(
+                                                System.Logger.Level.WARNING,
+                                                "Unable to close model wakeups",
+                                                error);
+                            }
+                        });
+        return Flux.deferContextual(
+                reactorContext -> {
+                    ModelRequestObserver observer =
+                            reactorContext.getOrDefault(ModelRequestObserver.class, null);
+                    return observer == null
+                            ? notified
+                            : observer.observe(notified, pendingRequest.model(), "queued");
+                });
+    }
+
+    private AutoCloseable subscribeOutputHints(
+            ModelExecutions.Key key, AtomicLong version, Sinks.Many<Long> hints) {
+        try {
+            return durable.wakeups()
+                    .subscribe(
+                            session -> {
+                                if (session.equals(key.thread().session()))
+                                    hints.tryEmitNext(version.incrementAndGet());
+                            });
+        } catch (RuntimeException error) {
+            System.getLogger(AgentScopeExecutionHost.class.getName())
+                    .log(System.Logger.Level.WARNING, "Model wakeups unavailable; polling", error);
+            return () -> {};
+        }
+    }
+
+    private void noteStoredProgress(String callId, long generation, long sequence, long now) {
+        String attempt = Long.toString(generation);
+        if (attempt.equals(replyProgressAttempt) && sequence <= replyProgress) return;
+        replyProgressAttempt = attempt;
+        replyProgress = sequence;
+        replyDeadline = Math.addExact(now, replyIdleMillis);
+        var recorder = InvocationRecorder.from(context);
+        recorder.append(
+                DurableEventSchemas.MODEL_ACCEPTED,
+                Map.of(
+                        "modelCallId",
+                        callId,
+                        "replyDeadline",
+                        replyDeadline,
+                        "idleMillis",
+                        replyIdleMillis,
+                        "workerAttempt",
+                        attempt,
+                        "sequence",
+                        replyProgress),
+                true);
+        recorder.flushNow();
+    }
+
+    private DurableException retryQueued(String callId) {
+        var old = pendingRequest;
+        pendingRequest =
+                new QueuedModelRequest(
+                        old.thread(),
+                        old.turnId(),
+                        UUID.randomUUID().toString(),
+                        old.model(),
+                        old.messages(),
+                        old.tools(),
+                        old.options());
+        InvocationRecorder.from(context)
+                .checkpointedRecordNow(
+                        context.getAgentState(),
+                        "queued_model_retry",
+                        DurableEventSchemas.QUEUED_MODEL,
+                        Map.of(
+                                "request",
+                                pendingRequest,
+                                "iteration",
+                                pendingIteration,
+                                "fallback",
+                                queuedFallback));
+        return new DurableException(
+                DurableException.Code.UNAVAILABLE, "Retryable provider failure for call " + callId);
     }
 
     private void checkReplyDeadline(long now, long sequence) {

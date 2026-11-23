@@ -51,6 +51,7 @@ import io.agentscope.durable.DurableTypes.TurnStatus;
 import io.agentscope.durable.DurableTypes.WaitCondition;
 import io.agentscope.durable.HarnessAdapter;
 import io.agentscope.durable.HarnessContext;
+import io.agentscope.durable.ModelExecutions;
 import io.agentscope.durable.ToolBinding;
 import io.agentscope.durable.codec.agentscope.AgentScopeCheckpointCodec;
 import io.agentscope.harness.agent.HarnessAgent;
@@ -93,13 +94,22 @@ public final class AgentScopeAdapter implements HarnessAdapter {
     private final Map<String, String> executors;
     private final Map<String, ToolBinding> bindings;
     private final QueuedModelRequest.Publisher publisher;
+    private final ModelExecutions modelExecutions;
+    private final String modelRoute;
     private final Duration replyTimeout;
 
     private AgentScopeAdapter(
             Function<InvocationBinding, NativeAgent> factory,
             Map<String, String> executors,
             Map<String, ToolBinding> bindings) {
-        this(factory, executors, bindings, null, ExecutionConfig.MODEL_DEFAULTS.getTimeout());
+        this(
+                factory,
+                executors,
+                bindings,
+                null,
+                null,
+                null,
+                ExecutionConfig.MODEL_DEFAULTS.getTimeout());
     }
 
     private AgentScopeAdapter(
@@ -107,9 +117,13 @@ public final class AgentScopeAdapter implements HarnessAdapter {
             Map<String, String> executors,
             Map<String, ToolBinding> bindings,
             QueuedModelRequest.Publisher publisher,
+            ModelExecutions modelExecutions,
+            String modelRoute,
             Duration replyTimeout) {
         this.replyTimeout = replyTimeout;
         this.publisher = publisher;
+        this.modelExecutions = modelExecutions;
+        this.modelRoute = modelRoute;
         this.factory = factory;
         this.executors = Map.copyOf(executors);
         this.bindings = Map.copyOf(bindings);
@@ -126,7 +140,32 @@ public final class AgentScopeAdapter implements HarnessAdapter {
         if (replyTimeout.toMillis() < 1)
             throw new IllegalArgumentException("Model reply timeout must be positive");
         return new AgentScopeAdapter(
-                factory, executors, bindings, Objects.requireNonNull(publisher), replyTimeout);
+                factory,
+                executors,
+                bindings,
+                Objects.requireNonNull(publisher),
+                null,
+                null,
+                replyTimeout);
+    }
+
+    /** Hand off reasoning to a lease-based Model Worker. */
+    public AgentScopeAdapter withModelExecutions(ModelExecutions executions, String route) {
+        return withModelExecutions(executions, route, ExecutionConfig.MODEL_DEFAULTS.getTimeout());
+    }
+
+    public AgentScopeAdapter withModelExecutions(
+            ModelExecutions executions, String route, Duration replyTimeout) {
+        if (replyTimeout.toMillis() < 1)
+            throw new IllegalArgumentException("Model reply timeout must be positive");
+        return new AgentScopeAdapter(
+                factory,
+                executors,
+                bindings,
+                null,
+                Objects.requireNonNull(executions),
+                DurableJson.text(route, "model route"),
+                replyTimeout);
     }
 
     /** Registers schemas from the same immutable definitions used by the remote worker. */
@@ -292,7 +331,9 @@ public final class AgentScopeAdapter implements HarnessAdapter {
     public void execute(HarnessContext context) {
         if (pauseIfRequested(context)) return;
         var log = new BackendThreadJournal(context, executors, bindings);
-        var host = new AgentScopeExecutionHost(context, log, publisher, replyTimeout);
+        var host =
+                new AgentScopeExecutionHost(
+                        context, log, publisher, modelExecutions, modelRoute, replyTimeout);
         if (host.pending()) host.restoreEntry();
         else if (completeInvocation(context, log)) return;
         var frame = context.frame();
