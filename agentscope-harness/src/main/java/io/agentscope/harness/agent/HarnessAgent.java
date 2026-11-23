@@ -80,6 +80,7 @@ import io.agentscope.harness.agent.filesystem.sandbox.SandboxBackedFilesystem;
 import io.agentscope.harness.agent.filesystem.spec.LocalFilesystemSpec;
 import io.agentscope.harness.agent.filesystem.spec.RemoteFilesystemSpec;
 import io.agentscope.harness.agent.filesystem.spec.SandboxFilesystemSpec;
+import io.agentscope.harness.agent.filesystem.util.FilesystemUtils;
 import io.agentscope.harness.agent.gateway.HarnessGateway;
 import io.agentscope.harness.agent.gateway.SubagentGatewayBridge;
 import io.agentscope.harness.agent.gateway.channel.Channel;
@@ -3072,7 +3073,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
                 sandboxLifecycleMw =
                         new SandboxLifecycleMiddleware(sandboxManager, capturedSandboxFs);
             } else if (!filesystemRoutes.isEmpty()) {
-                filesystem = new CompositeFilesystem(filesystem, filesystemRoutes);
+                filesystem = withFilesystemRoutes(filesystem, filesystemRoutes);
             }
             WorkspaceManager wsManager =
                     new WorkspaceManager(resolvedWorkspace, filesystem, workspaceIndex, nsFactory);
@@ -3324,7 +3325,9 @@ public class HarnessAgent implements Agent, AutoCloseable {
                         new ArtifactDeliveryTool(
                                 filesystem, pathNormalizer, artifactDeliveryTarget));
             }
-            if (!disableShellTool && filesystem instanceof AbstractSandboxFilesystem sandbox) {
+            if (!disableShellTool
+                    && FilesystemUtils.primaryBackend(filesystem)
+                            instanceof AbstractSandboxFilesystem sandbox) {
                 agentToolkit.registerTool(new ShellExecuteTool(sandbox));
             }
             if (!disableWebTools) {
@@ -3473,38 +3476,14 @@ public class HarnessAgent implements Agent, AutoCloseable {
                                         resolvedWorkspace)
                                 : null;
 
-                io.agentscope.harness.agent.skill.runtime.ShellPathPolicy shellPolicy;
                 boolean shellToolAvailable =
                         !disableShellTool
                                 && ToolFilter.isAllowed(ShellExecuteTool.NAME, resolvedToolsConfig);
-                if (!shellToolAvailable) {
-                    shellPolicy =
-                            io.agentscope.harness.agent.skill.runtime.ShellPathPolicy.noShell();
-                } else if (filesystem instanceof LocalFilesystemWithShell) {
-                    shellPolicy =
-                            io.agentscope.harness.agent.skill.runtime.ShellPathPolicy
-                                    .localWithShell(resolvedWorkspace);
-                } else if (filesystem instanceof OverlayFilesystem ov
-                        && ov.getUpper() instanceof LocalFilesystemWithShell) {
-                    shellPolicy =
-                            io.agentscope.harness.agent.skill.runtime.ShellPathPolicy
-                                    .localWithShell(resolvedWorkspace);
-                } else if (filesystem instanceof SandboxBackedFilesystem
-                        || (filesystem instanceof RoutedSandboxFilesystem routed
-                                && routed.primary() instanceof SandboxBackedFilesystem)) {
-                    String wsPrefix =
-                            defaultSandboxContext != null
-                                            && defaultSandboxContext.getClientOptions() != null
-                                    ? defaultSandboxContext.getClientOptions().getWorkspaceRoot()
-                                    : io.agentscope.harness.agent.skill.runtime.ShellPathPolicy
-                                            .SANDBOX_WORKSPACE_PREFIX;
-                    shellPolicy =
-                            io.agentscope.harness.agent.skill.runtime.ShellPathPolicy.sandbox(
-                                    wsPrefix);
-                } else {
-                    shellPolicy =
-                            io.agentscope.harness.agent.skill.runtime.ShellPathPolicy.noShell();
-                }
+                ShellPathPolicy shellPolicy =
+                        shellToolAvailable
+                                ? skillShellPolicy(
+                                        filesystem, defaultSandboxContext, resolvedWorkspace)
+                                : ShellPathPolicy.noShell();
 
                 HarnessSkillMiddleware skillMiddleware =
                         disableDynamicSkills
@@ -3595,5 +3574,42 @@ public class HarnessAgent implements Agent, AutoCloseable {
                     pathNormalizer,
                     agentToolkit);
         }
+    }
+
+    /** Applies {@code routes} to a builder-resolved primary, keeping its shell when it has one. */
+    static AbstractFilesystem withFilesystemRoutes(
+            AbstractFilesystem primary, Map<String, AbstractFilesystem> routes) {
+        if (primary instanceof AbstractSandboxFilesystem sandbox && !runsOnHostShell(primary)) {
+            return new RoutedSandboxFilesystem(sandbox, routes);
+        }
+        return new CompositeFilesystem(primary, routes);
+    }
+
+    /** Shell mode the skill runtime advertises for the backend that serves the workspace. */
+    static ShellPathPolicy skillShellPolicy(
+            AbstractFilesystem filesystem, SandboxContext sandboxContext, Path workspace) {
+        AbstractFilesystem backend = FilesystemUtils.primaryBackend(filesystem);
+        if (runsOnHostShell(backend)) {
+            return ShellPathPolicy.localWithShell(workspace);
+        }
+        if (backend instanceof AbstractSandboxFilesystem) {
+            String workspacePrefix =
+                    sandboxContext != null && sandboxContext.getClientOptions() != null
+                            ? sandboxContext.getClientOptions().getWorkspaceRoot()
+                            : ShellPathPolicy.SANDBOX_WORKSPACE_PREFIX;
+            return ShellPathPolicy.sandbox(workspacePrefix);
+        }
+        return ShellPathPolicy.noShell();
+    }
+
+    /**
+     * True when commands run on the host. {@link LocalFilesystemWithShell} also implements
+     * {@link AbstractSandboxFilesystem}, so it must not be routed as a sandbox.
+     */
+    private static boolean runsOnHostShell(AbstractFilesystem filesystem) {
+        AbstractFilesystem backend = FilesystemUtils.primaryBackend(filesystem);
+        return backend instanceof LocalFilesystemWithShell
+                || (backend instanceof OverlayFilesystem overlay
+                        && overlay.getUpper() instanceof LocalFilesystemWithShell);
     }
 }
