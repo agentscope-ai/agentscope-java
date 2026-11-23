@@ -218,7 +218,7 @@ public class AguiMessageConverter {
         if (reasoningContent.length() > 0) {
             messages.add(
                     AguiMessage.reasoningMessage(
-                            generatedMessageId(msg), reasoningContent.toString()));
+                            generatedMessageId(msg), reasoningContent.toString(), msg.getName()));
             if (content.length() == 0
                     && inputContents.isEmpty()
                     && toolCalls.isEmpty()
@@ -245,6 +245,7 @@ public class AguiMessageConverter {
                 new AguiMessage(
                         generatedMessageId(msg),
                         role,
+                        msg.getName(),
                         wireContent,
                         toolCalls.isEmpty() ? null : toolCalls,
                         toolCallId,
@@ -373,7 +374,12 @@ public class AguiMessageConverter {
             }
         }
 
-        return Msg.builder().id(aguiMessage.getId()).role(role).content(blocks).build();
+        return Msg.builder()
+                .id(aguiMessage.getId())
+                .name(aguiMessage.getName())
+                .role(role)
+                .content(blocks)
+                .build();
     }
 
     /**
@@ -604,6 +610,7 @@ public class AguiMessageConverter {
         return new AguiMessage(
                 id,
                 convertRole(msg.getRole()),
+                msg.getName(),
                 content,
                 null,
                 result.getId(),
