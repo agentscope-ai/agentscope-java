@@ -402,13 +402,8 @@ public class CompactionMiddleware implements HarnessRuntimeMiddleware {
                 });
     }
 
-    /**
-     * Names of tools registered on the agent that declare themselves non-prunable, so pruning
-     * skips their results following the tool's own {@code @Tool(prunable = false)} declaration
-     * instead of a name list.
-     */
-    private static Set<String> nonPrunableToolNames(Agent agent) {
-        Toolkit toolkit = agent.getToolkit();
+    /** Names of tools in {@code toolkit} that declare themselves non-prunable. */
+    public static Set<String> nonPrunableToolNames(Toolkit toolkit) {
         if (toolkit == null) {
             return Set.of();
         }
@@ -420,6 +415,10 @@ public class CompactionMiddleware implements HarnessRuntimeMiddleware {
             }
         }
         return names;
+    }
+
+    private static Set<String> nonPrunableToolNames(Agent agent) {
+        return nonPrunableToolNames(agent.getToolkit());
     }
 
     private static boolean sameSerializedHistory(List<Msg> canonical, List<Msg> conversation) {

@@ -745,6 +745,29 @@ class CompactionMiddlewareTest {
         }
     }
 
+    @Test
+    void nonPrunableToolNamesReadsDeclarationsFromToolkit() {
+        Toolkit toolkit = new Toolkit();
+        toolkit.registerTool(new PruneDeclarationTools());
+
+        Set<String> names = CompactionMiddleware.nonPrunableToolNames(toolkit);
+
+        assertTrue(names.contains("protected_output"));
+        assertFalse(names.contains("ordinary_output"));
+    }
+
+    static final class PruneDeclarationTools {
+        @Tool(name = "protected_output", description = "Protected output", prunable = false)
+        public String protectedOutput() {
+            return "protected";
+        }
+
+        @Tool(name = "ordinary_output", description = "Ordinary output")
+        public String ordinaryOutput() {
+            return "ordinary";
+        }
+    }
+
     /** Creates stable configuration that enters the compaction branch. */
     private CompactionConfig fixedConfig() {
         return CompactionConfig.builder()
