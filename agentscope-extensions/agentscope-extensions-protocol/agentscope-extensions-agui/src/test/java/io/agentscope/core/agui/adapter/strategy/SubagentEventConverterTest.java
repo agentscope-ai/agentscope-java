@@ -17,10 +17,13 @@ package io.agentscope.core.agui.adapter.strategy;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.agentscope.core.agui.AguiProtocol;
 import io.agentscope.core.agui.adapter.AguiAdapterConfig;
 import io.agentscope.core.agui.event.AguiEvent;
+import io.agentscope.core.agui.model.RunAgentInput;
 import io.agentscope.core.event.AgentEndEvent;
 import io.agentscope.core.event.AgentStartEvent;
 import io.agentscope.core.event.TextBlockDeltaEvent;
@@ -38,10 +41,12 @@ class SubagentEventConverterTest {
         List<AguiEvent> events =
                 registry.convert(new AgentStartEvent("sess", null, "main"), context);
         assertTrue(events.stream().anyMatch(e -> e instanceof AguiEvent.RunStarted));
+        AguiEvent.RunStarted started = assertInstanceOf(AguiEvent.RunStarted.class, events.get(0));
+        assertEquals(AguiProtocol.PROTOCOL_VERSION, started.protocolVersion());
     }
 
     @Test
-    void subagentEventsDowngradeToCustomByDefault() {
+    void subagentEventsDowngradeToCustomWithoutProtocolVersion() {
         AgentEventConverterRegistry registry = new AgentEventConverterRegistry();
         AguiStreamContext context =
                 new AguiStreamContext("t1", "r1", AguiAdapterConfig.defaultConfig());
@@ -73,6 +78,88 @@ class SubagentEventConverterTest {
         assertEquals(1, textEvents.size());
         AguiEvent.Custom textCustom = assertInstanceOf(AguiEvent.Custom.class, textEvents.get(0));
         assertEquals(SubagentEventConverter.NAME_TEXT, textCustom.name());
+    }
+
+    @Test
+    void protocolVersionOneEmitsAttributedSubagentEvents() {
+        AgentEventConverterRegistry registry = new AgentEventConverterRegistry();
+        RunAgentInput input =
+                RunAgentInput.builder()
+                        .threadId("t1")
+                        .runId("r1")
+                        .protocolVersion(AguiProtocol.PROTOCOL_VERSION)
+                        .build();
+        AguiStreamContext context =
+                new AguiStreamContext("t1", "r1", AguiAdapterConfig.defaultConfig(), input);
+
+        AgentStartEvent childStart = new AgentStartEvent("child-sess", "sa-1", "researcher");
+        childStart.withSource("main/researcher");
+        List<AguiEvent> startEvents = registry.convert(childStart, context);
+        assertEquals(1, startEvents.size());
+        AguiEvent.SubagentStarted started =
+                assertInstanceOf(AguiEvent.SubagentStarted.class, startEvents.get(0));
+        assertEquals("sa-1", started.subagentRunId());
+        assertEquals("researcher", started.name());
+        assertNull(started.parentSubagentRunId());
+
+        TextBlockDeltaEvent delta = new TextBlockDeltaEvent("sa-1", "b1", "hello");
+        delta.withSource("main/researcher");
+        List<AguiEvent> textEvents = registry.convert(delta, context);
+        assertTrue(
+                textEvents.stream().anyMatch(e -> e instanceof AguiEvent.TextMessageContent),
+                textEvents.toString());
+        AguiEvent.TextMessageContent content =
+                textEvents.stream()
+                        .filter(e -> e instanceof AguiEvent.TextMessageContent)
+                        .map(AguiEvent.TextMessageContent.class::cast)
+                        .findFirst()
+                        .orElseThrow();
+        assertEquals("sa-1", content.subagentRunId());
+        assertEquals("hello", content.delta());
+
+        AgentEndEvent childEnd = new AgentEndEvent("sa-1");
+        childEnd.withSource("main/researcher");
+        List<AguiEvent> endEvents = registry.convert(childEnd, context);
+        AguiEvent.SubagentFinished finished =
+                assertInstanceOf(AguiEvent.SubagentFinished.class, endEvents.get(0));
+        assertEquals("sa-1", finished.subagentRunId());
+    }
+
+    @Test
+    void nestedSubagentSetsParentSubagentRunId() {
+        AgentEventConverterRegistry registry = new AgentEventConverterRegistry();
+        RunAgentInput input =
+                RunAgentInput.builder()
+                        .threadId("t1")
+                        .runId("r1")
+                        .protocolVersion(AguiProtocol.PROTOCOL_VERSION)
+                        .build();
+        AguiStreamContext context =
+                new AguiStreamContext("t1", "r1", AguiAdapterConfig.defaultConfig(), input);
+
+        AgentStartEvent researcher = new AgentStartEvent("s1", "sa-researcher", "researcher");
+        researcher.withSource("main/researcher");
+        AguiEvent.SubagentStarted researcherStarted =
+                assertInstanceOf(
+                        AguiEvent.SubagentStarted.class,
+                        registry.convert(researcher, context).get(0));
+        assertEquals("sa-researcher", researcherStarted.subagentRunId());
+        assertNull(researcherStarted.parentSubagentRunId());
+
+        AgentStartEvent writer = new AgentStartEvent("s2", "sa-writer", "writer");
+        writer.withSource("main/researcher/writer");
+        AguiEvent.SubagentStarted writerStarted =
+                assertInstanceOf(
+                        AguiEvent.SubagentStarted.class, registry.convert(writer, context).get(0));
+        assertEquals("sa-writer", writerStarted.subagentRunId());
+        assertEquals("writer", writerStarted.name());
+        assertEquals("sa-researcher", writerStarted.parentSubagentRunId());
+
+        assertEquals(
+                "main/researcher",
+                SubagentEventConverter.parentSourcePath("main/researcher/writer"));
+        assertEquals("main", SubagentEventConverter.parentSourcePath("main/researcher"));
+        assertNull(SubagentEventConverter.parentSourcePath("main"));
     }
 
     @Test
