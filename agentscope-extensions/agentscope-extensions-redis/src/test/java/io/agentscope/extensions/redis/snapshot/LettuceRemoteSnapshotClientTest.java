@@ -20,6 +20,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.AdditionalMatchers.aryEq;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
@@ -54,19 +55,21 @@ class LettuceRemoteSnapshotClientTest {
         client(null, null).upload("snap-1", new ByteArrayInputStream(payload));
 
         verify(commands).set(aryEq(DEFAULT_KEY), aryEq(payload));
+        verify(commands, never()).setex(aryEq(DEFAULT_KEY), anyLong(), aryEq(payload));
         verify(commands, never()).expire(aryEq(DEFAULT_KEY), anyLong());
     }
 
     @Test
-    @DisplayName("upload normalizes the prefix and applies a positive TTL")
+    @DisplayName("upload normalizes the prefix and writes bytes plus TTL in a single command")
     void uploadAppliesPositiveTtlWithNormalizedPrefix() throws Exception {
         byte[] payload = "tar-bytes".getBytes(StandardCharsets.UTF_8);
         byte[] key = key("myapp:snap-1.tar");
 
         client("myapp", 60).upload("snap-1", new ByteArrayInputStream(payload));
 
-        verify(commands).set(aryEq(key), aryEq(payload));
-        verify(commands).expire(aryEq(key), eq(60L));
+        verify(commands).setex(aryEq(key), eq(60L), aryEq(payload));
+        verify(commands, never()).set(aryEq(key), aryEq(payload));
+        verify(commands, never()).expire(aryEq(key), anyLong());
     }
 
     @Test
@@ -75,6 +78,7 @@ class LettuceRemoteSnapshotClientTest {
         client("myapp:", 0).upload("snap-1", new ByteArrayInputStream(new byte[0]));
         client("myapp:", -5).upload("snap-2", new ByteArrayInputStream(new byte[0]));
 
+        verify(commands, never()).setex(any(byte[].class), anyLong(), any(byte[].class));
         verify(commands, never()).expire(aryEq(key("myapp:snap-1.tar")), anyLong());
         verify(commands, never()).expire(aryEq(key("myapp:snap-2.tar")), anyLong());
     }
