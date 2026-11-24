@@ -73,6 +73,10 @@ public class ConversationCompactor {
     /** Marker stored in message name to identify injected summary messages. */
     public static final String SUMMARY_MSG_NAME = "__compaction_summary__";
 
+    /** Metadata marker preventing an existing preview from being pruned again. */
+    static final String TOOL_RESULT_PRUNED_METADATA_KEY =
+            "agentscope.compaction.tool_result_pruned";
+
     private final Model model;
     private final MemoryFlushManager flushManager;
     private final ToLongFunction<List<Msg>> tokenCounter;
@@ -783,9 +787,11 @@ public class ConversationCompactor {
      * {@code minimumTokens}.
      *
      * <p>Non-LLM operation. Returns the original list if no pruning occurred. The pruned block
-     * keeps its metadata and execution state — only the output text is replaced with the
-     * preview — so downstream consumers of markers such as {@code agentscope.tool_result_evicted}
-     * or {@link ToolResultBlock#METADATA_SUSPENDED} keep working. The preserved markers describe
+     * preserves existing metadata and execution state, and records an internal marker on each
+     * pruned block to prevent rewriting that preview on later passes. Only the output text is
+     * replaced with the preview, so consumers of markers such as
+     * {@code agentscope.tool_result_evicted} or {@link ToolResultBlock#METADATA_SUSPENDED} keep
+     * working. The preserved markers describe
      * the pre-prune payload, though: consumers must not assume the block text is the full
      * payload (e.g. an eviction pointer's referenced content is no longer inline after pruning).
      */
@@ -828,6 +834,10 @@ public class ConversationCompactor {
                     protectedTokens += tokens;
                     continue;
                 }
+                // Count marked previews for protection, but never add them as candidates again.
+                if (Boolean.TRUE.equals(tr.getMetadata().get(TOOL_RESULT_PRUNED_METADATA_KEY))) {
+                    continue;
+                }
                 if (ToolResultPreview.textLength(tr.getOutput()) > maxChars) {
                     prunableTokens += tokens;
                     toPrune.add(new int[] {i, j});
@@ -846,12 +856,14 @@ public class ConversationCompactor {
             Msg msg = result.get(msgIdx);
             List<ContentBlock> newBlocks = new ArrayList<>(msg.getContent());
             ToolResultBlock tr = (ToolResultBlock) newBlocks.get(blockIdx);
+            Map<String, Object> metadata = new HashMap<>(tr.getMetadata());
+            metadata.put(TOOL_RESULT_PRUNED_METADATA_KEY, Boolean.TRUE);
             ToolResultBlock pruned =
                     ToolResultBlock.builder()
                             .id(tr.getId())
                             .name(tr.getName())
                             .output(buildPrunePreview(tr.getOutput(), maxChars))
-                            .metadata(tr.getMetadata())
+                            .metadata(metadata)
                             .state(tr.getState())
                             .executionDetails(tr.getExecutionDetails())
                             .build();
