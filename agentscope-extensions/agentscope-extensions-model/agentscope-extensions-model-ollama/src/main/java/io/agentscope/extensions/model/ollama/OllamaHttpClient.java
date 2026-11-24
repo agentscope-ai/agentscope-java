@@ -203,28 +203,32 @@ public class OllamaHttpClient {
                             .build();
 
             return transport.stream(httpRequest)
-                    .map(
-                            data -> {
+                    .<OllamaResponse>handle(
+                            (data, sink) -> {
                                 try {
                                     OllamaResponse response =
                                             JsonUtils.getJsonCodec()
                                                     .fromJson(data, OllamaResponse.class);
+                                    if (response == null) {
+                                        return;
+                                    }
                                     if (response.getError() != null) {
                                         log.error(
                                                 "Ollama streaming error: {}", response.getError());
-                                        throw new OllamaHttpException(
-                                                "Ollama streaming error: " + response.getError());
+                                        sink.error(
+                                                new OllamaHttpException(
+                                                        "Ollama streaming error: "
+                                                                + response.getError()));
+                                        return;
                                     }
-                                    return response;
+                                    sink.next(response);
                                 } catch (JsonException e) {
                                     log.warn(
                                             "Failed to parse Ollama NDJSON data: {}. Error: {}",
                                             data,
                                             e.getMessage());
-                                    return null;
                                 }
-                            })
-                    .filter(response -> response != null);
+                            });
 
         } catch (JsonException e) {
             return Flux.error(new OllamaHttpException("Failed to serialize request", e));
