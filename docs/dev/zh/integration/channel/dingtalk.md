@@ -85,6 +85,10 @@ DingTalkChannel channel = DingTalkChannel.fromProperties(
 
 **出站：** 通过 `DingTalkOutboundClient` 使用 OpenAPI 的 `batchSend` 接口发送回复——`oToMessages/batchSend` 用于单聊，`groupMessages/send` 用于群聊。文本和 Markdown 格式自动识别。
 
+## Token 刷新失败
+
+Token 提供器会拒绝空响应、缺失或空白的 token，以及格式无效的有效期，而不是把不可用的凭据写入缓存。刷新失败时，消息发送会在真正提交之前报错，并保留原缓存记录，让后续调用可以重新尝试。重试前请检查凭据配置，以及平台或代理返回的响应。有效的 token 响应如果省略有效期字段，仍使用默认的两小时有效期。
+
 ## 断线重连
 
 Stream 模式下，客户端在 WebSocket 断开时自动以指数退避（1s → 60s 上限）重连。

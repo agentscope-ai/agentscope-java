@@ -70,3 +70,7 @@ gw.start();
 **入站：** `WeComCallbackController` → URL 验证（echostr） → 解密 → MsgId 去重 → `WeComInboundMapper`（文本消息） → 防循环 → Gateway。
 
 **出站：** `WeComOutboundClient` 通过 `/cgi-bin/message/send`（单聊）或 `/cgi-bin/appchat/send`（群聊）发送回复，使用 `WeComAccessTokenProvider` 获取 `access_token`。
+
+## Token 刷新失败
+
+Token 提供器会拒绝空响应、缺失或空白的 token，以及格式无效的状态码或有效期，而不是把不可用的凭据写入缓存。刷新失败时，消息发送会在真正提交之前报错，并保留原缓存记录，让后续调用可以重新尝试。重试前请检查凭据配置，以及平台或代理返回的响应。有效的 token 响应如果省略有效期字段，仍使用默认的两小时有效期。

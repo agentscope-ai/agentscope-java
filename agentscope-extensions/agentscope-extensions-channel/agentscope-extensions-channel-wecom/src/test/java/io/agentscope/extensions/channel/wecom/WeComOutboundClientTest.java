@@ -22,6 +22,7 @@ import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.harness.agent.gateway.channel.OutboundAddress;
 import java.io.IOException;
+import java.time.Duration;
 import java.util.List;
 import okhttp3.mockwebserver.MockResponse;
 import okhttp3.mockwebserver.MockWebServer;
@@ -50,6 +51,15 @@ class WeComOutboundClientTest {
     @AfterEach
     void tearDown() throws IOException {
         server.shutdown();
+    }
+
+    @Test
+    void emptyTokenResponseFailsBeforeSendingMessage() {
+        server.enqueue(json(""));
+        StepVerifier.create(client.send(direct("user-1"), List.of(text("hello"))))
+                .expectError(IllegalStateException.class)
+                .verify(Duration.ofSeconds(10));
+        assertEquals(1, server.getRequestCount());
     }
 
     @Test

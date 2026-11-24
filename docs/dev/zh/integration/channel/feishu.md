@@ -69,3 +69,7 @@ gw.start();
 **入站：** `FeishuCallbackController` → 可选解密 → URL 验证检查 → event_id 去重 → `FeishuInboundMapper`（当前仅支持文本消息） → 防循环 → Gateway。
 
 **出站：** `FeishuOutboundClient` 通过 `POST /open-apis/im/v1/messages` 向聊天发送消息。出站地址带有话题 ID 时，每条消息通过 `POST /open-apis/im/v1/messages/{threadId}/reply` 回复到该话题。两条路径都使用 `FeishuAccessTokenProvider` 获取的 `tenant_access_token`。Token 自动缓存并在约 80% TTL 时主动刷新。
+
+## Token 刷新失败
+
+Token 提供器会拒绝空响应、缺失或空白的 token，以及格式无效的状态码或有效期，而不是把不可用的凭据写入缓存。刷新失败时，消息发送会在真正提交之前报错，并保留原缓存记录，让后续调用可以重新尝试。重试前请检查凭据配置，以及平台或代理返回的响应。有效的 token 响应如果省略有效期字段，仍使用默认的两小时有效期。
