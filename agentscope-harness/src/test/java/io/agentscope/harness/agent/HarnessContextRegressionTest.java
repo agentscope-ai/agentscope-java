@@ -19,8 +19,10 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.agent.test.MockModel;
+import io.agentscope.core.event.AgentResultEvent;
 import io.agentscope.core.event.ConfirmResult;
 import io.agentscope.core.message.GenerateReason;
 import io.agentscope.core.message.Msg;
@@ -33,16 +35,27 @@ import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.permission.PermissionBehavior;
 import io.agentscope.core.permission.PermissionContextState;
 import io.agentscope.core.permission.PermissionRule;
+import io.agentscope.core.tool.Tool;
+import io.agentscope.core.tool.Toolkit;
+import io.agentscope.harness.agent.bus.WorkspaceMessageBus;
 import io.agentscope.harness.agent.filesystem.local.LocalFilesystem;
+import io.agentscope.harness.agent.filesystem.model.FileUploadResponse;
 import io.agentscope.harness.agent.memory.compaction.CompactionConfig;
+import io.agentscope.harness.agent.memory.compaction.ConversationCompactor;
+import io.agentscope.harness.agent.middleware.InboxMiddleware;
 import io.agentscope.harness.agent.subagent.SubagentDeclaration;
+import io.agentscope.harness.agent.subagent.task.TaskRunSpec;
+import io.agentscope.harness.agent.tool.WaitAsyncResultsTool;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicInteger;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
@@ -51,6 +64,324 @@ import org.junit.jupiter.params.provider.ValueSource;
 class HarnessContextRegressionTest {
     @TempDir Path workspace;
     private final String dynamicSession = UUID.randomUUID().toString();
+
+    @Test
+    void ordinaryCompactionKeepsTheLatestUserMessageAfterSeveralToolSteps() {
+        Msg constraint =
+                user("Use the exact label RELEASE-07. Wait for my approval before publishing.");
+        Msg notice =
+                user("A background review completed.")
+                        .withMetadata(Map.of(Msg.METADATA_SYNTHETIC, true));
+        AtomicInteger reasoningCalls = new AtomicInteger();
+        MockModel model =
+                new MockModel(
+                        messages -> {
+                            int call = reasoningCalls.getAndIncrement();
+                            if (call < 3) {
+                                return List.of(
+                                        ChatResponse.builder()
+                                                .content(
+                                                        List.of(
+                                                                ToolUseBlock.builder()
+                                                                        .id("probe-" + call)
+                                                                        .name("inspectRelease")
+                                                                        .input(Map.of())
+                                                                        .content("{}")
+                                                                        .build()))
+                                                .build());
+                            }
+                            return List.of(
+                                    ChatResponse.builder()
+                                            .content(
+                                                    List.of(
+                                                            TextBlock.builder()
+                                                                    .text("Ready for approval.")
+                                                                    .build()))
+                                            .build());
+                        });
+        MockModel summary = new MockModel("Earlier work and release checks were reviewed.");
+        ReleaseProbe probe = new ReleaseProbe();
+        Toolkit toolkit = new Toolkit();
+        toolkit.registerTool(probe);
+        try (var agent =
+                HarnessAgent.builder()
+                        .workspace(workspace)
+                        .model(model)
+                        .toolkit(toolkit)
+                        .disableDefaultWorkspaceSkills()
+                        .compaction(
+                                CompactionConfig.builder()
+                                        .model(summary)
+                                        .triggerMessages(8)
+                                        .keepMessages(2)
+                                        .keepTokens(0)
+                                        .build())
+                        .build()) {
+            agent.call(
+                            List.of(user("Earlier review notes. ".repeat(300)), constraint, notice),
+                            context())
+                    .block(Duration.ofSeconds(15));
+
+            assertEquals(3, probe.calls.get());
+            assertEquals(4, model.getCallCount());
+            assertEquals(1, summary.getCallCount());
+            List<Msg> request = model.getLastMessages();
+            assertTrue(
+                    request.stream()
+                            .anyMatch(
+                                    m ->
+                                            ConversationCompactor.SUMMARY_MSG_NAME.equals(
+                                                    m.getName())));
+            assertEquals(
+                    1,
+                    request.stream()
+                            .filter(
+                                    m ->
+                                            m.getRole() == MsgRole.USER
+                                                    && constraint.getId().equals(m.getId())
+                                                    && constraint
+                                                            .getTextContent()
+                                                            .equals(m.getTextContent()))
+                            .count(),
+                    "compacted request must contain the original user message");
+            assertFalse(request.stream().anyMatch(m -> notice.getId().equals(m.getId())));
+        }
+    }
+
+    public static class ReleaseProbe {
+        final AtomicInteger calls = new AtomicInteger();
+
+        @Tool(description = "Inspect the release checklist", readOnly = true)
+        public String inspectRelease() {
+            calls.incrementAndGet();
+            return "Release checklist examined.";
+        }
+    }
+
+    private enum DeliveryScenario {
+        NORMAL,
+        OLD_SENDER,
+        FAILED_WRITE
+    }
+
+    @ParameterizedTest
+    @CsvSource({
+        "false,false,true,NORMAL,false",
+        "true,false,true,NORMAL,false",
+        "true,true,true,NORMAL,false",
+        "false,false,false,NORMAL,false",
+        "true,false,true,OLD_SENDER,false",
+        "true,true,true,FAILED_WRITE,false",
+        "true,true,false,NORMAL,false",
+        "true,true,true,NORMAL,true",
+        "true,true,false,NORMAL,true",
+        "true,true,false,FAILED_WRITE,true"
+    })
+    void backgroundResultSurvivesCompactionAndIsDeliveredOnce(
+            boolean dynamicSubagents,
+            boolean overflow,
+            boolean journalEnabled,
+            DeliveryScenario scenario,
+            boolean stream) {
+        String result = "registry evidence".repeat(100) + "EVIDENCE_END";
+        String legacyPayload = "legacy result copy";
+        var calls = new AtomicInteger();
+        var model =
+                new MockModel(
+                        messages -> {
+                            if (calls.getAndIncrement() == 0 && overflow) {
+                                throw new IllegalStateException("context_length_exceeded");
+                            }
+                            return List.of(
+                                    ChatResponse.builder()
+                                            .content(
+                                                    List.of(
+                                                            TextBlock.builder()
+                                                                    .text("done")
+                                                                    .build()))
+                                            .build());
+                        });
+        var summaryModel = new MockModel("Earlier staging checks were reviewed.");
+        var rejectedWrites = new AtomicInteger();
+        var filesystem =
+                new LocalFilesystem(workspace) {
+                    @Override
+                    public List<FileUploadResponse> uploadFiles(
+                            RuntimeContext rc, List<Map.Entry<String, byte[]>> files) {
+                        if (scenario == DeliveryScenario.FAILED_WRITE) {
+                            for (var file : files) {
+                                if (file.getKey().contains("/tasks/")
+                                        && new String(file.getValue(), StandardCharsets.UTF_8)
+                                                .contains(result)) {
+                                    rejectedWrites.incrementAndGet();
+                                    return List.of(
+                                            FileUploadResponse.fail(file.getKey(), "write failed"));
+                                }
+                            }
+                        }
+                        return super.uploadFiles(rc, files);
+                    }
+                };
+        var rc = RuntimeContext.builder().userId("alice").sessionId(dynamicSession).build();
+        try (var bus = new WorkspaceMessageBus(filesystem, workspace.resolve("bus").toString())) {
+            var builder =
+                    HarnessAgent.builder()
+                            .workspace(workspace)
+                            .abstractFilesystem(filesystem)
+                            .messageBus(bus)
+                            .journalEnabled(journalEnabled)
+                            .model(model)
+                            .disableDefaultWorkspaceSkills()
+                            .compaction(
+                                    CompactionConfig.builder()
+                                            .model(summaryModel)
+                                            .triggerMessages(overflow ? 1000 : 2)
+                                            .triggerTokens(1_000_000)
+                                            .keepMessages(1)
+                                            .keepTokens(0)
+                                            .build());
+            if (!dynamicSubagents) builder.disableDynamicSubagents();
+            try (var agent = builder.build()) {
+                var repository = agent.getTaskRepository();
+                repository.putTask(
+                        rc,
+                        "review",
+                        "general-purpose",
+                        dynamicSession,
+                        new TaskRunSpec.AdoptedTaskRunSpec(
+                                CompletableFuture.completedFuture(result)));
+                if (scenario == DeliveryScenario.OLD_SENDER) {
+                    bus.inboxDrain(dynamicSession, 10).block();
+                    bus.inboxPush(dynamicSession, legacySubagentHint("review", legacyPayload))
+                            .block();
+                }
+                if (scenario == DeliveryScenario.FAILED_WRITE) {
+                    assertEquals(1, rejectedWrites.get());
+                    assertTrue(repository.findPendingDeliveries(rc, dynamicSession).isEmpty());
+                }
+                var wait = new WaitAsyncResultsTool(bus, repository).waitForResults(1, rc);
+                assertTrue(wait.getOutput().toString().contains("Async results have arrived"));
+                assertFalse(repository.isDelivered(rc, dynamicSession, "review"));
+
+                invoke(
+                        agent,
+                        List.of(
+                                user("older question " + "x".repeat(4000)),
+                                Msg.builder()
+                                        .role(MsgRole.ASSISTANT)
+                                        .textContent("previous answer " + "x".repeat(4000))
+                                        .build(),
+                                user("continue")),
+                        rc,
+                        stream);
+                assertEquals(overflow ? 2 : 1, model.getCallCount());
+                assertEquals(1, summaryModel.getCallCount());
+                for (var request : model.getRecordedMessages()) {
+                    var resultMessages =
+                            request.stream()
+                                    .filter(message -> message.getTextContent().contains(result))
+                                    .toList();
+                    assertEquals(1, resultMessages.size());
+                    String text = resultMessages.get(0).getTextContent();
+                    assertEquals(text.indexOf(result), text.lastIndexOf(result));
+                    assertTrue(
+                            request.stream()
+                                    .noneMatch(
+                                            message -> {
+                                                String body = message.getTextContent();
+                                                return body.contains(legacyPayload)
+                                                        || body.contains(
+                                                                "Automated background event"
+                                                                        + " from subagent_task");
+                                            }));
+                }
+                var lastRequest = model.getRecordedMessages().get(model.getCallCount() - 1);
+                assertTrue(
+                        lastRequest.stream()
+                                .anyMatch(
+                                        message ->
+                                                message.getTextContent()
+                                                        .contains(
+                                                                "Earlier staging checks were"
+                                                                        + " reviewed.")));
+                assertTrue(
+                        lastRequest.stream()
+                                .anyMatch(message -> message.getTextContent().equals("continue")));
+                assertEquals(
+                        scenario != DeliveryScenario.FAILED_WRITE,
+                        repository.isDelivered(rc, dynamicSession, "review"));
+                assertEquals(
+                        1,
+                        agent.getDelegate().getAgentState(rc).getContext().stream()
+                                .filter(message -> message.getTextContent().contains(result))
+                                .count());
+            }
+        }
+    }
+
+    @Test
+    void newSubagentResultIsReadableByLegacyInbox() {
+        String result = "worker found a compatible result";
+        var filesystem = new LocalFilesystem(workspace);
+        var rc = RuntimeContext.builder().userId("alice").sessionId(dynamicSession).build();
+        var legacyModel = new MockModel("received");
+        try (var bus = new WorkspaceMessageBus(filesystem, workspace.resolve("bus").toString());
+                var sender =
+                        HarnessAgent.builder()
+                                .workspace(workspace)
+                                .abstractFilesystem(filesystem)
+                                .messageBus(bus)
+                                .model(new MockModel("unused"))
+                                .disableDefaultWorkspaceSkills()
+                                .build();
+                // The standalone inbox follows the old receiver contract: only a textual hint.
+                var legacyReceiver =
+                        ReActAgent.builder()
+                                .model(legacyModel)
+                                .journalEnabled(false)
+                                .middleware(new InboxMiddleware(bus))
+                                .build()) {
+            sender.getTaskRepository()
+                    .putTask(
+                            rc,
+                            "review",
+                            "general-purpose",
+                            dynamicSession,
+                            new TaskRunSpec.AdoptedTaskRunSpec(
+                                    CompletableFuture.completedFuture(result)));
+            legacyReceiver.call(List.of(user("continue")), rc).block(Duration.ofSeconds(10));
+            var request = legacyModel.getRecordedMessages().get(0);
+            assertEquals(
+                    1,
+                    request.stream()
+                            .filter(message -> message.getTextContent().contains(result))
+                            .count());
+            assertTrue(
+                    request.stream()
+                            .anyMatch(
+                                    message ->
+                                            message.getTextContent()
+                                                    .contains(
+                                                            "Automated background event from"
+                                                                    + " subagent_task")));
+        }
+    }
+
+    private static Map<String, Object> legacySubagentHint(String taskId, String result) {
+        return Map.of(
+                "type",
+                "hint",
+                "id",
+                "legacy-1",
+                "source",
+                "subagent_task",
+                "hint",
+                "<system-reminder>Background subagent task '"
+                        + taskId
+                        + "' (agent=general-purpose) has completed.\n\nResult:\n\n"
+                        + result
+                        + "</system-reminder>");
+    }
 
     @ParameterizedTest
     @ValueSource(booleans = {false, true})
@@ -148,14 +479,24 @@ class HarnessContextRegressionTest {
 
     @ParameterizedTest
     @CsvSource({
-        "false,true,false",
-        "true,true,false",
-        "true,false,false",
-        "false,true,true",
-        "true,true,true",
-        "true,false,true"
+        "false,true,false,true,false",
+        "true,true,false,true,false",
+        "true,false,false,true,false",
+        "false,true,true,true,false",
+        "true,true,true,true,false",
+        "true,false,true,true,false",
+        "false,true,true,false,false",
+        "true,true,true,false,false",
+        "true,false,true,false,false",
+        "false,true,true,true,true",
+        "true,true,true,true,true",
+        "true,false,true,true,true",
+        "false,true,true,false,true",
+        "true,true,true,false,true",
+        "true,false,true,false,true"
     })
-    void compactionFlushRequiresMemoryOptIn(boolean memory, boolean flush, boolean overflow) {
+    void compactionFlushRequiresMemoryOptIn(
+            boolean memory, boolean flush, boolean overflow, boolean journal, boolean stream) {
         var calls = new AtomicInteger();
         var model =
                 new MockModel(
@@ -178,6 +519,7 @@ class HarnessContextRegressionTest {
                         .model(model)
                         .workspace(workspace)
                         .abstractFilesystem(new LocalFilesystem(workspace))
+                        .journalEnabled(journal)
                         .disableDefaultWorkspaceSkills()
                         .disableMemoryHooks()
                         .compaction(
@@ -192,7 +534,9 @@ class HarnessContextRegressionTest {
         if (memory) builder.enableLongTermMemory();
         var rc = RuntimeContext.builder().userId("alice").sessionId("compaction").build();
         try (var agent = builder.build()) {
-            agent.call(
+            Msg reply =
+                    invoke(
+                            agent,
                             List.of(
                                     user("old " + "x".repeat(4000)),
                                     Msg.builder()
@@ -200,8 +544,10 @@ class HarnessContextRegressionTest {
                                             .textContent("blue " + "x".repeat(4000))
                                             .build(),
                                     user("continue")),
-                            rc)
-                    .block(Duration.ofSeconds(15));
+                            rc,
+                            stream);
+            assertEquals("done", reply.getTextContent());
+            assertEquals(overflow ? 2 : 1, model.getCallCount());
             assertEquals(memory && flush ? 2 : 1, compactionModel.getCallCount());
             var files = agent.getWorkspaceManager().listMemoryFilePaths(rc);
             assertEquals(memory && flush, !files.isEmpty());
@@ -336,6 +682,17 @@ class HarnessContextRegressionTest {
 
     private RuntimeContext context() {
         return RuntimeContext.builder().userId("alice").sessionId(dynamicSession).build();
+    }
+
+    private static Msg invoke(
+            HarnessAgent agent, List<Msg> input, RuntimeContext rc, boolean stream) {
+        return (stream
+                        ? agent.streamEvents(input, rc)
+                                .ofType(AgentResultEvent.class)
+                                .single()
+                                .map(AgentResultEvent::getResult)
+                        : agent.call(input, rc))
+                .block(Duration.ofSeconds(15));
     }
 
     private static Msg user(String text) {

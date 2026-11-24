@@ -191,7 +191,7 @@ public class CompactionMiddleware implements HarnessRuntimeMiddleware {
         }
     }
 
-    /** Retry provider context overflow inside the same execution, before its recorder is closed. */
+    /** Retry provider context overflow within the same reasoning step. */
     public HarnessRuntimeMiddleware overflowRecovery() {
         return new HarnessRuntimeMiddleware() {
             @Override
@@ -205,8 +205,7 @@ public class CompactionMiddleware implements HarnessRuntimeMiddleware {
                     RuntimeContext ctx,
                     ReasoningInput input,
                     Function<ReasoningInput, Flux<AgentEvent>> next) {
-                if (!(agent instanceof ReActAgent react) || !react.journalEnabled())
-                    return next.apply(input);
+                if (!(agent instanceof ReActAgent react)) return next.apply(input);
                 AgentState initialState = RuntimeContext.resolveAgentState(ctx, agent);
                 List<Msg> initialHistory =
                         initialState == null ? List.of() : List.copyOf(initialState.getContext());
@@ -246,7 +245,7 @@ public class CompactionMiddleware implements HarnessRuntimeMiddleware {
                                                     model,
                                                     CompactionConfig.builder()
                                                             .triggerMessages(1)
-                                                            .keepMessages(1)
+                                                            .keepMessages(recoveryTailSize(before))
                                                             .keepTokens(0)
                                                             .flushBeforeCompact(
                                                                     config.isFlushBeforeCompact())
@@ -288,6 +287,22 @@ public class CompactionMiddleware implements HarnessRuntimeMiddleware {
                                 });
             }
         };
+    }
+
+    private int recoveryTailSize(List<Msg> history) {
+        // Keep the current user input with its tool results if it is still within the recent
+        // message window and there is an older prefix to compact.
+        int first = Math.max(1, history.size() - config.getKeepMessages());
+        for (int i = history.size() - 1; i >= first; i--) {
+            Msg msg = history.get(i);
+            if (msg.getRole() == MsgRole.USER
+                    && !Boolean.TRUE.equals(msg.getMetadata().get(Msg.METADATA_SYNTHETIC))
+                    && !Boolean.TRUE.equals(msg.getMetadata().get("synthetic"))
+                    && !ConversationCompactor.SUMMARY_MSG_NAME.equals(msg.getName())) {
+                return history.size() - i;
+            }
+        }
+        return 1;
     }
 
     public static boolean isContextOverflowError(Throwable error) {

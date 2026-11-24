@@ -226,7 +226,7 @@ These are the defaults: results exceeding 80,000 characters are eligible, and th
 
 ### Shorten accumulated conversation
 
-Conversation compaction addresses repeated rounds of work. Its lightweight passes first truncate old tool arguments when configured and prune sufficiently large aggregates of older tool output. If the remaining history meets the message or token trigger, it summarizes a prefix and keeps a recent tail, preserving tool-call/result boundaries.
+Conversation compaction addresses repeated rounds of work. Its lightweight passes first truncate old tool arguments when configured and prune sufficiently large aggregates of older tool output. If the remaining history meets the message or token trigger, it summarizes a prefix and keeps a recent tail, preserving tool-call/result boundaries. The built-in summarizer keeps the latest user input verbatim before the retained tool steps even when those steps fill the configured tail.
 
 Tool-result pruning also shortens only text, keeping non-text blocks and retained text in their original order. Each result shares one head/tail text allowance and keeps its tool-call ID, tool name, metadata, state, and execution details. Pruning does not create a recovery file for each result; use Session Log to retrieve the original evidence when enabled. Retained media still counts toward the final request budget.
 
@@ -262,7 +262,7 @@ Compaction changes the conversation list, not the independently stored task, pla
 
 ### Recover from provider overflow
 
-The estimator cannot exactly predict every provider's token accounting. When native session logging is active and the provider reports a recognized context overflow, enabled compaction can force a smaller conversation and retry that reasoning request once within the same execution. Recovery requires reducible history; it is not a guarantee that an oversized request will succeed. If compaction is disabled or recovery cannot reduce the input, the error propagates.
+The estimator cannot exactly predict every provider's token accounting. When the provider reports a recognized context overflow, enabled compaction can force a smaller conversation and retry that reasoning request once within the same execution. Both `call()` and `streamEvents()` use this recovery with native session logging or the legacy state store. The retry preserves the request's output constraints and continues with the results of tools that already ran. If compaction is disabled, recovery cannot reduce the input, or the retry fails, the error propagates.
 
 <span id="letting-the-agent-inspect-its-own-history" />
 

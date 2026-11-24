@@ -19,11 +19,16 @@ import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.event.AgentEvent;
+import io.agentscope.core.event.ModelCallEndEvent;
+import io.agentscope.core.event.ModelCallStartEvent;
+import io.agentscope.core.message.HintBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.middleware.AgentInput;
 import io.agentscope.core.middleware.ReasoningInput;
+import io.agentscope.harness.agent.bus.MessageBus;
+import io.agentscope.harness.agent.context.ContextManifest;
 import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
 import io.agentscope.harness.agent.subagent.AgentSpecLoader;
 import io.agentscope.harness.agent.subagent.DefaultAgentManager;
@@ -44,14 +49,20 @@ import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.EnumSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.UUID;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Schedulers;
 
 /**
  * Middleware that provides the managed subagent mechanism.
@@ -91,6 +102,11 @@ public class SubagentsMiddleware implements HarnessRuntimeMiddleware {
      * can still fetch each one explicitly.
      */
     static final int MAX_DELIVERIES_PER_REMINDER = 10;
+
+    private static final String TASK_HINT_SOURCE = "subagent_task";
+    private static final String TASK_HINT_HEADER = "<system-reminder>Background subagent task '";
+    private static final String TASK_HINT_AGENT = "' (agent=";
+    private static final String METADATA_TASK_HINT_ID = "subagent_task_hint_id";
 
     // @formatter:off
     private static final String SUBAGENT_SECTION_TEMPLATE =
@@ -233,10 +249,10 @@ public class SubagentsMiddleware implements HarnessRuntimeMiddleware {
     }
 
     /**
-     * Wires a {@link io.agentscope.harness.agent.bus.MessageBus} so that background task completions are
-     * pushed to the session inbox and a wakeup signal is enqueued. This enables the
-     * {@link io.agentscope.harness.agent.gateway.WakeupDispatcher} to re-trigger idle sessions
-     * when subagent work finishes.
+     * Wires a {@link MessageBus} so that background task completions signal the session inbox and
+     * enqueue a wakeup. This enables the {@link
+     * io.agentscope.harness.agent.gateway.WakeupDispatcher} to re-trigger idle sessions when
+     * subagent work finishes.
      *
      * <p>Registers a {@link TaskRepository.TaskCompletionCallback} on the underlying repository.
      * Safe to call multiple times — each call replaces the previous callback.
@@ -245,37 +261,49 @@ public class SubagentsMiddleware implements HarnessRuntimeMiddleware {
      * @param agentId the parent agent id (for wakeup routing)
      * @return this middleware for chaining
      */
-    public SubagentsMiddleware wireMessageBus(
-            io.agentscope.harness.agent.bus.MessageBus messageBus, String agentId) {
-        if (messageBus == null) {
-            return this;
-        }
-        taskRepository.setCompletionCallback(
+    public SubagentsMiddleware wireMessageBus(MessageBus messageBus, String agentId) {
+        wireMessageBus(taskRepository, messageBus, agentId);
+        return this;
+    }
+
+    /** Shares the completion callback between static and dynamic subagent routing. */
+    public static void wireMessageBus(TaskRepository repository, MessageBus bus, String agentId) {
+        if (bus == null) return;
+        repository.setCompletionCallback(
                 (rc, taskId, subAgentId, sessionId, result) -> {
                     String userId = rc != null ? rc.getUserId() : null;
-                    String hintContent =
-                            String.format(
-                                    "<system-reminder>Background subagent task '%s'"
-                                            + " (agent=%s) has completed.\n\nResult:\n\n%s"
-                                            + "</system-reminder>",
-                                    taskId, subAgentId, result != null ? result : "(no output)");
-                    String hintId = java.util.UUID.randomUUID().toString().replace("-", "");
-                    java.util.Map<String, Object> hintPayload =
-                            java.util.Map.of(
+                    Map<String, Object> payload =
+                            Map.of(
                                     "type",
                                     "hint",
                                     "id",
-                                    hintId,
-                                    "hint",
-                                    hintContent,
+                                    UUID.randomUUID().toString().replace("-", ""),
                                     "source",
-                                    "subagent_task");
-                    messageBus.inboxPush(sessionId, hintPayload).subscribe();
-                    messageBus
-                            .enqueueWakeup(
-                                    userId != null ? userId : "",
-                                    sessionId,
-                                    agentId != null ? agentId : "")
+                                    TASK_HINT_SOURCE,
+                                    "taskId",
+                                    taskId != null ? taskId : "",
+                                    "hint",
+                                    TASK_HINT_HEADER
+                                            + taskId
+                                            + TASK_HINT_AGENT
+                                            + subAgentId
+                                            + ") has completed.\n\nResult:\n\n"
+                                            + (result != null ? result : "(no output)")
+                                            + "</system-reminder>");
+                    bus.inboxPush(sessionId, payload)
+                            .onErrorResume(
+                                    error -> {
+                                        log.warn(
+                                                "Failed to signal task {} in the inbox",
+                                                taskId,
+                                                error);
+                                        return Mono.empty();
+                                    })
+                            .then(
+                                    bus.enqueueWakeup(
+                                            userId != null ? userId : "",
+                                            sessionId,
+                                            agentId != null ? agentId : ""))
                             .subscribe(
                                     unused -> {},
                                     err ->
@@ -284,13 +312,7 @@ public class SubagentsMiddleware implements HarnessRuntimeMiddleware {
                                                             + " completion: {}",
                                                     taskId,
                                                     err.getMessage()));
-                    log.info(
-                            "Subagent task {} completed, pushed to inbox and enqueued wakeup:"
-                                    + " session={}",
-                            taskId,
-                            sessionId);
                 });
-        return this;
     }
 
     /**
@@ -366,78 +388,129 @@ public class SubagentsMiddleware implements HarnessRuntimeMiddleware {
             Function<ReasoningInput, Flux<AgentEvent>> next) {
         RuntimeContext rc = ctx != null ? ctx : RuntimeContext.empty();
         List<SubagentEntry> currentEntries = snapshotFor(rc).entries();
-        String sessionId = rc != null ? rc.getSessionId() : null;
+        return reasonWithSubagents(
+                agent, rc, input, next, taskRepository, currentEntries, isSessionMode, true);
+    }
 
-        // ---- Phase B-3 push delivery -------------------------------------------------------
-        // Drain newly-terminal tasks first so the SYSTEM summary built afterwards can omit them.
-        // Only persist to AgentState when the agent is a ReActAgent — other Agent kinds keep
-        // the legacy pull-only flow unchanged.
-        List<TaskDelivery> pending = this.taskRepository.findPendingDeliveries(rc, sessionId);
-        Msg deliveryMsg = null;
-        if (!pending.isEmpty()) {
-            deliveryMsg = buildDeliveryReminder(pending);
-        }
-        if (deliveryMsg != null && agent instanceof ReActAgent reAct) {
-            try {
-                RuntimeContext.resolveAgentState(rc, reAct).contextMutable().add(deliveryMsg);
-            } catch (RuntimeException e) {
-                log.warn(
-                        "Failed to append task delivery reminder to AgentState; "
-                                + "will inject for this round only: {}",
-                        e.getMessage());
-            }
-        }
-
+    static Flux<AgentEvent> reasonWithSubagents(
+            Agent agent,
+            RuntimeContext rc,
+            ReasoningInput input,
+            Function<ReasoningInput, Flux<AgentEvent>> next,
+            TaskRepository repository,
+            List<SubagentEntry> entries,
+            boolean sessionMode,
+            boolean collectDeliveries) {
+        String sessionId = rc.getSessionId();
+        List<TaskDelivery> pending =
+                collectDeliveries && agent instanceof ReActAgent
+                        ? repository.findPendingDeliveries(rc, sessionId)
+                        : List.of();
         List<Msg> rebuilt =
-                prependToSystemMessage(
-                        input.messages(), renderSubagentSection(currentEntries, isSessionMode));
-        Msg stateMsg =
-                buildSubagentStateMsg(currentEntries, buildTaskSummary(this.taskRepository, rc));
-        if (stateMsg != null) {
-            rebuilt = new ArrayList<>(rebuilt);
-            rebuilt.add(stateMsg);
-        }
-        if (deliveryMsg != null) {
-            // Inject for this round (parallel to the AgentState write — keeps the message visible
-            // in the immediate LLM call regardless of when the framework re-derives messages from
-            // the state next round).
-            rebuilt = new ArrayList<>(rebuilt);
-            rebuilt.add(deliveryMsg);
-        }
+                new ArrayList<>(
+                        prependToSystemMessage(
+                                input.messages(), renderSubagentSection(entries, sessionMode)));
+        Msg delivery = selectDeliveryReminder(rebuilt, pending, repository, rc);
+        if (delivery != null) rebuilt.add(delivery);
+        Msg stateMsg = buildSubagentStateMsg(entries, buildTaskSummary(repository, rc));
+        if (stateMsg != null) rebuilt.add(stateMsg);
 
         Flux<AgentEvent> downstream =
                 next.apply(new ReasoningInput(rebuilt, input.tools(), input.options()));
-        if (!pending.isEmpty()) {
-            // Mark delivered ONLY after the inner reasoning completes successfully. Order matters:
-            // if we marked before reasoning, a crash mid-call could persist deliveredAt while the
-            // AgentState write was never flushed, causing permanent message loss. The reverse
-            // (crash AFTER reasoning, BEFORE markDelivered) only causes a redundant re-delivery
-            // on the next round — annoying, but safe.
-            final TaskRepository repoRef = this.taskRepository;
-            final RuntimeContext rcRef = rc;
-            final String sidRef = sessionId;
-            downstream =
-                    downstream.doOnComplete(
-                            () -> {
-                                for (TaskDelivery d :
-                                        pending.subList(
-                                                0,
-                                                Math.min(
-                                                        pending.size(),
-                                                        MAX_DELIVERIES_PER_REMINDER))) {
-                                    try {
-                                        repoRef.markDelivered(rcRef, sidRef, d.taskId());
-                                    } catch (RuntimeException e) {
-                                        log.warn(
-                                                "Failed to mark task {} as delivered; "
-                                                        + "may re-push next round: {}",
-                                                d.taskId(),
-                                                e.getMessage());
+        if (delivery == null || !(agent instanceof ReActAgent react)) return downstream;
+
+        // A request projection survives compaction. Move it into regular history only after
+        // the completed model call included it, then persist history before acknowledging it.
+        AtomicReference<String> submittedCall = new AtomicReference<>();
+        AtomicBoolean received = new AtomicBoolean();
+        Mono<AgentEvent> acknowledge =
+                Mono.<AgentEvent>fromRunnable(
+                                () -> {
+                                    RuntimeContext.resolveAgentState(rc, react)
+                                            .contextMutable()
+                                            .add(delivery);
+                                    react.saveAgentState(rc);
+                                    int shown =
+                                            Math.min(pending.size(), MAX_DELIVERIES_PER_REMINDER);
+                                    for (TaskDelivery task : pending.subList(0, shown)) {
+                                        try {
+                                            repository.markDelivered(rc, sessionId, task.taskId());
+                                        } catch (RuntimeException error) {
+                                            log.warn(
+                                                    "Failed to mark task {} as delivered",
+                                                    task.taskId(),
+                                                    error);
+                                        }
                                     }
-                                }
-                            });
+                                })
+                        .subscribeOn(Schedulers.boundedElastic());
+        return downstream
+                .doOnNext(
+                        event -> {
+                            if (event instanceof ModelCallStartEvent start) {
+                                var metadata = start.getMetadata();
+                                Object manifest =
+                                        metadata == null ? null : metadata.get("contextManifest");
+                                boolean included =
+                                        !(manifest instanceof ContextManifest compiled)
+                                                || compiled.items().stream()
+                                                        .map(ContextManifest.Item::sourceId)
+                                                        .anyMatch(delivery.getId()::equals);
+                                submittedCall.set(included ? start.getReplyId() : null);
+                            } else if (event instanceof ModelCallEndEvent end
+                                    && end.getReplyId().equals(submittedCall.get())) {
+                                received.set(true);
+                            }
+                        })
+                .concatWith(Mono.defer(() -> received.get() ? acknowledge : Mono.empty()));
+    }
+
+    /** Passes the compatible inbox payload to the next middleware without entering history. */
+    static Msg projectTaskHint(Map<String, Object> payload, HintBlock hint) {
+        if (!TASK_HINT_SOURCE.equals(hint.getSource())) return null;
+        String text = hint.getHint();
+        String taskId = payload.get("taskId") instanceof String id ? id : "";
+        if (taskId.isBlank() && text.startsWith(TASK_HINT_HEADER)) {
+            int end = text.indexOf(TASK_HINT_AGENT, TASK_HINT_HEADER.length());
+            if (end > TASK_HINT_HEADER.length()) {
+                taskId = text.substring(TASK_HINT_HEADER.length(), end);
+            }
         }
-        return downstream;
+        if (taskId.isBlank()) return null;
+        return Msg.builder()
+                .role(MsgRole.USER)
+                .name("system")
+                .textContent(text)
+                .metadata(Map.of(Msg.METADATA_SYNTHETIC, true, METADATA_TASK_HINT_ID, taskId))
+                .build();
+    }
+
+    private static Msg selectDeliveryReminder(
+            List<Msg> messages,
+            List<TaskDelivery> pending,
+            TaskRepository repository,
+            RuntimeContext rc) {
+        Map<String, String> hints = new LinkedHashMap<>();
+        messages.removeIf(
+                msg -> {
+                    if (msg.getMetadata() == null
+                            || !(msg.getMetadata().get(METADATA_TASK_HINT_ID)
+                                    instanceof String taskId)) {
+                        return false;
+                    }
+                    hints.putIfAbsent(taskId, msg.getTextContent());
+                    return true;
+                });
+        pending.forEach(task -> hints.remove(task.taskId()));
+        hints.keySet().removeIf(taskId -> repository.isDelivered(rc, rc.getSessionId(), taskId));
+        if (hints.isEmpty()) return pending.isEmpty() ? null : buildDeliveryReminder(pending);
+        StringBuilder text = new StringBuilder();
+        if (!pending.isEmpty()) text.append(renderTaskResults(pending));
+        for (String hint : hints.values()) {
+            if (!text.isEmpty()) text.append("\n\n");
+            text.append(hint);
+        }
+        return deliveryReminder(text.toString());
     }
 
     /**
@@ -450,6 +523,10 @@ public class SubagentsMiddleware implements HarnessRuntimeMiddleware {
      * layers can recognise this as system-originated synthetic content rather than user input.
      */
     static Msg buildDeliveryReminder(List<TaskDelivery> deliveries) {
+        return deliveryReminder(renderTaskResults(deliveries));
+    }
+
+    private static String renderTaskResults(List<TaskDelivery> deliveries) {
         int total = deliveries.size();
         int shown = Math.min(total, MAX_DELIVERIES_PER_REMINDER);
         StringBuilder sb = new StringBuilder();
@@ -491,11 +568,14 @@ public class SubagentsMiddleware implements HarnessRuntimeMiddleware {
                     .append(total - shown)
                     .append(" more — call task_list() to inspect.\n");
         }
-        sb.append("</system-reminder>");
+        return sb.append("</system-reminder>").toString();
+    }
+
+    private static Msg deliveryReminder(String text) {
         return Msg.builder()
                 .role(MsgRole.USER)
                 .name("system")
-                .content(TextBlock.builder().text(sb.toString()).build())
+                .textContent(text)
                 .metadata(
                         Map.of(
                                 Msg.METADATA_SYNTHETIC,

@@ -152,17 +152,21 @@ Decompose work by independence and dependency graph first: nodes without depende
 
 ### Background tasks push back automatically
 
-When automatic delivery is wired, completed background results can be injected as a system reminder before the parent's next reasoning step:
+With the default workspace-backed task repository, both static and dynamic subagents deliver terminal results as an aggregate reminder in the parent's next reasoning request:
 
 ```
 <system-reminder>
-Background tasks delivered:
-- task_id=xxx, agent=research-analyst, status=COMPLETED
-  result summary: ...
+1 background subagent task has completed since your last turn. These results are now part of your conversation history.
+
+<task id="xxx" state="completed" agent="research-analyst">
+<task_result>
+...
+</task_result>
+</task>
 </system-reminder>
 ```
 
-Delivery depends on the configured subagent path and message bus. If only a status summary is present, use `task_output` to retrieve the actual output. Reading an existing result does not start, resume, or re-run a task.
+The message bus signals availability for idle-session wakeups and no-argument `wait_async_results()`. When a bus is configured, the inbox hint carries a copy of the result for older replicas and as a fallback if the terminal result is missing from the task repository. Harness prefers the stored result and includes one copy per task in each request. A pending reminder survives history compaction and overflow retry. After the model receives it in a successful request, Harness saves the reminder in conversation history and acknowledges the tasks delivered from the repository. Custom task repositories that support completion callbacks can deliver results through the inbox.
 
 Automatic delivery and wait barriers include the full output of each result they return. Task status summaries report execution state. Retrieve the task's output when the summary alone cannot answer your question.
 

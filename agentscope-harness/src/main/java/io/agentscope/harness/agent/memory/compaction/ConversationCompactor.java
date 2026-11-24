@@ -55,8 +55,8 @@ import reactor.core.publisher.Mono;
  * <h2>Algorithm</h2>
  * <ol>
  *   <li><b>Check trigger</b> — token count or message count exceeds threshold</li>
- *   <li><b>Determine cutoff</b> — find the earliest index that keeps the tail within the
- *       "keep" budget; never split an ASSISTANT tool-call from its TOOL result(s)</li>
+ *   <li><b>Determine cutoff</b> — choose a recent tail by the "keep" budget, preserve tool-call
+ *       pairs, and carry the latest user input forward verbatim.</li>
  *   <li><b>Memory flush</b> (optional) — extract long-term memories from the prefix via
  *       {@link MemoryFlushManager#flushMemories}</li>
  *   <li><b>Summarize</b> — one LLM call to distill the prefix into a structured summary</li>
@@ -286,8 +286,16 @@ public class ConversationCompactor {
         // Keep prior summaries in the summarization input so each compaction builds on the
         // previous one, but exclude them from memory flushing to avoid duplicate extraction.
         List<Msg> summaryInput = new ArrayList<>(messages.subList(0, cutoff));
-        List<Msg> flushInput = filterSummaryMessages(summaryInput);
         List<Msg> tail = new ArrayList<>(messages.subList(cutoff, messages.size()));
+        int latestUser = findLatestUserInput(messages);
+        if (latestUser >= 0 && latestUser < cutoff) {
+            // Keep the original input without retaining every tool step that followed it.
+            tail.add(0, summaryInput.remove(latestUser));
+        }
+        if (summaryInput.isEmpty()) {
+            return Mono.just(lightweightResult(messages, conversationMessages));
+        }
+        List<Msg> flushInput = filterSummaryMessages(summaryInput);
 
         log.info(
                 "Compaction triggered: total={} msgs / {} tokens, cutoff={}, keeping={} msgs",
@@ -446,6 +454,19 @@ public class ConversationCompactor {
             return 0;
         }
         return messages.size() - keepMessages;
+    }
+
+    private static int findLatestUserInput(List<Msg> messages) {
+        for (int i = messages.size() - 1; i >= 0; i--) {
+            Msg msg = messages.get(i);
+            if (msg.getRole() == MsgRole.USER
+                    && !SUMMARY_MSG_NAME.equals(msg.getName())
+                    && !Boolean.TRUE.equals(msg.getMetadata().get(Msg.METADATA_SYNTHETIC))
+                    && !Boolean.TRUE.equals(msg.getMetadata().get("synthetic"))) {
+                return i;
+            }
+        }
+        return -1;
     }
 
     /**

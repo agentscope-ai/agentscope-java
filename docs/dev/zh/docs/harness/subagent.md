@@ -150,17 +150,23 @@ RuntimeContext ctx = RuntimeContext.builder()
 
 ### 后台任务自动反向通知
 
-接入自动交付时，后台任务完成后的结果可在下一轮推理前作为系统提醒注入对话末尾：
+使用默认的工作区任务仓库时，静态和动态子 agent 的终态结果都会在父 agent 的下一次推理请求中以聚合提醒交付：
 
 ```
 <system-reminder>
-后台任务已交付：
-- task_id=xxx，agent=research-analyst，status=COMPLETED
-  结果摘要：...
+1 background subagent task has completed since your last turn. These results are now part of your conversation history.
+
+<task id="xxx" state="completed" agent="research-analyst">
+<task_result>
+...
+</task_result>
+</task>
 </system-reminder>
 ```
 
-交付方式取决于所配置的子 agent 路径及消息总线。如果当前只有状态摘要，应通过 `task_output` 读取实际结果。读取已有结果不会创建、恢复执行或重新运行任务。
+消息总线发出结果就绪信号，用于唤醒空闲会话和无参数的 `wait_async_results()`。配置了消息总线时，收件箱提醒携带一份结果正文，供旧节点读取，也可在任务仓库缺少终态结果时兜底。Harness 优先使用仓库结果，同一次请求中每个任务只注入一份结果。历史压缩和超窗重试会保留待交付的提醒。模型成功处理包含提醒的请求后，Harness 将提醒保存到会话历史，并确认从仓库交付的任务。支持完成回调的自定义任务仓库可以通过收件箱交付结果。
+
+自动交付和等待屏障会附上此次返回的完整结果。任务状态摘要用于查看执行状态。需要实际输出时，可以用 `task_output` 获取完整结果。
 
 ### 后台任务工具
 

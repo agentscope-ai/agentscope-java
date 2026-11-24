@@ -30,6 +30,7 @@ import io.agentscope.harness.agent.subagent.DefaultAgentManager;
 import io.agentscope.harness.agent.subagent.SubagentDeclaration;
 import io.agentscope.harness.agent.subagent.SubagentFactory;
 import io.agentscope.harness.agent.subagent.task.TaskRepository;
+import io.agentscope.harness.agent.subagent.task.WorkspaceTaskRepository;
 import io.agentscope.harness.agent.tool.AgentSpawnTool;
 import io.agentscope.harness.agent.tool.TaskTool;
 import java.nio.file.Files;
@@ -176,17 +177,15 @@ public class DynamicSubagentsMiddleware implements HarnessRuntimeMiddleware {
         RuntimeContext rc = ctx != null ? ctx : RuntimeContext.empty();
         List<SubagentEntry> merged = reloadEntries(rc);
         installSnapshot(rc, merged);
-        Msg stateMsg =
-                SubagentsMiddleware.buildSubagentStateMsg(
-                        merged, SubagentsMiddleware.buildTaskSummary(taskRepository, rc));
-        List<Msg> rebuilt =
-                SubagentsMiddleware.prependToSystemMessage(
-                        input.messages(), SubagentsMiddleware.renderSubagentSection(merged, false));
-        if (stateMsg != null) {
-            rebuilt = new ArrayList<>(rebuilt);
-            rebuilt.add(stateMsg);
-        }
-        return next.apply(new ReasoningInput(rebuilt, input.tools(), input.options()));
+        return SubagentsMiddleware.reasonWithSubagents(
+                agent,
+                rc,
+                input,
+                next,
+                taskRepository,
+                merged,
+                false,
+                taskRepository instanceof WorkspaceTaskRepository);
     }
 
     private DefaultAgentManager installSnapshot(RuntimeContext rc, List<SubagentEntry> entries) {

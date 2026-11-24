@@ -17,6 +17,7 @@ package io.agentscope.harness.agent.middleware;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.ReActAgent;
@@ -24,10 +25,14 @@ import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.agent.test.MockModel;
 import io.agentscope.core.event.AgentEvent;
+import io.agentscope.core.event.ModelCallEndEvent;
+import io.agentscope.core.event.ModelCallStartEvent;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.middleware.ReasoningInput;
 import io.agentscope.core.tool.Toolkit;
+import io.agentscope.harness.agent.bus.WorkspaceMessageBus;
+import io.agentscope.harness.agent.filesystem.local.LocalFilesystem;
 import io.agentscope.harness.agent.subagent.SubagentFactory;
 import io.agentscope.harness.agent.subagent.task.BackgroundTask;
 import io.agentscope.harness.agent.subagent.task.TaskDelivery;
@@ -36,6 +41,7 @@ import io.agentscope.harness.agent.subagent.task.TaskRunSpec;
 import io.agentscope.harness.agent.subagent.task.TaskStatus;
 import io.agentscope.harness.agent.tool.TaskTool;
 import io.agentscope.harness.agent.workspace.WorkspaceManager;
+import java.nio.file.Path;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -45,12 +51,11 @@ import java.util.List;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 import reactor.core.publisher.Flux;
 
 /**
- * Phase B-3 — push delivery: SubagentsMiddleware injects newly-terminal tasks as a single
- * {@code <system-reminder>} USER message, writes it into AgentState, marks delivered after
- * downstream completion, never re-delivers, falls back gracefully for non-ReActAgent.
+ * Newly terminal tasks enter a successful model request as one aggregate USER message.
  */
 class SubagentDeliveryTest {
 
@@ -62,7 +67,12 @@ class SubagentDeliveryTest {
                 .sysPrompt("Test agent")
                 .model(new MockModel("noop"))
                 .toolkit(new Toolkit())
+                .journalEnabled(false)
                 .build();
+    }
+
+    private static Flux<AgentEvent> successfulModelCall() {
+        return Flux.just(new ModelCallStartEvent("model"), new ModelCallEndEvent("model", null));
     }
 
     private static SubagentEntry dummyEntry() {
@@ -79,6 +89,12 @@ class SubagentDeliveryTest {
         final List<TaskDelivery> queue = new ArrayList<>();
         final Set<String> delivered = new HashSet<>();
         final List<String> markCalls = new ArrayList<>();
+        TaskCompletionCallback callback;
+
+        @Override
+        public void setCompletionCallback(TaskCompletionCallback callback) {
+            this.callback = callback;
+        }
 
         @Override
         public BackgroundTask getTask(RuntimeContext rc, String sessionId, String taskId) {
@@ -154,7 +170,7 @@ class SubagentDeliveryTest {
                                     List.of(), agent.getToolkit().getToolSchemas(), null),
                             input -> {
                                 seen.set(input);
-                                return Flux.empty();
+                                return successfulModelCall();
                             })
                     .blockLast();
             String notification =
@@ -251,7 +267,9 @@ class SubagentDeliveryTest {
                         new ReasoningInput(new ArrayList<>(), List.of(), null),
                         in -> {
                             forwarded.set(in);
-                            return Flux.<AgentEvent>empty();
+                            assertTrue(agent.getAgentState().getContext().isEmpty());
+                            assertTrue(repo.markCalls.isEmpty());
+                            return successfulModelCall();
                         })
                 .blockLast();
 
@@ -288,13 +306,13 @@ class SubagentDeliveryTest {
                         agent,
                         null,
                         new ReasoningInput(new ArrayList<>(), List.of(), null),
-                        in -> Flux.<AgentEvent>empty())
+                        in -> successfulModelCall())
                 .blockLast();
         mw.onReasoning(
                         agent,
                         null,
                         new ReasoningInput(new ArrayList<>(), List.of(), null),
-                        in -> Flux.<AgentEvent>empty())
+                        in -> successfulModelCall())
                 .blockLast();
 
         // Reminder added exactly once.
@@ -324,7 +342,7 @@ class SubagentDeliveryTest {
                         agent,
                         null,
                         new ReasoningInput(new ArrayList<>(), List.of(), null),
-                        in -> Flux.<AgentEvent>empty())
+                        in -> successfulModelCall())
                 .blockLast();
 
         List<Msg> ctx = agent.getAgentState().contextMutable();
@@ -352,7 +370,7 @@ class SubagentDeliveryTest {
                         agent,
                         null,
                         new ReasoningInput(List.of(), List.of(), null),
-                        in -> Flux.empty())
+                        in -> successfulModelCall())
                 .blockLast();
         assertEquals(10, repo.markCalls.size());
         assertEquals(2, repo.findPendingDeliveries(null, null).size());
@@ -360,8 +378,44 @@ class SubagentDeliveryTest {
                         agent,
                         null,
                         new ReasoningInput(List.of(), List.of(), null),
-                        in -> Flux.empty())
+                        in -> successfulModelCall())
                 .blockLast();
         assertEquals(12, repo.markCalls.size());
+    }
+
+    @Test
+    void unsuccessfulReasoningLeavesDeliveryPending() {
+        var agent = newReActAgent();
+        var repo = new StubRepo();
+        repo.queue.add(delivery("t1", TaskStatus.COMPLETED, "hello", null));
+        var middleware = new SubagentsMiddleware(List.of(), repo, (WorkspaceManager) null);
+        var input = new ReasoningInput(List.of(), List.of(), null);
+
+        middleware.onReasoning(agent, null, input, ignored -> Flux.empty()).blockLast();
+        Flux<AgentEvent> failed =
+                Flux.<AgentEvent>just(new ModelCallStartEvent("model"))
+                        .concatWith(Flux.error(new IllegalStateException("provider failed")));
+        assertThrows(
+                IllegalStateException.class,
+                () -> middleware.onReasoning(agent, null, input, ignored -> failed).blockLast());
+
+        assertEquals(1, repo.findPendingDeliveries(null, null).size());
+        assertTrue(agent.getAgentState().getContext().isEmpty());
+    }
+
+    @Test
+    void customRepositoryCompletionStillCarriesInboxText(@TempDir Path workspace) {
+        var repo = new StubRepo();
+        try (var bus =
+                new WorkspaceMessageBus(
+                        new LocalFilesystem(workspace), workspace.resolve("bus").toString())) {
+            SubagentsMiddleware.wireMessageBus(repo, bus, "parent");
+            repo.callback.onCompleted(RuntimeContext.empty(), "t1", "worker", "session", "result");
+
+            var entries = bus.inboxDrain("session", 10).block();
+            assertNotNull(entries);
+            assertEquals(1, entries.size());
+            assertTrue(entries.get(0).payload().get("hint").toString().contains("result"));
+        }
     }
 }

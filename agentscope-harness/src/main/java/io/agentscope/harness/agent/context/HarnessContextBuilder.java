@@ -511,7 +511,7 @@ public final class HarnessContextBuilder implements ModelRequestPreparer {
         return layout(copy(input, List.copyOf(messages)), canonical);
     }
 
-    /** Stable layout independent of compaction: System, conversation, state, reference material. */
+    /** Stable layout: system, conversation, pending deliveries, state, reference material. */
     private static ModelCallInput layout(ModelCallInput input, List<Msg> canonical) {
         List<Msg> ordered = new ArrayList<>();
         List<Msg> systems =
@@ -545,24 +545,23 @@ public final class HarnessContextBuilder implements ModelRequestPreparer {
                             .metadata(metadata)
                             .build());
         }
-        for (int group = 1; group < 4; group++) {
-            for (Msg msg : input.messages()) {
-                int position =
-                        msg.getRole() == MsgRole.SYSTEM
-                                ? 0
-                                : !msg.isRequestProjection(canonical)
-                                        ? 1
-                                        : "workspace_materials"
-                                                        .equals(
-                                                                msg.getMetadata()
-                                                                        .get(
-                                                                                Msg
-                                                                                        .METADATA_REMINDER_KIND))
-                                                ? 3
-                                                : 2;
-                if (position == group) ordered.add(msg);
+        List<Msg> deliveries = new ArrayList<>();
+        List<Msg> state = new ArrayList<>();
+        List<Msg> references = new ArrayList<>();
+        for (Msg msg : input.messages()) {
+            if (msg.getRole() == MsgRole.SYSTEM) continue;
+            if (!msg.isRequestProjection(canonical)) {
+                ordered.add(msg);
+            } else {
+                Object kind = msg.getMetadata().get(Msg.METADATA_REMINDER_KIND);
+                if ("task_delivery".equals(kind)) deliveries.add(msg);
+                else if ("workspace_materials".equals(kind)) references.add(msg);
+                else state.add(msg);
             }
         }
+        ordered.addAll(deliveries);
+        ordered.addAll(state);
+        ordered.addAll(references);
         return copy(input, List.copyOf(ordered));
     }
 
