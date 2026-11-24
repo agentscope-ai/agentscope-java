@@ -69,7 +69,6 @@ AgentScope Java 2.0 是面向企业级、分布式、生产环境的智能体框
 <!-- BEGIN NEWS -->
 - **[2026-11] `v2.0.5`：** 2.0.x 维护版本，回迁状态持久化、工具调用参数处理、上下文压缩、记忆持久化、技能与沙箱等修复；更新 Anthropic 和 Gemini 默认模型。 [Release Notes](https://github.com/agentscope-ai/agentscope-java/releases/tag/v2.0.5)
 - **[2026-11] `2.1` Durable（开发中）：** 面向长程任务引入持久执行设计，支持持久 Turn、有序排队、执行中补充输入（steer / inject）、暂停与恢复、故障恢复，以及沙箱异步执行。 [文档](https://java.agentscope.io/dev/zh/docs/harness/durable)
-- **[2026-10] `v2.1.0-BETA1`（预发布）：** AgentScope Service 预发布版本，提供 Docker 镜像、Compose / Helm 安装包、CLI 和 Runtime Host。 [Release Notes](https://github.com/agentscope-ai/agentscope-java/releases/tag/v2.1.0-BETA1)
 - **[2026-10] `v2.0.4`：** 新增 OpenAI Responses API 支持；重设计 AgentScope Service；扩展 Channel 和存储集成；增强并发 Agent 执行、工具与技能的隔离。 [Release Notes](https://github.com/agentscope-ai/agentscope-java/releases/tag/v2.0.4)
 - **[2026-09] `v2.0.3`：** 支持 Anthropic Prompt Caching；新增 `deliver_artifact` 工具、`FinalAnswerFilterMiddleware`、状态版本与乐观并发控制、`AgentProtocolEventBus`；升级控制台会话展示。 [Release Notes](https://github.com/agentscope-ai/agentscope-java/releases/tag/v2.0.3)
 - **[2026-09] `v2.0.2`：** 支持通过 `AgentFactory` 路由任务；完善 RuntimeContext 传递；支持完整的远程子 Agent 事件流转发；解耦 `TaskStore` 与执行工作区管理。 [Release Notes](https://github.com/agentscope-ai/agentscope-java/releases/tag/v2.0.2)

@@ -69,7 +69,6 @@ AgentScope Java 2.0 は、分散型でエンタープライズ品質のエージ
 <!-- BEGIN NEWS -->
 - **[2026-11] `v2.0.5`：** 2.0.x のメンテナンスリリースです。状態永続化、ツール呼び出し引数の処理、コンテキスト圧縮、メモリ永続化、スキル、サンドボックスの修正をバックポートし、Anthropic と Gemini のデフォルトモデルを更新しました。 [リリースノート](https://github.com/agentscope-ai/agentscope-java/releases/tag/v2.0.5)
 - **[2026-11] `2.1` Durable（開発中）：** 長時間実行タスク向けの永続実行設計を導入します。永続 Turn、順序付きキュー、実行中の入力追加（steer / inject）、一時停止・再開、障害からの復旧、サンドボックスでの非同期実行をサポートします。 [ドキュメント（英語）](https://java.agentscope.io/dev/en/docs/harness/durable)
-- **[2026-10] `v2.1.0-BETA1`（プレリリース）：** AgentScope Service のプレビュー版です。Docker イメージ、Compose / Helm パッケージ、CLI、Runtime Host を提供します。 [リリースノート](https://github.com/agentscope-ai/agentscope-java/releases/tag/v2.1.0-BETA1)
 - **[2026-10] `v2.0.4`：** OpenAI Responses API をサポートし、AgentScope Service を再設計しました。Channel とストレージの統合を拡張し、Agent の並行実行、ツール、スキルの分離を強化しました。 [リリースノート](https://github.com/agentscope-ai/agentscope-java/releases/tag/v2.0.4)
 - **[2026-09] `v2.0.3`：** Anthropic のプロンプトキャッシュ、`deliver_artifact` ツール、`FinalAnswerFilterMiddleware`、状態バージョンと楽観的並行制御、`AgentProtocolEventBus` を追加し、コンソールの会話表示を改善しました。 [リリースノート](https://github.com/agentscope-ai/agentscope-java/releases/tag/v2.0.3)
 - **[2026-09] `v2.0.2`：** `AgentFactory` によるタスクルーティングをサポートし、RuntimeContext の伝播を改善しました。リモートサブエージェントの完全なイベントストリーム転送に対応し、`TaskStore` と実行ワークスペース管理を分離しました。 [リリースノート](https://github.com/agentscope-ai/agentscope-java/releases/tag/v2.0.2)
