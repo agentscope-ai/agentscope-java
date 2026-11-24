@@ -186,7 +186,7 @@ class WorkspaceContextMiddlewareSandboxPromptTest {
     }
 
     @Test
-    void sandboxPrompt_withoutDeliveryTool_admitsNoBoundaryMechanism(@TempDir Path workspace) {
+    void sandboxPrompt_withoutDeliveryTool_defersToTheToolList(@TempDir Path workspace) {
         try (WorkspaceManager wm = new WorkspaceManager(workspace, mockSandboxFilesystem())) {
             String prompt = prompt(wm, false);
 
@@ -194,7 +194,12 @@ class WorkspaceContextMiddlewareSandboxPromptTest {
             assertFalse(prompt.contains("Sandbox root:"));
             assertFalse(prompt.contains("container id:"));
             assertTrue(prompt.contains("configured execution backend"));
-            assertTrue(prompt.contains("No artifact delivery tool is configured"));
+            assertTrue(
+                    prompt.contains(
+                            "Unless your tool list includes a delivery or upload tool, files"
+                                    + " remain in the configured execution backend"),
+                    () -> prompt);
+            assertFalse(prompt.contains("No artifact delivery tool"), () -> prompt);
             assertTrue(prompt.contains("retrieval work still needed"));
             assertTrue(prompt.contains("Use that backend's shell syntax, installed runtimes"));
             assertTrue(prompt.contains("The host workspace directory is:"));
