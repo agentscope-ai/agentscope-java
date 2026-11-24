@@ -16,6 +16,7 @@
 package io.agentscope.harness.agent;
 
 import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.core.hook.Hook;
 import io.agentscope.core.model.Model;
 import io.agentscope.harness.agent.filesystem.spec.LocalFilesystemSpec;
 import io.agentscope.harness.agent.subagent.SubagentDeclaration;
@@ -79,5 +80,30 @@ class ManagedSubagentBoundaryTest {
                                         parent, declaration, workspace, null)
                                 .create(RuntimeContext.empty());
         Assertions.assertTrue(child.getToolkit().getToolNames().isEmpty());
+    }
+
+    @Test
+    void declaredSubagentInheritsParentHooks() {
+        Hook hook = Mockito.mock(Hook.class);
+        var parent =
+                HarnessAgent.builder()
+                        .model(Mockito.mock(Model.class))
+                        .workspace(workspace)
+                        .filesystem(new LocalFilesystemSpec())
+                        .hook(hook);
+        var declaration =
+                SubagentDeclaration.builder()
+                        .name("reader")
+                        .description("read only")
+                        .inlineAgentsBody("read only")
+                        .build();
+        var child =
+                (HarnessAgent)
+                        HarnessAgentBuilderSupport.buildDeclaredFactory(
+                                        parent, declaration, workspace, null)
+                                .create(RuntimeContext.empty());
+        Assertions.assertTrue(
+                child.getDelegate().getHooks().contains(hook),
+                "declared subagent should inherit the parent agent's hooks");
     }
 }
