@@ -39,7 +39,6 @@ import java.nio.file.Path;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.concurrent.CopyOnWriteArrayList;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -65,9 +64,7 @@ class HarnessInputMessageDeduplicationTest {
     @BeforeEach
     void setUp() {
         mockModel = mock(Model.class);
-        // The harness's post-run memory-extraction model calls append concurrently with
-        // the assertions reading this capture, so iteration must tolerate concurrent adds.
-        modelInputs = new CopyOnWriteArrayList<>();
+        modelInputs = new ArrayList<>();
     }
 
     @Test
@@ -79,7 +76,9 @@ class HarnessInputMessageDeduplicationTest {
                             modelInputs.add(new ArrayList<>(invocation.getArgument(0)));
                             return Flux.just(textResponse("done"));
                         });
-        // workspace(...) forces ensureSessionDefaults onto the derivation path.
+        // workspace(...) forces ensureSessionDefaults onto the derivation path. Memory hooks
+        // stay off: their post-call flush and consolidation are fire-and-forget model calls on
+        // background threads, orthogonal to dedup and timed against the assertions below.
         try (HarnessAgent agent =
                 HarnessAgent.builder()
                         .name("harness-dedup")
@@ -87,6 +86,7 @@ class HarnessInputMessageDeduplicationTest {
                         .workspace(workspace)
                         .stateStore(new InMemoryAgentStateStore())
                         .middleware(new InputMessageDeduplicationMiddleware())
+                        .disableMemoryHooks()
                         .build()) {
             AguiAgentAdapter adapter =
                     new AguiAgentAdapter(agent, AguiAdapterConfig.defaultConfig());
@@ -95,9 +95,8 @@ class HarnessInputMessageDeduplicationTest {
             adapter.run(input(threadId, "r-1", AguiMessage.userMessage("u1", "hello")))
                     .collectList()
                     .block(TIMEOUT);
-            List<List<Msg>> reasoningAfterFirst = reasoningCalls();
-            assertEquals(1, reasoningAfterFirst.size());
-            assertEquals(List.of("hello"), conversationTexts(reasoningAfterFirst.get(0)));
+            assertEquals(1, modelInputs.size());
+            assertEquals(List.of("hello"), conversationTexts(modelInputs.get(0)));
 
             List<AguiEvent> events =
                     adapter.run(
@@ -111,13 +110,10 @@ class HarnessInputMessageDeduplicationTest {
                             .block(TIMEOUT);
 
             assertTrue(noRunError(events), "full transcript replay must not fail the run");
-            List<List<Msg>> reasoningAfterSecond = reasoningCalls();
-            assertEquals(2, reasoningAfterSecond.size());
-            // The derived delegate context still dedups: the second reasoning invocation sees
-            // the history exactly once, not the transcript re-appended.
-            assertEquals(
-                    List.of("hello", "done", "again"),
-                    conversationTexts(reasoningAfterSecond.get(1)));
+            // One reasoning invocation per run. The derived delegate context still dedups: the
+            // second one sees the history exactly once, not the transcript re-appended.
+            assertEquals(2, modelInputs.size());
+            assertEquals(List.of("hello", "done", "again"), conversationTexts(modelInputs.get(1)));
         }
     }
 
@@ -137,6 +133,7 @@ class HarnessInputMessageDeduplicationTest {
                         .workspace(workspace)
                         .stateStore(new InMemoryAgentStateStore())
                         .middleware(new InputMessageDeduplicationMiddleware())
+                        .disableMemoryHooks()
                         .build()) {
             agent.streamEvents(List.of(userMsg("first")), rc("s-harness-mutable"))
                     .blockLast(TIMEOUT);
@@ -149,8 +146,7 @@ class HarnessInputMessageDeduplicationTest {
             // The deduplication stripped a private copy: the caller's immutable list is untouched
             // and the model saw the history exactly once plus the new turn.
             assertEquals(3, immutableFullResend.size());
-            assertEquals(
-                    List.of("first", "done", "second"), conversationTexts(reasoningCalls().get(1)));
+            assertEquals(List.of("first", "done", "second"), conversationTexts(modelInputs.get(1)));
         }
     }
 
@@ -192,25 +188,6 @@ class HarnessInputMessageDeduplicationTest {
 
     private static boolean noRunError(List<AguiEvent> events) {
         return events != null && events.stream().noneMatch(e -> e instanceof AguiEvent.RunError);
-    }
-
-    /**
-     * Model calls that are conversation reasoning, i.e. not the harness's post-run
-     * memory-extraction calls (those carry the "memory extraction assistant" system prompt).
-     */
-    private List<List<Msg>> reasoningCalls() {
-        return modelInputs.stream()
-                .filter(
-                        input ->
-                                input.stream()
-                                        .noneMatch(
-                                                m ->
-                                                        m.getRole() == MsgRole.SYSTEM
-                                                                && m.getTextContent()
-                                                                        .contains(
-                                                                                "memory extraction"
-                                                                                    + " assistant")))
-                .toList();
     }
 
     /**
