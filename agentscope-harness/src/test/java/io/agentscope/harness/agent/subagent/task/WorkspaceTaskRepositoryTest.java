@@ -391,6 +391,98 @@ class WorkspaceTaskRepositoryTest {
     }
 
     @Test
+    void cancelledAdoptedTaskNotifiesCancelledNotFailed() throws Exception {
+        // Reviewer repro: cancelling an adopted future enters whenComplete's exception branch,
+        // but the callback must report the persisted CANCELLED terminal state, never FAILED.
+        CompletableFuture<TaskDelivery> callback = new CompletableFuture<>();
+        repo.setCompletionCallback(
+                (TaskRepository.TaskSettledCallback)
+                        (rc, taskId, subAgentId, sessionId, status, result, errorMessage) ->
+                                callback.complete(
+                                        new TaskDelivery(
+                                                taskId,
+                                                subAgentId,
+                                                status,
+                                                result,
+                                                errorMessage,
+                                                null)));
+        CompletableFuture<String> future = new CompletableFuture<>();
+        BackgroundTask task =
+                repo.putTask(
+                        RuntimeContext.empty(),
+                        "adopted-cancel",
+                        "worker",
+                        "session",
+                        new TaskRunSpec.AdoptedTaskRunSpec(future));
+
+        assertTrue(repo.cancelTask(RuntimeContext.empty(), "session", "adopted-cancel"));
+        assertTrue(task.waitForCompletion(5_000), "task did not settle within 5 seconds");
+
+        TaskDelivery delivery = callback.get(5, TimeUnit.SECONDS);
+        assertEquals(TaskStatus.CANCELLED, delivery.status());
+        assertNull(delivery.result());
+        assertNull(delivery.errorMessage());
+        var record =
+                workspaceManager
+                        .readTaskRecord(
+                                RuntimeContext.empty(), "test-agent", "session", "adopted-cancel")
+                        .orElseThrow();
+        assertEquals(TaskStatus.CANCELLED, record.getStatus());
+    }
+
+    @Test
+    void cancelledLocalTaskNotifiesCancelledNotFailed() throws Exception {
+        CompletableFuture<TaskDelivery> callback = new CompletableFuture<>();
+        repo.setCompletionCallback(
+                (TaskRepository.TaskSettledCallback)
+                        (rc, taskId, subAgentId, sessionId, status, result, errorMessage) ->
+                                callback.complete(
+                                        new TaskDelivery(
+                                                taskId,
+                                                subAgentId,
+                                                status,
+                                                result,
+                                                errorMessage,
+                                                null)));
+        CountDownLatch started = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        BackgroundTask task =
+                repo.putTask(
+                        RuntimeContext.empty(),
+                        "local-cancel",
+                        "worker",
+                        "session",
+                        new TaskRunSpec.LocalTaskRunSpec(
+                                () -> {
+                                    started.countDown();
+                                    // The supplier is not interrupted on cancel — it can only
+                                    // observe cancellation after its own failure, which must not
+                                    // be reported as FAILED.
+                                    try {
+                                        release.await(10, TimeUnit.SECONDS);
+                                    } catch (InterruptedException e) {
+                                        Thread.currentThread().interrupt();
+                                    }
+                                    throw new IllegalStateException("post-cancel failure");
+                                }));
+
+        assertTrue(started.await(5, TimeUnit.SECONDS));
+        assertTrue(repo.cancelTask(RuntimeContext.empty(), "session", "local-cancel"));
+        release.countDown();
+        assertTrue(task.waitForCompletion(5_000), "task did not settle within 5 seconds");
+
+        TaskDelivery delivery = callback.get(5, TimeUnit.SECONDS);
+        assertEquals(TaskStatus.CANCELLED, delivery.status());
+        assertNull(delivery.result());
+        var record =
+                workspaceManager
+                        .readTaskRecord(
+                                RuntimeContext.empty(), "test-agent", "session", "local-cancel")
+                        .orElseThrow();
+        assertEquals(TaskStatus.CANCELLED, record.getStatus());
+    }
+
+    @Test
     void suppressedSettledFailuresRetainDurableErrors() throws Exception {
         AtomicInteger callbacks = new AtomicInteger();
         repo.setCompletionCallback(

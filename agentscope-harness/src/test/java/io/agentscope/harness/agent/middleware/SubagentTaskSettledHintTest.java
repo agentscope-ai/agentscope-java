@@ -57,7 +57,7 @@ class SubagentTaskSettledHintTest {
     private static final String SESSION_ID = "original-session";
     private static final String TASK_ID = "task_settled";
     private static final String SUBAGENT_ID = "image-reader";
-    private static final String ERROR = "boom: rate limited";
+    private static final String ERROR = "auth failed: token=sk-live-secret-1234567890";
     private static final String OUTPUT = "done: 3 findings";
 
     @TempDir Path tempDir;
@@ -84,65 +84,46 @@ class SubagentTaskSettledHintTest {
     }
 
     @Test
-    void failedTaskIsAnnouncedWithErrorNotCompletion() {
+    void failedTaskIsAnnouncedWithFixedCategoryNotRawError() {
         String hint =
                 SubagentsMiddleware.taskSettledHintContent(
-                        "task_1", "image-reader", TaskStatus.FAILED, null, "boom: rate limited");
+                        "task_1", "image-reader", TaskStatus.FAILED, null);
 
         assertTrue(hint.contains("FAILED"), hint);
-        assertTrue(hint.contains("boom: rate limited"), hint);
-        assertTrue(hint.contains("Error summary: boom: rate limited"), hint);
+        assertTrue(hint.contains("Error category: execution failure"), hint);
         assertTrue(hint.contains("execution failure, not a business conclusion"), hint);
+        assertTrue(hint.contains("task_output(task_id=..., block=false)"), hint);
         assertFalse(hint.contains("has completed"), hint);
         assertFalse(hint.contains("Result:"), hint);
     }
 
     @Test
-    void multilineErrorIsReducedToASingleTruncatedLine() {
-        String message =
-                "first line with the cause "
-                        + "x".repeat(300)
-                        + "\n\tat internal.stack.Frame1(internal/File.java:42)\n"
-                        + "secret-token-from-later-frame";
+    void cancelledTaskIsAnnouncedAsCancelled() {
         String hint =
                 SubagentsMiddleware.taskSettledHintContent(
-                        "task_1", "worker", TaskStatus.FAILED, null, message);
+                        "task_1", "image-reader", TaskStatus.CANCELLED, null);
 
-        assertTrue(hint.contains("first line with the cause"), hint);
-        String summary =
-                hint.substring(
-                        hint.indexOf("Error summary: ") + "Error summary: ".length(),
-                        hint.indexOf("\n\nThis is an execution failure"));
-        assertEquals(SubagentsMiddleware.ERROR_SUMMARY_MAX_LENGTH + "...".length(), summary.length());
-        assertFalse(summary.contains("\n"), summary);
-        assertFalse(hint.contains("internal.stack.Frame1"), hint);
-        assertFalse(hint.contains("secret-token-from-later-frame"), hint);
+        assertTrue(hint.contains("CANCELLED"), hint);
+        assertFalse(hint.contains("FAILED"), hint);
+        assertFalse(hint.contains("has completed"), hint);
+        assertFalse(hint.contains("Result:"), hint);
     }
 
     @Test
     void completedTaskKeepsCompletionWording() {
         String hint =
                 SubagentsMiddleware.taskSettledHintContent(
-                        "task_1", "image-reader", TaskStatus.COMPLETED, "done: 3 findings", null);
+                        "task_1", "image-reader", TaskStatus.COMPLETED, "done: 3 findings");
 
         assertTrue(hint.contains("has completed"), hint);
         assertTrue(hint.contains("done: 3 findings"), hint);
         assertFalse(hint.contains("FAILED"), hint);
     }
 
-    @Test
-    void failedTaskWithoutMessageStillSaysFailed() {
-        String hint =
-                SubagentsMiddleware.taskSettledHintContent(
-                        "task_1", "worker", TaskStatus.FAILED, null, null);
-
-        assertTrue(hint.contains("FAILED"), hint);
-        assertTrue(hint.contains("(no error message)"), hint);
-    }
-
     @ParameterizedTest
     @EnumSource(EntryMode.class)
-    void failedTaskWiringPushesErrorAndWakesOriginalSession(EntryMode mode) throws Exception {
+    void failedTaskWiringNotifiesFixedCategoryAndWakesOriginalSession(EntryMode mode)
+            throws Exception {
         wire(mode);
         RuntimeContext rc = runtimeContext(false);
         BackgroundTask task = submitFailingTask(rc);
@@ -153,7 +134,9 @@ class SubagentTaskSettledHintTest {
         assertEquals(ERROR, task.getError().getMessage());
         assertDurableResult(rc, TaskStatus.FAILED, null, ERROR);
         assertTrue(hint.contains("FAILED"), hint);
-        assertTrue(hint.contains(ERROR), hint);
+        assertTrue(hint.contains("Error category: execution failure"), hint);
+        assertFalse(hint.contains(ERROR), hint);
+        assertFalse(hint.contains("sk-live"), hint);
         assertFalse(hint.contains("has completed"), hint);
         assertFalse(hint.contains("Result:"), hint);
     }

@@ -317,23 +317,20 @@ public class WorkspaceTaskRepository implements TaskRepository {
                                             : (cause != null
                                                     ? cause.getClass().getSimpleName()
                                                     : err.getClass().getSimpleName());
-                            updateStatus(capturedRc, sid, taskId, TaskStatus.FAILED, null, errMsg);
-                            fireCompletionCallback(
+                            settleAndNotify(
                                     capturedRc,
+                                    sid,
                                     taskId,
                                     subAgentId,
-                                    sid,
                                     TaskStatus.FAILED,
                                     null,
                                     errMsg);
                         } else {
-                            updateStatus(
-                                    capturedRc, sid, taskId, TaskStatus.COMPLETED, result, null);
-                            fireCompletionCallback(
+                            settleAndNotify(
                                     capturedRc,
+                                    sid,
                                     taskId,
                                     subAgentId,
-                                    sid,
                                     TaskStatus.COMPLETED,
                                     result,
                                     null);
@@ -395,15 +392,11 @@ public class WorkspaceTaskRepository implements TaskRepository {
                 markCancelled(rc, sessionId, taskId);
                 return null;
             }
-            updateStatus(rc, sessionId, taskId, TaskStatus.COMPLETED, result, null);
-            fireCompletionCallback(
-                    rc, taskId, subAgentId, sessionId, TaskStatus.COMPLETED, result, null);
+            settleAndNotify(rc, sessionId, taskId, subAgentId, TaskStatus.COMPLETED, result, null);
             return result;
         } catch (Exception e) {
             String errMsg = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
-            updateStatus(rc, sessionId, taskId, TaskStatus.FAILED, null, errMsg);
-            fireCompletionCallback(
-                    rc, taskId, subAgentId, sessionId, TaskStatus.FAILED, null, errMsg);
+            settleAndNotify(rc, sessionId, taskId, subAgentId, TaskStatus.FAILED, null, errMsg);
             throw e instanceof RuntimeException re ? re : new RuntimeException(e);
         }
     }
@@ -431,15 +424,13 @@ public class WorkspaceTaskRepository implements TaskRepository {
             }
             String result = pollRemoteUntilDone(rc, sessionId, taskId, target);
             if (result != null) {
-                fireCompletionCallback(
-                        rc, taskId, subAgentId, sessionId, TaskStatus.COMPLETED, result, null);
+                settleAndNotify(
+                        rc, sessionId, taskId, subAgentId, TaskStatus.COMPLETED, result, null);
             }
             return result;
         } catch (Exception e) {
             String errMsg = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
-            updateStatus(rc, sessionId, taskId, TaskStatus.FAILED, null, errMsg);
-            fireCompletionCallback(
-                    rc, taskId, subAgentId, sessionId, TaskStatus.FAILED, null, errMsg);
+            settleAndNotify(rc, sessionId, taskId, subAgentId, TaskStatus.FAILED, null, errMsg);
             throw e instanceof RuntimeException re ? re : new RuntimeException(e);
         }
     }
@@ -872,7 +863,7 @@ public class WorkspaceTaskRepository implements TaskRepository {
         return existing;
     }
 
-    private synchronized void updateStatus(
+    private synchronized TaskStatus updateStatus(
             RuntimeContext rc,
             String sessionId,
             String taskId,
@@ -887,14 +878,14 @@ public class WorkspaceTaskRepository implements TaskRepository {
         if (existing.isPresent()
                 && existing.get().getStatus() != null
                 && existing.get().getStatus().isTerminal()) {
-            return;
+            return existing.get().getStatus();
         }
         // Guard 2: if cancellation has been requested but the workspace record has not yet reached
         // a terminal state (e.g. heartbeat races cancelTask()), refuse to persist non-terminal
         // updates. This stops the heartbeat from writing RUNNING back over a record whose
         // cancelRequested flag was just set by cancelTask().
         if (!status.isTerminal() && existing.isPresent() && existing.get().isCancelRequested()) {
-            return;
+            return existing.get().getStatus();
         }
         TaskRecord record =
                 existing.orElseGet(
@@ -913,6 +904,36 @@ public class WorkspaceTaskRepository implements TaskRepository {
             record.setErrorMessage(error);
         }
         persistRecord(rc, sessionId, record);
+        return status;
+    }
+
+    /**
+     * Persists a terminal state and fires the settlement callback with the status actually
+     * persisted. When cancellation races a settlement, {@link #updateStatus} keeps the record's
+     * CANCELLED status, so the callback must also report CANCELLED — announcing FAILED for a task
+     * the user just cancelled would invite the parent agent to retry it.
+     */
+    private void settleAndNotify(
+            RuntimeContext rc,
+            String sessionId,
+            String taskId,
+            String subAgentId,
+            TaskStatus status,
+            String result,
+            String errorMessage) {
+        TaskStatus effective = updateStatus(rc, sessionId, taskId, status, result, errorMessage);
+        if (effective == null || !effective.isTerminal()) {
+            return;
+        }
+        boolean asPersisted = effective == status;
+        fireCompletionCallback(
+                rc,
+                taskId,
+                subAgentId,
+                sessionId,
+                effective,
+                asPersisted ? result : null,
+                asPersisted ? errorMessage : null);
     }
 
     private void markCancelled(RuntimeContext rc, String sessionId, String taskId) {

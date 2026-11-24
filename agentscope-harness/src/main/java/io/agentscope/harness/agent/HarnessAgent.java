@@ -2857,11 +2857,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
                                 String hintContent =
                                         io.agentscope.harness.agent.middleware.SubagentsMiddleware
                                                 .taskSettledHintContent(
-                                                        taskId,
-                                                        subAgentId,
-                                                        status,
-                                                        result,
-                                                        errorMessage);
+                                                        taskId, subAgentId, status, result);
                                 String hintId =
                                         java.util.UUID.randomUUID().toString().replace("-", "");
                                 bus.inboxPush(
