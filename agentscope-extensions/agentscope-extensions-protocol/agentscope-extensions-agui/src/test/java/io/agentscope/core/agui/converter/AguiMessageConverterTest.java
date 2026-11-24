@@ -2327,6 +2327,119 @@ class AguiMessageConverterTest {
         assertNotNull(msgs.get(1).getMetadata().get(Msg.METADATA_CONFIRM_RESULTS));
     }
 
+    // ===== Message name field tests =====
+
+    @Test
+    void testInboundWireNameMapsToMsgName() {
+        String json =
+                "{\"id\":\"msg-n1\",\"role\":\"assistant\",\"name\":\"Coder\",\"content\":\"hi\"}";
+        AguiMessage aguiMsg = JsonUtils.getJsonCodec().fromJson(json, AguiMessage.class);
+
+        assertEquals("Coder", aguiMsg.getName());
+        assertEquals("Coder", converter.toMsg(aguiMsg).getName());
+    }
+
+    @Test
+    void testInboundWithoutNameLeavesMsgNameNull() {
+        AguiMessage aguiMsg = AguiMessage.assistantMessage("msg-n2", "hi");
+
+        assertNull(aguiMsg.getName());
+        assertNull(converter.toMsg(aguiMsg).getName());
+    }
+
+    @Test
+    void testOutboundMsgNameMapsToWireName() {
+        Msg msg =
+                Msg.builder()
+                        .id("msg-n3")
+                        .name("Assistant")
+                        .role(MsgRole.ASSISTANT)
+                        .content(TextBlock.builder().text("hello").build())
+                        .build();
+
+        AguiMessage wire = converter.toAguiMessage(msg);
+
+        assertEquals("Assistant", wire.getName());
+    }
+
+    @Test
+    void testOutboundWithoutNameOmitsNameKeyFromWireJson() {
+        Msg msg =
+                Msg.builder()
+                        .id("msg-n4")
+                        .role(MsgRole.USER)
+                        .content(TextBlock.builder().text("hello").build())
+                        .build();
+
+        String json = JsonUtils.getJsonCodec().toJson(converter.toAguiMessage(msg));
+
+        assertFalse(json.contains("\"name\""), json);
+    }
+
+    @Test
+    void testNameSurvivesJsonRoundTrip() {
+        AguiMessage original = AguiMessage.userMessage("msg-n5", "hello", "Alice");
+
+        String json = JsonUtils.getJsonCodec().toJson(original);
+        AguiMessage parsed = JsonUtils.getJsonCodec().fromJson(json, AguiMessage.class);
+
+        assertEquals("Alice", parsed.getName());
+        assertEquals(original, parsed);
+    }
+
+    @Test
+    void testOutboundReasoningSplitCarriesName() {
+        Msg msg =
+                Msg.builder()
+                        .id("msg-n6")
+                        .name("Planner")
+                        .role(MsgRole.ASSISTANT)
+                        .content(
+                                List.of(
+                                        ThinkingBlock.builder().thinking("hmm").build(),
+                                        TextBlock.builder().text("answer").build()))
+                        .build();
+
+        List<AguiMessage> results = converter.toAguiMessages(msg);
+
+        assertEquals(2, results.size());
+        assertEquals("Planner", results.get(0).getName());
+        assertEquals("Planner", results.get(1).getName());
+    }
+
+    @Test
+    void testOutboundToolResultSplitCarriesName() {
+        Msg msg =
+                Msg.builder()
+                        .id("msg-n7")
+                        .name("Coder")
+                        .role(MsgRole.TOOL)
+                        .content(
+                                ToolResultBlock.text("first").withIdAndName("tc-0", "lookup"),
+                                ToolResultBlock.error("tc-1", "failed"))
+                        .build();
+
+        List<AguiMessage> results = converter.toAguiMessages(msg);
+
+        assertEquals(2, results.size());
+        assertEquals("Coder", results.get(0).getName());
+        assertEquals("Coder", results.get(1).getName());
+    }
+
+    @Test
+    void testFactoryOverloadsCarryName() {
+        assertEquals("U", AguiMessage.userMessage("m1", "hi", "U").getName());
+        assertEquals(
+                "U2",
+                AguiMessage.userMessage("m2", List.of(new TextInputContent("hi")), "U2").getName());
+        assertEquals("A", AguiMessage.assistantMessage("m3", "hi", "A").getName());
+        assertEquals("S", AguiMessage.systemMessage("m4", "hi", "S").getName());
+        assertEquals("T", AguiMessage.toolMessage("m5", "tc-1", "hi", null, "T").getName());
+        assertEquals("T2", AguiMessage.toolMessage("m6", "tc-1", "hi", "boom", "T2").getName());
+        assertEquals("R", AguiMessage.reasoningMessage("m7", "hi", "R").getName());
+        assertNull(AguiMessage.userMessage("m8", "hi").getName());
+    }
+
     private static String resultText(ToolResultBlock result) {
         return result.getOutput().stream()
                 .filter(TextBlock.class::isInstance)

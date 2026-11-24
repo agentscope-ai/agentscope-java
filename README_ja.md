@@ -67,6 +67,12 @@ AgentScope Java 2.0 は、分散型でエンタープライズ品質のエージ
 
 ## ニュース
 <!-- BEGIN NEWS -->
+- **[2026-11] `v2.0.5`：** 2.0.x のメンテナンスリリースです。状態永続化、ツール呼び出し引数の処理、コンテキスト圧縮、メモリ永続化、スキル、サンドボックスの修正をバックポートし、Anthropic と Gemini のデフォルトモデルを更新しました。 [リリースノート](https://github.com/agentscope-ai/agentscope-java/releases/tag/v2.0.5)
+- **[2026-11] `2.1` Durable（開発中）：** 長時間実行タスク向けの永続実行設計を導入します。永続 Turn、順序付きキュー、実行中の入力追加（steer / inject）、一時停止・再開、障害からの復旧、サンドボックスでの非同期実行をサポートします。 [ドキュメント（英語）](https://java.agentscope.io/dev/en/docs/harness/durable)
+- **[2026-10] `v2.0.4`：** OpenAI Responses API をサポートし、AgentScope Service を再設計しました。Channel とストレージの統合を拡張し、Agent の並行実行、ツール、スキルの分離を強化しました。 [リリースノート](https://github.com/agentscope-ai/agentscope-java/releases/tag/v2.0.4)
+- **[2026-09] `v2.0.3`：** Anthropic のプロンプトキャッシュ、`deliver_artifact` ツール、`FinalAnswerFilterMiddleware`、状態バージョンと楽観的並行制御、`AgentProtocolEventBus` を追加し、コンソールの会話表示を改善しました。 [リリースノート](https://github.com/agentscope-ai/agentscope-java/releases/tag/v2.0.3)
+- **[2026-09] `v2.0.2`：** `AgentFactory` によるタスクルーティングをサポートし、RuntimeContext の伝播を改善しました。リモートサブエージェントの完全なイベントストリーム転送に対応し、`TaskStore` と実行ワークスペース管理を分離しました。 [リリースノート](https://github.com/agentscope-ai/agentscope-java/releases/tag/v2.0.2)
+- **[2026-08] `v2.0.1`：** 2.0 GA 後の最初のメンテナンスリリースです。DeepSeek、GLM、Kimi、MiniMax、OpenAI 互換プロバイダーを拡充し、Middleware の実行順序、リモートサブエージェントのイベントストリーミングと HITL 再開をサポートしました。本番環境の信頼性に関する修正も含まれます。 [リリースノート](https://github.com/agentscope-ai/agentscope-java/releases/tag/v2.0.1)
 - **[2026-08] [AgentScope Service](./agentscope-service)：** エージェントの観測、登録、オーケストレーションのためのエージェントのコントロールプレーンとダッシュボードで、AgentScope、LangChain、ADK、Claude / Qoder などとの互換性を考慮して設計されています。
 - **[2026-07] `v2.0.0 GA`：** 初めての本番環境向けのリリースです！2 層のエージェントのアーキテクチャ、イベントストリーム、権限システム、ミドルウェア、ワークスペースのサンドボックス、マルチエージェントのオーケストレーション、分散デプロイがすべてそろいました。[ドキュメント](https://java.agentscope.io/) | [リリースノート](https://github.com/agentscope-ai/agentscope-java/releases/tag/v2.0.0)
 - **[2026-07] `v2.0.0-RC5`：** モデルプロバイダーのモジュール化、統一された DataBlock によるマルチモーダル対応、ネイティブの構造化出力、Channel による IM の統合、Tencent Cloud COS による状態の永続化。[リリースノート](https://github.com/agentscope-ai/agentscope-java/releases/tag/v2.0.0-RC5)

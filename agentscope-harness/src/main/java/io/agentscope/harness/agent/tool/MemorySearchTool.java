@@ -51,6 +51,8 @@ public class MemorySearchTool {
     @Tool(
             name = "memory_search",
             readOnly = true,
+            evictable = false,
+            prunable = false,
             description =
                     "Search through long-term memory files (MEMORY.md and memory/*.md) for"
                             + " relevant information. Use before answering questions about prior"
