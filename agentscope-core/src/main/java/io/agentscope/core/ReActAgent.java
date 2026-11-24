@@ -75,6 +75,7 @@ import io.agentscope.core.journal.InvocationRecorder;
 import io.agentscope.core.journal.JournalException;
 import io.agentscope.core.journal.JournalExportSink;
 import io.agentscope.core.journal.JournalSchedulers;
+import io.agentscope.core.journal.ModelInvocation;
 import io.agentscope.core.journal.RecordedModels;
 import io.agentscope.core.journal.ThreadJournal;
 import io.agentscope.core.journal.ThreadJournalStore;
@@ -948,8 +949,12 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
     @Override
     protected Mono<Object> acquireCallExecution(
             List<Msg> msgs, RuntimeContext rc, RunControl control) {
-        if (threadJournalStore == null || !journalEnabled)
+        if (threadJournalStore == null || !journalEnabled) {
+            if (rc != null && rc.get(ModelInvocation.class) != null)
+                return Mono.error(
+                        new JournalException("Model invocation hosts require a Thread journal"));
             return super.acquireCallExecution(msgs, rc, control);
+        }
         // A subscriber can cancel after the recorder is created, which already holds the writer
         // lease. `usingWhen` has no scope to release until this Mono emits, so the lease would
         // stay taken until it expires and the next call on the same session is rejected. Remember
@@ -981,6 +986,9 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                                 cancelBeforeJournalStart(callContext);
                                                 return null;
                                             }
+                                            recorder.verifyModelContinuation(
+                                                    callContext.get(ModelInvocation.class) != null,
+                                                    msgs);
                                             var position =
                                                     callContext.get(AgentExecutionPosition.class);
                                             if (position != null) {
@@ -2781,6 +2789,11 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         }
 
         private Mono<Msg> doCallInner(List<Msg> msgs) {
+            var recorder = InvocationRecorder.from(rc);
+            if (recorder != null) {
+                var answer = recorder.modelAnswer(state);
+                if (answer != null) return Mono.just(answer);
+            }
             // Graceful-shutdown deduplication: if the agent's session was previously interrupted
             // by shutdown, the client is likely retrying with the same user prompt that already
             // exists in memory. Discard the duplicate input so the agent resumes purely from its
@@ -2805,7 +2818,6 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             // consuming results, including returnDirect paths that never enter acting().
             AgentExecutionPosition position = rc.get(AgentExecutionPosition.class);
             lastSessionIteration = position == null ? 0 : position.actingIteration();
-            InvocationRecorder recorder = InvocationRecorder.from(rc);
             if (recorder != null) recorder.resumeStep(lastSessionIteration);
 
             // Permission HITL: if any pending tool is ASKING, the caller MUST supply
@@ -3554,13 +3566,12 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                                                 // from pending tool calls.
                                                                 state.contextMutable()
                                                                         .add(finalMsg);
-                                                                if (recorder != null)
-                                                                    recorder.reasoningCompleted(
-                                                                            iter);
-                                                                return Mono.just(
-                                                                        finalMsg.withGenerateReason(
-                                                                                rs
-                                                                                        .getGenerateReason()));
+                                                                return reasoningApplied(iter, null)
+                                                                        .thenReturn(
+                                                                                finalMsg
+                                                                                        .withGenerateReason(
+                                                                                                rs
+                                                                                                        .getGenerateReason()));
                                                             }
                                                             return Mono.justOrEmpty(finalMsg);
                                                         }));
@@ -3605,14 +3616,17 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                     .flatMap(
                             event -> {
                                 Msg eventMsg = event.getReasoningMessage();
-                                // Advance the durable execution position when this
-                                // iteration's decision exists; the message itself lands
-                                // per-branch below — a terminal candidate only after the
-                                // final-answer gate verdict.
-                                if (eventMsg != null) {
-                                    InvocationRecorder recorder = InvocationRecorder.from(rc);
-                                    if (recorder != null) recorder.reasoningCompleted(iter);
-                                }
+                                // The message lands per-branch below — a terminal candidate
+                                // only after the final-answer gate verdict — so the recorder's
+                                // "decision applied" bookkeeping is deferred with it: running
+                                // it here would settle a resumed model call before its result
+                                // is in memory.
+                                Mono<Void> applied =
+                                        Mono.defer(
+                                                () ->
+                                                        eventMsg == null
+                                                                ? Mono.empty()
+                                                                : reasoningApplied(iter, null));
 
                                 // HITL stop
                                 if (event.isStopRequested()) {
@@ -3620,7 +3634,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                         return Mono.empty();
                                     }
                                     state.contextMutable().add(eventMsg);
-                                    return Mono.just(
+                                    return applied.thenReturn(
                                             eventMsg.withGenerateReason(
                                                     GenerateReason.REASONING_STOP_REQUESTED));
                                 }
@@ -3634,7 +3648,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                     if (gotoMsgs != null) {
                                         state.contextMutable().addAll(gotoMsgs);
                                     }
-                                    return reasoning(iter + 1, true);
+                                    return applied.then(reasoning(iter + 1, true));
                                 }
 
                                 // Check finish conditions
@@ -3665,7 +3679,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                             // maxIters=1 caller still gets the pending
                                             // generate_response), and the total extra model
                                             // calls stay bounded by the 3-retry ceiling above.
-                                            return reasoning(iter + 1, true);
+                                            return applied.then(reasoning(iter + 1, true));
                                         }
                                         log.warn(
                                                 "Structured output tool '{}' not called after {} "
@@ -3690,6 +3704,13 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                     // fails closed instead of silently restarting. Gate-raised
                                     // failures are marked so the caller's fallback rethrows
                                     // them instead of re-running the model.
+                                    // The gate reports each round to reasoningApplied once its
+                                    // outcome is in memory, never here: on accept the report
+                                    // follows the landing, so a resumed model call is
+                                    // checkpointed with — and preserves — the certified
+                                    // message instead of the pre-verdict candidate; on a veto
+                                    // it precedes the re-entry, so the settled handoff does
+                                    // not block the retry round's model call.
                                     if (nativeResponseFormat != null) {
                                         return finalAnswerGateEngine.gate(
                                                 eventMsg,
@@ -3703,10 +3724,17 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                                                                 nativeResponseFormat
                                                                                         .getJsonSchema())),
                                                 null,
-                                                true);
+                                                true,
+                                                this::reasoningApplied);
                                     }
                                     return finalAnswerGateEngine.gate(
-                                            eventMsg, iter, FinishReason.FINAL_ANSWER);
+                                            eventMsg,
+                                            iter,
+                                            FinishReason.FINAL_ANSWER,
+                                            Mono::just,
+                                            null,
+                                            false,
+                                            this::reasoningApplied);
                                 }
 
                                 // Non-terminal round: persist the reasoning message, then act.
@@ -3728,7 +3756,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                 }
 
                                 // Continue to acting
-                                return checkInterrupted().then(acting(iter));
+                                return applied.then(checkInterrupted()).then(acting(iter));
                             })
                     .switchIfEmpty(
                             Mono.defer(
@@ -3736,6 +3764,14 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                         // No message was produced
                                         return Mono.justOrEmpty((Msg) null);
                                     }));
+        }
+
+        private Mono<Void> reasoningApplied(int iteration, Msg answer) {
+            InvocationRecorder recorder = InvocationRecorder.from(rc);
+            if (recorder == null) return Mono.empty();
+            boolean deferred = recorder.pendingModelCallId() != null;
+            recorder.reasoningCompleted(iteration, answer);
+            return deferred ? recorder.checkpoint(state, "model_result_applied") : Mono.empty();
         }
 
         /**
@@ -6013,6 +6049,10 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         if (fallbackModel == null) {
             return RecordedModels.wrap(callModel, callContext, purpose.name());
         }
+        var invocation = callContext == null ? null : callContext.get(ModelInvocation.class);
+        if (invocation != null && invocation.resumingFallback(purpose.name())) {
+            return RecordedModels.wrap(fallbackModel, callContext, purpose.name());
+        }
         FailoverListener failoverListener = modelConfig.failoverListener();
 
         AtomicReference<Model> activeModel = new AtomicReference<>(callModel);
@@ -6033,7 +6073,11 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                         (signal, flux) -> {
                             if (signal.isOnError()) {
                                 Throwable error = signal.getThrowable();
-                                if (JournalException.causedBy(error)) return flux;
+                                if (error instanceof AgentExecutionHost.Paused
+                                        || JournalException.causedBy(error)
+                                        || (invocation != null
+                                                && !invocation.beginFallback(
+                                                        purpose.name(), error))) return flux;
                                 InvocationRecorder recorder = InvocationRecorder.from(callContext);
                                 if (recorder != null)
                                     recorder.append(

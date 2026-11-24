@@ -37,6 +37,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.function.BiFunction;
 import java.util.function.Function;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -283,26 +284,15 @@ final class FinalAnswerGateEngine {
      * ignoreMaxIters} — the retry fuse is the framework's only iteration bound on
      * that path. Gate errors fail the call (fail closed).
      *
-     * @param candidate the final-answer candidate
-     * @param iter the reasoning iteration the candidate came from; a retry
-     *     re-enters at {@code iter + 1}
-     * @param finishReason which exit produced the candidate
-     * @return the accepted (possibly replaced) message
-     */
-    Mono<Msg> gate(Msg candidate, int iter, FinishReason finishReason) {
-        return gate(candidate, iter, finishReason, Mono::just, null);
-    }
-
-    /**
-     * Same as {@link #gate(Msg, int, FinishReason)}, with an async transform applied
-     * to the accepted message before it is memorized, projected, and returned — and
-     * a {@code replyId} correlating the certified projection (the returnDirect exit
-     * passes its own; {@code null} means the current round's model-call reply id).
-     * Gate errors are marked per the exit's default policy ({@link
+     * <p>An async transform is applied to the accepted message before it is memorized,
+     * projected, and returned, and a {@code replyId} correlates the certified projection
+     * (the returnDirect exit passes its own; {@code null} means the current round's
+     * model-call reply id). Gate errors are marked per the exit's default policy ({@link
      * #marksGateErrors}).
      *
      * @param candidate the final-answer candidate
-     * @param iter the reasoning iteration the candidate came from
+     * @param iter the reasoning iteration the candidate came from; a retry
+     *     re-enters at {@code iter + 1}
      * @param finishReason which exit produced the candidate
      * @param acceptTransform async transform of the accepted message; emits
      *     exactly one message
@@ -359,6 +349,45 @@ final class FinalAnswerGateEngine {
             Function<Msg, Mono<Msg>> acceptTransform,
             String replyId,
             boolean markGateErrors) {
+        return gate(candidate, iter, finishReason, acceptTransform, replyId, markGateErrors, null);
+    }
+
+    /**
+     * Same as {@link #gate(Msg, int, FinishReason, Function, String, boolean)},
+     * additionally reporting each settled round to {@code reasoningApplied} once its
+     * outcome is in memory: the landed message on accept, {@code null} on retry — only
+     * the rejected draft and feedback were written. A report precedes everything that
+     * follows from its round (the certified projection, the retry re-entry), so the
+     * exit's bookkeeping never runs ahead of what the session keeps, nor behind a model
+     * call it may have to release. {@code null} disables the report.
+     *
+     * <p>Only the reasoning loop's own terminal exit passes its bookkeeping here: its
+     * rounds are model decisions, so the report settles a resumed (handed-off) model
+     * call — on accept it checkpoints the call with, and preserves, the certified
+     * message rather than the pre-verdict candidate; on a veto it releases the call
+     * before the retry round needs the model again. The other exits are not model
+     * answers.
+     *
+     * @param candidate the final-answer candidate
+     * @param iter the reasoning iteration the candidate came from
+     * @param finishReason which exit produced the candidate
+     * @param acceptTransform async transform of the accepted message; emits
+     *     exactly one message
+     * @param replyId reply id correlating the certified projection, or {@code null}
+     * @param markGateErrors whether gate-raised failures are wrapped as {@link
+     *     GateError} for the exit's error consumers
+     * @param reasoningApplied the exit's round bookkeeping — its reasoning iteration and
+     *     settled outcome — or {@code null} to disable the report
+     * @return the accepted (transformed, possibly replaced) message
+     */
+    Mono<Msg> gate(
+            Msg candidate,
+            int iter,
+            FinishReason finishReason,
+            Function<Msg, Mono<Msg>> acceptTransform,
+            String replyId,
+            boolean markGateErrors,
+            BiFunction<Integer, Msg, Mono<Void>> reasoningApplied) {
         // Verdict boundary: an interrupt issued while a gate deliberated is honored here,
         // before any verdict is applied or anything ships.
         return markedForExit(
@@ -371,7 +400,12 @@ final class FinalAnswerGateEngine {
                         decision -> {
                             if (decision.isRetry()) {
                                 return markedForExit(
-                                        applyRetry(candidate, decision, iter, finishReason),
+                                        applyRetry(
+                                                candidate,
+                                                decision,
+                                                iter,
+                                                finishReason,
+                                                reasoningApplied),
                                         markGateErrors);
                             }
                             Msg accepted =
@@ -388,27 +422,55 @@ final class FinalAnswerGateEngine {
                                             // semantics.
                                             result ->
                                                     markedForExit(
-                                                            Mono.fromCallable(
-                                                                    () ->
-                                                                            land(
-                                                                                    result,
-                                                                                    finishReason,
-                                                                                    replyId)),
+                                                            land(
+                                                                    result,
+                                                                    iter,
+                                                                    finishReason,
+                                                                    replyId,
+                                                                    reasoningApplied),
                                                             markGateErrors));
                         });
     }
 
     /**
-     * Lands an accepted message — the single accept landing of every exit: writes
-     * it to memory, projects its certified content, and returns it.
+     * Lands an accepted message — the single accept landing of every exit: writes it
+     * to memory, reports the settled round to the exit's bookkeeping, projects its
+     * certified content, and returns it. The report sits between the two by design: the
+     * bookkeeping sees the message the session keeps, and nothing ships ahead of it.
      *
      * @param result the transformed accepted message to land
+     * @param iter the reasoning iteration the round came from
+     * @param finishReason which exit produced the candidate
+     * @param replyId reply id correlating the certified projection, or {@code null}
+     * @param reasoningApplied the exit's round bookkeeping, or {@code null}
+     * @return the landed message
+     */
+    private Mono<Msg> land(
+            Msg result,
+            int iter,
+            FinishReason finishReason,
+            String replyId,
+            BiFunction<Integer, Msg, Mono<Void>> reasoningApplied) {
+        return Mono.defer(
+                () -> {
+                    execution.state.contextMutable().add(result);
+                    // Chained, not thenReturn: the projection must wait for the report.
+                    return roundApplied(reasoningApplied, iter, result)
+                            .then(
+                                    Mono.fromCallable(
+                                            () -> projectLanded(result, finishReason, replyId)));
+                });
+    }
+
+    /**
+     * Projects a memorized message's certified content and returns it.
+     *
+     * @param result the memorized accepted message
      * @param finishReason which exit produced the candidate
      * @param replyId reply id correlating the certified projection, or {@code null}
      * @return the landed message
      */
-    private Msg land(Msg result, FinishReason finishReason, String replyId) {
-        execution.state.contextMutable().add(result);
+    private Msg projectLanded(Msg result, FinishReason finishReason, String replyId) {
         if (finishReason == FinishReason.RETURN_DIRECT) {
             // returnDirect closing text never streamed live: always project
             // post-gate, keeping the audit marker.
@@ -449,16 +511,22 @@ final class FinalAnswerGateEngine {
      * Applies a retry decision: counts the retry (a multi-veto round counts
      * once), emits the observation event, audits the rejected original to the
      * invocation journal, writes the original — never a gate's rewrite — plus
-     * the merged feedback (chain order) to memory, and re-enters reasoning.
+     * the merged feedback (chain order) to memory, reports the settled round to
+     * the exit's bookkeeping, and re-enters reasoning.
      *
      * @param candidate the rejected final-answer candidate
      * @param decision the retry decision carrying the merged feedback
      * @param iter the reasoning iteration to re-enter from
      * @param finishReason exit that produced the rejected candidate
+     * @param reasoningApplied the exit's round bookkeeping, or {@code null}
      * @return the final answer produced by the re-entered reasoning
      */
     private Mono<Msg> applyRetry(
-            Msg candidate, FinalAnswerDecision decision, int iter, FinishReason finishReason) {
+            Msg candidate,
+            FinalAnswerDecision decision,
+            int iter,
+            FinishReason finishReason,
+            BiFunction<Integer, Msg, Mono<Void>> reasoningApplied) {
         retryCount++;
         log.info(
                 "Final answer rejected by gate middleware (retry {}, finishReason={})",
@@ -471,7 +539,24 @@ final class FinalAnswerGateEngine {
         observeRejected(candidate);
         execution.state.contextMutable().add(candidate);
         execution.state.contextMutable().addAll(decision.retryMessages());
-        return execution.reasoning(iter + 1, true);
+        return roundApplied(reasoningApplied, iter, null).then(execution.reasoning(iter + 1, true));
+    }
+
+    /**
+     * Reports a settled round to the exit's bookkeeping, deferred to subscription.
+     *
+     * @param reasoningApplied the exit's round bookkeeping, or {@code null}
+     * @param iter the reasoning iteration the round came from
+     * @param answer the landed message on accept, {@code null} on retry
+     * @return the report's completion
+     */
+    private static Mono<Void> roundApplied(
+            BiFunction<Integer, Msg, Mono<Void>> reasoningApplied, int iter, Msg answer) {
+        return Mono.defer(
+                () ->
+                        reasoningApplied == null
+                                ? Mono.empty()
+                                : reasoningApplied.apply(iter, answer));
     }
 
     /**
