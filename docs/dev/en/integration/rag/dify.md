@@ -94,6 +94,8 @@ DifyRAGConfig config = DifyRAGConfig.builder()
 
 ## Key parameters
 
+If retries are exhausted, the client reports the final attempt's outcome. A final HTTP error retains its status and response message; a final transport failure propagates the `IOException` rather than reusing an earlier HTTP response. In reactive code, unwrap the error with Reactor's `Exceptions.unwrap(...)` to inspect a checked transport exception.
+
 | Field | Notes |
 | --- | --- |
 | `apiKey` | Dify dataset API key (required) |

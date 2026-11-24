@@ -16,6 +16,7 @@
 package io.agentscope.core.rag.integration.dify;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -26,14 +27,20 @@ import io.agentscope.core.rag.integration.dify.exception.DifyAuthException;
 import io.agentscope.core.rag.integration.dify.model.DifyResponse;
 import io.agentscope.core.util.JsonUtils;
 import java.io.IOException;
+import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import okhttp3.mockwebserver.MockResponse;
 import okhttp3.mockwebserver.MockWebServer;
 import okhttp3.mockwebserver.RecordedRequest;
+import okhttp3.mockwebserver.SocketPolicy;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
+import reactor.core.Exceptions;
 
 /**
  * Unit tests for DifyRAGClient.
@@ -485,6 +492,93 @@ class DifyRAGClientTest {
     }
 
     // === Error Handling Tests ===
+
+    @ParameterizedTest
+    @ValueSource(ints = {429, 500, 503})
+    @Timeout(10)
+    void finalTransportFailureIsNotReplacedWithClosedResponse(int status) {
+        mockWebServer.enqueue(new MockResponse().setResponseCode(status).setBody("retry"));
+        mockWebServer.enqueue(new MockResponse().setSocketPolicy(SocketPolicy.NO_RESPONSE));
+        DifyRAGClient client = createRetryingClient();
+
+        RuntimeException failure =
+                assertThrows(
+                        RuntimeException.class,
+                        () -> client.retrieve("test query", 5).block(Duration.ofSeconds(5)));
+        assertInstanceOf(IOException.class, Exceptions.unwrap(failure));
+        assertEquals(2, mockWebServer.getRequestCount());
+
+        // A failed retry must not poison a later retrieval on the same client.
+        mockWebServer.enqueue(createSuccessResponse());
+        DifyResponse recovered = client.retrieve("next query", 5).block(Duration.ofSeconds(5));
+        assertNotNull(recovered);
+        assertEquals(1, recovered.getRecords().size());
+        assertEquals(3, mockWebServer.getRequestCount());
+    }
+
+    @Test
+    @Timeout(10)
+    void finalHttpFailurePreservesItsBodyAfterTransportFailure() {
+        mockWebServer.enqueue(new MockResponse().setSocketPolicy(SocketPolicy.NO_RESPONSE));
+        mockWebServer.enqueue(
+                new MockResponse()
+                        .setResponseCode(503)
+                        .setBody("{\"message\":\"last server error\"}"));
+
+        DifyApiException failure =
+                assertThrows(
+                        DifyApiException.class,
+                        () ->
+                                createRetryingClient()
+                                        .retrieve("test query", 5)
+                                        .block(Duration.ofSeconds(5)));
+        assertEquals(503, failure.getStatusCode());
+        assertTrue(failure.getMessage().contains("last server error"));
+        assertEquals(2, mockWebServer.getRequestCount());
+    }
+
+    @Test
+    @Timeout(10)
+    void retryableHttpFailureCanRecover() {
+        mockWebServer.enqueue(new MockResponse().setResponseCode(500).setBody("retry"));
+        mockWebServer.enqueue(createSuccessResponse());
+
+        DifyResponse response =
+                createRetryingClient().retrieve("test query", 5).block(Duration.ofSeconds(5));
+        assertNotNull(response);
+        assertEquals(1, response.getRecords().size());
+        assertEquals(2, mockWebServer.getRequestCount());
+    }
+
+    @Test
+    @Timeout(10)
+    void nonRetryableHttpFailureIsReturnedImmediately() {
+        mockWebServer.enqueue(
+                new MockResponse()
+                        .setResponseCode(401)
+                        .setBody("{\"message\":\"invalid credentials\"}"));
+
+        DifyAuthException failure =
+                assertThrows(
+                        DifyAuthException.class,
+                        () ->
+                                createRetryingClient()
+                                        .retrieve("test query", 5)
+                                        .block(Duration.ofSeconds(5)));
+        assertEquals(401, failure.getStatusCode());
+        assertEquals(1, mockWebServer.getRequestCount());
+    }
+
+    private DifyRAGClient createRetryingClient() {
+        return new DifyRAGClient(
+                DifyRAGConfig.builder()
+                        .apiKey("test-api-key")
+                        .apiBaseUrl(mockWebServer.url("/v1").toString())
+                        .datasetId("dataset-123")
+                        .readTimeout(Duration.ofMillis(250))
+                        .maxRetries(1)
+                        .build());
+    }
 
     @Test
     void testNullQueryShouldThrow() {
