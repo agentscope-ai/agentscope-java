@@ -70,3 +70,7 @@ This separation prevents inconsistent indexing states across two sides.
 | `filterPolicy` | Filter policy (see `FilterPolicy`) |
 
 `HayStackConfig` also exposes timeouts, custom headers, and API keys to fit your HayStack deployment's auth scheme.
+
+## HTTP failures and retries
+
+When retries are enabled, server errors may be retried with backoff, while client errors such as HTTP 401 are returned immediately. If the final response is an HTTP error, retrieval fails with `HayStackApiException` carrying that response's status code. Use the code to distinguish authentication or request failures from an unavailable service; enabling retries does not turn a failed response into an empty result.

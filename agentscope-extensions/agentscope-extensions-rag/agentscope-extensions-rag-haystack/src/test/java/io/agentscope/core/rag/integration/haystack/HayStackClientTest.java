@@ -25,6 +25,7 @@ import io.agentscope.core.rag.integration.haystack.exception.HayStackApiExceptio
 import io.agentscope.core.rag.integration.haystack.model.HayStackResponse;
 import io.agentscope.core.util.JsonUtils;
 import java.io.IOException;
+import java.time.Duration;
 import java.util.Map;
 import okhttp3.mockwebserver.MockResponse;
 import okhttp3.mockwebserver.MockWebServer;
@@ -32,6 +33,8 @@ import okhttp3.mockwebserver.RecordedRequest;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 /**
  * Unit tests for HayStackClient.
@@ -232,6 +235,74 @@ class HayStackClientTest {
     }
 
     // ========= Error Handling =========
+    @ParameterizedTest
+    @ValueSource(ints = {400, 401, 404})
+    void clientErrorsRemainReadableWithRetriesEnabled(int status) {
+        mockWebServer.enqueue(
+                new MockResponse().setResponseCode(status).setBody("{\"error\":\"rejected\"}"));
+        HayStackClient client = retryingClient();
+        HayStackApiException error =
+                assertThrows(
+                        HayStackApiException.class,
+                        () -> client.retrieve("query", null, null).block(Duration.ofSeconds(10)));
+        assertEquals(status, error.getStatusCode());
+        assertEquals(1, mockWebServer.getRequestCount(), "Client errors are not retryable");
+    }
+
+    @Test
+    void exhaustedServerErrorsRemainReadable() {
+        mockWebServer.enqueue(new MockResponse().setResponseCode(500).setBody("initial failure"));
+        mockWebServer.enqueue(new MockResponse().setResponseCode(503).setBody("final failure"));
+        HayStackApiException error =
+                assertThrows(
+                        HayStackApiException.class,
+                        () ->
+                                retryingClient()
+                                        .retrieve("query", null, null)
+                                        .block(Duration.ofSeconds(10)));
+        assertEquals(503, error.getStatusCode(), "The final HTTP status must be preserved");
+        assertEquals(2, mockWebServer.getRequestCount());
+    }
+
+    @Test
+    void serverErrorThenSuccessStillReturnsReadableDocuments() throws Exception {
+        mockWebServer.enqueue(new MockResponse().setResponseCode(503).setBody("retry later"));
+        mockWebServer.enqueue(successResponse());
+        HayStackResponse response =
+                retryingClient().retrieve("query", null, null).block(Duration.ofSeconds(10));
+        assertEquals(2, response.getDocuments().size());
+        assertEquals("doc-1", response.getDocuments().get(0).getId());
+        assertEquals(2, mockWebServer.getRequestCount());
+        assertEquals(0, mockWebServer.takeRequest().getSequenceNumber());
+        assertEquals(
+                1,
+                mockWebServer.takeRequest().getSequenceNumber(),
+                "Discarded response should release its connection for reuse");
+    }
+
+    @Test
+    void clientErrorAfterServerErrorKeepsFinalStatus() {
+        mockWebServer.enqueue(new MockResponse().setResponseCode(503).setBody("retry later"));
+        mockWebServer.enqueue(new MockResponse().setResponseCode(401).setBody("unauthorized"));
+        HayStackApiException error =
+                assertThrows(
+                        HayStackApiException.class,
+                        () ->
+                                retryingClient()
+                                        .retrieve("query", null, null)
+                                        .block(Duration.ofSeconds(10)));
+        assertEquals(401, error.getStatusCode());
+        assertEquals(2, mockWebServer.getRequestCount());
+    }
+
+    private HayStackClient retryingClient() {
+        return new HayStackClient(
+                HayStackConfig.builder()
+                        .baseUrl(mockWebServer.url("/retrieve").toString())
+                        .maxRetries(1)
+                        .build());
+    }
+
     @Test
     void testApiErrorCodeNotZero() {
         String body =

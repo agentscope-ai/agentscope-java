@@ -70,3 +70,7 @@ ReActAgent agent = ReActAgent.builder()
 | `filterPolicy` | 过滤策略（见 `FilterPolicy`） |
 
 `HayStackConfig` 还提供超时、自定义 header、API Key 等扩展项，按 HayStack 部署侧的鉴权方案配置即可。
+
+## HTTP 失败与重试
+
+启用重试后，服务端错误可以经过退避再次请求，HTTP 401 这样的客户端错误则直接返回。如果最终响应仍是 HTTP 错误，检索会抛出携带该状态码的 `HayStackApiException`。可以据此区分鉴权或请求错误与服务不可用；启用重试并不会把失败的响应变成空检索结果。
