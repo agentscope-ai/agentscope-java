@@ -43,6 +43,17 @@ class ReflectiveFunctionToolTest {
         }
     }
 
+    static final class PinnedOutputTools {
+        @Tool(
+                name = "pinned_output",
+                description = "Result must survive eviction and pruning",
+                evictable = false,
+                prunable = false)
+        public String pinned(@ToolParam(name = "q", description = "q") String q) {
+            return q;
+        }
+    }
+
     static final class StatefulTools {
         @Tool(
                 name = "with_state",
@@ -90,6 +101,21 @@ class ReflectiveFunctionToolTest {
         assertFalse(tb.isExternalTool(), "externalTool default false");
         assertFalse(tb.isStateInjected(), "stateInjected default false");
         assertFalse(tb.isMcp(), "mcp default false");
+    }
+
+    @Test
+    void evictableAndPrunableFlagsPropagateFromAnnotation() {
+        Toolkit toolkit = new Toolkit();
+        toolkit.registerTool(new PinnedOutputTools());
+        toolkit.registerTool(new SafeReadTools());
+
+        ToolBase pinned = assertInstanceOf(ToolBase.class, toolkit.getTool("pinned_output"));
+        assertFalse(pinned.isEvictable(), "evictable=false must propagate");
+        assertFalse(pinned.isPrunable(), "prunable=false must propagate");
+
+        ToolBase undeclared = assertInstanceOf(ToolBase.class, toolkit.getTool("safe_read"));
+        assertTrue(undeclared.isEvictable(), "undeclared tools stay evictable");
+        assertTrue(undeclared.isPrunable(), "undeclared tools stay prunable");
     }
 
     @Test

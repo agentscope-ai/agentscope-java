@@ -301,4 +301,36 @@ class FilePartParserTest {
         ContentBlock result = parser.parse(part);
         assertNull(result);
     }
+
+    @Test
+    @DisplayName("A document marker cannot bypass a null mime type")
+    void testDocumentMarkerWithNullMimeTypeIsDropped() {
+        // FileWithUri accepts a null MIME type. The marker used to win before the guard, so the
+        // part became a DocumentBlock whose media type no provider could resolve.
+        FileContent file = new FileWithUri(null, "test.pdf", "https://example.test/test.pdf");
+        FilePart part =
+                new FilePart(
+                        file,
+                        Map.of(
+                                MessageConstants.BLOCK_TYPE_METADATA_KEY,
+                                MessageConstants.BlockContent.TYPE_DOCUMENT));
+
+        assertNull(parser.parse(part));
+    }
+
+    @Test
+    @DisplayName("A document marker cannot bypass a blank mime type")
+    void testDocumentMarkerWithBlankMimeTypeIsDropped() {
+        FileContent file =
+                new FileWithBytes(
+                        "  ", "test.pdf", Base64.getEncoder().encodeToString("test".getBytes()));
+        FilePart part =
+                new FilePart(
+                        file,
+                        Map.of(
+                                MessageConstants.BLOCK_TYPE_METADATA_KEY,
+                                MessageConstants.BlockContent.TYPE_DOCUMENT));
+
+        assertNull(parser.parse(part));
+    }
 }

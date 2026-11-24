@@ -228,7 +228,7 @@ class E2bSandboxFileTransferTest {
         assertArrayEquals(archive, uploadContent.getValue());
         ArgumentCaptor<String> commands = ArgumentCaptor.forClass(String.class);
         verify(envd, times(2)).runShell(any(), any(), commands.capture(), anyInt());
-        assertTrue(commands.getAllValues().get(0).contains("xf " + tarPath));
+        assertTrue(commands.getAllValues().get(0).contains("-xpf " + tarPath));
         assertEquals("rm -f " + tarPath, commands.getAllValues().get(1));
     }
 

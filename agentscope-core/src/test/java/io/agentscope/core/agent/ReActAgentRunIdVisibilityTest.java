@@ -23,15 +23,15 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.test.MockModel;
 import io.agentscope.core.event.AgentEvent;
+import io.agentscope.core.journal.InMemoryThreadJournalStore;
+import io.agentscope.core.journal.JournalEvent;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.UserMessage;
 import io.agentscope.core.middleware.AgentInput;
 import io.agentscope.core.middleware.MiddlewareBase;
 import io.agentscope.core.middleware.ReasoningInput;
-import io.agentscope.core.session.InMemorySessionLogStore;
-import io.agentscope.core.session.SessionEvent;
-import io.agentscope.core.session.SessionKey;
 import java.time.Duration;
+import java.util.EnumSet;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
@@ -71,6 +71,14 @@ class ReActAgentRunIdVisibilityTest {
 
         Set<String> observed(String sessionId) {
             return observedBySession.getOrDefault(sessionId, Set.of());
+        }
+
+        @Override
+        public Set<ExtensionPoint> activePoints() {
+            return EnumSet.of(
+                    ExtensionPoint.ON_AGENT,
+                    ExtensionPoint.ON_REASONING,
+                    ExtensionPoint.ON_SYSTEM_PROMPT);
         }
 
         @Override
@@ -221,12 +229,12 @@ class ReActAgentRunIdVisibilityTest {
     @Test
     @DisplayName("streamEvents(): session log records the RuntimeContext runId")
     void streamEventsRecordsSessionFactsWithRuntimeContextRunId() {
-        InMemorySessionLogStore store = new InMemorySessionLogStore();
+        InMemoryThreadJournalStore store = new InMemoryThreadJournalStore();
         try (ReActAgent agent =
                 ReActAgent.builder()
                         .name("runid-log")
                         .model(new MockModel("done"))
-                        .sessionLogStore(store)
+                        .threadJournalStore(store)
                         .build()) {
             String runId = "session-log-run-id";
             RuntimeContext ctx =
@@ -234,11 +242,11 @@ class ReActAgentRunIdVisibilityTest {
 
             agent.streamEvents(List.of(new UserMessage("hello")), ctx).blockLast(TIMEOUT);
 
-            List<SessionEvent> events =
-                    store.open(new SessionKey("u", "runid-log", "sess-log"), ctx)
+            List<JournalEvent> events =
+                    store.open(new ThreadKey("u", "runid-log", "sess-log", "main"), ctx)
                             .readAfter(0, 1000);
             assertFalse(events.isEmpty(), "session log must record events");
-            for (SessionEvent event : events) {
+            for (JournalEvent event : events) {
                 assertEquals(runId, event.executionRunId());
             }
         }

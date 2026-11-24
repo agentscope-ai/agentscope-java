@@ -32,6 +32,8 @@ import io.agentscope.core.tool.ToolParam;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.extensions.model.dashscope.DashScopeChatModel;
 import io.agentscope.extensions.model.dashscope.formatter.DashScopeChatFormatter;
+import java.util.EnumSet;
+import java.util.Set;
 import java.util.function.Function;
 import reactor.core.publisher.Flux;
 
@@ -157,6 +159,11 @@ public class InterruptionExample {
      * agent start/end, tool calls, progress chunks, and errors.
      */
     static class MonitoringMiddleware implements MiddlewareBase {
+
+        @Override
+        public Set<ExtensionPoint> activePoints() {
+            return EnumSet.of(ExtensionPoint.ON_AGENT, ExtensionPoint.ON_ACTING);
+        }
 
         @Override
         public Flux<AgentEvent> onAgent(

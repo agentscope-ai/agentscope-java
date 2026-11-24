@@ -70,6 +70,15 @@ public abstract class ToolBase implements AgentTool {
     private final String mcpName;
     private final boolean returnDirect;
 
+    /** Whether this is a system capability exempt from grant-layer trimming. */
+    private final boolean system;
+
+    /** Whether large-tool-result eviction may offload this tool's results (see AgentTool#isEvictable). */
+    private final boolean evictable;
+
+    /** Whether aggregate tool-result pruning may replace this tool's results (see AgentTool#isPrunable). */
+    private final boolean prunable;
+
     /** Sensitive files; subclasses may replace this list to widen or narrow protection. */
     protected List<String> dangerousFiles = ToolDangerousPathConstants.DEFAULT_DANGEROUS_FILES;
 
@@ -90,7 +99,10 @@ public abstract class ToolBase implements AgentTool {
                 builder.mcpName,
                 builder.externalTool,
                 builder.stateInjected,
-                builder.returnDirect);
+                builder.returnDirect,
+                builder.system,
+                builder.evictable,
+                builder.prunable);
         if (builder.dangerousFiles != null) {
             this.dangerousFiles = List.copyOf(builder.dangerousFiles);
         }
@@ -124,7 +136,10 @@ public abstract class ToolBase implements AgentTool {
                 mcpName,
                 externalTool,
                 stateInjected,
-                false);
+                false,
+                false,
+                true,
+                true);
     }
 
     private ToolBase(
@@ -138,7 +153,10 @@ public abstract class ToolBase implements AgentTool {
             String mcpName,
             boolean externalTool,
             boolean stateInjected,
-            boolean returnDirect) {
+            boolean returnDirect,
+            boolean system,
+            boolean evictable,
+            boolean prunable) {
         this.name = Objects.requireNonNull(name, "name must not be null");
         this.description = Objects.requireNonNull(description, "description must not be null");
         this.title = title;
@@ -150,6 +168,9 @@ public abstract class ToolBase implements AgentTool {
         this.externalTool = externalTool;
         this.stateInjected = stateInjected;
         this.returnDirect = returnDirect;
+        this.system = system;
+        this.evictable = evictable;
+        this.prunable = prunable;
         if (mcp && (mcpName == null || mcpName.isBlank())) {
             throw new IllegalArgumentException("mcpName is required when mcp is true");
         }
@@ -185,6 +206,17 @@ public abstract class ToolBase implements AgentTool {
     }
 
     /**
+     * Whether this is a system capability exempt from grant-layer (per-user capability)
+     * trimming. Only framework/infrastructure tools should be marked system; a business tool
+     * marked system bypasses per-user capability trimming entirely (explicit declaration by
+     * the assembler — trusted boundary).
+     */
+    @Override
+    public final boolean isSystem() {
+        return system;
+    }
+
+    /**
      * Whether this tool's result should short-circuit the ReAct loop and be returned directly
      * to the caller as the turn's final answer, instead of being fed back to the model for
      * another reasoning iteration. Defaults to {@code false}.
@@ -210,6 +242,16 @@ public abstract class ToolBase implements AgentTool {
 
     public final String getMcpName() {
         return mcpName;
+    }
+
+    @Override
+    public final boolean isEvictable() {
+        return evictable;
+    }
+
+    @Override
+    public final boolean isPrunable() {
+        return prunable;
     }
 
     /**
@@ -332,6 +374,9 @@ public abstract class ToolBase implements AgentTool {
         private boolean returnDirect = false;
         private boolean mcp = false;
         private String mcpName;
+        private boolean system = false;
+        private boolean evictable = true;
+        private boolean prunable = true;
         private List<String> dangerousFiles;
         private List<String> dangerousDirectories;
 
@@ -388,6 +433,38 @@ public abstract class ToolBase implements AgentTool {
         public Builder mcp(String mcpName) {
             this.mcp = true;
             this.mcpName = mcpName;
+            return this;
+        }
+
+        /**
+         * Marks the tool as a system capability exempt from grant-layer trimming. Only mark
+         * framework/infrastructure tools; business tools marked system bypass per-user
+         * capability trimming entirely.
+         *
+         * @param system true to exempt this tool from grant-layer trimming
+         * @return This builder for method chaining
+         */
+        public Builder system(boolean system) {
+            this.system = system;
+            return this;
+        }
+
+        /**
+         * Sets whether large-tool-result eviction may offload this tool's results. Declare
+         * {@code false} when the result is the requested content itself and a file pointer would
+         * defeat the call; defaults to {@code true}.
+         */
+        public Builder evictable(boolean evictable) {
+            this.evictable = evictable;
+            return this;
+        }
+
+        /**
+         * Sets whether aggregate tool-result pruning may replace this tool's older results with
+         * a preview; defaults to {@code true}.
+         */
+        public Builder prunable(boolean prunable) {
+            this.prunable = prunable;
             return this;
         }
 

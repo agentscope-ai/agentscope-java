@@ -42,6 +42,8 @@ import org.a2aproject.sdk.spec.FileWithUri;
  *     <li>a {@link FilePart} whose MIME type names a document format (PDF, office files, text,
  *         ...) parses to a {@link DocumentBlock}; anything else is not routable content and
  *         yields {@code null} rather than binary bytes in a model request</li>
+ *     <li>a {@link FilePart} without a usable MIME type yields {@code null}, even when it carries
+ *         a block-type marker</li>
  * </ul>
  */
 public class FilePartParser implements PartParser<FilePart> {
@@ -70,6 +72,13 @@ public class FilePartParser implements PartParser<FilePart> {
     @Override
     public ContentBlock parse(FilePart part) {
         FileContent file = part.file();
+        // A FilePart without a MIME type cannot be routed: the media blocks and the document
+        // block all need one, and a document with an empty media type leaves providers unable to
+        // build a data URL or pick a decoder. Check this before the marker: the marker routes the
+        // part into the document branch and used to bypass this guard.
+        if (file.mimeType() == null || file.mimeType().isBlank()) {
+            return null;
+        }
         // An explicit AgentScope block-type marker wins over the MIME type: a scanned page is a
         // document travelling as image/jpeg, and routing it by MIME alone would rebuild an
         // ImageBlock where the sender sent a DocumentBlock.
@@ -79,11 +88,6 @@ public class FilePartParser implements PartParser<FilePart> {
             if (document != null) {
                 return document;
             }
-        }
-        // A FilePart without a MIME type cannot be routed: both the media blocks and the
-        // document block require one, and Base64Source rejects a null media type.
-        if (file.mimeType() == null || file.mimeType().isBlank()) {
-            return null;
         }
         return switch (getPrimaryType(file.mimeType())) {
             case MessageConstants.BlockContent.TYPE_IMAGE -> parseToImageBlock(file);

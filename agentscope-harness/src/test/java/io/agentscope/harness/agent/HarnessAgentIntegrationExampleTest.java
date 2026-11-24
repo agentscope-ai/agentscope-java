@@ -55,7 +55,8 @@ import reactor.core.publisher.Flux;
  * <pre>
  * workspace/
  * ├── AGENTS.md              # persona / local rules
- * ├── MEMORY.md              # optional long-term scratch (loaded into &lt;memory_context&gt;)
+ * ├── integration-session-1/
+ * │   └── MEMORY.md          # per-session scratch (loaded into &lt;memory_context&gt;)
  * ├── knowledge/
  * │   └── KNOWLEDGE.md       # optional domain summary
  * └── subagents/
@@ -90,7 +91,12 @@ class HarnessAgentIntegrationExampleTest {
         Files.writeString(
                 workspace.resolve(WorkspaceConstants.AGENTS_MD),
                 "# Agent\n\n" + agentsPersona + "\n");
-        Files.writeString(workspace.resolve(WorkspaceConstants.MEMORY_MD), memoryNote);
+        // MEMORY.md is per-identity runtime data, so it lives under the namespace the call's
+        // RuntimeContext resolves to; AGENTS.md and knowledge/ stay at the workspace root as
+        // shared agent configuration.
+        Path sessionMemory = workspace.resolve("integration-session-1");
+        Files.createDirectories(sessionMemory);
+        Files.writeString(sessionMemory.resolve(WorkspaceConstants.MEMORY_MD), memoryNote);
 
         Path knowledgeDir = workspace.resolve(WorkspaceConstants.KNOWLEDGE_DIR);
         Files.createDirectories(knowledgeDir);

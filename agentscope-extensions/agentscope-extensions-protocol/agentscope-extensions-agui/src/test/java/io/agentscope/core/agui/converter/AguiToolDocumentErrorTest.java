@@ -71,11 +71,17 @@ class AguiToolDocumentErrorTest {
                         .build();
         AguiMessage wire =
                 converter
-                        .toAguiMessages(Msg.builder().role(MsgRole.TOOL).content(result).build())
+                        .toAguiMessages(
+                                Msg.builder()
+                                        .name("report-tool")
+                                        .role(MsgRole.TOOL)
+                                        .content(result)
+                                        .build())
                         .get(0);
 
         ToolResultBlock restored = restore(wire);
 
+        assertEquals("report-tool", wire.getName());
         assertEquals(state, restored.getState());
         assertEquals("tc-document", restored.getId());
         DocumentBlock attachment =
