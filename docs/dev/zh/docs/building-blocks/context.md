@@ -241,6 +241,10 @@ agent.clearContext(RuntimeContext.builder()
     .build());
 ```
 
+`HarnessAgent` 在运行上下文未指定 `sessionId` 时使用 builder 配置的 `defaultSessionId`；
+`call`、`streamEvents` 和 `clearContext` 使用相同的默认会话。显式传入的 `sessionId` 优先；
+未配置默认会话时才使用 Agent 名称。
+
 请在该会话当前请求完成后调用。它不会取消正在执行的调用。
 下一次请求仍会加载 System、工作区材料及保留状态的投影，因此不等于清除全部模型输入。
 旧 Todo、需求或计划状态仍可能出现；完整的新会话应使用新的 sessionId，而不是仅清空历史。
