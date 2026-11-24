@@ -205,6 +205,7 @@ public class HayStackKnowledge implements Knowledge {
                                                     return doc.getScore()
                                                             >= config.getScoreThreshold();
                                                 })
+                                        .limit(config.getLimit())
                                         .toList())
                 .onErrorResume(
                         e -> {
