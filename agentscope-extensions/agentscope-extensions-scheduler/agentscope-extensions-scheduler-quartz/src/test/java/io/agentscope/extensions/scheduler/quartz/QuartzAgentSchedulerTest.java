@@ -19,9 +19,11 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
@@ -35,14 +37,20 @@ import io.agentscope.extensions.scheduler.config.RuntimeAgentConfig;
 import io.agentscope.extensions.scheduler.config.ScheduleConfig;
 import io.agentscope.extensions.scheduler.config.ScheduleMode;
 import java.util.Collections;
+import java.util.Date;
 import java.util.List;
+import java.util.UUID;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.quartz.CronScheduleBuilder;
 import org.quartz.JobBuilder;
 import org.quartz.JobDetail;
+import org.quartz.JobExecutionContext;
 import org.quartz.JobKey;
 import org.quartz.Scheduler;
 import org.quartz.SchedulerException;
@@ -74,6 +82,146 @@ class QuartzAgentSchedulerTest {
     @BeforeEach
     void setUp() {
         scheduler = QuartzAgentScheduler.builder().autoStart(true).build();
+    }
+
+    @ParameterizedTest
+    @EnumSource(
+            value = ScheduleMode.class,
+            names = {"CRON", "FIXED_RATE", "FIXED_DELAY"})
+    void taskIsPublishedBeforeQuartzCanFire(ScheduleMode mode) throws Exception {
+        Scheduler quartz = mock(Scheduler.class);
+        QuartzAgentScheduler adapter =
+                QuartzAgentScheduler.builder()
+                        .scheduler(quartz)
+                        .schedulerId("publication-" + UUID.randomUUID())
+                        .autoStart(false)
+                        .build();
+        RuntimeAgentConfig config =
+                RuntimeAgentConfig.builder()
+                        .name("immediate")
+                        .modelConfig(STUB_MODEL_CONFIG)
+                        .sysPrompt("test prompt")
+                        .build();
+        ScheduleConfig timing =
+                switch (mode) {
+                    case CRON -> ScheduleConfig.builder().cron("0 0 8 * * ?").build();
+                    case FIXED_RATE -> ScheduleConfig.builder().fixedRate(1000L).build();
+                    case FIXED_DELAY -> ScheduleConfig.builder().fixedDelay(1000L).build();
+                    default -> throw new AssertionError(mode);
+                };
+        doAnswer(
+                        invocation -> {
+                            JobDetail detail = invocation.getArgument(0);
+                            Trigger trigger = invocation.getArgument(1);
+                            // Quartz has stored the job and can dispatch it before scheduleJob
+                            // returns.
+                            when(quartz.checkExists(detail.getKey())).thenReturn(true);
+                            when(quartz.getJobDetail(detail.getKey())).thenReturn(detail);
+                            doReturn(List.of(trigger))
+                                    .when(quartz)
+                                    .getTriggersOfJob(detail.getKey());
+                            QuartzScheduleAgentTask ready = adapter.getScheduledAgent("immediate");
+                            assertNotNull(ready);
+                            assertSame(
+                                    config,
+                                    ready.getAgentConfig(),
+                                    "An early fire needs the full runtime config, not a"
+                                            + " control-only fallback");
+                            assertSame(timing, ready.getScheduleConfig());
+                            assertSame(ready, adapter.schedule(config, timing));
+                            JobExecutionContext context = mock(JobExecutionContext.class);
+                            when(context.getJobDetail()).thenReturn(detail);
+                            new AgentQuartzJob().execute(context);
+                            assertEquals(1, ready.getExecutionCount());
+                            return new Date();
+                        })
+                .when(quartz)
+                .scheduleJob(any(JobDetail.class), any(Trigger.class));
+        try {
+            ScheduleAgentTask task = adapter.schedule(config, timing);
+            assertSame(task, adapter.getScheduledAgent("immediate"));
+            verify(quartz).scheduleJob(any(JobDetail.class), any(Trigger.class));
+        } finally {
+            adapter.shutdown();
+        }
+    }
+
+    @Test
+    void checkedSchedulingFailureRemovesPendingTaskAndAllowsRetry() throws Exception {
+        assertSchedulingFailureRollsBack(false);
+    }
+
+    @Test
+    void uncheckedSchedulingFailureRemovesPendingTaskAndAllowsRetry() throws Exception {
+        assertSchedulingFailureRollsBack(true);
+    }
+
+    private void assertSchedulingFailureRollsBack(boolean unchecked) throws Exception {
+        Scheduler quartz = mock(Scheduler.class);
+        QuartzAgentScheduler adapter =
+                QuartzAgentScheduler.builder()
+                        .scheduler(quartz)
+                        .schedulerId("rollback-" + UUID.randomUUID())
+                        .autoStart(false)
+                        .build();
+        RuntimeAgentConfig config =
+                RuntimeAgentConfig.builder()
+                        .name("retry")
+                        .modelConfig(STUB_MODEL_CONFIG)
+                        .sysPrompt("test prompt")
+                        .build();
+        ScheduleConfig timing = ScheduleConfig.builder().fixedDelay(1000L).build();
+        AtomicInteger attempts = new AtomicInteger();
+        doAnswer(
+                        invocation -> {
+                            QuartzScheduleAgentTask pending = adapter.getScheduledAgent("retry");
+                            assertNotNull(pending);
+                            assertSame(config, pending.getAgentConfig());
+                            if (attempts.incrementAndGet() == 1) {
+                                if (unchecked)
+                                    throw new IllegalStateException("scheduler unavailable");
+                                throw new SchedulerException("scheduler unavailable");
+                            }
+                            return new Date();
+                        })
+                .when(quartz)
+                .scheduleJob(any(JobDetail.class), any(Trigger.class));
+        try {
+            RuntimeException failure =
+                    assertThrows(RuntimeException.class, () -> adapter.schedule(config, timing));
+            if (unchecked) {
+                assertEquals(IllegalStateException.class, failure.getClass());
+            } else {
+                assertEquals(SchedulerException.class, failure.getCause().getClass());
+            }
+            assertNull(adapter.getScheduledAgent("retry"));
+            ScheduleAgentTask task = adapter.schedule(config, timing);
+            assertNotNull(task);
+            assertSame(task, adapter.getScheduledAgent("retry"));
+            assertEquals(2, attempts.get(), "A failed attempt must not leave a cached task");
+        } finally {
+            adapter.shutdown();
+        }
+    }
+
+    @Test
+    void invalidCronRemovesPendingTaskAndAllowsCorrectedRetry() {
+        RuntimeAgentConfig config =
+                RuntimeAgentConfig.builder()
+                        .name("invalid-cron-retry")
+                        .modelConfig(STUB_MODEL_CONFIG)
+                        .sysPrompt("test prompt")
+                        .build();
+        ScheduleConfig invalid = mock(ScheduleConfig.class);
+        when(invalid.getScheduleMode()).thenReturn(ScheduleMode.CRON);
+        when(invalid.getCronExpression()).thenReturn("invalid");
+
+        assertThrows(RuntimeException.class, () -> scheduler.schedule(config, invalid));
+        assertNull(scheduler.getScheduledAgent(config.getName()));
+        ScheduleConfig corrected = ScheduleConfig.builder().cron("0 0 8 * * ?").build();
+        ScheduleAgentTask task = scheduler.schedule(config, corrected);
+        assertNotNull(task);
+        assertSame(corrected, scheduler.getScheduledAgent(config.getName()).getScheduleConfig());
     }
 
     @Test
