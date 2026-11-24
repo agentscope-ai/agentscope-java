@@ -20,13 +20,16 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.agentscope.core.message.AudioBlock;
 import io.agentscope.core.message.ContentBlock;
+import io.agentscope.core.message.DataBlock;
 import io.agentscope.core.message.DocumentBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.URLSource;
+import io.agentscope.core.message.VideoBlock;
 import io.agentscope.extensions.model.ollama.dto.OllamaMessage;
 import java.util.Arrays;
 import java.util.List;
@@ -317,5 +320,87 @@ class OllamaConversationMergerTest {
                                 "[document: report.pdf, application/pdf, url:"
                                         + " https://example.com/report.pdf]"),
                 "Merged history must mention the document instead of dropping it");
+    }
+
+    @Test
+    @DisplayName("Should record audio blocks in merged history")
+    void testAudioBlockIsRecorded() {
+        Msg msg =
+                Msg.builder()
+                        .name("Alice")
+                        .content(
+                                List.of(
+                                        TextBlock.builder().text("Listen to this").build(),
+                                        AudioBlock.builder()
+                                                .source(
+                                                        URLSource.builder()
+                                                                .url("https://example.com/a.wav")
+                                                                .build())
+                                                .build()))
+                        .build();
+        List<Msg> msgs = List.of(msg);
+
+        OllamaMessage merged =
+                merger.mergeToMessage(
+                        msgs, Msg::getName, blocks -> "Converted", TEST_HISTORY_PROMPT);
+
+        assertTrue(
+                merged.getContent().contains("Alice: [Audio]"),
+                "Merged history must mention the audio block instead of dropping it");
+    }
+
+    @Test
+    @DisplayName("Should record video blocks in merged history")
+    void testVideoBlockIsRecorded() {
+        Msg msg =
+                Msg.builder()
+                        .name("Alice")
+                        .content(
+                                List.of(
+                                        TextBlock.builder().text("Watch this").build(),
+                                        VideoBlock.builder()
+                                                .source(
+                                                        URLSource.builder()
+                                                                .url("https://example.com/v.mp4")
+                                                                .build())
+                                                .build()))
+                        .build();
+        List<Msg> msgs = List.of(msg);
+
+        OllamaMessage merged =
+                merger.mergeToMessage(
+                        msgs, Msg::getName, blocks -> "Converted", TEST_HISTORY_PROMPT);
+
+        assertTrue(
+                merged.getContent().contains("Alice: [Video]"),
+                "Merged history must mention the video block instead of dropping it");
+    }
+
+    @Test
+    @DisplayName("Should record data blocks in merged history")
+    void testDataBlockIsRecorded() {
+        Msg msg =
+                Msg.builder()
+                        .name("Alice")
+                        .content(
+                                List.of(
+                                        TextBlock.builder().text("Analyse this").build(),
+                                        DataBlock.builder()
+                                                .name("sales.csv")
+                                                .source(
+                                                        URLSource.builder()
+                                                                .url("https://example.com/s.csv")
+                                                                .build())
+                                                .build()))
+                        .build();
+        List<Msg> msgs = List.of(msg);
+
+        OllamaMessage merged =
+                merger.mergeToMessage(
+                        msgs, Msg::getName, blocks -> "Converted", TEST_HISTORY_PROMPT);
+
+        assertTrue(
+                merged.getContent().contains("Alice: [Data]"),
+                "Merged history must mention the data block instead of dropping it");
     }
 }
