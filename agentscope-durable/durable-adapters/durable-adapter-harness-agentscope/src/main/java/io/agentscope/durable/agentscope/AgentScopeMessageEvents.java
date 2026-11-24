@@ -100,10 +100,18 @@ final class AgentScopeMessageEvents {
                 && "REASONING".equals(data.path("purpose").asText())
                 && steps.containsKey(stepId)) {
             String id = steps.get(stepId).messageId();
+            String callId = data.path("modelCallId").asText();
+            // The collecting host re-enters the same queued model call. Its first presentation
+            // delta advances the revision of the existing attempt.
             var previous = versions.get(id);
+            var collecting = calls.get(callId);
+            if (collecting != null
+                    && collecting.messageId().equals(id)
+                    && previous != null
+                    && collecting.attempt() == previous.attempt()) return Output.none();
             long attempt = previous == null ? 1 : Math.addExact(previous.attempt(), 1);
             versions.put(id, new Version(attempt, 0, null, null));
-            calls.put(data.path("modelCallId").asText(), new Reference(id, attempt));
+            calls.put(callId, new Reference(id, attempt));
         } else if ("model/chunk".equals(event.type())) {
             var reference = calls.get(data.path("modelCallId").asText());
             if (reference != null && data.path("chunk").hasNonNull("id"))

@@ -71,6 +71,18 @@ public final class HarnessContext {
         return invocation;
     }
 
+    /** Atomically seal a model generation before allowing its result to execute tools. */
+    public void sealModelReply(DurableTypes.Signal signal) {
+        check();
+        backend.signal(lease.thread(), lease.turnId(), signal);
+    }
+
+    /** Optional change hints; callers must still repair lost hints by reading durable state. */
+    public Wakeups wakeups() {
+        check();
+        return backend.wakeups();
+    }
+
     public Frame frame() {
         check();
         var frame = backend.frame(lease);
