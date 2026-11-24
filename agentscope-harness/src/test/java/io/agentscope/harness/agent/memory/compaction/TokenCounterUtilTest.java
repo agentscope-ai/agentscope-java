@@ -16,15 +16,18 @@
 package io.agentscope.harness.agent.memory.compaction;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
+import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ThinkingBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.message.URLSource;
 import io.agentscope.core.middleware.ModelCallInput;
+import io.agentscope.core.model.ChatUsage;
 import io.agentscope.harness.agent.context.ContextTokenEstimator;
 import java.util.List;
 import java.util.Map;
@@ -109,5 +112,119 @@ class TokenCounterUtilTest {
                         .tokens();
 
         assertEquals(finalEstimate, TokenCounterUtil.calculateToken(messages));
+    }
+
+    @Test
+    void conversationTokensFromReportedUsage_returnsMinusOneWhenNoUsageIsReported() {
+        Msg user =
+                Msg.builder()
+                        .role(MsgRole.USER)
+                        .content(TextBlock.builder().text("run the checks").build())
+                        .build();
+
+        assertEquals(
+                -1,
+                TokenCounterUtil.conversationTokensFromReportedUsage(
+                        List.of(user), 0, ContextTokenEstimator.approximate()));
+    }
+
+    @Test
+    void conversationTokensFromReportedUsage_chargesTheMeasuredTurnInFull() {
+        Msg assistant = assistantWithUsage("done", 1_000, 200);
+
+        assertEquals(
+                1_200,
+                TokenCounterUtil.conversationTokensFromReportedUsage(
+                        List.of(assistant), 0, ContextTokenEstimator.approximate()));
+    }
+
+    @Test
+    void conversationTokensFromReportedUsage_subtractsFixedInputsChargedSeparately() {
+        Msg assistant = assistantWithUsage("done", 1_000, 200);
+
+        assertEquals(
+                700,
+                TokenCounterUtil.conversationTokensFromReportedUsage(
+                        List.of(assistant), 500, ContextTokenEstimator.approximate()));
+    }
+
+    @Test
+    void conversationTokensFromReportedUsage_estimatesOnlyTheMessagesAfterTheMeasuredTurn() {
+        Msg assistant = assistantWithUsage("done", 1_000, 200);
+        Msg followUp =
+                Msg.builder()
+                        .role(MsgRole.USER)
+                        .content(TextBlock.builder().text("and then summarize it").build())
+                        .build();
+        long appended = TokenCounterUtil.calculateToken(List.of(followUp));
+
+        assertEquals(
+                1_200 + appended,
+                TokenCounterUtil.conversationTokensFromReportedUsage(
+                        List.of(assistant, followUp), 0, ContextTokenEstimator.approximate()));
+    }
+
+    @Test
+    void conversationTokensFromReportedUsage_usesTheLatestMeasuredTurn() {
+        Msg earlier = assistantWithUsage("first", 1_000, 100);
+        Msg latest = assistantWithUsage("second", 5_000, 300);
+
+        assertEquals(
+                5_300,
+                TokenCounterUtil.conversationTokensFromReportedUsage(
+                        List.of(earlier, latest), 0, ContextTokenEstimator.approximate()));
+    }
+
+    @Test
+    void conversationTokensFromReportedUsage_ignoresAZeroReport() {
+        Msg assistant = assistantWithUsage("done", 0, 0);
+
+        assertEquals(
+                -1,
+                TokenCounterUtil.conversationTokensFromReportedUsage(
+                        List.of(assistant), 0, ContextTokenEstimator.approximate()));
+    }
+
+    @Test
+    void conversationTokensFromReportedUsage_fallsBackWhenFixedInputsExceedTheReport() {
+        Msg assistant = assistantWithUsage("done", 100, 100);
+
+        assertEquals(
+                -1,
+                TokenCounterUtil.conversationTokensFromReportedUsage(
+                        List.of(assistant), 1_000, ContextTokenEstimator.approximate()));
+    }
+
+    @Test
+    void conversationTokensFromReportedUsage_correctsTheNonAsciiUndercount() {
+        // Non-ASCII prose is what the character-ratio estimate undercounts most, which is the
+        // direction that lets a conversation run past the window before compaction triggers.
+        Msg assistant =
+                assistantWithUsage("系统已完成本次巡检并记录了全部异常项，接下来会按照既定流程逐条核对。".repeat(20), 4_000, 500);
+        long estimated = TokenCounterUtil.calculateToken(List.of(assistant));
+
+        long reported =
+                TokenCounterUtil.conversationTokensFromReportedUsage(
+                        List.of(assistant), 0, ContextTokenEstimator.approximate());
+
+        assertEquals(4_500, reported);
+        assertTrue(
+                reported > estimated,
+                "a reported count must beat the undercounting estimate: reported="
+                        + reported
+                        + " estimated="
+                        + estimated);
+    }
+
+    private static Msg assistantWithUsage(String text, int inputTokens, int outputTokens) {
+        return Msg.builder()
+                .role(MsgRole.ASSISTANT)
+                .content(TextBlock.builder().text(text).build())
+                .usage(
+                        ChatUsage.builder()
+                                .inputTokens(inputTokens)
+                                .outputTokens(outputTokens)
+                                .build())
+                .build();
     }
 }
