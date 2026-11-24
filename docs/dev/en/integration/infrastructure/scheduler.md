@@ -21,6 +21,8 @@ The SPI lives in `agentscope-extensions-scheduler-common` so you can plug in oth
 
 Each trigger creates a fresh Agent instance for execution to avoid leaked state.
 
+For manual execution, subscribe to the `Mono` returned by `task.run(...)`, for example with `task.run(input).block()` in blocking application code. Each subscription, including a retry, creates a fresh Agent and increments the execution count when the agent call starts. Preparing a publisher without subscribing does not count as an execution. Cancelling the task prevents subsequent subscriptions from starting, including subscriptions to a publisher prepared before cancellation; it does not by itself interrupt an agent call already in progress.
+
 ## Quartz mode
 
 ### Add the dependency

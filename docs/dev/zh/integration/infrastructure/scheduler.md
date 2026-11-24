@@ -21,6 +21,8 @@ en_link: /dev/en/integration/infrastructure/scheduler
 
 每次任务触发时，调度器会"现造"一个新的 Agent 实例并执行，避免状态串台。
 
+手动执行时，需要订阅 `task.run(...)` 返回的 `Mono`，例如在允许阻塞的应用代码中调用 `task.run(input).block()`。每次订阅（包括重试）都会创建新的 Agent，并在开始调用 Agent 时增加执行计数；仅创建发布者而不订阅，不计为一次执行。取消任务后，后续订阅将不能启动执行，即使发布者是在取消前创建的也一样；这一操作本身不会中断已经开始的 Agent 调用。
+
 ## Quartz 模式（单机/集群）
 
 ### 添加依赖
