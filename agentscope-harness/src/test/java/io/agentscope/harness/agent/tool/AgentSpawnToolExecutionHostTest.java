@@ -78,11 +78,12 @@ class AgentSpawnToolExecutionHostTest {
                         .build();
         String first =
                 assertText(
-                        tool.agentSpawn(context, null, "worker", "first", "label", 5, null).block(),
+                        tool.agentSpawn(context, null, "worker", "first", true, "label", 5, null)
+                                .block(),
                         ToolResultState.SUCCESS);
         String second =
                 assertText(
-                        tool.agentSpawn(context, null, "worker", "second", "label", 5, null)
+                        tool.agentSpawn(context, null, "worker", "second", true, "label", 5, null)
                                 .block(),
                         ToolResultState.SUCCESS);
         assertTrue(first.contains("session_id: host-owned-child"), first);
@@ -114,7 +115,9 @@ class AgentSpawnToolExecutionHostTest {
                 assertThrows(
                         JournalException.class,
                         () ->
-                                tool().agentSpawn(context, null, "worker", "task", null, 5, null)
+                                tool().agentSpawn(
+                                                context, null, "worker", "task", true, null, 5,
+                                                null)
                                         .block()));
     }
 
@@ -170,7 +173,9 @@ class AgentSpawnToolExecutionHostTest {
                         .build();
         assertTrue(
                 assertText(
-                                tool.agentSpawn(context, state, "worker", "task", null, 5, null)
+                                tool.agentSpawn(
+                                                context, state, "worker", "task", true, null, 5,
+                                                null)
                                         .block(),
                                 ToolResultState.SUCCESS)
                         .contains("durable child result"));

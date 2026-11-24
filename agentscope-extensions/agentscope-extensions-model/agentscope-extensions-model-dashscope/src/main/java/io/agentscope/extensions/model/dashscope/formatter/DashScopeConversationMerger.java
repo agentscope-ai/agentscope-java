@@ -113,6 +113,20 @@ public class DashScopeConversationMerger {
                         textAccumulator.append(name).append(": [Image - processing failed]\n");
                     }
 
+                } else if (block instanceof AudioBlock audioBlock) {
+                    try {
+                        String audioUrl = mediaConverter.convertAudioBlockToUrl(audioBlock);
+                        textAccumulator
+                                .append(name)
+                                .append(": [Audio: ")
+                                .append(audioUrl)
+                                .append("]\n");
+                        log.debug("Processed AudioBlock in multi-agent conversation: {}", audioUrl);
+                    } catch (Exception e) {
+                        log.warn("Failed to process AudioBlock: {}", e.getMessage());
+                        textAccumulator.append(name).append(": [Audio - processing failed]\n");
+                    }
+
                 } else if (block instanceof VideoBlock videoBlock) {
                     try {
                         String videoUrl = mediaConverter.convertVideoBlockToUrl(videoBlock);

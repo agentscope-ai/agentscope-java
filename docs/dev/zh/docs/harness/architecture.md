@@ -71,7 +71,7 @@ en_link: /dev/en/docs/harness/architecture
 ## 相关文档
 
 - [会话操作、事件与恢复](/dev/zh/docs/harness/session-log) — 后台任务、排队、交互和续做
-- [可恢复聊天示例](/v2/zh/blogs/best-practices/session-chat) — 从提交任务到前端断线续传的完整应用
+- [可恢复聊天示例](/dev/zh/blogs/best-practices/session-chat) — 从提交任务到前端断线续传的完整应用
 - [工作区](/dev/zh/docs/harness/workspace) — 目录结构、指令与参考材料的来源、`tools.json`
 - [上下文与 AgentState](/dev/zh/docs/building-blocks/context) — `AgentState`、`RuntimeContext`、`AgentStateStore` 持久化、多用户隔离
 - [记忆](/dev/zh/docs/harness/memory) — 两层记忆
@@ -85,4 +85,4 @@ en_link: /dev/en/docs/harness/architecture
 
 ## 模型输入的统一构建
 
-Harness 在最终模型调用边界统一组织 System、对话、任务状态和参考材料；动态业务信息通过 contextSource 接入。配置、默认行为和限制见 [上下文管理](/dev/zh/docs/harness/context)。
+Harness 在最终模型调用前统一组织 System 指令、技能目录、对话、临时状态和参考材料。动态业务信息通过 `contextSource` 接入。配置、默认行为和限制见[上下文管理](/dev/zh/docs/harness/context)。

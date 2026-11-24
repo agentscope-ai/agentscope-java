@@ -55,6 +55,11 @@ public class JevAutoConfiguration {
             builder.baseUrl(baseUrl);
         }
 
+        String endpointPath = trimToNull(properties.getEndpointPath());
+        if (endpointPath != null) {
+            builder.endpointPath(endpointPath);
+        }
+
         String model = trimToNull(properties.getModel());
         if (model != null) {
             builder.model(model);

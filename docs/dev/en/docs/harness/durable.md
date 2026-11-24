@@ -97,6 +97,110 @@ runtime context and Durable workspace. The Runtime owns the durable lease and ta
 ThreadJournal owns native Agent history; Durable scheduling remains in the Durable Runtime.
 The namespace maps to `RuntimeContext.userId`; identity is invocation-scoped.
 
+### Run model reasoning in a Durable Worker
+
+Use `withModelExecutions` to hand off reasoning from a ReAct or Harness Agent to a
+`ModelWorker`. The Agent saves its recovery position before submitting a model
+request. The Worker claims a lease for the request's route, runs the provider and
+commits output in ordered batches. The first committed batch makes the original
+Turn runnable. Any compatible Runtime can replay committed batches and read
+subsequent ones using the same Session, Thread, Turn and model call IDs. Later
+Turns on the same Thread remain queued until the current Turn settles.
+
+For a local deployment, use SQLite for both records and output bytes:
+
+```java
+var records = JdbcRecordStore.sqlite(Path.of("./durable.db"));
+var objects = new RecordObjectStore(records);
+var wakeups = Wakeups.local();
+var backend = new TransactionalSessionBackend(records, objects).withWakeups(wakeups);
+var executions = new TransactionalModelExecutionStore(
+        records, new ObjectModelOutputStore(objects), wakeups);
+var adapter = AgentScopeAdapter.forReAct(
+        binding -> ReActAgent.builder().name("assistant").model(model), Map.of())
+        .withModelExecutions(executions, "reasoning");
+var runtime = DurableRuntime.builder().backend(backend)
+        .harness("assistant", "definition-v1", adapter).build();
+var worker = new ModelWorker(executions, "reasoning", ModelExecutor.using(name -> model));
+worker.start();
+runtime.start();
+```
+
+Keep the Worker and Runtime running for the lifetime of their hosts and close
+them at shutdown. The resolver passed to `ModelExecutor.using` resolves the
+requested model name using the Worker's provider configuration.
+
+In a distributed deployment, share a transactional record database, such as
+PostgreSQL through `JdbcRecordStore`, across the Session backend, Agent and Worker.
+The database stores the execution state, output sequence and storage references.
+Supply a shared `S3ObjectStore` or `OssObjectStore` to both
+`TransactionalSessionBackend` and `ObjectModelOutputStore` so handed-off model
+chunks and their journal content live in object storage. Direct calls use the
+Journal's size-based storage rule. Use `RocketMqWakeups` to notify
+Workers and Runtimes of changes. They also check durable state periodically to
+recover from delayed or lost notifications.
+
+A custom `ModelOutputStore` can use a replayable message broker as its output
+store. Its `write` returns a stable locator, such as a topic, partition and offset.
+Its `read` must be able to retrieve that exact batch from another instance until
+the Turn no longer needs to resume. The runtime commits the locator only after
+the write succeeds. If a Worker loses its lease after starting a provider call,
+the execution settles as `UNKNOWN` and the Runtime can handle that outcome
+without automatically issuing a second provider call.
+
+### Dispatch reasoning to a model queue
+
+Register `adapter.withQueuedModel(publisher)` as the harness for this definition. Both
+ReAct and Harness factories support this option. The publisher receives a
+`QueuedModelRequest` with the target Thread and Turn, call ID, model, prepared
+messages, tool schemas and generation options. Acknowledge only after the broker accepts the
+request. Recovery can repeat a send whose acknowledgement was lost, using the same call ID,
+and may trigger another provider request. Workers use their configured provider credentials.
+Harness memory and finalization model calls keep their own execution path.
+
+The adapter commits the prepared request and Agent recovery position before dispatch. Once
+dispatched, the Turn waits without holding its Runtime invocation. Replies resume the same
+Turn on any compatible Runtime that shares the backend. Later Turns on the same Thread
+can be submitted and remain queued behind it. To wake the waiting Turn, the reply consumer
+uses the original request's Thread and Turn:
+
+```java
+var turn = runtime.getSession(request.thread().session())
+        .getThread(request.thread().threadId()).getTurn(request.turnId());
+String deliveryId = java.util.UUID.randomUUID().toString();
+boolean accepted = QueuedModelRequest.begin(turn, request.callId(), deliveryId);
+```
+
+Call begin once before generation. If accepted is false, acknowledge the MQ delivery and return. Every frame from an accepted generation uses the same delivery ID.
+
+```java
+var signal = QueuedModelRequest.reply(
+        request.callId(), deliveryId, sequence, chatResponse, last);
+boolean stored = QueuedModelRequest.accept(turn, signal);
+```
+
+A false stored result is an authoritative ignored reply and can also be acknowledged.
+
+Start at sequence zero. A complete response uses a single terminal frame. For streaming,
+use consecutive sequence numbers and mark the last frame terminal. A terminal frame may
+omit the response if all chunks were sent earlier. Use `QueuedModelRequest.failure` for
+a terminal error. Acknowledge each broker delivery after the signal is persisted. Retrying
+the same frame uses the same signal ID and payload. The first frame wakes a compatible
+host, which displays ordered deltas and advances the ReAct loop after the terminal frame.
+
+By default, the adapter uses a five-minute idle timeout, initially measured from broker acceptance.
+Each newly consumed ordered frame renews the persisted deadline. Replaying frames after a Runtime replacement does not renew it.
+Set a different budget with `withQueuedModel(publisher, Duration.ofMinutes(15))`. The deadline
+is persisted across Runtime replacements. At the deadline, a missing frame fails the Turn with
+the call ID and expected sequence. A replacement can still process replies already available.
+If a collector dies after publishing a partial reply, its replacement replays the persisted
+chunks with the same message ID and attempt and a higher presentation revision. Clients replace
+the previous partial text when that revision starts.
+Malformed reply frames fail the Turn before later chunks can trigger tools.
+With a configured fallback model, a provider failure before the first response can dispatch the
+fallback as a separate call. A replacement host resumes that call. Suspending the host, an invalid
+frame, or a failure after the first response does not trigger another model dispatch.
+
 ## Reconnect and control tasks
 
 ### Reopen an existing task
@@ -992,3 +1096,26 @@ tasks in a reused Thread. Cancellation before admission stores a tombstone; a la
 The transaction rejects cross-Session targets, the parent Thread itself and Thread dependency cycles formed
 by unfinished delegations. `turn.delegated`, `tool.delegated` and `tool.delegation.cancel_requested` are common
 public events; they do not replace the actual child result or its application by the parent.
+
+Publisher RuntimeExceptions represent unknown broker acceptance and use the bounded host recovery policy with the same call ID. Throw a DurableException with an explicit code for definite rejection. Reply consumers can use QueuedModelRequest.accept to persist replies and safely acknowledge late deliveries to completed or cancelling Turns. Duplicate provider billing after uncertain provider acceptance remains possible.
+
+Workers start each generation with `QueuedModelRequest.begin(turn, callId, deliveryId)`.
+Use a unique delivery ID for each replacement generation, and reuse it when retrying that
+generation's begin command. Check its boolean result before calling the provider. A false
+result means the call is sealed or the Turn has ended and the delivery can be acknowledged.
+Pass the delivery ID to the attempt-aware `reply` and `failure` overloads. The backend assigns
+begin commands a monotonic epoch inside its transaction. New attempts replace previously
+displayed partial text on the original Turn. Old-attempt replies return an ignored receipt
+and can be acknowledged, including conflicting late content. After receiving the ordered
+terminal frame, the collector atomically seals the winning attempt before allowing tool dispatch.
+A concurrent takeover forces collector recovery, and a sealed call rejects further takeovers.
+
+The Throwable failure overload classifies provider HTTP 429 and 5xx, I/O failures and timeouts
+as transient. Other HTTP statuses and unclassified errors are permanent. Workers can specify
+retryability explicitly. Transient errors consume the persisted host retry budget and dispatch
+a successor model call on the same Turn. Permanent errors retain the configured fallback
+behavior. The queue collector emits the standard model request started, usage and ended events
+through the core request observer. These events describe collector observation, and a collector
+replacement starts a new observation of persisted replies.
+
+Collectors subscribe to the configured backend wakeups before reading replies and unsubscribe on completion, failure or cancellation. Lost hints are repaired by bounded backoff polling up to one second. Beginning a worker generation keeps the Turn suspended until its first response arrives.

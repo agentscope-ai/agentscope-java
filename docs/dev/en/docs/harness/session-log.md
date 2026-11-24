@@ -46,7 +46,7 @@ var events = journal.readAfter(0, 100);
 
 Reads neither claim a writer nor repair state or invoke a model. Harness also supplies `threadTranscript(ctx)` and `inspectThread(ctx)`. Native queries and storage SPIs are blocking; WebFlux applications must schedule them on suitable blocking workers rather than network event loops.
 
-`ThreadHistory.Transcript` contains complete messages and `asOfSeq`, not a public UI snapshot with task controls, partial text and tool progress. Durable applications restore the UI through Session/Thread/Turn `snapshot()`, `history()` and event APIs instead of inferring Turn state from native logs. See the runnable [recoverable chat example](/v2/en/blogs/best-practices/session-chat).
+`ThreadHistory.Transcript` contains complete messages and `asOfSeq`, not a public UI snapshot with task controls, partial text and tool progress. Durable applications restore the UI through Session/Thread/Turn `snapshot()`, `history()` and event APIs instead of inferring Turn state from native logs. See the runnable [recoverable chat example](/dev/en/blogs/best-practices/session-chat).
 
 ## Event envelope and reads
 
@@ -81,6 +81,8 @@ Recording failures do not trigger provider retries, and committed-result replay 
 ## Storage and backend configuration
 
 Harness defaults to `WorkspaceThreadJournalStore`, scoped by its Workspace Filesystem. POSIX local storage uses atomic file commits under `.agentscope-runtime/`; Windows uses `journal.sqlite3` in that directory. Remote storage uses a reserved BaseStore partition. Do not edit internal files or keys manually.
+
+With `RemoteFilesystemSpec`, native thread journals use the remote `sessions` backend and its configured isolation scope. Custom `CompositeFilesystem` assemblies can pass an explicit journal backend as the third constructor argument; file routing remains independent. Existing local journals are not migrated automatically.
 
 Override storage with `.threadJournalStore(store)`. Custom backends implement `ThreadJournalStore`; atomic storage implementations can supply `AtomicJournalStorage` and reuse `AtomicThreadJournal`. Preserve CAS, writer fencing, ordered/idempotent batches and export cursors. Filesystems expose this through `journalStorage(context)`; ordinary file reads/writes cannot implement atomic journal commits.
 
