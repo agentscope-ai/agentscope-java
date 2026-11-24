@@ -164,7 +164,7 @@ public final class GitHubChannel implements Channel {
 
     @Override
     public void stop() {
-        registry.unregister(channelId);
+        registry.unregister(channelId, this);
         log.info("GitHub channel '{}' stopped", channelId);
     }
 

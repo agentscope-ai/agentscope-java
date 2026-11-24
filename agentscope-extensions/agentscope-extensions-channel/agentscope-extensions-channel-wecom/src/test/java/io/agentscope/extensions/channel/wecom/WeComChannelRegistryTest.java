@@ -1,0 +1,101 @@
+/*
+ * Copyright 2024-2026 the original author or authors.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package io.agentscope.extensions.channel.wecom;
+
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
+
+import io.agentscope.harness.agent.gateway.channel.ChannelConfig;
+import java.util.Map;
+import java.util.UUID;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.Test;
+
+/** Real channel stop calls must not detach a different instance's callbacks. */
+class WeComChannelRegistryTest {
+    private final WeComChannelRegistry registry = WeComChannelRegistry.instance();
+    private final String channelId = "registry-test-" + UUID.randomUUID();
+
+    @AfterEach
+    void clearRegistration() {
+        registry.unregister(channelId);
+    }
+
+    @Test
+    void stoppingReplacedChannelPreservesSuccessor() {
+        WeComChannel original = channel();
+        WeComChannel successor = channel();
+        registry.register(original);
+        registry.register(successor);
+        original.stop();
+        assertSame(successor, registry.get(channelId));
+    }
+
+    @Test
+    void stoppingUnregisteredChannelPreservesActiveRegistration() {
+        WeComChannel active = channel();
+        registry.register(active);
+        channel().stop();
+        assertSame(active, registry.get(channelId));
+    }
+
+    @Test
+    void repeatedStopCannotDetachLaterRegistration() {
+        WeComChannel original = channel();
+        registry.register(original);
+        original.stop();
+        assertNull(registry.get(channelId));
+        WeComChannel successor = channel();
+        registry.register(successor);
+        original.stop();
+        assertSame(successor, registry.get(channelId));
+    }
+
+    @Test
+    void matchingStopRemovesRegistrationAndCanBeRepeated() {
+        WeComChannel active = channel();
+        registry.register(active);
+        active.stop();
+        active.stop();
+        assertNull(registry.get(channelId));
+    }
+
+    @Test
+    void explicitUnregisterByIdKeepsExistingBehavior() {
+        registry.register(channel());
+        registry.unregister(channelId);
+        assertNull(registry.get(channelId));
+    }
+
+    private WeComChannel channel() {
+        return WeComChannel.fromProperties(
+                channelId,
+                ChannelConfig.of(channelId, "main"),
+                Map.of(
+                        "corpId",
+                        "test-corp",
+                        "agentId",
+                        "1",
+                        "secret",
+                        "test-secret",
+                        "token",
+                        "test-token",
+                        "encodingAesKey",
+                        java.util.Base64.getEncoder()
+                                .withoutPadding()
+                                .encodeToString(new byte[32])));
+    }
+}

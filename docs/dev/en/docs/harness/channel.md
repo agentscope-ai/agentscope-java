@@ -320,6 +320,8 @@ gw.stop();    // calls stop() on all channels
 
 ## Built-in channel adapters
 
+GitHub, GitLab, Feishu and WeCom callback registrations belong to their channel instances. If you register a replacement under the same channel ID, stopping the old instance does not detach the replacement. Stopping the currently registered instance removes its route; an explicit registry `unregister(channelId)` still removes the route by ID. This behavior does not migrate in-flight agent runs between instances.
+
 AgentScope provides ready-to-use Channel adapters for popular messaging platforms as extension modules:
 
 - [DingTalk](/dev/en/integration/channel/dingtalk) — Stream protocol (persistent WebSocket)

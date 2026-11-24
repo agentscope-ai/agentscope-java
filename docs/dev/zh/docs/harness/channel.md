@@ -320,6 +320,8 @@ gw.stop();    // 调用所有 channel 的 stop()
 
 ## 内置 Channel 适配器
 
+GitHub、GitLab、飞书和企业微信的回调注册与 channel 实例绑定。如果使用同一个 channel ID 注册了替代实例，停止旧实例不会移除替代实例的回调路由。停止当前已注册的实例会移除其路由；显式调用 registry 的 `unregister(channelId)` 仍按 ID 移除路由。此行为不会在实例之间迁移正在进行的 Agent 调用。
+
 AgentScope 提供了多个开箱即用的 Channel 适配器作为扩展模块：
 
 - [钉钉](/dev/zh/integration/channel/dingtalk) — Stream 协议（持久 WebSocket）
