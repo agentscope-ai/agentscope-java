@@ -330,6 +330,12 @@ AgentScope provides ready-to-use Channel adapters for popular messaging platform
 
 See the [Channel Adapters](/dev/en/integration/channel/index) integration overview for details.
 
+### Webhook redelivery
+
+The default in-process `IdempotencyStore` retains up to 10,000 event keys for five minutes. A duplicate of a retained, unexpired key is rejected without evicting another entry, even when the store is full. A new key may evict an existing entry to stay within the capacity limit, so the retention period is not a guarantee under heavy traffic.
+
+The store does not share keys across processes or preserve them after a restart. For multi-instance deployments, use a channel's programmatic `InboundEventDeduplicator` overload with a shared implementation; the config-driven channel factory uses the process-local default.
+
 ## Related pages
 
 - [Subagent](/dev/en/docs/harness/subagent) — declaring and spawning subagents, background tasks, streaming forwarding

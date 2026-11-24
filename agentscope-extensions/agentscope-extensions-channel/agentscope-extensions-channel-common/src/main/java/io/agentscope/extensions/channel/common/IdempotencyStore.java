@@ -36,6 +36,7 @@ public final class IdempotencyStore implements InboundEventDeduplicator {
     private final long ttlMillis;
     private final int maxEntries;
     private final ConcurrentHashMap<String, Long> seen = new ConcurrentHashMap<>();
+    private final Object admissionLock = new Object();
 
     /** Default 5-minute TTL, 10k entries — sufficient for any single channel's retry burst. */
     public IdempotencyStore() {
@@ -65,10 +66,18 @@ public final class IdempotencyStore implements InboundEventDeduplicator {
             return true;
         }
         long now = System.currentTimeMillis();
-        sweep(now);
-        Long prior = seen.putIfAbsent(key, now);
+        Long prior = seen.get(key);
         if (prior == null) {
-            return true;
+            // Only a new key needs room. Recheck under the admission lock so concurrent
+            // deliveries cannot evict the entry another caller just inserted for this key.
+            synchronized (admissionLock) {
+                prior = seen.get(key);
+                if (prior == null) {
+                    sweep(now);
+                    seen.put(key, now);
+                    return true;
+                }
+            }
         }
         if (now - prior > ttlMillis) {
             // Only the CAS winner restarts the window; the loser sees a redelivery.
@@ -86,7 +95,7 @@ public final class IdempotencyStore implements InboundEventDeduplicator {
         while (it.hasNext()) {
             Map.Entry<String, Long> e = it.next();
             if (now - e.getValue() > ttlMillis) {
-                it.remove();
+                seen.remove(e.getKey(), e.getValue());
             }
         }
         // Hard cap: if still over budget, evict arbitrary entries.
