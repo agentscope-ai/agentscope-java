@@ -441,10 +441,12 @@ public class WorkspaceContextMiddleware implements HarnessRuntimeMiddleware {
                                 + " other backends.\n");
             }
             if (!artifactDeliveryEnabled) {
+                // The flag only covers the harness deliver_artifact tool; hosts may register
+                // their own delivery tools, so defer to the tool list instead of denying them.
                 sb.append(
-                        "No artifact delivery tool is configured. Files remain in the configured"
-                                + " execution backend; describe their location and any retrieval"
-                                + " work still needed.\n");
+                        "Unless your tool list includes a delivery or upload tool, files remain"
+                                + " in the configured execution backend; describe their location"
+                                + " and any retrieval work still needed.\n");
             }
         } else if (fs instanceof CompositeFilesystem) {
             sb.append("Distributed workspace template root: ")

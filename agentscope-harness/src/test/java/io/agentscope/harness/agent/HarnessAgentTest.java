@@ -428,7 +428,9 @@ class HarnessAgentTest {
         agent.call(userText("hi"), RuntimeContext.builder().sessionId("s1").build()).block();
 
         String combined = capturedPrompt(model);
-        assertTrue(combined.contains("No artifact delivery tool is configured"), () -> combined);
+        assertTrue(
+                combined.contains("Unless your tool list includes a delivery or upload tool"),
+                () -> combined);
         assertFalse(combined.contains("deliver_artifact"), () -> combined);
     }
 
