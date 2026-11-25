@@ -47,6 +47,10 @@ DashScopeChatModel model = DashScopeChatModel.builder()
     .build();
 ```
 
+## Streaming responses
+
+The DashScope SSE parser skips malformed JSON payloads and JSON `null` frames, so they do not replace valid responses that follow. Provider error responses still terminate the stream with `DashScopeHttpException` and retain the raw response body, including any request ID; transport failures remain errors rather than being treated as empty output. Skipping an invalid frame cannot recover content missing from that frame.
+
 ## Spring Boot
 
 Spring Boot applications can use the DashScope starter:
