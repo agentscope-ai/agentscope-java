@@ -426,6 +426,8 @@ class GatewaySubagentMaterializerRecoveryTest {
                                                         Map.of(
                                                                 "agent_id",
                                                                 "worker",
+                                                                "reusable",
+                                                                true,
                                                                 "expose_to_user",
                                                                 true))
                                                 .build())

@@ -40,14 +40,11 @@ import io.agentscope.harness.agent.subagent.task.TaskRepository;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.function.Function;
 import java.util.function.Supplier;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -59,6 +56,7 @@ import reactor.core.publisher.Mono;
 class AgentSpawnToolOwnershipTest {
     private final AtomicInteger creations = new AtomicInteger();
     private final AtomicInteger calls = new AtomicInteger();
+    private Runnable beforeCreate = () -> {};
     private final DefaultAgentManager manager =
             new DefaultAgentManager(
                     List.of(
@@ -67,6 +65,7 @@ class AgentSpawnToolOwnershipTest {
                                     "worker",
                                     rc -> {
                                         creations.incrementAndGet();
+                                        beforeCreate.run();
                                         var child = mock(Agent.class);
                                         when(child.call(anyList()))
                                                 .thenAnswer(
@@ -138,48 +137,30 @@ class AgentSpawnToolOwnershipTest {
         assertEquals(0, calls.get());
     }
 
-    /** Pauses only the first caller after computeIfAbsent has published its value. */
-    private static final class PublicationPausedMap extends ConcurrentHashMap<String, Object> {
-        private final AtomicBoolean first = new AtomicBoolean(true);
-        private final CountDownLatch published = new CountDownLatch(1);
-        private final CountDownLatch resume = new CountDownLatch(1);
-
-        @Override
-        public Object computeIfAbsent(
-                String key, Function<? super String, ? extends Object> mappingFunction) {
-            Object value = super.computeIfAbsent(key, mappingFunction);
-            if (first.compareAndSet(true, false)) {
-                published.countDown();
-                try {
-                    assertTrue(resume.await(30, TimeUnit.SECONDS));
-                } catch (InterruptedException e) {
-                    Thread.currentThread().interrupt();
-                    throw new AssertionError(e);
-                }
-            }
-            return value;
-        }
-    }
-
     @Test
     void concurrentFirstSpawnPublishesRegistryBeforeReuseAndCannotReviveInvalidatedEntry()
             throws Exception {
         var tool = tool();
         var owner = context("alice", "parent-a");
         var state = owner.getAgentState();
-        var paused = new PublicationPausedMap();
-        var field = AgentSpawnTool.class.getDeclaredField("agentsByKey");
-        field.setAccessible(true);
-        field.set(tool, paused);
+        var creationStarted = new CountDownLatch(1);
+        var resume = new CountDownLatch(1);
+        beforeCreate =
+                () -> {
+                    creationStarted.countDown();
+                    try {
+                        assertTrue(resume.await(30, TimeUnit.SECONDS));
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                        throw new AssertionError(e);
+                    }
+                };
         var executor = Executors.newFixedThreadPool(8);
         try {
             Future<String> first = executor.submit(() -> spawn(tool, owner));
-            assertTrue(paused.published.await(10, TimeUnit.SECONDS));
-            String key = paused.keySet().iterator().next();
-            assertTrue(
-                    state.getToolContext().getSpawnRegistry().containsKey(key),
-                    "registry must already exist when the cache is published");
-            assertTrue(cache(tool, "labelToKey").containsValue(key));
+            assertTrue(creationStarted.await(10, TimeUnit.SECONDS));
+            assertTrue(state.getToolContext().getSpawnRegistry().isEmpty());
+            assertTrue(cache(tool, "agentsByKey").isEmpty());
 
             List<Future<String>> reuses = new ArrayList<>();
             for (int i = 0; i < 7; i++) {
@@ -192,11 +173,13 @@ class AgentSpawnToolOwnershipTest {
                                                         .agentState(state)
                                                         .build())));
             }
+            resume.countDown();
+            String key = first.get(10, TimeUnit.SECONDS);
             for (Future<String> reuse : reuses) {
                 assertEquals(key, reuse.get(10, TimeUnit.SECONDS));
             }
-            paused.resume.countDown();
-            assertEquals(key, first.get(10, TimeUnit.SECONDS));
+            assertTrue(state.getToolContext().getSpawnRegistry().containsKey(key));
+            assertTrue(cache(tool, "labelToKey").containsValue(key));
             assertEquals(1, creations.get(), "all eight successful spawns share one factory call");
             assertEquals(1, state.getToolContext().getSpawnRegistry().size());
 
@@ -230,7 +213,7 @@ class AgentSpawnToolOwnershipTest {
             assertEquals(1, creations.get(), "concurrent invalidation must not create or revive");
             assertEquals(0, calls.get());
         } finally {
-            paused.resume.countDown();
+            resume.countDown();
             executor.shutdownNow();
             assertTrue(executor.awaitTermination(10, TimeUnit.SECONDS));
         }
@@ -246,8 +229,10 @@ class AgentSpawnToolOwnershipTest {
         String unknown = send(tool, other, "agent:worker:unknown", ToolResultState.ERROR);
         assertEquals(unknown, send(tool, other, key, ToolResultState.ERROR));
         assertEquals(
-                "No active subagents.", assertText(tool.agentList(other), ToolResultState.SUCCESS));
-        assertEquals("No active subagents.", assertText(tool.agentList(), ToolResultState.SUCCESS));
+                "No addressable subagents.",
+                assertText(tool.agentList(other), ToolResultState.SUCCESS));
+        assertEquals(
+                "No addressable subagents.", assertText(tool.agentList(), ToolResultState.SUCCESS));
         assertFalse(assertText(tool.agentList(other), ToolResultState.SUCCESS).contains(key));
         assertEquals(
                 "Error: Unknown label: work",
@@ -263,7 +248,8 @@ class AgentSpawnToolOwnershipTest {
                         key, owner.getAgentState().getToolContext().getSpawnRegistry().get(key));
         assertEquals(unknown, send(tool, other, key, ToolResultState.ERROR));
         assertEquals(
-                "No active subagents.", assertText(tool.agentList(other), ToolResultState.SUCCESS));
+                "No addressable subagents.",
+                assertText(tool.agentList(other), ToolResultState.SUCCESS));
         assertTrue(send(tool, owner, key, ToolResultState.SUCCESS).contains("child result"));
         assertTrue(assertText(tool.agentList(owner), ToolResultState.SUCCESS).contains(key));
         assertEquals(1, creations.get());
@@ -280,7 +266,7 @@ class AgentSpawnToolOwnershipTest {
         String unknown = send(tool, missing, "unknown", ToolResultState.ERROR);
         assertEquals(unknown, send(tool, missing, key, ToolResultState.ERROR));
         assertEquals(
-                "No active subagents.",
+                "No addressable subagents.",
                 assertText(tool.agentList(missing), ToolResultState.SUCCESS));
         missing.setAgentState(null);
         assertEquals(unknown, send(tool, missing, key, ToolResultState.ERROR));
@@ -292,7 +278,8 @@ class AgentSpawnToolOwnershipTest {
                                 key, entry.agentId(), "wrong-child", entry.label(), entry.depth()));
         assertEquals(unknown, send(tool, owner, key, ToolResultState.ERROR));
         assertEquals(
-                "No active subagents.", assertText(tool.agentList(owner), ToolResultState.SUCCESS));
+                "No addressable subagents.",
+                assertText(tool.agentList(owner), ToolResultState.SUCCESS));
         owner.getAgentState().getToolContext().putSpawnEntry(key, entry);
         assertTrue(send(tool, owner, key, ToolResultState.SUCCESS).contains("child result"));
         assertEquals(1, calls.get());
@@ -339,9 +326,17 @@ class AgentSpawnToolOwnershipTest {
 
     private static Map<?, ?> cache(AgentSpawnTool tool, String fieldName)
             throws ReflectiveOperationException {
-        var field = AgentSpawnTool.class.getDeclaredField(fieldName);
+        var registries = AgentSpawnTool.class.getDeclaredField("registries");
+        registries.setAccessible(true);
+        var scopes = (Map<?, ?>) registries.get(tool);
+        if (scopes.isEmpty()) {
+            return Map.of();
+        }
+        assertEquals(1, scopes.size());
+        var scope = scopes.values().iterator().next();
+        var field = scope.getClass().getDeclaredField(fieldName);
         field.setAccessible(true);
-        return (Map<?, ?>) field.get(tool);
+        return (Map<?, ?>) field.get(scope);
     }
 
     private static SpawnSnapshot snapshot(AgentSpawnTool tool, AgentState state)
@@ -447,6 +442,7 @@ class AgentSpawnToolOwnershipTest {
                 tool.agentSend(owner, foreignState, "unknown", null, "next", 5).block();
         assertText(unknown, ToolResultState.ERROR);
         assertEquals(unknown, tool.agentSend(owner, foreignState, key, null, "next", 5).block());
+        assertEquals(unknown, tool.agentRelease(owner, foreignState, key, null));
         assertEquals(
                 unknown,
                 tool.agentSpawn(owner, foreignState, "worker", "next", "work", 5, null).block());
@@ -454,7 +450,7 @@ class AgentSpawnToolOwnershipTest {
                 ToolResultBlock.error("Unknown label: work"),
                 tool.agentSend(owner, foreignState, null, "work", "next", 5).block());
         assertEquals(
-                "No active subagents.",
+                "No addressable subagents.",
                 assertText(
                         tool.agentList(
                                 RuntimeContext.builder(owner).agentState(foreignState).build()),
@@ -655,7 +651,7 @@ class AgentSpawnToolOwnershipTest {
             assertText(unknown, ToolResultState.ERROR);
             assertEquals(unknown, tool.agentSend(other, null, key, null, "next", 5).block());
             assertEquals(
-                    "No active subagents.",
+                    "No addressable subagents.",
                     assertText(tool.agentList(other), ToolResultState.SUCCESS));
             assertEquals(before, snapshot(tool, null));
         }

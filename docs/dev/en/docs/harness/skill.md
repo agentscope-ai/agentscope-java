@@ -274,7 +274,9 @@ agent.promoteSkill("notes-taker", "alice")                   // manually promote
 
 ## How the agent reads and runs skills
 
-When the agent reasons, it sees an `<available_skills>` runtime material listing skills currently in scope (large catalogs use a compact, paginated index):
+Harness renders the current skill catalog as an `<available_skills>` block in a request-only User message. The catalog normally precedes conversation history, so unchanged instructions and catalog text can form a shared prefix as the conversation grows. Cache reuse depends on the provider and its caching configuration. The catalog remains available on the first reasoning request after history compaction.
+
+Large catalogs use a compact, paginated index.
 
 ```xml
 <available_skills>

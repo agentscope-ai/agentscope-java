@@ -43,6 +43,7 @@ import io.agentscope.core.tool.Toolkit;
 import io.agentscope.durable.DurableException;
 import io.agentscope.durable.DurableJson;
 import io.agentscope.durable.DurableRuntime;
+import io.agentscope.durable.DurableTurn;
 import io.agentscope.durable.DurableTypes.ExecutionRequest;
 import io.agentscope.durable.DurableTypes.ExecutionResult;
 import io.agentscope.durable.DurableTypes.ExecutionState;
@@ -82,6 +83,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.BooleanSupplier;
 import java.util.function.Function;
+import java.util.function.Supplier;
 import org.apache.rocketmq.client.apis.ClientServiceProvider;
 import org.apache.rocketmq.client.apis.consumer.SimpleConsumer;
 import org.apache.rocketmq.client.apis.message.Message;
@@ -131,6 +133,13 @@ class RocketMqExecutionTest {
     }
 
     static final Duration POLL = Duration.ofMillis(10);
+
+    /** Redelivery window for the fake broker; it has to stay well above consumer latency. */
+    static final long ACK_TIMEOUT_MILLIS = 1000;
+
+    /** Shared await budget for every {@link #await} poll in this class; see {@link #waitUntil}. */
+    static final long AWAIT_DEADLINE_SECONDS = 30;
+
     static final ClientServiceProvider FACTORY = ClientServiceProvider.loadService();
     static final RocketMqExecutionTopology.Route TOPOLOGY =
             RocketMqExecutionTopology.route(RocketMqExecutionTopology.DEFAULT_NAMESPACE, "hands");
@@ -143,9 +152,57 @@ class RocketMqExecutionTest {
                             .withOrigin(new RunStepRef("brain-run", "brain-step")));
 
     static void await(BooleanSupplier condition) throws Exception {
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
+        assertTrue(waitUntil(condition), "Condition did not become true");
+    }
+
+    /** Waits as long as {@link #await(BooleanSupplier)}, then fails with the caller's snapshot. */
+    static void await(String what, BooleanSupplier condition, Supplier<String> diagnostics)
+            throws Exception {
+        assertTrue(
+                waitUntil(condition),
+                () ->
+                        what
+                                + " did not become true within "
+                                + AWAIT_DEADLINE_SECONDS
+                                + "s: "
+                                + diagnostics.get());
+    }
+
+    /**
+     * Recovery with injected broker failures needs far more than 10s when the runner is starved
+     * under -T1C: the turn kept progressing (modelCalls complete, acks climbing) yet missed the
+     * former 10s deadline on #4182, #4192 and #4103, and main's own run 44516464414 (2026-11-19,
+     * ubuntu-only). 30s is the repo's established deflake tier (#3726/#3774).
+     */
+    private static boolean waitUntil(BooleanSupplier condition) throws Exception {
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(AWAIT_DEADLINE_SECONDS);
         while (!condition.getAsBoolean() && System.nanoTime() < deadline) Thread.sleep(10);
-        assertTrue(condition.getAsBoolean(), "Condition did not become true");
+        return condition.getAsBoolean();
+    }
+
+    private static String recoveryDiagnostics(
+            DurableRuntime runtime, DurableTurn turn, Broker broker, AtomicInteger modelCalls) {
+        StringBuilder out = new StringBuilder("turnId=").append(turn.turnId());
+        try {
+            out.append(", turn.status=").append(turn.status().status());
+        } catch (RuntimeException e) {
+            out.append(", turn.status=<unreadable: ").append(e).append('>');
+        }
+        try {
+            Throwable failure = runtime.lastFailure(turn.threadKey());
+            out.append(", lastFailure=").append(failure == null ? "none" : failure.toString());
+        } catch (RuntimeException e) {
+            out.append(", lastFailure=<unreadable: ").append(e).append('>');
+        }
+        return out.append(", modelCalls=")
+                .append(modelCalls.get())
+                .append(", commandAcks=")
+                .append(broker.commandAcks.get())
+                .append(", eventAcks=")
+                .append(broker.eventAcks.get())
+                .append(", queuedEvents=")
+                .append(broker.events.size())
+                .toString();
     }
 
     @Test
@@ -220,7 +277,7 @@ class RocketMqExecutionTest {
                                         () -> {
                                             if (!acked.contains(message)) queue.add(message);
                                         },
-                                        50,
+                                        ACK_TIMEOUT_MILLIS,
                                         TimeUnit.MILLISECONDS);
                                 return List.of(message);
                             });
@@ -401,9 +458,11 @@ class RocketMqExecutionTest {
                 worker.start();
                 runtime.start();
                 await(
+                        "turn reaches SUCCEEDED",
                         () ->
                                 runtime.getSession(session).getTurn(turn.turnId()).status().status()
-                                        == TurnStatus.SUCCEEDED);
+                                        == TurnStatus.SUCCEEDED,
+                        () -> recoveryDiagnostics(runtime, turn, broker, modelCalls));
                 await(() -> broker.eventAcks.get() > 0);
                 assertEquals(
                         "done",

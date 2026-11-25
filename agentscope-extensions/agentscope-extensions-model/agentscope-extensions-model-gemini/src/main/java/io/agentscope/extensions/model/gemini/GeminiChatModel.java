@@ -24,6 +24,7 @@ import com.google.genai.types.GenerateContentConfig;
 import com.google.genai.types.GenerateContentResponse;
 import com.google.genai.types.HttpOptions;
 import com.google.genai.types.ProxyOptions;
+import com.google.genai.types.ThinkingConfig;
 import io.agentscope.core.formatter.Formatter;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.model.ChatModelBase;
@@ -40,6 +41,7 @@ import io.agentscope.extensions.model.gemini.formatter.GeminiToolsHelper;
 import io.agentscope.extensions.model.gemini.tool.GeminiServerTool;
 import java.time.Instant;
 import java.util.List;
+import java.util.Locale;
 import java.util.Objects;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -296,7 +298,36 @@ public class GeminiChatModel extends ChatModelBase {
         }
 
         formatter.applyOptions(configBuilder, options, defaultOptions);
+        applyThinkingConfig(configBuilder, GenerateOptions.mergeOptions(options, defaultOptions));
         return GeminiToolsHelper.mergeServerTools(configBuilder.build(), serverTools);
+    }
+
+    /** Maps thinking options directly to the Gemini request configuration. */
+    private void applyThinkingConfig(
+            GenerateContentConfig.Builder configBuilder, GenerateOptions options) {
+        Integer thinkingBudget = options.getThinkingBudget();
+        Boolean includeThoughts = options.getIncludeThoughts();
+        String reasoningEffort = options.getReasoningEffort();
+
+        if (thinkingBudget == null && includeThoughts == null && reasoningEffort == null) {
+            return;
+        }
+
+        ThinkingConfig.Builder builder = ThinkingConfig.builder();
+        if (includeThoughts != null) {
+            builder.includeThoughts(includeThoughts);
+        }
+        if (thinkingBudget != null) {
+            builder.thinkingBudget(thinkingBudget);
+        }
+        if (reasoningEffort != null) {
+            builder.thinkingLevel(normalizeReasoningEffort(reasoningEffort));
+        }
+        configBuilder.thinkingConfig(builder.build());
+    }
+
+    private static String normalizeReasoningEffort(String reasoningEffort) {
+        return reasoningEffort.trim().toUpperCase(Locale.ROOT);
     }
 
     /**

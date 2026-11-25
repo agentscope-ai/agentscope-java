@@ -55,6 +55,7 @@ public class TaskTool {
 
     @Tool(
             name = "task_output",
+            timeoutManaged = true,
             description =
                     "Read the full output of an existing background task. Reading does not start,"
                         + " resume, or re-run work. The task was created by agent_spawn/agent_send"

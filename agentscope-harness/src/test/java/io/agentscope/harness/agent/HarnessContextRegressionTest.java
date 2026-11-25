@@ -584,7 +584,9 @@ class HarnessContextRegressionTest {
                                                                                 .input(
                                                                                         Map.of(
                                                                                                 "agent_id",
-                                                                                                "worker"))
+                                                                                                "worker",
+                                                                                                "reusable",
+                                                                                                true))
                                                                                 .build())
                                                                 : List.of(
                                                                         TextBlock.builder()

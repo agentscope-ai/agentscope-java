@@ -19,12 +19,20 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.mock;
 
+import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
+import io.agentscope.harness.agent.filesystem.CompositeFilesystem;
+import io.agentscope.harness.agent.filesystem.OverlayFilesystem;
+import io.agentscope.harness.agent.filesystem.RoutedSandboxFilesystem;
 import io.agentscope.harness.agent.filesystem.model.EditResult;
+import io.agentscope.harness.agent.filesystem.sandbox.AbstractSandboxFilesystem;
 import java.nio.charset.CharacterCodingException;
 import java.nio.charset.StandardCharsets;
+import java.util.Map;
 import org.junit.jupiter.api.Test;
 
 class FilesystemUtilsTest {
@@ -298,5 +306,46 @@ class FilesystemUtilsTest {
         EditResult nulled = FilesystemUtils.validateEditArguments(null, "x");
         assertNotNull(nulled);
         assertTrue(nulled.error().contains("oldString must not be null or empty"));
+    }
+
+    // ================================================================
+    // primaryBackend
+    // ================================================================
+
+    @Test
+    void primaryBackend_returnsTheFilesystemWhenNothingIsWrapped() {
+        AbstractFilesystem plain = mock(AbstractFilesystem.class);
+
+        assertSame(plain, FilesystemUtils.primaryBackend(plain));
+        assertNull(FilesystemUtils.primaryBackend(null));
+    }
+
+    @Test
+    void primaryBackend_unwrapsRoutingLayers() {
+        AbstractSandboxFilesystem sandbox = mock(AbstractSandboxFilesystem.class);
+        AbstractFilesystem route = mock(AbstractFilesystem.class);
+
+        assertSame(
+                sandbox,
+                FilesystemUtils.primaryBackend(
+                        new CompositeFilesystem(sandbox, Map.of("memory-stores", route))));
+        assertSame(
+                sandbox,
+                FilesystemUtils.primaryBackend(
+                        new RoutedSandboxFilesystem(sandbox, Map.of("memory-stores", route))));
+        assertSame(
+                sandbox,
+                FilesystemUtils.primaryBackend(
+                        new CompositeFilesystem(
+                                new RoutedSandboxFilesystem(sandbox, Map.of("a", route)),
+                                Map.of("memory-stores", route))));
+    }
+
+    @Test
+    void primaryBackend_leavesOverlayLayersAlone() {
+        // Overlays expose shell execution through their upper layer; they are not routing layers.
+        OverlayFilesystem overlay = mock(OverlayFilesystem.class);
+
+        assertSame(overlay, FilesystemUtils.primaryBackend(overlay));
     }
 }

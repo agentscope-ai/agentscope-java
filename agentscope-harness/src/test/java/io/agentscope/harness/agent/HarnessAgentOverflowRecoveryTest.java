@@ -51,12 +51,14 @@ import java.util.Objects;
 import java.util.Queue;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.ValueSource;
 import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
 
 /** Verifies that overflow recovery continues the current reasoning step and preserves its input. */
 @HarnessQuiescence
@@ -149,8 +151,12 @@ class HarnessAgentOverflowRecoveryTest {
     }
 
     @ParameterizedTest
-    @CsvSource({"false,false", "false,true", "true,false", "true,true"})
-    void preservesStructuredOutputAcrossOverflow(boolean journal, boolean jsonSchema) {
+    @CsvSource({
+        "false,false,false", "false,false,true", "false,true,false", "false,true,true",
+        "true,false,false", "true,false,true", "true,true,false", "true,true,true"
+    })
+    void preservesStructuredOutputAcrossOverflow(
+            boolean journal, boolean jsonSchema, boolean stream) {
         var model = new ScriptedModel();
         try (var agent = newAgent(model, new InMemoryAgentStateStore(), new Toolkit(), journal)) {
             List<Msg> messages =
@@ -169,11 +175,18 @@ class HarnessAgentOverflowRecoveryTest {
                                     {"type":"object","properties":{"value":{"type":"string"}},"required":["value"]}
                                     """,
                                     JsonNode.class);
-            Msg result =
-                    (jsonSchema
+            Mono<Msg> response =
+                    stream
+                            ? (jsonSchema
+                                            ? agent.streamEvents(messages, schema, ctx)
+                                            : agent.streamEvents(messages, Output.class, ctx))
+                                    .ofType(AgentResultEvent.class)
+                                    .single()
+                                    .map(AgentResultEvent::getResult)
+                            : jsonSchema
                                     ? agent.call(messages, schema, ctx)
-                                    : agent.call(messages, Output.class, ctx))
-                            .block(Duration.ofSeconds(30));
+                                    : agent.call(messages, Output.class, ctx);
+            Msg result = response.block(Duration.ofSeconds(30));
             assertNotNull(result);
             assertEquals("structured", result.getStructuredData(Output.class).value());
             assertEquals(List.of(true, true), model.structuredRequests);
@@ -190,6 +203,56 @@ class HarnessAgentOverflowRecoveryTest {
                                 .map(AgentResultEvent::getResult)
                         : agent.call(input, ctx))
                 .block(Duration.ofSeconds(30));
+    }
+
+    @ParameterizedTest
+    @CsvSource({"class,false", "schema,false", "class,true", "schema,true"})
+    void structuredCallsRetainTheirOutputFormatDuringRecovery(
+            String outputFormat, boolean overflow) {
+        AgentStateStore store = new JsonFileAgentStateStore(stateDir);
+        StructuredOverflowModel model = new StructuredOverflowModel();
+        try (HarnessAgent agent = newAgent(model, store, new Toolkit(), false)) {
+            RuntimeContext ctx = runPriorTurns(agent);
+            model.overflowUntilSummarized.set(overflow);
+            Msg input = userMsg("Return a receipt with value ok.");
+            Msg reply;
+            if ("class".equals(outputFormat)) {
+                reply =
+                        agent.call(List.of(input), Receipt.class, ctx)
+                                .block(Duration.ofSeconds(30));
+            } else {
+                JsonNode schema =
+                        JsonUtils.getJsonCodec()
+                                .fromJson(
+                                        """
+                                        {"type":"object","properties":{"value":{"type":"string"}},
+                                         "required":["value"],"additionalProperties":false}
+                                        """,
+                                        JsonNode.class);
+                reply = agent.call(List.of(input), schema, ctx).block(Duration.ofSeconds(30));
+            }
+
+            assertNotNull(reply);
+            assertEquals(
+                    overflow, model.summarySeen.get(), "emergency compaction must run on overflow");
+            assertEquals(1, count(persistedContext(store), input), "input persisted once");
+            assertEquals(
+                    1, count(model.lastMainInput, input), "retry must not duplicate the input");
+            if (overflow) {
+                assertTrue(
+                        model.lastMainInput.stream()
+                                .noneMatch(m -> priorTurn(0).equals(m.getTextContent())),
+                        "retry must use the compacted history");
+            }
+            assertTrue(reply.hasStructuredData(), "recovery must preserve structured output");
+            assertEquals("ok", reply.getStructuredData(Receipt.class).value);
+            assertNotNull(
+                    model.lastMainOptions.getResponseFormat(), "retry must retain response_format");
+        }
+    }
+
+    public static class Receipt {
+        public String value;
     }
 
     private HarnessAgent newAgent(
@@ -278,6 +341,57 @@ class HarnessAgentOverflowRecoveryTest {
         public String probe() {
             calls.incrementAndGet();
             return "observed";
+        }
+    }
+
+    /** Rejects both structured-output paths until emergency compaction has summarized history. */
+    private static final class StructuredOverflowModel implements Model {
+        private final AtomicBoolean overflowUntilSummarized = new AtomicBoolean();
+        private final AtomicBoolean summarySeen = new AtomicBoolean();
+        private volatile List<Msg> lastMainInput = List.of();
+        private volatile GenerateOptions lastMainOptions;
+
+        @Override
+        public String getModelName() {
+            return "structured-overflow-model";
+        }
+
+        @Override
+        public boolean supportsNativeStructuredOutput() {
+            return true;
+        }
+
+        @Override
+        public boolean supportsNativeStructuredOutputWithTools() {
+            return true;
+        }
+
+        @Override
+        public Flux<ChatResponse> stream(
+                List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
+            if (messages.stream()
+                    .anyMatch(m -> m.getTextContent().contains("Context Extraction Assistant"))) {
+                summarySeen.set(true);
+                return text("Summary of the earlier discussion.");
+            }
+            if (messages.stream()
+                    .anyMatch(m -> m.getTextContent().contains("memory extraction assistant"))) {
+                return text("NO_REPLY");
+            }
+            lastMainInput = List.copyOf(messages);
+            lastMainOptions = options;
+            if (overflowUntilSummarized.get() && !summarySeen.get()) {
+                return overflow();
+            }
+            return text("{\"value\":\"ok\"}");
+        }
+
+        private static Flux<ChatResponse> text(String value) {
+            return Flux.just(
+                    ChatResponse.builder()
+                            .content(List.of(TextBlock.builder().text(value).build()))
+                            .finishReason("stop")
+                            .build());
         }
     }
 

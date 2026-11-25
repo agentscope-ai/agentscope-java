@@ -137,11 +137,14 @@ public class SubagentsMiddleware implements HarnessRuntimeMiddleware {
 
             Reconcile results before declaring success. COMPLETED describes execution, not goal
             acceptance; status: max_iterations / partial means unfinished work remains.
+
+            %s
             """;
     // @formatter:on
 
     private final List<SubagentEntry> baseEntries;
     private volatile Object subagentTool;
+    private volatile AgentSpawnTool ownedAgentSpawnTool;
     private final TaskTool taskTool;
     private final TaskRepository taskRepository;
     private final boolean isSessionMode;
@@ -179,7 +182,9 @@ public class SubagentsMiddleware implements HarnessRuntimeMiddleware {
         this.workspaceManager = workspaceManager;
         java.util.Objects.requireNonNull(taskRepository, "taskRepository");
         this.taskRepository = taskRepository;
-        this.subagentTool = new AgentSpawnTool(dam, taskRepository, 0);
+        AgentSpawnTool spawnTool = new AgentSpawnTool(dam, taskRepository, 0);
+        this.subagentTool = spawnTool;
+        this.ownedAgentSpawnTool = spawnTool;
         this.taskTool = new TaskTool(taskRepository);
         this.filesystem = filesystem;
         this.mainWorkspace = mainWorkspace;
@@ -208,6 +213,7 @@ public class SubagentsMiddleware implements HarnessRuntimeMiddleware {
         this.agentManager = null;
         this.workspaceManager = null;
         this.subagentTool = externalSubagentTool;
+        this.ownedAgentSpawnTool = null;
         java.util.Objects.requireNonNull(taskRepository, "taskRepository");
         this.taskRepository = taskRepository;
         this.taskTool = new TaskTool(taskRepository);
@@ -336,9 +342,20 @@ public class SubagentsMiddleware implements HarnessRuntimeMiddleware {
         if (this.subagentTool instanceof AgentSpawnTool ast) {
             ast.setGatewayBridge(bridge);
         } else {
-            this.subagentTool = new AgentSpawnTool(agentManager, taskRepository, 0, bridge);
+            AgentSpawnTool spawnTool = new AgentSpawnTool(agentManager, taskRepository, 0, bridge);
+            this.subagentTool = spawnTool;
+            this.ownedAgentSpawnTool = spawnTool;
         }
         return this;
+    }
+
+    /** Closes the internally-created spawn tool without touching an injected external tool. */
+    public synchronized void closeOwnedAgentSpawnTool() {
+        AgentSpawnTool spawnTool = ownedAgentSpawnTool;
+        if (spawnTool != null) {
+            ownedAgentSpawnTool = null;
+            spawnTool.close();
+        }
     }
 
     /**
@@ -687,7 +704,13 @@ public class SubagentsMiddleware implements HarnessRuntimeMiddleware {
         String spawnName = isSessionMode ? "sessions_spawn" : "agent_spawn";
         String sendName = isSessionMode ? "sessions_send" : "agent_send";
         String listName = isSessionMode ? "sessions_list" : "agent_list";
-        return String.format(SUBAGENT_SECTION_TEMPLATE, spawnName, sendName, listName);
+        String lifecycle =
+                isSessionMode
+                        ? ""
+                        : "Use reusable=false for one-shot tasks, or reusable=true for follow-ups."
+                                + " Release an idle retained subagent with `agent_release` to"
+                                + " invalidate its agent_key and public handles.";
+        return String.format(SUBAGENT_SECTION_TEMPLATE, spawnName, sendName, listName, lifecycle);
     }
 
     /**

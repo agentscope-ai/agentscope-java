@@ -101,6 +101,7 @@ public class ThreadHistoryTool {
     @Tool(
             name = "thread_search",
             readOnly = true,
+            prunable = false,
             description =
                     "Search native Thread conversation messages, tool calls and results for a"
                             + " keyword or phrase. Oversized matches are summarized; read a full"

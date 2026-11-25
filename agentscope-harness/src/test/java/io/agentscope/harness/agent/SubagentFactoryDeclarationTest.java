@@ -183,6 +183,7 @@ class SubagentFactoryDeclarationTest {
                                 parentState,
                                 "note-taker",
                                 "Remember the code word: heron.",
+                                true,
                                 null,
                                 30,
                                 null)
@@ -195,6 +196,7 @@ class SubagentFactoryDeclarationTest {
                                 nextParentState,
                                 "note-taker",
                                 "What is the code word?",
+                                true,
                                 null,
                                 30,
                                 null)
@@ -263,19 +265,19 @@ class SubagentFactoryDeclarationTest {
         AgentSpawnTool tool = new AgentSpawnTool(new DefaultAgentManager(entries, null), null, 0);
 
         String aliceFirst =
-                tool.agentSpawn(aliceContext, null, "note-taker", "first", label, 30, null)
+                tool.agentSpawn(aliceContext, null, "note-taker", "first", true, label, 30, null)
                         .map(result -> assertText(result, SUCCESS))
                         .block(TIMEOUT);
         String bobFirst =
-                tool.agentSpawn(bobContext, null, "note-taker", "first", label, 30, null)
+                tool.agentSpawn(bobContext, null, "note-taker", "first", true, label, 30, null)
                         .map(result -> assertText(result, SUCCESS))
                         .block(TIMEOUT);
         String aliceAgain =
-                tool.agentSpawn(aliceContext, null, "note-taker", "again", label, 30, null)
+                tool.agentSpawn(aliceContext, null, "note-taker", "again", true, label, 30, null)
                         .map(result -> assertText(result, SUCCESS))
                         .block(TIMEOUT);
         String bobAgain =
-                tool.agentSpawn(bobContext, null, "note-taker", "again", label, 30, null)
+                tool.agentSpawn(bobContext, null, "note-taker", "again", true, label, 30, null)
                         .map(result -> assertText(result, SUCCESS))
                         .block(TIMEOUT);
 
@@ -341,6 +343,7 @@ class SubagentFactoryDeclarationTest {
                                                     parentState,
                                                     "worker",
                                                     null,
+                                                    true,
                                                     "notes",
                                                     30,
                                                     null)

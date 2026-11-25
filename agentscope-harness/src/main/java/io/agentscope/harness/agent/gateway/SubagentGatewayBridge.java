@@ -64,4 +64,19 @@ public interface SubagentGatewayBridge {
             RuntimeContext context) {
         return expose(agentId, sessionId, agent, replyTo);
     }
+
+    /**
+     * Revokes every public handle exposed for the given child session.
+     *
+     * <p>The gateway owns the mapping from public handles to child sessions. The default value
+     * preserves compatibility with existing expose-only bridge implementations; gateway-backed
+     * bridges should override it so releasing a subagent also makes its public handles
+     * unaddressable.
+     *
+     * @param sessionId the child session whose exposed handles should be revoked
+     * @return whether the bridge revoked at least one handle or knows the capability is supported
+     */
+    default boolean revokeBySessionId(String sessionId) {
+        return false;
+    }
 }

@@ -157,6 +157,11 @@ public final class GatewayBootstrap {
                                 context != null ? context.getUserId() : null);
                 return new ExposeResult(subagentId);
             }
+
+            @Override
+            public boolean revokeBySessionId(String sessionId) {
+                return gateway.revokeSubagentsBySession(sessionId);
+            }
         };
     }
 

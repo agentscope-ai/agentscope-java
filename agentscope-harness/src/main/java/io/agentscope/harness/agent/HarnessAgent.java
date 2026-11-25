@@ -81,6 +81,7 @@ import io.agentscope.harness.agent.filesystem.sandbox.SandboxBackedFilesystem;
 import io.agentscope.harness.agent.filesystem.spec.LocalFilesystemSpec;
 import io.agentscope.harness.agent.filesystem.spec.RemoteFilesystemSpec;
 import io.agentscope.harness.agent.filesystem.spec.SandboxFilesystemSpec;
+import io.agentscope.harness.agent.filesystem.util.FilesystemUtils;
 import io.agentscope.harness.agent.gateway.HarnessGateway;
 import io.agentscope.harness.agent.gateway.SubagentGatewayBridge;
 import io.agentscope.harness.agent.gateway.channel.Channel;
@@ -530,7 +531,11 @@ public class HarnessAgent implements Agent, AutoCloseable {
             // race with resource cleanup (e.g., temp workspace deletion in tests).
             io.agentscope.harness.agent.memory.MemoryBackgroundTasks.awaitQuiescence(
                     5, java.util.concurrent.TimeUnit.SECONDS);
-            shutdownTaskRepository();
+            try {
+                shutdownTaskRepository();
+            } finally {
+                closeOwnedAgentSpawnTool();
+            }
         } finally {
             try {
                 if (ownedWorkspaceIndex != null) {
@@ -552,6 +557,14 @@ public class HarnessAgent implements Agent, AutoCloseable {
         }
         if (taskRepo != null) {
             taskRepo.shutdown();
+        }
+    }
+
+    private void closeOwnedAgentSpawnTool() {
+        if (subagentMiddleware instanceof SubagentsMiddleware sm) {
+            sm.closeOwnedAgentSpawnTool();
+        } else if (subagentMiddleware instanceof DynamicSubagentsMiddleware dsm) {
+            dsm.closeOwnedAgentSpawnTool();
         }
     }
 
@@ -772,6 +785,11 @@ public class HarnessAgent implements Agent, AutoCloseable {
                                         context != null ? context.getUserId() : null);
                         return new ExposeResult(subagentId);
                     }
+
+                    @Override
+                    public boolean revokeBySessionId(String sessionId) {
+                        return gw.revokeSubagentsBySession(sessionId);
+                    }
                 };
         io.agentscope.harness.agent.subagent.DefaultAgentManager agentManager = null;
         if (subagentMiddleware instanceof SubagentsMiddleware sm) {
@@ -848,6 +866,32 @@ public class HarnessAgent implements Agent, AutoCloseable {
      */
     public Mono<Msg> call(String text, RuntimeContext ctx) {
         return call(new UserMessage(text), ctx);
+    }
+
+    /**
+     * Calls the agent with a plain text input, structured output class, and per-call
+     * {@link RuntimeContext}.
+     *
+     * @param text           input text (wrapped into a {@link UserMessage})
+     * @param structuredModel class defining the expected structure
+     * @param ctx             runtime context to propagate into the call
+     * @return response message with structured data in metadata
+     */
+    public Mono<Msg> call(String text, Class<?> structuredModel, RuntimeContext ctx) {
+        return call(List.of(new UserMessage(text)), structuredModel, ctx);
+    }
+
+    /**
+     * Calls the agent with a plain text input, structured output JSON schema, and per-call
+     * {@link RuntimeContext}.
+     *
+     * @param text  input text (wrapped into a {@link UserMessage})
+     * @param schema JSON schema defining the expected structure
+     * @param ctx   runtime context to propagate into the call
+     * @return response message with structured data in metadata
+     */
+    public Mono<Msg> call(String text, JsonNode schema, RuntimeContext ctx) {
+        return call(List.of(new UserMessage(text)), schema, ctx);
     }
 
     public Mono<Msg> call(List<Msg> msgs, RuntimeContext ctx) {
@@ -1003,6 +1047,36 @@ public class HarnessAgent implements Agent, AutoCloseable {
     }
 
     /**
+     * Stream fine-grained {@link AgentEvent}s for a single message with structured output
+     * (class-driven) and a caller-supplied {@link RuntimeContext}. Mirrors
+     * {@code ReActAgent#streamEvents(Msg, Class, RuntimeContext)} with the same
+     * sandbox-lifecycle acquire/release semantics.
+     *
+     * @param msg input message
+     * @param structuredModel class defining the expected structure
+     * @param ctx runtime context to propagate into the call
+     * @return event stream covering the full agent invocation lifecycle
+     */
+    public Flux<AgentEvent> streamEvents(Msg msg, Class<?> structuredModel, RuntimeContext ctx) {
+        return streamEvents(List.of(msg), structuredModel, ctx);
+    }
+
+    /**
+     * Stream fine-grained {@link AgentEvent}s for a single message with structured output
+     * (JSON-schema-driven) and a caller-supplied {@link RuntimeContext}. Mirrors
+     * {@code ReActAgent#streamEvents(Msg, JsonNode, RuntimeContext)} with the same
+     * sandbox-lifecycle acquire/release semantics.
+     *
+     * @param msg input message
+     * @param schema JSON schema defining the expected structure
+     * @param ctx runtime context to propagate into the call
+     * @return event stream covering the full agent invocation lifecycle
+     */
+    public Flux<AgentEvent> streamEvents(Msg msg, JsonNode schema, RuntimeContext ctx) {
+        return streamEvents(List.of(msg), schema, ctx);
+    }
+
+    /**
      * @deprecated Use {@link #streamEvents(String, RuntimeContext)} with explicit runtime context.
      */
     @Deprecated(since = "2.2.0")
@@ -1020,6 +1094,37 @@ public class HarnessAgent implements Agent, AutoCloseable {
      */
     public Flux<AgentEvent> streamEvents(String text, RuntimeContext ctx) {
         return streamEvents(new UserMessage(text), ctx);
+    }
+
+    /**
+     * Stream fine-grained {@link AgentEvent}s for a plain text input with structured output
+     * (class-driven) and a caller-supplied {@link RuntimeContext}. Mirrors
+     * {@code ReActAgent#streamEvents(String, Class, RuntimeContext)} with the same
+     * sandbox-lifecycle acquire/release semantics.
+     *
+     * @param text input text (wrapped into a {@link UserMessage})
+     * @param structuredModel class defining the expected structure
+     * @param ctx runtime context to propagate into the call
+     * @return event stream covering the full agent invocation lifecycle
+     */
+    public Flux<AgentEvent> streamEvents(
+            String text, Class<?> structuredModel, RuntimeContext ctx) {
+        return streamEvents(new UserMessage(text), structuredModel, ctx);
+    }
+
+    /**
+     * Stream fine-grained {@link AgentEvent}s for a plain text input with structured output
+     * (JSON-schema-driven) and a caller-supplied {@link RuntimeContext}. Mirrors
+     * {@code ReActAgent#streamEvents(String, JsonNode, RuntimeContext)} with the same
+     * sandbox-lifecycle acquire/release semantics.
+     *
+     * @param text input text (wrapped into a {@link UserMessage})
+     * @param schema JSON schema defining the expected structure
+     * @param ctx runtime context to propagate into the call
+     * @return event stream covering the full agent invocation lifecycle
+     */
+    public Flux<AgentEvent> streamEvents(String text, JsonNode schema, RuntimeContext ctx) {
+        return streamEvents(new UserMessage(text), schema, ctx);
     }
 
     /**
@@ -1041,6 +1146,40 @@ public class HarnessAgent implements Agent, AutoCloseable {
         RuntimeContext effective =
                 ensureSessionDefaults(ctx != null ? ctx : RuntimeContext.empty());
         return wrappedStreamEvents(effective, eff -> delegate.streamEvents(msgs, eff));
+    }
+
+    /**
+     * Stream fine-grained {@link AgentEvent}s with structured output (class-driven) and a
+     * caller-supplied {@link RuntimeContext}. Mirrors {@code ReActAgent#streamEvents(List, Class,
+     * RuntimeContext)} with the same sandbox-lifecycle acquire/release semantics.
+     *
+     * @param msgs input messages
+     * @param structuredModel class defining the expected structure
+     * @param ctx runtime context to propagate into the call
+     * @return event stream covering the full agent invocation lifecycle
+     */
+    public Flux<AgentEvent> streamEvents(
+            List<Msg> msgs, Class<?> structuredModel, RuntimeContext ctx) {
+        RuntimeContext effective =
+                ensureSessionDefaults(ctx != null ? ctx : RuntimeContext.empty());
+        return wrappedStreamEvents(
+                effective, eff -> delegate.streamEvents(msgs, structuredModel, eff));
+    }
+
+    /**
+     * Stream fine-grained {@link AgentEvent}s with structured output (JSON-schema-driven) and a
+     * caller-supplied {@link RuntimeContext}. Mirrors {@code ReActAgent#streamEvents(List, JsonNode,
+     * RuntimeContext)} with the same sandbox-lifecycle acquire/release semantics.
+     *
+     * @param msgs input messages
+     * @param schema JSON schema defining the expected structure
+     * @param ctx runtime context to propagate into the call
+     * @return event stream covering the full agent invocation lifecycle
+     */
+    public Flux<AgentEvent> streamEvents(List<Msg> msgs, JsonNode schema, RuntimeContext ctx) {
+        RuntimeContext effective =
+                ensureSessionDefaults(ctx != null ? ctx : RuntimeContext.empty());
+        return wrappedStreamEvents(effective, eff -> delegate.streamEvents(msgs, schema, eff));
     }
 
     @Override
@@ -1069,7 +1208,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
                             }
                             return eff;
                         },
-                        eff -> inner.apply(eff),
+                        inner,
                         eff -> {
                             if (sandboxLifecycleMw != null) {
                                 sandboxLifecycleMw.releaseForCall(eff);
@@ -2847,7 +2986,7 @@ public class HarnessAgent implements Agent, AutoCloseable {
                 sandboxLifecycleMw =
                         new SandboxLifecycleMiddleware(sandboxManager, capturedSandboxFs);
             } else if (!filesystemRoutes.isEmpty()) {
-                filesystem = new CompositeFilesystem(filesystem, filesystemRoutes);
+                filesystem = withFilesystemRoutes(filesystem, filesystemRoutes);
             }
             WorkspaceManager wsManager =
                     new WorkspaceManager(resolvedWorkspace, filesystem, workspaceIndex, nsFactory);
@@ -3121,7 +3260,9 @@ public class HarnessAgent implements Agent, AutoCloseable {
                         new ArtifactDeliveryTool(
                                 filesystem, pathNormalizer, artifactDeliveryTarget));
             }
-            if (!disableShellTool && filesystem instanceof AbstractSandboxFilesystem sandbox) {
+            if (!disableShellTool
+                    && FilesystemUtils.primaryBackend(filesystem)
+                            instanceof AbstractSandboxFilesystem sandbox) {
                 agentToolkit.registerTool(new ShellExecuteTool(sandbox));
             }
             if (!disableWebTools) {
@@ -3270,38 +3411,14 @@ public class HarnessAgent implements Agent, AutoCloseable {
                                         resolvedWorkspace)
                                 : null;
 
-                io.agentscope.harness.agent.skill.runtime.ShellPathPolicy shellPolicy;
                 boolean shellToolAvailable =
                         !disableShellTool
                                 && ToolFilter.isAllowed(ShellExecuteTool.NAME, resolvedToolsConfig);
-                if (!shellToolAvailable) {
-                    shellPolicy =
-                            io.agentscope.harness.agent.skill.runtime.ShellPathPolicy.noShell();
-                } else if (filesystem instanceof LocalFilesystemWithShell) {
-                    shellPolicy =
-                            io.agentscope.harness.agent.skill.runtime.ShellPathPolicy
-                                    .localWithShell(resolvedWorkspace);
-                } else if (filesystem instanceof OverlayFilesystem ov
-                        && ov.getUpper() instanceof LocalFilesystemWithShell) {
-                    shellPolicy =
-                            io.agentscope.harness.agent.skill.runtime.ShellPathPolicy
-                                    .localWithShell(resolvedWorkspace);
-                } else if (filesystem instanceof SandboxBackedFilesystem
-                        || (filesystem instanceof RoutedSandboxFilesystem routed
-                                && routed.primary() instanceof SandboxBackedFilesystem)) {
-                    String wsPrefix =
-                            defaultSandboxContext != null
-                                            && defaultSandboxContext.getClientOptions() != null
-                                    ? defaultSandboxContext.getClientOptions().getWorkspaceRoot()
-                                    : io.agentscope.harness.agent.skill.runtime.ShellPathPolicy
-                                            .SANDBOX_WORKSPACE_PREFIX;
-                    shellPolicy =
-                            io.agentscope.harness.agent.skill.runtime.ShellPathPolicy.sandbox(
-                                    wsPrefix);
-                } else {
-                    shellPolicy =
-                            io.agentscope.harness.agent.skill.runtime.ShellPathPolicy.noShell();
-                }
+                ShellPathPolicy shellPolicy =
+                        shellToolAvailable
+                                ? skillShellPolicy(
+                                        filesystem, defaultSandboxContext, resolvedWorkspace)
+                                : ShellPathPolicy.noShell();
 
                 HarnessSkillMiddleware skillMiddleware =
                         disableDynamicSkills
@@ -3391,5 +3508,42 @@ public class HarnessAgent implements Agent, AutoCloseable {
                     pathNormalizer,
                     agentToolkit);
         }
+    }
+
+    /** Applies {@code routes} to a builder-resolved primary, keeping its shell when it has one. */
+    static AbstractFilesystem withFilesystemRoutes(
+            AbstractFilesystem primary, Map<String, AbstractFilesystem> routes) {
+        if (primary instanceof AbstractSandboxFilesystem sandbox && !runsOnHostShell(primary)) {
+            return new RoutedSandboxFilesystem(sandbox, routes);
+        }
+        return new CompositeFilesystem(primary, routes);
+    }
+
+    /** Shell mode the skill runtime advertises for the backend that serves the workspace. */
+    static ShellPathPolicy skillShellPolicy(
+            AbstractFilesystem filesystem, SandboxContext sandboxContext, Path workspace) {
+        AbstractFilesystem backend = FilesystemUtils.primaryBackend(filesystem);
+        if (runsOnHostShell(backend)) {
+            return ShellPathPolicy.localWithShell(workspace);
+        }
+        if (backend instanceof AbstractSandboxFilesystem) {
+            String workspacePrefix =
+                    sandboxContext != null && sandboxContext.getClientOptions() != null
+                            ? sandboxContext.getClientOptions().getWorkspaceRoot()
+                            : ShellPathPolicy.SANDBOX_WORKSPACE_PREFIX;
+            return ShellPathPolicy.sandbox(workspacePrefix);
+        }
+        return ShellPathPolicy.noShell();
+    }
+
+    /**
+     * True when commands run on the host. {@link LocalFilesystemWithShell} also implements
+     * {@link AbstractSandboxFilesystem}, so it must not be routed as a sandbox.
+     */
+    private static boolean runsOnHostShell(AbstractFilesystem filesystem) {
+        AbstractFilesystem backend = FilesystemUtils.primaryBackend(filesystem);
+        return backend instanceof LocalFilesystemWithShell
+                || (backend instanceof OverlayFilesystem overlay
+                        && overlay.getUpper() instanceof LocalFilesystemWithShell);
     }
 }

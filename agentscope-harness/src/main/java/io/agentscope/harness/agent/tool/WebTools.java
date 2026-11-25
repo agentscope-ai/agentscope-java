@@ -32,6 +32,7 @@ import java.net.http.HttpResponse;
 import java.net.http.HttpTimeoutException;
 import java.time.Duration;
 import java.util.Objects;
+import java.util.regex.Pattern;
 
 /**
  * Builtin web tools ({@code web_fetch}, {@code web_search}) for Managed Agents / Harness.
@@ -130,6 +131,23 @@ public final class WebTools {
     }
 
     public static final class WebFetchTool {
+        /**
+         * Percent sign that does not start a two-digit hexadecimal escape. A URL written by a
+         * model may hold such literal signs in its path or query (for example {@code
+         * https://wttr.in/?format=%l:+%c}), which {@link URI#create(String)} rejects as a
+         * malformed escape pair.
+         */
+        private static final Pattern STRAY_PERCENT = Pattern.compile("%(?![0-9A-Fa-f]{2})");
+
+        /** Separates the scheme of a URL from its authority. */
+        private static final String SCHEME_END = "://";
+
+        /** Characters that end the authority of a URL by starting its path, query or fragment. */
+        private static final String AUTHORITY_END = "/?#";
+
+        /** Starts the fragment of a URL. */
+        private static final char FRAGMENT_START = '#';
+
         private final HttpClient client;
 
         public WebFetchTool() {
@@ -166,7 +184,7 @@ public final class WebTools {
             try {
                 HttpRequest request =
                         HttpRequest.newBuilder()
-                                .uri(URI.create(trimmed))
+                                .uri(URI.create(encodeStrayPercentSigns(trimmed)))
                                 .timeout(Duration.ofSeconds(30))
                                 .header("User-Agent", "AgentScope-Harness-WebFetch/1.0")
                                 .GET()
@@ -192,6 +210,26 @@ public final class WebTools {
             } catch (Exception e) {
                 return requestError("web_fetch failed: " + e.getMessage(), trimmed, e);
             }
+        }
+
+        /**
+         * Encodes stray percent signs in the path and query as {@code %25}. Valid escapes, the
+         * scheme, the authority and the fragment are kept as given.
+         */
+        private static String encodeStrayPercentSigns(String url) {
+            int pathAndQueryStart = url.indexOf(SCHEME_END) + SCHEME_END.length();
+            while (pathAndQueryStart < url.length()
+                    && AUTHORITY_END.indexOf(url.charAt(pathAndQueryStart)) < 0) {
+                pathAndQueryStart++;
+            }
+            int fragmentStart = url.indexOf(FRAGMENT_START, pathAndQueryStart);
+            if (fragmentStart < 0) {
+                fragmentStart = url.length();
+            }
+            String pathAndQuery = url.substring(pathAndQueryStart, fragmentStart);
+            return url.substring(0, pathAndQueryStart)
+                    + STRAY_PERCENT.matcher(pathAndQuery).replaceAll("%25")
+                    + url.substring(fragmentStart);
         }
     }
 

@@ -29,7 +29,7 @@ You are a subagent focused on code review. Follow this flow:
 The parent can now call it during reasoning:
 
 ```
-agent_spawn agent_id="reviewer" task="review every change in this PR"
+agent_spawn agent_id="reviewer" task="review every change in this PR" reusable=false
 ```
 
 No registration step.
@@ -181,6 +181,7 @@ Behind the scenes, subagent lifecycle is split across two groups of tools:
 | `agent_spawn` | Create a subagent and optionally run a task (sync or background) |
 | `agent_send` | Send a follow-up message to an existing subagent |
 | `agent_list` | List active subagent instances |
+| `agent_release` | Release an idle reusable subagent and invalidate its handles |
 | `task_output` | Retrieve the result of a background task by `task_id` (blocking or non-blocking) |
 | `wait_async_results` | Wait for background results; can wait for specific `task_ids` to all finish, or use `wait_all=true` for a snapshot of unfinished tasks in the current session |
 | `task_cancel` | Cancel a running background task |
@@ -209,13 +210,26 @@ agent_send agent_key="agent:reviewer:abc-123" message="also check the schema cha
 If you set a `label` at spawn time, you can use that instead of the `agent_key`:
 
 ```
-agent_spawn agent_id="reviewer" task="review the PR" label="pr-reviewer"
+agent_spawn agent_id="reviewer" task="review the PR" label="pr-reviewer" reusable=true
 agent_send label="pr-reviewer" message="also check the schema changes"
 ```
 
 To list active subagents: `agent_list`.
 
 `agent_key`, label-based follow-ups and `agent_list` are scoped to the caller's user and parent session. A handle from another user or parent session cannot be used to inspect or message that instance; an unknown key and an out-of-scope key return indistinguishable errors. If a follow-up cannot resolve its target, use `agent_list` in the original authorized parent session to find the handle rather than try other identities or guess keys.
+
+## Reusable and one-shot subagents
+
+`agent_spawn` requires `reusable`. Use `reusable=true` when the parent may send follow-up messages
+with `agent_send`; the instance remains addressable until `agent_release` or the parent agent
+closes. Use `reusable=false` for a one-shot task: after the task completes, fails, is cancelled,
+or is promoted to a background task and reaches a terminal state, Harness closes the subagent and
+removes its `agent_key`, label, and persisted spawn entry.
+
+`reusable=false` requires a task and cannot be combined with `label`, `persistSession`, or
+`expose_to_user`; those options all imply later addressing or reuse. For a reusable instance with
+no active work, call `agent_release` when it is no longer needed. Release is rejected while work
+is in flight.
 
 ## Persistent sessions
 
@@ -240,7 +254,7 @@ The optional `ownsChildState()` method defaults to `false`. A host returning `tr
 Normally subagents are invisible to the user — they run behind the scenes as the parent's internal tools. With `expose_to_user=true`, the parent can make a subagent **directly addressable by the user** through the Channel:
 
 ```
-agent_spawn agent_id="researcher" task="investigate AI trends" expose_to_user=true
+agent_spawn agent_id="researcher" task="investigate AI trends" expose_to_user=true reusable=true
 ```
 
 This does two things:
