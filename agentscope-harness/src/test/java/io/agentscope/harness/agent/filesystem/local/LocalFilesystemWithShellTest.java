@@ -658,8 +658,7 @@ class LocalFilesystemWithShellTest {
 
     private static String treeCommand(Path ready) {
         // A following shell command prevents Unix sh from replacing itself with the fixture JVM.
-        return fixtureCommand("tree", ready.toString())
-                + (isWindows() ? " & rem fixture-end" : "; :");
+        return fixtureCommand("tree", ready.toString()) + (isWindows() ? "" : "; :");
     }
 
     private static void assumeProcessHandles() {
@@ -725,7 +724,8 @@ class LocalFilesystemWithShellTest {
             for (String arg : args) {
                 command += " " + shellQuote(arg);
             }
-            return command;
+            // cmd /c strips the outer pair, leaving the executable and argument quotes intact.
+            return isWindows() ? '"' + command + '"' : command;
         } catch (java.net.URISyntaxException e) {
             throw new IllegalStateException(e);
         }
