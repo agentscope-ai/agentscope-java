@@ -108,9 +108,10 @@ public class LettuceRemoteSnapshotClient implements RemoteSnapshotClient {
     public void upload(String snapshotId, InputStream data) throws Exception {
         byte[] key = redisKey(snapshotId);
         byte[] value = data.readAllBytes();
-        stringCommands.set(key, value);
         if (ttlSeconds != null) {
-            keyCommands.expire(key, ttlSeconds);
+            stringCommands.setex(key, ttlSeconds, value);
+        } else {
+            stringCommands.set(key, value);
         }
     }
 

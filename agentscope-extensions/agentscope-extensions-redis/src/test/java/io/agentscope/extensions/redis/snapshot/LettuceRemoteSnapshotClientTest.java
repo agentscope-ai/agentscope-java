@@ -17,6 +17,7 @@ package io.agentscope.extensions.redis.snapshot;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.AdditionalMatchers.aryEq;
@@ -26,8 +27,10 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.verifyNoMoreInteractions;
 import static org.mockito.Mockito.when;
 
+import io.lettuce.core.RedisException;
 import io.lettuce.core.api.sync.RedisCommands;
 import io.lettuce.core.cluster.api.sync.RedisAdvancedClusterCommands;
 import java.io.ByteArrayInputStream;
@@ -36,6 +39,8 @@ import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 @DisplayName("LettuceRemoteSnapshotClient")
 class LettuceRemoteSnapshotClientTest {
@@ -57,16 +62,48 @@ class LettuceRemoteSnapshotClientTest {
         verify(commands, never()).expire(aryEq(DEFAULT_KEY), anyLong());
     }
 
-    @Test
+    @ParameterizedTest
+    @ValueSource(ints = {1, 60, Integer.MAX_VALUE})
     @DisplayName("upload normalizes the prefix and applies a positive TTL")
-    void uploadAppliesPositiveTtlWithNormalizedPrefix() throws Exception {
+    void uploadAppliesPositiveTtlWithNormalizedPrefix(int ttl) throws Exception {
         byte[] payload = "tar-bytes".getBytes(StandardCharsets.UTF_8);
         byte[] key = key("myapp:snap-1.tar");
 
-        client("myapp", 60).upload("snap-1", new ByteArrayInputStream(payload));
+        client("myapp", ttl).upload("snap-1", new ByteArrayInputStream(payload));
 
-        verify(commands).set(aryEq(key), aryEq(payload));
-        verify(commands).expire(aryEq(key), eq(60L));
+        verify(commands).setex(aryEq(key), eq((long) ttl), aryEq(payload));
+        verifyNoMoreInteractions(commands);
+    }
+
+    @Test
+    void failedExpiringWriteDoesNotFallBackToPersistentData() {
+        byte[] payload = {0, (byte) 0xff, 1};
+        RedisException failure = new RedisException("write unavailable");
+        when(commands.setex(aryEq(DEFAULT_KEY), eq(60L), aryEq(payload))).thenThrow(failure);
+
+        assertSame(
+                failure,
+                assertThrows(
+                        RedisException.class,
+                        () ->
+                                client(null, 60)
+                                        .upload("snap-1", new ByteArrayInputStream(payload))));
+        verify(commands).setex(aryEq(DEFAULT_KEY), eq(60L), aryEq(payload));
+        verifyNoMoreInteractions(commands);
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void clusterUploadStoresBytesAndTtlInOneCommand() throws Exception {
+        RedisAdvancedClusterCommands<byte[], byte[]> cluster =
+                mock(RedisAdvancedClusterCommands.class);
+        byte[] payload = {0, (byte) 0xff, 1};
+
+        new LettuceRemoteSnapshotClient(cluster, null, 60)
+                .upload("snap-1", new ByteArrayInputStream(payload));
+
+        verify(cluster).setex(aryEq(DEFAULT_KEY), eq(60L), aryEq(payload));
+        verifyNoMoreInteractions(cluster);
     }
 
     @Test

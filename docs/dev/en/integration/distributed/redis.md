@@ -83,6 +83,8 @@ Concurrency-safe: `put` / `putIfVersion` use Lua scripts for atomicity.
 
 Sandbox snapshots stored as Redis binary keys. Best for small workspaces + short TTL.
 
+When a positive TTL is configured, Jedis and Lettuce upload each archive and its expiry in a single atomic Redis command. This avoids leaving a persistent archive if a connection fails between writing the data and setting its expiry. A null, zero or negative TTL keeps the existing no-expiry behavior.
+
 ```java
 import io.agentscope.extensions.redis.snapshot.RedisSnapshotSpec;
 

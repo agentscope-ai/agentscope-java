@@ -49,9 +49,10 @@ public class RedisRemoteSnapshotClient implements RemoteSnapshotClient {
     public void upload(String snapshotId, InputStream data) throws Exception {
         byte[] key = redisKey(snapshotId);
         byte[] value = data.readAllBytes();
-        jedis.set(key, value);
         if (ttlSeconds != null) {
-            jedis.expire(key, ttlSeconds);
+            jedis.setex(key, ttlSeconds, value);
+        } else {
+            jedis.set(key, value);
         }
     }
 

@@ -88,6 +88,8 @@ BaseStore store = new RedisStore(jedis, "myapp:store:");
 
 沙箱快照存储到 Redis 二进制 key。适合小工作区 + 短 TTL 场景。
 
+配置正数 TTL 时，Jedis 和 Lettuce 都通过一条原子 Redis 命令同时写入快照数据及过期时间，避免连接在写入数据和设置过期时间之间中断而留下永久快照。TTL 为 null、零或负数时，仍保持不过期的原有行为。
+
 ```java
 import io.agentscope.extensions.redis.snapshot.RedisSnapshotSpec;
 
