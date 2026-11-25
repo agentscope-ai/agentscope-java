@@ -69,7 +69,7 @@ class KeywordSearchModesTest {
                 store.open(new ThreadKey(null, "agent", "session", "main"), RuntimeContext.empty());
         var writer = log.acquire("keyword-fixture", Duration.ofMinutes(2));
         var events = new ArrayList<JournalEvent>();
-        var contents = List.of(CONTENT, "only-first", "only-second");
+        var contents = List.of(CONTENT, "only-first", "only-second", "answer is \"yes\"");
         for (int index = 0; index < contents.size(); index++) {
             MsgRole role = index == 2 ? MsgRole.ASSISTANT : MsgRole.USER;
             Msg message =
@@ -78,19 +78,64 @@ class KeywordSearchModesTest {
                             .content(TextBlock.builder().text(contents.get(index)).build())
                             .build();
             events.add(
-                    new JournalEvent(
-                            JournalEvent.SCHEMA_VERSION,
-                            "keyword-event-" + index,
-                            index + 1,
-                            1,
-                            "message/" + role.name().toLowerCase(Locale.ROOT),
-                            "run",
-                            "turn",
-                            true,
-                            JsonUtils.getJsonCodec().toJson(Map.of("message", message))));
+                    journalEvent(
+                            index + 1, "message/" + role.name().toLowerCase(Locale.ROOT), message));
         }
+        var call =
+                ToolUseBlock.builder()
+                        .id("lookup-1")
+                        .name("lookup")
+                        .input(Map.of("filters", List.of(Map.of("phrase", "North \"Star\""))))
+                        .build();
+        var assistant = Msg.builder().role(MsgRole.ASSISTANT).content(call).build();
+        var result =
+                ToolResultBlock.builder()
+                        .id("lookup-1")
+                        .name("lookup")
+                        .output(
+                                List.of(
+                                        TextBlock.builder().text("Found \"North Star\"").build(),
+                                        TextBlock.builder().text("catalog entry").build()))
+                        .build();
+        var toolMessage = Msg.builder().role(MsgRole.TOOL).content(result).build();
+        events.add(journalEvent(5, "message/assistant", assistant));
+        events.add(journalEvent(6, "tool/result", toolMessage));
         log.commit(writer, "keyword-fixture", 0, events);
         log.release(writer);
+    }
+
+    private static JournalEvent journalEvent(int seq, String type, Msg message) {
+        return new JournalEvent(
+                JournalEvent.SCHEMA_VERSION,
+                "keyword-event-" + (seq - 1),
+                seq,
+                1,
+                type,
+                "run",
+                "turn",
+                true,
+                JsonUtils.getJsonCodec().toJson(Map.of("message", message)));
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"type", "metadata", "lookup-1"})
+    void sessionSearchIgnoresSerializationFields(String query) {
+        assertEquals("[]", text(sessions.threadSearch(null, query, "agent", 10)));
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"answer is \"yes\"", "North \"Star\"", "Found \"North Star\""})
+    void sessionSearchMatchesLiteralQuotes(String query) {
+        assertMatchCount(1, text(sessions.threadSearch(null, query, "agent", 10)));
+    }
+
+    @Test
+    void sessionSearchFindsToolNamesAndCombinesKeywordsWithinOneMessage() {
+        assertMatchCount(2, text(sessions.threadSearch(null, "lookup", "agent", 10)));
+        assertMatchCount(1, text(sessions.threadSearch(null, "found catalog", "agent", 10, "all")));
+        assertMatchCount(1, text(sessions.threadSearch(null, "filters star", "agent", 10, "all")));
+        assertEquals(
+                "[]", text(sessions.threadSearch(null, "catalog filters", "agent", 10, "all")));
     }
 
     private List<String> search(String query, String mode) {
