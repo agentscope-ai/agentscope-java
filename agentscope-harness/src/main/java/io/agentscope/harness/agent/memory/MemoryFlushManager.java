@@ -32,8 +32,8 @@ import io.agentscope.harness.agent.memory.compaction.ConversationCompactor;
 import io.agentscope.harness.agent.workspace.WorkspaceConstants;
 import io.agentscope.harness.agent.workspace.WorkspaceManager;
 import java.time.Clock;
-import java.time.Instant;
 import java.time.LocalDate;
+import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
@@ -197,11 +197,17 @@ public class MemoryFlushManager {
      * curated, size-bounded MEMORY.md.
      */
     private void writeMemoryFiles(RuntimeContext rc, String content) {
-        String today = LocalDate.now(clock(rc)).format(DateTimeFormatter.ISO_LOCAL_DATE);
+        // One clock for both the ledger date and the entry heading, so they always agree: a
+        // heading in another zone can read as the previous or next day next to its own file
+        // name (#3433).
+        Clock clock = clock(rc);
+        String today = LocalDate.now(clock).format(DateTimeFormatter.ISO_LOCAL_DATE);
 
         String dailyEntry =
                 String.format(
-                        "\n## Memory Flush — %s\n%s\n", Instant.now(clock(rc)).toString(), content);
+                        "\n## Memory Flush — %s\n%s\n",
+                        ZonedDateTime.now(clock).format(DateTimeFormatter.ISO_OFFSET_DATE_TIME),
+                        content);
 
         String dailyRelPath = WorkspaceConstants.MEMORY_DIR + "/" + today + ".md";
         workspaceManager.appendMemoryFileUtf8(rc, dailyRelPath, dailyEntry);
