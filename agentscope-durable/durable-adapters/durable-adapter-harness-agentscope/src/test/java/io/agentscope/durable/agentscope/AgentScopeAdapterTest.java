@@ -26,6 +26,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doReturn;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.spy;
 
 import io.agentscope.core.ReActAgent;
@@ -109,6 +110,7 @@ import io.agentscope.harness.agent.filesystem.remote.RemoteFilesystem;
 import java.math.BigInteger;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
@@ -2216,6 +2218,394 @@ class AgentScopeAdapterTest {
                 assertEquals(3, reasoning.get());
                 assertEquals(1, summaries.get());
             }
+        }
+    }
+
+    @ParameterizedTest
+    @org.junit.jupiter.params.provider.CsvSource({
+        "false,false",
+        "true,false",
+        "false,true",
+        "true,true"
+    })
+    void queuedModelResumesOriginalTurnAcrossRuntimeReplacement(boolean streaming, boolean harness)
+            throws Exception {
+        var file = directory.resolve("model.db");
+        var thread = new ThreadKey(key, "main");
+        var sent = new CopyOnWriteArrayList<QueuedModelRequest>();
+        var local = new ScriptedModel(false);
+        var backend = new TransactionalSessionBackend(JdbcRecordStore.sqlite(file));
+        String redis = System.getenv("AGENTSCOPE_TEST_REDIS_CONTAINER");
+        String queue = "model-test:" + java.util.UUID.randomUUID();
+        java.util.function.Supplier<AgentScopeAdapter> factory =
+                () ->
+                        harness
+                                ? AgentScopeAdapter.forHarness(
+                                        binding ->
+                                                HarnessAgent.builder()
+                                                        .name("harness")
+                                                        .model(local)
+                                                        .disableMemoryHooks()
+                                                        .workspace(directory.resolve("workspace")),
+                                        Map.of())
+                                : adapter(local, PermissionMode.BYPASS, Map.of());
+        var adapter =
+                factory.get()
+                        .withQueuedModel(
+                                request -> {
+                                    if (redis != null)
+                                        redisCommand(
+                                                redis,
+                                                "RPUSH",
+                                                queue,
+                                                DurableJson.value(request).toString());
+                                    sent.add(request);
+                                });
+        String turnId;
+        try (var first = runtime(backend, adapter, null)) {
+            turnId = first.createSession(key, "agent").submit("one", "hello").turnId();
+            first.tick(thread);
+            assertNull(first.lastFailure(thread));
+            assertEquals(TurnStatus.WAITING, backend.turn(thread, turnId).status());
+        }
+        assertEquals(1, sent.size());
+        var request = sent.get(0);
+        assertEquals(turnId, request.turnId());
+        assertEquals(thread, request.thread());
+        if (redis != null) {
+            var job = DurableJson.parse(redisCommand(redis, "LPOP", queue));
+            assertEquals(request.callId(), job.path("callId").asText());
+            assertEquals(turnId, job.path("turnId").asText());
+            assertTrue(job.path("messages").toString().contains("hello"));
+        }
+        var reopened = new TransactionalSessionBackend(JdbcRecordStore.sqlite(file));
+        var fresh =
+                factory.get()
+                        .withQueuedModel(
+                                r -> {
+                                    throw new AssertionError("redispatched");
+                                });
+        var live = LiveEvents.local();
+        var firstChunk = new CountDownLatch(1);
+        try (var subscription =
+                        live.subscribe(
+                                event -> {
+                                    if ("message.delta".equals(event.type())
+                                            && event.data().toString().contains("hello"))
+                                        firstChunk.countDown();
+                                });
+                var second = runtime(reopened, fresh, null, live)) {
+            var chunk =
+                    QueuedModelRequest.reply(
+                            request.callId(),
+                            0,
+                            queuedText(streaming ? "hello" : "hello world"),
+                            !streaming);
+            var handle = second.getSession(key).getTurn(turnId);
+            if (streaming && harness) {
+                var end =
+                        deliverReply(
+                                redis,
+                                queue,
+                                QueuedModelRequest.reply(request.callId(), 2, null, true));
+                handle.signal(end.id(), end.key(), end.value());
+            }
+            var delivered = deliverReply(redis, queue, chunk);
+            handle.signal(delivered.id(), delivered.key(), delivered.value());
+            handle.signal(delivered.id(), delivered.key(), delivered.value());
+            var tick = java.util.concurrent.CompletableFuture.runAsync(() -> second.tick(thread));
+            if (streaming) {
+                try {
+                    assertTrue(
+                            firstChunk.await(10, TimeUnit.SECONDS), "live chunk before terminal");
+                } finally {
+                    var terminal =
+                            deliverReply(
+                                    redis,
+                                    queue,
+                                    QueuedModelRequest.reply(
+                                            request.callId(), 1, queuedText(" world"), !harness));
+                    handle.signal(terminal.id(), terminal.key(), terminal.value());
+                }
+            }
+            tick.get(15, TimeUnit.SECONDS);
+            if (second.lastFailure(thread) != null)
+                throw new AssertionError("Model resume failed", second.lastFailure(thread));
+            var turn = reopened.turn(thread, turnId);
+            assertEquals(TurnStatus.SUCCEEDED, turn.status(), () -> turn.toString());
+            assertEquals("hello world", turn.output().path("content").get(0).path("text").asText());
+            assertTrue(local.inputs.isEmpty());
+        }
+    }
+
+    private static ChatResponse queuedText(String text) {
+        return ChatResponse.builder()
+                .id("remote")
+                .content(List.of(TextBlock.builder().text(text).build()))
+                .build();
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void completedQueuedFallbackRecoversAcrossModelApplication(boolean afterApplication)
+            throws Exception {
+        var requests = new ArrayList<QueuedModelRequest>();
+        var primary = new ScriptedModel(false);
+        var fallback = mock(Model.class);
+        doReturn("secondary").when(fallback).getModelName();
+        var adapter =
+                AgentScopeAdapter.forReAct(
+                                binding ->
+                                        ReActAgent.builder()
+                                                .name("agent")
+                                                .model(primary)
+                                                .fallbackModel(fallback),
+                                Map.of())
+                        .withQueuedModel(requests::add);
+        var thread = new ThreadKey(key, "main");
+        try (var storage = LocalBackend.open(directory.resolve("queued-fallback"))) {
+            var backend = spy(storage);
+            var armed = new AtomicBoolean();
+            var crashed = new AtomicBoolean();
+            doAnswer(
+                            invocation -> {
+                                Commit command = invocation.getArgument(1);
+                                if (command.journal() == null) return invocation.callRealMethod();
+                                if (armed.get()) {
+                                    crashed.set(true);
+                                    throw new DurableException(
+                                            DurableException.Code.UNAVAILABLE, "Simulated restart");
+                                }
+                                boolean cut =
+                                        command.journal().entries().stream()
+                                                .map(
+                                                        value ->
+                                                                DurableJson.convert(
+                                                                        value, JournalEvent.class))
+                                                .anyMatch(
+                                                        event ->
+                                                                afterApplication
+                                                                        ? "state/checkpoint"
+                                                                                        .equals(
+                                                                                                event
+                                                                                                        .type())
+                                                                                && "model_result_applied"
+                                                                                        .equals(
+                                                                                                event.data()
+                                                                                                        .get(
+                                                                                                                "reason"))
+                                                                        : "model/end"
+                                                                                        .equals(
+                                                                                                event
+                                                                                                        .type())
+                                                                                && "completed"
+                                                                                        .equals(
+                                                                                                event.data()
+                                                                                                        .get(
+                                                                                                                "status")));
+                                Object result = invocation.callRealMethod();
+                                if (cut) armed.set(true);
+                                return result;
+                            })
+                    .when(backend)
+                    .commit(any(), any());
+            String turnId;
+            try (var first = runtime(backend, adapter, null)) {
+                var turn = first.createSession(key, "agent").submit("queued-fallback", "hello");
+                turnId = turn.turnId();
+                first.tick(thread);
+                var failed =
+                        QueuedModelRequest.failure(requests.get(0).callId(), 0, "provider failure");
+                turn.signal(failed.id(), failed.key(), failed.value());
+                first.tick(thread);
+                assertEquals("secondary", requests.get(1).model());
+                var result =
+                        QueuedModelRequest.reply(
+                                requests.get(1).callId(), 0, queuedText("fallback answer"), true);
+                turn.signal(result.id(), result.key(), result.value());
+                first.tick(thread);
+                assertTrue(crashed.get());
+                assertFalse(turn.status().status().terminal());
+            }
+            Thread.sleep(5);
+            try (var replacement = runtime(storage, adapter, null)) {
+                replacement.tick(thread);
+                assertNull(replacement.lastFailure(thread));
+                var resumed = storage.turn(thread, turnId);
+                assertEquals(TurnStatus.SUCCEEDED, resumed.status(), resumed::toString);
+                assertEquals(
+                        "fallback answer",
+                        resumed.output().path("content").get(0).path("text").asText());
+                assertEquals(2, requests.size());
+                assertTrue(primary.inputs.isEmpty());
+            }
+        }
+    }
+
+    @Test
+    void queuedModelEarlyReplyExecutesToolOnceAndQueuesNextIteration() {
+        var path = directory.resolve("queued-tool.db");
+        var thread = new ThreadKey(key, "main");
+        var calls = new AtomicInteger();
+        var requests = new CopyOnWriteArrayList<QueuedModelRequest>();
+        var local = new ScriptedModel(false);
+        var adapters =
+                (Function<SessionBackend, AgentScopeAdapter>)
+                        backend ->
+                                AgentScopeAdapter.forReAct(
+                                                binding -> {
+                                                    var toolkit = new Toolkit();
+                                                    toolkit.registerAgentTool(
+                                                            new ToolBase(
+                                                                    ToolBase.builder()
+                                                                            .name("job")
+                                                                            .description(
+                                                                                    "count calls")
+                                                                            .inputSchema(
+                                                                                    Map.of(
+                                                                                            "type",
+                                                                                            "object"))) {
+                                                                public Mono<ToolResultBlock>
+                                                                        callAsync(
+                                                                                ToolCallParam
+                                                                                        param) {
+                                                                    calls.incrementAndGet();
+                                                                    return Mono.just(
+                                                                            ToolResultBlock.text(
+                                                                                    "job finished"));
+                                                                }
+                                                            });
+                                                    return ReActAgent.builder()
+                                                            .name("agent")
+                                                            .model(local)
+                                                            .toolkit(toolkit)
+                                                            .permissionContext(
+                                                                    PermissionContextState.builder()
+                                                                            .mode(
+                                                                                    PermissionMode
+                                                                                            .BYPASS)
+                                                                            .build());
+                                                },
+                                                Map.of())
+                                        .withQueuedModel(
+                                                request -> {
+                                                    requests.add(request);
+                                                    var early =
+                                                            requests.size() == 1
+                                                                    ? ChatResponse.builder()
+                                                                            .content(
+                                                                                    List.of(
+                                                                                            ToolUseBlock
+                                                                                                    .builder()
+                                                                                                    .id(
+                                                                                                            "job-1")
+                                                                                                    .name(
+                                                                                                            "job")
+                                                                                                    .input(
+                                                                                                            Map
+                                                                                                                    .of())
+                                                                                                    .build()))
+                                                                            .build()
+                                                                    : queuedText("done");
+                                                    var reply =
+                                                            QueuedModelRequest.reply(
+                                                                    request.callId(),
+                                                                    0,
+                                                                    early,
+                                                                    true);
+                                                    backend.signal(thread, request.turnId(), reply);
+                                                    backend.signal(thread, request.turnId(), reply);
+                                                });
+        String turnId = null;
+        for (int i = 0; i < 3; i++) {
+            var backend = new TransactionalSessionBackend(JdbcRecordStore.sqlite(path));
+            try (var runtime = runtime(backend, adapters.apply(backend), null)) {
+                if (i == 0)
+                    turnId = runtime.createSession(key, "agent").submit("one", "run").turnId();
+                runtime.tick(thread);
+                assertNull(runtime.lastFailure(thread));
+                assertEquals(
+                        i == 2 ? TurnStatus.SUCCEEDED : TurnStatus.WAITING,
+                        backend.turn(thread, turnId).status());
+                assertEquals(i == 0 ? 0 : 1, calls.get());
+            }
+        }
+        assertEquals(2, requests.size());
+        assertNotEquals(requests.get(0).callId(), requests.get(1).callId());
+        assertTrue(requests.get(1).messages().toString().contains("job finished"));
+        assertTrue(local.inputs.isEmpty());
+    }
+
+    @Test
+    void queuedModelLostPublishAckReusesRequestAndRemoteFailureEndsTurn() throws Exception {
+        var file = directory.resolve("model-ack.db");
+        var thread = new ThreadKey(key, "main");
+        var requests = new CopyOnWriteArrayList<QueuedModelRequest>();
+        var local = new ScriptedModel(false);
+        var adapter =
+                adapter(local, PermissionMode.BYPASS, Map.of())
+                        .withQueuedModel(
+                                request -> {
+                                    requests.add(request);
+                                    if (requests.size() == 1)
+                                        throw new DurableException(
+                                                DurableException.Code.UNAVAILABLE,
+                                                "Broker acknowledgement lost");
+                                });
+        String id;
+        var first = new TransactionalSessionBackend(JdbcRecordStore.sqlite(file));
+        try (var runtime = runtime(first, adapter, null)) {
+            id = runtime.createSession(key, "agent").submit("lost-ack", "hello").turnId();
+            runtime.tick(thread);
+            assertEquals(TurnStatus.WAITING, first.turn(thread, id).status());
+        }
+        var second = new TransactionalSessionBackend(JdbcRecordStore.sqlite(file));
+        try (var runtime = runtime(second, adapter, null)) {
+            Thread.sleep(10);
+            runtime.tick(thread);
+            assertEquals(2, requests.size());
+            assertEquals(requests.get(0), requests.get(1));
+            assertEquals(TurnStatus.WAITING, second.turn(thread, id).status());
+            var error =
+                    QueuedModelRequest.failure(
+                            requests.get(0).callId(), 0, "worker rejected request");
+            var turn = runtime.getSession(key).getTurn(id);
+            turn.signal(error.id(), error.key(), error.value());
+            runtime.tick(thread);
+            assertEquals(TurnStatus.FAILED, turn.status().status());
+            assertEquals(2, requests.size());
+            assertTrue(local.inputs.isEmpty());
+        }
+    }
+
+    private static Signal deliverReply(String redis, String queue, Signal signal) {
+        if (redis == null) return signal;
+        redisCommand(redis, "RPUSH", queue + ":replies", DurableJson.value(signal).toString());
+        return DurableJson.convert(
+                DurableJson.parse(redisCommand(redis, "LPOP", queue + ":replies")), Signal.class);
+    }
+
+    private static String redisCommand(String container, String... arguments) {
+        var command = new ArrayList<>(List.of("docker", "exec", container, "redis-cli", "--raw"));
+        command.addAll(List.of(arguments));
+        try {
+            var process = new ProcessBuilder(command).redirectErrorStream(true).start();
+            if (!process.waitFor(10, TimeUnit.SECONDS)) {
+                process.destroyForcibly();
+                throw new AssertionError("Redis command timed out");
+            }
+            var result =
+                    new String(
+                                    process.getInputStream().readAllBytes(),
+                                    java.nio.charset.StandardCharsets.UTF_8)
+                            .strip();
+            assertEquals(0, process.exitValue(), result);
+            return result;
+        } catch (java.io.IOException error) {
+            throw new java.io.UncheckedIOException(error);
+        } catch (InterruptedException error) {
+            Thread.currentThread().interrupt();
+            throw new AssertionError(error);
         }
     }
 
