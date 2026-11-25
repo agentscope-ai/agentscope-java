@@ -40,9 +40,9 @@ import io.agentscope.durable.LiveEvents;
 import io.agentscope.durable.ModelExecutions.Batch;
 import io.agentscope.durable.ModelExecutions.Key;
 import io.agentscope.durable.ModelExecutions.Status;
+import io.agentscope.durable.SessionBackend;
 import io.agentscope.durable.TransactionalModelExecutionStore;
 import io.agentscope.durable.TransactionalSessionBackend;
-import io.agentscope.durable.TransactionalSessionBackend.StoredContent;
 import io.agentscope.durable.Wakeups;
 import io.agentscope.durable.store.ModelOutputStore;
 import io.agentscope.durable.store.ObjectModelOutputStore;
@@ -50,9 +50,9 @@ import io.agentscope.durable.store.ObjectStore;
 import io.agentscope.durable.store.RecordObjectStore;
 import io.agentscope.extensions.durable.jdbc.FileObjectStore;
 import io.agentscope.extensions.durable.jdbc.JdbcRecordStore;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -106,7 +106,8 @@ class ModelWorkerTest {
                 assertEquals(
                         "small-" + longText,
                         turn.status().output().path("content").get(0).path("text").asText());
-                assertEquals(List.of(false, true), journalChunkReferences(records, objects));
+                assertEquals(
+                        List.of(false, true), journalChunkReferences(records, runtime.backend()));
             }
         }
     }
@@ -245,7 +246,7 @@ class ModelWorkerTest {
                 assertNotNull(second);
                 assertEquals(1, providerCalls.get());
                 assertTrue(local.inputs.isEmpty());
-                var chunkReferences = journalChunkReferences(readerRecords, readerObjects);
+                var chunkReferences = journalChunkReferences(readerRecords, replacement.backend());
                 assertTrue(chunkReferences.size() >= 2);
                 boolean external = !"sqlite".equals(outputBackend);
                 assertTrue(chunkReferences.stream().allMatch(reference -> reference == external));
@@ -306,33 +307,26 @@ class ModelWorkerTest {
     }
 
     private static List<Boolean> journalChunkReferences(
-            JdbcRecordStore records, ObjectStore objects) {
+            JdbcRecordStore records, SessionBackend backend) {
+        var checkpoints = backend.checkpoints(THREAD, 0, 1000);
+        var position = Long.parseLong(checkpoints.get(checkpoints.size() - 1).position());
+        var events = backend.checkpointJournal(THREAD, position, 0, 1000);
         var prefix = "thread-data:" + DurableJson.hash(THREAD.threadId()) + ":journal:";
-        var journal =
-                records.transaction(
-                        SESSION.storageKey(),
-                        tx ->
-                                tx.keys(prefix, null, 1000).stream()
-                                        .map(tx::get)
-                                        .map(
-                                                value ->
-                                                        DurableJson.convert(
-                                                                value, StoredContent.class))
-                                        .toList());
-        return journal.stream()
-                .filter(
-                        stored -> {
-                            var event =
-                                    stored.reference() == null
-                                            ? stored.inline()
-                                            : DurableJson.parse(
-                                                    new String(
-                                                            objects.read(stored.reference()),
-                                                            StandardCharsets.UTF_8));
-                            return "model/chunk".equals(event.path("type").asText());
-                        })
-                .map(stored -> stored.reference() != null)
-                .toList();
+        return records.transaction(
+                SESSION.storageKey(),
+                tx -> {
+                    var keys = tx.keys(prefix, null, 1000);
+                    assertEquals(events.size(), keys.size());
+                    var references = new ArrayList<Boolean>();
+                    for (int i = 0; i < events.size(); i++) {
+                        if ("model/chunk".equals(events.get(i).path("type").asText())) {
+                            var stored = tx.get(keys.get(i));
+                            references.add(
+                                    stored.hasNonNull("reference") || stored.hasNonNull("chunked"));
+                        }
+                    }
+                    return references;
+                });
     }
 
     private ObjectStore objects(String type, JdbcRecordStore records) {
