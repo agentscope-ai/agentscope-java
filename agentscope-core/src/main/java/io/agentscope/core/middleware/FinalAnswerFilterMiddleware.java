@@ -42,6 +42,13 @@ import reactor.core.publisher.Flux;
  * <p>This middleware is opt-in and does not change the default behavior of {@code ReActAgent}.
  * Because a round can only be identified as intermediate after a tool call is observed, text from
  * the current round is not emitted until the model call completes or a tool call is detected.
+ *
+ * <p>Division of labor with the final-answer gate ({@link
+ * MiddlewareBase#onFinalAnswer}): this class serves
+ * gate-free agents that only want a clean stream (intermediate-round text suppressed, no
+ * verdict). Registering any gate makes this middleware redundant but harmless — the guard
+ * already withholds every round's live text and only the certified projection is published,
+ * so this class's per-round buffering is simply wasted work.
  */
 public class FinalAnswerFilterMiddleware implements MiddlewareBase {
 

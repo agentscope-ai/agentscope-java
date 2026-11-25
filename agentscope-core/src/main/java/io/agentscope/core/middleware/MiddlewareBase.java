@@ -27,10 +27,10 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 /**
- * Middleware provides interception mechanisms at 6 key execution points
+ * Middleware provides interception mechanisms at key execution points
  * in the Agent lifecycle.
  *
- * <p><b>Onion Pattern</b> (4 hooks — wrap execution with before/after logic):
+ * <p><b>Onion Pattern</b> (wrap execution with before/after logic):
  * <ul>
  *   <li>{@link #onAgent} — intercepts the entire agent invocation</li>
  *   <li>{@link #onReasoning} — intercepts the reasoning/model-call phase</li>
@@ -38,20 +38,30 @@ import reactor.core.publisher.Mono;
  *   <li>{@link #onModelCall} — intercepts the raw model API call</li>
  * </ul>
  *
- * <p><b>Transformer/Pipeline Pattern</b> (1 hook — sequential transform):
+ * <p><b>Transformer/Pipeline Pattern</b> (sequential transform):
  * <ul>
  *   <li>{@link #onSystemPrompt} — transforms the system prompt string</li>
  * </ul>
  *
- * <p><b>Notification Pattern</b> (one-way synchronous notification, no {@code next}
+ * <p><b>Notification Pattern</b> (one-way notification, no {@code next}
  * delegation):
  * <ul>
  *   <li>{@link #onAgentStateReady} — notified once this call's AgentState is ready</li>
+ *   <li>{@link #onAgentFinish} — notified after a successful call result, before
+ *       the invocation-journal checkpoint commit and writer release</li>
+ * </ul>
+ *
+ * <p><b>Gate Pattern</b> (verdict on the final answer):
+ * <ul>
+ *   <li>{@link #onFinalAnswer} — decides what becomes this call's final answer</li>
  * </ul>
  *
  * <p>Each onion/transformer hook has a default implementation that delegates
  * directly to {@code next}, so subclasses only need to override the hooks they
- * care about; {@link #onAgentStateReady} defaults to a no-op. Every
+ * care about; {@link #onAgentStateReady} defaults to a no-op; {@link
+ * #onAgentFinish} defaults to an immediate empty completion; {@link
+ * #onFinalAnswer} defaults to an empty completion that accepts the candidate,
+ * reachable only through an explicit {@code ON_FINAL_ANSWER} declaration. Every
  * implementation should additionally declare the points it participates in via
  * {@link #activePoints()}; an undeclared middleware (returning {@code null})
  * has its participation set inferred from the hooks its class actually
@@ -81,10 +91,18 @@ public interface MiddlewareBase {
     /**
      * Middleware extension points. Adding a point adds one constant here; the
      * grouping mechanism stays unchanged. A middleware participates at a new
-     * point only when it declares the point or implements the new hook —
-     * which is exactly why a capability whose activation has side effects
-     * beyond the declaring middleware must never be gated on participation
-     * alone: it requires an explicit declaration or an explicit switch.
+     * point only when it declares the point or implements the new hook.
+     *
+     * <p>{@link #ON_FINAL_ANSWER} is the first mode-switching point — activating
+     * it changes the whole agent's delivery behavior (live answer content is
+     * withheld until the gate chain certifies it). This is safe exactly
+     * because participation is never vacuous: the auto-detected path lights
+     * up only for classes that factually implement {@link #onFinalAnswer}
+     * (writing the hook is writing gate logic), and the only other path is an
+     * explicit declaration — both are statements of intent. A future
+     * point with the same agent-wide effect must preserve this property:
+     * participation must not be reachable without either the fact or the
+     * declaration.
      *
      * <p>Each constant names the hook method it pairs with; auto-detection of
      * undeclared ({@code null}) middlewares resolves participation from these
@@ -97,6 +115,7 @@ public interface MiddlewareBase {
         ON_MODEL_CALL("onModelCall"),
         ON_SYSTEM_PROMPT("onSystemPrompt"),
         ON_AGENT_STATE_READY("onAgentStateReady"),
+        ON_FINAL_ANSWER("onFinalAnswer"),
         ON_AGENT_FINISH("onAgentFinish");
 
         private final String hookMethod;
@@ -282,6 +301,67 @@ public interface MiddlewareBase {
      */
     default void onAgentStateReady(
             Agent agent, RuntimeContext ctx, AgentState state, List<Msg> inputMessages) {}
+
+    /**
+     * Decide whether an output becomes this call's final answer — the last word
+     * on what gets delivered. Consulted at every final-answer exit (normal
+     * finish, the forced summary after {@code maxIters}, and the
+     * return-direct short-circuit, distinguished by {@link FinishReason});
+     * interrupt-like exits never reach this hook.
+     *
+     * <p>Unlike the other hooks, this one never receives the agent: a verdict
+     * needs only the per-call context and the gate input, so a single
+     * stateless gate can serve any number of agents and concurrent calls.
+     * Cross-round state belongs in {@link RuntimeContext} attributes.
+     *
+     * <p>This is a <b>mode-switching point</b>: the moment any middleware
+     * participates here, the agent switches to certified delivery — live text
+     * and thinking of every round are withheld from the public stream, and
+     * only the chain-certified content is projected after the verdict. The
+     * tool-result content of a returnDirect-bound batch is withheld too (its
+     * outputs are the final-answer candidate); tool lifecycle events still
+     * stream, and so does the content of batches that cannot short-circuit.
+     * Participation is resolved by the {@link #activePoints()} contract and
+     * is never vacuous (see {@link ExtensionPoint#ON_FINAL_ANSWER}).
+     * Purely observational uses (logging, metrics) should not implement this
+     * hook — the event stream and session recording already serve them, and
+     * a gate sacrifices real-time streaming.
+     *
+     * <p>The default completes empty, which counts as accepting the candidate
+     * — reachable only through an explicit {@code ON_FINAL_ANSWER} declaration
+     * without an override.
+     *
+     * <p><b>Chain semantics.</b> Gates are consulted sequentially in {@link
+     * #order()} order (higher first; registration order within ties). Each
+     * gate receives the current working draft: the chain head sees the
+     * model's original, later gates see their predecessors' replacements.
+     * Vetoes do not short-circuit: every gate is consulted, all feedback of
+     * a round is collected in chain order, and one round with multiple
+     * vetoes counts as a single retry — the retry writes the model's
+     * original draft plus the merged feedback to memory, never a gate's
+     * rewrite. The framework honors at most 10 retries per call (not
+     * configurable): the 11th veto fails the whole call closed — an error,
+     * zero delivery, the rejected draft still reaching the session-recording
+     * audit. Graceful exhaustion fallback is a gate's own job: watch {@link
+     * FinalAnswerInput#retryCount()} and switch to {@link
+     * FinalAnswerDecision#accept(Msg)} with fallback text before hitting the
+     * limit. An {@code accept(replacement)} replacement is memorized and
+     * delivered as the chain's output; at the {@code MAX_ITERATIONS} and
+     * {@code RETURN_DIRECT} exits the framework re-applies the exit's {@code
+     * GenerateReason} onto it. A gate error fails the call, never a silent
+     * pass.
+     *
+     * @param ctx per-call runtime context (session, user, attributes)
+     * @param input gate input: the working draft this gate receives, retries
+     *     already honored, cumulative usage, and the exit that produced the
+     *     candidate
+     * @return exactly one decision — accept (optionally with a replacement)
+     *     or retry with injected feedback; an empty Mono counts as a plain
+     *     accept
+     */
+    default Mono<FinalAnswerDecision> onFinalAnswer(RuntimeContext ctx, FinalAnswerInput input) {
+        return Mono.empty();
+    }
 
     /**
      * Runs after a successful call result, before native checkpoints and writer release.
