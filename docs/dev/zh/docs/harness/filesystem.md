@@ -365,7 +365,7 @@ HarnessAgent agent = HarnessAgent.builder()
     .inheritEnv(true))
 ```
 
-读链是 workspace → 项目写层 → 共享项目。上层已有同名副本时它会遮蔽项目写层，所以 `write`/`edit`/`upload`/`move` 会拒绝并报出该副本的时间戳与大小；`delete` 会先删除上层副本，之后即可恢复写入。
+读链是 workspace → 项目写层 → 共享项目。上层已有同名副本时它会遮蔽项目写层，所以 `write`/`edit`/`upload`/`move` 会拒绝并报出该副本的时间戳与大小。
 
 #### 示例场景：本地开发助手
 

@@ -366,7 +366,7 @@ Enable `projectWritable(true)` and the framework routes writes by path:
     .inheritEnv(true))
 ```
 
-Reads go workspace, then the project write layer, then the shared project. A workspace copy of the same key shadows the project write, so `write`/`edit`/`upload`/`move` refuse and report its timestamp and size; `delete` removes the workspace copy first, which restores writes through.
+Reads go workspace, then the project write layer, then the shared project. A workspace copy of the same key shadows the project write, so `write`/`edit`/`upload`/`move` refuse and report its timestamp and size.
 
 #### Example: local development assistant
 

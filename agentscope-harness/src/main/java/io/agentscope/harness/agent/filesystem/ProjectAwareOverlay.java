@@ -181,8 +181,8 @@ public class ProjectAwareOverlay extends OverlayFilesystem implements AbstractSa
                         + key
                         + "'"
                         + details
-                        + " is read before the project layer, so this change would not be visible."
-                        + " Delete the workspace copy first.");
+                        + " is read before the project layer, so this change would not be visible;"
+                        + " the project copy stays shadowed until that workspace copy is removed.");
     }
 
     @Override
@@ -221,18 +221,10 @@ public class ProjectAwareOverlay extends OverlayFilesystem implements AbstractSa
         if (linked != null) {
             return projectFs.delete(runtimeContext, linked);
         }
-        // A workspace copy is what reads return, so delete it first: removing the project copy
-        // underneath would leave the caller still reading the old file, and the refusal's
-        // "delete the workspace copy first" would never converge.
-        if (Path.of(normalizeSeparators(target)).isAbsolute()) {
-            return projectFs.exists(runtimeContext, target)
-                    ? projectFs.delete(runtimeContext, target)
-                    : super.delete(runtimeContext, target);
+        if (projectFs.exists(runtimeContext, target)) {
+            return projectFs.delete(runtimeContext, target);
         }
-        if (upper().exists(runtimeContext, target) || !projectFs.exists(runtimeContext, target)) {
-            return super.delete(runtimeContext, target);
-        }
-        return projectFs.delete(runtimeContext, target);
+        return super.delete(runtimeContext, target);
     }
 
     @Override

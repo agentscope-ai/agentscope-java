@@ -114,31 +114,6 @@ class ProjectWriteShadowTest {
     }
 
     /**
-     * The refusal tells the caller to delete the workspace copy first, and delete must do that:
-     * removing the project copy underneath would leave the read still returning the workspace
-     * file, so the next write would be refused again.
-     */
-    @Test
-    void delete_removesTheWorkspaceCopyFirstSoTheWriteCanProceed() throws Exception {
-        assertTrue(filesystem(false).write(alice(), RELATIVE, "mine").isSuccess());
-        Files.createDirectories(project.resolve("alice/src"));
-        Files.writeString(project.resolve("alice/" + RELATIVE), "project-copy");
-
-        AbstractFilesystem fs = filesystem(true);
-        assertFalse(fs.write(alice(), RELATIVE, "next").isSuccess());
-
-        assertTrue(fs.delete(alice(), RELATIVE).isSuccess());
-        assertFalse(
-                Files.exists(workspace.resolve("alice/" + RELATIVE)),
-                "delete removed the project copy the read never returns");
-        assertEquals("project-copy", fs.read(alice(), RELATIVE, 0, 100).fileData().content());
-        assertTrue(
-                fs.edit(alice(), RELATIVE, "project-copy", "next", false).isSuccess(),
-                "with the workspace copy gone the project key is writable again");
-        assertEquals("next", fs.read(alice(), RELATIVE, 0, 100).fileData().content());
-    }
-
-    /**
      * The workspace copy of a metadata file is the caller's own customization, and it is what
      * reads return; a newer project copy is a fallback the caller has overridden, not a conflict.
      */
