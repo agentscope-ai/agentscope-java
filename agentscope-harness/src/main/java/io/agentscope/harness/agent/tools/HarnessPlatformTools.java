@@ -58,6 +58,7 @@ public final class HarnessPlatformTools {
                     "agent_spawn",
                     "agent_send",
                     "agent_list",
+                    "agent_release",
                     "agent_generate",
                     "sessions_spawn",
                     "sessions_send",

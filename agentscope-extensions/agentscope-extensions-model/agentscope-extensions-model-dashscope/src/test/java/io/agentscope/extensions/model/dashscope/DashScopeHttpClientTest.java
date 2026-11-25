@@ -265,6 +265,21 @@ class DashScopeHttpClientTest {
         assertFalse(DashScopeHttpClient.isMultimodalModel("qwen-3.8-flash"));
     }
 
+    @ParameterizedTest
+    @ValueSource(strings = {"qwen4-max", "Qwen4-Max", "qwen4-max-2026-11-01", "qwen4-max-preview"})
+    void testQwen4MultimodalRouting(String modelName) {
+        assertTrue(DashScopeHttpClient.isMultimodalModel(modelName));
+        assertTrue(client.requiresMultimodalApi(modelName, EndpointType.AUTO));
+        assertEquals(
+                DashScopeHttpClient.MULTIMODAL_GENERATION_ENDPOINT,
+                client.selectEndpoint(modelName, EndpointType.AUTO));
+    }
+
+    @Test
+    void testQwen4ModelNameWithExtraHyphenDoesNotMatch() {
+        assertFalse(DashScopeHttpClient.isMultimodalModel("qwen-4-max"));
+    }
+
     @Test
     void testIsMultimodalModelPatterns() {
         // qvq prefix

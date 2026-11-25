@@ -118,6 +118,8 @@ toolkit.registerTool(new SimpleTools());
 | `description` | `String` | 面向 agent 的描述 |
 | `readOnly` | `boolean` | 是否只读（默认 `false`） |
 | `concurrencySafe` | `boolean` | 是否可并发调用（默认 `true`） |
+| `evictable` | `boolean` | 超大结果卸载是否可以替换该工具的结果（默认 `true`） |
+| `prunable` | `boolean` | 对话裁剪是否可以修剪该工具的较旧结果（默认 `true`） |
 | `stateInjected` | `boolean` | 是否在调用时注入 `AgentState` 作为额外参数（默认 `false`） |
 | `dangerousFiles` / `dangerousDirectories` | `String[]` | 追加自定义危险路径列表 |
 | `converter` | `Class<? extends ToolResultConverter>` | 自定义返回值到 `ToolResultBlock` 的转换器 |

@@ -195,6 +195,7 @@ Key points:
 - **Re-assembled every turn.** Edit `AGENTS.md` or `MEMORY.md` and the next `call()` picks up the change — no restart, no rebuild.
 - **`MEMORY.md` is token-estimated before injection.** Overflow truncates by character count with a trailing note that nudges the model toward `memory_search`.
 - **`knowledge/` is a directory index + entry file.** The full tree never enters the prompt — only `KNOWLEDGE.md` plus a listing of paths; the agent reads what it needs with `read_file`.
+- **Host facts follow the execution backend.** The host operating system, host workspace and JVM temporary directory appear in `## Runtime Environment` only for local and remote-template-fallback deployments. A pure sandbox execution backend omits them: they are not actionable there and would contradict the sandbox description of file and shell paths. A sandbox root is shown only when the current call's active sandbox supplies workspace metadata; unknown roots and container IDs are not inferred from filesystem proxy IDs.
 
 ### Two-layer reads (filesystem-first + local fallback)
 
