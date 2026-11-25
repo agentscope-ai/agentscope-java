@@ -131,6 +131,7 @@ import org.junit.jupiter.params.provider.ValueSource;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.publisher.Sinks;
+import reactor.core.scheduler.Schedulers;
 
 class AgentScopeAdapterTest {
     @TempDir Path directory;
@@ -2971,5 +2972,178 @@ class AgentScopeAdapterTest {
                     TurnStatus.SUCCEEDED,
                     backend.turn(new ThreadKey(key, "main"), turn.turnId()).status());
         }
+    }
+
+    @Test
+    void cancelReconcilesDispatchedNativeCallSoSettlementCanCommit() throws Exception {
+        // A native (in-process) tool that dispatches and then blocks: cancelling the Turn stops the
+        // worker before action/end is written, leaving tool/dispatch unresolved. Without automatic
+        // reconciliation the Thread can never settle and every later Turn is blocked.
+        var entered = new CountDownLatch(1);
+        var release = new CountDownLatch(1);
+        var adapter = blockingNativeAdapter(entered, release);
+        var thread = new ThreadKey(key, "main");
+        try (var backend = LocalBackend.open(directory.resolve("cancel-native-dispatch"))) {
+            String turnId;
+            try (var runtime = runtime(backend, adapter, null)) {
+                runtime.createSession(key, "agent").mainThread().view().definition();
+                turnId = runtime.getSession(key).submit("one", "run job").turnId();
+                var ticking = new Thread(() -> runtime.tick(thread), "cancel-tick");
+                ticking.start();
+                assertTrue(
+                        entered.await(TURN_DEADLINE.toMillis(), TimeUnit.MILLISECONDS),
+                        "native tool never dispatched");
+                backend.cancel(thread, turnId, "ui-cancel");
+                release.countDown();
+                ticking.join(TURN_DEADLINE.toMillis());
+            }
+
+            try (var settled = runtime(backend, adapter, null)) {
+                tickUntilTerminal(settled, backend, thread, turnId);
+                assertNull(settled.lastFailure(thread));
+                assertEquals(TurnStatus.CANCELLED, backend.turn(thread, turnId).status());
+            }
+
+            // The reconciled outcome is committed, so the Thread accepts another Turn.
+            try (var next =
+                    runtime(
+                            backend,
+                            adapter(new ScriptedModel(false), PermissionMode.BYPASS, Map.of()),
+                            null)) {
+                next.createSession(key, "agent").mainThread().view().definition();
+                var turn = next.getSession(key).submit("two", "next turn");
+                next.tick(thread);
+                assertNull(next.lastFailure(thread));
+                assertEquals(TurnStatus.SUCCEEDED, backend.turn(thread, turn.turnId()).status());
+            }
+        } finally {
+            release.countDown();
+        }
+    }
+
+    @Test
+    void failedSettlementStillRequiresReconciliationForLostNativeCalls() throws Exception {
+        // FAILED keeps the manual reconciliation gate: a crashed or retryable Turn may be replayed,
+        // so its lost side effects must never be silently recorded as interrupted. The probe runs
+        // inside the invocation, where tool/dispatch exists but action/end does not yet.
+        var checked = new AtomicReference<String>();
+        var spec =
+                ToolBase.builder()
+                        .name("job")
+                        .description("probing native fixture")
+                        .inputSchema(
+                                Map.of(
+                                        "type",
+                                        "object",
+                                        "properties",
+                                        Map.of("value", Map.of("type", "integer"))));
+        var nativeTool =
+                new ToolBase(spec) {
+                    @Override
+                    public Mono<ToolResultBlock> callAsync(ToolCallParam param) {
+                        return Mono.fromCallable(
+                                        () -> {
+                                            var context =
+                                                    param.getRuntimeContext()
+                                                            .get(HarnessContext.class);
+                                            try {
+                                                adapterRef
+                                                        .get()
+                                                        .settle(context, TurnStatus.FAILED, "lost");
+                                            } catch (DurableException refused) {
+                                                checked.set(refused.getMessage());
+                                            } catch (Exception other) {
+                                                checked.set(other.getClass().getSimpleName());
+                                            }
+                                            return ToolResultBlock.text("done");
+                                        })
+                                .subscribeOn(Schedulers.boundedElastic());
+                    }
+                };
+        var adapter =
+                AgentScopeAdapter.forReAct(
+                        binding -> {
+                            var toolkit = new Toolkit();
+                            toolkit.registerTool(nativeTool);
+                            return ReActAgent.builder()
+                                    .name("probe-fixture")
+                                    .model(new ScriptedModel(true))
+                                    .toolkit(toolkit)
+                                    .permissionContext(
+                                            PermissionContextState.builder()
+                                                    .mode(PermissionMode.BYPASS)
+                                                    .build());
+                        },
+                        Map.of());
+        adapterRef.set(adapter);
+        try (var backend = LocalBackend.open(directory.resolve("failed-native-dispatch"));
+                var runtime = runtime(backend, adapter, null)) {
+            runtime.createSession(key, "agent").mainThread().view().definition();
+            runtime.getSession(key).submit("one", "run job");
+            runtime.tick(new ThreadKey(key, "main"));
+            assertNull(runtime.lastFailure(new ThreadKey(key, "main")));
+            assertEquals("Native tool outcome requires reconciliation", checked.get());
+        } finally {
+            adapterRef.set(null);
+        }
+    }
+
+    /** Set while the probing tool drives a direct settlement call. */
+    private static final AtomicReference<AgentScopeAdapter> adapterRef = new AtomicReference<>();
+
+    /** A native tool that dispatches and then blocks until released. */
+    private static AgentScopeAdapter blockingNativeAdapter(
+            CountDownLatch entered, CountDownLatch release) {
+        var spec =
+                ToolBase.builder()
+                        .name("job")
+                        .description("blocking native fixture")
+                        .inputSchema(
+                                Map.of(
+                                        "type",
+                                        "object",
+                                        "properties",
+                                        Map.of("value", Map.of("type", "integer"))));
+        var nativeTool =
+                new ToolBase(spec) {
+                    @Override
+                    public Mono<ToolResultBlock> callAsync(ToolCallParam param) {
+                        return Mono.fromCallable(
+                                        () -> {
+                                            entered.countDown();
+                                            release.await(10, TimeUnit.SECONDS);
+                                            return ToolResultBlock.text("late");
+                                        })
+                                .subscribeOn(Schedulers.boundedElastic());
+                    }
+                };
+        return AgentScopeAdapter.forReAct(
+                binding -> {
+                    var toolkit = new Toolkit();
+                    toolkit.registerTool(nativeTool);
+                    return ReActAgent.builder()
+                            .name("blocking-fixture")
+                            .model(new ScriptedModel(true))
+                            .toolkit(toolkit)
+                            .permissionContext(
+                                    PermissionContextState.builder()
+                                            .mode(PermissionMode.BYPASS)
+                                            .build());
+                },
+                Map.of());
+    }
+
+    /** Ticks until the Turn reaches a terminal status. */
+    private static void tickUntilTerminal(
+            DurableRuntime runtime, SessionBackend backend, ThreadKey thread, String turnId)
+            throws InterruptedException {
+        long deadline = System.currentTimeMillis() + TURN_DEADLINE.toMillis();
+        while (System.currentTimeMillis() < deadline) {
+            runtime.tick(thread);
+            if (backend.turn(thread, turnId).status().terminal()) return;
+            Thread.sleep(10L);
+        }
+        throw new IllegalStateException(
+                "Turn did not settle: " + backend.turn(thread, turnId).status());
     }
 }

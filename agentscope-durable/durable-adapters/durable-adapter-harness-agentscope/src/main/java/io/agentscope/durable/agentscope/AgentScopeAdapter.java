@@ -27,6 +27,7 @@ import io.agentscope.core.journal.ModelInvocation;
 import io.agentscope.core.journal.ThreadInteractions;
 import io.agentscope.core.journal.ThreadJournal;
 import io.agentscope.core.journal.ThreadJournalStore;
+import io.agentscope.core.journal.ThreadRecovery;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.GenerateReason;
 import io.agentscope.core.message.Msg;
@@ -59,7 +60,9 @@ import io.agentscope.harness.agent.middleware.MemoryFlushMiddleware;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -662,6 +665,16 @@ public final class AgentScopeAdapter implements HarnessAdapter {
                     DurableException.Code.CONFLICT,
                     "External tool outcome requires reconciliation");
         var log = new BackendThreadJournal(context, executors, bindings);
+        if (status == TurnStatus.CANCELLED) {
+            // A user cancellation abandons in-flight native work, so the journal keeps
+            // tool/dispatch with no action/end. The Harness contract requires native pending work
+            // to be cleared before the terminal task is committed; recording those lost outcomes
+            // as INTERRUPTED states a fact (the result was lost and is never retried) and never
+            // guesses a success. FAILED keeps the manual reconciliation gate because that Turn may
+            // be replayed.
+            var lost = JournalProjection.read(log).uncertainToolCalls();
+            if (!lost.isEmpty()) ThreadRecovery.reconcile(log, interrupted(log, lost), reason);
+        }
         var projection = JournalProjection.read(log);
         var reconciled =
                 frame.tools().stream().map(tool -> tool.request().call().callId()).toList();
@@ -742,5 +755,34 @@ public final class AgentScopeAdapter implements HarnessAdapter {
                                     "reason",
                                     reason)));
         log.append(context.lease().turnId(), facts, status, error);
+    }
+
+    /** Interrupted outcomes for calls that dispatched but never reported a result. */
+    private static Map<String, ToolResultBlock> interrupted(
+            ThreadJournal log, Set<String> callIds) {
+        var names = new HashMap<String, String>();
+        for (var event : log.scanMetadata(0, log.head().seq())) {
+            if (!"tool/requested".equals(event.type())) continue;
+            String callId = String.valueOf(event.data().get("toolCallId"));
+            if (!callIds.contains(callId)) continue;
+            var call =
+                    JsonUtils.getJsonCodec()
+                            .convertValue(event.data().get("call"), ToolUseBlock.class);
+            names.put(callId, call.getName());
+        }
+        var outcomes = new LinkedHashMap<String, ToolResultBlock>();
+        for (var id : callIds) {
+            String name = names.getOrDefault(id, "tool");
+            outcomes.put(
+                    id,
+                    ToolResultBlock.text(
+                                    "Tool '"
+                                            + name
+                                            + "' was interrupted by the user; its side effect is"
+                                            + " unknown and it will not be retried.")
+                            .withIdAndName(id, name)
+                            .withState(ToolResultState.INTERRUPTED));
+        }
+        return outcomes;
     }
 }
