@@ -573,8 +573,8 @@ public class WorkspaceContextMiddleware implements HarnessRuntimeMiddleware {
      */
     private static boolean isPureSandbox(AbstractFilesystem fs) {
         return fs instanceof AbstractSandboxFilesystem
-                && !(fs instanceof OverlayFilesystem)
-                && !(fs instanceof LocalFilesystemWithShell);
+                && !(fs instanceof LocalFilesystemWithShell)
+                && detectLocalUpper(fs) == null;
     }
 
     /**

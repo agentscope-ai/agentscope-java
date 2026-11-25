@@ -26,6 +26,7 @@ import static org.mockito.Mockito.when;
 
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.harness.agent.context.WorkspaceContextMaterials;
+import io.agentscope.harness.agent.filesystem.OverlayFilesystem;
 import io.agentscope.harness.agent.filesystem.RoutedSandboxFilesystem;
 import io.agentscope.harness.agent.filesystem.local.LocalFilesystemWithShell;
 import io.agentscope.harness.agent.filesystem.model.FileData;
@@ -210,6 +211,24 @@ class WorkspaceContextMiddlewareSandboxPromptTest {
             assertFalse(prompt.contains("Local shell:"));
             assertFalse(prompt.contains("must** call deliver_artifact"));
             assertFalse(prompt.contains("upload/download tools"), () -> prompt);
+        }
+    }
+
+    @Test
+    void sandboxOverlayPrompt_omitsHostFacts(@TempDir Path workspace) {
+        var overlay = OverlayFilesystem.of(mockSandboxFilesystem(), mockSandboxFilesystem());
+
+        try (WorkspaceManager wm = new WorkspaceManager(workspace, overlay)) {
+            String prompt = prompt(wm, false);
+
+            assertTrue(
+                    prompt.contains(
+                            "File and shell paths follow the configured execution backend"));
+            assertFalse(prompt.contains("The host operating system is:"));
+            assertFalse(prompt.contains("The host workspace directory is:"));
+            assertFalse(prompt.contains("The host JVM temporary directory is:"));
+            assertFalse(prompt.contains("Local shell:"));
+            assertFalse(prompt.contains("Workspace root for file operations:"));
         }
     }
 
