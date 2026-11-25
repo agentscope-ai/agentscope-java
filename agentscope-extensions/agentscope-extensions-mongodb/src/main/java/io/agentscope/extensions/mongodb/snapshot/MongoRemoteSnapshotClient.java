@@ -25,12 +25,15 @@ import com.mongodb.client.gridfs.model.GridFSFile;
 import com.mongodb.client.gridfs.model.GridFSUploadOptions;
 import com.mongodb.client.model.Filters;
 import com.mongodb.client.model.Projections;
+import com.mongodb.client.model.Sorts;
 import io.agentscope.extensions.mongodb.MongoConstants;
 import io.agentscope.harness.agent.sandbox.snapshot.RemoteSnapshotClient;
 import java.io.ByteArrayInputStream;
 import java.io.FileNotFoundException;
 import java.io.InputStream;
+import java.util.ArrayList;
 import java.util.Date;
+import java.util.List;
 import java.util.Objects;
 import org.bson.Document;
 import org.bson.types.Binary;
@@ -94,12 +97,16 @@ public class MongoRemoteSnapshotClient implements RemoteSnapshotClient {
         Objects.requireNonNull(snapshotId, "snapshotId");
         Objects.requireNonNull(data, "data");
 
-        // Delete any existing file with the same id (upsert semantics).
-        deleteIfExists(snapshotId);
+        // Capture only completed revisions that predate this upload. Never remove the last
+        // restorable archive until the replacement stream has been uploaded successfully.
+        List<GridFSFile> previousFiles = findFiles(snapshotId);
 
         Document metadata = new Document(META_CREATED_AT, new Date());
         GridFSUploadOptions options = new GridFSUploadOptions().metadata(metadata);
         gridFSBucket.uploadFromStream(snapshotId, data, options);
+        for (GridFSFile previous : previousFiles) {
+            deletePrevious(previous, snapshotId);
+        }
     }
 
     @Override
@@ -109,7 +116,11 @@ public class MongoRemoteSnapshotClient implements RemoteSnapshotClient {
         // throws MongoGridFSException on the first read() if the file is missing.  To
         // preserve the eager FileNotFoundException contract and enable legacy fallback,
         // check existence first via find() (like exists() and delete() do).
-        GridFSFile file = gridFSBucket.find(Filters.eq(GRIDFS_FIELD_FILENAME, snapshotId)).first();
+        GridFSFile file =
+                gridFSBucket
+                        .find(Filters.eq(GRIDFS_FIELD_FILENAME, snapshotId))
+                        .sort(Sorts.descending("uploadDate", "_id"))
+                        .first();
         if (file != null) {
             return gridFSBucket.openDownloadStream(file.getId());
         }
@@ -138,22 +149,22 @@ public class MongoRemoteSnapshotClient implements RemoteSnapshotClient {
      */
     public boolean delete(String snapshotId) throws Exception {
         Objects.requireNonNull(snapshotId, "snapshotId");
-        GridFSFile file = gridFSBucket.find(Filters.eq(GRIDFS_FIELD_FILENAME, snapshotId)).first();
-        if (file == null) {
-            return deleteLegacy(snapshotId);
+        List<GridFSFile> files = findFiles(snapshotId);
+        for (GridFSFile file : files) {
+            gridFSBucket.delete(file.getId());
         }
-        gridFSBucket.delete(file.getId());
         // Also clean up legacy document if it exists (migration scenario).
-        deleteLegacy(snapshotId);
-        return true;
+        boolean legacyDeleted = deleteLegacy(snapshotId);
+        return !files.isEmpty() || legacyDeleted;
     }
 
-    private void deleteIfExists(String snapshotId) {
-        GridFSFile existing =
-                gridFSBucket.find(Filters.eq(GRIDFS_FIELD_FILENAME, snapshotId)).first();
-        if (existing == null) {
-            return;
-        }
+    private List<GridFSFile> findFiles(String snapshotId) {
+        return gridFSBucket
+                .find(Filters.eq(GRIDFS_FIELD_FILENAME, snapshotId))
+                .into(new ArrayList<>());
+    }
+
+    private void deletePrevious(GridFSFile existing, String snapshotId) {
         try {
             gridFSBucket.delete(existing.getId());
         } catch (MongoGridFSException e) {

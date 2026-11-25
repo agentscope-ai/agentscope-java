@@ -61,7 +61,7 @@ AgentStateStore store = MongoAgentStateStore.builder()
 
 - **单值**：存储在 `states.<key>`，版本号在 `versions.<key>`。
 - **列表**：存储在 `states.<key>` 为 BSON 数组，内容 hash 在 `hashes.<key>`，用于增量 append 优化。
-- **TTL**：`_updated_at` 上 30 天过期（sparse 索引），与快照 TTL 对齐。
+- **TTL**：`_updated_at` 上 30 天过期（sparse 索引）。
 
 ### 2. MongoBaseStore（BaseStore）
 
@@ -78,7 +78,7 @@ BaseStore store = new MongoBaseStore(mongoClient.getDatabase("agentscope"), "age
 
 ### 3. MongoSnapshotSpec
 
-沙箱快照存储为 BSON Binary，集合上建有 `createdAt` 的 30 天 TTL 索引。与会话 TTL 对齐，确保快照不会先于会话过期。
+沙箱快照使用 GridFS 存储，文件元数据与数据块分别放在两个集合中，没有独立的快照 TTL。显式删除所属会话时，应用会触发快照清理；MongoDB 的 TTL 机制使会话过期时，不会执行这个应用层回调。
 
 ```java
 import io.agentscope.extensions.mongodb.snapshot.MongoSnapshotSpec;
@@ -86,7 +86,9 @@ import io.agentscope.extensions.mongodb.snapshot.MongoSnapshotSpec;
 SandboxSnapshotSpec spec = new MongoSnapshotSpec(mongoClient, "agentscope");
 ```
 
-> BSON 文档大小上限 16 MB，快照上限 15 MB。更大工作区建议混合后端（MongoDB 管状态和锁，OSS 管快照）。
+覆盖快照时，会先上传新归档，成功后才删除之前已完成的版本。如果读取上传流失败，上一次完整归档仍可恢复。下载按 `uploadDate` 选择最新完成的文件；时间相同时按 `_id` 确定顺序。清理中断可能留下多个完整版本，下次覆盖会清理它开始时观察到的旧版本，显式删除快照则会清理所有同名版本及旧 BSON 快照。并发写入仍需要应用协调，这不代表快照与 Agent 状态之间具有事务一致性。
+
+GridFS 分块避免了旧版单 BSON 文档的 16 MB 限制。如果没有已完成的 GridFS 文件，仍会回退读取旧 BSON Binary 快照。
 
 ### 4. MongoSandboxExecutionGuard
 
@@ -114,7 +116,7 @@ SandboxExecutionGuard guard = MongoSandboxExecutionGuard.builder(mongoClient)
 |------|------|-----|---------|
 | 会话 | Agent 状态存储 | `_updated_at` 30 天 | `agentscope_sessions` |
 | 基础存储 | 工作区 KV | — | `agentscope_base` |
-| 快照 | 沙箱 tar 归档 | `createdAt` 30 天 | `agentscope_snapshots` |
+| 快照 | 沙箱 tar 归档 | 无独立 TTL | `agentscope_snapshots.files` / `agentscope_snapshots.chunks` |
 | 沙箱锁 | 分布式锁 | `expiresAt` 即时 | `agentscope_sandbox_locks` |
 
 所有集合名集中在 `MongoConstants` 中管理，可按组件覆盖。
@@ -126,4 +128,4 @@ SandboxExecutionGuard guard = MongoSandboxExecutionGuard.builder(mongoClient)
 | 已有 MongoDB 集群 | **首选** MongoDB |
 | 偏好文档型存储 | MongoDB |
 | 大量会话历史（字段无长度限制） | MongoDB（无 MySQL 字段长度红线） |
-| 大工作区快照（>15 MB） | 混合后端：MongoDB 管状态和锁，OSS 管快照 |
+| 大工作区快照（>15 MB） | GridFS 快照，或搭配 OSS 的混合后端 |
