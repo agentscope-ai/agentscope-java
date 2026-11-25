@@ -16,6 +16,7 @@
 package io.agentscope.harness.agent.memory.compaction;
 
 import io.agentscope.core.message.ContentBlock;
+import io.agentscope.core.message.HintBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ThinkingBlock;
@@ -37,6 +38,7 @@ import java.util.Map;
  *   <li>Thinking content: Uses the same character-based estimate as text content
  *   <li>Tool calls: Includes tool name, parameters, and structure overhead
  *   <li>Tool results: Includes output content and structure overhead
+ *   <li>Media (image, audio, video, ...): A fixed approximate weight per block
  *   <li>Message structure: Role, name, and formatting overhead
  * </ul>
  */
@@ -56,6 +58,13 @@ public class TokenCounterUtil {
 
     // Overhead tokens for tool result structure
     private static final int TOOL_RESULT_OVERHEAD = 8;
+
+    // Approximate tokens per media block (image, audio, video, ...). Real cost depends on the
+    // provider, resolution and duration; a fixed realistic weight keeps media-heavy histories from
+    // looking almost free, which would otherwise defeat compaction triggers and make every text
+    // summary of them look larger than the history it replaces. Same value as main's
+    // ContextTokenEstimator.approximate().
+    private static final int MEDIA_BLOCK_TOKENS = 2048;
 
     /**
      * Calculates the estimated total input tokens for a list of messages.
@@ -135,10 +144,13 @@ public class TokenCounterUtil {
             return estimateToolUseBlockTokens(toolUseBlock);
         } else if (block instanceof ToolResultBlock toolResultBlock) {
             return estimateToolResultBlockTokens(toolResultBlock);
+        } else if (block instanceof HintBlock hintBlock) {
+            // Hints are injected text (e.g. RAG context), not media
+            return estimateTextTokens(hintBlock.getHint());
         }
 
-        // For other block types (ImageBlock, AudioBlock, etc.), estimate minimal overhead
-        return 5;
+        // Other block types (ImageBlock, AudioBlock, VideoBlock, DataBlock, ...) are media
+        return MEDIA_BLOCK_TOKENS;
     }
 
     /**
