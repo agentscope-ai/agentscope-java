@@ -109,6 +109,16 @@ jobs:
           # child JVM and detached-process timing is not stable on hosted Windows runners.
           mvn -B -T1C "-Dmaven.javadoc.skip=true" "-Dmaven.source.skip=true" "-Djacoco.skip=true" "-DskipDurableWindowsTests=true" clean verify
 
+      - name: Merge cross-module coverage [Linux]
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          # Backend and Core code is also exercised by adapter and extension tests.
+          # Rebuild each source module's report with all reactor execution data.
+          mvn -B -pl :agentscope-parent jacoco:merge@merge-reactor-coverage
+          JACOCO_VERSION=$(mvn -B -q -pl :agentscope-parent -Dstyle.color=never help:evaluate -Dexpression=jacoco.version -DforceStdout)
+          mvn -B -T1C "org.jacoco:jacoco-maven-plugin:${JACOCO_VERSION}:report" "-Djacoco.dataFile=$GITHUB_WORKSPACE/target/jacoco-merged.exec"
+
       - name: Upload coverage reports to Codecov
         # Secrets are unavailable to fork PRs, and Codecov rejects tokenless uploads to a
         # protected branch (HTTP 400) — skipping the step beats failing the build on a run

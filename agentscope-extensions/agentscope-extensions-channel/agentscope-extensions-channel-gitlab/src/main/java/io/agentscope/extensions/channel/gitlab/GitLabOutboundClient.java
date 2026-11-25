@@ -17,8 +17,6 @@ package io.agentscope.extensions.channel.gitlab;
 
 import io.agentscope.core.message.Msg;
 import io.agentscope.harness.agent.gateway.channel.OutboundAddress;
-import java.net.URLEncoder;
-import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
@@ -69,10 +67,9 @@ public final class GitLabOutboundClient {
         if (text == null || text.isBlank()) {
             return Mono.empty();
         }
-        String encodedPath = URLEncoder.encode(target.path, StandardCharsets.UTF_8);
         String typeSegment = "Issue".equals(target.type) ? "issues" : "merge_requests";
         return client.post()
-                .uri("/projects/{id}/{type}/{iid}/notes", encodedPath, typeSegment, target.iid)
+                .uri("/projects/{id}/{type}/{iid}/notes", target.path, typeSegment, target.iid)
                 .header("PRIVATE-TOKEN", token)
                 .contentType(MediaType.APPLICATION_JSON)
                 .bodyValue(Map.of("body", text))

@@ -18,6 +18,7 @@ package io.agentscope.harness.agent.gateway;
 import io.agentscope.harness.agent.filesystem.remote.store.BaseStore;
 import io.agentscope.harness.agent.filesystem.remote.store.StoreItem;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
@@ -102,6 +103,43 @@ public final class StoreBackedSubagentRegistry implements SubagentRegistry {
             store.delete(NAMESPACE, subagentId);
         } catch (RuntimeException e) {
             log.warn("Failed to revoke exposed-subagent record {}: {}", subagentId, e.getMessage());
+        }
+    }
+
+    @Override
+    public boolean revokeBySessionId(String sessionId) {
+        if (sessionId == null) {
+            return false;
+        }
+        try {
+            List<String> subagentIds = new ArrayList<>();
+            int offset = 0;
+            while (true) {
+                List<StoreItem> items = store.search(NAMESPACE, SCAN_PAGE_SIZE, offset);
+                if (items == null || items.isEmpty()) {
+                    break;
+                }
+                for (StoreItem item : items) {
+                    SubagentRecord r = SubagentRecord.fromMap(item.value());
+                    if (r != null && sessionId.equals(r.sessionId())) {
+                        subagentIds.add(r.subagentId());
+                    }
+                }
+                offset += items.size();
+                if (items.size() < SCAN_PAGE_SIZE) {
+                    break;
+                }
+            }
+            for (String subagentId : subagentIds) {
+                revoke(subagentId);
+            }
+            return !subagentIds.isEmpty();
+        } catch (RuntimeException e) {
+            log.warn(
+                    "Failed to revoke exposed subagents for session {}: {}",
+                    sessionId,
+                    e.getMessage());
+            return false;
         }
     }
 

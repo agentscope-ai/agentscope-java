@@ -1,7 +1,7 @@
 ---
 title: Recoverable chat example
 description: Run agentscope-chat to explore history, SSE replay, user input and checkpoint continuation.
-zh_link: /v2/zh/blogs/best-practices/session-chat
+zh_link: /dev/zh/blogs/best-practices/session-chat
 ---
 
 Historical source: [agentscope-chat at v2.1.0-BETA1](https://github.com/agentscope-ai/agentscope-java/tree/v2.1.0-BETA1/agentscope-examples/agents/agentscope-chat). This shared post describes a later, unreleased DurableRuntime implementation; the tagged example uses AgentSession instead. Neither implementation is included in v2.0.4.

@@ -1,7 +1,7 @@
 ---
 title: Capability Grant (能力裁剪)
 description: 按用户/请求的实际权限，把 agent 无权的能力彻底切除
-en_link: /v2/en/docs/building-blocks/capability-grant
+en_link: /dev/en/docs/building-blocks/capability-grant
 ---
 
 ## 概述

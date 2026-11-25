@@ -1,7 +1,7 @@
 ---
 title: 可恢复聊天示例
 description: 运行 agentscope-chat，体验聊天历史、SSE 续传、用户补充与 checkpoint 恢复。
-en_link: /v2/en/blogs/best-practices/session-chat
+en_link: /dev/en/blogs/best-practices/session-chat
 ---
 
 历史源码见 [v2.1.0-BETA1 的 agentscope-chat](https://github.com/agentscope-ai/agentscope-java/tree/v2.1.0-BETA1/agentscope-examples/agents/agentscope-chat)。本共享文章描述的是后来尚未发布的 DurableRuntime 实现；tag 中的示例使用 AgentSession，两种实现均不包含在 v2.0.4 中。

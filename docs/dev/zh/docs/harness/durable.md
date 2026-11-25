@@ -85,6 +85,89 @@ runtime.start();
 ThreadJournal 负责 Agent 原生历史，Durable 调度仍由 Durable Runtime 负责。
 namespace 映射为 `RuntimeContext.userId`，身份限定在每次调用内。
 
+### 通过 Durable Worker 执行模型推理
+
+使用 `withModelExecutions` 将 ReAct 或 Harness Agent 的推理交给 `ModelWorker`。
+Agent 先保存恢复位置，再提交模型请求。Worker 按路由认领请求、持有租约、调用模型并按序提交分片批次。
+首批分片提交后，原 Turn 即可恢复。共享同一后端的兼容 Runtime 可用原 Session、Thread、Turn 和模型调用 ID，
+回放已提交批次并读取后续分片。同一 Thread 的后续 Turn 等当前 Turn 结束后再执行。
+
+本地部署可以用 SQLite 保存状态、索引和分片正文。
+
+```java
+var records = JdbcRecordStore.sqlite(Path.of("./durable.db"));
+var objects = new RecordObjectStore(records);
+var wakeups = Wakeups.local();
+var backend = new TransactionalSessionBackend(records, objects).withWakeups(wakeups);
+var executions = new TransactionalModelExecutionStore(
+        records, new ObjectModelOutputStore(objects), wakeups);
+var adapter = AgentScopeAdapter.forReAct(
+        binding -> ReActAgent.builder().name("assistant").model(model), Map.of())
+        .withModelExecutions(executions, "reasoning");
+var runtime = DurableRuntime.builder().backend(backend)
+        .harness("assistant", "definition-v1", adapter).build();
+var worker = new ModelWorker(executions, "reasoning", ModelExecutor.using(name -> model));
+worker.start();
+runtime.start();
+```
+
+在宿主运行期间保持 Worker 和 Runtime 运行，并在退出时关闭。
+`ModelExecutor.using` 根据请求中的模型名，从 Worker 自己的模型配置解析模型。
+
+分布式部署时，Session 后端、Agent 和 Worker 共享事务数据库，例如通过 `JdbcRecordStore` 接入 PostgreSQL。
+数据库保存执行状态、分片序号和存储引用。为 `TransactionalSessionBackend` 和 `ObjectModelOutputStore`
+配置同一套 `S3ObjectStore` 或 `OssObjectStore`，将交接调用的分片正文及其 Journal 内容保存到对象存储。
+直调的 Journal 分片继续按原有的大小阈值存储。
+通过 `RocketMqWakeups` 通知 Worker 和 Runtime。通知延迟或丢失时，轮询仍可从持久状态发现变化。
+
+自定义 `ModelOutputStore` 可以将正文写入支持回放的消息队列。`write` 返回稳定的引用，例如 topic、
+partition 和 offset。`read` 必须允许任意实例按该引用读回同一批次，保留期应覆盖 Turn 的恢复窗口。
+写入成功后，Runtime 才提交引用。如果 Worker 在启动模型调用后丢失租约，执行状态会结束为 `UNKNOWN`，
+Runtime 可处理这一结果，避免自动发起第二次模型调用。
+
+### 通过消息队列执行模型推理
+
+将 `adapter.withQueuedModel(publisher)` 注册为当前定义的 Harness。ReAct 和 Harness 工厂均支持。
+发布方收到的 `QueuedModelRequest` 包含目标 Thread、Turn、调用 ID、模型名、已准备的消息、工具定义和生成参数。
+发布方应在队列确认接收后返回。如果发送成功但确认丢失，恢复时可能按原调用 ID 重投，并导致额外模型请求。
+Worker 使用自身配置的模型凭据。Harness 的记忆和收尾阶段沿用各自的模型调用路径。
+
+适配器在投递前保存已准备好的请求和 Agent 恢复位置。投递完成后，Turn 进入等待并释放本次 Runtime 执行。
+共享同一后端的兼容 Runtime 可以接续原 Turn。同一 Thread 的后续 Turn 可以提交，但仍会在等待中的 Turn 之后排队。
+回包消费者通过原请求定位等待中的 Turn：
+
+```java
+var turn = runtime.getSession(request.thread().session())
+        .getThread(request.thread().threadId()).getTurn(request.turnId());
+String deliveryId = java.util.UUID.randomUUID().toString();
+boolean accepted = QueuedModelRequest.begin(turn, request.callId(), deliveryId);
+```
+
+每次生成前只调用一次 begin。accepted 为 false 时确认 MQ 投递并返回。同一 generation 的所有分片沿用同一 deliveryId。
+
+```java
+var signal = QueuedModelRequest.reply(
+        request.callId(), deliveryId, sequence, chatResponse, last);
+boolean stored = QueuedModelRequest.accept(turn, signal);
+```
+
+stored 为 false 表示后端已确认忽略该回包，也可以确认投递。
+
+序号从零开始。整体返回只发一个终态帧；流式返回按连续序号发分片，并在最后一帧设置终态。
+已发完内容时可用空响应结束流。远端失败使用 `QueuedModelRequest.failure`。
+消费者在信号写入成功后确认 MQ 消息，重投时使用相同的信号 ID 和内容。
+第零帧唤醒可用 Runtime；接手的实例按序展示分片，在成功终态后推进原 ReAct 循环。
+
+适配器默认使用五分钟空闲期限，从队列确认接收开始计时，可通过
+`withQueuedModel(publisher, Duration.ofMinutes(15))` 调整。新消费的有序分片续期，
+期限会持久化，更换 Runtime 后重放已消费分片不会续期。到期时若仍缺帧，Turn 进入失败状态，
+错误包含调用 ID 和所缺序号。
+接手时已到齐的回包仍可处理。若接流实例在展示部分回复后退出，新实例以同一消息 ID 和
+attempt、更高的 revision 回放已保存分片。客户端收到新 revision 时替换之前的部分文本。
+回包格式无效时，Turn 会失败，后续分片中的工具调用不会执行。
+配置备用模型时，主模型在首个响应前明确回传失败，可以触发独立的备用模型调用。
+接手的 Runtime 会继续这次备用调用。正常挂起、回包格式错误、模型已输出分片后的失败均不会触发模型切换。
+
 ## 重连与控制任务
 
 ### 重新打开原任务
@@ -867,3 +950,17 @@ var children = new DelegationExecutor(backend, request ->
 取消先于受理时只保存取消记录，后续迟到的 start 不会创建子任务。事务内拒绝跨 Session、父 Thread
 自身及未完成委派形成的 Thread 依赖环。`turn.delegated`、`tool.delegated` 和
 `tool.delegation.cancel_requested` 是统一公开事件；它们不替代真实子任务结果及父任务的结果应用。
+
+队列模型的空闲期限随新消费的有序分片续期，重放已消费分片不会续期。发布器抛出普通 RuntimeException 表示 MQ 接收结果未知，按宿主有界恢复策略以相同 callId 重投。明确拒绝应抛出带分类码的 DurableException。回包消费者可调用 QueuedModelRequest.accept 持久化回包，并安全确认终态或已取消 Turn 的晚包。Provider 已接收请求但确认丢失时仍可能重复计费。
+
+Worker 每轮生成前调用 `QueuedModelRequest.begin(turn, callId, deliveryId)`，接手时使用新的唯一 deliveryId，
+重试同一次 begin 命令时沿用原 ID。返回 false 时确认 MQ 消息即可。后续使用带 deliveryId 的 reply 和 failure 重载。
+后端在事务内为 begin 分配单调递增的 epoch。新 attempt 替换原 Turn 已展示的部分文本，旧 attempt 晚包返回 ignored，
+可直接 ACK。收齐有序终帧后，collector 在派发工具前原子封存胜出的 attempt。并发接手触发恢复，封存后拒绝继续接手。
+
+Throwable failure 重载将 provider HTTP 429、5xx、I/O 和超时归为瞬时失败，其余 HTTP 状态及未分类异常归为永久失败。
+Worker 也可显式指定 retryable。瞬时失败消耗持久化的宿主重试预算，并在原 Turn 投递后续模型调用。
+永久失败沿用已配置的 fallback 语义。队列 collector 通过 core request observer 输出标准 started、usage、ended 事件。
+这些事件记录 collector 对回包的观测，collector 更换后会为持久化回包建立新的观测。
+
+Collector 在读取回包前订阅已配置的 backend wakeups，完成、失败或取消时释放订阅。丢失的提示由最长一秒的退避轮询补偿。Worker 开始 generation 后，Turn 继续挂起，直到首个响应到达。
