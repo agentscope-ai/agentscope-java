@@ -16,6 +16,7 @@
 package io.agentscope.extensions.agentprotocol;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.harness.agent.subagent.protocol.RemoteAgentEvent;
@@ -125,6 +126,78 @@ class AgentProtocolTaskEventBusTest {
         assertEquals(sizeAfterComplete, received.size());
         assertTrue(completed.get());
         sub.dispose();
+    }
+
+    @Test
+    void subscribe_afterComplete_replaysBufferAndThenCompletes() {
+        bus.publish("task-late", event(RemoteEventType.RUN_STARTED));
+        bus.publish("task-late", event(RemoteEventType.TEXT_DELTA));
+        bus.complete("task-late");
+
+        List<RemoteAgentEvent> received =
+                bus.subscribe("task-late", 0L).collectList().block(Duration.ofSeconds(2));
+
+        assertNotNull(received, "a late subscriber must terminate, not wait for the SSE timeout");
+        assertEquals(2, received.size());
+        assertEquals(RemoteEventType.RUN_STARTED, received.get(0).getType());
+        assertEquals(RemoteEventType.TEXT_DELTA, received.get(1).getType());
+    }
+
+    @Test
+    void subscribe_afterComplete_honoursFromSeq() {
+        bus.publish("task-late-seq", event(RemoteEventType.RUN_STARTED));
+        bus.publish("task-late-seq", event(RemoteEventType.TEXT_DELTA));
+        bus.complete("task-late-seq");
+
+        List<RemoteAgentEvent> received =
+                bus.subscribe("task-late-seq", 1L).collectList().block(Duration.ofSeconds(2));
+
+        assertNotNull(received);
+        assertEquals(1, received.size());
+        assertEquals(2L, received.get(0).getSeq());
+    }
+
+    @Test
+    void channels_areBoundedByMaxChannels() {
+        AgentProtocolTaskEventBus bounded = new AgentProtocolTaskEventBus(16, 8);
+
+        for (int i = 0; i < 50; i++) {
+            bounded.subscribe("bounded-" + i, 0L);
+        }
+
+        assertTrue(
+                bounded.channelCount() <= 8,
+                "retained channels must stay bounded, was " + bounded.channelCount());
+
+        bounded.publish("bounded-49", event(RemoteEventType.RUN_STARTED));
+        List<RemoteAgentEvent> received =
+                bounded.subscribe("bounded-49", 0L)
+                        .take(1)
+                        .collectList()
+                        .block(Duration.ofSeconds(2));
+        assertNotNull(received);
+        assertEquals(1, received.size());
+    }
+
+    @Test
+    void completedChannelsAreEvictedBeforeLiveOnes() {
+        AgentProtocolTaskEventBus bounded = new AgentProtocolTaskEventBus(16, 3);
+
+        bounded.publish("live-1", event(RemoteEventType.RUN_STARTED));
+        bounded.publish("done-1", event(RemoteEventType.RUN_STARTED));
+        bounded.complete("done-1");
+        bounded.subscribe("live-2", 0L);
+        bounded.subscribe("live-3", 0L);
+
+        List<RemoteAgentEvent> live =
+                bounded.subscribe("live-1", 0L).take(1).collectList().block(Duration.ofSeconds(2));
+        assertNotNull(live, "a live channel must survive eviction while a completed one exists");
+        assertEquals(1, live.size());
+
+        List<RemoteAgentEvent> done =
+                bounded.subscribe("done-1", 0L).collectList().block(Duration.ofSeconds(2));
+        assertNotNull(done, "a reconnect to an evicted completed task must terminate");
+        assertTrue(done.isEmpty(), "an evicted completed channel has nothing left to replay");
     }
 
     private static RemoteAgentEvent event(RemoteEventType type) {
