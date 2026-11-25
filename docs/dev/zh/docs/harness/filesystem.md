@@ -311,7 +311,7 @@ HarnessAgent agent = HarnessAgent.builder()
 ```java
 .filesystem(new LocalFilesystemSpec()
     .executeTimeoutSeconds(120)       // shell 命令超时
-    .maxOutputBytes(100_000)          // 单条命令最大输出字节
+    .maxOutputBytes(100_000)          // 保留的输出预览预算
     .env("MY_VAR", "value")          // 额外环境变量
     .inheritEnv(true)                // 是否继承父进程环境
     .mode(LocalFsMode.ROOTED)        // 路径策略
@@ -322,7 +322,7 @@ HarnessAgent agent = HarnessAgent.builder()
 | 方法 | 说明 | 默认值 |
 |------|------|-------|
 | `executeTimeoutSeconds(int)` | 单条 shell 命令超时（秒） | 120 |
-| `maxOutputBytes(int)` | 单条命令最大捕获输出字节数 | 100,000 |
+| `maxOutputBytes(int)` | 单条命令保留的输出预览字节预算 | 100,000 |
 | `env(String, String)` | 添加 shell 环境变量 | 无 |
 | `inheritEnv(boolean)` | 是否继承父进程环境 | `false` |
 | `mode(LocalFsMode)` | 路径解析策略 | `ROOTED` |
@@ -495,6 +495,14 @@ Harness 把仓库中当前可见的技能渲染成仅供本轮请求使用的 `<
 | 本机 | ✅ | 宿主 `sh -c`，cwd 为 `project` 目录 |
 | 共享存储 | ❌ | 不提供 shell |
 | 沙箱 | ✅ | 沙箱容器内 |
+
+本地 Shell 输出超过 `maxOutputBytes` 时，保留 UTF-8 字符完整的头部和尾部，明确标注省略字节数。字节预算只约束保留的正文，不含省略和读取提示。捕获使用有界内存，并将输出流式写入归档，不再把全文累积在内存中。完整已捕获输出通过本地文件系统既有路径策略和 namespace 保存到工具结果卸载目录，只有保存成功后才返回 `read_file` 引用。需要查看省略的诊断内容时，应读取返回的真实路径。保存失败会说明限制，不改变命令退出码，也不重跑命令。超时结果保留已有输出并标明是部分内容。
+
+`ExecuteResponse.outputDigest` 是已捕获原始 stdout/stderr 流的可选 SHA-256 指纹。摘要可用时，Shell 工具结果通过 `agentscope_output_sha256` 元数据提供它；摘要不包含展示提示和归档路径，因此保存路径变化时仍可识别相同的已捕获输出。缺少摘要表示不可用，不表示输出为空。
+
+取消或超时时，本地执行会尽力清理父子进程、流和临时文件，但逃逸进程仍可能存活，预览预算也不是磁盘配额。需要更强隔离或存储限制时，应使用沙箱和部署层资源控制。
+
+其他执行后端若已丢失被截内容且未提供引用，工具无法重建，也不会编造读取路径。退出码 0 即使正文包含业务错误文本，仍然表示执行成功。失败 scope 跳过简单 `cd`、环境变量赋值及启动器前缀，只保留可执行文件名，不含参数；歧义 Shell 语法不提供 scope。这是尽力分类，不是完整 Shell 解析器或权限边界。
 
 ### tools.json / MCP 服务器
 

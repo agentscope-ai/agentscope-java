@@ -22,7 +22,6 @@ import static io.agentscope.extensions.model.openai.OpenAIModelProviderSupport.a
 
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.Model;
-import io.agentscope.core.model.ModelContextWindows;
 import io.agentscope.core.model.ModelCreationContext;
 import io.agentscope.core.model.spi.ModelProvider;
 import io.agentscope.extensions.model.openai.OpenAIChatModel;
@@ -82,9 +81,7 @@ public final class MiniMaxModelProvider implements ModelProvider {
                         .endpointPath(endpointPath)
                         .formatter(new MiniMaxFormatter())
                         .nativeStructuredOutput(false)
-                        .supportsToolChoiceSpecific(false)
-                        .contextWindowSize(
-                                ModelContextWindows.lookup(modelName, ModelContextWindows.MINIMAX));
+                        .supportsToolChoiceSpecific(false);
 
         GenerateOptions userOptions = context.component(GenerateOptions.class);
         GenerateOptions miniMaxDefaults = miniMaxDefaultOptions(context);

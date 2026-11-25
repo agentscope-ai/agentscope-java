@@ -17,10 +17,13 @@ package io.agentscope.harness.agent;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.core.event.AgentResultEvent;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
@@ -50,24 +53,20 @@ import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
-import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.ValueSource;
 import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
 
-/**
- * Regression tests for {@link HarnessAgent}'s context-overflow recovery: since a failed call
- * persists its state (including the turn's input), the retry must neither re-send that input nor
- * be reloaded from the uncompacted persisted state.
- */
+/** Verifies that overflow recovery continues the current reasoning step and preserves its input. */
 @HarnessQuiescence
 class HarnessAgentOverflowRecoveryTest {
 
     private static final String SESSION_ID = "overflow-session";
 
-    /** Enough prior turns that the forced compaction (keepMessages = 20) has a prefix to fold. */
+    /** Enough prior turns to leave a compressible prefix. */
     private static final int PRIOR_TURNS = 12;
 
     /** Padding that keeps prior turns above the fixed summary-wrapper cost after folding. */
@@ -89,7 +88,7 @@ class HarnessAgentOverflowRecoveryTest {
                         ? new JsonFileAgentStateStore(stateDir)
                         : new InMemoryAgentStateStore();
         ScriptedModel model = new ScriptedModel();
-        HarnessAgent agent = newAgent(model, store, new Toolkit());
+        HarnessAgent agent = newAgent(model, store, new Toolkit(), false);
         RuntimeContext ctx = runPriorTurns(agent);
 
         Msg input = userMsg("final question");
@@ -107,27 +106,103 @@ class HarnessAgentOverflowRecoveryTest {
     }
 
     /** Overflow after a tool step: the retry continues from it instead of redoing the turn. */
-    @Test
-    void overflowAfterAToolStepContinuesWithoutRerunningTheTool() {
+    @ParameterizedTest
+    @CsvSource({
+        "false,false,false",
+        "false,true,false",
+        "true,false,false",
+        "true,true,false",
+        "false,false,true",
+        "false,true,true",
+        "true,false,true",
+        "true,true,true"
+    })
+    void overflowAfterAToolStepRetriesOnceWithoutRerunningTheTool(
+            boolean journal, boolean stream, boolean retryOverflows) {
         AgentStateStore store = new JsonFileAgentStateStore(stateDir);
         ScriptedModel model = new ScriptedModel();
         Probe probe = new Probe();
         Toolkit toolkit = new Toolkit();
         toolkit.registerTool(probe);
-        HarnessAgent agent = newAgent(model, store, toolkit);
-        RuntimeContext ctx = runPriorTurns(agent);
+        try (HarnessAgent agent = newAgent(model, store, toolkit, journal)) {
+            RuntimeContext ctx = runPriorTurns(agent);
+            Msg input = userMsg("final question");
+            int before = model.mainInputs.size();
+            model.script(toolUse("probe-call", "probe"), overflow());
+            if (retryOverflows) {
+                model.script(overflow());
+                RuntimeException error =
+                        assertThrows(
+                                RuntimeException.class, () -> invoke(agent, input, ctx, stream));
+                assertTrue(error.getMessage().contains("context_length_exceeded"));
+            } else {
+                assertEquals("ok", invoke(agent, input, ctx, stream).getTextContent());
+                List<Msg> persisted =
+                        journal
+                                ? agent.getDelegate().getAgentState(ctx).getContext()
+                                : persistedContext(store);
+                assertEquals(1, count(persisted, input), "input persisted once");
+                assertEquals(1, toolResults(persisted, "probe-call"), "tool result persisted once");
+            }
+            assertEquals(before + 3, model.mainInputs.size(), "one tool step and two attempts");
+            assertEquals(1, probe.calls.get(), "the tool must not run again on the retry");
+            assertEquals(1, toolResults(model.lastMainInput(), "probe-call"));
+        }
+    }
 
-        Msg input = userMsg("final question");
-        model.script(toolUse("probe-call", "probe"), overflow());
-        Msg reply = agent.call(input, ctx).block(Duration.ofSeconds(30));
+    @ParameterizedTest
+    @CsvSource({
+        "false,false,false", "false,false,true", "false,true,false", "false,true,true",
+        "true,false,false", "true,false,true", "true,true,false", "true,true,true"
+    })
+    void preservesStructuredOutputAcrossOverflow(
+            boolean journal, boolean jsonSchema, boolean stream) {
+        var model = new ScriptedModel();
+        try (var agent = newAgent(model, new InMemoryAgentStateStore(), new Toolkit(), journal)) {
+            List<Msg> messages =
+                    List.of(userMsg(priorTurn(0).repeat(8)), userMsg("final question"));
+            RuntimeContext ctx = RuntimeContext.builder().sessionId(SESSION_ID).build();
+            model.script(
+                    overflow(),
+                    toolUse(
+                            "output",
+                            ReActAgent.STRUCTURED_OUTPUT_TOOL_NAME,
+                            Map.of("response", Map.of("value", "structured"))));
+            JsonNode schema =
+                    JsonUtils.getJsonCodec()
+                            .fromJson(
+                                    """
+                                    {"type":"object","properties":{"value":{"type":"string"}},"required":["value"]}
+                                    """,
+                                    JsonNode.class);
+            Mono<Msg> response =
+                    stream
+                            ? (jsonSchema
+                                            ? agent.streamEvents(messages, schema, ctx)
+                                            : agent.streamEvents(messages, Output.class, ctx))
+                                    .ofType(AgentResultEvent.class)
+                                    .single()
+                                    .map(AgentResultEvent::getResult)
+                            : jsonSchema
+                                    ? agent.call(messages, schema, ctx)
+                                    : agent.call(messages, Output.class, ctx);
+            Msg result = response.block(Duration.ofSeconds(30));
+            assertNotNull(result);
+            assertEquals("structured", result.getStructuredData(Output.class).value());
+            assertEquals(List.of(true, true), model.structuredRequests);
+        }
+    }
 
-        assertNotNull(reply);
-        assertEquals("ok", reply.getTextContent());
-        assertEquals(1, probe.calls.get(), "the tool must not run again on the retry");
-        List<Msg> persisted = persistedContext(store);
-        assertEquals(1, count(persisted, input), "input persisted once");
-        assertEquals(1, toolResults(persisted, "probe-call"), "tool result persisted once");
-        assertEquals(1, toolResults(model.lastMainInput(), "probe-call"));
+    public record Output(String value) {}
+
+    private static Msg invoke(HarnessAgent agent, Msg input, RuntimeContext ctx, boolean stream) {
+        return (stream
+                        ? agent.streamEvents(input, ctx)
+                                .ofType(AgentResultEvent.class)
+                                .single()
+                                .map(AgentResultEvent::getResult)
+                        : agent.call(input, ctx))
+                .block(Duration.ofSeconds(30));
     }
 
     @ParameterizedTest
@@ -136,7 +211,7 @@ class HarnessAgentOverflowRecoveryTest {
             String outputFormat, boolean overflow) {
         AgentStateStore store = new JsonFileAgentStateStore(stateDir);
         StructuredOverflowModel model = new StructuredOverflowModel();
-        try (HarnessAgent agent = newAgent(model, store, new Toolkit())) {
+        try (HarnessAgent agent = newAgent(model, store, new Toolkit(), false)) {
             RuntimeContext ctx = runPriorTurns(agent);
             model.overflowUntilSummarized.set(overflow);
             Msg input = userMsg("Return a receipt with value ok.");
@@ -180,14 +255,14 @@ class HarnessAgentOverflowRecoveryTest {
         public String value;
     }
 
-    private HarnessAgent newAgent(Model model, AgentStateStore store, Toolkit toolkit) {
+    private HarnessAgent newAgent(
+            Model model, AgentStateStore store, Toolkit toolkit, boolean journal) {
         return HarnessAgent.builder()
                 .name("overflow-agent")
                 .model(model)
                 .workspace(workspace)
                 .toolkit(toolkit)
-                // Overflow recovery only runs on the legacy state-store path.
-                .journalEnabled(false)
+                .journalEnabled(journal)
                 .stateStore(store)
                 .compaction(CompactionConfig.builder().triggerMessages(1_000).build())
                 .memory(
@@ -244,8 +319,17 @@ class HarnessAgentOverflowRecoveryTest {
     }
 
     private static Flux<ChatResponse> toolUse(String id, String name) {
+        return toolUse(id, name, Map.of());
+    }
+
+    private static Flux<ChatResponse> toolUse(String id, String name, Map<String, Object> input) {
         ToolUseBlock use =
-                ToolUseBlock.builder().id(id).name(name).input(Map.of()).content("{}").build();
+                ToolUseBlock.builder()
+                        .id(id)
+                        .name(name)
+                        .input(input)
+                        .content(JsonUtils.getJsonCodec().toJson(input))
+                        .build();
         return Flux.just(new ChatResponse("tool", List.of(use), null, Map.of(), "tool_use"));
     }
 
@@ -320,6 +404,7 @@ class HarnessAgentOverflowRecoveryTest {
 
         private final Queue<Flux<ChatResponse>> script = new ConcurrentLinkedQueue<>();
         private final List<List<Msg>> mainInputs = new CopyOnWriteArrayList<>();
+        private final List<Boolean> structuredRequests = new CopyOnWriteArrayList<>();
 
         @SafeVarargs
         final void script(Flux<ChatResponse>... responses) {
@@ -340,6 +425,12 @@ class HarnessAgentOverflowRecoveryTest {
                 List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
             if (tools != null && !tools.isEmpty()) {
                 mainInputs.add(List.copyOf(messages));
+                structuredRequests.add(
+                        tools.stream()
+                                .anyMatch(
+                                        tool ->
+                                                ReActAgent.STRUCTURED_OUTPUT_TOOL_NAME.equals(
+                                                        tool.getName())));
                 Flux<ChatResponse> scripted = script.poll();
                 if (scripted != null) {
                     return scripted;

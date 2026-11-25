@@ -118,6 +118,16 @@ class ContextConventionsResetOrderTest {
                 systemPrompt.contains("harness:context-conventions"),
                 "framework conventions must be present, got: " + systemPrompt);
         assertTrue(
+                systemPrompt.contains(
+                        "query the current state or the original operation's receipt"),
+                "uncertain writes must be checked before retrying");
+        assertTrue(
+                systemPrompt.contains("copy the source verbatim"),
+                "exact quotations must preserve the original source");
+        assertTrue(
+                systemPrompt.contains("permission denial is a stop condition"),
+                "conventions must not suggest permission bypass");
+        assertTrue(
                 systemPrompt.contains("USER_POLICY_TEXT"),
                 "user-registered item must survive the framework reset (#3829), got: "
                         + systemPrompt);

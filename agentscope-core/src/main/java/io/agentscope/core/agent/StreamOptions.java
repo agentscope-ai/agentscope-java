@@ -16,7 +16,7 @@
 
 package io.agentscope.core.agent;
 
-import java.util.Arrays;
+import java.util.Collections;
 import java.util.EnumSet;
 import java.util.Set;
 
@@ -110,7 +110,13 @@ public class StreamOptions {
      * @param builder The builder containing configuration values
      */
     private StreamOptions(Builder builder) {
-        this.eventTypes = builder.eventTypes;
+        // Routing decisions are made per emitted event, so the set must not be reachable in
+        // mutable form from outside: one consumer could otherwise change what every other
+        // consumer of the same options receives.
+        this.eventTypes =
+                builder.eventTypes.isEmpty()
+                        ? Collections.emptySet()
+                        : Collections.unmodifiableSet(EnumSet.copyOf(builder.eventTypes));
         this.incremental = builder.incremental;
         this.includeReasoningChunk = builder.includeReasoningChunk;
         this.includeReasoningResult = builder.includeReasoningResult;
@@ -272,7 +278,17 @@ public class StreamOptions {
          * @return this builder
          */
         public Builder eventTypes(EventType... types) {
-            this.eventTypes = EnumSet.copyOf(Arrays.asList(types));
+            if (types == null || types.length == 0) {
+                throw new IllegalArgumentException("At least one event type is required");
+            }
+            EnumSet<EventType> selected = EnumSet.noneOf(EventType.class);
+            for (EventType type : types) {
+                if (type == null) {
+                    throw new IllegalArgumentException("Event types must not contain null");
+                }
+                selected.add(type);
+            }
+            this.eventTypes = selected;
             return this;
         }
 

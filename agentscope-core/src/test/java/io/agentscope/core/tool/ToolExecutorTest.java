@@ -23,6 +23,8 @@ import io.agentscope.core.agent.CapabilitySurface;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.ToolErrorKind;
+import io.agentscope.core.message.ToolErrorMetadata;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolResultState;
 import io.agentscope.core.message.ToolUseBlock;
@@ -167,6 +169,9 @@ class ToolExecutorTest {
         assertTrue(
                 extractFirstText(response).contains("malformed"),
                 "expected the malformed guard, got: " + extractFirstText(response));
+        assertEquals(
+                ToolErrorMetadata.of(ToolErrorKind.INVALID_ARGUMENT, "add"),
+                response.getMetadata());
     }
 
     @Test
@@ -195,6 +200,9 @@ class ToolExecutorTest {
         assertTrue(
                 extractFirstText(response).contains("malformed"),
                 "expected the malformed guard, got: " + extractFirstText(response));
+        assertEquals(
+                ToolErrorMetadata.of(ToolErrorKind.INVALID_ARGUMENT, "add"),
+                response.getMetadata());
     }
 
     @Test
@@ -380,6 +388,9 @@ class ToolExecutorTest {
         assertTrue(
                 errorText.startsWith("Error: Parameter validation failed for tool 'external_api'"),
                 "External tool should fail validation before suspension: " + errorText);
+        assertEquals(
+                ToolErrorMetadata.of(ToolErrorKind.INVALID_ARGUMENT, "external_api"),
+                response.getMetadata());
     }
 
     @Test
@@ -426,6 +437,9 @@ class ToolExecutorTest {
         assertEquals(
                 "Error: Unauthorized tool call: 'external_inactive' is not available",
                 extractFirstText(response));
+        assertEquals(
+                ToolErrorMetadata.of(ToolErrorKind.PERMISSION_DENIED, "external_inactive"),
+                response.getMetadata());
     }
 
     @Test

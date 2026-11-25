@@ -276,6 +276,8 @@ agent.promoteSkill("notes-taker", "alice")                   // manually promote
 
 Harness renders the current skill catalog as an `<available_skills>` block in a request-only User message. The catalog normally precedes conversation history, so unchanged instructions and catalog text can form a shared prefix as the conversation grows. Cache reuse depends on the provider and its caching configuration. The catalog remains available on the first reasoning request after history compaction.
 
+Large catalogs use a compact, paginated index.
+
 ```xml
 <available_skills>
 <skill>
@@ -288,13 +290,14 @@ Harness renders the current skill catalog as an `<available_skills>` block in a 
 </available_skills>
 ```
 
-Each entry carries just enough metadata for the agent to decide whether to load it. `<files-root>`, when present, is the absolute path the agent uses for shell execution (see below).
+Compact catalogs preserve default or customized execution instructions; when the per-call loader is hidden or external, the full catalog is kept. Each entry carries just enough metadata for the agent to decide whether to load it. `<files-root>`, when present, is the absolute path the agent uses for shell execution (see below).
 
 ### Reading SKILL.md and resources
 
 To activate a skill the agent calls a built-in tool — `load_skill_through_path`:
 
-- `load_skill_through_path(skillId, path="SKILL.md")` returns the markdown body
+- `load_skill_through_path(query="keywords", offset=0)` discovers visible skills by name, ID or description; an empty query lists all. Follow the returned offset for another page.
+- `load_skill_through_path(skillId, path="SKILL.md")` returns the full markdown and files root
 - `load_skill_through_path(skillId, path="references/style-guide.md")` returns any other file under the skill directory
 
 How the file gets fetched depends on where the skill came from:

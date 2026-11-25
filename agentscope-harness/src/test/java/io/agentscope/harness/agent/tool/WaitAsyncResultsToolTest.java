@@ -77,6 +77,37 @@ class WaitAsyncResultsToolTest {
     }
 
     @Test
+    void barrierDoesNotDescribeEmptySuccessOrCancellationAsAnError() {
+        var empty = new BackgroundTask("empty", "worker", CompletableFuture.completedFuture(null));
+        var cancelled = new BackgroundTask("cancelled", "worker", new CompletableFuture<>());
+        cancelled.cancel(false);
+        var tool =
+                new WaitAsyncResultsTool(
+                        emptyBus(), new StubTaskRepository(List.of(empty, cancelled)));
+        String output = text(tool.waitForResults(1, "empty,cancelled", null, ctx()));
+        assertTrue(output.contains("Cancelled"));
+        assertTrue(output.contains("No result."));
+        assertFalse(output.contains("Error:"));
+    }
+
+    @Test
+    void barrierIncludesAllLargeResults() {
+        String first = "first ".repeat(8000) + "FIRST_TAIL";
+        String second = "second ".repeat(8000) + "SECOND_TAIL";
+        var tasks =
+                List.of(
+                        new BackgroundTask(
+                                "first", "worker", CompletableFuture.completedFuture(first)),
+                        new BackgroundTask(
+                                "second", "worker", CompletableFuture.completedFuture(second)));
+        var repo = new StubTaskRepository(tasks);
+        var tool = new WaitAsyncResultsTool(emptyBus(), repo);
+        String output = text(tool.waitForResults(1, "first,second", null, ctx()));
+        assertTrue(output.contains(first));
+        assertTrue(output.contains(second));
+    }
+
+    @Test
     @DisplayName("timeout_seconds > 120 is clamped — wait finishes within cap")
     void timeoutClampedToMax() throws Exception {
         VirtualTime time = new VirtualTime();

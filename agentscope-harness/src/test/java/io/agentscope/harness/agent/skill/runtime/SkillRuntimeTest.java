@@ -22,6 +22,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.agentscope.core.agent.CapabilitySurface;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.TextBlock;
@@ -35,6 +36,7 @@ import io.agentscope.harness.agent.skill.runtime.MarketplaceStager.StageResult;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -45,12 +47,121 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.regex.Pattern;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 @SuppressWarnings("deprecation")
 class SkillRuntimeTest {
+
+    @Test
+    void compactCatalogPreservesExecutionInstructionsAndUnicode() {
+        var entries = new ArrayList<HarnessSkillEntry>();
+        for (int i = 0; i < 200; i++)
+            entries.add(
+                    new HarnessSkillEntry(
+                            skillWith(
+                                    "script-" + i,
+                                    "a".repeat(159) + "😀" + "details".repeat(100),
+                                    "body",
+                                    null),
+                            null,
+                            "/scripts/" + i));
+        var catalog = SkillCatalog.of(entries);
+        String defaults = new SkillPromptBuilder().render(catalog);
+        assertTrue(defaults.contains(SkillPromptBuilder.DEFAULT_CODE_EXECUTION_INSTRUCTION));
+        String custom =
+                new SkillPromptBuilder(null, "\nUSE_APPROVED_RUNTIME_ONLY\n", false)
+                        .render(catalog);
+        assertTrue(custom.contains("USE_APPROVED_RUNTIME_ONLY"));
+        assertTrue(defaults.length() <= SkillPromptBuilder.INDEX_CHARS);
+        assertTrue(custom.length() <= SkillPromptBuilder.INDEX_CHARS);
+        assertFalse(defaults.contains("\ud83d…"), "description must not split surrogate pairs");
+        assertTrue(defaults.contains("files root"));
+    }
+
+    @Test
+    void largeCatalogIsBoundedDiscoverableAndScoped() {
+        var entries = new ArrayList<HarnessSkillEntry>();
+        for (int i = 0; i < 200; i++)
+            entries.add(
+                    HarnessSkillEntry.of(
+                            skillWith(
+                                    "skill-" + i,
+                                    "exact-key-" + i + " " + "描述".repeat(3000),
+                                    "body-" + i,
+                                    null),
+                            null));
+        var catalog = SkillCatalog.of(entries);
+        String prompt = new SkillPromptBuilder().render(catalog);
+        assertTrue(prompt.length() <= SkillPromptBuilder.INDEX_CHARS);
+        assertTrue(prompt.contains("load_skill_through_path(query="));
+        assertFalse(prompt.contains("<skill-id>skill-199_workspace</skill-id>"));
+        SkillRuntime runtime = new SkillRuntime();
+        RuntimeContext ctx = RuntimeContext.empty();
+        runtime.install(catalog, ctx, null);
+        int offset = 0;
+        var discovered = new ArrayList<String>();
+        while (offset < entries.size()) {
+            var result =
+                    runtime.loadTool()
+                            .callAsync(
+                                    ToolCallParam.builder()
+                                            .runtimeContext(ctx)
+                                            .input(Map.of("query", "", "offset", offset))
+                                            .build())
+                            .block();
+            String page = textOf(result);
+            assertTrue(page.length() <= SkillPromptBuilder.INDEX_CHARS);
+            var ids = Pattern.compile("<skill-id>([^<]+)</skill-id>").matcher(page);
+            int count = 0;
+            while (ids.find()) {
+                discovered.add(ids.group(1));
+                count++;
+            }
+            assertTrue(count > 0);
+            offset += count;
+        }
+        assertEquals(catalog.ids(), discovered);
+        var query =
+                ToolCallParam.builder()
+                        .runtimeContext(ctx)
+                        .input(Map.of("query", "exact-key-199 "))
+                        .build();
+        assertTrue(
+                textOf(runtime.loadTool().callAsync(query).block())
+                        .contains("skill-199_workspace"));
+        assertTrue(
+                textOf(
+                                runtime.loadTool()
+                                        .callAsync(
+                                                ToolCallParam.builder()
+                                                        .runtimeContext(ctx)
+                                                        .input(
+                                                                Map.of(
+                                                                        "skillId",
+                                                                        "skill-199_workspace",
+                                                                        "path",
+                                                                        "SKILL.md"))
+                                                        .build())
+                                        .block())
+                        .contains("body-199"));
+        ctx.put(CapabilitySurface.class, CapabilitySurface.DENY_ALL);
+        assertFalse(
+                textOf(runtime.loadTool().callAsync(query).block())
+                        .contains("skill-199_workspace"));
+        assertFalse(
+                textOf(
+                                runtime.loadTool()
+                                        .callAsync(
+                                                ToolCallParam.builder()
+                                                        .runtimeContext(RuntimeContext.empty())
+                                                        .input(Map.of("query", ""))
+                                                        .build())
+                                        .block())
+                        .contains("skill-0_workspace"));
+    }
 
     // =========================================================================
     //  SkillCatalog

@@ -833,6 +833,50 @@ class DashScopeChatModelTest {
                 request.getInput().getMessages().get(0).getContent());
     }
 
+    @ParameterizedTest
+    @ValueSource(booleans = {true, false})
+    @DisplayName("Qwen4 Max AUTO routing uses multimodal endpoint and text content parts")
+    void testQwen4MaxAutoRoutingAndMessageFormat(boolean streaming) throws Exception {
+        String responseJson =
+                """
+                {"output":{"choices":[{"message":{"role":"assistant","content":[{"text":"Hi"}]},"finish_reason":"stop"}]}}
+                """;
+        mockServer.enqueue(
+                new MockResponse()
+                        .setHeader(
+                                "Content-Type",
+                                streaming ? "text/event-stream" : "application/json")
+                        .setBody(
+                                streaming
+                                        ? "data: " + responseJson.trim() + "\n\n"
+                                        : responseJson));
+
+        DashScopeChatModel chatModel =
+                DashScopeChatModel.builder()
+                        .apiKey(mockApiKey)
+                        .modelName("qwen4-max")
+                        .baseUrl(mockServer.url("/").toString().replaceAll("/$", ""))
+                        .stream(streaming)
+                        .build();
+        Msg userMsg = Msg.builder().role(MsgRole.USER).textContent("Hello").build();
+
+        StepVerifier.create(chatModel.doStream(List.of(userMsg), List.of(), null))
+                .expectNextCount(1)
+                .expectComplete()
+                .verify(Duration.ofSeconds(10));
+
+        RecordedRequest recorded = mockServer.takeRequest(5, TimeUnit.SECONDS);
+        assertNotNull(recorded);
+        assertEquals(DashScopeHttpClient.MULTIMODAL_GENERATION_ENDPOINT, recorded.getPath());
+        DashScopeRequest request =
+                JsonUtils.getJsonCodec()
+                        .fromJson(recorded.getBody().readUtf8(), DashScopeRequest.class);
+        assertEquals("qwen4-max", request.getModel());
+        assertEquals(
+                List.of(Map.of("text", "Hello")),
+                request.getInput().getMessages().get(0).getContent());
+    }
+
     @Test
     @DisplayName("DashScope chat model stream with additional headers and params")
     void testDoStreamWithAdditionHeadersAndParams() throws Exception {
