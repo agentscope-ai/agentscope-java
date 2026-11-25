@@ -968,16 +968,17 @@ public final class InvocationRecorder {
             return;
         }
         if (event instanceof RequireExternalExecutionEvent external) {
-            for (var call : external.getToolCalls())
-                append(
-                        "interaction/requested",
-                        Map.of(
-                                "requestId",
-                                call.getId(),
-                                "kind",
-                                "external_execution",
-                                "call",
-                                call));
+            for (var call : external.getToolCalls()) {
+                var data = new LinkedHashMap<String, Object>();
+                data.put("requestId", call.getId());
+                data.put("kind", "external_execution");
+                data.put("call", call);
+                var form = external.getInputForms().get(call.getId());
+                if (form != null) {
+                    data.put("inputForm", form);
+                }
+                append("interaction/requested", data);
+            }
             return;
         }
         if (event instanceof ExternalExecutionResultEvent external) {

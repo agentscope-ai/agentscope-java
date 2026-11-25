@@ -19,7 +19,10 @@ import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
+import com.fasterxml.jackson.core.type.TypeReference;
+import io.agentscope.core.tool.ExternalExecutionForm;
 import io.agentscope.core.tool.ToolSuspendException;
+import io.agentscope.core.util.JsonUtils;
 import java.beans.Transient;
 import java.util.HashMap;
 import java.util.List;
@@ -58,6 +61,8 @@ public final class ToolResultBlock extends ContentBlock {
      * the assistant message rather than produced by local tool execution.
      */
     public static final String METADATA_SERVER_TOOL = ToolUseBlock.METADATA_SERVER_TOOL;
+
+    private static final String METADATA_INPUT_FORM = "agentscope_input_form";
 
     private final String id;
     private final String name;
@@ -227,6 +232,13 @@ public final class ToolResultBlock extends ContentBlock {
         if (exception.getReason() != null) {
             metadata.put(METADATA_SUSPEND_REASON, exception.getReason());
         }
+        ExternalExecutionForm inputForm = exception.getInputForm();
+        if (inputForm != null) {
+            metadata.put(
+                    METADATA_INPUT_FORM,
+                    JsonUtils.getJsonCodec()
+                            .convertValue(inputForm, new TypeReference<Map<String, Object>>() {}));
+        }
         return new ToolResultBlock(
                 toolUse.getId(),
                 toolUse.getName(),
@@ -258,6 +270,19 @@ public final class ToolResultBlock extends ContentBlock {
         }
         Object reason = metadata.get(METADATA_SUSPEND_REASON);
         return reason instanceof String s ? s : null;
+    }
+
+    /**
+     * Gets the form descriptor for a suspended result.
+     *
+     * @return the input form, or null if the result is not suspended or has no form
+     */
+    @JsonIgnore
+    public ExternalExecutionForm getInputForm() {
+        Object form = metadata.get(METADATA_INPUT_FORM);
+        return isSuspended() && form != null
+                ? JsonUtils.getJsonCodec().convertValue(form, ExternalExecutionForm.class)
+                : null;
     }
 
     /**

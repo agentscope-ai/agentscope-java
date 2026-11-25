@@ -149,6 +149,7 @@ import io.agentscope.core.state.ConflictPolicy;
 import io.agentscope.core.state.ToolContextState;
 import io.agentscope.core.state.VersionedState;
 import io.agentscope.core.tool.AgentTool;
+import io.agentscope.core.tool.ExternalExecutionForm;
 import io.agentscope.core.tool.ToolBase;
 import io.agentscope.core.tool.ToolCallParam;
 import io.agentscope.core.tool.ToolExecutionCallback;
@@ -4482,20 +4483,18 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                                                                             ungranted,
                                                                                             deniedEntries,
                                                                                             results));
-                                                                            List<ToolUseBlock>
-                                                                                    suspendedCalls =
-                                                                                            getSuspendedToolCalls(
-                                                                                                    results);
-                                                                            if (!suspendedCalls
-                                                                                    .isEmpty()) {
+                                                                            var externalRequest =
+                                                                                    externalExecutionRequest(
+                                                                                            replyId,
+                                                                                            results);
+                                                                            if (externalRequest
+                                                                                    != null) {
                                                                                 persistPendingRequestReplyId(
                                                                                         Msg
                                                                                                 .METADATA_EXTERNAL_EXECUTION_REQUEST_REPLY_ID,
                                                                                         replyId);
                                                                                 sink.next(
-                                                                                        new RequireExternalExecutionEvent(
-                                                                                                replyId,
-                                                                                                suspendedCalls));
+                                                                                        externalRequest);
                                                                             }
                                                                             sink.complete();
                                                                         },
@@ -4731,12 +4730,23 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             return merged;
         }
 
-        private List<ToolUseBlock> getSuspendedToolCalls(
-                List<Map.Entry<ToolUseBlock, ToolResultBlock>> results) {
-            return results.stream()
-                    .filter(entry -> entry.getValue().isSuspended())
-                    .map(Map.Entry::getKey)
-                    .toList();
+        private RequireExternalExecutionEvent externalExecutionRequest(
+                String replyId, List<Map.Entry<ToolUseBlock, ToolResultBlock>> results) {
+            List<ToolUseBlock> suspendedCalls = new ArrayList<>();
+            Map<String, ExternalExecutionForm> forms = new HashMap<>();
+            for (var entry : results) {
+                if (entry.getValue().isSuspended()) {
+                    ToolUseBlock call = entry.getKey();
+                    suspendedCalls.add(call);
+                    ExternalExecutionForm form = entry.getValue().getInputForm();
+                    if (form != null) {
+                        forms.put(call.getId(), form);
+                    }
+                }
+            }
+            return suspendedCalls.isEmpty()
+                    ? null
+                    : new RequireExternalExecutionEvent(replyId, suspendedCalls, forms);
         }
 
         /**
