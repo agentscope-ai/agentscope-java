@@ -43,7 +43,7 @@ class JevEvidenceProcessorTest {
     }
 
     static JevExecution.Options options(JevExecution.Mode mode) {
-        return new JevExecution.Options(mode, Duration.ofSeconds(2), "test", (ctx, r) -> {});
+        return new JevExecution.Options(mode, Duration.ofSeconds(6), "test", (ctx, r) -> {});
     }
 
     static JevEvidenceProcessor processor(
@@ -302,7 +302,7 @@ class JevEvidenceProcessorTest {
                         JevExecution.Mode.ENFORCE);
         StepVerifier.withVirtualTime(
                         () -> p.process(null, "query", List.of(passage("x")), (c, d) -> true, 1))
-                .thenAwait(Duration.ofSeconds(3))
+                .thenAwait(Duration.ofSeconds(7)) // virtual clock past the 6s options() budget
                 .assertNext(
                         r -> {
                             assertEquals("TIMEOUT", r.reason());
@@ -311,7 +311,7 @@ class JevEvidenceProcessorTest {
                 .verifyComplete();
         assertTrue(cancelled.get());
         StepVerifier.withVirtualTime(() -> p.process(null, "query", Mono::never, (c, d) -> true, 1))
-                .thenAwait(Duration.ofSeconds(3))
+                .thenAwait(Duration.ofSeconds(7)) // virtual clock past the 6s options() budget
                 .assertNext(r -> assertEquals("TIMEOUT", r.reason()))
                 .verifyComplete();
         cancelled.set(false);

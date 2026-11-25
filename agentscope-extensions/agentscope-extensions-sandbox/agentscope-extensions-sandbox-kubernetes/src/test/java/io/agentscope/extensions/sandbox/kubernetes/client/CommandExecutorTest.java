@@ -142,19 +142,27 @@ class CommandExecutorTest {
     }
 
     @Test
-    void legacyRuntimeIsRejectedBeforeCommandStarts() {
+    void legacyRuntimeUsesOriginalRequestFormat() {
         capabilitiesSupported = false;
+        assertEquals(0, executor(Duration.ofSeconds(2)).run("echo legacy").getExitCode());
+        assertEquals("echo legacy", payload.get().path("command").asText());
+        assertFalse(payload.get().has("timeout_seconds"));
+        assertEquals(1, executions.get());
+        // 404 is not retryable, so the legacy fallback must not repeat the capability probe.
+        assertEquals(1, capabilityRequests.get());
+    }
+
+    @Test
+    void legacyRuntimeHttpFailureHasUnknownOutcomeAndIsNotRetried() {
+        capabilitiesSupported = false;
+        responseStatus = 404;
         SandboxRequestException error =
                 assertThrows(
                         SandboxRequestException.class,
-                        () ->
-                                executor(Duration.ofSeconds(2))
-                                        .run("write-side-effect", Duration.ofSeconds(300)));
-        assertTrue(error instanceof SandboxRequestException.RuntimeCapabilityException);
+                        () -> executor(Duration.ofSeconds(2)).run("side-effect"));
         assertEquals(404, error.getStatusCode());
-        assertFalse(error.isExecutionOutcomeUnknown());
-        assertTrue(error.getMessage().contains("timeout"));
-        assertEquals(0, executions.get());
+        assertTrue(error.isExecutionOutcomeUnknown());
+        assertEquals(1, executions.get());
     }
 
     @Test
@@ -280,10 +288,16 @@ class CommandExecutorTest {
     @Test
     void missingExitCodeIsUnknown() {
         response = "{\"stdout\":\"partial\",\"stderr\":\"\"}";
+        // The 2s network budget used elsewhere is plumbed for the instant fake transport, but a
+        // starved -T2C/-T1C runner can burn it on scheduling before the response is processed,
+        // which classifies the failure as a deadline miss instead of a missing exit code
+        // (observed locally under -T2C full-repo stress: isExecutionOutcomeUnknown() was false
+        // after 2.97s). A 30s budget cannot preempt the instant response; the classification
+        // under test is unchanged.
         SandboxRequestException error =
                 assertThrows(
                         SandboxRequestException.class,
-                        () -> executor(Duration.ofSeconds(2)).run("side-effect"));
+                        () -> executor(Duration.ofSeconds(30)).run("side-effect"));
         assertTrue(error.isExecutionOutcomeUnknown());
         assertEquals(1, executions.get());
     }

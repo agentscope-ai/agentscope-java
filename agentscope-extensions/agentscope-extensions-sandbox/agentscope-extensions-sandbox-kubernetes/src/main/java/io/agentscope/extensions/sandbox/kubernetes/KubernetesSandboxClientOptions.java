@@ -57,6 +57,8 @@ public class KubernetesSandboxClientOptions extends SandboxClientOptions {
     private long perAttemptTimeoutSeconds = 60;
     private long portForwardTimeoutSeconds = 30;
 
+    private Long shutdownAfterSeconds;
+
     @Override
     public String getType() {
         return "kubernetes";
@@ -202,5 +204,16 @@ public class KubernetesSandboxClientOptions extends SandboxClientOptions {
 
     public void setPortForwardTimeoutSeconds(long portForwardTimeoutSeconds) {
         this.portForwardTimeoutSeconds = portForwardTimeoutSeconds;
+    }
+
+    public Long getShutdownAfterSeconds() {
+        return shutdownAfterSeconds;
+    }
+
+    public void setShutdownAfterSeconds(Long shutdownAfterSeconds) {
+        if (shutdownAfterSeconds != null && shutdownAfterSeconds <= 0) {
+            throw new IllegalArgumentException("shutdownAfterSeconds must be positive or null");
+        }
+        this.shutdownAfterSeconds = shutdownAfterSeconds;
     }
 }

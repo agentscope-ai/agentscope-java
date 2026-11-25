@@ -353,7 +353,15 @@ def exercise(folder):
     sql(
         "create table native_starts(scenario text, turn_id text, call_id text, receipt text)"
     )
-    for scenario in ("safe", "never", "unknown"):
+    for scenario in (
+        "safe",
+        "never",
+        "unknown",
+        "safe-direct",
+        "never-direct",
+        "manual-direct",
+        "cancel-direct",
+    ):
         service = "native-" + scenario
         start(
             service,
@@ -370,19 +378,32 @@ def exercise(folder):
         count = "select count(*) from native_starts where scenario='" + scenario + "'"
         wait("native dispatch " + scenario, lambda: sql(count) == "1")
         docker("kill", name(service))
+        operator = scenario in ("manual-direct", "cancel-direct")
+        if operator:
+            assert "REPAIRED" in client("NativeReplayProbe", scenario, "operator")
         report = client("NativeReplayProbe", scenario, "recover")
         terminal = "PARKED" if scenario == "unknown" else "SUCCEEDED"
+        if scenario == "cancel-direct":
+            terminal = "CANCELLED"
         match = re.search(r"^" + terminal + r" (turn_[\w-]+)$", report, re.MULTILINE)
         if not match:
             raise AssertionError(report)
-        assert sql(count) == ("2" if scenario == "safe" else "1"), report
-        assert report.count("MODEL_CHECK") == (0 if scenario == "safe" else 1), report
+        assert sql(count) == ("2" if scenario.startswith("safe") else "1"), report
+        assert report.count("MODEL_CHECK") == (
+            0 if scenario.startswith("safe") or operator else 1
+        ), report
+        if scenario.endswith("-direct"):
+            assert logs(service).count("REASONING_REQUEST") == 1
+            assert report.count("REASONING_REQUEST") == 0, report
+        expected = "receipt-7" if scenario.endswith("-direct") else "verified answer"
         answers = sql(
             "select count(*) from durable_parts where part_key like 'event:%' and "
-            "payload::jsonb->>'type'='message.completed' and payload::jsonb#>>'{data,text}'='verified answer' and "
+            "payload::jsonb->>'type'='message.completed' and payload::jsonb#>>'{data,text}'='"
+            + expected
+            + "' and "
             "payload::jsonb->>'turnId'='" + match[1] + "'"
         )
-        assert answers == ("0" if scenario == "unknown" else "1")
+        assert answers == ("0" if scenario in ("unknown", "cancel-direct") else "1")
         print(
             "native",
             scenario,

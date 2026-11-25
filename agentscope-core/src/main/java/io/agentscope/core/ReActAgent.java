@@ -75,6 +75,7 @@ import io.agentscope.core.journal.InvocationRecorder;
 import io.agentscope.core.journal.JournalException;
 import io.agentscope.core.journal.JournalExportSink;
 import io.agentscope.core.journal.JournalSchedulers;
+import io.agentscope.core.journal.ModelInvocation;
 import io.agentscope.core.journal.RecordedModels;
 import io.agentscope.core.journal.ThreadJournal;
 import io.agentscope.core.journal.ThreadJournalStore;
@@ -96,6 +97,7 @@ import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ThinkingBlock;
 import io.agentscope.core.message.ToolCallState;
 import io.agentscope.core.message.ToolResultBlock;
+import io.agentscope.core.message.ToolResultMessage;
 import io.agentscope.core.message.ToolResultState;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.message.UserMessage;
@@ -947,8 +949,12 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
     @Override
     protected Mono<Object> acquireCallExecution(
             List<Msg> msgs, RuntimeContext rc, RunControl control) {
-        if (threadJournalStore == null || !journalEnabled)
+        if (threadJournalStore == null || !journalEnabled) {
+            if (rc != null && rc.get(ModelInvocation.class) != null)
+                return Mono.error(
+                        new JournalException("Model invocation hosts require a Thread journal"));
             return super.acquireCallExecution(msgs, rc, control);
+        }
         // A subscriber can cancel after the recorder is created, which already holds the writer
         // lease. `usingWhen` has no scope to release until this Mono emits, so the lease would
         // stay taken until it expires and the next call on the same session is rejected. Remember
@@ -980,6 +986,9 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                                 cancelBeforeJournalStart(callContext);
                                                 return null;
                                             }
+                                            recorder.verifyModelContinuation(
+                                                    callContext.get(ModelInvocation.class) != null,
+                                                    msgs);
                                             var position =
                                                     callContext.get(AgentExecutionPosition.class);
                                             if (position != null) {
@@ -1386,6 +1395,19 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
     }
 
     /**
+     * Calls the agent with a plain text input, structured output JSON schema, and per-call
+     * {@link RuntimeContext}.
+     *
+     * @param text         input text (wrapped into a {@link UserMessage})
+     * @param outputSchema JSON schema defining the structure
+     * @param context      per-call runtime context
+     * @return response message with structured data in metadata
+     */
+    public Mono<Msg> call(String text, JsonNode outputSchema, RuntimeContext context) {
+        return call(List.of(new UserMessage(text)), outputSchema, context);
+    }
+
+    /**
      * Attaches the caller-supplied {@link RuntimeContext} to the Reactor Context of the given
      * publisher under {@link AgentBase#RUNTIME_CONTEXT_KEY}, so the call lifecycle reads it
      * per-subscription (concurrency-safe) rather than from a shared instance field.
@@ -1741,6 +1763,49 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
     }
 
     /**
+     * Stream fine-grained {@link AgentEvent}s with structured output driven by a target class.
+     *
+     * <p>Semantically equivalent to {@code call(List, Class, RuntimeContext)}: the model's native
+     * {@code response_format} path is preferred when supported, otherwise the synthetic
+     * {@code generate_response} tool is used as a fallback. The final {@link AgentResultEvent}
+     * carries a {@link Msg} whose {@code hasStructuredData()} is {@code true}.
+     *
+     * <p>A bare {@code null} for {@code structuredOutputClass} is ambiguous between this overload
+     * and its {@code JsonNode} sibling — use an explicit cast (e.g. {@code (Class<?>) null}) or the
+     * plain {@link #streamEvents(List, RuntimeContext)} overload instead.
+     *
+     * @param msgs input messages
+     * @param structuredOutputClass class defining the expected structure
+     * @param context runtime context to propagate into the call
+     * @return event stream covering the full agent invocation lifecycle
+     */
+    public Flux<AgentEvent> streamEvents(
+            List<Msg> msgs, Class<?> structuredOutputClass, RuntimeContext context) {
+        return buildAgentStream(msgs, context, m -> doCall(m, structuredOutputClass));
+    }
+
+    /**
+     * Stream fine-grained {@link AgentEvent}s with structured output driven by a JSON schema.
+     *
+     * <p>Semantically equivalent to {@code call(List, JsonNode, RuntimeContext)}: the model's
+     * native {@code response_format} path is preferred when supported, otherwise the synthetic
+     * {@code generate_response} tool is used as a fallback.
+     *
+     * <p>A bare {@code null} for {@code outputSchema} is ambiguous between this overload and its
+     * {@code Class} sibling — use an explicit cast (e.g. {@code (JsonNode) null}) or the plain
+     * {@link #streamEvents(List, RuntimeContext)} overload instead.
+     *
+     * @param msgs input messages
+     * @param outputSchema JSON schema defining the expected structure
+     * @param context runtime context to propagate into the call
+     * @return event stream covering the full agent invocation lifecycle
+     */
+    public Flux<AgentEvent> streamEvents(
+            List<Msg> msgs, JsonNode outputSchema, RuntimeContext context) {
+        return buildAgentStream(msgs, context, m -> doCall(m, outputSchema));
+    }
+
+    /**
      * Stream fine-grained {@link AgentEvent}s for a single input message with a caller-supplied
      * {@link RuntimeContext}.
      *
@@ -1750,6 +1815,33 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
      */
     public Flux<AgentEvent> streamEvents(Msg msg, RuntimeContext context) {
         return streamEvents(List.of(msg), context);
+    }
+
+    /**
+     * Stream fine-grained {@link AgentEvent}s for a single input message with structured output
+     * (class-driven) and a caller-supplied {@link RuntimeContext}.
+     *
+     * @param msg input message
+     * @param structuredOutputClass class defining the expected structure
+     * @param context runtime context to propagate into the call
+     * @return event stream covering the full agent invocation lifecycle
+     */
+    public Flux<AgentEvent> streamEvents(
+            Msg msg, Class<?> structuredOutputClass, RuntimeContext context) {
+        return streamEvents(List.of(msg), structuredOutputClass, context);
+    }
+
+    /**
+     * Stream fine-grained {@link AgentEvent}s for a single input message with structured output
+     * (JSON-schema-driven) and a caller-supplied {@link RuntimeContext}.
+     *
+     * @param msg input message
+     * @param outputSchema JSON schema defining the expected structure
+     * @param context runtime context to propagate into the call
+     * @return event stream covering the full agent invocation lifecycle
+     */
+    public Flux<AgentEvent> streamEvents(Msg msg, JsonNode outputSchema, RuntimeContext context) {
+        return streamEvents(List.of(msg), outputSchema, context);
     }
 
     /**
@@ -1772,6 +1864,34 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
      */
     public Flux<AgentEvent> streamEvents(String text, RuntimeContext context) {
         return streamEvents(new UserMessage(text), context);
+    }
+
+    /**
+     * Stream fine-grained {@link AgentEvent}s for a plain text input with structured output
+     * (class-driven) and a caller-supplied {@link RuntimeContext}.
+     *
+     * @param text input text (wrapped into a {@link UserMessage})
+     * @param structuredOutputClass class defining the expected structure
+     * @param context runtime context to propagate into the call
+     * @return event stream covering the full agent invocation lifecycle
+     */
+    public Flux<AgentEvent> streamEvents(
+            String text, Class<?> structuredOutputClass, RuntimeContext context) {
+        return streamEvents(new UserMessage(text), structuredOutputClass, context);
+    }
+
+    /**
+     * Stream fine-grained {@link AgentEvent}s for a plain text input with structured output
+     * (JSON-schema-driven) and a caller-supplied {@link RuntimeContext}.
+     *
+     * @param text input text (wrapped into a {@link UserMessage})
+     * @param outputSchema JSON schema defining the expected structure
+     * @param context runtime context to propagate into the call
+     * @return event stream covering the full agent invocation lifecycle
+     */
+    public Flux<AgentEvent> streamEvents(
+            String text, JsonNode outputSchema, RuntimeContext context) {
+        return streamEvents(new UserMessage(text), outputSchema, context);
     }
 
     // ==================== Protected API ====================
@@ -2575,6 +2695,11 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         }
 
         private Mono<Msg> doCallInner(List<Msg> msgs) {
+            var recorder = InvocationRecorder.from(rc);
+            if (recorder != null) {
+                var answer = recorder.modelAnswer(state);
+                if (answer != null) return Mono.just(answer);
+            }
             // Graceful-shutdown deduplication: if the agent's session was previously interrupted
             // by shutdown, the client is likely retrying with the same user prompt that already
             // exists in memory. Discard the duplicate input so the agent resumes purely from its
@@ -2585,6 +2710,31 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                 + " input",
                         getName());
                 msgs = List.of();
+            }
+
+            if (state.getReturnDirectTurn() != null) {
+                boolean resume = state.getReturnDirectTurn().equals(rc.getTurnId());
+                state.setReturnDirectTurn(null);
+                if (resume) {
+                    var messages = state.contextMutable();
+                    var calls = MessageUtils.extractRecentToolCalls(messages, getName());
+                    var results = new java.util.HashMap<String, ToolResultBlock>();
+                    while (!messages.isEmpty()
+                            && messages.get(messages.size() - 1)
+                                    instanceof ToolResultMessage message) {
+                        for (var result : message.getContentBlocks(ToolResultBlock.class))
+                            results.put(result.getId(), result);
+                        messages.remove(messages.size() - 1);
+                    }
+                    var pairs =
+                            calls.stream()
+                                    .map(call -> Map.entry(call, results.get(call.getId())))
+                                    .toList();
+                    for (var pair : pairs)
+                        messages.add(
+                                buildReturnDirectPlaceholderMsg(pair.getKey(), pair.getValue()));
+                    return Mono.just(finalizeReturnDirect(pairs, state.getReplyId()));
+                }
             }
 
             Set<String> pendingIds = MessageUtils.pendingToolUseIds(state.contextMutable());
@@ -2599,7 +2749,6 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             // consuming results, including returnDirect paths that never enter acting().
             AgentExecutionPosition position = rc.get(AgentExecutionPosition.class);
             lastSessionIteration = position == null ? 0 : position.actingIteration();
-            InvocationRecorder recorder = InvocationRecorder.from(rc);
             if (recorder != null) recorder.resumeStep(lastSessionIteration);
 
             // Permission HITL: if any pending tool is ASKING, the caller MUST supply
@@ -3327,13 +3476,12 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                                                 // from pending tool calls.
                                                                 state.contextMutable()
                                                                         .add(finalMsg);
-                                                                if (recorder != null)
-                                                                    recorder.reasoningCompleted(
-                                                                            iter);
-                                                                return Mono.just(
-                                                                        finalMsg.withGenerateReason(
-                                                                                rs
-                                                                                        .getGenerateReason()));
+                                                                return reasoningApplied(iter, null)
+                                                                        .thenReturn(
+                                                                                finalMsg
+                                                                                        .withGenerateReason(
+                                                                                                rs
+                                                                                                        .getGenerateReason()));
                                                             }
                                                             return Mono.justOrEmpty(finalMsg);
                                                         }));
@@ -3378,18 +3526,19 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                     .flatMap(
                             event -> {
                                 Msg eventMsg = event.getReasoningMessage();
-                                if (eventMsg != null) {
-                                    state.contextMutable().add(eventMsg);
-                                    InvocationRecorder recorder = InvocationRecorder.from(rc);
-                                    if (recorder != null) recorder.reasoningCompleted(iter);
-                                }
-
+                                if (eventMsg != null) state.contextMutable().add(eventMsg);
+                                Mono<Void> applied =
+                                        Mono.defer(
+                                                () ->
+                                                        eventMsg == null
+                                                                ? Mono.empty()
+                                                                : reasoningApplied(iter, null));
                                 // HITL stop
                                 if (event.isStopRequested()) {
                                     if (eventMsg == null) {
                                         return Mono.empty();
                                     }
-                                    return Mono.just(
+                                    return applied.thenReturn(
                                             eventMsg.withGenerateReason(
                                                     GenerateReason.REASONING_STOP_REQUESTED));
                                 }
@@ -3400,7 +3549,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                     if (gotoMsgs != null) {
                                         state.contextMutable().addAll(gotoMsgs);
                                     }
-                                    return reasoning(iter + 1, true);
+                                    return applied.then(reasoning(iter + 1, true));
                                 }
 
                                 // Check finish conditions
@@ -3422,7 +3571,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                             // maxIters=1 caller still gets the pending
                                             // generate_response), and the total extra model
                                             // calls stay bounded by the 3-retry ceiling above.
-                                            return reasoning(iter + 1, true);
+                                            return applied.then(reasoning(iter + 1, true));
                                         }
                                         log.warn(
                                                 "Structured output tool '{}' not called after {} "
@@ -3433,7 +3582,9 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                                 getAgentId(),
                                                 getName());
                                     }
-                                    return Mono.justOrEmpty(eventMsg);
+                                    return eventMsg == null
+                                            ? Mono.empty()
+                                            : reasoningApplied(iter, eventMsg).thenReturn(eventMsg);
                                 }
 
                                 // Empty final response: no tool calls and no visible content
@@ -3450,7 +3601,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                 }
 
                                 // Continue to acting
-                                return checkInterrupted().then(acting(iter));
+                                return applied.then(checkInterrupted()).then(acting(iter));
                             })
                     .switchIfEmpty(
                             Mono.defer(
@@ -3458,6 +3609,14 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                         // No message was produced
                                         return Mono.justOrEmpty((Msg) null);
                                     }));
+        }
+
+        private Mono<Void> reasoningApplied(int iteration, Msg answer) {
+            InvocationRecorder recorder = InvocationRecorder.from(rc);
+            if (recorder == null) return Mono.empty();
+            boolean deferred = recorder.pendingModelCallId() != null;
+            recorder.reasoningCompleted(iteration, answer);
+            return deferred ? recorder.checkpoint(state, "model_result_applied") : Mono.empty();
         }
 
         /**
@@ -5606,6 +5765,10 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         if (fallbackModel == null) {
             return RecordedModels.wrap(callModel, callContext, purpose.name());
         }
+        var invocation = callContext == null ? null : callContext.get(ModelInvocation.class);
+        if (invocation != null && invocation.resumingFallback(purpose.name())) {
+            return RecordedModels.wrap(fallbackModel, callContext, purpose.name());
+        }
         FailoverListener failoverListener = modelConfig.failoverListener();
 
         AtomicReference<Model> activeModel = new AtomicReference<>(callModel);
@@ -5626,7 +5789,11 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                         (signal, flux) -> {
                             if (signal.isOnError()) {
                                 Throwable error = signal.getThrowable();
-                                if (JournalException.causedBy(error)) return flux;
+                                if (error instanceof AgentExecutionHost.Paused
+                                        || JournalException.causedBy(error)
+                                        || (invocation != null
+                                                && !invocation.beginFallback(
+                                                        purpose.name(), error))) return flux;
                                 InvocationRecorder recorder = InvocationRecorder.from(callContext);
                                 if (recorder != null)
                                     recorder.append(

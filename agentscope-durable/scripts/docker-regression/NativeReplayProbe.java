@@ -45,6 +45,7 @@ public class NativeReplayProbe {
                         tools != null
                                 && tools.stream()
                                         .anyMatch(t -> t.getName().equals("verify_outcome"));
+                if (!check) System.out.println("REASONING_REQUEST");
                 boolean applied =
                         messages.stream().anyMatch(m -> m.hasContentBlocks(ToolResultBlock.class));
                 ContentBlock output;
@@ -62,6 +63,8 @@ public class NativeReplayProbe {
                                                             : "receipt-7"))
                                     .build();
                 } else if (applied) {
+                    if (scenario.endsWith("-direct"))
+                        throw new AssertionError("Unexpected model request after direct tool");
                     output = TextBlock.builder().text("verified answer").build();
                 } else {
                     output =
@@ -89,6 +92,8 @@ public class NativeReplayProbe {
                                     new ToolBase(
                                             ToolBase.builder()
                                                     .name("operation")
+                                                    .returnDirect(
+                                                            old && scenario.endsWith("-direct"))
                                                     .description("Instrumented local operation")
                                                     .inputSchema(
                                                             Map.of(
@@ -144,7 +149,7 @@ public class NativeReplayProbe {
                                                     .build());
                         },
                         Map.of());
-        boolean safe = scenario.equals("safe");
+        boolean safe = scenario.startsWith("safe");
         // Intentionally reverse the registration on takeover. The dispatch fact must win.
         var policies =
                 Map.of(
@@ -192,6 +197,44 @@ public class NativeReplayProbe {
                                 .pollInterval(Duration.ofMillis(100))
                                 .build()) {
             var turn = runtime.createSession(key, "native").submit("one", "perform operation");
+            if (args[1].equals("operator")) {
+                var thread = new ThreadKey(key, "main");
+                var lease = backend.claim(thread, "operator", Duration.ofSeconds(4));
+                while (lease.isEmpty()) {
+                    Thread.sleep(100);
+                    lease = backend.claim(thread, "operator", Duration.ofSeconds(4));
+                }
+                var context =
+                        new HarnessContext(
+                                backend,
+                                lease.get(),
+                                new java.util.concurrent.atomic.AtomicBoolean());
+                try (var c = Probe.database().getConnection();
+                        var q =
+                                c.prepareStatement(
+                                        "select call_id, receipt from native_starts where"
+                                            + " scenario=? and turn_id=?")) {
+                    q.setString(1, scenario);
+                    q.setString(2, turn.turnId());
+                    try (var row = q.executeQuery()) {
+                        if (!row.next()) throw new AssertionError("Missing independent receipt");
+                        var id = row.getString(1);
+                        adapter.reconcileNativeTools(
+                                context,
+                                "repair",
+                                "postgres:" + id,
+                                Map.of(
+                                        id,
+                                        ToolResultBlock.success(row.getString(2))
+                                                .withIdAndName(id, "operation")));
+                    }
+                }
+                if (scenario.startsWith("cancel"))
+                    backend.cancel(thread, turn.turnId(), "cancel-after-repair");
+                System.out.println("REPAIRED");
+                System.out.flush();
+                Runtime.getRuntime().halt(0);
+            }
             runtime.start();
             long end = System.nanoTime() + Duration.ofSeconds(80).toNanos();
             while (System.nanoTime() < end) {
@@ -204,6 +247,10 @@ public class NativeReplayProbe {
                     return;
                 }
                 if (v.status().terminal()) {
+                    if (scenario.startsWith("cancel") && v.status() == TurnStatus.CANCELLED) {
+                        System.out.println("CANCELLED " + turn.turnId());
+                        return;
+                    }
                     if (v.status() != TurnStatus.SUCCEEDED || scenario.equals("unknown"))
                         throw new AssertionError(v);
                     System.out.println("SUCCEEDED " + turn.turnId());
