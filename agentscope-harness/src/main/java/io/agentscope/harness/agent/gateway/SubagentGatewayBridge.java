@@ -16,6 +16,7 @@
 package io.agentscope.harness.agent.gateway;
 
 import io.agentscope.core.agent.Agent;
+import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.harness.agent.gateway.channel.OutboundAddress;
 
 /**
@@ -47,6 +48,22 @@ public interface SubagentGatewayBridge {
      * @return the expose result containing the subagentId handle
      */
     ExposeResult expose(String agentId, String sessionId, Agent agent, OutboundAddress replyTo);
+
+    /**
+     * Exposes a subagent using the validated parent invocation context for tenant-aware recovery.
+     * Existing four-argument implementations retain their anonymous exposure behavior.
+     *
+     * @param context the parent invocation context; may be null for legacy direct calls
+     * @return the expose result containing the subagentId handle
+     */
+    default ExposeResult expose(
+            String agentId,
+            String sessionId,
+            Agent agent,
+            OutboundAddress replyTo,
+            RuntimeContext context) {
+        return expose(agentId, sessionId, agent, replyTo);
+    }
 
     /**
      * Revokes every public handle exposed for the given child session.

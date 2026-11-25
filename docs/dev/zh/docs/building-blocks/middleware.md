@@ -8,7 +8,7 @@ en_link: /dev/en/docs/building-blocks/middleware
 
 Agent middleware 是在不修改 agent 或 model 代码的前提下，向 agent 执行流程中的关键位置注入自定义逻辑（日志、追踪、输入改写、访问控制等）的机制。
 
-AgentScope Java 中，可以在 7 个位置上设置 hook，覆盖了从外层 reply 流程一路下沉到底层模型 API 调用的全链路：
+AgentScope Java 中，可以在以下生命周期点位设置 hook，覆盖从外层 reply 流程一路下沉到底层模型 API 调用的全链路：
 
 | 位置 | 类型 | 说明 |
 |------|------|------|
@@ -18,15 +18,16 @@ AgentScope Java 中，可以在 7 个位置上设置 hook，覆盖了从外层 r
 | `onModelCall` | Onion | 包裹一次底层 `ChatModel` API 调用，最贴近模型 |
 | `onSystemPrompt` | Transformer | 在每次组装 system prompt 时触发；多个 middleware 串行接力，每一个把上一个的输出再做一次变换 |
 | `onAgentStateReady` | Notification | 每次调用触发一次：本次调用的 `AgentState` 就绪时——早于输入进入流水线（pre-call 钩子、记忆、推理） |
+| `onAgentEvent` | Notification | 同步观察经过 `recordEvent` 的事件，不含外层生命周期封装与外部注入；只读且不依赖消费者 demand |
 | `onAgentFinish` | 等待完成的通知 | 在调用结果产生后、原生 checkpoint 与 writer 释放前返回 `Mono<Void>`；保留当前调用上下文。 |
 
 三种类型的差别：
 
 - **Onion**（洋葱式）—— middleware 包裹下一层 handler，可以在 `next.apply(input)` 前后插入逻辑、观察中间事件流。
 - **Transformer**（变换式）—— middleware 之间串成流水线，前一个的输出作为后一个的输入，不存在「内层」概念。
-- **Notification**（通知式）—— 单向同步通知，没有 `next` 委托；多个 middleware 在固定的生命周期点位按序执行。
+- **Notification**（通知式）—— 单向同步通知，没有 `next` 委托；多个 middleware 在固定的生命周期点位按序执行。`onAgentStateReady` 每次调用触发一次；`onAgentEvent` 对每个经过 `recordEvent` 的事件触发，处理时不得阻塞或改写事件。
 
-下图展示这些 hook 在 agent 生命周期中的嵌套关系。`onSystemPrompt` 嵌入在 `onReasoning` 内部，因为它在 reasoning 步骤组装 system prompt 时被触发；`onAgentStateReady` 在本次调用的 `AgentState` 绑定到 `RuntimeContext` 之后、输入进入流水线之前触发：
+下图展示这些 hook 在 agent 生命周期中的嵌套关系。`onSystemPrompt` 嵌入在 `onReasoning` 内部，因为它在 reasoning 步骤组装 system prompt 时被触发；`onAgentStateReady` 在本次调用的 `AgentState` 绑定到 `RuntimeContext` 之后、输入进入流水线之前触发。`onAgentEvent` 随事件产出触发，而不是包裹某个生命周期步骤：
 
 ```text
 onAgent/
@@ -36,6 +37,9 @@ onAgent/
     │   ├── onSystemPrompt（组装 system prompt）
     │   └── onModelCall（模型 API 调用）
     └── onActing（每次工具调用）
+
+每个经过 recordEvent 的事件：
+recordEvent：赋予 executionIdentity → onAgentEvent → 外层 BUFFER / 转发
 ```
 
 
@@ -48,7 +52,7 @@ onAgent/
 
 ## 装备 Middleware
 
-AgentScope 把一组 hook 装在一个 `MiddlewareBase` 实现里 —— 同一个 middleware 类可以同时实现 7 个位置中任意子集的 hook（未实现的 Onion / Transformer 位置默认 `next.apply(input)`；通知式位置默认不做任何事）。把实例传给 builder 的 `middlewares(...)` 即可装备：
+AgentScope 把一组 hook 装在一个 `MiddlewareBase` 实现里 —— 同一个 middleware 类可以同时实现这些位置中任意子集的 hook（未实现的 Onion / Transformer 位置默认 `next.apply(input)`；通知式位置默认不做任何事）。把实例传给 builder 的 `middlewares(...)` 即可装备：
 
 ```java
 import io.agentscope.core.ReActAgent;
@@ -314,6 +318,7 @@ public class FullObservabilityMiddleware implements MiddlewareBase {
 | `onModelCall` | `ModelCallInput` | `messages`, `tools`, `options`, `model: Model` |
 | `onSystemPrompt` | `String` | 当前 prompt |
 | `onAgentStateReady` | —（直接参数） | `state: AgentState`, `inputMessages: List<Msg>` |
+| `onAgentEvent` | —（直接参数） | `event: AgentEvent`（`io.agentscope.core.event`，只读） |
 
 需要替换流入下一层的字段时，构造一个新的 input record 后再调用 `next.apply(...)`。
 
@@ -351,7 +356,38 @@ public class SessionBootstrapMiddleware implements MiddlewareBase {
 }
 ```
 
-实现必须非阻塞：通知在本次调用的订阅线程上同步执行（流式场景可能是 Reactor 事件循环线程）。触发以每次生命周期执行（订阅）为单位——冷流重订阅会再次触发。抛出的异常原样使本次调用失败，其后的 middleware 不再执行。未覆写该 hook 的 middleware 只是执行默认空调用；固定的开销仅为每次调用一次输入列表浅拷贝，它同时使调用方列表隔离无条件成立。与其他扩展点一样，参与与否由 `activePoints()` 声明：未声明 `ExtensionPoint.ON_AGENT_STATE_READY` 的 middleware 即使覆写了该 hook 也不会被通知。生命周期窗口：通知在本次调用通过准入并完成中断注册之后、追踪包裹与错误事件链就位之前执行——通知期间发出的中断会被兑现，而抛出的异常直接到达调用方，不经过 ErrorEvent 钩子或追踪 span。
+实现必须非阻塞：通知在本次调用的订阅线程上同步执行（流式场景可能是 Reactor 事件循环线程）。触发以每次生命周期执行（订阅）为单位——冷流重订阅会再次触发。抛出的异常原样使本次调用失败，其后的 middleware 不再执行。未覆写该 hook 的 middleware 只是执行默认空调用；固定的开销仅为每次调用一次输入列表浅拷贝，它同时使调用方列表隔离无条件成立。与其他扩展点一样，参与与否由 `activePoints()` 决定：显式集合未包含 `ExtensionPoint.ON_AGENT_STATE_READY` 时，即使覆写了该 hook 也不会被通知。生命周期窗口：通知在本次调用通过准入并完成中断注册之后、追踪包裹与错误事件链就位之前执行——通知期间发出的中断会被兑现，而抛出的异常直接到达调用方，不经过 ErrorEvent 钩子或追踪 span。
+
+### 生产侧事件通知
+
+需要在事件产出时同步观察，请使用 `onAgentEvent(Agent agent, RuntimeContext ctx, AgentEvent event)`。在 Core 的 `recordEvent` 中，通知位于赋予 `executionIdentity` 之后、事件进入外层 `BUFFER` 或转发之前。它返回 `void`，没有 `next`，默认不做任何事；参与者按 middleware 顺序执行。只观察经过 `recordEvent` 的事件，不包括外层流的生命周期封装或外部 emitter 注入的事件。观察者抛出的 `Exception` 会记录日志并忽略，其余观察者与事件交付继续，因此不能把该通知当作阻断式权限钩子。
+
+显式声明 `activePoints()` 时，请把 `ExtensionPoint.ON_AGENT_EVENT` 加入集合。集合中未包含该点，即使覆写 `onAgentEvent` 也不会被调用。未显式声明时（`activePoints()` 返回 `null`），按实际覆写的 hook 推断参与点，新点也遵循这一规则。
+
+```java
+import io.agentscope.core.agent.Agent;
+import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.core.event.AgentEvent;
+import io.agentscope.core.middleware.MiddlewareBase;
+import java.util.EnumSet;
+import java.util.Set;
+
+public class EventObservationMiddleware implements MiddlewareBase {
+    @Override
+    public Set<ExtensionPoint> activePoints() {
+        return EnumSet.of(ExtensionPoint.ON_AGENT_EVENT);
+    }
+
+    @Override
+    public void onAgentEvent(Agent agent, RuntimeContext ctx, AgentEvent event) {
+        ctx.put("last_agent_event_type", event.getType());
+    }
+}
+```
+
+示例只在本次调用的上下文中记录最近的事件类型。通知处理必须非阻塞，并对事件保持只读：不要执行阻塞 I/O、修改事件或其 metadata，也不要尝试替换或丢弃事件。通过既有 builder 方法注册 middleware 即可，不需要新配置或终态结果 API。
+
+相对地，`onAgent` 中的 `next.apply(input).doOnNext(...)` 观察的是**流消费**。缓冲和外部消费者 demand 可能延迟观察，因此不能用它保证下一次 reasoning 前控制决策已就绪。需要这一时序时，在 `onAgentEvent` 收集观察结果，再在 `onReasoning` 应用策略；生产侧通知不依赖外部消费者 demand。子 agent 自身的 middleware 可在转发附加子 `source` 标签之前观察本地事件；父观察者若只统计父自身的工作，仍应过滤带子来源的转发事件。
 
 ### 读取 RuntimeContext
 
@@ -410,7 +446,7 @@ MiddlewareBase lowerPriority = new MiddlewareBase() {
 };
 ```
 
-对于流式 / 产出事件的 hook，内层 middleware 先看到每一个 emit 出的事件：
+对于流式 Onion hook，内层 middleware 先看到每一个 emit 出的事件：
 
 ```
 mw1_pre → mw2_pre → mw2_event → mw1_event → ... → mw2_post → mw1_post
@@ -423,11 +459,12 @@ middlewares = [mw1, mw2]
 // originalPrompt → mw1.onSystemPrompt() → mw2.onSystemPrompt() → final
 ```
 
-通知式 hook（`onAgentStateReady`）每次调用按 `order()` 顺序执行一遍——数值大者先执行，与洋葱链的进入方向一致：
+同步通知式 hook 按 `order()` 顺序执行——数值大者先执行，与洋葱链的进入方向一致。`onAgentStateReady` 每次调用执行一遍；`onAgentEvent` 对每个经过 `recordEvent` 的事件执行一遍：
 
 ```
 middlewares = [mw1(order=2), mw2(order=1)]
-// onAgentStateReady：mw1 → mw2
+// onAgentStateReady：mw1 → mw2（每次调用一次）
+// onAgentEvent：mw1 → mw2（每个事件一次，外层 BUFFER / 转发之前）
 ```
 
 一次 reply 中各 hook 的整体执行顺序遵循 agent 生命周期：
@@ -440,23 +477,26 @@ onAgent
         │     ├── prepare model input → onSystemPrompt
         │     └── onModelCall
         └── onActing（本轮每个工具调用一次）
+
+每个经过 recordEvent 的事件：
+recordEvent：赋予 executionIdentity → onAgentEvent → 外层 BUFFER / 转发
 ```
 
 ### 扩展点参与声明（`activePoints()`）
 
-`MiddlewareBase.activePoints()` 声明 middleware 在哪些扩展点处于激活状态。它是**参与开关**，不是对"覆写了哪些方法"的复述：
+`MiddlewareBase.activePoints()` 声明 middleware 在哪些扩展点处于激活状态。默认返回 `null`，框架按实际覆写的 hook 推断参与点，包括继承的实现。显式集合是具有最终决定权的**参与开关**，不是对"覆写了哪些方法"的复述：
 
 | 声明       | 方法实现 | 行为                                     |
 | ---------- | -------- | ---------------------------------------- |
 | 包含该点   | 已覆写   | 正常参与                                 |
-| 包含该点   | 未覆写   | 调用默认实现（直通）——合法冗余           |
+| 包含该点   | 未覆写   | 调用默认实现（直通 / 无操作）——合法冗余  |
 | 不包含该点 | 已覆写   | 方法不会被调用——有意关闭，非错误         |
 | 不包含该点 | 未覆写   | 该 middleware 在此点不存在，链中不占位   |
 
 关键语义：
 
-- **默认全量激活。** 未覆写 `activePoints()` 的 middleware 保持与现状完全一致的行为，包括未来版本新增的扩展点。
-- **覆写即接管。** 一旦覆写，激活集合就是返回的集合本身；忘记声明的扩展点即使覆写了方法也不会生效。
+- **默认按覆写方法推断。** `activePoints()` 返回 `null` 时，按实际覆写的方法推断参与点，而非全量激活；`onAgentEvent` 也遵循这一规则。
+- **显式集合接管。** 返回非 `null` 集合时，以该集合为准；忘记包含的扩展点即使覆写了方法也不会生效。
 - **空集合合法。** `EnumSet.noneOf(ExtensionPoint.class)` 让 middleware 在所有扩展点失活，同时保留注册——可用作运行开关。
 - **构造期固化。** agent 构建时读取一次声明；之后修改返回的集合对已构建的 agent 无效。
 - **与 `order()` 正交。** 声明只回答"是否参与"，不回答"什么顺序"——各点参与者保持既有 `order()` 语义。
@@ -476,7 +516,7 @@ MiddlewareBase timingOnly =
         };
 ```
 
-**推荐实践：** 为你实现的每个 middleware 准确定义 `activePoints()`。精确声明让框架能整体跳过未参与者——某扩展点无任何参与者时不建任何包装层（零包装、不组装 pipeline），链更短，构建期的有效执行计划也更清晰。不声明则保持完全兼容的默认行为（全量激活），因此任何时候补充声明都不会破坏行为，只会收窄参与范围。
+**推荐实践：** 为你实现的每个 middleware 准确定义 `activePoints()`。精确声明让框架能整体跳过未参与者——某扩展点无任何参与者时不建任何包装层（零包装、不组装 pipeline），链更短，构建期的有效执行计划也更清晰。未显式声明时，框架按覆写的 hook 推断，作为兼容回退。之后补充声明时，应包含所有希望继续激活的 hook；覆写了 `onAgentEvent` 时也应包含 `ON_AGENT_EVENT`。
 
 继承内置 middleware 时同样适用：内置类声明的正是其挂接的扩展点，子类若覆写了新的 hook（例如给 `TaskReminderMiddleware` 增加 `onModelCall`），必须相应扩展继承到的 `activePoints()`——否则新增的 hook 会被静默跳过。
 

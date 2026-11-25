@@ -873,7 +873,8 @@ public class DashScopeChatModel extends ChatModelBase {
             model.setContextWindowSize(
                     contextWindowSize >= 0
                             ? contextWindowSize
-                            : ModelContextWindows.lookup(modelName, ModelContextWindows.DASHSCOPE));
+                            : ModelContextWindows.resolve(
+                                    modelName, ModelContextWindows.DASHSCOPE));
             if (nativeStructuredOutput != null) {
                 model.setNativeStructuredOutput(nativeStructuredOutput);
             }

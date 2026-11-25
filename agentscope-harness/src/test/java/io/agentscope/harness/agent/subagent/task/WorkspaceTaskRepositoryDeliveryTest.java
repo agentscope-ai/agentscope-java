@@ -22,10 +22,15 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.ToolResultState;
+import io.agentscope.harness.agent.tool.TaskTool;
 import io.agentscope.harness.agent.workspace.WorkspaceManager;
 import java.nio.file.Path;
 import java.time.Instant;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -62,6 +67,93 @@ class WorkspaceTaskRepositoryDeliveryTest {
         r.setErrorMessage(error);
         wsm.writeTaskRecord(RuntimeContext.empty(), AGENT_ID, SESSION_ID, r);
         return r;
+    }
+
+    @Test
+    void cancelledAdoptedTaskRemainsCancelledAfterRestoration() {
+        var rc = RuntimeContext.builder().sessionId(SESSION_ID).build();
+        var future = new CompletableFuture<String>();
+        var task =
+                repo.putTask(
+                        rc,
+                        "cancelled-adopted",
+                        "worker",
+                        SESSION_ID,
+                        new TaskRunSpec.AdoptedTaskRunSpec(future));
+        future.cancel(false);
+        assertEquals(TaskStatus.CANCELLED, task.getTaskStatus());
+        assertEquals(
+                TaskStatus.CANCELLED, repo.findPendingDeliveries(rc, SESSION_ID).get(0).status());
+        repo.shutdown();
+        repo = WorkspaceTaskRepository.forTests(wsm, AGENT_ID);
+        assertEquals(
+                TaskStatus.CANCELLED,
+                repo.getTask(rc, SESSION_ID, "cancelled-adopted").getTaskStatus());
+    }
+
+    @Test
+    void fullErrorMatchesDeliveryAndPersistedPayloadAfterRestart() throws Exception {
+        String message = "failure😀".repeat(1200) + "FINAL_ERROR_DETAIL";
+        var failures =
+                List.of(
+                        new IllegalArgumentException(message),
+                        new CompletionException(new IllegalStateException(message)),
+                        new CompletionException(
+                                new CompletionException(new IllegalStateException(message))),
+                        new CompletionException(new IllegalStateException()));
+        var rc = RuntimeContext.builder().sessionId(SESSION_ID).build();
+        for (int i = 0; i < failures.size(); i++) {
+            for (boolean adopted : List.of(false, true)) {
+                String id = "error-" + i + "-" + adopted;
+                RuntimeException failure = failures.get(i);
+                TaskRunSpec spec =
+                        adopted
+                                ? new TaskRunSpec.AdoptedTaskRunSpec(
+                                        CompletableFuture.failedFuture(failure))
+                                : new TaskRunSpec.LocalTaskRunSpec(
+                                        () -> {
+                                            throw failure;
+                                        });
+                BackgroundTask task = repo.putTask(rc, id, "worker", SESSION_ID, spec);
+                assertTrue(task.waitForCompletion(5000));
+                var delivery =
+                        repo.findPendingDeliveries(rc, SESSION_ID).stream()
+                                .filter(d -> d.taskId().equals(id))
+                                .findFirst()
+                                .orElseThrow();
+                String errorText = "\nError:\n" + delivery.errorMessage();
+                var live = new TaskTool(repo).taskOutput(rc, id, false, null);
+                assertEquals(ToolResultState.ERROR, live.getState());
+                assertTrue(((TextBlock) live.getOutput().get(0)).getText().contains(errorText));
+                repo.shutdown();
+                repo = WorkspaceTaskRepository.forTests(wsm, AGENT_ID);
+                var restored = new TaskTool(repo).taskOutput(rc, id, false, null);
+                assertEquals(ToolResultState.ERROR, restored.getState());
+                assertTrue(((TextBlock) restored.getOutput().get(0)).getText().endsWith(errorText));
+            }
+        }
+    }
+
+    @Test
+    void fullOutputRemainsReadableAfterDeliveryAndRepositoryRestoration() {
+        String payload = "header" + "中😀".repeat(3000) + "tail";
+        writeRecord("large", TaskStatus.COMPLETED, payload, null);
+        var firstContext = RuntimeContext.builder().sessionId(SESSION_ID).build();
+        var first = new TaskTool(repo).taskOutput(firstContext, "large", false, null);
+        assertEquals(ToolResultState.SUCCESS, first.getState());
+        assertTrue(repo.isDelivered(firstContext, SESSION_ID, "large"));
+        repo.shutdown();
+        repo = WorkspaceTaskRepository.forTests(wsm, AGENT_ID);
+        var restored = RuntimeContext.builder().sessionId(SESSION_ID).build();
+        var next = new TaskTool(repo).taskOutput(restored, "large", false, null);
+        String text = ((TextBlock) next.getOutput().get(0)).getText();
+        assertEquals(ToolResultState.SUCCESS, next.getState());
+        assertTrue(text.endsWith("\nResult:\n" + payload));
+        assertEquals(payload, repo.getTask(restored, SESSION_ID, "large").getResult());
+        var other = RuntimeContext.builder().sessionId("different-session").build();
+        assertEquals(
+                ToolResultState.ERROR,
+                new TaskTool(repo).taskOutput(other, "large", false, null).getState());
     }
 
     @Test

@@ -15,6 +15,8 @@
  */
 package io.agentscope.harness.agent.tool;
 
+import static io.agentscope.harness.agent.tool.ToolResultAssertions.assertErrorKind;
+import static io.agentscope.harness.agent.tool.ToolResultAssertions.assertNoErrorMetadata;
 import static io.agentscope.harness.agent.tool.ToolResultAssertions.assertText;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -27,12 +29,14 @@ import static org.mockito.Mockito.when;
 
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.ToolErrorKind;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolResultState;
 import io.agentscope.core.tool.AgentTool;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.harness.agent.IsolationScope;
 import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
+import io.agentscope.harness.agent.filesystem.local.LocalFilesystem;
 import io.agentscope.harness.agent.filesystem.model.EditResult;
 import io.agentscope.harness.agent.filesystem.model.FileData;
 import io.agentscope.harness.agent.filesystem.model.FileInfo;
@@ -41,6 +45,7 @@ import io.agentscope.harness.agent.filesystem.model.GrepMatch;
 import io.agentscope.harness.agent.filesystem.model.GrepResult;
 import io.agentscope.harness.agent.filesystem.model.LsResult;
 import io.agentscope.harness.agent.filesystem.model.ReadResult;
+import io.agentscope.harness.agent.filesystem.model.WriteResult;
 import io.agentscope.harness.agent.filesystem.remote.store.NamespaceFactory;
 import io.agentscope.harness.agent.filesystem.spec.LocalFilesystemSpec;
 import io.agentscope.harness.agent.workspace.WorkspacePathNormalizer;
@@ -154,6 +159,49 @@ class FilesystemToolTest {
                         ToolResultState.SUCCESS));
     }
 
+    @Test
+    void editClassificationIgnoresReplacementTextAndPathKeywords(@TempDir Path root)
+            throws Exception {
+        var local = new LocalFilesystem(root);
+        var localTool = new FilesystemTool(local);
+        for (String keyword : List.of("permission denied", "not found", "outside", "read-only")) {
+            String path = keyword + ".txt";
+            Files.writeString(root.resolve(path), keyword + "\n" + keyword);
+            var result = localTool.editFile(RT, path, keyword, "fixed", false);
+            assertErrorKind(result, ToolErrorKind.INVALID_ARGUMENT, path);
+            assertTrue(textOf(result).contains(keyword));
+            assertErrorKind(
+                    localTool.editFile(RT, path, "missing " + keyword, "fixed", false),
+                    ToolErrorKind.INVALID_ARGUMENT,
+                    path);
+            assertErrorKind(
+                    localTool.readFile(RT, "missing-" + path, null, null),
+                    ToolErrorKind.NOT_FOUND,
+                    "missing-" + path);
+        }
+    }
+
+    @Test
+    void controlledBackendErrorsRetainKindsWithoutScanningPayload() {
+        String path = "permission denied not found.txt";
+        for (var entry :
+                Map.of(
+                                "Permission denied: " + path, ToolErrorKind.PERMISSION_DENIED,
+                                "Error editing file '" + path + "': Permission denied",
+                                        ToolErrorKind.PERMISSION_DENIED,
+                                "Edit conflict on '"
+                                                + path
+                                                + "' after 5 retries. Another writer is"
+                                                + " concurrently modifying this file.",
+                                        ToolErrorKind.CONFLICT,
+                                "backend failure for " + path, ToolErrorKind.IO_ERROR)
+                        .entrySet()) {
+            when(filesystem.edit(RT, path, "old", "new", false))
+                    .thenReturn(EditResult.fail(entry.getKey()));
+            assertErrorKind(tool.editFile(RT, path, "old", "new", false), entry.getValue(), path);
+        }
+    }
+
     // ==================== Bug reproduction: listFiles ambiguous error message ====================
 
     @Test
@@ -163,6 +211,7 @@ class FilesystemToolTest {
 
         ToolResultBlock result = tool.listFiles(RT, "/nonexistent");
         assertEquals(ToolResultState.ERROR, result.getState());
+        assertErrorKind(result, ToolErrorKind.NOT_FOUND, "/nonexistent");
 
         assertTrue(
                 textOf(result).startsWith("Error:"), "should report error for non-existent path");
@@ -177,6 +226,7 @@ class FilesystemToolTest {
 
         ToolResultBlock result = tool.listFiles(RT, "/path/to/file.txt");
         assertEquals(ToolResultState.ERROR, result.getState());
+        assertErrorKind(result, ToolErrorKind.INVALID_ARGUMENT, "/path/to/file.txt");
 
         assertTrue(textOf(result).startsWith("Error:"), "should report error for file path");
         assertTrue(
@@ -238,8 +288,30 @@ class FilesystemToolTest {
 
         ToolResultBlock result = tool.readFile(RT, "missing.txt", null, null);
         assertEquals(ToolResultState.ERROR, result.getState());
+        assertErrorKind(result, ToolErrorKind.NOT_FOUND, "missing.txt");
 
         assertTrue(textOf(result).contains("no such file"));
+    }
+
+    @Test
+    void writeFile_existingTargetIsAConflict() {
+        when(filesystem.write(RT, "f.txt", "x")).thenReturn(WriteResult.alreadyExists("f.txt"));
+
+        ToolResultBlock result = tool.writeFile(RT, "f.txt", "x");
+
+        assertEquals(ToolResultState.ERROR, result.getState());
+        assertErrorKind(result, ToolErrorKind.CONFLICT, "f.txt");
+    }
+
+    @Test
+    void successfulReadCarriesNoErrorMetadata() {
+        when(filesystem.read(eq(RT), eq("f.txt"), eq(0), eq(0)))
+                .thenReturn(ReadResult.success(new FileData("hello", "utf-8")));
+
+        ToolResultBlock result = tool.readFile(RT, "f.txt", null, null);
+
+        assertEquals(ToolResultState.SUCCESS, result.getState());
+        assertNoErrorMetadata(result);
     }
 
     @Test
@@ -322,6 +394,7 @@ class FilesystemToolTest {
     void grepFiles_nonPositiveLimit_isRejectedBeforeSearch() {
         ToolResultBlock result = tool.grepFiles(RT, "needle", ".", null, 0);
         assertEquals(ToolResultState.ERROR, result.getState());
+        assertErrorKind(result, ToolErrorKind.INVALID_ARGUMENT, null);
 
         assertEquals("Error: limit must be greater than 0", textOf(result));
         verifyNoInteractions(filesystem);

@@ -645,6 +645,9 @@ class AgentScopeAdapterTest {
                                     .name("memory")
                                     .model(model)
                                     .workspace("/work")
+                                    // Long-term memory is opt-in, and only an enabled pipeline
+                                    // performs the inline flush this test records.
+                                    .enableLongTermMemory()
                                     .abstractFilesystem(
                                             new RemoteFilesystem(
                                                     binding.workspace(), List.of("workspace")));

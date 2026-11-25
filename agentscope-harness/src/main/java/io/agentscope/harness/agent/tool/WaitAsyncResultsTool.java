@@ -27,6 +27,7 @@ import io.agentscope.harness.agent.subagent.task.TaskStatus;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
+import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.BooleanSupplier;
@@ -480,16 +481,20 @@ public class WaitAsyncResultsTool {
                 sb.append("agent_id: ").append(task.getAgentId()).append('\n');
             }
             sb.append("status: ").append(task.getStatus()).append('\n');
+            Exception error = task.getError();
             if (task.getResult() != null) {
                 sb.append("Result:\n").append(task.getResult()).append('\n');
-            } else if (task.getError() != null) {
-                Exception err = task.getError();
-                sb.append("Error:\n").append(err.getMessage()).append('\n');
-                if (err.getCause() != null) {
-                    sb.append("Cause: ").append(err.getCause().getMessage()).append('\n');
+            } else if (error != null && task.getTaskStatus() != TaskStatus.CANCELLED) {
+                sb.append("Error:\n")
+                        .append(
+                                Objects.toString(
+                                        error.getMessage(), error.getClass().getSimpleName()))
+                        .append('\n');
+                if (error.getCause() != null) {
+                    sb.append("Cause: ").append(error.getCause().getMessage()).append('\n');
                 }
             } else {
-                sb.append("Task completed with no result.").append('\n');
+                sb.append("No result.").append('\n');
             }
         }
         return ToolResultBlock.text(sb.toString().trim()).withState(barrierState(tasks));

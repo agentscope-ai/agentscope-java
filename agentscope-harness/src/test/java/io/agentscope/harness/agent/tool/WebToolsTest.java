@@ -16,6 +16,9 @@
 
 package io.agentscope.harness.agent.tool;
 
+import static io.agentscope.harness.agent.tool.ToolResultAssertions.assertErrorKind;
+import static io.agentscope.harness.agent.tool.ToolResultAssertions.assertNoErrorMetadata;
+import static io.agentscope.harness.agent.tool.ToolResultAssertions.assertRetriable;
 import static io.agentscope.harness.agent.tool.ToolResultAssertions.assertText;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -24,6 +27,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 import com.sun.net.httpserver.HttpServer;
+import io.agentscope.core.message.ToolErrorKind;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolResultState;
 import io.agentscope.core.message.ToolUseBlock;
@@ -65,6 +69,7 @@ class WebToolsTest {
                 call(new WebTools.WebFetchTool(), "web_fetch", Map.of("url", "file:///tmp/data"));
         assertNotNull(result);
         assertEquals(ToolResultState.ERROR, result.getState());
+        assertErrorKind(result, ToolErrorKind.INVALID_ARGUMENT, null);
     }
 
     @Test
@@ -76,6 +81,7 @@ class WebToolsTest {
                 call(new WebTools.WebSearchTool(), "web_search", Map.of("query", "industry"));
         assertNotNull(result);
         assertEquals(ToolResultState.ERROR, result.getState());
+        assertErrorKind(result, ToolErrorKind.CONFIGURATION_ERROR, null);
     }
 
     @Test
@@ -100,10 +106,9 @@ class WebToolsTest {
         server.start();
         try {
             String url = "http://127.0.0.1:" + server.getAddress().getPort() + "/";
-            String out =
-                    assertText(
-                            new WebTools.WebFetchTool().webFetch(url, null),
-                            ToolResultState.SUCCESS);
+            ToolResultBlock result = new WebTools.WebFetchTool().webFetch(url, null);
+            String out = assertText(result, ToolResultState.SUCCESS);
+            assertNoErrorMetadata(result);
             assertTrue(out.contains("hello from http/1.1"));
         } finally {
             server.stop(0);
@@ -125,9 +130,10 @@ class WebToolsTest {
         server.start();
         try {
             String url = "http://127.0.0.1:" + server.getAddress().getPort() + "/missing";
-            String output =
-                    assertText(
-                            new WebTools.WebFetchTool().webFetch(url, null), ToolResultState.ERROR);
+            ToolResultBlock result = new WebTools.WebFetchTool().webFetch(url, null);
+            String output = assertText(result, ToolResultState.ERROR);
+            assertErrorKind(result, ToolErrorKind.UPSTREAM_ERROR, "127.0.0.1");
+            assertRetriable(result, false);
             assertTrue(output.contains("status=404"));
             assertTrue(output.contains("resource not found"));
         } finally {
