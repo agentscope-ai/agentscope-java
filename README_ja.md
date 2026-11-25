@@ -73,7 +73,7 @@ AgentScope Java 2.0 は、分散型でエンタープライズ品質のエージ
 - **[2026-09] `v2.0.3`：** Anthropic のプロンプトキャッシュ、`deliver_artifact` ツール、`FinalAnswerFilterMiddleware`、状態バージョンと楽観的並行制御、`AgentProtocolEventBus` を追加し、コンソールの会話表示を改善しました。 [リリースノート](https://github.com/agentscope-ai/agentscope-java/releases/tag/v2.0.3)
 - **[2026-09] `v2.0.2`：** `AgentFactory` によるタスクルーティングをサポートし、RuntimeContext の伝播を改善しました。リモートサブエージェントの完全なイベントストリーム転送に対応し、`TaskStore` と実行ワークスペース管理を分離しました。 [リリースノート](https://github.com/agentscope-ai/agentscope-java/releases/tag/v2.0.2)
 - **[2026-08] `v2.0.1`：** 2.0 GA 後の最初のメンテナンスリリースです。DeepSeek、GLM、Kimi、MiniMax、OpenAI 互換プロバイダーを拡充し、Middleware の実行順序、リモートサブエージェントのイベントストリーミングと HITL 再開をサポートしました。本番環境の信頼性に関する修正も含まれます。 [リリースノート](https://github.com/agentscope-ai/agentscope-java/releases/tag/v2.0.1)
-- **[2026-08] [AgentScope Service](./agentscope-service)：** エージェントの観測、登録、オーケストレーションのためのエージェントのコントロールプレーンとダッシュボードで、AgentScope、LangChain、ADK、Claude / Qoder などとの互換性を考慮して設計されています。
+- **[2026-08] [AgentScope Service](https://java.agentscope.io/v2/en/service/index)：** エージェントの観測、登録、オーケストレーションのためのエージェントのコントロールプレーンとダッシュボードで、AgentScope、LangChain、ADK、Claude / Qoder などとの互換性を考慮して設計されています。
 - **[2026-07] `v2.0.0 GA`：** 初めての本番環境向けのリリースです！2 層のエージェントのアーキテクチャ、イベントストリーム、権限システム、ミドルウェア、ワークスペースのサンドボックス、マルチエージェントのオーケストレーション、分散デプロイがすべてそろいました。[ドキュメント](https://java.agentscope.io/) | [リリースノート](https://github.com/agentscope-ai/agentscope-java/releases/tag/v2.0.0)
 - **[2026-07] `v2.0.0-RC5`：** モデルプロバイダーのモジュール化、統一された DataBlock によるマルチモーダル対応、ネイティブの構造化出力、Channel による IM の統合、Tencent Cloud COS による状態の永続化。[リリースノート](https://github.com/agentscope-ai/agentscope-java/releases/tag/v2.0.0-RC5)
 - **[2026-06] `v2.0.0-RC4`：** ツールの非同期実行とスケジュールされたウェイクアップの振り分け、サブエージェントのレプリカをまたいだルーティングとセッションの復旧。[リリースノート](https://github.com/agentscope-ai/agentscope-java/releases/tag/v2.0.0-RC4)
@@ -174,7 +174,7 @@ public class FirstAgent {
 通常の返答、マルチターンのチャット、ワークフローのステップには、`call` / `streamEvents` から始めてください。[クイックスタート](https://java.agentscope.io/v2/en/docs/quickstart)をご覧ください。どちらもデフォルトで Harness の会話履歴を記録します。ページを閉じたあとも作業を続ける必要がある場合、ビジー時にキューに入れる場合、中断後に再開する場合は、[AgentSession](https://java.agentscope.io/v2/en/docs/harness/session-log) を導入してください。[復旧可能なチャットの例](./agentscope-examples/agents/agentscope-chat/README.md)で、統合の全体を確認できます。
 
 ## AgentScope Service
-**[AgentScope Service](./agentscope-service)** — ビジネスアプリケーションのための Agent as a Service のプラットフォームです。提案書の作成、文書の検証、例外の調査といった機能を API で公開できます。ユーザーは、既存のプロダクトの中で作業を始め、判断を下し、成果物を確認できます。
+**[AgentScope Service 2.0](https://java.agentscope.io/v2/en/service/index)** — ビジネスアプリケーションのための Agent as a Service のプラットフォームです。提案書の作成、文書の検証、例外の調査といった機能を API で公開できます。ユーザーは、既存のプロダクトの中で作業を始め、判断を下し、成果物を確認できます。
 
 + **ビジネスとの統合。** Endpoint を通じて、バックグラウンドのタスク、インタラクティブなアシスタント、専門的なプロセスのステップを提供します。アプリケーションは、そのインターフェース、データの認可、受け入れのルールを維持できます。
 + **永続的な作業と成果物。** Invocation を通じて状態、スナップショット、イベントを追い、人とのやり取りを処理し、ビジネスのプロセスのために結果やファイルを取得します。
