@@ -28,6 +28,9 @@ import io.agentscope.core.event.ModelCallEndEvent;
 import io.agentscope.core.event.ToolCallEndEvent;
 import io.agentscope.core.event.ToolResultEndEvent;
 import io.agentscope.core.event.ToolResultTextDeltaEvent;
+import io.agentscope.core.hook.Hook;
+import io.agentscope.core.hook.HookEvent;
+import io.agentscope.core.hook.PostReasoningEvent;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
@@ -48,7 +51,9 @@ import io.agentscope.core.state.AgentState;
 import io.agentscope.core.tool.ToolBase;
 import io.agentscope.core.tool.ToolCallParam;
 import io.agentscope.core.tool.Toolkit;
+import java.time.Duration;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -448,6 +453,79 @@ class ReActAgentNewLoopE2ETest {
                         .flatMap(m -> m.getContentBlocks(ToolResultBlock.class).stream())
                         .anyMatch(b -> "c1".equals(b.getId()));
         assertTrue(pairedInContext, "the context must carry the paired error result for c1");
+    }
+
+    @Test
+    @SuppressWarnings("removal")
+    void longSynchronousReasoningLoopCompletes() {
+        int rounds = 1024;
+        ScriptedModel model =
+                new ScriptedModel(
+                        Collections.nCopies(rounds, () -> Flux.just(textResponse("done"))));
+        Hook repeatReasoning =
+                new Hook() {
+                    @Override
+                    public <T extends HookEvent> Mono<T> onEvent(T event) {
+                        if (event instanceof PostReasoningEvent reasoning
+                                && model.calls.get() < rounds) {
+                            reasoning.gotoReasoning();
+                        }
+                        return Mono.just(event);
+                    }
+                };
+
+        try (ReActAgent agent =
+                ReActAgent.builder()
+                        .name("long-reasoning")
+                        .model(model)
+                        .maxIters(1)
+                        .hook(repeatReasoning)
+                        .build()) {
+            Msg result = agent.call("start").block(Duration.ofSeconds(10));
+            assertNotNull(result);
+            assertEquals("done", result.getTextContent());
+            assertEquals(rounds, model.calls.get());
+        }
+    }
+
+    @Test
+    void longToolLoopStreamsAllResultsAndCompletes() {
+        int rounds = 1024;
+        List<Supplier<Flux<ChatResponse>>> responses = new ArrayList<>();
+        for (int i = 0; i < rounds; i++) {
+            String callId = "tool-" + i;
+            responses.add(() -> Flux.just(toolUseResponse(callId, "search", "alpha")));
+        }
+        responses.add(() -> Flux.just(textResponse("done")));
+        ScriptedModel model = new ScriptedModel(responses);
+        Toolkit toolkit = new Toolkit();
+        toolkit.registerAgentTool(new AlwaysAllowTool("search"));
+
+        try (ReActAgent agent =
+                ReActAgent.builder()
+                        .name("long-tool-loop")
+                        .model(model)
+                        .toolkit(toolkit)
+                        .maxIters(rounds + 1)
+                        .build()) {
+            List<AgentEvent> events =
+                    agent.streamEvents("start")
+                            .filter(
+                                    event ->
+                                            event instanceof ToolResultEndEvent
+                                                    || event instanceof AgentEndEvent)
+                            .collectList()
+                            .block(Duration.ofSeconds(30));
+            assertNotNull(events);
+            assertEquals(rounds + 1, model.calls.get());
+            assertEquals(rounds + 1, events.size());
+            for (int i = 0; i < rounds; i++) {
+                ToolResultEndEvent result = (ToolResultEndEvent) events.get(i);
+                assertEquals("tool-" + i, result.getToolCallId());
+                assertEquals(ToolResultState.SUCCESS, result.getState());
+            }
+            assertTrue(events.get(rounds) instanceof AgentEndEvent);
+        }
     }
 
     @Test

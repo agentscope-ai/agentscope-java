@@ -2517,11 +2517,19 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
 
         // ==================== Core ReAct Loop ====================
 
+        private sealed interface LoopState permits ReasoningStep, ActingStep, LoopDone {}
+
+        private record ReasoningStep(int iteration, boolean ignoreMaxIters) implements LoopState {}
+
+        private record ActingStep(int iteration) implements LoopState {}
+
+        private record LoopDone(Msg message) implements LoopState {}
+
         /**
          * Entry point for a fresh agent invocation: kicks off the ReAct loop at iteration 0.
          */
         private Mono<Msg> coreAgent() {
-            return executeIteration(0);
+            return runLoop(new ReasoningStep(0, false));
         }
 
         /**
@@ -2529,11 +2537,32 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
          * jumps directly into the acting phase without another reasoning step.
          */
         private Mono<Msg> resumeAgent() {
-            return acting(0);
+            return runLoop(new ActingStep(0));
         }
 
-        private Mono<Msg> executeIteration(int iter) {
-            return reasoning(iter, false);
+        private Mono<Msg> runLoop(LoopState first) {
+            return Mono.defer(
+                    () -> {
+                        AtomicReference<LoopState> current = new AtomicReference<>(first);
+                        // Repeat subscribes to one phase at a time without nesting subscriptions.
+                        return Mono.defer(() -> runPhase(current.get()))
+                                .defaultIfEmpty(new LoopDone(null))
+                                .doOnNext(current::set)
+                                .repeat(() -> !(current.get() instanceof LoopDone))
+                                .ofType(LoopDone.class)
+                                .single()
+                                .flatMap(done -> Mono.justOrEmpty(done.message()));
+                    });
+        }
+
+        private Mono<LoopState> runPhase(LoopState phase) {
+            if (phase instanceof ReasoningStep step) {
+                return reasoning(step.iteration(), step.ignoreMaxIters());
+            }
+            if (phase instanceof ActingStep step) {
+                return acting(step.iteration());
+            }
+            throw new IllegalStateException("Cannot run a completed ReAct loop");
         }
 
         /**
@@ -2543,13 +2572,13 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
          * decides whether to continue to acting or return early (HITL stop, gotoReasoning, or finished).
          *
          * @param iter Current iteration number
-         * @param ignoreMaxIters If true, skip maxIters check (for gotoReasoning)
-         * @return Mono containing the final result message
+         * @param ignoreMaxIters If true, skip maxIters check (for gotoReasoning and forced output)
+         * @return Mono containing the next phase or terminal result
          */
-        private Mono<Msg> reasoning(int iter, boolean ignoreMaxIters) {
+        private Mono<LoopState> reasoning(int iter, boolean ignoreMaxIters) {
             // Check maxIters unless ignoreMaxIters is set
             if (!ignoreMaxIters && iter >= maxIters) {
-                return summarizing();
+                return summarizing().map(LoopDone::new);
             }
 
             AtomicReference<ReasoningContext> attemptContext =
@@ -2690,7 +2719,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                                 == GenerateReason.MIDDLEWARE_STOP_REQUESTED
                                         || msg.getGenerateReason()
                                                 == GenerateReason.PERMISSION_ASKING) {
-                                    return Mono.just(msg);
+                                    return Mono.just(new LoopDone(msg));
                                 }
                                 return runPostReasoningPipeline(msg, iter);
                             })
@@ -2703,7 +2732,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         }
 
         @SuppressWarnings("deprecation")
-        private Mono<Msg> runPostReasoningPipeline(Msg msg, int iter) {
+        private Mono<LoopState> runPostReasoningPipeline(Msg msg, int iter) {
             return hookDispatcher
                     .firePostReasoning(msg, model.getModelName())
                     .flatMap(
@@ -2718,9 +2747,10 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                     if (eventMsg == null) {
                                         return Mono.empty();
                                     }
-                                    return Mono.just(
+                                    Msg stopped =
                                             eventMsg.withGenerateReason(
-                                                    GenerateReason.REASONING_STOP_REQUESTED));
+                                                    GenerateReason.REASONING_STOP_REQUESTED);
+                                    return Mono.just(new LoopDone(stopped));
                                 }
 
                                 // gotoReasoning requested (e.g., by a PostReasoning hook)
@@ -2729,7 +2759,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                     if (gotoMsgs != null) {
                                         state.contextMutable().addAll(gotoMsgs);
                                     }
-                                    return reasoning(iter + 1, true);
+                                    return Mono.just(new ReasoningStep(iter + 1, true));
                                 }
 
                                 // Check finish conditions
@@ -2739,7 +2769,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                             soForceToolChoiceCount++;
                                             // Recovery is independently bounded: maxIters=1 still
                                             // permits up to three forced output requests.
-                                            return reasoning(iter + 1, true);
+                                            return Mono.just(new ReasoningStep(iter + 1, true));
                                         }
                                         log.warn(
                                                 "Structured output tool '{}' not called after {}"
@@ -2749,7 +2779,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                                 soForceToolChoiceCount,
                                                 getName());
                                     }
-                                    return Mono.justOrEmpty(eventMsg);
+                                    return Mono.just(new LoopDone(eventMsg));
                                 }
 
                                 // Empty final response: no tool calls and no visible content
@@ -2766,14 +2796,8 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                 }
 
                                 // Continue to acting
-                                return checkInterrupted().then(acting(iter));
-                            })
-                    .switchIfEmpty(
-                            Mono.defer(
-                                    () -> {
-                                        // No message was produced
-                                        return Mono.justOrEmpty((Msg) null);
-                                    }));
+                                return checkInterrupted().thenReturn(new ActingStep(iter));
+                            });
         }
 
         /**
@@ -3092,9 +3116,9 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
          * </ul>
          *
          * @param iter Current iteration number
-         * @return Mono containing the final result message
+         * @return Mono containing the next phase or terminal result
          */
-        private Mono<Msg> acting(int iter) {
+        private Mono<LoopState> acting(int iter) {
             List<ToolUseBlock> pendingToolCalls =
                     MessageUtils.extractPendingToolCalls(state.contextMutable(), getName());
             String replyId = UUID.randomUUID().toString().replace("-", "");
@@ -3119,7 +3143,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                 state.contextMutable(), recentToolCalls)) {
                     return emitAllToolsDeniedThroughMiddleware(recentToolCalls, iter);
                 }
-                return executeIteration(iter + 1);
+                return Mono.just(new ReasoningStep(iter + 1, false));
             }
 
             AtomicReference<List<Map.Entry<ToolUseBlock, ToolResultBlock>>> resultHolder =
@@ -3161,13 +3185,14 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                                 MessageUtils.lastAssistantMessage(
                                                         state.contextMutable());
                                         if (lastAssistant != null) {
-                                            return Mono.just(
+                                            Msg asking =
                                                     lastAssistant.withGenerateReason(
-                                                            GenerateReason.PERMISSION_ASKING));
+                                                            GenerateReason.PERMISSION_ASKING);
+                                            return Mono.just(new LoopDone(asking));
                                         }
                                     }
                                     Msg stopMsg = buildStopMsg(results, rs.getGenerateReason());
-                                    return Mono.just(stopMsg);
+                                    return Mono.just(new LoopDone(stopMsg));
                                 }
                                 List<Map.Entry<ToolUseBlock, ToolResultBlock>> successPairs =
                                         results.stream()
@@ -3180,9 +3205,10 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
 
                                 if (successPairs.isEmpty()) {
                                     if (!pendingPairs.isEmpty()) {
-                                        return Mono.just(buildSuspendedMsg(pendingPairs));
+                                        return Mono.just(
+                                                new LoopDone(buildSuspendedMsg(pendingPairs)));
                                     }
-                                    return executeIteration(iter + 1);
+                                    return Mono.just(new ReasoningStep(iter + 1, false));
                                 }
 
                                 boolean returnDirect =
@@ -3213,10 +3239,10 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                                 })
                                         .collectList()
                                         .map(this::earliestStopOrLast)
-                                        .flatMap(
+                                        .map(
                                                 event -> {
                                                     if (event.isStopRequested()) {
-                                                        return Mono.just(
+                                                        return new LoopDone(
                                                                 event.getToolResultMsg()
                                                                         .withGenerateReason(
                                                                                 GenerateReason
@@ -3224,17 +3250,17 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                                     }
 
                                                     if (returnDirect) {
-                                                        return Mono.just(
+                                                        return new LoopDone(
                                                                 finalizeReturnDirect(
                                                                         successPairs, replyId));
                                                     }
 
                                                     if (!pendingPairs.isEmpty()) {
-                                                        return Mono.just(
+                                                        return new LoopDone(
                                                                 buildSuspendedMsg(pendingPairs));
                                                     }
 
-                                                    return executeIteration(iter + 1);
+                                                    return new ReasoningStep(iter + 1, false);
                                                 });
                             });
         }
@@ -4443,7 +4469,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
          * middlewares the opportunity to emit a {@link RequestStopEvent}. If a stop is requested,
          * the agent returns immediately; otherwise it continues to the next iteration.
          */
-        private Mono<Msg> emitAllToolsDeniedThroughMiddleware(
+        private Mono<LoopState> emitAllToolsDeniedThroughMiddleware(
                 List<ToolUseBlock> deniedToolCalls, int iter) {
             AtomicReference<RequestStopEvent> stopRef = new AtomicReference<>();
 
@@ -4466,7 +4492,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                 }
                             })
                     .then(
-                            Mono.defer(
+                            Mono.fromSupplier(
                                     () -> {
                                         RequestStopEvent rs = stopRef.get();
                                         if (rs != null) {
@@ -4478,17 +4504,17 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                                             ? rs.getGenerateReason()
                                                             : GenerateReason.ALL_TOOLS_DENIED;
                                             if (lastMsg != null) {
-                                                return Mono.just(
+                                                return new LoopDone(
                                                         lastMsg.withGenerateReason(reason));
                                             }
-                                            return Mono.just(
+                                            return new LoopDone(
                                                     Msg.builder()
                                                             .role(MsgRole.ASSISTANT)
                                                             .textContent("")
                                                             .generateReason(reason)
                                                             .build());
                                         }
-                                        return executeIteration(iter + 1);
+                                        return new ReasoningStep(iter + 1, false);
                                     }));
         }
 
