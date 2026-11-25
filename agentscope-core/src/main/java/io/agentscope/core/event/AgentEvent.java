@@ -87,6 +87,19 @@ public abstract class AgentEvent {
     public static final String METADATA_PARENT_SESSION_ID = "parentSessionId";
 
     /**
+     * Well-known {@link #metadata} key carrying the child session id (e.g. {@code sub-<uuid>}) of
+     * a locally spawned subagent instance. Attached to child events forwarded into the parent's
+     * {@code streamEvents()} stream (see {@code AgentSpawnTool#tagLocalForwardedEvent}) so that
+     * concurrent spawns of the same subagent type — which share one {@link #source} path — stay
+     * attributable to distinct instances. Set keep-if-absent, so for nested subagents the
+     * innermost originating instance wins. Distinct from {@link #source} (the type-name path)
+     * and from {@link #METADATA_TASK_ID} (remote/harness task correlation). The wrapper
+     * {@code AGENT_START} boundary event also carries this id as its first-class {@code
+     * sessionId} field.
+     */
+    public static final String METADATA_CHILD_SESSION_ID = "childSessionId";
+
+    /**
      * Well-known {@link #metadata} key carrying the {@code GenerateReason} name behind a text
      * projection. Currently attached to the {@code TextBlock} events synthesized for a
      * {@code returnDirect} closing message, letting observers distinguish "the model said this"
