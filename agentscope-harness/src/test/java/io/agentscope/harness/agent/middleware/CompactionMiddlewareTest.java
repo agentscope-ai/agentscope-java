@@ -17,26 +17,37 @@ package io.agentscope.harness.agent.middleware;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 import io.agentscope.core.ReActAgent;
+import io.agentscope.core.agent.Agent;
+import io.agentscope.core.agent.AgentBase;
 import io.agentscope.core.agent.AgentRun;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.event.AgentEvent;
+import io.agentscope.core.interruption.InterruptContext;
+import io.agentscope.core.journal.InMemoryThreadJournalStore;
+import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.GenerateReason;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.ToolResultBlock;
+import io.agentscope.core.middleware.ModelCallInput;
 import io.agentscope.core.middleware.ReasoningInput;
 import io.agentscope.core.model.ChatModelBase;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.GenerateOptions;
+import io.agentscope.core.model.Model;
 import io.agentscope.core.model.ToolSchema;
-import io.agentscope.core.session.InMemorySessionLogStore;
 import io.agentscope.core.state.AgentState;
+import io.agentscope.core.tool.Tool;
+import io.agentscope.core.tool.ToolParam;
+import io.agentscope.core.tool.Toolkit;
 import io.agentscope.core.util.JsonUtils;
 import io.agentscope.harness.agent.memory.compaction.CompactionConfig;
 import java.time.Duration;
@@ -52,6 +63,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
 import reactor.test.StepVerifier;
 
@@ -75,7 +87,7 @@ class CompactionMiddlewareTest {
         var state = AgentState.builder().context(original).build();
         var ctx = RuntimeContext.builder().agentState(state).build();
         var agent = agent();
-        when(agent.sessionLogEnabled()).thenReturn(true);
+        when(agent.journalEnabled()).thenReturn(true);
         when(agent.getModel()).thenReturn(new SuccessfulSummaryModel());
         var recovery = new CompactionMiddleware(null, new SuccessfulSummaryModel(), fixedConfig());
         var calls = new AtomicInteger();
@@ -193,7 +205,7 @@ class CompactionMiddlewareTest {
                 ReActAgent.builder()
                         .name("notification-recovery")
                         .model(execution)
-                        .sessionLogStore(new InMemorySessionLogStore())
+                        .threadJournalStore(new InMemoryThreadJournalStore())
                         .middleware(recovery.overflowRecovery())
                         .build();
         var ctx = context("user", "notice-overflow");
@@ -234,7 +246,7 @@ class CompactionMiddlewareTest {
                 ReActAgent.builder()
                         .name("overflow-test")
                         .model(model)
-                        .sessionLogStore(new InMemorySessionLogStore())
+                        .threadJournalStore(new InMemoryThreadJournalStore())
                         .middleware(recovery.overflowRecovery())
                         .build();
         var ctx = context("user", "overflow-session");
@@ -245,7 +257,7 @@ class CompactionMiddlewareTest {
         assertEquals("answer", run.stream().blockLast(Duration.ofSeconds(10)).getTextContent());
         assertEquals(AgentRun.Status.COMPLETED, run.status());
         assertEquals(2, calls.get());
-        var facts = agent.sessionLog(ctx).readAfter(0, 1000);
+        var facts = agent.threadJournal(ctx).readAfter(0, 1000);
         assertEquals(1, facts.stream().filter(e -> e.type().equals("run/start")).count());
         assertEquals(1, facts.stream().filter(e -> e.type().equals("run/end")).count());
         assertTrue(facts.stream().allMatch(e -> run.runId().equals(e.executionRunId())));
@@ -620,6 +632,140 @@ class CompactionMiddlewareTest {
         assertFalse(
                 rendered.contains("default-model-compacted"),
                 () -> "default model must not compact: " + rendered);
+    }
+
+    @Test
+    void pruneSkipsToolsThatDeclareNonPrunable() {
+        CompactionConfig config =
+                CompactionConfig.builder()
+                        .triggerTokens(3_000)
+                        .prune(
+                                CompactionConfig.PruneConfig.builder()
+                                        .protectTokens(0)
+                                        .minimumTokens(1)
+                                        .maxOutputChars(10)
+                                        .build())
+                        .build();
+        CompactionMiddleware middleware = new CompactionMiddleware(null, null, config);
+        String bulky = "x".repeat(2_000);
+        List<Msg> history =
+                List.of(
+                        toolResultMessage("call-1", "execute", bulky),
+                        toolResultMessage("call-2", "read_file", bulky),
+                        userMessage("hi"));
+        ModelCallInput input = new ModelCallInput(history, List.of(), null, mock(Model.class));
+
+        CompactionMiddleware.Candidate candidate =
+                middleware
+                        .prepareCandidate(
+                                pruneDeclaringAgent(),
+                                RuntimeContext.empty(),
+                                input,
+                                100_000,
+                                history,
+                                CompactionMiddlewareTest::textVolume,
+                                message -> textVolume(List.of(message)))
+                        .block();
+
+        assertNotNull(candidate);
+        List<Msg> result = candidate.history();
+        // execute is undeclared: its old result is trimmed to a head+tail preview.
+        assertTrue(
+                resultText(result.get(0)).contains("chars pruned"),
+                () -> "undeclared tool must be pruned: " + resultText(result.get(0)));
+        // read_file declares prunable=false on the toolkit: its result survives verbatim.
+        assertEquals(bulky, resultText(result.get(1)));
+        assertEquals(history.get(2), result.get(2));
+    }
+
+    private static Msg toolResultMessage(String id, String name, String text) {
+        return Msg.builder()
+                .role(MsgRole.TOOL)
+                .content(ToolResultBlock.of(id, name, TextBlock.builder().text(text).build()))
+                .build();
+    }
+
+    private static String resultText(Msg message) {
+        ToolResultBlock result = message.getContentBlocks(ToolResultBlock.class).get(0);
+        StringBuilder output = new StringBuilder();
+        for (ContentBlock block : result.getOutput()) {
+            if (block instanceof TextBlock t && t.getText() != null) {
+                output.append(t.getText());
+            }
+        }
+        return output.toString();
+    }
+
+    private static long textVolume(List<Msg> messages) {
+        return messages.stream().mapToLong(CompactionMiddlewareTest::textVolumeOf).sum();
+    }
+
+    private static long textVolumeOf(Msg message) {
+        long total = 0;
+        for (ContentBlock block : message.getContent()) {
+            if (block instanceof TextBlock t && t.getText() != null) {
+                total += t.getText().length();
+            }
+        }
+        for (ToolResultBlock result : message.getContentBlocks(ToolResultBlock.class)) {
+            for (ContentBlock block : result.getOutput()) {
+                if (block instanceof TextBlock t && t.getText() != null) {
+                    total += t.getText().length();
+                }
+            }
+        }
+        return total;
+    }
+
+    private static Agent pruneDeclaringAgent() {
+        Toolkit toolkit = new Toolkit();
+        toolkit.registerTool(new DeclaredNonPrunableTools());
+        return new AgentBase("prune-agent") {
+            @Override
+            public Toolkit getToolkit() {
+                return toolkit;
+            }
+
+            @Override
+            protected Mono<Msg> doCall(List<Msg> msgs) {
+                return Mono.empty();
+            }
+
+            @Override
+            protected Mono<Msg> handleInterrupt(InterruptContext context, Msg... originalArgs) {
+                return Mono.empty();
+            }
+        };
+    }
+
+    static final class DeclaredNonPrunableTools {
+        @Tool(name = "read_file", description = "Read a file", prunable = false)
+        public String readFile(@ToolParam(name = "path", description = "File path") String path) {
+            return path;
+        }
+    }
+
+    @Test
+    void nonPrunableToolNamesReadsDeclarationsFromToolkit() {
+        Toolkit toolkit = new Toolkit();
+        toolkit.registerTool(new PruneDeclarationTools());
+
+        Set<String> names = CompactionMiddleware.nonPrunableToolNames(toolkit);
+
+        assertTrue(names.contains("protected_output"));
+        assertFalse(names.contains("ordinary_output"));
+    }
+
+    static final class PruneDeclarationTools {
+        @Tool(name = "protected_output", description = "Protected output", prunable = false)
+        public String protectedOutput() {
+            return "protected";
+        }
+
+        @Tool(name = "ordinary_output", description = "Ordinary output")
+        public String ordinaryOutput() {
+            return "ordinary";
+        }
     }
 
     /** Creates stable configuration that enters the compaction branch. */

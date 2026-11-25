@@ -22,8 +22,11 @@ import io.agentscope.core.hook.PostCallEvent;
 import io.agentscope.core.hook.PreCallEvent;
 import io.agentscope.core.interruption.InterruptContext;
 import io.agentscope.core.interruption.InterruptSource;
+import io.agentscope.core.message.AssistantMessage;
+import io.agentscope.core.message.GenerateReason;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
+import io.agentscope.core.model.ModelSchedulers;
 import io.agentscope.core.shutdown.GracefulShutdownManager;
 import io.agentscope.core.state.AgentState;
 import io.agentscope.core.tracing.TracerRegistry;
@@ -45,7 +48,6 @@ import reactor.core.publisher.FluxSink;
 import reactor.core.publisher.Mono;
 import reactor.core.publisher.SignalType;
 import reactor.core.publisher.Sinks;
-import reactor.core.scheduler.Schedulers;
 
 /**
  * Abstract base class for all agents in the AgentScope framework.
@@ -457,20 +459,39 @@ public abstract class AgentBase implements Agent {
         // no-arg "most-recently-active" accessors.
         GracefulShutdownManager.getInstance().bindRequestState(requestId, stateForCall(scope));
         List<Msg> acceptedInputs = inputsForCall(scope, msgs);
+        RuntimeContext activeRuntime = runtimeForCall(scope);
+        AgentExecutionHost host =
+                activeRuntime == null ? null : activeRuntime.get(AgentExecutionHost.class);
+        Msg resumedResult = host == null ? null : host.resumeResult();
         Mono<Msg> body =
                 TracerRegistry.get()
                         .callAgent(
                                 this,
                                 msgs,
                                 () ->
-                                        notifyPreCall(acceptedInputs, scope)
-                                                .flatMap(doCallFn)
-                                                .flatMap(this::notifyPostCall)
+                                        (resumedResult == null
+                                                        ? notifyPreCall(acceptedInputs, scope)
+                                                                .flatMap(doCallFn)
+                                                                .flatMap(this::notifyPostCall)
+                                                        : Mono.just(resumedResult))
+                                                .flatMap(
+                                                        result ->
+                                                                finishInvocation(
+                                                                                scope,
+                                                                                activeRuntime,
+                                                                                host,
+                                                                                result)
+                                                                        .thenReturn(result))
                                                 .onErrorResume(
                                                         createErrorHandler(
                                                                 control,
                                                                 msgs.toArray(new Msg[0]))));
-        body = body.doOnNext(result -> onCallResult(scope, result));
+        body =
+                body.doOnNext(
+                        result -> {
+                            onCallResult(scope, result);
+                            control.result(RunOutcome.fromResult(result));
+                        });
         Mono<Msg> scoped =
                 scope == null ? body : body.contextWrite(c -> c.put(CALL_SCOPE_KEY, scope));
         // Nested calls own their own control; only the outer execution receives this handle.
@@ -483,8 +504,32 @@ public abstract class AgentBase implements Agent {
                                         .put(RUNTIME_CONTEXT_KEY, runtime));
     }
 
+    private Mono<Void> finishInvocation(
+            Object scope, RuntimeContext runtime, AgentExecutionHost host, Msg result) {
+        if (host == null) return beforeCallComplete(scope, result);
+        return Mono.defer(
+                () ->
+                        host.finish(
+                                runtime,
+                                result,
+                                () ->
+                                        host.beforeBoundary(
+                                                        AgentExecutionHost.Boundary.FINALIZATION,
+                                                        runtime,
+                                                        stateForCall(scope))
+                                                .then(
+                                                        Mono.defer(
+                                                                () ->
+                                                                        beforeCallComplete(
+                                                                                scope, result)))));
+    }
+
     protected List<Msg> inputsForCall(Object scope, List<Msg> inputs) {
         return inputs;
+    }
+
+    protected Mono<Void> beforeCallComplete(Object scope, Msg result) {
+        return Mono.empty();
     }
 
     protected void onCallResult(Object scope, Msg result) {}
@@ -680,6 +725,14 @@ public abstract class AgentBase implements Agent {
     private Function<Throwable, Mono<Msg>> createErrorHandler(
             RunControl control, Msg... originalArgs) {
         return error -> {
+            if (error instanceof AgentExecutionHost.Paused) {
+                return Mono.just(
+                        AssistantMessage.builder()
+                                .name(getName())
+                                .textContent("")
+                                .generateReason(GenerateReason.HOST_PAUSED)
+                                .build());
+            }
             if (error instanceof InterruptedException
                     || (error.getCause() instanceof InterruptedException)) {
                 return handleInterrupt(control.interruption().toContext(), originalArgs);
@@ -1175,7 +1228,7 @@ public abstract class AgentBase implements Agent {
                                             sink.onCancel(callDisposable);
                                         },
                                         FluxSink.OverflowStrategy.BUFFER)
-                                .publishOn(Schedulers.boundedElastic()));
+                                .publishOn(ModelSchedulers.responses()));
     }
 
     @Override

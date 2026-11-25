@@ -24,6 +24,7 @@ import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.ModelContextWindows;
 import io.agentscope.core.model.ModelException;
+import io.agentscope.core.model.ModelSchedulers;
 import io.agentscope.core.model.ModelUtils;
 import io.agentscope.core.model.ToolSchema;
 import io.agentscope.core.model.transport.HttpTransport;
@@ -42,7 +43,6 @@ import java.util.Objects;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Flux;
-import reactor.core.scheduler.Schedulers;
 
 /**
  * OpenAI Chat Model using native HTTP API.
@@ -173,7 +173,7 @@ public class OpenAIChatModel extends ChatModelBase {
                                                             formatter.parseResponse(
                                                                     response, start))
                                             .filter(Objects::nonNull))
-                    .subscribeOn(Schedulers.boundedElastic());
+                    .subscribeOn(ModelSchedulers.requests());
         } else {
             // Non-streaming mode: make a single call and return as Flux
             return Flux.defer(
@@ -193,7 +193,7 @@ public class OpenAIChatModel extends ChatModelBase {
                                                     "openai"));
                                 }
                             })
-                    .subscribeOn(Schedulers.boundedElastic());
+                    .subscribeOn(ModelSchedulers.requests());
         }
     }
 

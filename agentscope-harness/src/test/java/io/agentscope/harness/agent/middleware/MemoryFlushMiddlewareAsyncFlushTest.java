@@ -40,6 +40,8 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import reactor.core.publisher.Flux;
 
 /**
@@ -272,8 +274,9 @@ class MemoryFlushMiddlewareAsyncFlushTest {
         }
     }
 
-    @Test
-    void sameUserDifferentSessionsEachKeepTheirPendingFlush() throws Exception {
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void distinctThreadsEachKeepTheirPendingFlush(boolean sameSession) throws Exception {
         AtomicInteger calls = new AtomicInteger();
         CountDownLatch[] started = {
             new CountDownLatch(1), new CountDownLatch(1), new CountDownLatch(1)
@@ -289,12 +292,14 @@ class MemoryFlushMiddlewareAsyncFlushTest {
                 RuntimeContext.builder()
                         .userId("alice")
                         .sessionId("sessionA")
+                        .threadId("left")
                         .agentState(AgentState.builder().addMessage(userMsg).build())
                         .build();
         RuntimeContext rcB =
                 RuntimeContext.builder()
                         .userId("alice")
-                        .sessionId("sessionB")
+                        .sessionId(sameSession ? "sessionA" : "sessionB")
+                        .threadId("right")
                         .agentState(AgentState.builder().addMessage(userMsg).build())
                         .build();
         MemoryFlushMiddleware middleware = new MemoryFlushMiddleware(null, gatedModel);
@@ -342,7 +347,7 @@ class MemoryFlushMiddlewareAsyncFlushTest {
             assertEquals(
                     3,
                     calls.get(),
-                    "one flush per distinct session must still run — coalescing is per session,"
+                    "one flush per distinct Thread must still run — coalescing is per Thread,"
                             + " not per isolation key");
         } finally {
             for (CountDownLatch latch : release) {

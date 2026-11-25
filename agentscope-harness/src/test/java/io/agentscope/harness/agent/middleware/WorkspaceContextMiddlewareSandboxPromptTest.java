@@ -57,6 +57,25 @@ import org.junit.jupiter.params.provider.ValueSource;
 class WorkspaceContextMiddlewareSandboxPromptTest {
 
     @Test
+    void sandboxPrompt_usesActiveWorkspaceRoot(@TempDir Path workspace) {
+        WorkspaceSpec spec = new WorkspaceSpec();
+        spec.setRoot("/home/user");
+        SandboxState state = mock(SandboxState.class);
+        when(state.getWorkspaceSpec()).thenReturn(spec);
+        Sandbox sandbox = mock(Sandbox.class);
+        when(sandbox.getState()).thenReturn(state);
+        RuntimeContext context = RuntimeContext.empty();
+        context.put(SandboxAcquireResult.class, SandboxAcquireResult.selfManaged(sandbox));
+        try (WorkspaceManager wm = new WorkspaceManager(workspace, mockSandboxFilesystem())) {
+            String prompt =
+                    WorkspacePromptTestSupport.render(
+                            new WorkspaceContextMiddleware(wm), context, "BASE\n");
+            assertTrue(prompt.contains("Sandbox root: /home/user"), () -> prompt);
+            assertFalse(prompt.contains("Sandbox root: /workspace"), () -> prompt);
+        }
+    }
+
+    @Test
     void emptyKnowledgeOmitsNavigation(@TempDir Path workspace) {
         try (WorkspaceManager wm = new WorkspaceManager(workspace, mockSandboxFilesystem())) {
             String prompt = prompt(wm, false);
@@ -167,7 +186,7 @@ class WorkspaceContextMiddlewareSandboxPromptTest {
     }
 
     @Test
-    void sandboxPrompt_withoutDeliveryTool_admitsNoBoundaryMechanism(@TempDir Path workspace) {
+    void sandboxPrompt_withoutDeliveryTool_defersToTheToolList(@TempDir Path workspace) {
         try (WorkspaceManager wm = new WorkspaceManager(workspace, mockSandboxFilesystem())) {
             String prompt = prompt(wm, false);
 
@@ -177,7 +196,12 @@ class WorkspaceContextMiddlewareSandboxPromptTest {
             assertTrue(
                     prompt.contains(
                             "File and shell paths follow the configured execution backend"));
-            assertTrue(prompt.contains("No artifact delivery tool is configured"));
+            assertTrue(
+                    prompt.contains(
+                            "Unless your tool list includes a delivery or upload tool, files"
+                                    + " remain in the configured execution backend"),
+                    () -> prompt);
+            assertFalse(prompt.contains("No artifact delivery tool"), () -> prompt);
             assertTrue(prompt.contains("retrieval work still needed"));
             assertTrue(prompt.contains("use that backend's shell syntax, installed runtimes"));
             assertFalse(prompt.contains("The host operating system is:"));

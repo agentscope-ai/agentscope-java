@@ -95,6 +95,9 @@ public class WorkspaceSpecApplier {
             Files.createDirectories(dest.getParent());
             Charset charset =
                     Charset.forName(fe.getEncoding() != null ? fe.getEncoding() : "UTF-8");
+            // Inline content has no host source to inherit permissions from, so the file keeps
+            // the platform default (0644 under the usual umask). A caller that needs an
+            // executable writes a LocalFileEntry instead.
             Files.writeString(
                     dest,
                     fe.getContent() != null ? fe.getContent() : "",
@@ -116,6 +119,11 @@ public class WorkspaceSpecApplier {
             Path source = Path.of(lf.getSourcePath()).toAbsolutePath().normalize();
             Files.createDirectories(dest.getParent());
             Files.copy(source, dest, StandardCopyOption.REPLACE_EXISTING);
+            // Files.copy without COPY_ATTRIBUTES creates the target with the platform default
+            // permissions, so a 0755 script would arrive 0644 and fail with "Permission
+            // denied" — the same loss the projection tar has to avoid. Inherit the source
+            // mode, the one rule every materialization path follows.
+            TarFileModes.applyTo(dest, TarFileModes.modeOf(source));
 
         } else if (entry instanceof LocalDirEntry ld) {
             if (ld.getSourcePath() == null || ld.getSourcePath().isBlank()) {
@@ -149,10 +157,15 @@ public class WorkspaceSpecApplier {
                         Path target = dest.resolve(rel);
                         try {
                             if (Files.isDirectory(src)) {
+                                // Directories keep the platform default on purpose: inheriting a
+                                // 0555 directory would reject the children copied into it here
+                                // and on the next materialization. Only regular files carry a
+                                // mode, which is what the executable-bit fix needs.
                                 Files.createDirectories(target);
                             } else {
                                 Files.createDirectories(target.getParent());
                                 Files.copy(src, target, StandardCopyOption.REPLACE_EXISTING);
+                                TarFileModes.applyTo(target, TarFileModes.modeOf(src));
                             }
                         } catch (IOException e) {
                             throw new UncheckedIOException(e);

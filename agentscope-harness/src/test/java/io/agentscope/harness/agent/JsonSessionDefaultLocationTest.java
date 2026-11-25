@@ -29,6 +29,8 @@ import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.Model;
+import io.agentscope.core.state.AgentState;
+import io.agentscope.core.state.JsonFileAgentStateStore;
 import io.agentscope.harness.agent.testing.HarnessQuiescence;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -75,7 +77,7 @@ class JsonSessionDefaultLocationTest {
     }
 
     @Test
-    void defaultSession_writesOnlyNativeJournalUnderWorkspace() throws Exception {
+    void defaultSession_writesNativeJournalAndVersion2StateMirror() throws Exception {
         String agentName = "assistant-" + UUID.randomUUID();
         agent =
                 HarnessAgent.builder()
@@ -86,11 +88,14 @@ class JsonSessionDefaultLocationTest {
                         .build();
         RuntimeContext rc = RuntimeContext.builder().sessionId("s1").build();
         agent.call(userMsg("hi"), rc).block();
-        assertTrue(agent.sessionLog(rc).head().seq() > 0);
-        assertEquals(2, agent.sessionTranscript(rc).messages().size());
-        assertFalse(
-                Files.exists(stateHome.resolve(agentName)),
-                "Native logging must not write legacy state");
+        assertTrue(agent.threadJournal(rc).head().seq() > 0);
+        assertEquals(2, agent.threadTranscript(rc).messages().size());
+        AgentState version2State =
+                new JsonFileAgentStateStore(stateHome.resolve(agentName))
+                        .get(null, "s1", "agent_state", AgentState.class)
+                        .orElseThrow();
+        assertEquals("main", version2State.getThreadId());
+        assertEquals(2, version2State.getContext().size());
         try (Stream<Path> files = Files.walk(workspace)) {
             assertFalse(
                     files.anyMatch(path -> path.toString().endsWith(".jsonl")),
@@ -111,7 +116,7 @@ class JsonSessionDefaultLocationTest {
         String agentName = "shared-" + UUID.randomUUID();
         agent =
                 HarnessAgent.builder()
-                        .legacySessionHistory(true)
+                        .journalEnabled(false)
                         .name(agentName)
                         .model(stubModel("done"))
                         .workspace(workspace)
@@ -133,11 +138,27 @@ class JsonSessionDefaultLocationTest {
         assertTrue(
                 Files.isDirectory(bobSession), "bob's session dir should exist under " + stateRoot);
         assertTrue(
-                Files.isRegularFile(aliceSession.resolve("agent_state.json")),
-                "alice's agent_state.json should exist");
+                Files.isRegularFile(
+                        aliceSession.resolve(
+                                agent.threadKey(
+                                                        RuntimeContext.builder()
+                                                                .userId("alice")
+                                                                .sessionId("s1")
+                                                                .build())
+                                                .stateEntry("agent_state")
+                                        + ".json")),
+                "alice's Thread state file should exist");
         assertTrue(
-                Files.isRegularFile(bobSession.resolve("agent_state.json")),
-                "bob's agent_state.json should exist");
+                Files.isRegularFile(
+                        bobSession.resolve(
+                                agent.threadKey(
+                                                        RuntimeContext.builder()
+                                                                .userId("bob")
+                                                                .sessionId("s1")
+                                                                .build())
+                                                .stateEntry("agent_state")
+                                        + ".json")),
+                "bob's Thread state file should exist");
     }
 
     @Test
@@ -151,7 +172,7 @@ class JsonSessionDefaultLocationTest {
         String agentName = "wipe-" + UUID.randomUUID();
         agent =
                 HarnessAgent.builder()
-                        .legacySessionHistory(true)
+                        .journalEnabled(false)
                         .name(agentName)
                         .model(stubModel("done"))
                         .workspace(workspace)

@@ -38,7 +38,7 @@ import io.agentscope.core.tool.AgentTool;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.harness.agent.example.support.InMemorySandboxFilesystemSpec;
 import io.agentscope.harness.agent.filesystem.local.LocalFilesystem;
-import io.agentscope.harness.agent.session.WorkspaceSessionLogStore;
+import io.agentscope.harness.agent.journal.WorkspaceThreadJournalStore;
 import io.agentscope.harness.agent.testing.HarnessQuiescence;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -230,8 +230,8 @@ class HarnessAgentCapabilityResolverTest {
                         .model(new RecordingModel("ok"))
                         .workspace(ws.toAbsolutePath().normalize().toString())
                         .filesystem(new InMemorySandboxFilesystemSpec())
-                        .sessionLogStore(
-                                new WorkspaceSessionLogStore(
+                        .threadJournalStore(
+                                new WorkspaceThreadJournalStore(
                                         new LocalFilesystem(ws.resolve("journal"))))
                         .skillRepositories(
                                 List.of(new StubRepo(List.of(granted, denied), "market")))
