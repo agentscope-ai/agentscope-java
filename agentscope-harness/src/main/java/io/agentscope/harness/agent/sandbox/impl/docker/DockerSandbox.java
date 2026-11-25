@@ -36,10 +36,12 @@ import java.nio.file.attribute.PosixFilePermissions;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -271,6 +273,12 @@ public class DockerSandbox extends AbstractBaseSandbox implements SandboxFileTra
 
         Process process = pb.start();
 
+        hydrateWorkspace(process, archive);
+    }
+
+    /** Pipes an archive into the started extraction process and reports either side's failure. */
+    void hydrateWorkspace(Process process, InputStream archive) throws Exception {
+        String containerId = dockerState.getContainerId();
         ExecutorService ioExecutor =
                 Executors.newFixedThreadPool(
                         2,
@@ -289,10 +297,6 @@ public class DockerSandbox extends AbstractBaseSandbox implements SandboxFileTra
                         () -> {
                             try (OutputStream stdin = process.getOutputStream()) {
                                 archive.transferTo(stdin);
-                            } catch (IOException e) {
-                                log.warn(
-                                        "[sandbox-docker] Error writing archive to container stdin",
-                                        e);
                             }
                             return null;
                         });
@@ -302,23 +306,43 @@ public class DockerSandbox extends AbstractBaseSandbox implements SandboxFileTra
                         () -> readStream(process.getErrorStream(), OUTPUT_TRUNCATE_BYTES));
         ioExecutor.shutdown();
 
-        writeFuture.get(TAR_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        try {
+            writeFuture.get(TAR_TIMEOUT_SECONDS, TimeUnit.SECONDS);
 
-        boolean exited = process.waitFor(TAR_TIMEOUT_SECONDS, TimeUnit.SECONDS);
-        if (!exited) {
-            process.destroyForcibly();
+            boolean exited = process.waitFor(TAR_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+            if (!exited) {
+                throw new SandboxException.SandboxRuntimeException(
+                        SandboxErrorCode.WORKSPACE_ARCHIVE_READ_ERROR,
+                        "docker tar extract timed out for container: " + containerId);
+            }
+
+            int exitCode = process.exitValue();
+            if (exitCode != 0) {
+                String stderr = stderrFuture.get();
+                throw new SandboxException.SandboxRuntimeException(
+                        SandboxErrorCode.WORKSPACE_ARCHIVE_READ_ERROR,
+                        "docker tar extract failed (exit=" + exitCode + "): " + stderr);
+            }
+        } catch (ExecutionException e) {
+            throw new SandboxException.SandboxRuntimeException(
+                    SandboxErrorCode.WORKSPACE_ARCHIVE_READ_ERROR,
+                    "Failed to transfer archive to container: " + containerId,
+                    e.getCause());
+        } catch (TimeoutException e) {
+            throw new SandboxException.SandboxRuntimeException(
+                    SandboxErrorCode.WORKSPACE_ARCHIVE_READ_ERROR,
+                    "docker tar archive transfer timed out for container: " + containerId,
+                    e);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw e;
+        } finally {
+            if (process.isAlive()) {
+                process.destroyForcibly();
+            }
+            writeFuture.cancel(true);
+            stderrFuture.cancel(true);
             ioExecutor.shutdownNow();
-            throw new SandboxException.SandboxRuntimeException(
-                    SandboxErrorCode.WORKSPACE_ARCHIVE_READ_ERROR,
-                    "docker tar extract timed out for container: " + containerId);
-        }
-
-        int exitCode = process.exitValue();
-        if (exitCode != 0) {
-            String stderr = stderrFuture.get();
-            throw new SandboxException.SandboxRuntimeException(
-                    SandboxErrorCode.WORKSPACE_ARCHIVE_READ_ERROR,
-                    "docker tar extract failed (exit=" + exitCode + "): " + stderr);
         }
     }
 

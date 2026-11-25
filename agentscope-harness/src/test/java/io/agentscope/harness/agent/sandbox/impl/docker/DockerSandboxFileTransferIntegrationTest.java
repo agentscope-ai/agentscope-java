@@ -18,6 +18,7 @@ package io.agentscope.harness.agent.sandbox.impl.docker;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -27,6 +28,9 @@ import io.agentscope.harness.agent.filesystem.model.ReadResult;
 import io.agentscope.harness.agent.filesystem.model.WriteResult;
 import io.agentscope.harness.agent.filesystem.sandbox.SandboxBackedFilesystem;
 import io.agentscope.harness.agent.sandbox.WorkspaceSpec;
+import java.io.ByteArrayInputStream;
+import java.io.IOException;
+import java.io.InputStream;
 import java.nio.file.DirectoryStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -97,6 +101,40 @@ class DockerSandboxFileTransferIntegrationTest {
         byte[] downloaded = sandbox.downloadFile(path);
 
         assertArrayEquals(payload, downloaded, "uploaded and downloaded bytes must be identical");
+    }
+
+    @Test
+    void hydratePropagatesArchiveReadFailureAfterValidTar() throws Exception {
+        byte[] content = "valid archived content".getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        sandbox.uploadFile("fixture.txt", content);
+        byte[] archive;
+        try (InputStream persisted = sandbox.persistWorkspace()) {
+            archive = persisted.readAllBytes();
+        }
+        IOException failure = new IOException("fixture archive read failure");
+        try (InputStream broken =
+                new InputStream() {
+                    private final ByteArrayInputStream bytes = new ByteArrayInputStream(archive);
+
+                    @Override
+                    public int read() throws IOException {
+                        if (bytes.available() == 0) throw failure;
+                        return bytes.read();
+                    }
+
+                    @Override
+                    public int read(byte[] buffer, int offset, int length) throws IOException {
+                        if (bytes.available() == 0) throw failure;
+                        return bytes.read(buffer, offset, length);
+                    }
+                }) {
+            Exception error = assertThrows(Exception.class, () -> sandbox.hydrateWorkspace(broken));
+            Throwable root = error;
+            while (root.getCause() != null) root = root.getCause();
+            assertSame(failure, root);
+        }
+        // A failed restore need not roll back extracted files; the caller must see its failure.
+        assertArrayEquals(content, sandbox.downloadFile("fixture.txt"));
     }
 
     @Test
