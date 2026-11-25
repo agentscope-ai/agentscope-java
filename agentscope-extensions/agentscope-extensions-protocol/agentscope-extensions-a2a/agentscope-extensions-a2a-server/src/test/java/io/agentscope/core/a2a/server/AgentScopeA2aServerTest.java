@@ -16,6 +16,7 @@
 
 package io.agentscope.core.a2a.server;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -25,13 +26,6 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import io.a2a.server.events.QueueManager;
-import io.a2a.server.requesthandlers.RequestHandler;
-import io.a2a.server.tasks.PushNotificationConfigStore;
-import io.a2a.server.tasks.PushNotificationSender;
-import io.a2a.server.tasks.TaskStore;
-import io.a2a.spec.AgentCard;
-import io.a2a.spec.TransportProtocol;
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.a2a.server.card.ConfigurableAgentCard;
 import io.agentscope.core.a2a.server.executor.AgentExecuteProperties;
@@ -43,6 +37,21 @@ import io.agentscope.core.a2a.server.transport.TransportWrapper;
 import io.agentscope.core.a2a.server.transport.TransportWrapperBuilder;
 import io.agentscope.core.a2a.server.transport.jsonrpc.JsonRpcTransportWrapper;
 import java.util.concurrent.Executor;
+import java.util.concurrent.TimeUnit;
+import org.a2aproject.sdk.jsonrpc.common.json.JsonUtil;
+import org.a2aproject.sdk.server.events.InMemoryQueueManager;
+import org.a2aproject.sdk.server.events.MainEventBus;
+import org.a2aproject.sdk.server.events.QueueManager;
+import org.a2aproject.sdk.server.requesthandlers.RequestHandler;
+import org.a2aproject.sdk.server.tasks.InMemoryTaskStore;
+import org.a2aproject.sdk.server.tasks.PushNotificationConfigStore;
+import org.a2aproject.sdk.server.tasks.PushNotificationSender;
+import org.a2aproject.sdk.server.tasks.TaskStore;
+import org.a2aproject.sdk.spec.AgentCard;
+import org.a2aproject.sdk.spec.Task;
+import org.a2aproject.sdk.spec.TaskState;
+import org.a2aproject.sdk.spec.TaskStatus;
+import org.a2aproject.sdk.spec.TransportProtocol;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -158,6 +167,19 @@ class AgentScopeA2aServerTest {
         }
 
         @Test
+        @DisplayName("Should serve the agent card as JSON written by the A2A SDK")
+        void testAgentCardJson() throws Exception {
+            AgentScopeA2aServer server =
+                    AgentScopeA2aServer.builder(agentRunner)
+                            .deploymentProperties(deploymentProperties)
+                            .build();
+
+            assertEquals(
+                    server.getAgentCard(),
+                    JsonUtil.fromJson(server.getAgentCardJson(), AgentCard.class));
+        }
+
+        @Test
         @DisplayName("Should add supported transport")
         void testWithTransport() throws Exception {
             AgentScopeA2aServer.Builder builder = AgentScopeA2aServer.builder(agentRunner);
@@ -194,6 +216,7 @@ class AgentScopeA2aServerTest {
             AgentScopeA2aServer.Builder result = builder.queueManager(queueManager);
 
             assertSame(builder, result);
+            assertSame(builder, builder.mainEventBus(new MainEventBus()));
             assertNotNull(builder.build());
         }
 
@@ -308,6 +331,83 @@ class AgentScopeA2aServerTest {
 
             assertNotNull(result);
             assertSame(builder, result);
+        }
+    }
+
+    @Nested
+    @DisplayName("Lifecycle Tests")
+    class LifecycleTests {
+
+        @BeforeEach
+        void setUpDeployment() {
+            when(deploymentProperties.host()).thenReturn("localhost");
+            when(deploymentProperties.port()).thenReturn(8080);
+        }
+
+        @Test
+        @DisplayName("Should stop the threads of its request handler on close")
+        void testCloseStopsRequestHandlerThreads() {
+            long before = processorThreads();
+            AgentScopeA2aServer server =
+                    AgentScopeA2aServer.builder(agentRunner)
+                            .deploymentProperties(deploymentProperties)
+                            .build();
+            assertEquals(before + 1, processorThreads());
+
+            server.close();
+
+            assertEquals(before, processorThreads());
+        }
+
+        @Test
+        @DisplayName("Should not leave threads behind when the build fails")
+        void testFailedBuildLeavesNoThreads() {
+            long before = processorThreads();
+
+            assertThrows(
+                    IllegalArgumentException.class,
+                    () -> AgentScopeA2aServer.builder(agentRunner).build());
+
+            assertEquals(before, processorThreads());
+        }
+
+        @Test
+        @DisplayName("Should process the events of a custom queue manager")
+        void testCustomQueueManagerEventsAreProcessed() throws Exception {
+            InMemoryTaskStore taskStore = new InMemoryTaskStore();
+            MainEventBus mainEventBus = new MainEventBus();
+            InMemoryQueueManager queueManager = new InMemoryQueueManager(taskStore, mainEventBus);
+            AgentScopeA2aServer server =
+                    AgentScopeA2aServer.builder(agentRunner)
+                            .taskStore(taskStore)
+                            .mainEventBus(mainEventBus)
+                            .queueManager(queueManager)
+                            .deploymentProperties(deploymentProperties)
+                            .build();
+            try {
+                queueManager
+                        .createOrTap("task-1")
+                        .enqueueEvent(
+                                Task.builder()
+                                        .id("task-1")
+                                        .contextId("context-1")
+                                        .status(new TaskStatus(TaskState.TASK_STATE_WORKING))
+                                        .build());
+
+                long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+                while (null == taskStore.get("task-1") && System.nanoTime() < deadline) {
+                    Thread.sleep(10);
+                }
+                assertNotNull(taskStore.get("task-1"), "the event was not processed");
+            } finally {
+                server.close();
+            }
+        }
+
+        private long processorThreads() {
+            return Thread.getAllStackTraces().keySet().stream()
+                    .filter(t -> t.isAlive() && "MainEventBusProcessor".equals(t.getName()))
+                    .count();
         }
     }
 

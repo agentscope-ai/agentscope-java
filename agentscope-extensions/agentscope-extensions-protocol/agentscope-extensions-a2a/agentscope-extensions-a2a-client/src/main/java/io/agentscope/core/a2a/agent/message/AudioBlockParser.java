@@ -16,11 +16,11 @@
 
 package io.agentscope.core.a2a.agent.message;
 
-import io.a2a.spec.Part;
 import io.agentscope.core.message.AudioBlock;
+import org.a2aproject.sdk.spec.Part;
 
 /**
- * Parser for {@link AudioBlock} to {@link io.a2a.spec.FilePart}.
+ * Parser for {@link AudioBlock} to {@link org.a2aproject.sdk.spec.FilePart}.
  */
 public class AudioBlockParser extends BaseMediaBlockParser<AudioBlock> {
 

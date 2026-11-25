@@ -20,13 +20,13 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 
-import io.a2a.spec.AgentInterface;
-import io.a2a.spec.AgentProvider;
-import io.a2a.spec.AgentSkill;
-import io.a2a.spec.MutualTLSSecurityScheme;
-import io.a2a.spec.SecurityScheme;
 import java.util.List;
 import java.util.Map;
+import org.a2aproject.sdk.spec.AgentInterface;
+import org.a2aproject.sdk.spec.AgentProvider;
+import org.a2aproject.sdk.spec.AgentSkill;
+import org.a2aproject.sdk.spec.MutualTLSSecurityScheme;
+import org.a2aproject.sdk.spec.SecurityScheme;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -47,7 +47,7 @@ class ConfigurableAgentCardTest {
         List<String> defaultOutputModes = List.of("text");
         List<AgentSkill> skills =
                 List.of(
-                        new AgentSkill.Builder()
+                        AgentSkill.builder()
                                 .id("skill1")
                                 .name("Skill 1")
                                 .description("Skill 1")

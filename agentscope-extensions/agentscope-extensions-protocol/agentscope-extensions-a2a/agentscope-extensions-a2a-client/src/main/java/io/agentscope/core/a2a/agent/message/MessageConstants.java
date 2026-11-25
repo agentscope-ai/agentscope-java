@@ -63,6 +63,6 @@ public class MessageConstants {
     /** Remote task id when the task waits for input or authorization. */
     public static final String TASK_ID_METADATA_KEY = "_agentscope_a2a_task_id";
 
-    /** Remote {@link io.a2a.spec.TaskState} name, set with {@link #TASK_ID_METADATA_KEY}. */
+    /** Remote {@link org.a2aproject.sdk.spec.TaskState} name, set with {@link #TASK_ID_METADATA_KEY}. */
     public static final String TASK_STATE_METADATA_KEY = "_agentscope_a2a_task_state";
 }

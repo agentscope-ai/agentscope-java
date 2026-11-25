@@ -15,32 +15,36 @@
  */
 package io.agentscope.core.a2a.agent;
 
-import io.a2a.client.http.A2AHttpClient;
-import io.a2a.client.http.A2AHttpResponse;
 import java.io.IOException;
 import java.util.Map;
 import java.util.Queue;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentLinkedQueue;
-import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
+import org.a2aproject.sdk.client.http.A2AHttpClient;
+import org.a2aproject.sdk.client.http.A2AHttpResponse;
+import org.a2aproject.sdk.client.http.ServerSentEvent;
 
 /**
- * Tracks SSE futures because the SDK JSON-RPC transport's {@code close()} is a no-op.
+ * An {@link A2AHttpClient} that keeps the futures of the server-sent event streams it opens, so
+ * {@link #cancelStreams()} can close them.
+ *
+ * <p>The JSON-RPC transport keeps the future of a streaming request to itself and its {@code
+ * close()} does nothing, so without this a cancelled call leaves its stream open: the events keep
+ * arriving until the remote agent ends the task.
  */
 final class StreamTrackingHttpClient implements A2AHttpClient {
 
     private final A2AHttpClient delegate;
+
     private final Queue<CompletableFuture<Void>> streams = new ConcurrentLinkedQueue<>();
-    private final AtomicBoolean stopped = new AtomicBoolean();
 
     StreamTrackingHttpClient(A2AHttpClient delegate) {
         this.delegate = delegate;
     }
 
-    /** Cancels active streams and streams returned after call cleanup raced with their creation. */
+    /** Cancels the streams this client opened; it does nothing for those that already ended. */
     void cancelStreams() {
-        stopped.set(true);
         CompletableFuture<Void> stream;
         while ((stream = streams.poll()) != null) {
             stream.cancel(true);
@@ -50,10 +54,6 @@ final class StreamTrackingHttpClient implements A2AHttpClient {
     private CompletableFuture<Void> track(CompletableFuture<Void> stream) {
         streams.add(stream);
         stream.whenComplete((ignored, error) -> streams.remove(stream));
-        if (stopped.get()) {
-            streams.remove(stream);
-            stream.cancel(true);
-        }
         return stream;
     }
 
@@ -73,6 +73,7 @@ final class StreamTrackingHttpClient implements A2AHttpClient {
     }
 
     private final class TrackingGetBuilder implements GetBuilder {
+
         private final GetBuilder delegate;
 
         private TrackingGetBuilder(GetBuilder delegate) {
@@ -80,8 +81,8 @@ final class StreamTrackingHttpClient implements A2AHttpClient {
         }
 
         @Override
-        public GetBuilder url(String url) {
-            delegate.url(url);
+        public GetBuilder url(String s) {
+            delegate.url(s);
             return this;
         }
 
@@ -98,13 +99,19 @@ final class StreamTrackingHttpClient implements A2AHttpClient {
         }
 
         @Override
+        public GetBuilder followRedirects(boolean follow) {
+            delegate.followRedirects(follow);
+            return this;
+        }
+
+        @Override
         public A2AHttpResponse get() throws IOException, InterruptedException {
             return delegate.get();
         }
 
         @Override
         public CompletableFuture<Void> getAsyncSSE(
-                Consumer<String> messageConsumer,
+                Consumer<ServerSentEvent> messageConsumer,
                 Consumer<Throwable> errorConsumer,
                 Runnable completeRunnable)
                 throws IOException, InterruptedException {
@@ -113,6 +120,7 @@ final class StreamTrackingHttpClient implements A2AHttpClient {
     }
 
     private final class TrackingPostBuilder implements PostBuilder {
+
         private final PostBuilder delegate;
 
         private TrackingPostBuilder(PostBuilder delegate) {
@@ -120,8 +128,8 @@ final class StreamTrackingHttpClient implements A2AHttpClient {
         }
 
         @Override
-        public PostBuilder url(String url) {
-            delegate.url(url);
+        public PostBuilder url(String s) {
+            delegate.url(s);
             return this;
         }
 
@@ -144,13 +152,19 @@ final class StreamTrackingHttpClient implements A2AHttpClient {
         }
 
         @Override
+        public PostBuilder followRedirects(boolean follow) {
+            delegate.followRedirects(follow);
+            return this;
+        }
+
+        @Override
         public A2AHttpResponse post() throws IOException, InterruptedException {
             return delegate.post();
         }
 
         @Override
         public CompletableFuture<Void> postAsyncSSE(
-                Consumer<String> messageConsumer,
+                Consumer<ServerSentEvent> messageConsumer,
                 Consumer<Throwable> errorConsumer,
                 Runnable completeRunnable)
                 throws IOException, InterruptedException {
