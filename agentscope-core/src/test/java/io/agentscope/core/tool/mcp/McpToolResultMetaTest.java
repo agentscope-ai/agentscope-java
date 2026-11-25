@@ -68,6 +68,33 @@ class McpToolResultMetaTest {
     }
 
     @Test
+    void resourceLinkOutputSurvivesCallAndMetadataCustomization() {
+        McpSchema.ResourceLink link =
+                McpSchema.ResourceLink.builder()
+                        .name("report")
+                        .uri("notes://reports/42")
+                        .meta(Map.of("private", "server-only"))
+                        .build();
+        stubResult(
+                new McpSchema.CallToolResult(
+                        List.of(link), false, null, Map.of("traceId", "trace-42")));
+        useCustomizer(
+                (context, metadata) ->
+                        metadata.put("trace.id", context.resultMeta().get("traceId")));
+
+        ToolResultBlock block = call(newTool());
+
+        assertEquals(
+                Map.of("type", "resource_link", "name", "report", "uri", "notes://reports/42"),
+                io.agentscope.core.util.JsonUtils.getJsonCodec().fromJson(text(block), Map.class));
+        assertEquals(
+                Map.of("trace.id", "trace-42"),
+                block.getMetadata().get(McpTool.METADATA_MCP_RESULT_META));
+        assertFalse(text(block).contains("server-only"));
+        assertFalse(text(block).contains("trace-42"));
+    }
+
+    @Test
     void resultWithoutMetaLeavesMetadataEmpty() {
         stubResult(result(Map.of(), false));
 
