@@ -292,6 +292,7 @@ public class OkHttpWebSocketTransport implements WebSocketTransport {
                                             }
                                         }
                                     });
+                    sink.onCancel(webSocket::cancel);
                 });
     }
 
