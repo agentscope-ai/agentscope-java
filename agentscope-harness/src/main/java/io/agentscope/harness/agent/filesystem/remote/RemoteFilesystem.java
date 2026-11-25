@@ -258,8 +258,13 @@ public class RemoteFilesystem implements AbstractFilesystem {
             for (String subdir : subdirs) {
                 infos.add(FileInfo.ofDir(subdir, ""));
             }
-            infos.sort(Comparator.comparing(FileInfo::path));
-            return LsResult.success(infos);
+            // The index is best-effort and node-local. An empty fast-path result is not
+            // authoritative: sibling nodes may have written files this index has not seen
+            // (#3197). Fall through to the store scan, mirroring grep().
+            if (!infos.isEmpty()) {
+                infos.sort(Comparator.comparing(FileInfo::path));
+                return LsResult.success(infos);
+            }
         }
 
         // Fallback: full remote scan
@@ -545,8 +550,13 @@ public class RemoteFilesystem implements AbstractFilesystem {
                     results.add(FileInfo.ofFile(key, 0, ""));
                 }
             }
-            results.sort(Comparator.comparing(FileInfo::path));
-            return GlobResult.success(results);
+            // The index is best-effort and node-local. After pattern filtering the fast path
+            // may yield nothing even when the store has matches (#3197); only return when it
+            // produced results, otherwise fall through to the authoritative store scan.
+            if (!results.isEmpty()) {
+                results.sort(Comparator.comparing(FileInfo::path));
+                return GlobResult.success(results);
+            }
         }
 
         // Fallback: full remote scan
