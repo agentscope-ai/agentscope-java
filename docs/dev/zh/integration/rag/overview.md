@@ -32,6 +32,10 @@ Toolkit toolkit = new Toolkit();
 toolkit.registerObject(tools);
 ```
 
+## 响应式检索
+
+百炼、Dify、HayStack 和 RAGFlow 客户端会在订阅时才执行同步 SDK/HTTP 操作，并将这些操作调度到 Reactor 共享的 bounded-elastic 线程池。因此，从非阻塞请求线程订阅检索时，网络调用不会直接占用该线程。请将返回的 `Mono` 组合到响应式调用链中；示例中的 `.block()` 适用于命令式调用方，不适用于事件循环处理函数。取消订阅会释放调度任务，但正在执行的请求能否立即停止，仍取决于底层 SDK/HTTP 客户端对中断和超时的处理。
+
 ## 选型建议
 
 | 需求 | 建议 |

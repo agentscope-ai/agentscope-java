@@ -22,6 +22,7 @@ import io.agentscope.core.util.JsonUtils;
 import java.io.IOException;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.Callable;
 import java.util.concurrent.TimeUnit;
 import okhttp3.Interceptor;
 import okhttp3.MediaType;
@@ -32,6 +33,7 @@ import okhttp3.Response;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Schedulers;
 
 /**
  * HTTP client for RAGFlow API.
@@ -102,7 +104,7 @@ public class RAGFlowClient {
             Double similarityThreshold,
             Map<String, Object> metadataCondition) {
 
-        return Mono.fromCallable(
+        Callable<RAGFlowResponse> retrieval =
                 () -> {
                     if (question == null || question.trim().isEmpty()) {
                         throw new IllegalArgumentException("Question cannot be null or empty");
@@ -153,12 +155,14 @@ public class RAGFlowClient {
                         requestBody.put("page_size", config.getPageSize());
                     }
 
-                    // Optional: use_kg - knowledge graph for multi-hop queries (default: false)
+                    // Optional: use_kg - knowledge graph for multi-hop queries (default:
+                    // false)
                     if (config.getUseKg() != null) {
                         requestBody.put("use_kg", config.getUseKg());
                     }
 
-                    // Optional: toc_enhance - table of contents enhancement (default: false)
+                    // Optional: toc_enhance - table of contents enhancement (default:
+                    // false)
                     if (config.getTocEnhance() != null) {
                         requestBody.put("toc_enhance", config.getTocEnhance());
                     }
@@ -245,7 +249,8 @@ public class RAGFlowClient {
                             int chunkCount = ragFlowResponse.getData().getChunks().size();
                             Integer total = ragFlowResponse.getData().getTotal();
                             logger.debug(
-                                    "RAGFlow retrieval successful: retrieved {} chunks, total={}",
+                                    "RAGFlow retrieval successful: retrieved {} chunks,"
+                                            + " total={}",
                                     chunkCount,
                                     total);
 
@@ -259,7 +264,8 @@ public class RAGFlowClient {
 
                         return ragFlowResponse;
                     }
-                });
+                };
+        return Mono.fromCallable(retrieval).subscribeOn(Schedulers.boundedElastic());
     }
 
     private void handleErrorResponse(int statusCode, String responseBody) {

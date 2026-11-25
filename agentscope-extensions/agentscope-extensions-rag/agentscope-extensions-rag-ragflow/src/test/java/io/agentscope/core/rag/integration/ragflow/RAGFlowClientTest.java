@@ -16,6 +16,7 @@
 package io.agentscope.core.rag.integration.ragflow;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -33,6 +34,7 @@ import io.agentscope.core.rag.integration.ragflow.model.RAGFlowResponse;
 import io.agentscope.core.util.JsonUtils;
 import java.io.IOException;
 import java.lang.reflect.Field;
+import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import okhttp3.Interceptor;
@@ -46,11 +48,42 @@ import okhttp3.mockwebserver.RecordedRequest;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Scheduler;
+import reactor.core.scheduler.Schedulers;
+import reactor.test.StepVerifier;
 
 /**
  * Unit tests for RAGFlowClient.
  */
 class RAGFlowClientTest {
+
+    @Test
+    void retrieveOffloadsSynchronousHttpFromNonBlockingSubscriber() {
+        mockWebServer.enqueue(createSuccessResponse());
+        OkHttpClient http =
+                new OkHttpClient.Builder()
+                        .addInterceptor(
+                                chain -> {
+                                    assertFalse(Schedulers.isInNonBlockingThread());
+                                    return chain.proceed(chain.request());
+                                })
+                        .build();
+        RAGFlowClient client = new RAGFlowClient(http, createConfig());
+        Mono<RAGFlowResponse> retrieval = client.retrieve("query", 5, null, null);
+        assertEquals(0, mockWebServer.getRequestCount());
+        Scheduler eventLoop = Schedulers.newSingle("ragflow-test-event-loop");
+        try {
+            StepVerifier.create(Mono.defer(() -> retrieval).subscribeOn(eventLoop))
+                    .assertNext(response -> assertEquals(2, response.getData().getChunks().size()))
+                    .expectComplete()
+                    .verify(Duration.ofSeconds(10));
+        } finally {
+            eventLoop.dispose();
+            http.connectionPool().evictAll();
+            http.dispatcher().executorService().shutdownNow();
+        }
+    }
 
     private MockWebServer mockWebServer;
 

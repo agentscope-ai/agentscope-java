@@ -21,6 +21,7 @@ import io.agentscope.core.util.JsonUtils;
 import java.io.IOException;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.Callable;
 import java.util.concurrent.TimeUnit;
 import okhttp3.Interceptor;
 import okhttp3.MediaType;
@@ -32,6 +33,7 @@ import org.jspecify.annotations.NonNull;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Schedulers;
 
 /**
  * Client for interacting with HayStack Knowledge Base API.
@@ -127,7 +129,7 @@ public class HayStackClient {
      * @return a Mono emitting the retrieval response
      */
     public Mono<HayStackResponse> retrieve(String query, Integer topK, Double scoreThreshold) {
-        return Mono.fromCallable(
+        Callable<HayStackResponse> retrieval =
                 () -> {
                     if (query == null || query.trim().isEmpty()) {
                         throw new IllegalArgumentException("Query cannot be null or empty");
@@ -255,7 +257,8 @@ public class HayStackClient {
 
                         return hayStackResponse;
                     }
-                });
+                };
+        return Mono.fromCallable(retrieval).subscribeOn(Schedulers.boundedElastic());
     }
 
     private OkHttpClient createHttpClient() {

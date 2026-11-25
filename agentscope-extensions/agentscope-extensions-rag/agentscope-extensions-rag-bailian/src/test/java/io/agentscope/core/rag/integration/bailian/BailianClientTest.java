@@ -16,13 +16,17 @@
 package io.agentscope.core.rag.integration.bailian;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyMap;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import com.aliyun.bailian20231229.Client;
@@ -30,16 +34,98 @@ import com.aliyun.bailian20231229.models.RetrieveRequest;
 import com.aliyun.bailian20231229.models.RetrieveResponse;
 import com.aliyun.bailian20231229.models.RetrieveResponseBody;
 import com.aliyun.teautil.models.RuntimeOptions;
+import java.io.IOException;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import reactor.core.Disposable;
+import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Scheduler;
+import reactor.core.scheduler.Schedulers;
 import reactor.test.StepVerifier;
 
 class BailianClientTest {
+
+    @Test
+    void sdkFailureAndRetryRemainPerSubscription() throws Exception {
+        IOException failure = new IOException("fixture failure");
+        RetrieveResponse response = new RetrieveResponse().setBody(new RetrieveResponseBody());
+        when(mockSdkClient.retrieveWithOptions(anyString(), any(), anyMap(), any()))
+                .thenThrow(failure)
+                .thenReturn(response);
+        BailianClient client = new BailianClient(mockSdkClient, "test-workspace", testConfig);
+        Mono<RetrieveResponse> retrieval = client.retrieve("index", "query", 5);
+
+        StepVerifier.create(retrieval)
+                .expectErrorMatches(error -> error == failure)
+                .verify(Duration.ofSeconds(10));
+        StepVerifier.create(retrieval)
+                .expectNext(response)
+                .expectComplete()
+                .verify(Duration.ofSeconds(10));
+        verify(mockSdkClient, times(2)).retrieveWithOptions(anyString(), any(), anyMap(), any());
+    }
+
+    @Test
+    void cancellationInterruptsAnInterruptibleSdkCall() throws Exception {
+        CountDownLatch entered = new CountDownLatch(1);
+        CountDownLatch interrupted = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        when(mockSdkClient.retrieveWithOptions(anyString(), any(), anyMap(), any()))
+                .thenAnswer(
+                        invocation -> {
+                            entered.countDown();
+                            try {
+                                if (!release.await(10, TimeUnit.SECONDS)) {
+                                    throw new IllegalStateException("fixture was not released");
+                                }
+                            } catch (InterruptedException error) {
+                                interrupted.countDown();
+                                throw error;
+                            }
+                            return new RetrieveResponse().setBody(new RetrieveResponseBody());
+                        });
+        BailianClient client = new BailianClient(mockSdkClient, "test-workspace", testConfig);
+        Disposable subscription = client.retrieve("index", "query", 5).subscribe();
+        try {
+            assertTrue(entered.await(10, TimeUnit.SECONDS));
+            subscription.dispose();
+            assertTrue(interrupted.await(10, TimeUnit.SECONDS));
+        } finally {
+            subscription.dispose();
+            release.countDown();
+        }
+    }
+
+    @Test
+    void retrieveRunsBlockingSdkAwayFromNonBlockingSubscriber() throws Exception {
+        RetrieveResponse response = new RetrieveResponse().setBody(new RetrieveResponseBody());
+        when(mockSdkClient.retrieveWithOptions(anyString(), any(), anyMap(), any()))
+                .thenAnswer(
+                        invocation -> {
+                            assertFalse(Schedulers.isInNonBlockingThread());
+                            return response;
+                        });
+        BailianClient client = new BailianClient(mockSdkClient, "test-workspace", testConfig);
+        Mono<RetrieveResponse> retrieval = client.retrieve("index", "query", 5);
+        verifyNoInteractions(mockSdkClient);
+        Scheduler eventLoop = Schedulers.newSingle("bailian-test-event-loop");
+        try {
+            StepVerifier.create(Mono.defer(() -> retrieval).subscribeOn(eventLoop))
+                    .expectNext(response)
+                    .expectComplete()
+                    .verify(Duration.ofSeconds(10));
+        } finally {
+            eventLoop.dispose();
+        }
+    }
 
     private Client mockSdkClient;
     private BailianConfig testConfig;
