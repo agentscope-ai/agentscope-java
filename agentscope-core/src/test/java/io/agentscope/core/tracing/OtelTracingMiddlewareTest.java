@@ -59,6 +59,8 @@ import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
@@ -265,8 +267,9 @@ class OtelTracingMiddlewareTest {
                                         "gen_ai.usage.input_tokens")));
     }
 
-    @Test
-    void onActing_createsExecuteToolSpan() {
+    @ParameterizedTest
+    @CsvSource({"SUCCESS, OK", "ERROR, ERROR"})
+    void onActing_createsExecuteToolSpan(ToolResultState state, StatusCode expectedStatus) {
         Agent agent = stubAgent("tool-agent", "agent-004");
         ToolUseBlock toolCall =
                 ToolUseBlock.builder()
@@ -275,18 +278,17 @@ class OtelTracingMiddlewareTest {
                         .input(Map.of("q", "hello"))
                         .build();
 
-        ToolResultEndEvent tre =
-                new ToolResultEndEvent("reply-1", "call-1", "testTool", ToolResultState.SUCCESS);
+        ToolResultEndEvent tre = new ToolResultEndEvent("reply-1", "call-1", "search", state);
         ActingInput input = new ActingInput(List.of(toolCall));
         Flux<AgentEvent> result = middleware.onActing(agent, null, input, in -> Flux.just(tre));
-        result.collectList().block();
+        assertEquals(List.of(tre), result.collectList().block());
 
         List<SpanData> spans = spanExporter.getFinishedSpanItems();
         assertEquals(1, spans.size());
 
         SpanData span = spans.get(0);
         assertEquals("execute_tool search", span.getName());
-        assertEquals(StatusCode.OK, span.getStatus().getStatusCode());
+        assertEquals(expectedStatus, span.getStatus().getStatusCode());
         assertEquals(
                 "execute_tool",
                 span.getAttributes()
@@ -305,6 +307,22 @@ class OtelTracingMiddlewareTest {
                         .get(
                                 io.opentelemetry.api.common.AttributeKey.stringKey(
                                         "gen_ai.tool.call.id")));
+    }
+
+    @Test
+    void onActing_recordsAndPropagatesStreamError() {
+        Agent agent = stubAgent("tool-agent", "agent-004");
+        ToolUseBlock call =
+                ToolUseBlock.builder().id("call-1").name("search").input(Map.of()).build();
+        ActingInput input = new ActingInput(List.of(call));
+        var failure = new IllegalStateException("search failed");
+        Flux<AgentEvent> result =
+                middleware.onActing(agent, null, input, in -> Flux.error(failure));
+
+        assertSame(failure, assertThrows(IllegalStateException.class, result::blockLast));
+        List<SpanData> spans = spanExporter.getFinishedSpanItems();
+        assertEquals(1, spans.size());
+        assertEquals(StatusCode.ERROR, spans.get(0).getStatus().getStatusCode());
     }
 
     @Test
@@ -454,23 +472,24 @@ class OtelTracingMiddlewareTest {
         assertEquals("cancelled", spans.get(0).getStatus().getDescription());
     }
 
-    @Test
-    void onActing_aggregatesAllToolCallIds() {
+    @ParameterizedTest
+    @CsvSource({"SUCCESS, SUCCESS, OK", "ERROR, SUCCESS, ERROR", "SUCCESS, ERROR, ERROR"})
+    void onActing_aggregatesToolResultsAndCallIds(
+            ToolResultState firstState, ToolResultState secondState, StatusCode expectedStatus) {
         Agent agent = stubAgent("multi-tool-agent", "agent-103");
         ToolUseBlock t1 =
                 ToolUseBlock.builder().id("call-a").name("search").input(Map.of()).build();
         ToolUseBlock t2 = ToolUseBlock.builder().id("call-b").name("calc").input(Map.of()).build();
         ActingInput input = new ActingInput(List.of(t1, t2));
 
-        ToolResultEndEvent r1 =
-                new ToolResultEndEvent("reply-1", "call-a", "search", ToolResultState.SUCCESS);
-        ToolResultEndEvent r2 =
-                new ToolResultEndEvent("reply-1", "call-b", "calc", ToolResultState.SUCCESS);
+        ToolResultEndEvent r1 = new ToolResultEndEvent("reply-1", "call-a", "search", firstState);
+        ToolResultEndEvent r2 = new ToolResultEndEvent("reply-1", "call-b", "calc", secondState);
 
         middleware.onActing(agent, null, input, in -> Flux.just(r1, r2)).collectList().block();
 
         List<SpanData> spans = spanExporter.getFinishedSpanItems();
         assertEquals(1, spans.size());
+        assertEquals(expectedStatus, spans.get(0).getStatus().getStatusCode());
 
         String callIds =
                 spans.get(0)

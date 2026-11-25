@@ -76,7 +76,7 @@ ReActAgent agent =
 
 - `invoke_agent <name>` — wraps a full reply
 - `chat <model>` — wraps each model API call
-- `execute_tool <name>` — wraps each tool execution
+- `execute_tool <name>` — records one batch of tool calls. If any tool returns `ToolResultState.ERROR`, the span status is `ERROR` even when the event stream completes normally.
 
 When no OpenTelemetry SDK is configured (only the default no-op provider), every hook short-circuits to `next.apply(input)` — near-zero overhead.
 
