@@ -415,6 +415,7 @@ public class DashScopeHttpClient {
      *   <li>Models starting with "qwen3.7" where not "qwen3.7-max" (e.g., qwen3.7-plus)</li>
      *   <li>Models starting with "qwen3.8" where not "qwen3.8-2.4t-a95b"
      *       (e.g., qwen3.8-max, qwen3.8-flash, qwen3.8-27b)</li>
+     *   <li>Models starting with "qwen4" (e.g., qwen4-max, qwen4-max-2026-11-01)</li>
      *   <li>Models containing "kimi-k2.5"/"kimi-k2.6" (e.g., kimi-k2.6, kimi/kimi-k2.5)</li>
      * </ul>
      *
@@ -450,6 +451,7 @@ public class DashScopeHttpClient {
                 || lowerModelName.startsWith("qwen3.6")
                 || lowerModelName.startsWith("qwen3.7")
                 || lowerModelName.startsWith("qwen3.8")
+                || lowerModelName.startsWith("qwen4")
                 || lowerModelName.contains("kimi-k");
     }
 

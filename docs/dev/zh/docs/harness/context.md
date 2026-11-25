@@ -222,7 +222,7 @@ builder.toolResultEviction(ToolResultEvictionConfig.builder()
         .build());
 ```
 
-`read_file`、`write_file`、`edit_file`、`memory_search` 和 `memory_get` 默认不参与这种卸载。`execute`、`thread_search` 等工具仍可卸载；读取工具本身应合理分页，避免一次读回全部内容又占满窗口。
+排除跟随工具自身的注册声明：内置的 `read_file`、`write_file`、`edit_file`、`memory_search` 和 `memory_get` 在注册处声明 `@Tool(evictable = false)`——它们的结果小或自带分页——因此与这些工具同名的自定义工具若未做同样声明，仍会被卸载。`execute`、`thread_search` 等工具仍可卸载；`excludedToolNames(...)` 可按名称追加豁免。读取工具本身应合理分页，避免一次读回全部内容又占满窗口。
 
 <span id="配置预算与观测" />
 
@@ -278,7 +278,7 @@ builder.compaction(CompactionConfig.builder()
 
 <Accordion title="进一步减少旧工具参数和结果的开销">
 
-默认的工具结果裁剪会保护最近约 40,000 token 的工具输出；更早的可裁剪内容累计达到约 20,000 token 时，将旧结果缩为预览。一条消息包含多个工具结果时，每个结果独立计入这些预算。这与单个大结果写入文件是两种处理：裁剪不会为每条旧结果额外生成可回读文件，需要完整事实时应查询 Thread 日志。
+默认的工具结果裁剪会保护最近约 40,000 token 的工具输出；更早的可裁剪内容累计达到约 20,000 token 时，将旧结果缩为预览。裁剪豁免跟随工具注册处的声明：声明 `@Tool(prunable = false)` 的工具结果不参与裁剪（内置的 `read_file`、`memory_search`、`memory_get` 和 `thread_search` 已声明），`PruneConfig` 的 `excludedTools(...)` 可按名称追加豁免。一条消息包含多个工具结果时，每个结果独立计入这些预算。这与单个大结果写入文件是两种处理：裁剪不会为每条旧结果额外生成可回读文件，需要完整事实时应查询 Thread 日志。
 
 这种裁剪同样只缩短文字，非文本块与保留的文字仍按原顺序排列。同一结果的所有文本块共用一份首尾文字额度，调用 ID、工具名、元数据、状态和执行信息均保留。留下的媒体仍计入最终请求预算。
 

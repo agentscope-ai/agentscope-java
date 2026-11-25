@@ -137,6 +137,8 @@ public class FilesystemTool {
     @Tool(
             name = "read_file",
             readOnly = true,
+            evictable = false,
+            prunable = false,
             description =
                     "Read a file's content. Binary files come back base64-encoded. Paginate large"
                         + " files with offset (0-indexed start line) and limit (max lines). Output"
@@ -212,6 +214,7 @@ public class FilesystemTool {
 
     @Tool(
             name = "write_file",
+            evictable = false,
             description =
                     "Create a new file with the given full content (parent directories are"
                             + " created). Fails if the path already exists — read_file the"
@@ -230,6 +233,7 @@ public class FilesystemTool {
 
     @Tool(
             name = "edit_file",
+            evictable = false,
             description =
                     "Replace an exact text string in an existing file after line-ending"
                             + " normalization; whitespace and indentation within lines must match."

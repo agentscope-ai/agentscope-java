@@ -1385,7 +1385,12 @@ public class HarnessAgent implements Agent, AutoCloseable {
                         ? effective.getSessionId()
                         : "default";
 
-        CompactionConfig forceConfig = CompactionConfig.builder().triggerMessages(1).build();
+        CompactionConfig forceConfig =
+                CompactionConfig.builder()
+                        .triggerMessages(1)
+                        .build()
+                        .withPruneExclusions(
+                                CompactionMiddleware.nonPrunableToolNames(getToolkit()));
         String effectiveFlushPrompt =
                 memoryConfig.flushPrompt() != null
                         ? memoryConfig.flushPrompt()
