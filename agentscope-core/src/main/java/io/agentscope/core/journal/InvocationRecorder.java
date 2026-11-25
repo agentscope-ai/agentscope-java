@@ -24,6 +24,9 @@ import io.agentscope.core.event.ExternalExecutionResultEvent;
 import io.agentscope.core.event.RequireExternalExecutionEvent;
 import io.agentscope.core.event.RequireUserConfirmEvent;
 import io.agentscope.core.event.TextBlockDeltaEvent;
+import io.agentscope.core.event.ThinkingBlockDeltaEvent;
+import io.agentscope.core.event.ThinkingBlockEndEvent;
+import io.agentscope.core.event.ThinkingBlockStartEvent;
 import io.agentscope.core.event.ToolCallDeltaEvent;
 import io.agentscope.core.event.ToolResultEndEvent;
 import io.agentscope.core.event.UserConfirmResultEvent;
@@ -929,6 +932,31 @@ public final class InvocationRecorder {
         // A forwarded child's requests belong to its own journal, never the parent's inbox.
         if (event.getExecution() != null && !runId.equals(event.getExecution().runId())) return;
         if (event.getSource() != null && !event.getSource().isBlank()) return;
+        if (event instanceof ThinkingBlockStartEvent start) {
+            append(
+                    "presentation/thinking_started",
+                    Map.of("replyId", start.getReplyId(), "blockId", start.getBlockId()));
+            return;
+        }
+        if (event instanceof ThinkingBlockDeltaEvent delta) {
+            if (delta.getDelta() != null && !delta.getDelta().isEmpty())
+                append(
+                        "presentation/thinking_delta",
+                        Map.of(
+                                "replyId",
+                                delta.getReplyId(),
+                                "blockId",
+                                delta.getBlockId(),
+                                "text",
+                                delta.getDelta()));
+            return;
+        }
+        if (event instanceof ThinkingBlockEndEvent end) {
+            append(
+                    "presentation/thinking_completed",
+                    Map.of("replyId", end.getReplyId(), "blockId", end.getBlockId()));
+            return;
+        }
         if (event instanceof TextBlockDeltaEvent delta) {
             if (delta.getDelta() != null && !delta.getDelta().isEmpty())
                 append(

@@ -358,7 +358,12 @@ committed response replaces incomplete text through revision, preventing duplica
 reconnection. `message.completed` is the authoritative durable fact. `message.delta` and
 `tool.arguments.delta` are best-effort `LiveEvent` previews produced from middleware-processed
 presentation facts; they have no sequence or cursor and never enter history, snapshots or replay.
-Private reasoning remains excluded. History uses the first public sequence for ordering; consumers
+By default the AgentScope adapter commits Harness thinking blocks to the Session stream as
+`reasoning.started`, `reasoning.delta` and `reasoning.completed`. Each delta carries display
+`text` for its `messageId` and `blockId`. Consumers can resume from a Session cursor within
+event retention, even if nobody was connected at emission. Thinking blocks are excluded from
+`history()` and snapshots. Configure the adapter with `withThinkingEvents(false)` to stop
+publishing new thinking events. History uses the first public sequence for ordering; consumers
 reading the snapshot messages map should also sort by sequence rather than relying on object field
 order. Existing stored `message.delta` and `tool.call.arguments` events remain readable for
 development-data compatibility, but new AgentScope writes do not create them.

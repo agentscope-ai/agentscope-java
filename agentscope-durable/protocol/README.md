@@ -327,6 +327,7 @@ Public event families include:
 - Run/Step lifecycle and model-call/request diagnostics.
 - Signal acceptance/application/withdrawal and interaction request/resolution.
 - `message.delta` and `message.completed`.
+- `reasoning.started`, `reasoning.delta` and `reasoning.completed` for replayable thinking blocks.
 - Tool argument generation, call updates/progress, dispatch, output, result acceptance,
   and result application.
 - `artifact.published` and `checkpoint.restored`.

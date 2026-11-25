@@ -3,6 +3,26 @@
   "$id": "https://agentscope.io/durable/v1/schema.json",
   "title": "AgentScope Durable v1",
   "$defs": {
+    "reasoningEvent": {
+      "properties": {
+        "type": { "enum": ["reasoning.started", "reasoning.delta", "reasoning.completed"] },
+        "data": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["messageId", "blockId", "attempt", "revision"],
+          "properties": {
+            "messageId": { "type": "string", "minLength": 1, "maxLength": 256 },
+            "blockId": { "type": "string", "minLength": 1, "maxLength": 256 },
+            "attempt": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+            "revision": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+            "text": { "type": "string", "minLength": 1 }
+          }
+        }
+      },
+      "if": { "properties": { "type": { "const": "reasoning.delta" } } },
+      "then": { "properties": { "data": { "required": ["text"] } } },
+      "else": { "properties": { "data": { "not": { "required": ["text"] } } } }
+    },
     "session": {
       "type": "object",
       "additionalProperties": false,
@@ -912,6 +932,9 @@
         }
       },
       "anyOf": [
+        {
+          "$ref": "#/$defs/reasoningEvent"
+        },
         {
           "properties": {
             "type": {
@@ -2011,6 +2034,9 @@
         }
       },
       "anyOf": [
+        {
+          "$ref": "#/$defs/reasoningEvent"
+        },
         {
           "properties": {
             "type": {

@@ -262,11 +262,13 @@ inherited native history is private recovery state, never fabricated past public
 
 ## 5. Delivery guarantees
 
-Public `message.delta` and `message.completed` events are persisted and replayable.
+AgentScope commits `message.completed` and, by default, `reasoning.started`, `reasoning.delta`
+and `reasoning.completed`. Its text deltas are live previews. Thinking events carry messageId,
+blockId, attempt and revision. Only delta carries text. They do not enter the message projection.
 Consumers resume with the Session cursor and a consistent snapshot when necessary;
 they do not reconstruct state from private native logs. A control receipt confirms
 admission, while application events or the resulting Turn state confirm processing.
-User input does not acquire system privileges, and public events exclude private reasoning.
+User input does not acquire system privileges. Only Harness presentation thinking is published.
 
 ## 6. Capabilities, errors and recovery
 
