@@ -56,6 +56,7 @@ import org.bson.conversions.Bson;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
 import org.mockito.stubbing.Answer;
@@ -251,6 +252,40 @@ class MongoBaseStoreTest {
     void searchReturnsEmptyList() {
         List<StoreItem> items = store.search(List.of("ns"), 10, 0);
         assertTrue(items.isEmpty());
+    }
+
+    @Test
+    void searchUsesExclusiveNamespacePrefixSuccessor() {
+        store.search(List.of("tenant", "😀"), 5, 2);
+
+        ArgumentCaptor<Bson> query = ArgumentCaptor.forClass(Bson.class);
+        verify(collection).find(query.capture());
+        assertEquals(
+                BsonDocument.parse(
+                        "{\"$and\":[{\"namespace\":{\"$gte\":\"tenant\\u001f😀\\u001f\"}},"
+                                + "{\"namespace\":{\"$lt\":\"tenant\\u001f😀 \"}}]}"),
+                query.getValue()
+                        .toBsonDocument(
+                                Document.class,
+                                com.mongodb.MongoClientSettings.getDefaultCodecRegistry()));
+        verify(findIterable).skip(2);
+        verify(findIterable).limit(5);
+    }
+
+    @Test
+    void rootSearchHasNoNamespaceFilterAndNormalizesOffset() {
+        store.search(List.of(), 5, -2);
+
+        ArgumentCaptor<Bson> query = ArgumentCaptor.forClass(Bson.class);
+        verify(collection).find(query.capture());
+        assertTrue(
+                query.getValue()
+                        .toBsonDocument(
+                                Document.class,
+                                com.mongodb.MongoClientSettings.getDefaultCodecRegistry())
+                        .isEmpty());
+        verify(findIterable).skip(0);
+        verify(findIterable).limit(5);
     }
 
     @Test
