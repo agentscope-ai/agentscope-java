@@ -221,6 +221,41 @@ class HarnessAgentTest {
     }
 
     @Test
+    void memoryRecallInstructions_overrideGuidanceWithoutDisablingMemoryTools() throws Exception {
+        Files.createDirectories(workspace);
+        Files.writeString(workspace.resolve("MEMORY.md"), "recall-marker");
+        Model model = stubModel("ok");
+        String custom = "Use injected MEMORY.md first.";
+        HarnessAgent agent =
+                HarnessAgent.builder()
+                        .name("t")
+                        .model(model)
+                        .workspace(workspace)
+                        .abstractFilesystem(new LocalFilesystem(workspace))
+                        .memory(
+                                MemoryConfig.builder()
+                                        .recallInstructions(custom)
+                                        .flushTrigger(MemoryConfig.FlushTrigger.never())
+                                        .build())
+                        .build();
+
+        agent.call(userText("Hello"), RuntimeContext.builder().sessionId("recall").build())
+                .block(Duration.ofSeconds(10));
+        String prompt = capturedPrompt(model);
+        assertTrue(prompt.contains("## Memory Recall"));
+        assertTrue(prompt.contains("Use injected MEMORY.md first."));
+        assertFalse(prompt.contains("Before answering questions about prior work"));
+        assertTrue(prompt.contains("## Memory Persistence"));
+
+        List<String> toolNames =
+                agent.getDelegate().getToolkit().getToolSchemas().stream()
+                        .map(ToolSchema::getName)
+                        .toList();
+        assertTrue(toolNames.contains("memory_search"));
+        assertTrue(toolNames.contains("memory_get"));
+    }
+
+    @Test
     void clearStateCache_delegatesTargetedSessionToReActAgent() throws Exception {
         Files.createDirectories(workspace);
         try (HarnessAgent agent =
@@ -2155,7 +2190,10 @@ class HarnessAgentTest {
         Files.createDirectories(workspace);
         Model model = stubModel("done");
         MemoryConfig memoryConfig =
-                MemoryConfig.builder().flushTrigger(MemoryConfig.FlushTrigger.never()).build();
+                MemoryConfig.builder()
+                        .recallInstructions("Recall only missing prior facts for this workspace.")
+                        .flushTrigger(MemoryConfig.FlushTrigger.never())
+                        .build();
         SubagentDeclaration declaration =
                 SubagentDeclaration.builder()
                         .name("memory-worker")
@@ -2187,6 +2225,10 @@ class HarnessAgentTest {
                 .block();
 
         verify(model, times(1)).stream(anyList(), any(), any());
+        String prompt = capturedPrompt(model);
+        assertTrue(prompt.contains("## Memory Recall"));
+        assertTrue(prompt.contains(memoryConfig.recallInstructions()));
+        assertFalse(prompt.contains("Before answering questions about prior work"));
     }
 
     // =========================================================================
@@ -2302,7 +2344,10 @@ class HarnessAgentTest {
         Files.createDirectories(workspace);
         Model model = stubModel("done");
         MemoryConfig memoryConfig =
-                MemoryConfig.builder().flushTrigger(MemoryConfig.FlushTrigger.never()).build();
+                MemoryConfig.builder()
+                        .recallInstructions("Recall only missing prior facts for this workspace.")
+                        .flushTrigger(MemoryConfig.FlushTrigger.never())
+                        .build();
 
         List<SubagentEntry> entries =
                 HarnessAgent.builder()
@@ -2326,6 +2371,10 @@ class HarnessAgentTest {
                 .block();
 
         verify(model, times(1)).stream(anyList(), any(), any());
+        String prompt = capturedPrompt(model);
+        assertTrue(prompt.contains("## Memory Recall"));
+        assertTrue(prompt.contains(memoryConfig.recallInstructions()));
+        assertFalse(prompt.contains("Before answering questions about prior work"));
     }
 
     // =========================================================================
