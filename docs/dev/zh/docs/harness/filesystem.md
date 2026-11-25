@@ -104,6 +104,8 @@ HarnessAgent agent = HarnessAgent.builder()
 | `JdbcStore` | 基于 JDBC，适合 MySQL / PostgreSQL / H2 / SQLite | `agentscope-extensions-jdbc` |
 | `InMemoryStore` | 内存实现，适合测试 | `agentscope-harness` |
 
+直接调用内存、OSS 和 COS 后端的 `BaseStore.search` 时，非负 offset 指定分页起点，正数 limit 限制返回数量。limit 大于剩余条目数时，只返回可用条目，不会因页尾计算溢出而失败；offset 位于结果末尾或之后时，返回空页。这不会减少对象存储的列举工作：OSS 和 COS 仍会先列举匹配的对象 key，再选取当前页。
+
 ---
 
 ### 模式 2：沙箱（`SandboxFilesystemSpec` 系列）

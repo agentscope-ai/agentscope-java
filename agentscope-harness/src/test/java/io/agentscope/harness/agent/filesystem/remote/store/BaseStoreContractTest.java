@@ -126,4 +126,20 @@ class BaseStoreContractTest {
     private static BaseStore newStore() {
         return new InMemoryStore();
     }
+
+    @Test
+    void searchHandlesLargeLimitWithoutOverflow() {
+        BaseStore store = newStore();
+        store.put(List.of("ws"), "a", Map.of());
+        store.put(List.of("ws"), "b", Map.of());
+        assertEquals(
+                List.of("b"),
+                store.search(List.of("ws"), Integer.MAX_VALUE, 1).stream()
+                        .map(StoreItem::key)
+                        .toList());
+        assertTrue(store.search(List.of("ws"), Integer.MAX_VALUE, Integer.MAX_VALUE).isEmpty());
+        assertEquals("b", store.search(List.of("ws"), 1, 1).get(0).key());
+        assertEquals(2, store.search(List.of("ws"), Integer.MAX_VALUE, 0).size());
+        assertTrue(store.search(List.of("ws"), 0, 1).isEmpty());
+    }
 }
