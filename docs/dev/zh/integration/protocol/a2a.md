@@ -61,6 +61,8 @@ A2aAgent remote = A2aAgent.builder()
 
 `A2aAgent` 是 `AgentBase` 的子类，可以像普通 Agent 一样组合到 Pipeline、MsgHub、Subagent 中。
 
+使用默认 JSON-RPC 传输时，每次调用都有独立的 HTTP 流跟踪器。调用清理会关闭已跟踪的 SSE 流；如果流的 future 在清理后才完成注册，也会被取消，避免迟到的流继续存活。关闭本地流与请求取消已知远端任务是两件事，并不能证明远端工作已停止。自定义客户端传输仍需负责自己的流清理。
+
 ## 服务端：把 ReActAgent 暴露成 A2A Server
 
 ### 添加依赖

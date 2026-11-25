@@ -61,6 +61,8 @@ A2aAgent remote = A2aAgent.builder()
 
 `A2aAgent` is a subclass of `AgentBase`, so it composes naturally with Pipeline, MsgHub, Subagent, etc.
 
+With the default JSON-RPC transport, each call owns its HTTP stream tracker. Call cleanup closes tracked SSE streams and cancels a stream future that finishes registering after cleanup, so a late registration does not outlive the call. Closing the local stream is separate from requesting cancellation of a known remote task; it does not prove that remote work has already stopped. Custom client transports remain responsible for their own stream cleanup.
+
 ## Server: expose a ReActAgent as an A2A Server
 
 ### Add the dependency

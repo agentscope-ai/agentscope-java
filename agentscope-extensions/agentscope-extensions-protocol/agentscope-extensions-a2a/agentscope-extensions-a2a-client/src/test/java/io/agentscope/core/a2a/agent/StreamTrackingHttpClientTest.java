@@ -30,6 +30,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.a2aproject.sdk.client.http.A2AHttpClient;
@@ -40,6 +41,79 @@ import org.junit.jupiter.api.Test;
 
 @DisplayName("StreamTrackingHttpClient Tests")
 class StreamTrackingHttpClientTest {
+
+    @Test
+    void cancelsStreamRegisteredAfterCallCleanup() throws Exception {
+        A2AHttpClient delegate = mock(A2AHttpClient.class);
+        A2AHttpClient.PostBuilder post = mock(A2AHttpClient.PostBuilder.class);
+        when(delegate.createPost()).thenReturn(post);
+        CompletableFuture<Void> stream = new CompletableFuture<>();
+        StreamTrackingHttpClient client = new StreamTrackingHttpClient(delegate);
+        when(post.postAsyncSSE(any(), any(), any()))
+                .thenAnswer(
+                        inv -> {
+                            client.cancelStreams();
+                            return stream;
+                        });
+
+        client.createPost().postAsyncSSE(event -> {}, error -> {}, () -> {});
+
+        assertTrue(
+                stream.isCancelled(), "call cleanup must also close a stream returned afterward");
+    }
+
+    @Test
+    void cancelsGetStreamStartedAfterCleanupAndKeepsCompletedFuture() throws Exception {
+        A2AHttpClient delegate = mock(A2AHttpClient.class);
+        A2AHttpClient.GetBuilder get = mock(A2AHttpClient.GetBuilder.class);
+        when(delegate.createGet()).thenReturn(get);
+        CompletableFuture<Void> pending = new CompletableFuture<>();
+        CompletableFuture<Void> completed = CompletableFuture.completedFuture(null);
+        when(get.getAsyncSSE(any(), any(), any())).thenReturn(pending, completed);
+        StreamTrackingHttpClient client = new StreamTrackingHttpClient(delegate);
+
+        client.cancelStreams();
+        client.cancelStreams();
+        assertSame(pending, client.createGet().getAsyncSSE(event -> {}, error -> {}, () -> {}));
+        assertTrue(pending.isCancelled());
+        assertSame(completed, client.createGet().getAsyncSSE(event -> {}, error -> {}, () -> {}));
+        assertFalse(completed.isCancelled());
+    }
+
+    @Test
+    void cancelsFutureReturnedByConcurrentRegistration() throws Exception {
+        A2AHttpClient delegate = mock(A2AHttpClient.class);
+        A2AHttpClient.PostBuilder post = mock(A2AHttpClient.PostBuilder.class);
+        when(delegate.createPost()).thenReturn(post);
+        CountDownLatch entered = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        CompletableFuture<Void> stream = new CompletableFuture<>();
+        when(post.postAsyncSSE(any(), any(), any()))
+                .thenAnswer(
+                        inv -> {
+                            entered.countDown();
+                            assertTrue(release.await(5, TimeUnit.SECONDS));
+                            return stream;
+                        });
+        StreamTrackingHttpClient client = new StreamTrackingHttpClient(delegate);
+        var executor = Executors.newSingleThreadExecutor();
+        try {
+            var opening =
+                    executor.submit(
+                            () ->
+                                    client.createPost()
+                                            .postAsyncSSE(event -> {}, error -> {}, () -> {}));
+            assertTrue(entered.await(5, TimeUnit.SECONDS));
+            client.cancelStreams();
+            release.countDown();
+            assertSame(stream, opening.get(5, TimeUnit.SECONDS));
+            assertTrue(stream.isCancelled());
+        } finally {
+            release.countDown();
+            executor.shutdownNow();
+            assertTrue(executor.awaitTermination(5, TimeUnit.SECONDS));
+        }
+    }
 
     @Test
     @DisplayName("Should close an open event stream when its streams are cancelled")
