@@ -55,6 +55,15 @@ class DashScopeMultiModalEmbeddingTest {
     private static final String TEST_MODEL_NAME = "multimodal-embedding-v1";
     private static final int TEST_DIMENSIONS = 1024;
 
+    /**
+     * The first SDK request in a fork loads the DashScope and OkHttp classes. This class runs
+     * first on windows-latest, where its synchronous test pays that cold start: 1.4-4.2s for the
+     * class even when green, and #4413 (2026-11-25) hit the former 5s latch before the request
+     * arrived (7.29s elapsed). On ubuntu-latest the sibling class runs first and the same test
+     * took 0.07s.
+     */
+    private static final long FIRST_REQUEST_TIMEOUT_SECONDS = 15;
+
     @Test
     @DisplayName("Should create embedding model with builder")
     void testBuilderCreation() {
@@ -201,7 +210,8 @@ class DashScopeMultiModalEmbeddingTest {
                                     },
                                     completed::countDown);
 
-            requestObserved = requestReceived.await(5, TimeUnit.SECONDS);
+            requestObserved =
+                    requestReceived.await(FIRST_REQUEST_TIMEOUT_SECONDS, TimeUnit.SECONDS);
             subscriberScheduler.schedule(markerRan::countDown);
             markerObserved = markerRan.await(5, TimeUnit.SECONDS);
         } finally {
