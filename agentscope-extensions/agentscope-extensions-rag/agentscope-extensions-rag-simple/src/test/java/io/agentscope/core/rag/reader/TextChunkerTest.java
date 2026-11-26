@@ -73,11 +73,21 @@ class TextChunkerTest {
     @Test
     @DisplayName("Should handle empty text")
     void testChunkEmptyText() {
+        // #3305: blank input produces no chunks — an empty chunk would flow into the RAG
+        // embedding pipeline as a Document with nothing to embed.
         String text = "";
         List<String> chunks = TextChunker.chunkText(text, 10, SplitStrategy.CHARACTER, 0);
 
-        assertEquals(1, chunks.size());
-        assertEquals("", chunks.get(0));
+        assertTrue(chunks.isEmpty(), () -> "blank input must produce no chunks: " + chunks);
+    }
+
+    @Test
+    @DisplayName("Should drop whitespace-only chunks")
+    void testChunkWhitespaceOnlyMiddleChunk() {
+        // #3305: the whitespace-only middle chunk from "abc   def" must be dropped.
+        List<String> chunks = TextChunker.chunkText("abc   def", 3, SplitStrategy.CHARACTER, 0);
+
+        assertEquals(List.of("abc", "def"), chunks);
     }
 
     @Test
