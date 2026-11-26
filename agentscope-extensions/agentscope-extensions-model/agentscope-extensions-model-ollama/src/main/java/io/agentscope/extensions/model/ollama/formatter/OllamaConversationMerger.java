@@ -16,14 +16,17 @@
 package io.agentscope.extensions.model.ollama.formatter;
 
 import io.agentscope.core.formatter.DocumentReferenceRenderer;
+import io.agentscope.core.message.AudioBlock;
 import io.agentscope.core.message.Base64Source;
 import io.agentscope.core.message.ContentBlock;
+import io.agentscope.core.message.DataBlock;
 import io.agentscope.core.message.DocumentBlock;
 import io.agentscope.core.message.HintBlock;
 import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
+import io.agentscope.core.message.VideoBlock;
 import io.agentscope.extensions.model.ollama.dto.OllamaMessage;
 import java.util.ArrayList;
 import java.util.List;
@@ -90,6 +93,16 @@ public class OllamaConversationMerger {
                             .append(": ")
                             .append(DocumentReferenceRenderer.render(doc))
                             .append("\n");
+                } else if (block instanceof AudioBlock) {
+                    // Ollama has no audio input. Record the block anyway, like the image and
+                    // document branches above: the merged history is the only place a later turn
+                    // can learn that the message carried audio, so dropping it silently would
+                    // lose the content instead of just the media.
+                    textAccumulator.append(name).append(": [Audio]\n");
+                } else if (block instanceof VideoBlock) {
+                    textAccumulator.append(name).append(": [Video]\n");
+                } else if (block instanceof DataBlock) {
+                    textAccumulator.append(name).append(": [Data]\n");
                 } else if (block instanceof ToolResultBlock) {
                     // Tool results in history are usually just appended as text
                     ToolResultBlock toolResult = (ToolResultBlock) block;
