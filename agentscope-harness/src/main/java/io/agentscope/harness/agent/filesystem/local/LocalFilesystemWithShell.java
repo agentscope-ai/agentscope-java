@@ -17,22 +17,36 @@ package io.agentscope.harness.agent.filesystem.local;
 
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.harness.agent.filesystem.model.ExecuteResponse;
+import io.agentscope.harness.agent.filesystem.model.WriteResult;
 import io.agentscope.harness.agent.filesystem.remote.store.NamespaceFactory;
 import io.agentscope.harness.agent.filesystem.sandbox.AbstractSandboxFilesystem;
+import io.agentscope.harness.agent.memory.compaction.ToolResultEvictionConfig;
 import io.agentscope.harness.agent.workspace.LocalFsMode;
 import io.agentscope.harness.agent.workspace.PathPolicy;
-import java.io.ByteArrayOutputStream;
+import java.io.BufferedOutputStream;
+import java.io.Closeable;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.io.OutputStream;
+import java.io.Reader;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
+import java.security.DigestInputStream;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.util.ArrayList;
+import java.util.HexFormat;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -58,8 +72,8 @@ public class LocalFilesystemWithShell extends LocalFilesystem implements Abstrac
     private static final int DRAIN_CHUNK_BYTES = 8192;
 
     /**
-     * Safety net (millis) for joining drainer threads after the process exits or is destroyed.
-     * Never reached in practice: process exit closes the streams and ends the drainers at once.
+     * Bounded wait (millis) for process cleanup and drainer termination. Descendants can keep
+     * inherited pipes open after their parent exits; EOF is not implied by parent exit.
      */
     private static final long DRAIN_JOIN_TIMEOUT_MILLIS = 5000;
 
@@ -132,7 +146,7 @@ public class LocalFilesystemWithShell extends LocalFilesystem implements Abstrac
      * @param rootDir working directory for both filesystem and shell operations
      * @param virtualMode enable virtual path mode for filesystem operations
      * @param timeout default maximum time in seconds for shell command execution
-     * @param maxOutputBytes maximum number of bytes to capture from command output
+     * @param maxOutputBytes maximum UTF-8 bytes retained from output, excluding notices
      * @param env environment variables for shell commands ({@code null} for empty)
      * @param inheritEnv whether to inherit the parent process's environment variables
      */
@@ -173,7 +187,7 @@ public class LocalFilesystemWithShell extends LocalFilesystem implements Abstrac
      * @param rootDir working directory for both filesystem and shell operations
      * @param virtualMode enable virtual path mode for filesystem operations
      * @param timeout default maximum time in seconds for shell command execution
-     * @param maxOutputBytes maximum number of bytes to capture from command output
+     * @param maxOutputBytes maximum UTF-8 bytes retained from output, excluding notices
      * @param env environment variables for shell commands ({@code null} for empty)
      * @param inheritEnv whether to inherit the parent process's environment variables
      * @param namespaceFactory optional namespace factory for path scoping ({@code null} for none)
@@ -204,7 +218,7 @@ public class LocalFilesystemWithShell extends LocalFilesystem implements Abstrac
      * @param rootDir working directory for filesystem operations (read/write/edit/glob/...)
      * @param virtualMode enable virtual path mode for filesystem operations
      * @param timeout default maximum time in seconds for shell command execution
-     * @param maxOutputBytes maximum number of bytes to capture from command output
+     * @param maxOutputBytes maximum UTF-8 bytes retained from output, excluding notices
      * @param env environment variables for shell commands ({@code null} for empty)
      * @param inheritEnv whether to inherit the parent process's environment variables
      * @param namespaceFactory optional namespace factory for path scoping ({@code null} for none)
@@ -241,7 +255,7 @@ public class LocalFilesystemWithShell extends LocalFilesystem implements Abstrac
      * @param mode path-resolution policy ({@code null} treated as {@link LocalFsMode#UNRESTRICTED})
      * @param pathPolicy allow-list for {@link LocalFsMode#ROOTED}; ignored otherwise
      * @param timeout default shell timeout (seconds, must be positive)
-     * @param maxOutputBytes byte cap for captured shell output
+     * @param maxOutputBytes maximum UTF-8 bytes retained from output, excluding notices
      * @param env environment variables for shell commands ({@code null} for empty)
      * @param inheritEnv whether to inherit the parent process environment
      * @param namespaceFactory optional per-user/session namespace factory
@@ -329,6 +343,12 @@ public class LocalFilesystemWithShell extends LocalFilesystem implements Abstrac
             throw new IllegalArgumentException("timeout must be positive, got " + effectiveTimeout);
         }
 
+        Process proc = null;
+        StreamCapture stdout = null;
+        StreamCapture stderr = null;
+        Thread stdoutDrainer = null;
+        Thread stderrDrainer = null;
+        List<ProcessHandle> descendants = new ArrayList<>();
         try {
             Path workDir = resolveExecuteCwd(runtimeContext);
             String osName = System.getProperty("os.name").toLowerCase();
@@ -344,78 +364,90 @@ public class LocalFilesystemWithShell extends LocalFilesystem implements Abstrac
                 pb.environment().putAll(env);
             }
 
-            Process proc = pb.start();
+            stdout = new StreamCapture(runtimeContext, false);
+            stderr = new StreamCapture(runtimeContext, true);
+            proc = pb.start();
+            // Synchronous spool writes apply disk backpressure, without a growing write queue.
+            stdoutDrainer = drainAsync(proc.getInputStream(), stdout, outputCharset(osName));
+            stderrDrainer = drainAsync(proc.getErrorStream(), stderr, outputCharset(osName));
 
-            // stdout/stderr must be drained concurrently with waitFor: if the child writes
-            // more than the OS pipe buffer (~4 KB on Windows, 64 KB default on Linux) while
-            // the parent blocks in waitFor, both sides deadlock and every such command is
-            // misreported as a timeout (exit 124).
-            ByteArrayOutputStream stdoutBuf = new ByteArrayOutputStream();
-            ByteArrayOutputStream stderrBuf = new ByteArrayOutputStream();
-            Thread stdoutDrainer = drainAsync(proc.getInputStream(), stdoutBuf);
-            Thread stderrDrainer = drainAsync(proc.getErrorStream(), stderrBuf);
-
-            boolean finished = proc.waitFor(effectiveTimeout, TimeUnit.SECONDS);
+            long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(effectiveTimeout);
+            boolean finished;
+            do {
+                observeDescendants(proc, descendants);
+                long remaining = deadline - System.nanoTime();
+                finished =
+                        proc.waitFor(
+                                Math.max(
+                                        0,
+                                        Math.min(
+                                                remaining,
+                                                TimeUnit.MILLISECONDS.toNanos(
+                                                        DRAIN_JOIN_TIMEOUT_MILLIS))),
+                                TimeUnit.NANOSECONDS);
+            } while (!finished && System.nanoTime() < deadline);
             if (!finished) {
-                proc.destroyForcibly();
+                terminateTree(proc, descendants);
             }
-            joinQuietly(stdoutDrainer);
-            joinQuietly(stderrDrainer);
+            stdoutDrainer.join(DRAIN_JOIN_TIMEOUT_MILLIS);
+            stderrDrainer.join(DRAIN_JOIN_TIMEOUT_MILLIS);
+            boolean drained = !stdoutDrainer.isAlive() && !stderrDrainer.isAlive();
+            if (!drained) {
+                terminateTree(proc, descendants);
+                closeQuietly(proc.getInputStream());
+                closeQuietly(proc.getErrorStream());
+                stdoutDrainer.interrupt();
+                stderrDrainer.interrupt();
+                stdoutDrainer.join(DRAIN_JOIN_TIMEOUT_MILLIS);
+                stderrDrainer.join(DRAIN_JOIN_TIMEOUT_MILLIS);
+            }
 
-            Charset outputCharset = outputCharset(osName);
-            String stdout = stdoutBuf.toString(outputCharset);
-            String stderr = stderrBuf.toString(outputCharset);
+            BoundedOutput combined = new BoundedOutput(Math.max(0, maxOutputBytes));
+            combined.append(stdout.snapshot());
+            BoundedOutput stderrOutput = stderr.snapshot();
+            if (stderrOutput.size > 0) {
+                if (combined.size > 0) {
+                    combined.append(new byte[] {'\n'});
+                }
+                combined.append(stderrOutput);
+            }
+            if (combined.size == 0) {
+                combined.append("<no output>".getBytes(StandardCharsets.UTF_8));
+            }
+            boolean truncated = combined.size > Math.max(0, maxOutputBytes);
+            String outputStr = combined.preview();
+            if (truncated) {
+                outputStr +=
+                        "\n\n" + saveOutput(runtimeContext, stdout, stderr, !finished, drained);
+            }
+            if (!drained || !stdout.complete || !stderr.complete) {
+                outputStr +=
+                        "\nOnly partial output was captured: output draining did not complete.";
+            }
 
+            int exitCode = finished ? proc.exitValue() : 124;
             if (!finished) {
-                String msg;
-                if (timeoutSeconds != null) {
-                    msg =
-                            "Error: Command timed out after "
-                                    + effectiveTimeout
-                                    + " seconds (custom timeout). The command may be stuck or"
-                                    + " require more time.";
-                } else {
-                    msg =
-                            "Error: Command timed out after "
-                                    + effectiveTimeout
-                                    + " seconds. For long-running commands, re-run using the"
-                                    + " timeout parameter.";
-                }
-                return new ExecuteResponse(msg, 124, false, true);
-            }
-
-            StringBuilder output = new StringBuilder();
-            if (stdout != null && !stdout.isEmpty()) {
-                output.append(stdout);
-            }
-            if (stderr != null && !stderr.isBlank()) {
-                String[] stderrLines = stderr.strip().split("\n");
-                for (String line : stderrLines) {
-                    if (!output.isEmpty()) {
-                        output.append('\n');
-                    }
-                    output.append("[stderr] ").append(line);
-                }
-            }
-
-            String outputStr = output.isEmpty() ? "<no output>" : output.toString();
-
-            boolean truncated = false;
-            if (outputStr.length() > maxOutputBytes) {
                 outputStr =
-                        outputStr.substring(0, maxOutputBytes)
-                                + "\n\n... Output truncated at "
-                                + maxOutputBytes
-                                + " bytes.";
-                truncated = true;
+                        "Error: Command timed out after "
+                                + effectiveTimeout
+                                + " seconds"
+                                + (timeoutSeconds != null ? " (custom timeout)" : "")
+                                + ". Only partial output was captured before timeout:\n\n"
+                                + outputStr;
             }
-
-            int exitCode = proc.exitValue();
             if (exitCode != 0) {
                 outputStr = outputStr.stripTrailing() + "\n\nExit code: " + exitCode;
             }
 
-            return new ExecuteResponse(outputStr, exitCode, truncated);
+            // Ordered, fixed-length stream hashes avoid stdout/stderr boundary ambiguity.
+            MessageDigest digest = sha256();
+            String outputDigest = null;
+            if (drained && stdout.complete && stderr.complete) {
+                digest.update(stdout.digest.digest());
+                digest.update(stderr.digest.digest());
+                outputDigest = HexFormat.of().formatHex(digest.digest());
+            }
+            return new ExecuteResponse(outputStr, exitCode, truncated, !finished, outputDigest);
 
         } catch (IOException | InterruptedException e) {
             if (e instanceof InterruptedException) {
@@ -429,7 +461,129 @@ public class LocalFilesystemWithShell extends LocalFilesystem implements Abstrac
                             + e.getMessage(),
                     1,
                     false);
+        } finally {
+            // Reactor's interrupt-based cancellation follows the same path as Java interruption.
+            // Clear the flag only during bounded cleanup, then restore it for the caller.
+            boolean interrupted = Thread.interrupted();
+            try {
+                if (proc != null) {
+                    terminateTree(proc, descendants);
+                    closeQuietly(proc.getOutputStream());
+                    closeQuietly(proc.getInputStream());
+                    closeQuietly(proc.getErrorStream());
+                }
+                stopDrainer(stdoutDrainer);
+                stopDrainer(stderrDrainer);
+                if (stdout != null) {
+                    stdout.cleanup();
+                }
+                if (stderr != null) {
+                    stderr.cleanup();
+                }
+            } finally {
+                if (interrupted) {
+                    Thread.currentThread().interrupt();
+                }
+            }
         }
+    }
+
+    /** The byte budget covers retained output; omission and recovery notices are additional. */
+    static String previewOutput(byte[] output, int byteBudget) {
+        byteBudget = Math.max(0, byteBudget);
+        if (output.length <= byteBudget) {
+            return new String(output, StandardCharsets.UTF_8);
+        }
+        int headEnd = byteBudget / 2;
+        int tailStart = output.length - (byteBudget - headEnd);
+        // Do not split a UTF-8 code point at either end of the omitted region.
+        while (headEnd > 0 && (output[headEnd] & 0xc0) == 0x80) {
+            headEnd--;
+        }
+        while (tailStart < output.length && (output[tailStart] & 0xc0) == 0x80) {
+            tailStart++;
+        }
+        return new String(output, 0, headEnd, StandardCharsets.UTF_8)
+                + "\n\n... "
+                + (tailStart - headEnd)
+                + " UTF-8 bytes omitted ...\n\n"
+                + new String(output, tailStart, output.length - tailStart, StandardCharsets.UTF_8);
+    }
+
+    private String saveOutput(
+            RuntimeContext rc,
+            StreamCapture stdout,
+            StreamCapture stderr,
+            boolean partial,
+            boolean drained) {
+        String path =
+                ToolResultEvictionConfig.DEFAULT_EVICTION_PATH
+                        + "/execute/"
+                        + UUID.randomUUID()
+                        + ".txt";
+        Path artifact = null;
+        boolean saved = false;
+        try {
+            // Preserve virtual write policy and subclass storage-failure contracts. Never hand
+            // write() a full-output String; only publish the reference after the stream closes.
+            WriteResult result = write(rc, path, "");
+            if (!result.isSuccess()) {
+                log.warn("Failed to save shell output to {}: {}", path, result.error());
+                return unavailableOutput();
+            }
+            artifact = resolvePath(rc, path);
+            if (!drained
+                    || !stdout.saved()
+                    || !stderr.saved()
+                    || result.path() == null
+                    || result.path().isBlank()
+                    || !resolvePath(rc, result.path()).equals(artifact)) {
+                return unavailableOutput();
+            }
+            try (OutputStream out =
+                    new BufferedOutputStream(
+                            Files.newOutputStream(
+                                    artifact,
+                                    StandardOpenOption.WRITE,
+                                    StandardOpenOption.TRUNCATE_EXISTING),
+                            DRAIN_CHUNK_BYTES)) {
+                if (partial) {
+                    out.write(
+                            "Only partial output was captured before timeout:\n\n"
+                                    .getBytes(StandardCharsets.UTF_8));
+                }
+                stdout.copyTo(out);
+                if (stderr.output.size > 0) {
+                    if (stdout.output.size > 0) {
+                        out.write('\n');
+                    }
+                    stderr.copyTo(out);
+                }
+                if (stdout.output.size == 0 && stderr.output.size == 0) {
+                    out.write("<no output>".getBytes(StandardCharsets.UTF_8));
+                }
+            }
+            if (!Files.isRegularFile(artifact) || !Files.isReadable(artifact)) {
+                return unavailableOutput();
+            }
+            saved = true;
+            return (partial ? "Captured partial output" : "Full output")
+                    + " saved. Use `read_file` with path `"
+                    + result.path()
+                    + "` to read it.";
+        } catch (IOException | RuntimeException e) {
+            // Disk capacity is finite. A failed spool/archive never changes the process outcome.
+            log.warn("Failed to save shell output to {}: {}", path, e.getMessage());
+            return unavailableOutput();
+        } finally {
+            if (!saved && artifact != null) {
+                deleteQuietly(artifact);
+            }
+        }
+    }
+
+    private static String unavailableOutput() {
+        return "Full output unavailable: the captured output could not be saved.";
     }
 
     private Path resolveExecuteCwd(RuntimeContext rc) {
@@ -456,35 +610,371 @@ public class LocalFilesystemWithShell extends LocalFilesystem implements Abstrac
         return namespaced;
     }
 
-    /**
-     * Continuously copies a subprocess stream into {@code buf} on a daemon thread so the child
-     * never blocks on a full OS pipe buffer. Read errors (e.g. the stream closing when the
-     * process is destroyed on timeout) end the drainer quietly.
-     */
-    private static Thread drainAsync(InputStream in, ByteArrayOutputStream buf) {
-        Thread t =
+    private static Thread drainAsync(InputStream in, StreamCapture capture, Charset charset) {
+        Thread thread =
                 new Thread(
                         () -> {
-                            byte[] chunk = new byte[DRAIN_CHUNK_BYTES];
-                            int n;
-                            try {
-                                while ((n = in.read(chunk)) != -1) {
-                                    buf.write(chunk, 0, n);
+                            // Readers retain incomplete encoded characters across reads. Carry a
+                            // high surrogate too, so UTF-8 re-encoding cannot split a code point.
+                            char[] chunk = new char[DRAIN_CHUNK_BYTES + 1];
+                            int carry = 0;
+                            try (Reader reader =
+                                    new InputStreamReader(
+                                            new DigestInputStream(in, capture.digest), charset)) {
+                                int count;
+                                while ((count = reader.read(chunk, carry, DRAIN_CHUNK_BYTES))
+                                        != -1) {
+                                    count += carry;
+                                    carry = Character.isHighSurrogate(chunk[count - 1]) ? 1 : 0;
+                                    capture.accept(chunk, count - carry);
+                                    if (carry != 0) {
+                                        chunk[0] = chunk[count - 1];
+                                    }
                                 }
-                            } catch (IOException ignored) {
-                                // Stream closed because the process was destroyed; nothing to do.
+                                if (carry != 0) {
+                                    capture.accept(chunk, carry);
+                                }
+                                capture.complete = true;
+                            } catch (IOException e) {
+                                log.debug(
+                                        "Shell output stream ended before EOF: {}", e.getMessage());
+                            } finally {
+                                capture.finish();
                             }
-                        });
-        t.setDaemon(true);
-        t.start();
-        return t;
+                        },
+                        "agentscope-shell-drain-" + UUID.randomUUID());
+        thread.setDaemon(true);
+        thread.start();
+        return thread;
     }
 
-    private static void joinQuietly(Thread t) {
+    private static MessageDigest sha256() {
         try {
-            t.join(DRAIN_JOIN_TIMEOUT_MILLIS);
+            return MessageDigest.getInstance("SHA-256");
+        } catch (NoSuchAlgorithmException e) {
+            throw new IllegalStateException("Java runtime does not support SHA-256", e);
+        }
+    }
+
+    private static void observeDescendants(Process process, List<ProcessHandle> children) {
+        children.removeIf(child -> !child.isAlive());
+        try (var descendants = process.descendants()) {
+            descendants.forEach(
+                    child -> {
+                        if (!children.contains(child)) {
+                            children.add(child);
+                        }
+                    });
+        } catch (UnsupportedOperationException | SecurityException e) {
+            log.debug("Cannot enumerate shell descendants: {}", e.getMessage());
+        }
+    }
+
+    private static void terminateTree(Process process, List<ProcessHandle> children) {
+        // Snapshot before destroying the parent: reparented/escaped descendants may no longer
+        // be discoverable afterwards. This is not an OS process-group isolation guarantee.
+        observeDescendants(process, children);
+        Map<ProcessHandle, Integer> depths = new java.util.HashMap<>();
+        children.forEach(child -> depths.put(child, processDepth(child)));
+        children.sort(
+                java.util.Comparator.comparingInt((ProcessHandle child) -> depths.get(child))
+                        .reversed());
+        long deadline =
+                System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(DRAIN_JOIN_TIMEOUT_MILLIS);
+        // Kill deepest first, leaving each parent a bounded opportunity to reap its child.
+        for (ProcessHandle child : children) {
+            destroyQuietly(child);
+            awaitExit(child, deadline);
+        }
+        process.destroyForcibly();
+        awaitExit(
+                process.toHandle(),
+                System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(DRAIN_JOIN_TIMEOUT_MILLIS));
+    }
+
+    private static int processDepth(ProcessHandle process) {
+        int depth = 0;
+        for (var parent = process.parent(); parent.isPresent(); parent = parent.get().parent()) {
+            depth++;
+        }
+        return depth;
+    }
+
+    private static void destroyQuietly(ProcessHandle process) {
+        try {
+            if (process.isAlive()) {
+                process.destroyForcibly();
+            }
+        } catch (UnsupportedOperationException | SecurityException e) {
+            log.warn("Cannot terminate shell descendant {}: {}", process.pid(), e.getMessage());
+        }
+    }
+
+    private static void awaitExit(ProcessHandle process, long deadline) {
+        long remaining = deadline - System.nanoTime();
+        if (remaining <= 0 || !process.isAlive()) {
+            return;
+        }
+        try {
+            process.onExit().get(remaining, TimeUnit.NANOSECONDS);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
+        } catch (ExecutionException | TimeoutException | UnsupportedOperationException e) {
+            log.debug("Shell process {} exit not confirmed: {}", process.pid(), e.getMessage());
+        }
+    }
+
+    private static void stopDrainer(Thread thread) {
+        if (thread == null || !thread.isAlive()) {
+            return;
+        }
+        thread.interrupt();
+        try {
+            thread.join(DRAIN_JOIN_TIMEOUT_MILLIS);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+        if (thread.isAlive()) {
+            log.warn("Shell drainer {} did not terminate within cleanup timeout", thread.getName());
+        }
+    }
+
+    private static void closeQuietly(Closeable stream) {
+        if (stream != null) {
+            try {
+                stream.close();
+            } catch (IOException | RuntimeException e) {
+                log.debug("Failed to close shell capture stream: {}", e.getMessage());
+            }
+        }
+    }
+
+    private static void deleteQuietly(Path file) {
+        try {
+            Files.deleteIfExists(file);
+        } catch (IOException | RuntimeException e) {
+            log.warn("Failed to delete shell capture {}: {}", file, e.getMessage());
+        }
+    }
+
+    /**
+     * Decoded UTF-8 spool plus bounded preview. stderr trailing whitespace is speculative:
+     * it is written to disk but committed to the preview only when followed by non-whitespace.
+     * Thus strip()/line prefix compatibility does not require buffering an entire line or run.
+     */
+    private final class StreamCapture {
+        private final RuntimeContext rc;
+        private final String key = ".shell-capture-" + UUID.randomUUID() + ".tmp";
+        private final boolean stderr;
+        private final MessageDigest digest = sha256();
+        private final BoundedOutput output = new BoundedOutput(Math.max(0, maxOutputBytes));
+        private final BoundedOutput pending = new BoundedOutput(Math.max(0, maxOutputBytes));
+        private Path spool;
+        private OutputStream sink;
+        private boolean storageFailed;
+        private volatile boolean complete;
+        private volatile boolean closed;
+
+        private StreamCapture(RuntimeContext rc, boolean stderr) {
+            this.rc = rc;
+            this.stderr = stderr;
+            try {
+                spool = resolvePath(rc, key);
+                Files.createDirectories(spool.getParent());
+                sink =
+                        new BufferedOutputStream(
+                                Files.newOutputStream(
+                                        spool,
+                                        StandardOpenOption.CREATE_NEW,
+                                        StandardOpenOption.WRITE),
+                                DRAIN_CHUNK_BYTES);
+            } catch (IOException | RuntimeException e) {
+                storageFailed = true;
+                log.warn("Shell output spool unavailable: {}", e.getMessage());
+            }
+        }
+
+        private void accept(char[] chars, int count) {
+            if (!stderr) {
+                emit(new String(chars, 0, count).getBytes(StandardCharsets.UTF_8), false);
+                return;
+            }
+            int start = 0;
+            while (start < count) {
+                boolean whitespace = Character.isWhitespace(chars[start]);
+                int end = start + 1;
+                while (end < count
+                        && chars[end] != '\n'
+                        && Character.isWhitespace(chars[end]) == whitespace) {
+                    end++;
+                }
+                if (output.size == 0 && whitespace) {
+                    start = end;
+                    continue;
+                }
+                if (!whitespace) {
+                    if (output.size == 0) {
+                        emit("[stderr] ".getBytes(StandardCharsets.UTF_8), false);
+                    }
+                    output.append(pending);
+                    pending.reset();
+                }
+                if (chars[start] == '\n') {
+                    // Each LF is prefixed, including interior blank lines, but not stripped LFs.
+                    emit("\n[stderr] ".getBytes(StandardCharsets.UTF_8), true);
+                    start++;
+                } else {
+                    emit(
+                            new String(chars, start, end - start).getBytes(StandardCharsets.UTF_8),
+                            whitespace);
+                    start = end;
+                }
+            }
+        }
+
+        private void emit(byte[] bytes, boolean speculative) {
+            (speculative ? pending : output).append(bytes);
+            if (sink != null) {
+                try {
+                    sink.write(bytes);
+                } catch (IOException e) {
+                    storageFailed = true;
+                    closeQuietly(sink);
+                    sink = null;
+                    log.warn("Shell output spool write failed: {}", e.getMessage());
+                }
+            }
+        }
+
+        private void finish() {
+            if (sink != null) {
+                try {
+                    sink.close();
+                    // Discard stderr.stripTrailing() without reading the spool into memory.
+                    try (var channel =
+                            Files.newByteChannel(resolvePath(rc, key), StandardOpenOption.WRITE)) {
+                        channel.truncate(output.size);
+                    }
+                } catch (IOException | RuntimeException e) {
+                    storageFailed = true;
+                    log.warn("Shell output spool completion failed: {}", e.getMessage());
+                } finally {
+                    sink = null;
+                }
+            }
+            closed = true;
+        }
+
+        private BoundedOutput snapshot() {
+            return output.snapshot();
+        }
+
+        private boolean saved() {
+            return complete && closed && !storageFailed && spool != null;
+        }
+
+        private void copyTo(OutputStream out) throws IOException {
+            try (InputStream in = Files.newInputStream(resolvePath(rc, key))) {
+                byte[] chunk = new byte[DRAIN_CHUNK_BYTES];
+                int n;
+                long copied = 0;
+                while ((n = in.read(chunk)) != -1) {
+                    out.write(chunk, 0, n);
+                    copied += n;
+                }
+                if (copied != output.size) {
+                    throw new IOException("Shell output spool is incomplete");
+                }
+            }
+        }
+
+        private void cleanup() {
+            closeQuietly(sink);
+            if (spool != null) {
+                deleteQuietly(spool);
+            }
+        }
+    }
+
+    /** Two byte-budget arrays and a long count, independent of total output size. */
+    private static final class BoundedOutput {
+        private final byte[] head;
+        private final byte[] tail;
+        private long size;
+        private int tailPosition;
+
+        private BoundedOutput(int budget) {
+            head = new byte[budget];
+            tail = new byte[budget];
+        }
+
+        private synchronized void append(byte[] bytes) {
+            int headLength = (int) Math.min(size, head.length);
+            int headCopy = Math.min(bytes.length, head.length - headLength);
+            System.arraycopy(bytes, 0, head, headLength, headCopy);
+            if (tail.length > 0) {
+                int length = Math.min(bytes.length, tail.length);
+                int offset = bytes.length - length;
+                int first = Math.min(length, tail.length - tailPosition);
+                System.arraycopy(bytes, offset, tail, tailPosition, first);
+                System.arraycopy(bytes, offset + first, tail, 0, length - first);
+                tailPosition = (tailPosition + length) % tail.length;
+            }
+            size += bytes.length;
+        }
+
+        private synchronized byte[] tailBytes() {
+            int length = (int) Math.min(size, tail.length);
+            byte[] bytes = new byte[length];
+            int start = size < tail.length ? 0 : tailPosition;
+            int first = Math.min(length, tail.length - start);
+            System.arraycopy(tail, start, bytes, 0, first);
+            System.arraycopy(tail, 0, bytes, first, length - first);
+            return bytes;
+        }
+
+        private synchronized void append(BoundedOutput other) {
+            int headLength = (int) Math.min(other.size, other.head.length);
+            append(java.util.Arrays.copyOf(other.head, headLength));
+            long remaining = other.size - headLength;
+            if (remaining > 0) {
+                byte[] suffix = other.tailBytes();
+                int length = (int) Math.min(remaining, suffix.length);
+                size += remaining - length;
+                append(java.util.Arrays.copyOfRange(suffix, suffix.length - length, suffix.length));
+            }
+        }
+
+        private synchronized BoundedOutput snapshot() {
+            BoundedOutput copy = new BoundedOutput(head.length);
+            copy.append(this);
+            return copy;
+        }
+
+        private synchronized void reset() {
+            size = 0;
+            tailPosition = 0;
+        }
+
+        private String preview() {
+            if (size <= head.length) {
+                return new String(head, 0, (int) size, StandardCharsets.UTF_8);
+            }
+            int headEnd = head.length / 2;
+            while (headEnd > 0 && (head[headEnd] & 0xc0) == 0x80) {
+                headEnd--;
+            }
+            byte[] suffix = tailBytes();
+            int tailStart = suffix.length - (head.length - head.length / 2);
+            while (tailStart < suffix.length && (suffix[tailStart] & 0xc0) == 0x80) {
+                tailStart++;
+            }
+            return new String(head, 0, headEnd, StandardCharsets.UTF_8)
+                    + "\n\n... "
+                    + (size - headEnd - suffix.length + tailStart)
+                    + " UTF-8 bytes omitted ...\n\n"
+                    + new String(
+                            suffix, tailStart, suffix.length - tailStart, StandardCharsets.UTF_8);
         }
     }
 

@@ -16,15 +16,22 @@
 package io.agentscope.harness.agent.memory;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.spy;
+import static org.mockito.Mockito.verify;
 
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.GenerateOptions;
@@ -228,6 +235,156 @@ class MemoryConsolidatorCommitGateTest {
     // A complete but over-budget body (the same max-chars target the prompt
     // states) is refused — MEMORY.md must stay bounded.
     // ======================================================================
+
+    @Test
+    void earlierIncompleteSignalsAndToolResultsCannotBeHiddenByTheFinalStopChunk() {
+        InMemoryStore store = new InMemoryStore();
+        List<String> ns = List.of("all-chunk-gate");
+        seedFile(store, ns, "MEMORY.md", OLD_MEMORY);
+        seedDailyLedger(store, ns, "- fresh fact one");
+        ChatResponse metadata =
+                ChatResponse.builder()
+                        .id("meta")
+                        .content(List.of())
+                        .metadata(Map.of("openai.response.incomplete_reason", "max_output_tokens"))
+                        .build();
+        ChatResponse clearedMetadata =
+                ChatResponse.builder()
+                        .id("meta-clear")
+                        .content(List.of())
+                        .metadata(Map.of("openai.response.incomplete_reason", "content_filter"))
+                        .finishReason("stop")
+                        .build();
+        ChatResponse result =
+                ChatResponse.builder()
+                        .id("tool-result")
+                        .content(List.of(ToolResultBlock.success("plausible memory")))
+                        .build();
+        List<Flux<ChatResponse>> scripts =
+                List.of(
+                        Flux.just(textChunk("partial"), finishChunk("length"), finishChunk("stop")),
+                        Flux.just(
+                                textChunk("partial"),
+                                finishChunk("incomplete"),
+                                metadata,
+                                clearedMetadata),
+                        Flux.just(
+                                metadata,
+                                textChunk("partial"),
+                                finishChunk("incomplete"),
+                                finishChunk("stop")),
+                        Flux.just(textChunk("plausible memory"), result, finishChunk("stop")));
+        ScriptedModel model = new ScriptedModel(scripts);
+        try (WorkspaceManager manager =
+                new WorkspaceManager(workspace, new RemoteFilesystem(store, ns))) {
+            MemoryConsolidator consolidator = new MemoryConsolidator(manager, model, 20);
+            for (int i = 0; i < scripts.size(); i++) {
+                consolidator.consolidate(RuntimeContext.empty()).block();
+                assertEquals(OLD_MEMORY, manager.readMemoryMd(RuntimeContext.empty()));
+                assertEquals(Instant.EPOCH, consolidator.readWatermark(RuntimeContext.empty()));
+            }
+        }
+    }
+
+    @Test
+    void nonLimitIncompleteNeverWritesMemoryOrAdvancesEitherWatermark() {
+        InMemoryStore store = new InMemoryStore();
+        List<String> ns = List.of("non-limit-incomplete");
+        Instant oldWatermark = Instant.parse("2020-01-01T00:00:00Z");
+        seedFile(store, ns, "MEMORY.md", OLD_MEMORY);
+        seedDailyLedger(store, ns, "- fresh fact one");
+        seedFile(store, ns, MemoryConsolidator.STATE_REL_PATH, oldWatermark.toString());
+        store.put(
+                List.of("memory", "consolidation"),
+                "watermark",
+                Map.of("ts", oldWatermark.toEpochMilli()));
+        StoreItem oldStoreWatermark = store.get(List.of("memory", "consolidation"), "watermark");
+        ChatResponse filtered =
+                ChatResponse.builder()
+                        .id("filtered")
+                        .content(List.of(TextBlock.builder().text("partial").build()))
+                        .finishReason("incomplete")
+                        .metadata(Map.of("openai.response.incomplete_reason", "content_filter"))
+                        .build();
+        ChatResponse filteredStop =
+                ChatResponse.builder()
+                        .id("filtered-stop")
+                        .content(List.of())
+                        .finishReason("stop")
+                        .metadata(Map.of("openai.response.incomplete_reason", "content_filter"))
+                        .build();
+        ChatResponse missingReason =
+                ChatResponse.builder()
+                        .id("missing-reason")
+                        .content(List.of(TextBlock.builder().text("partial").build()))
+                        .finishReason("incomplete")
+                        .metadata(Map.of("provider", "fake"))
+                        .build();
+        List<Flux<ChatResponse>> scripts =
+                List.of(
+                        Flux.just(textChunk("partial"), finishChunk("incomplete")),
+                        Flux.just(
+                                textChunk("partial"),
+                                finishChunk("INCOMPLETE"),
+                                finishChunk("stop")),
+                        Flux.just(filtered),
+                        Flux.just(filtered, finishChunk("stop")),
+                        Flux.just(textChunk("partial"), finishChunk("incomplete"), filteredStop),
+                        Flux.just(missingReason, finishChunk("stop")));
+        ScriptedModel model = new ScriptedModel(scripts);
+        RuntimeContext rc = RuntimeContext.empty();
+        try (WorkspaceManager manager =
+                spy(new WorkspaceManager(workspace, new RemoteFilesystem(store, ns)))) {
+            MemoryConsolidator consolidator =
+                    new MemoryConsolidator(
+                            manager,
+                            model,
+                            MemoryConsolidator.DEFAULT_CONSOLIDATION_PROMPT,
+                            20,
+                            store);
+            for (Flux<ChatResponse> script : scripts) {
+                var output =
+                        script.collect(
+                                        MemoryConsolidator.ConsolidationOutput::new,
+                                        MemoryConsolidator.ConsolidationOutput::accept)
+                                .block();
+                assertNotNull(output);
+                assertFalse(output.outputLimited(), "regression must not rely on the limit gate");
+                assertTrue(output.incomplete(), "an incomplete chunk permanently vetoes commit");
+                consolidator.consolidate(rc).block();
+                assertEquals(OLD_MEMORY, manager.readMemoryMd(rc));
+                assertEquals(oldWatermark, consolidator.readWatermark(rc));
+                assertEquals(
+                        oldWatermark.toString(),
+                        manager.readMemoryFileUtf8(rc, MemoryConsolidator.STATE_REL_PATH));
+                StoreItem watermark = store.get(List.of("memory", "consolidation"), "watermark");
+                assertEquals(oldStoreWatermark.version(), watermark.version());
+                assertEquals(oldStoreWatermark.value(), watermark.value());
+            }
+            verify(manager, never()).writeMemoryFileUtf8(any(), anyString(), anyString());
+            verify(manager, never()).appendMemoryFileUtf8(any(), anyString(), anyString());
+            assertEquals(scripts.size(), model.inputs.size());
+        }
+    }
+
+    @Test
+    void missingFinishReasonStillCommitsCompleteConsolidation() {
+        InMemoryStore store = new InMemoryStore();
+        List<String> ns = List.of("legacy-finish-reason");
+        seedFile(store, ns, "MEMORY.md", OLD_MEMORY);
+        seedDailyLedger(store, ns, "- fresh fact one");
+        ScriptedModel model =
+                new ScriptedModel(
+                        List.of(Flux.just(textChunk("# Curated"), textChunk("\n- fresh fact"))));
+        try (WorkspaceManager manager =
+                new WorkspaceManager(workspace, new RemoteFilesystem(store, ns))) {
+            MemoryConsolidator consolidator = new MemoryConsolidator(manager, model, 20);
+            RuntimeContext rc = RuntimeContext.empty();
+            consolidator.consolidate(rc).block();
+            assertEquals("# Curated\n- fresh fact", manager.readMemoryMd(rc));
+            assertTrue(consolidator.readWatermark(rc).isAfter(Instant.EPOCH));
+        }
+    }
 
     @Test
     void overBudgetOutputRejected() throws Exception {

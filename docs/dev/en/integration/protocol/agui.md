@@ -15,6 +15,8 @@ Multimodal input supports image/audio/video/document. Document parts are convert
 
 Structured blocks are emitted only for AG-UI user and tool messages; other roles use text references. ASJ-to-AGUI outbound message conversion is no longer officially guaranteed. Implement it yourself if your application needs it.
 
+Tool results containing documents preserve their `ERROR` state through AG-UI JSON round trips even when the text output is empty or blank. In that case a document reference supplies the non-blank wire error; inline document bytes are not copied into the error. The fallback is included in the content before serialization so repeated round trips keep the same block order. A failed result with neither text nor a document reference uses `Tool execution failed` instead. An error already present as a structured text part is not prepended again, while a distinct frontend error is retained.
+
 ## When To Use
 
 - You need to connect an AgentScope agent to an AG-UI-compatible front end or a custom chat UI.

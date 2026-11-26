@@ -23,7 +23,7 @@ import org.junit.jupiter.api.Test;
 
 /**
  * Model-facing delegation contract carried by the {@code agent_spawn} / {@code agent_send}
- * tool descriptions.
+ * standalone tool descriptions without requiring Harness middleware.
  */
 class AgentSpawnToolDelegationSemanticsTest {
 
@@ -43,13 +43,13 @@ class AgentSpawnToolDelegationSemanticsTest {
     void agentSpawnDescription_carriesDelegationSemantics() {
         String description = toolDescription("agentSpawn");
         assertTrue(
-                description.contains("does not inherit the parent conversation"),
+                description.contains("does not see your conversation"),
                 "spawn must distinguish parent context from the child's own history");
         assertTrue(
-                description.contains("persistent sessions may retain their own history"),
+                description.contains("local agent retains its history"),
                 "spawn must account for persistent session reuse");
         assertTrue(
-                description.contains("reworded to bypass a permission denial"),
+                description.contains("denied request to bypass permissions"),
                 "spawn must restrict permission bypass, not normal task adjustments");
     }
 
@@ -57,10 +57,10 @@ class AgentSpawnToolDelegationSemanticsTest {
     void agentSendDescription_allowsSteeringWithoutPermissionBypass() {
         String description = toolDescription("agentSend");
         assertTrue(
-                description.contains("steer the task or continue"),
+                description.contains("follow-up"),
                 "send must support follow-ups within the child's existing context");
         assertTrue(
-                description.contains("reworded to bypass a permission denial"),
+                description.contains("denied request to bypass permissions"),
                 "send must restrict permission bypass, not normal task adjustments");
     }
 }

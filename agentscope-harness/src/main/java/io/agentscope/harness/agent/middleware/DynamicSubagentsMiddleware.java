@@ -20,6 +20,7 @@ import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.middleware.ReasoningInput;
+import io.agentscope.core.state.AgentState;
 import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
 import io.agentscope.harness.agent.filesystem.model.FileInfo;
 import io.agentscope.harness.agent.filesystem.model.GlobResult;
@@ -29,6 +30,7 @@ import io.agentscope.harness.agent.subagent.DefaultAgentManager;
 import io.agentscope.harness.agent.subagent.SubagentDeclaration;
 import io.agentscope.harness.agent.subagent.SubagentFactory;
 import io.agentscope.harness.agent.subagent.task.TaskRepository;
+import io.agentscope.harness.agent.subagent.task.WorkspaceTaskRepository;
 import io.agentscope.harness.agent.tool.AgentSpawnTool;
 import io.agentscope.harness.agent.tool.TaskTool;
 import java.nio.file.Files;
@@ -111,7 +113,15 @@ public class DynamicSubagentsMiddleware implements HarnessRuntimeMiddleware {
     /** Narrow declaration: subclasses overriding more hooks must extend this set. */
     @Override
     public Set<ExtensionPoint> activePoints() {
-        return EnumSet.of(ExtensionPoint.ON_REASONING);
+        return EnumSet.of(ExtensionPoint.ON_AGENT_STATE_READY, ExtensionPoint.ON_REASONING);
+    }
+
+    @Override
+    public void onAgentStateReady(
+            Agent agent, RuntimeContext ctx, AgentState state, List<Msg> inputMessages) {
+        // Permission confirmation can resume directly in acting with a fresh RuntimeContext.
+        // Install only after admission/state restoration, using this call's resolved identity.
+        refreshAgentManager(ctx);
     }
 
     /**
@@ -159,8 +169,7 @@ public class DynamicSubagentsMiddleware implements HarnessRuntimeMiddleware {
     /** Loads declarations for host-owned continuation without invoking a model. */
     public DefaultAgentManager refreshAgentManager(RuntimeContext context) {
         RuntimeContext effective = context == null ? RuntimeContext.empty() : context;
-        if (agentManager != null) agentManager.replaceAgents(reloadEntries(effective));
-        return agentManager;
+        return installSnapshot(effective, reloadEntries(effective));
     }
 
     /**
@@ -183,20 +192,25 @@ public class DynamicSubagentsMiddleware implements HarnessRuntimeMiddleware {
             Function<ReasoningInput, Flux<AgentEvent>> next) {
         RuntimeContext rc = ctx != null ? ctx : RuntimeContext.empty();
         List<SubagentEntry> merged = reloadEntries(rc);
-        if (agentManager != null) {
-            agentManager.replaceAgents(merged);
-        }
-        Msg stateMsg =
-                SubagentsMiddleware.buildSubagentStateMsg(
-                        merged, SubagentsMiddleware.buildTaskSummary(taskRepository, rc));
-        List<Msg> rebuilt =
-                SubagentsMiddleware.prependToSystemMessage(
-                        input.messages(), SubagentsMiddleware.renderSubagentSection(merged, false));
-        if (stateMsg != null) {
-            rebuilt = new ArrayList<>(rebuilt);
-            rebuilt.add(stateMsg);
-        }
-        return next.apply(new ReasoningInput(rebuilt, input.tools(), input.options()));
+        installSnapshot(rc, merged);
+        return SubagentsMiddleware.reasonWithSubagents(
+                agent,
+                rc,
+                input,
+                next,
+                taskRepository,
+                merged,
+                false,
+                taskRepository instanceof WorkspaceTaskRepository);
+    }
+
+    private DefaultAgentManager installSnapshot(RuntimeContext rc, List<SubagentEntry> entries) {
+        DefaultAgentManager snapshot =
+                agentManager == null
+                        ? null
+                        : new DefaultAgentManager(entries, agentManager.getWorkspaceManager());
+        rc.put(AgentSpawnTool.CTX_AGENT_MANAGER, snapshot);
+        return snapshot;
     }
 
     private List<SubagentEntry> reloadEntries(RuntimeContext rc) {

@@ -31,6 +31,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -306,17 +307,16 @@ public class WorkspaceTaskRepository implements TaskRepository {
             final String sid = sessionId;
             future.whenComplete(
                     (result, err) -> {
-                        if (err != null) {
-                            Throwable cause =
-                                    err instanceof java.util.concurrent.CompletionException
-                                            ? err.getCause()
-                                            : err;
-                            String errMsg =
-                                    cause != null && cause.getMessage() != null
-                                            ? cause.getMessage()
-                                            : (cause != null
-                                                    ? cause.getClass().getSimpleName()
-                                                    : err.getClass().getSimpleName());
+                        if (adopted.future().isCancelled()) {
+                            settleAndNotify(
+                                    capturedRc,
+                                    sid,
+                                    taskId,
+                                    subAgentId,
+                                    TaskStatus.CANCELLED,
+                                    null,
+                                    null);
+                        } else if (err != null) {
                             settleAndNotify(
                                     capturedRc,
                                     sid,
@@ -324,7 +324,7 @@ public class WorkspaceTaskRepository implements TaskRepository {
                                     subAgentId,
                                     TaskStatus.FAILED,
                                     null,
-                                    errMsg);
+                                    failureMessage(err));
                         } else {
                             settleAndNotify(
                                     capturedRc,
@@ -370,6 +370,17 @@ public class WorkspaceTaskRepository implements TaskRepository {
         return bgTask;
     }
 
+    // Match the failure exposed by BackgroundTask.getError() so live reads, delivery,
+    // and reads after repository restoration preserve the same primary error text.
+    private static String failureMessage(Throwable failure) {
+        Throwable exposed =
+                failure instanceof CompletionException ? failure : new CompletionException(failure);
+        if (exposed.getCause() instanceof Exception cause) exposed = cause;
+        return exposed.getMessage() != null
+                ? exposed.getMessage()
+                : exposed.getClass().getSimpleName();
+    }
+
     private String runLocalSupplier(
             RuntimeContext rc,
             String sessionId,
@@ -395,9 +406,17 @@ public class WorkspaceTaskRepository implements TaskRepository {
             settleAndNotify(rc, sessionId, taskId, subAgentId, TaskStatus.COMPLETED, result, null);
             return result;
         } catch (Exception e) {
-            String errMsg = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
-            settleAndNotify(rc, sessionId, taskId, subAgentId, TaskStatus.FAILED, null, errMsg);
-            throw e instanceof RuntimeException re ? re : new RuntimeException(e);
+            RuntimeException failure =
+                    e instanceof RuntimeException re ? re : new RuntimeException(e);
+            settleAndNotify(
+                    rc,
+                    sessionId,
+                    taskId,
+                    subAgentId,
+                    TaskStatus.FAILED,
+                    null,
+                    failureMessage(failure));
+            throw failure;
         }
     }
 
@@ -429,9 +448,17 @@ public class WorkspaceTaskRepository implements TaskRepository {
             }
             return result;
         } catch (Exception e) {
-            String errMsg = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
-            settleAndNotify(rc, sessionId, taskId, subAgentId, TaskStatus.FAILED, null, errMsg);
-            throw e instanceof RuntimeException re ? re : new RuntimeException(e);
+            RuntimeException failure =
+                    e instanceof RuntimeException re ? re : new RuntimeException(e);
+            settleAndNotify(
+                    rc,
+                    sessionId,
+                    taskId,
+                    subAgentId,
+                    TaskStatus.FAILED,
+                    null,
+                    failureMessage(failure));
+            throw failure;
         }
     }
 

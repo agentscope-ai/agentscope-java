@@ -65,6 +65,8 @@ Agent 的对话上下文、压缩摘要、权限规则、Plan Mode 状态等，�
 
 `RemoteFilesystemSpec` 的存储后端，将 `MEMORY.md`、`memory/`、`skills/`、`sessions/` 等路径路由到共享 KV 存储。`distributedStore` 自动注入到 `RemoteFilesystemSpec`（如果用的是无参构造器）。
 
+对于基于文件系统的 `WorkspaceMessageBus`，后端报告写入失败时，回放日志追加（包括 `sessionPublishEvent`）会返回错误，不再返回成功游标、裁剪日志或发布实时事件。确认失败仍可能留下已持久化的条目，因此消息总线不会自动重试或删除该条目。
+
 ### SandboxSnapshotSpec — 沙箱快照
 
 将 Docker/K8s 等沙箱的工作区打成 tar 包持久化，下次 `call()` 自动恢复。`distributedStore` 自动注入到 `SandboxFilesystemSpec`。

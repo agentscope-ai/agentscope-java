@@ -37,6 +37,7 @@ import io.agentscope.harness.agent.skill.runtime.MarketplaceStager.RepoBound;
 import io.agentscope.harness.agent.skill.runtime.MarketplaceStager.StageResult;
 import io.agentscope.harness.agent.skill.runtime.ShellPathPolicy;
 import io.agentscope.harness.agent.skill.runtime.SkillCatalog;
+import io.agentscope.harness.agent.skill.runtime.SkillLoadTool;
 import io.agentscope.harness.agent.skill.runtime.SkillRuntime;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -356,7 +357,11 @@ public class HarnessSkillMiddleware implements HarnessRuntimeMiddleware {
         SkillCatalog catalog = SkillCatalog.of(entries);
         runtime.install(catalog, ctx, agentToolkit);
 
-        registerSkillsMaterial(ctx, runtime.renderPrompt(catalog, SkillFilter.all()));
+        boolean canDiscover =
+                agentToolkit != null
+                        && agentToolkit.getTool(SkillLoadTool.TOOL_NAME, ctx.getToolRequestConfig())
+                                instanceof SkillLoadTool;
+        registerSkillsMaterial(ctx, runtime.renderPrompt(catalog, SkillFilter.all(), canDiscover));
         return Mono.just(currentPrompt);
     }
 

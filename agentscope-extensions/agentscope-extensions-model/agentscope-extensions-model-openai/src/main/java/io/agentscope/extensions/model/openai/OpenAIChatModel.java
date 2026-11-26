@@ -529,7 +529,7 @@ public class OpenAIChatModel extends ChatModelBase {
             model.setContextWindowSize(
                     contextWindowSize >= 0
                             ? contextWindowSize
-                            : ModelContextWindows.lookup(modelName, ModelContextWindows.OPENAI));
+                            : ModelContextWindows.resolve(modelName, ModelContextWindows.OPENAI));
             model.setNativeStructuredOutput(
                     nativeStructuredOutput != null ? nativeStructuredOutput : true);
             if (nativeStructuredOutputWithTools != null) {

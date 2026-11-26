@@ -26,9 +26,14 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.test.MockModel;
+import io.agentscope.core.event.AgentEvent;
+import io.agentscope.core.event.ToolResultEndEvent;
+import io.agentscope.core.event.ToolResultTextDeltaEvent;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.ToolErrorKind;
+import io.agentscope.core.message.ToolErrorMetadata;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.message.UserMessage;
@@ -1070,9 +1075,18 @@ class CapabilityGrantIntegrationTest {
     @DisplayName("un-granted backend tool call → disguised not-found wording (no existence oracle)")
     void executorDeniesUngrantedTool() {
         Toolkit toolkit = grantToolkit();
-        ToolResultBlock result =
-                call(toolkit, "t2", rc(new CapabilitySurface(null, Set.of("g1"), Set.of())));
+        RuntimeContext ctx = rc(new CapabilitySurface(null, Set.of("g1"), Set.of()));
+        ToolResultBlock result = call(toolkit, "t2", ctx);
         assertEquals("Error: Tool not found: t2", firstText(result));
+
+        // The failure classification must not become an existence oracle either: an ungranted
+        // tool and a missing tool carry the same text and the same metadata shape.
+        Toolkit missingToolkit = grantToolkit();
+        missingToolkit.removeTool("t2");
+        ToolResultBlock missing = call(missingToolkit, "t2", ctx);
+        assertEquals(firstText(result), firstText(missing));
+        assertEquals(ToolErrorMetadata.of(ToolErrorKind.NOT_FOUND, "t2"), result.getMetadata());
+        assertEquals(result.getMetadata(), missing.getMetadata());
     }
 
     @Test
@@ -1248,34 +1262,7 @@ class CapabilityGrantIntegrationTest {
     @DisplayName("e2e: model insists on a cut-off tool → ToolResult error feeds back to the model")
     void endToEndForcedCallIsDenied() {
         Toolkit toolkit = grantToolkit();
-        AtomicInteger calls = new AtomicInteger();
-        MockModel model =
-                new MockModel(
-                        msgs -> {
-                            if (calls.getAndIncrement() == 0) {
-                                Map<String, Object> args = new HashMap<>();
-                                return List.of(
-                                        ChatResponse.builder()
-                                                .id("m1")
-                                                .content(
-                                                        List.of(
-                                                                ToolUseBlock.builder()
-                                                                        .id("call-1")
-                                                                        .name("t2")
-                                                                        .input(args)
-                                                                        .build()))
-                                                .build());
-                            }
-                            return List.of(
-                                    ChatResponse.builder()
-                                            .id("m2")
-                                            .content(
-                                                    List.of(
-                                                            TextBlock.builder()
-                                                                    .text("final")
-                                                                    .build()))
-                                            .build());
-                        });
+        MockModel model = forcedCallModel("t2");
         ReActAgent agent =
                 ReActAgent.builder()
                         .name("a")
@@ -1296,6 +1283,72 @@ class CapabilityGrantIntegrationTest {
                         .findFirst()
                         .orElse(null);
         assertEquals("Error: Tool not found: t2", toolResultText);
+    }
+
+    @Test
+    @DisplayName("e2e: same-name ungranted and missing tools share delta and end metadata")
+    void endToEndDeniedCallEventsCarryNotFoundMetadata() {
+        for (boolean missing : List.of(false, true)) {
+            Toolkit toolkit = grantToolkit();
+            if (missing) {
+                toolkit.removeTool("t2");
+            }
+            try (ReActAgent agent =
+                    ReActAgent.builder()
+                            .name("a")
+                            .model(forcedCallModel("t2"))
+                            .toolkit(toolkit)
+                            .capabilityResolver(
+                                    (ctx, a) -> new CapabilitySurface(null, Set.of("g1"), Set.of()))
+                            .build()) {
+                List<AgentEvent> events =
+                        agent.streamEvents(userMsg("hi"), rc())
+                                .collectList()
+                                .block(Duration.ofSeconds(15));
+                Map<String, Object> expected = ToolErrorMetadata.of(ToolErrorKind.NOT_FOUND, "t2");
+                ToolResultTextDeltaEvent delta =
+                        events.stream()
+                                .filter(ToolResultTextDeltaEvent.class::isInstance)
+                                .map(ToolResultTextDeltaEvent.class::cast)
+                                .findFirst()
+                                .orElseThrow();
+                assertEquals("Error: Tool not found: t2", delta.getDelta());
+                assertEquals(expected, delta.getMetadata(), "missing=" + missing);
+                ToolResultEndEvent end =
+                        events.stream()
+                                .filter(ToolResultEndEvent.class::isInstance)
+                                .map(ToolResultEndEvent.class::cast)
+                                .findFirst()
+                                .orElseThrow();
+                assertEquals(expected, end.getMetadata(), "missing=" + missing);
+            }
+        }
+    }
+
+    /** A model that calls {@code toolName} once with no arguments, then answers "final". */
+    private static MockModel forcedCallModel(String toolName) {
+        AtomicInteger calls = new AtomicInteger();
+        return new MockModel(
+                msgs -> {
+                    if (calls.getAndIncrement() == 0) {
+                        return List.of(
+                                ChatResponse.builder()
+                                        .id("m1")
+                                        .content(
+                                                List.of(
+                                                        ToolUseBlock.builder()
+                                                                .id("call-1")
+                                                                .name(toolName)
+                                                                .input(new HashMap<>())
+                                                                .build()))
+                                        .build());
+                    }
+                    return List.of(
+                            ChatResponse.builder()
+                                    .id("m2")
+                                    .content(List.of(TextBlock.builder().text("final").build()))
+                                    .build());
+                });
     }
 
     // ==================== skill-bound group expansion ====================
