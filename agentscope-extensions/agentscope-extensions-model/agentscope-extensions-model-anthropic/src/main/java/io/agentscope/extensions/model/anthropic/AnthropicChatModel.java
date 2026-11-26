@@ -567,7 +567,8 @@ public class AnthropicChatModel extends ChatModelBase {
             model.setContextWindowSize(
                     contextWindowSize >= 0
                             ? contextWindowSize
-                            : ModelContextWindows.lookup(modelName, ModelContextWindows.ANTHROPIC));
+                            : ModelContextWindows.resolve(
+                                    modelName, ModelContextWindows.ANTHROPIC));
             return model;
         }
     }
