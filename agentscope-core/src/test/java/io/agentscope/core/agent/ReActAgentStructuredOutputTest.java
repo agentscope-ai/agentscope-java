@@ -25,6 +25,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.test.MockModel;
 import io.agentscope.core.agent.test.TestConstants;
+import io.agentscope.core.event.AgentEvent;
+import io.agentscope.core.event.AgentEventEmitter;
+import io.agentscope.core.event.ToolResultEndEvent;
 import io.agentscope.core.hook.Hook;
 import io.agentscope.core.hook.HookEvent;
 import io.agentscope.core.hook.PostReasoningEvent;
@@ -35,6 +38,10 @@ import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ThinkingBlock;
+import io.agentscope.core.message.ToolErrorKind;
+import io.agentscope.core.message.ToolErrorMetadata;
+import io.agentscope.core.message.ToolResultBlock;
+import io.agentscope.core.message.ToolResultState;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.ChatUsage;
@@ -81,6 +88,84 @@ class ReActAgentStructuredOutputTest {
     @BeforeEach
     void setUp() {
         toolkit = new Toolkit();
+    }
+
+    @Test
+    void invalidStructuredToolArgumentsCarryClassificationInResultAndEvent() {
+        AtomicInteger calls = new AtomicInteger();
+        List<ToolResultBlock> observedResults = new CopyOnWriteArrayList<>();
+        MockModel model =
+                new MockModel(
+                        messages -> {
+                            messages.forEach(
+                                    m ->
+                                            observedResults.addAll(
+                                                    m.getContentBlocks(ToolResultBlock.class)));
+                            boolean invalid = calls.getAndIncrement() == 0;
+                            Map<String, Object> input =
+                                    invalid
+                                            ? Map.of("response", "not-an-object")
+                                            : Map.of(
+                                                    "response",
+                                                    Map.of(
+                                                            "location", "London",
+                                                            "temperature", "15°C",
+                                                            "condition", "Sunny"));
+                            return List.of(
+                                    ChatResponse.builder()
+                                            .content(
+                                                    List.of(
+                                                            ToolUseBlock.builder()
+                                                                    .id(
+                                                                            invalid
+                                                                                    ? "invalid"
+                                                                                    : "valid")
+                                                                    .name("generate_response")
+                                                                    .input(input)
+                                                                    .content(
+                                                                            JsonUtils.getJsonCodec()
+                                                                                    .toJson(input))
+                                                                    .build()))
+                                            .build());
+                        });
+        List<AgentEvent> events = new CopyOnWriteArrayList<>();
+        try (ReActAgent agent =
+                ReActAgent.builder().name("weather-agent").model(model).toolkit(toolkit).build()) {
+            Msg response =
+                    agent.call("weather", WeatherResponse.class)
+                            .contextWrite(
+                                    ctx ->
+                                            ctx.put(
+                                                    AgentEventEmitter.FORWARDING_CONTEXT_KEY,
+                                                    (AgentEventEmitter) events::add))
+                            .block(Duration.ofSeconds(10));
+            assertNotNull(response);
+            assertEquals(2, model.getCallCount());
+        }
+        ToolResultBlock result =
+                observedResults.stream()
+                        .filter(r -> "invalid".equals(r.getId()))
+                        .findFirst()
+                        .orElseThrow();
+        assertEquals(ToolResultState.ERROR, result.getState());
+        assertTrue(
+                ((TextBlock) result.getOutput().get(0))
+                        .getText()
+                        .startsWith(
+                                "[ERROR] Parameter validation failed for tool"
+                                        + " 'generate_response':"));
+        assertEquals(
+                ToolErrorMetadata.of(ToolErrorKind.INVALID_ARGUMENT, "generate_response"),
+                result.getMetadata());
+        ToolResultEndEvent end =
+                events.stream()
+                        .filter(ToolResultEndEvent.class::isInstance)
+                        .map(ToolResultEndEvent.class::cast)
+                        .filter(e -> "invalid".equals(e.getToolCallId()))
+                        .findFirst()
+                        .orElseThrow();
+        assertEquals(ToolResultState.ERROR, end.getState());
+        assertEquals(result.getMetadata(), end.getMetadata());
     }
 
     @Test

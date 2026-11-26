@@ -15,18 +15,24 @@
  */
 package io.agentscope.harness.agent.tool;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.agentscope.core.message.ToolErrorKind;
+import io.agentscope.core.message.ToolErrorMetadata;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolResultState;
 import io.agentscope.core.tool.Tool;
 import io.agentscope.core.tool.ToolParam;
+import java.io.IOException;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.net.http.HttpTimeoutException;
 import java.time.Duration;
 import java.util.Objects;
+import java.util.regex.Pattern;
 
 /**
  * Builtin web tools ({@code web_fetch}, {@code web_search}) for Managed Agents / Harness.
@@ -65,7 +71,83 @@ public final class WebTools {
         return SHARED_DEFAULT_CLIENT;
     }
 
+    private static String hostScope(String url) {
+        try {
+            String host = URI.create(url.strip()).getHost();
+            return host == null || host.isBlank() ? null : host;
+        } catch (RuntimeException e) {
+            return null;
+        }
+    }
+
+    private static ToolErrorKind statusKind(int status) {
+        if (status == 429) {
+            return ToolErrorKind.RATE_LIMITED;
+        }
+        if (status == 408 || status == 504) {
+            return ToolErrorKind.TIMEOUT;
+        }
+        return ToolErrorKind.UPSTREAM_ERROR;
+    }
+
+    private static boolean statusRetriable(int status) {
+        return status == 429 || status == 408 || status == 504 || status >= 500;
+    }
+
+    private static ToolResultBlock requestError(String message, String url, Exception error) {
+        if (error instanceof InterruptedException) {
+            Thread.currentThread().interrupt();
+            return ToolResultBlock.error(message)
+                    .withMetadata(
+                            ToolErrorMetadata.of(
+                                    ToolErrorKind.INTERNAL_ERROR, hostScope(url), false));
+        }
+        if (error instanceof HttpTimeoutException) {
+            return ToolResultBlock.error(message)
+                    .withMetadata(
+                            ToolErrorMetadata.of(ToolErrorKind.TIMEOUT, hostScope(url), true));
+        }
+        if (error instanceof IllegalArgumentException) {
+            return ToolResultBlock.error(message)
+                    .withMetadata(
+                            ToolErrorMetadata.of(
+                                    ToolErrorKind.INVALID_ARGUMENT, hostScope(url), false));
+        }
+        if (error instanceof JsonProcessingException) {
+            return ToolResultBlock.error(message)
+                    .withMetadata(
+                            ToolErrorMetadata.of(
+                                    ToolErrorKind.UPSTREAM_ERROR, hostScope(url), false));
+        }
+        if (error instanceof IOException) {
+            return ToolResultBlock.error(message)
+                    .withMetadata(
+                            ToolErrorMetadata.of(
+                                    ToolErrorKind.UPSTREAM_ERROR, hostScope(url), true));
+        }
+        return ToolResultBlock.error(message)
+                .withMetadata(
+                        ToolErrorMetadata.of(ToolErrorKind.INTERNAL_ERROR, hostScope(url), false));
+    }
+
     public static final class WebFetchTool {
+        /**
+         * Percent sign that does not start a two-digit hexadecimal escape. A URL written by a
+         * model may hold such literal signs in its path or query (for example {@code
+         * https://wttr.in/?format=%l:+%c}), which {@link URI#create(String)} rejects as a
+         * malformed escape pair.
+         */
+        private static final Pattern STRAY_PERCENT = Pattern.compile("%(?![0-9A-Fa-f]{2})");
+
+        /** Separates the scheme of a URL from its authority. */
+        private static final String SCHEME_END = "://";
+
+        /** Characters that end the authority of a URL by starting its path, query or fragment. */
+        private static final String AUTHORITY_END = "/?#";
+
+        /** Starts the fragment of a URL. */
+        private static final char FRAGMENT_START = '#';
+
         private final HttpClient client;
 
         public WebFetchTool() {
@@ -90,17 +172,19 @@ public final class WebTools {
                                 required = false)
                         Integer maxChars) {
             if (url == null || url.isBlank()) {
-                return ToolResultBlock.error("url is required");
+                return ToolResultBlock.error("url is required")
+                        .withMetadata(ToolErrorMetadata.of(ToolErrorKind.INVALID_ARGUMENT));
             }
             String trimmed = url.strip();
             if (!trimmed.startsWith("http://") && !trimmed.startsWith("https://")) {
-                return ToolResultBlock.error("only http/https URLs are allowed");
+                return ToolResultBlock.error("only http/https URLs are allowed")
+                        .withMetadata(ToolErrorMetadata.of(ToolErrorKind.INVALID_ARGUMENT));
             }
             int limit = maxChars != null && maxChars > 0 ? Math.min(maxChars, 100_000) : 20_000;
             try {
                 HttpRequest request =
                         HttpRequest.newBuilder()
-                                .uri(URI.create(trimmed))
+                                .uri(URI.create(encodeStrayPercentSigns(trimmed)))
                                 .timeout(Duration.ofSeconds(30))
                                 .header("User-Agent", "AgentScope-Harness-WebFetch/1.0")
                                 .GET()
@@ -111,17 +195,41 @@ public final class WebTools {
                 if (body.length() > limit) {
                     body = body.substring(0, limit) + "\n...[truncated]";
                 }
-                String payload = "status=" + response.statusCode() + "\n\n" + body;
-                if (response.statusCode() < 200 || response.statusCode() >= 300) {
-                    return ToolResultBlock.text(payload).withState(ToolResultState.ERROR);
+                int status = response.statusCode();
+                String payload = "status=" + status + "\n\n" + body;
+                if (status < 200 || status >= 300) {
+                    return ToolResultBlock.text(payload)
+                            .withState(ToolResultState.ERROR)
+                            .withMetadata(
+                                    ToolErrorMetadata.of(
+                                            statusKind(status),
+                                            hostScope(trimmed),
+                                            statusRetriable(status)));
                 }
                 return ToolResultBlock.success(payload);
             } catch (Exception e) {
-                if (e instanceof InterruptedException) {
-                    Thread.currentThread().interrupt();
-                }
-                return ToolResultBlock.error("web_fetch failed: " + e.getMessage());
+                return requestError("web_fetch failed: " + e.getMessage(), trimmed, e);
             }
+        }
+
+        /**
+         * Encodes stray percent signs in the path and query as {@code %25}. Valid escapes, the
+         * scheme, the authority and the fragment are kept as given.
+         */
+        private static String encodeStrayPercentSigns(String url) {
+            int pathAndQueryStart = url.indexOf(SCHEME_END) + SCHEME_END.length();
+            while (pathAndQueryStart < url.length()
+                    && AUTHORITY_END.indexOf(url.charAt(pathAndQueryStart)) < 0) {
+                pathAndQueryStart++;
+            }
+            int fragmentStart = url.indexOf(FRAGMENT_START, pathAndQueryStart);
+            if (fragmentStart < 0) {
+                fragmentStart = url.length();
+            }
+            String pathAndQuery = url.substring(pathAndQueryStart, fragmentStart);
+            return url.substring(0, pathAndQueryStart)
+                    + STRAY_PERCENT.matcher(pathAndQuery).replaceAll("%25")
+                    + url.substring(fragmentStart);
         }
     }
 
@@ -153,13 +261,15 @@ public final class WebTools {
                                 required = false)
                         Integer maxResults) {
             if (query == null || query.isBlank()) {
-                return ToolResultBlock.error("query is required");
+                return ToolResultBlock.error("query is required")
+                        .withMetadata(ToolErrorMetadata.of(ToolErrorKind.INVALID_ARGUMENT));
             }
             String apiKey = System.getenv("TAVILY_API_KEY");
             if (apiKey == null || apiKey.isBlank()) {
                 return ToolResultBlock.error(
-                        "TAVILY_API_KEY is not set. Configure the key via Environment vault"
-                                + " credentials or process env to enable web_search.");
+                                "TAVILY_API_KEY is not set. Configure the key via Environment"
+                                        + " vault credentials or process env to enable web_search.")
+                        .withMetadata(ToolErrorMetadata.of(ToolErrorKind.CONFIGURATION_ERROR));
             }
             int limit = maxResults != null && maxResults > 0 ? Math.min(maxResults, 10) : 5;
             String body =
@@ -180,7 +290,13 @@ public final class WebTools {
                 HttpResponse<String> response =
                         client.send(request, HttpResponse.BodyHandlers.ofString());
                 if (response.statusCode() != 200) {
-                    return ToolResultBlock.error("Tavily API returned " + response.statusCode());
+                    int status = response.statusCode();
+                    return ToolResultBlock.error("Tavily API returned " + status)
+                            .withMetadata(
+                                    ToolErrorMetadata.of(
+                                            statusKind(status),
+                                            hostScope(TAVILY_API),
+                                            statusRetriable(status)));
                 }
                 JsonNode root = mapper.readTree(response.body());
                 JsonNode results = root.path("results");
@@ -201,10 +317,7 @@ public final class WebTools {
                 }
                 return ToolResultBlock.success(sb.toString().strip());
             } catch (Exception e) {
-                if (e instanceof InterruptedException) {
-                    Thread.currentThread().interrupt();
-                }
-                return ToolResultBlock.error("web_search failed: " + e.getMessage());
+                return requestError("web_search failed: " + e.getMessage(), TAVILY_API, e);
             }
         }
     }

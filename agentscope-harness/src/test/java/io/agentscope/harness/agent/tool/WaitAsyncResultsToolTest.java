@@ -23,12 +23,18 @@ import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolResultState;
+import io.agentscope.core.message.ToolUseBlock;
+import io.agentscope.core.model.ExecutionConfig;
+import io.agentscope.core.tool.ToolCallParam;
+import io.agentscope.core.tool.Toolkit;
+import io.agentscope.core.tool.ToolkitConfig;
 import io.agentscope.harness.agent.bus.BusEntry;
 import io.agentscope.harness.agent.bus.MessageBus;
 import io.agentscope.harness.agent.subagent.task.BackgroundTask;
 import io.agentscope.harness.agent.subagent.task.TaskRepository;
 import io.agentscope.harness.agent.subagent.task.TaskRunSpec;
 import io.agentscope.harness.agent.subagent.task.TaskStatus;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
@@ -41,6 +47,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
@@ -67,6 +74,37 @@ class WaitAsyncResultsToolTest {
 
     private static MessageBus busWithMessages() {
         return new StubMessageBus(true);
+    }
+
+    @Test
+    void barrierDoesNotDescribeEmptySuccessOrCancellationAsAnError() {
+        var empty = new BackgroundTask("empty", "worker", CompletableFuture.completedFuture(null));
+        var cancelled = new BackgroundTask("cancelled", "worker", new CompletableFuture<>());
+        cancelled.cancel(false);
+        var tool =
+                new WaitAsyncResultsTool(
+                        emptyBus(), new StubTaskRepository(List.of(empty, cancelled)));
+        String output = text(tool.waitForResults(1, "empty,cancelled", null, ctx()));
+        assertTrue(output.contains("Cancelled"));
+        assertTrue(output.contains("No result."));
+        assertFalse(output.contains("Error:"));
+    }
+
+    @Test
+    void barrierIncludesAllLargeResults() {
+        String first = "first ".repeat(8000) + "FIRST_TAIL";
+        String second = "second ".repeat(8000) + "SECOND_TAIL";
+        var tasks =
+                List.of(
+                        new BackgroundTask(
+                                "first", "worker", CompletableFuture.completedFuture(first)),
+                        new BackgroundTask(
+                                "second", "worker", CompletableFuture.completedFuture(second)));
+        var repo = new StubTaskRepository(tasks);
+        var tool = new WaitAsyncResultsTool(emptyBus(), repo);
+        String output = text(tool.waitForResults(1, "first,second", null, ctx()));
+        assertTrue(output.contains(first));
+        assertTrue(output.contains(second));
     }
 
     @Test
@@ -289,6 +327,50 @@ class WaitAsyncResultsToolTest {
                 "should indicate all tasks done, got: " + text(result));
         assertEquals(ToolResultState.ERROR, result.getState());
         assertTrue(elapsed < 2_000, "should return immediately, took: " + elapsed + "ms");
+    }
+
+    @Test
+    @Timeout(5)
+    @DisplayName("ordinary tool timeout does not cut short the managed async wait")
+    void managedWaitIsNotCutShortByOrdinaryToolTimeout() {
+        BackgroundTask task =
+                new BackgroundTask(
+                        "late",
+                        "agent",
+                        CompletableFuture.supplyAsync(
+                                () -> "late result",
+                                CompletableFuture.delayedExecutor(100, TimeUnit.MILLISECONDS)));
+        TaskRepository repo = new StubTaskRepository(List.of(task));
+        WaitAsyncResultsTool tool = new WaitAsyncResultsTool(emptyBus(), repo, 20L);
+        Toolkit toolkit =
+                new Toolkit(
+                        ToolkitConfig.builder()
+                                .executionConfig(
+                                        ExecutionConfig.builder()
+                                                .timeout(Duration.ofMillis(20))
+                                                .build())
+                                .build());
+        toolkit.registerTool(tool);
+        Map<String, Object> input =
+                Map.of("timeout_seconds", 1, "task_ids", "late", "wait_all", false);
+        ToolUseBlock toolCall =
+                ToolUseBlock.builder()
+                        .id("wait-async-results")
+                        .name("wait_async_results")
+                        .input(input)
+                        .build();
+
+        ToolResultBlock result =
+                toolkit.callTool(
+                                ToolCallParam.builder()
+                                        .toolUseBlock(toolCall)
+                                        .input(input)
+                                        .runtimeContext(ctx())
+                                        .build())
+                        .block(Duration.ofSeconds(4));
+
+        String output = text(result);
+        assertTrue(output.contains("late result"), "got: " + output);
     }
 
     @Test

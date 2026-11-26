@@ -15,12 +15,14 @@
  */
 package io.agentscope.harness.agent.gateway;
 
+import com.fasterxml.jackson.core.type.TypeReference;
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.event.AgentResultEvent;
 import io.agentscope.core.message.Msg;
+import io.agentscope.core.util.JsonUtils;
 import io.agentscope.harness.agent.HarnessAgent;
 import io.agentscope.harness.agent.bus.MessageBus;
 import io.agentscope.harness.agent.filesystem.remote.store.BaseStore;
@@ -368,6 +370,16 @@ public final class HarnessGateway implements Gateway, WakeupDispatcher.WakeupTar
      */
     public String exposeSubagent(
             String agentId, String sessionId, Agent agent, OutboundAddress replyTo) {
+        return exposeSubagent(agentId, sessionId, agent, replyTo, null);
+    }
+
+    /**
+     * Exposes a subagent with the trusted caller identity used for cold materialization.
+     *
+     * @param userId the parent invocation's user identity; null preserves anonymous exposure
+     */
+    public String exposeSubagent(
+            String agentId, String sessionId, Agent agent, OutboundAddress replyTo, String userId) {
         Objects.requireNonNull(agent, "agent");
         String subagentId = "sub-" + UUID.randomUUID().toString().substring(0, 8);
         exposedSessions.put(
@@ -375,7 +387,7 @@ public final class HarnessGateway implements Gateway, WakeupDispatcher.WakeupTar
         try {
             subagentRegistry.register(
                     new SubagentRecord(
-                            subagentId, agentId, sessionId, null, null, Instant.now(), null));
+                            subagentId, agentId, sessionId, userId, null, Instant.now(), null));
         } catch (RuntimeException e) {
             log.warn(
                     "Failed to persist exposed-subagent record {}: {}", subagentId, e.getMessage());
@@ -397,6 +409,29 @@ public final class HarnessGateway implements Gateway, WakeupDispatcher.WakeupTar
             } catch (RuntimeException e) {
                 log.debug("Registry revoke failed for {}: {}", subagentId, e.getMessage());
             }
+        }
+    }
+
+    /**
+     * Revokes every public handle routed to the given child session.
+     *
+     * @param sessionId the child session whose exposed handles should be revoked
+     * @return whether a live handle or durable exposure record was revoked
+     */
+    public boolean revokeSubagentsBySession(String sessionId) {
+        if (sessionId == null) {
+            return false;
+        }
+        boolean revokedLive =
+                exposedSessions.values().removeIf(s -> sessionId.equals(s.sessionId()));
+        try {
+            return subagentRegistry.revokeBySessionId(sessionId) || revokedLive;
+        } catch (RuntimeException e) {
+            log.warn(
+                    "Failed to revoke durable exposed subagents for session {}: {}",
+                    sessionId,
+                    e.getMessage());
+            return revokedLive;
         }
     }
 
@@ -673,17 +708,22 @@ public final class HarnessGateway implements Gateway, WakeupDispatcher.WakeupTar
     }
 
     private void publishEventToSession(String sessionId, AgentEvent event) {
-        try {
-            Map<String, Object> payload =
-                    io.agentscope.core.util.JsonUtils.getJsonCodec()
-                            .convertValue(
-                                    event,
-                                    new com.fasterxml.jackson.core.type.TypeReference<
-                                            Map<String, Object>>() {});
-            messageBus.sessionPublishEvent(sessionId, payload).subscribe();
-        } catch (Exception e) {
-            log.debug("Failed to publish event to session {}: {}", sessionId, e.getMessage());
-        }
+        Mono.defer(
+                        () -> {
+                            Map<String, Object> payload =
+                                    JsonUtils.getJsonCodec()
+                                            .convertValue(event, new TypeReference<>() {});
+                            return messageBus.sessionPublishEvent(sessionId, payload);
+                        })
+                .subscribe(
+                        null,
+                        // Backend and serialization errors can echo the event payload.
+                        error ->
+                                log.warn(
+                                        "Failed to publish event {} to session {} ({})",
+                                        event.getId(),
+                                        sessionId,
+                                        error.getClass().getName()));
     }
 
     // ------------------------------------------------------------------

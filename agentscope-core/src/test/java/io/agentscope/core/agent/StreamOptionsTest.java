@@ -17,6 +17,7 @@ package io.agentscope.core.agent;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import org.junit.jupiter.api.Test;
@@ -247,5 +248,39 @@ class StreamOptionsTest {
         StreamOptions options = StreamOptions.defaults();
 
         assertTrue(options.isIncludeActingChunk());
+    }
+
+    @Test
+    void testReturnedEventTypesCannotChangeRouting() {
+        StreamOptions options = StreamOptions.builder().eventTypes(EventType.REASONING).build();
+
+        try {
+            options.getEventTypes().clear();
+        } catch (UnsupportedOperationException expected) {
+            // Immutable view: the mutation never reaches the options.
+        }
+
+        assertTrue(
+                options.shouldStream(EventType.REASONING),
+                "mutating the returned set must not change which events are streamed");
+    }
+
+    @Test
+    void testBuilderRejectsEmptyEventTypes() {
+        IllegalArgumentException error =
+                assertThrows(
+                        IllegalArgumentException.class, () -> StreamOptions.builder().eventTypes());
+
+        assertTrue(error.getMessage().contains("At least one event type"));
+    }
+
+    @Test
+    void testBuilderRejectsNullEventType() {
+        IllegalArgumentException error =
+                assertThrows(
+                        IllegalArgumentException.class,
+                        () -> StreamOptions.builder().eventTypes(EventType.REASONING, null));
+
+        assertTrue(error.getMessage().contains("must not contain null"));
     }
 }

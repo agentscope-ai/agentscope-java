@@ -29,6 +29,7 @@ import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.Model;
 import io.agentscope.core.model.ToolSchema;
+import io.agentscope.core.state.AgentState;
 import io.agentscope.harness.agent.middleware.SubagentEntry;
 import io.agentscope.harness.agent.subagent.DefaultAgentManager;
 import io.agentscope.harness.agent.subagent.task.BackgroundTask;
@@ -62,7 +63,13 @@ class AgentSpawnToolFollowUpSessionTest {
                                 List.of(new SubagentEntry("worker", "worker", rc -> child)), null),
                         new RecordingTaskRepository(),
                         0);
-        RuntimeContext ctx = RuntimeContext.builder().userId("u1").sessionId("parent-s1").build();
+        RuntimeContext ctx =
+                RuntimeContext.builder()
+                        .userId("u1")
+                        .sessionId("parent-s1")
+                        .agentState(
+                                AgentState.builder().userId("u1").sessionId("parent-s1").build())
+                        .build();
         return new Fixture(model, tool, ctx);
     }
 
@@ -138,7 +145,7 @@ class AgentSpawnToolFollowUpSessionTest {
 
         String spawn =
                 assertText(
-                        f.tool.agentSpawn(f.ctx, null, "worker", "first task", null, 5, null)
+                        f.tool.agentSpawn(f.ctx, null, "worker", "first task", true, null, 5, null)
                                 .block(),
                         ToolResultState.SUCCESS);
         assertTrue(spawn.contains("status: ok"), spawn);
@@ -175,7 +182,7 @@ class AgentSpawnToolFollowUpSessionTest {
 
         String spawn =
                 assertText(
-                        f.tool.agentSpawn(f.ctx, null, "worker", null, null, 5, null).block(),
+                        f.tool.agentSpawn(f.ctx, null, "worker", null, true, null, 5, null).block(),
                         ToolResultState.SUCCESS);
         assertTrue(spawn.contains("status: accepted"), spawn);
         assertEquals(0, f.model.calls.size(), "task-less spawn must not invoke the child");

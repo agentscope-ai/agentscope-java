@@ -32,6 +32,7 @@ import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.ChatUsage;
 import io.agentscope.core.model.ExecutionConfig;
+import io.agentscope.core.state.AgentState;
 import io.agentscope.core.tool.AgentTool;
 import io.agentscope.core.tool.ToolCallParam;
 import io.agentscope.core.tool.Toolkit;
@@ -162,7 +163,7 @@ class AgentSpawnToolForceSyncTest {
 
         String result =
                 assertText(
-                        tool.agentSpawn(ctx, null, "fast_agent", "go", null, 0, null)
+                        tool.agentSpawn(ctx, null, "fast_agent", "go", true, null, 0, null)
                                 .block(Duration.ofSeconds(15)),
                         ToolResultState.SUCCESS);
 
@@ -194,13 +195,22 @@ class AgentSpawnToolForceSyncTest {
                 RuntimeContext.builder()
                         .sessionId("parent")
                         .userId("user")
+                        .agentState(AgentState.builder().sessionId("parent").userId("user").build())
                         .put(AgentSpawnTool.CTX_FORCE_SYNC, true)
                         .put(AgentSpawnTool.CTX_FORCE_SYNC_TIMEOUT_SECONDS, 5)
                         .build();
         for (String name : List.of("agent_spawn", "agent_send")) {
             Map<String, Object> input =
                     "agent_spawn".equals(name)
-                            ? Map.of("agent_id", "slow_agent", "task", "go", "label", "slow")
+                            ? Map.of(
+                                    "agent_id",
+                                    "slow_agent",
+                                    "task",
+                                    "go",
+                                    "label",
+                                    "slow",
+                                    "reusable",
+                                    true)
                             : Map.of("label", "slow", "message", "continue");
             String result =
                     assertText(
@@ -353,6 +363,8 @@ class AgentSpawnToolForceSyncTest {
                                                 "slow_agent",
                                                 "task",
                                                 "go",
+                                                "reusable",
+                                                true,
                                                 "timeout_seconds",
                                                 1),
                                         ctx,

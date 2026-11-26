@@ -202,6 +202,33 @@ class HarnessCompactionFlushPromptTest {
                 model.inputs.get(0).get(0).getTextContent());
     }
 
+    @Test
+    void customPromptDoesNotEnableMemoryExtraction() {
+        RecordingModel model = new RecordingModel(false);
+        CompactionConfig config =
+                CompactionConfig.builder().triggerMessages(2).keepMessages(1).keepTokens(0).build();
+        try (WorkspaceManager manager = new WorkspaceManager(workspace)) {
+            CompactionMiddleware middleware =
+                    new CompactionMiddleware(
+                            manager, model, config, null, false, "CUSTOM_FLUSH_MARKER");
+            var agent =
+                    ReActAgent.builder().name("memory-disabled-compaction").model(model).build();
+            var input =
+                    new ReasoningInput(
+                            List.of(
+                                    message(MsgRole.USER, "Remember Java."),
+                                    message(MsgRole.USER, "Continue.")),
+                            List.of(),
+                            null);
+            middleware
+                    .onReasoning(agent, RuntimeContext.empty(), input, next -> Flux.empty())
+                    .then()
+                    .block(Duration.ofSeconds(10));
+        }
+        assertEquals(1, model.inputs.size(), "only the summary model call should run");
+        assertEquals(MsgRole.USER, model.inputs.get(0).get(0).getRole());
+    }
+
     private static Msg message(MsgRole role, String text) {
         return Msg.builder().role(role).content(TextBlock.builder().text(text).build()).build();
     }

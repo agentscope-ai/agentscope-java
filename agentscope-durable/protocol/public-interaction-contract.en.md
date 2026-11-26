@@ -125,6 +125,7 @@ signal keys: Control.requestId is signalId; Interaction.id is the response targe
 Interaction.requestId identifies the native request.
 
 Receipt status=accepted acknowledges admission, with the Session cursor after that transaction.
+Model reply controls in the reserved `x.model:` namespace return status=ignored for superseded generations, sealed calls, and completed or cancelling Turns. Consumers acknowledge these deliveries. Model generation begin commands receive a transactionally assigned epoch, and collectors seal the current epoch atomically before dispatching tools.
 signal.applied/withdrawn, interaction.resolved and Turn terminal events report subsequent facts.
 A SUCCEEDED commit requires accepted steer/inject input to be applied or withdrawn. Input admission and success compete at the same transaction boundary: input admitted first cannot be discarded when an invocation returns normally, and a Turn completed first rejects new controls. AgentScope retains turnId and uses a new Run when more input needs processing.
 Backend admission defines FIFO within each Thread: WAITING/PAUSING/PAUSED block later tasks. Queued cancellation need not wait for the head.

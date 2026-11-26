@@ -153,6 +153,8 @@ class SubagentInvocationIdentityTest {
                                                 childId,
                                                 "task",
                                                 "record your runId",
+                                                "reusable",
+                                                true,
                                                 "timeout_seconds",
                                                 60))))
                 .thenReturn(Flux.just(stopChunk("p2", "parent done")));

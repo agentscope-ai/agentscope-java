@@ -244,6 +244,11 @@ public class WorkspaceMessageBus implements MessageBus {
 
     // ---- Mode C: replay log ----
 
+    /**
+     * Append only acknowledges a successful backend write. A reported write failure signals an
+     * error before log capping or session-event fan-out. Since a failed acknowledgement may follow
+     * a persisted write, this implementation does not retry or delete the uncertain entry.
+     */
     @Override
     public Mono<String> logAppend(String key, Map<String, Object> payload, int maxLen) {
         return Mono.fromCallable(
@@ -253,7 +258,15 @@ public class WorkspaceMessageBus implements MessageBus {
                     ensureDir(dir);
                     String path = dir + "/" + entryId + ".json";
                     String json = JsonUtils.getJsonCodec().toJson(payload);
-                    fs.write(RC, path, json);
+                    WriteResult write = fs.write(RC, path, json);
+                    if (!write.isSuccess()) {
+                        throw new IllegalStateException(
+                                "logAppend: failed to write entry "
+                                        + path
+                                        + " ("
+                                        + write.error()
+                                        + ")");
+                    }
 
                     if (maxLen > 0) {
                         List<FileInfo> files = listSorted(dir);

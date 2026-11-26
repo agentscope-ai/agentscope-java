@@ -15,6 +15,9 @@
  */
 package io.agentscope.harness.agent.filesystem.util;
 
+import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
+import io.agentscope.harness.agent.filesystem.CompositeFilesystem;
+import io.agentscope.harness.agent.filesystem.RoutedSandboxFilesystem;
 import io.agentscope.harness.agent.filesystem.model.EditResult;
 import java.nio.ByteBuffer;
 import java.nio.charset.CharacterCodingException;
@@ -221,5 +224,25 @@ public final class FilesystemUtils {
             return "''";
         }
         return "'" + s.replace("'", "'\\''") + "'";
+    }
+
+    /**
+     * Unwraps routing layers to the filesystem serving unrouted paths. Overlays are returned as-is:
+     * one filesystem already exposing its upper layer's capabilities.
+     */
+    public static AbstractFilesystem primaryBackend(AbstractFilesystem filesystem) {
+        AbstractFilesystem current = filesystem;
+        while (current instanceof CompositeFilesystem
+                || current instanceof RoutedSandboxFilesystem) {
+            AbstractFilesystem next =
+                    current instanceof CompositeFilesystem composite
+                            ? composite.getDefaultBackend()
+                            : ((RoutedSandboxFilesystem) current).primary();
+            if (next == current) {
+                return current;
+            }
+            current = next;
+        }
+        return current;
     }
 }

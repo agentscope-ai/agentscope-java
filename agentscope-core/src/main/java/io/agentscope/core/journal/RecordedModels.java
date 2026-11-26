@@ -15,6 +15,7 @@
  */
 package io.agentscope.core.journal;
 
+import io.agentscope.core.agent.AgentExecutionHost;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.middleware.ModelCallInput;
@@ -28,6 +29,7 @@ import io.agentscope.core.model.ToolSchema;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicReference;
 import reactor.core.publisher.Flux;
@@ -87,35 +89,91 @@ public final class RecordedModels {
             return Flux.defer(
                     () -> {
                         var recorder = InvocationRecorder.from(context);
+                        var host = context.get(ModelInvocation.class);
+                        var input = new ModelCallInput(messages, tools, options, delegate);
+                        var route =
+                                host == null
+                                        ? new ModelInvocation.Direct()
+                                        : Objects.requireNonNull(
+                                                host.route(
+                                                        new ModelInvocation.Call(
+                                                                callId, purpose, input)),
+                                                "model invocation route");
+                        var pending = recorder.pendingModelCallId();
+                        if (route instanceof ModelInvocation.Suspend suspended) {
+                            if (!"REASONING".equals(purpose) || context.getTurnId() == null)
+                                return Flux.error(
+                                        new JournalException(
+                                                "A model handoff requires reasoning and a Turn"
+                                                        + " ID"));
+                            var admission =
+                                    callId.equals(pending) ? Mono.<Void>empty() : before(callId);
+                            return admission
+                                    .then(
+                                            recorder.prepareModelHandoff(
+                                                    input,
+                                                    callId,
+                                                    purpose,
+                                                    context.getAgentState()))
+                                    .then(suspended.handoff())
+                                    .thenMany(Flux.error(new AgentExecutionHost.Paused()));
+                        }
+                        Mono<Void> admission;
+                        Flux<ChatResponse> responses;
+                        boolean handoff = route instanceof ModelInvocation.Resume;
+                        if (route instanceof ModelInvocation.Resume resumed) {
+                            if (!callId.equals(pending))
+                                return Flux.error(
+                                        new JournalException(
+                                                "Model result must resume the pending call "
+                                                        + pending));
+                            admission = Mono.empty();
+                            responses = resumed.responses();
+                        } else {
+                            if (pending != null && "REASONING".equals(purpose))
+                                return Flux.error(
+                                        new JournalException(
+                                                "Cannot call the model while waiting for "
+                                                        + pending));
+                            admission = before(callId);
+                            responses = Flux.defer(() -> delegate.stream(messages, tools, options));
+                        }
                         var last = new AtomicReference<ChatResponse>();
                         var usage = new AtomicReference<ChatUsage>();
                         var requests = new RecordedModelRequests(recorder, callId, purpose);
                         return Flux.usingWhen(
-                                before(callId)
+                                admission
                                         .then(
                                                 recorder.prepareModel(
-                                                        new ModelCallInput(
-                                                                messages, tools, options, delegate),
+                                                        input,
                                                         callId,
                                                         purpose,
                                                         context.getAgentState()))
                                         .thenReturn(callId),
                                 id ->
-                                        Flux.defer(() -> delegate.stream(messages, tools, options))
+                                        responses
                                                 .doOnNext(
                                                         chunk -> {
                                                             last.set(chunk);
                                                             if (chunk.getUsage() != null)
                                                                 usage.set(chunk.getUsage());
-                                                            recorder.append(
-                                                                    "model/chunk",
+                                                            Map<String, Object> payload =
                                                                     Map.of(
                                                                             "modelCallId",
                                                                             id,
                                                                             "purpose",
                                                                             purpose,
                                                                             "chunk",
-                                                                            chunk));
+                                                                            chunk);
+                                                            if (handoff) {
+                                                                var resumedPayload =
+                                                                        new LinkedHashMap<>(
+                                                                                payload);
+                                                                resumedPayload.put(
+                                                                        "modelHandoff", true);
+                                                                payload = resumedPayload;
+                                                            }
+                                                            recorder.append("model/chunk", payload);
                                                         })
                                                 .contextWrite(
                                                         context ->
@@ -135,6 +193,8 @@ public final class RecordedModels {
                                                 null),
                                 (id, error) ->
                                         JournalException.causedBy(error)
+                                                        || error
+                                                                instanceof AgentExecutionHost.Paused
                                                 ? Mono.empty()
                                                 : end(
                                                         recorder,

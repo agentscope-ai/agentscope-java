@@ -137,6 +137,9 @@ class RocketMqExecutionTest {
     /** Redelivery window for the fake broker; it has to stay well above consumer latency. */
     static final long ACK_TIMEOUT_MILLIS = 1000;
 
+    /** Shared await budget for every {@link #await} poll in this class; see {@link #waitUntil}. */
+    static final long AWAIT_DEADLINE_SECONDS = 30;
+
     static final ClientServiceProvider FACTORY = ClientServiceProvider.loadService();
     static final RocketMqExecutionTopology.Route TOPOLOGY =
             RocketMqExecutionTopology.route(RocketMqExecutionTopology.DEFAULT_NAMESPACE, "hands");
@@ -149,19 +152,30 @@ class RocketMqExecutionTest {
                             .withOrigin(new RunStepRef("brain-run", "brain-step")));
 
     static void await(BooleanSupplier condition) throws Exception {
-        assertTrue(waitUpTo10s(condition), "Condition did not become true");
+        assertTrue(waitUntil(condition), "Condition did not become true");
     }
 
     /** Waits as long as {@link #await(BooleanSupplier)}, then fails with the caller's snapshot. */
     static void await(String what, BooleanSupplier condition, Supplier<String> diagnostics)
             throws Exception {
         assertTrue(
-                waitUpTo10s(condition),
-                () -> what + " did not become true within 10s: " + diagnostics.get());
+                waitUntil(condition),
+                () ->
+                        what
+                                + " did not become true within "
+                                + AWAIT_DEADLINE_SECONDS
+                                + "s: "
+                                + diagnostics.get());
     }
 
-    private static boolean waitUpTo10s(BooleanSupplier condition) throws Exception {
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
+    /**
+     * Recovery with injected broker failures needs far more than 10s when the runner is starved
+     * under -T1C: the turn kept progressing (modelCalls complete, acks climbing) yet missed the
+     * former 10s deadline on #4182, #4192 and #4103, and main's own run 44516464414 (2026-11-19,
+     * ubuntu-only). 30s is the repo's established deflake tier (#3726/#3774).
+     */
+    private static boolean waitUntil(BooleanSupplier condition) throws Exception {
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(AWAIT_DEADLINE_SECONDS);
         while (!condition.getAsBoolean() && System.nanoTime() < deadline) Thread.sleep(10);
         return condition.getAsBoolean();
     }

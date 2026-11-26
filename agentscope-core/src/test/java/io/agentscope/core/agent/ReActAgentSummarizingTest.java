@@ -24,27 +24,43 @@ import io.agentscope.core.agent.test.MockModel;
 import io.agentscope.core.agent.test.MockToolkit;
 import io.agentscope.core.agent.test.TestConstants;
 import io.agentscope.core.agent.test.TestUtils;
+import io.agentscope.core.event.AgentEvent;
+import io.agentscope.core.event.AgentResultEvent;
 import io.agentscope.core.hook.Hook;
 import io.agentscope.core.hook.HookEvent;
 import io.agentscope.core.hook.PostSummaryEvent;
 import io.agentscope.core.hook.PreSummaryEvent;
+import io.agentscope.core.message.GenerateReason;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
+import io.agentscope.core.message.ToolResultState;
 import io.agentscope.core.message.ToolUseBlock;
+import io.agentscope.core.middleware.ActingInput;
+import io.agentscope.core.middleware.MiddlewareBase;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.ChatUsage;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.Model;
 import io.agentscope.core.model.ToolSchema;
+import io.agentscope.core.permission.PermissionContextState;
+import io.agentscope.core.permission.PermissionDecision;
+import io.agentscope.core.tool.ToolBase;
+import io.agentscope.core.tool.ToolCallParam;
+import io.agentscope.core.tool.Toolkit;
 import java.lang.reflect.Method;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.Function;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
@@ -259,6 +275,7 @@ class ReActAgentSummarizingTest {
                 hintText.contains("failed to generate response"),
                 "Hint message should contain expected text");
         assertTrue(hintText.contains("summarizing"), "Hint message should mention summarizing");
+        assertSummaryFactsHint(hintText);
     }
 
     @Test
@@ -743,6 +760,161 @@ class ReActAgentSummarizingTest {
         assertEquals("Fallback summary output", TestUtils.extractTextContent(response));
         assertEquals(
                 List.of("pre:primary-summary-model", "post:FallbackSummaryModel"), seenModelNames);
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void exhaustedSummaryKeepsExecutionFactsCancellationAndTerminalOutcome(boolean streaming) {
+        AtomicInteger rounds = new AtomicInteger();
+        AtomicInteger executions = new AtomicInteger();
+        MockModel model =
+                new MockModel(
+                        messages -> {
+                            int round = rounds.getAndIncrement();
+                            if (round < 2) {
+                                return List.of(
+                                        ChatResponse.builder()
+                                                .content(
+                                                        List.of(
+                                                                TextBlock.builder()
+                                                                        .text(
+                                                                                "Plan: complete the"
+                                                                                        + " task")
+                                                                        .build(),
+                                                                ToolUseBlock.builder()
+                                                                        .id(
+                                                                                round == 0
+                                                                                        ? "executed"
+                                                                                        : "not-executed")
+                                                                        .name("fixture")
+                                                                        .input(Map.of())
+                                                                        .content("{}")
+                                                                        .build()))
+                                                .build());
+                            }
+                            return List.of(
+                                    ChatResponse.builder()
+                                            .content(
+                                                    List.of(
+                                                            TextBlock.builder()
+                                                                    .text(
+                                                                            "Incomplete;"
+                                                                                + " confirmation"
+                                                                                + " needed")
+                                                                    .build()))
+                                            .build());
+                        });
+        Toolkit toolkit = new Toolkit();
+        toolkit.registerAgentTool(
+                new ToolBase(
+                        ToolBase.builder()
+                                .name("fixture")
+                                .description("Fake execution fixture")
+                                .inputSchema(Map.of("type", "object"))
+                                .readOnly(true)) {
+                    @Override
+                    public Mono<PermissionDecision> checkPermissions(
+                            Map<String, Object> input, PermissionContextState context) {
+                        return Mono.just(PermissionDecision.allow("fixture"));
+                    }
+
+                    @Override
+                    public Mono<ToolResultBlock> callAsync(ToolCallParam param) {
+                        executions.incrementAndGet();
+                        return Mono.just(
+                                ToolResultBlock.success("partial subagent progress")
+                                        .withMetadata(Map.of("incomplete", true)));
+                    }
+                });
+        MiddlewareBase leavePending =
+                new MiddlewareBase() {
+                    @Override
+                    public Set<ExtensionPoint> activePoints() {
+                        return Set.of(ExtensionPoint.ON_ACTING);
+                    }
+
+                    @Override
+                    public Flux<AgentEvent> onActing(
+                            Agent agent,
+                            RuntimeContext ctx,
+                            ActingInput input,
+                            Function<ActingInput, Flux<AgentEvent>> next) {
+                        return "not-executed".equals(input.toolCalls().get(0).getId())
+                                ? Flux.empty()
+                                : next.apply(input);
+                    }
+                };
+        try (ReActAgent agent =
+                ReActAgent.builder()
+                        .name("summary-facts")
+                        .model(model)
+                        .toolkit(toolkit)
+                        .middleware(leavePending)
+                        .maxIters(2)
+                        .build()) {
+            RuntimeContext ctx = RuntimeContext.builder().sessionId("summary-facts").build();
+            Msg result;
+            RunOutcome outcome;
+            if (streaming) {
+                AgentRun<AgentEvent> run = agent.prepareRun(List.of(), ctx);
+                result =
+                        run.stream()
+                                .ofType(AgentResultEvent.class)
+                                .map(AgentResultEvent::getResult)
+                                .single()
+                                .block(Duration.ofSeconds(10));
+                outcome = run.outcome().block(Duration.ofSeconds(10));
+            } else {
+                AgentRun<Msg> run = agent.prepareCall(List.of(), ctx);
+                result = run.stream().single().block(Duration.ofSeconds(10));
+                outcome = run.outcome().block(Duration.ofSeconds(10));
+            }
+            assertNotNull(result);
+            assertEquals(GenerateReason.MAX_ITERATIONS, result.getGenerateReason());
+            assertEquals(new RunOutcome(RunOutcome.Status.FAILED, "MAX_ITERATIONS"), outcome);
+            assertEquals(3, model.getCallCount(), "existing two-step budget plus one summary only");
+            assertEquals(1, executions.get(), "summary must not execute or retry the pending tool");
+            assertTrue(
+                    model.getLastTools().isEmpty(), "summary receives no executable tool surface");
+            List<Msg> summaryInput = model.getRecordedMessages().get(2);
+            assertSummaryFactsHint(summaryInput.get(summaryInput.size() - 1).getTextContent());
+            List<ToolResultBlock> facts =
+                    summaryInput.stream()
+                            .flatMap(msg -> msg.getContentBlocks(ToolResultBlock.class).stream())
+                            .toList();
+            assertEquals(
+                    List.of("executed", "not-executed"),
+                    facts.stream().map(ToolResultBlock::getId).toList());
+            assertEquals(ToolResultState.SUCCESS, facts.get(0).getState());
+            assertEquals(Boolean.TRUE, facts.get(0).getMetadata().get("incomplete"));
+            assertEquals(ToolResultState.ERROR, facts.get(1).getState());
+            assertTrue(
+                    ((TextBlock) facts.get(1).getOutput().get(0))
+                            .getText()
+                            .contains(
+                                    "Tool execution cancelled because maximum iterations limit"
+                                            + " (2)"));
+            List<ToolResultBlock> persisted =
+                    agent.getAgentState(ctx).getContext().stream()
+                            .flatMap(msg -> msg.getContentBlocks(ToolResultBlock.class).stream())
+                            .toList();
+            assertEquals(facts, persisted);
+            assertTrue(
+                    io.agentscope.core.util.MessageUtils.extractPendingToolCalls(
+                                    agent.getAgentState(ctx).getContext(), "summary-facts")
+                            .isEmpty());
+        }
+    }
+
+    private static void assertSummaryFactsHint(String hint) {
+        assertTrue(
+                hint.contains("executed, not executed, incomplete, and awaiting confirmation"),
+                hint);
+        assertTrue(hint.contains("observed results and remaining uncertainty"), hint);
+        assertTrue(hint.contains("Do not claim the goal is complete based only on a plan"), hint);
+        assertTrue(hint.contains("successful tool execution"), hint);
+        assertTrue(hint.contains("partial subagent response"), hint);
+        assertTrue(hint.contains("Do not retry tools or perform additional side effects"), hint);
     }
 
     private static Msg invokeSummarizing(ReActAgent agent) {
