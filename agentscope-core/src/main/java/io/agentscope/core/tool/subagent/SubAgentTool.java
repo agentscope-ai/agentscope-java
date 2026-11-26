@@ -66,7 +66,9 @@ import reactor.core.publisher.SignalType;
  *
  * <ul>
  *   <li>{@code session_id} - Optional. Omit to start a new session, provide to continue an
- *       existing one.
+ *       existing one. Only exposed under {@link SubAgentSessionStrategy#MODEL_CONTROLLED} (the
+ *       default); under {@link SubAgentSessionStrategy#PER_PARENT_SESSION} the child session
+ *       follows the caller's session and this parameter is neither exposed nor honored.
  *   <li>{@code message} - Required. The message to send to the agent.
  * </ul>
  */
@@ -143,9 +145,27 @@ public class SubAgentTool implements AgentTool {
                 (ctxView) -> {
                     try {
                         Map<String, Object> input = param.getInput();
+                        RuntimeContext parentContext = param.getRuntimeContext();
+
+                        if (config.getSessionStrategy()
+                                        == SubAgentSessionStrategy.PER_PARENT_SESSION
+                                && parentSessionId(parentContext) == null) {
+                            // Fail loudly: silently starting a fresh child session would lose
+                            // exactly the continuity this strategy was opted into for.
+                            logger.warn(
+                                    "Sub-agent tool '{}' uses PER_PARENT_SESSION but the caller's"
+                                            + " runtime context carries no session id",
+                                    name);
+                            return Mono.just(
+                                    ToolResultBlock.error(
+                                            "Sub-agent session strategy PER_PARENT_SESSION"
+                                                    + " requires the caller's runtime context to"
+                                                    + " carry a session id, but none was"
+                                                    + " provided"));
+                        }
 
                         // Get or create session ID
-                        String sessionId = (String) input.get(PARAM_SESSION_ID);
+                        String sessionId = resolveChildSessionId(input, parentContext);
                         boolean isNewSession = sessionId == null;
                         if (isNewSession) {
                             sessionId = UUID.randomUUID().toString();
@@ -157,7 +177,6 @@ public class SubAgentTool implements AgentTool {
                             return Mono.just(ToolResultBlock.error("Message is required"));
                         }
 
-                        RuntimeContext parentContext = param.getRuntimeContext();
                         Agent agent = agentProvider.provide();
                         RuntimeContext childContext = childContext(parentContext, sessionId);
 
@@ -219,6 +238,36 @@ public class SubAgentTool implements AgentTool {
                                         "AgentStateStore setup failed: " + e.getMessage()));
                     }
                 });
+    }
+
+    /**
+     * Resolves the child session id for this delegation according to {@link
+     * SubAgentConfig#getSessionStrategy()}.
+     *
+     * <p>Under {@link SubAgentSessionStrategy#PER_PARENT_SESSION} the id is derived from the
+     * caller's session id and this tool's name, and any model-supplied {@code session_id} is
+     * ignored. The caller is expected to have checked that a parent session id is present.
+     * Otherwise the model-supplied value is used as is.
+     *
+     * @return the child session id, or {@code null} to start a new session
+     */
+    private String resolveChildSessionId(Map<String, Object> input, RuntimeContext parentContext) {
+        if (config.getSessionStrategy() == SubAgentSessionStrategy.PER_PARENT_SESSION) {
+            if (input.get(PARAM_SESSION_ID) != null) {
+                logger.debug(
+                        "Ignoring model-supplied session_id for sub-agent tool '{}' under"
+                                + " PER_PARENT_SESSION",
+                        name);
+            }
+            return parentSessionId(parentContext) + ":" + name;
+        }
+        return (String) input.get(PARAM_SESSION_ID);
+    }
+
+    /** Returns the caller's session id, or {@code null} when it is absent or blank. */
+    private static String parentSessionId(RuntimeContext parentContext) {
+        String sessionId = parentContext == null ? null : parentContext.getSessionId();
+        return sessionId == null || sessionId.isBlank() ? null : sessionId;
     }
 
     /**
@@ -523,15 +572,19 @@ public class SubAgentTool implements AgentTool {
 
         Map<String, Object> properties = new HashMap<>();
 
-        // AgentStateStore ID (optional)
-        Map<String, Object> sessionIdProp = new HashMap<>();
-        sessionIdProp.put("type", "string");
-        sessionIdProp.put(
-                "description",
-                "AgentStateStore ID for multi-turn dialogue. Omit to start a NEW session."
-                        + " To CONTINUE an existing session and retain memory, you MUST extract"
-                        + " the session_id from the previous response and pass it here.");
-        properties.put(PARAM_SESSION_ID, sessionIdProp);
+        // AgentStateStore ID (optional). Not exposed when the session follows the caller's
+        // session: the model has nothing to choose, and an ignored parameter would mislead it.
+        if (config.getSessionStrategy() == SubAgentSessionStrategy.MODEL_CONTROLLED) {
+            Map<String, Object> sessionIdProp = new HashMap<>();
+            sessionIdProp.put("type", "string");
+            sessionIdProp.put(
+                    "description",
+                    "AgentStateStore ID for multi-turn dialogue. Omit to start a NEW session."
+                            + " To CONTINUE an existing session and retain memory, you MUST"
+                            + " extract the session_id from the previous response and pass it"
+                            + " here.");
+            properties.put(PARAM_SESSION_ID, sessionIdProp);
+        }
 
         // Message (required)
         Map<String, Object> messageProp = new HashMap<>();
