@@ -97,6 +97,7 @@ public final class AgentScopeAdapter implements HarnessAdapter {
     private final ModelExecutions modelExecutions;
     private final String modelRoute;
     private final Duration replyTimeout;
+    private final boolean thinkingEvents;
 
     private AgentScopeAdapter(
             Function<InvocationBinding, NativeAgent> factory,
@@ -109,7 +110,8 @@ public final class AgentScopeAdapter implements HarnessAdapter {
                 null,
                 null,
                 null,
-                ExecutionConfig.MODEL_DEFAULTS.getTimeout());
+                ExecutionConfig.MODEL_DEFAULTS.getTimeout(),
+                true);
     }
 
     private AgentScopeAdapter(
@@ -119,7 +121,9 @@ public final class AgentScopeAdapter implements HarnessAdapter {
             QueuedModelRequest.Publisher publisher,
             ModelExecutions modelExecutions,
             String modelRoute,
-            Duration replyTimeout) {
+            Duration replyTimeout,
+            boolean thinkingEvents) {
+        this.thinkingEvents = thinkingEvents;
         this.replyTimeout = replyTimeout;
         this.publisher = publisher;
         this.modelExecutions = modelExecutions;
@@ -127,6 +131,19 @@ public final class AgentScopeAdapter implements HarnessAdapter {
         this.factory = factory;
         this.executors = Map.copyOf(executors);
         this.bindings = Map.copyOf(bindings);
+    }
+
+    /** Publish native thinking presentation events to the replayable Session stream (default true). */
+    public AgentScopeAdapter withThinkingEvents(boolean enabled) {
+        return new AgentScopeAdapter(
+                factory,
+                executors,
+                bindings,
+                publisher,
+                modelExecutions,
+                modelRoute,
+                replyTimeout,
+                enabled);
     }
 
     /** Dispatch reasoning model calls to a durable message queue. */
@@ -146,7 +163,8 @@ public final class AgentScopeAdapter implements HarnessAdapter {
                 Objects.requireNonNull(publisher),
                 null,
                 null,
-                replyTimeout);
+                replyTimeout,
+                thinkingEvents);
     }
 
     /** Hand off reasoning to a lease-based Model Worker. */
@@ -165,7 +183,8 @@ public final class AgentScopeAdapter implements HarnessAdapter {
                 null,
                 Objects.requireNonNull(executions),
                 DurableJson.text(route, "model route"),
-                replyTimeout);
+                replyTimeout,
+                thinkingEvents);
     }
 
     /** Registers schemas from the same immutable definitions used by the remote worker. */
@@ -331,7 +350,7 @@ public final class AgentScopeAdapter implements HarnessAdapter {
     @Override
     public void execute(HarnessContext context) {
         if (pauseIfRequested(context)) return;
-        var log = new BackendThreadJournal(context, executors, bindings);
+        var log = new BackendThreadJournal(context, executors, bindings, thinkingEvents);
         var host =
                 new AgentScopeExecutionHost(
                         context, log, publisher, modelExecutions, modelRoute, replyTimeout);
@@ -662,7 +681,7 @@ public final class AgentScopeAdapter implements HarnessAdapter {
             throw new DurableException(
                     DurableException.Code.CONFLICT,
                     "External tool outcome requires reconciliation");
-        var log = new BackendThreadJournal(context, executors, bindings);
+        var log = new BackendThreadJournal(context, executors, bindings, thinkingEvents);
         var projection = JournalProjection.read(log);
         var reconciled =
                 frame.tools().stream().map(tool -> tool.request().call().callId()).toList();

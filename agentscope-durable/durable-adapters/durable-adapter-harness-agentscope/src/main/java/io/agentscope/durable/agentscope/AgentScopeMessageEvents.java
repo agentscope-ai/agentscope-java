@@ -54,16 +54,26 @@ final class AgentScopeMessageEvents {
 
     private record Reference(String messageId, long attempt) {}
 
-    private record Version(long attempt, long revision, String replyId, String completedHash) {}
+    private record Version(
+            long attempt,
+            long revision,
+            String replyId,
+            String completedHash,
+            boolean textStarted) {}
+
+    private final boolean thinkingEvents;
 
     private final Map<String, Step> steps = new HashMap<>();
     private final Map<String, Reference> calls = new HashMap<>();
     private final Map<String, Reference> nativeMessages = new HashMap<>();
     private final Map<String, Version> versions = new HashMap<>();
 
-    AgentScopeMessageEvents() {}
+    AgentScopeMessageEvents(boolean thinkingEvents) {
+        this.thinkingEvents = thinkingEvents;
+    }
 
     AgentScopeMessageEvents(AgentScopeMessageEvents source) {
+        this(source.thinkingEvents);
         steps.putAll(source.steps);
         calls.putAll(source.calls);
         nativeMessages.putAll(source.nativeMessages);
@@ -110,7 +120,7 @@ final class AgentScopeMessageEvents {
                     && previous != null
                     && collecting.attempt() == previous.attempt()) return Output.none();
             long attempt = previous == null ? 1 : Math.addExact(previous.attempt(), 1);
-            versions.put(id, new Version(attempt, 0, null, null));
+            versions.put(id, new Version(attempt, 0, null, null, false));
             calls.put(callId, new Reference(id, attempt));
         } else if ("model/chunk".equals(event.type())) {
             var reference = calls.get(data.path("modelCallId").asText());
@@ -119,7 +129,8 @@ final class AgentScopeMessageEvents {
                         nativeKey(event.turnId(), data.path("chunk").path("id").asText()),
                         reference);
         } else if ("presentation/text".equals(event.type())
-                || "presentation/tool_arguments".equals(event.type())) {
+                || "presentation/tool_arguments".equals(event.type())
+                || (thinkingEvents && event.type().startsWith("presentation/thinking_"))) {
             var step = steps.get(stepId);
             if (step == null || !"REASONING".equals(step.phase())) return Output.none();
             var version = versions.get(step.messageId());
@@ -131,8 +142,23 @@ final class AgentScopeMessageEvents {
             // model request. Replace the old partial output instead of appending it again.
             if (version.replyId() != null && !version.replyId().equals(replyId))
                 revision = Math.addExact(revision, 1);
-            version = new Version(version.attempt(), revision, replyId, null);
+            boolean textStarted = !started && version.textStarted();
+            version =
+                    new Version(
+                            version.attempt(),
+                            revision,
+                            replyId,
+                            null,
+                            textStarted || "presentation/text".equals(event.type()));
             versions.put(step.messageId(), version);
+            if (event.type().startsWith("presentation/thinking_")) {
+                var output = payload(step.messageId(), version, data.path("text").asText());
+                if (!data.has("text")) output.remove("text");
+                output.set("blockId", data.required("blockId"));
+                String type =
+                        "reasoning." + event.type().substring("presentation/thinking_".length());
+                return Output.durable(event(event, type, output));
+            }
             if ("presentation/tool_arguments".equals(event.type())) {
                 var output = payload(step.messageId(), version, data.path("text").asText());
                 if (data.hasNonNull("toolCallId")) output.set("toolCallId", data.get("toolCallId"));
@@ -142,7 +168,7 @@ final class AgentScopeMessageEvents {
             var output = payload(step.messageId(), version, data.path("text").asText());
             if (data.hasNonNull("blockId")) output.set("blockId", data.get("blockId"));
             var delta = live(event, "message.delta", output);
-            if (!started) return Output.live(delta);
+            if (textStarted) return Output.live(delta);
             var start = payload(step.messageId(), version, "");
             start.remove("text");
             return Output.live(live(event, ":start", "message.started", start), delta);
@@ -155,7 +181,7 @@ final class AgentScopeMessageEvents {
                     && (!message.hasContentBlocks(ToolUseBlock.class)
                             || "run/output".equals(event.type()))) return Output.none();
             String hash = DurableJson.hash(publicMessage);
-            var version = versions.getOrDefault(id, new Version(0, 0, null, null));
+            var version = versions.getOrDefault(id, new Version(0, 0, null, null, false));
             var reference = nativeMessages.get(nativeKey(event.turnId(), message.getId()));
             if (reference != null && reference.attempt() < version.attempt()) return Output.none();
             if (Objects.equals(hash, version.completedHash())) return Output.none();
@@ -163,7 +189,13 @@ final class AgentScopeMessageEvents {
                     version.completedHash() == null
                             ? version.revision()
                             : Math.addExact(version.revision(), 1);
-            version = new Version(version.attempt(), revision, version.replyId(), hash);
+            version =
+                    new Version(
+                            version.attempt(),
+                            revision,
+                            version.replyId(),
+                            hash,
+                            version.textStarted());
             versions.put(id, version);
             var output = payload(id, version, message.getTextContent());
             output.set("message", DurableJson.value(publicMessage));

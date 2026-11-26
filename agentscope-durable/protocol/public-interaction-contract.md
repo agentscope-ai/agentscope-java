@@ -228,9 +228,11 @@ fork 在目标 Session 时间线记录目标 Thread 的恢复；继承的原生�
 
 ## 5. 交付保证
 
-公共 `message.delta` 和 `message.completed` 事件持久化且可重放。消费者使用 Session 游标
+AgentScope 持久化 `message.completed`，默认也持久化 `reasoning.started`、`reasoning.delta` 和
+`reasoning.completed`。正文增量作为实时预览交付。思考事件携带 messageId、blockId、attempt 和 revision，
+仅 delta 携带 text。思考块不进入消息投影。消费者使用 Session 游标
 恢复读取，必要时获取一致性快照，不需要从私有原生日志重建状态。控制回执确认已受理，
-应用事件或最终 Turn 状态确认后续处理。用户输入不会获得系统权限，公共事件不包含私有推理。
+应用事件或最终 Turn 状态确认后续处理。用户输入不会获得系统权限。公开的思考内容来自 Harness 展示事件。
 
 ## 6. 能力、错误与恢复
 

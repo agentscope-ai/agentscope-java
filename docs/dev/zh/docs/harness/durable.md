@@ -306,8 +306,12 @@ var history = handle.history(null, 100);
 Run/Step 更换而改变；重新调用模型时增加 attempt，重放已提交模型结果时用 revision
 替换未完成文本，避免重连后重复拼接。`message.completed` 是权威持久事实；
 `message.delta` 与 `tool.arguments.delta` 是由 middleware 处理后展示事实产生的尽力而为
-`LiveEvent` 预览，没有 sequence/cursor，也不进入 history、snapshot 或重放。模型私有推理
-仍不公开。history 按首次公共 sequence 排序；直接读取 snapshot 的 messages 映射时也应
+`LiveEvent` 预览，没有 sequence/cursor，也不进入 history、snapshot 或重放。
+AgentScope adapter 默认将 Harness 展示的思考块作为 `reasoning.started`、`reasoning.delta` 和
+`reasoning.completed` 提交到 Session 事件流。增量的 `text` 属于对应的 `messageId` 和 `blockId`；
+即使没有在线订阅者，也可以在事件保留期内按 Session 游标补读。思考块不进入 `history()` 或快照。
+在装配 adapter 时调用 `withThinkingEvents(false)` 可关闭后续公共思考事件。
+history 按首次公共 sequence 排序；直接读取 snapshot 的 messages 映射时也应
 使用 sequence，不能依赖对象字段顺序。已有存储中的 `message.delta` 和
 `tool.call.arguments` 仍可读取，但 AgentScope 的新写入不再创建它们。
 

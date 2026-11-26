@@ -34,7 +34,7 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 
 class AgentScopeToolEventsTest {
-    private final AgentScopeMessageEvents messages = new AgentScopeMessageEvents();
+    private final AgentScopeMessageEvents messages = new AgentScopeMessageEvents(true);
     private AgentScopeToolEvents tools = new AgentScopeToolEvents();
     private long sequence;
 

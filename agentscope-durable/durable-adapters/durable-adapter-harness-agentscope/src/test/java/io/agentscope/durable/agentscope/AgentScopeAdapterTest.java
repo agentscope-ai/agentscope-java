@@ -34,6 +34,7 @@ import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.event.TextBlockDeltaEvent;
+import io.agentscope.core.event.ThinkingBlockDeltaEvent;
 import io.agentscope.core.journal.JournalEvent;
 import io.agentscope.core.journal.RecordedModels;
 import io.agentscope.core.message.AssistantMessage;
@@ -1569,7 +1570,7 @@ class AgentScopeAdapterTest {
     }
 
     @Test
-    void textDeltaIsLiveOnlyWhileTheModelIsStillRunning() throws Exception {
+    void runningSessionPublishesReplayableThinkingAndLiveOnlyText() throws Exception {
         var release = Sinks.<Void>empty();
         Model model =
                 new Model() {
@@ -1584,6 +1585,9 @@ class AgentScopeAdapterTest {
                                                 .id("streaming-reply")
                                                 .content(
                                                         List.of(
+                                                                ThinkingBlock.builder()
+                                                                        .thinking("thinking prefix")
+                                                                        .build(),
                                                                 TextBlock.builder()
                                                                         .text("visible prefix")
                                                                         .build()))
@@ -1598,12 +1602,34 @@ class AgentScopeAdapterTest {
         var received = new CopyOnWriteArrayList<SessionStreamEvent>();
         try (var backend = LocalBackend.open(directory.resolve("streaming"));
                 var runtime = runtime(backend, adapter, null, liveEvents)) {
-            var turn = runtime.createSession(key, "agent").submit("stream", "hello");
+            var session = runtime.createSession(key, "agent");
+            var turn = session.submit("stream", "hello");
+            var thinkingReceived = new CountDownLatch(1);
             try (var observation =
-                    turn.subscribeEvents(
+                    session.subscribeEvents(
                             EventStreamOptions.builder().deltas(EventDeltaType.MESSAGE).build(),
-                            received::add)) {
+                            event -> {
+                                received.add(event);
+                                if (event instanceof SessionStreamEvent.Committed committed
+                                        && committed.event().type().equals("reasoning.delta"))
+                                    thinkingReceived.countDown();
+                            })) {
                 runtime.start();
+                assertTrue(thinkingReceived.await(5, TimeUnit.SECONDS));
+                var online =
+                        received.stream()
+                                .filter(SessionStreamEvent.Committed.class::isInstance)
+                                .map(SessionStreamEvent.Committed.class::cast)
+                                .map(SessionStreamEvent.Committed::event)
+                                .filter(event -> event.type().equals("reasoning.delta"))
+                                .findFirst()
+                                .orElseThrow();
+                var stored =
+                        session.events(null, 100).events().stream()
+                                .filter(event -> event.eventId().equals(online.eventId()))
+                                .toList();
+                assertEquals("thinking prefix", online.data().required("text").asText());
+                assertEquals(List.of(online), stored);
                 long until = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
                 while (received.stream().noneMatch(SessionStreamEvent.EventDelta.class::isInstance)
                         && System.nanoTime() < until) Thread.sleep(10);
@@ -1659,8 +1685,10 @@ class AgentScopeAdapterTest {
         }
     }
 
-    @Test
-    void eachReasoningRoundKeepsItsOwnPublicMessageAndLiveTransformedDeltas() throws Exception {
+    @ParameterizedTest
+    @ValueSource(booleans = {true, false})
+    void eachReasoningRoundKeepsItsOwnPublicMessageAndLiveTransformedDeltas(boolean publishThinking)
+            throws Exception {
         var calls = new AtomicInteger();
         Model model =
                 new Model() {
@@ -1749,25 +1777,38 @@ class AgentScopeAdapterTest {
                                                                 next) {
                                                     return next.apply(input)
                                                             .map(
-                                                                    event ->
-                                                                            event
-                                                                                            instanceof
-                                                                                            TextBlockDeltaEvent
-                                                                                                    delta
-                                                                                    ? new TextBlockDeltaEvent(
-                                                                                            delta
-                                                                                                    .getReplyId(),
-                                                                                            delta
-                                                                                                    .getBlockId(),
-                                                                                            delta.getDelta()
-                                                                                                    .replace(
-                                                                                                            "raw",
-                                                                                                            "shown"))
-                                                                                    : event);
+                                                                    event -> {
+                                                                        if (event
+                                                                                instanceof
+                                                                                ThinkingBlockDeltaEvent
+                                                                                        delta)
+                                                                            return new ThinkingBlockDeltaEvent(
+                                                                                    delta
+                                                                                            .getReplyId(),
+                                                                                    delta
+                                                                                            .getBlockId(),
+                                                                                    "displayed"
+                                                                                        + " thinking");
+                                                                        if (event
+                                                                                instanceof
+                                                                                TextBlockDeltaEvent
+                                                                                        delta)
+                                                                            return new TextBlockDeltaEvent(
+                                                                                    delta
+                                                                                            .getReplyId(),
+                                                                                    delta
+                                                                                            .getBlockId(),
+                                                                                    delta.getDelta()
+                                                                                            .replace(
+                                                                                                    "raw",
+                                                                                                    "shown"));
+                                                                        return event;
+                                                                    });
                                                 }
                                             });
                         },
                         Map.of());
+        if (!publishThinking) adapter = adapter.withThinkingEvents(false);
         var liveEvents = LiveEvents.local();
         var live = new CopyOnWriteArrayList<LiveEvent>();
         try (var subscription = liveEvents.subscribe(live::add);
@@ -1845,6 +1886,38 @@ class AgentScopeAdapterTest {
             assertEquals(
                     List.of("shown 0", "shown 1", "shown 2"),
                     deltas.stream().map(e -> e.data().path("text").asText()).toList());
+            var thinking = events.stream().filter(e -> e.type().startsWith("reasoning.")).toList();
+            assertEquals(publishThinking ? 9 : 0, thinking.size());
+            if (publishThinking) {
+                for (int i = 0; i < answers.size(); i++) {
+                    var block = thinking.subList(i * 3, i * 3 + 3);
+                    assertEquals(
+                            List.of("reasoning.started", "reasoning.delta", "reasoning.completed"),
+                            block.stream().map(e -> e.type()).toList());
+                    var start = block.get(0);
+                    for (var event : block) {
+                        DurableProtocol.validate("event", event);
+                        assertEquals(
+                                answers.get(i).path("messageId"), event.data().path("messageId"));
+                        assertEquals(
+                                start.data().required("blockId"), event.data().required("blockId"));
+                    }
+                    assertEquals(
+                            "displayed thinking", block.get(1).data().required("text").asText());
+                    var resumed = runtime.getSession(key).events(start.cursor(), 1000).events();
+                    assertEquals(
+                            block.subList(1, 3),
+                            resumed.stream()
+                                    .filter(e -> e.type().startsWith("reasoning."))
+                                    .limit(2)
+                                    .toList());
+                }
+            }
+            assertFalse(
+                    DurableJson.value(runtime.getSession(key).history(null, 100))
+                            .toString()
+                            .contains("displayed thinking"));
+            assertFalse(snapshot.projection().toString().contains("displayed thinking"));
             assertFalse(DurableJson.value(events).toString().contains("private reasoning"));
             assertFalse(DurableJson.value(events).toString().contains("raw "));
             var projection = new EventProjection(key);

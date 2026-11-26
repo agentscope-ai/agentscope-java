@@ -68,17 +68,19 @@ final class BackendThreadJournal implements ThreadJournal {
     private String owner;
     private final Map<String, ModelCapture> captures = new LinkedHashMap<>();
     private ObjectNode cached;
-    private AgentScopeMessageEvents messages = new AgentScopeMessageEvents();
+    private AgentScopeMessageEvents messages;
     private AgentScopeToolEvents toolEvents = new AgentScopeToolEvents();
 
     BackendThreadJournal(HarnessContext context, Map<String, String> executors) {
-        this(context, executors, Map.of());
+        this(context, executors, Map.of(), true);
     }
 
     BackendThreadJournal(
             HarnessContext context,
             Map<String, String> executors,
-            Map<String, ToolBinding> bindings) {
+            Map<String, ToolBinding> bindings,
+            boolean thinkingEvents) {
+        messages = new AgentScopeMessageEvents(thinkingEvents);
         this.bindings = bindings;
         DurableEventSchemas.ensureRegistered();
         this.context = context;
