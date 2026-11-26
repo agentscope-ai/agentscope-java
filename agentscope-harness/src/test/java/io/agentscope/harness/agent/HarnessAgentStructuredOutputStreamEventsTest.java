@@ -52,6 +52,13 @@ import reactor.core.publisher.Flux;
  * {@link HarnessAgent#streamEvents(List, JsonNode, RuntimeContext)} overloads delegate structured
  * output to the wrapped {@code ReActAgent} (mirroring the non-streaming {@code call(...)} family),
  * with the same sandbox-lifecycle semantics as the non-structured {@code streamEvents} overload.
+ *
+ * <p>Every agent uses an ephemeral {@link InMemoryThreadJournalStore}. These tests assert
+ * delegation, not journal persistence, and the default workspace journal is SQLite on Windows:
+ * one durable transaction per storage operation makes the class take 3.7-9.6s there when green
+ * (one call reached 7.3s) and took single calls past the 10s {@code block} deadline in four runs
+ * (#4296, #4349, #4071 and main run 44879286932, 2026-11-20 to 11-23), while it runs in 1-1.5s on
+ * ubuntu.
  */
 class HarnessAgentStructuredOutputStreamEventsTest {
 
@@ -136,6 +143,7 @@ class HarnessAgentStructuredOutputStreamEventsTest {
                         .model(fallbackModel())
                         .workspace(workspace)
                         .abstractFilesystem(new LocalFilesystem(workspace))
+                        .threadJournalStore(new InMemoryThreadJournalStore())
                         .build()) {
 
             List<AgentEvent> events =
@@ -164,6 +172,7 @@ class HarnessAgentStructuredOutputStreamEventsTest {
                         .model(fallbackModel())
                         .workspace(workspace)
                         .abstractFilesystem(new LocalFilesystem(workspace))
+                        .threadJournalStore(new InMemoryThreadJournalStore())
                         .build()) {
 
             List<AgentEvent> events =
@@ -217,6 +226,7 @@ class HarnessAgentStructuredOutputStreamEventsTest {
                         .model(repeatedFallbackModel())
                         .workspace(workspace)
                         .abstractFilesystem(new LocalFilesystem(workspace))
+                        .threadJournalStore(new InMemoryThreadJournalStore())
                         .build()) {
 
             List<AgentEvent> msgClassEvents =
