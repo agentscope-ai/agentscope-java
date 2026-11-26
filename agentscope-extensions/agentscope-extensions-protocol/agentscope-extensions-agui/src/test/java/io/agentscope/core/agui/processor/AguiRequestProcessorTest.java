@@ -16,6 +16,7 @@
 package io.agentscope.core.agui.processor;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -27,8 +28,10 @@ import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.ArgumentMatchers.nullable;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -43,14 +46,25 @@ import io.agentscope.core.agui.event.AguiEventType;
 import io.agentscope.core.agui.model.AguiMessage;
 import io.agentscope.core.agui.model.AguiResume;
 import io.agentscope.core.agui.model.RunAgentInput;
+import io.agentscope.core.agui.queue.QueueAcceptance;
+import io.agentscope.core.agui.queue.QueueSnapshot;
+import io.agentscope.core.agui.queue.QueuedMessage;
+import io.agentscope.core.agui.queue.ThreadMessageQueue;
 import io.agentscope.core.agui.runtime.AguiRuntimeContextRequest;
 import io.agentscope.core.event.AgentEndEvent;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.ToolResultBlock;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.locks.ReentrantLock;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import reactor.core.Disposable;
@@ -401,6 +415,303 @@ class AguiRequestProcessorTest {
 
         assertEquals(1, adapterCount.get());
         assertResumeContractErrorLifecycle(events);
+    }
+
+    @Test
+    void threadIsNotIdleWhileAnInterruptAwaitsItsAnswer() {
+        AgentResolver resolver = mock(AgentResolver.class);
+        ReActAgent agent = mock(ReActAgent.class);
+        when(resolver.resolveAgent(eq("default"), eq("thread-1"), nullable(String.class)))
+                .thenReturn(agent);
+        when(agent.streamEvents(anyList(), any(RuntimeContext.class)))
+                .thenReturn(Flux.just(new AgentEndEvent("reply-2")));
+        AtomicInteger runCount = new AtomicInteger();
+        AguiRequestProcessor processor =
+                AguiRequestProcessor.builder()
+                        .agentResolver(resolver)
+                        .adapterFactory(
+                                (resolvedAgent, config) ->
+                                        runCount.getAndIncrement() == 0
+                                                ? new InterruptingAdapter(resolvedAgent, config)
+                                                : new AguiAgentAdapter(resolvedAgent, config))
+                        .build();
+
+        assertTrue(processor.isThreadIdle("thread-1"));
+        processor.process(request(input("run-1"))).events().collectList().block();
+
+        // The run itself is over, yet the unanswered confirmation keeps the thread from starting
+        // a new one, so no queued message may be claimed in this window.
+        assertFalse(processor.isRunActive("thread-1"));
+        assertFalse(processor.isThreadIdle("thread-1"));
+
+        processor
+                .process(
+                        request(
+                                RunAgentInput.builder()
+                                        .threadId("thread-1")
+                                        .runId("run-2")
+                                        .resume(
+                                                List.of(
+                                                        new AguiResume(
+                                                                "interrupt-from-server",
+                                                                AguiResume.STATUS_RESOLVED,
+                                                                Map.of("approved", true))))
+                                        .build()))
+                .events()
+                .collectList()
+                .block();
+
+        assertTrue(processor.isThreadIdle("thread-1"));
+    }
+
+    @Test
+    void claimIfIdleDoesNotDeliverWhenARunStartsAfterTheIdleObservation() throws Exception {
+        // The run-start half of the pause the maintainer asked for: observe idle, start a run
+        // before the claim is released, and the queued message must stay pending without a model
+        // call. The unresolved-interrupt half is covered by a separate test.
+        AgentResolver resolver = mock(AgentResolver.class);
+        ReActAgent agent = mock(ReActAgent.class);
+        when(resolver.resolveAgent(eq("default"), eq("thread-1"), nullable(String.class)))
+                .thenReturn(agent);
+        CountDownLatch adapterStarted = new CountDownLatch(1);
+        AtomicInteger adapterRuns = new AtomicInteger();
+        AguiRequestProcessor processor =
+                AguiRequestProcessor.builder()
+                        .agentResolver(resolver)
+                        .adapterFactory(
+                                (resolvedAgent, config) ->
+                                        new AguiAgentAdapter(resolvedAgent, config) {
+                                            @Override
+                                            public Flux<AguiEvent> run(
+                                                    RunAgentInput input,
+                                                    RuntimeContext runtimeContext) {
+                                                adapterRuns.incrementAndGet();
+                                                adapterStarted.countDown();
+                                                return Flux.never();
+                                            }
+                                        })
+                        .build();
+        AguiRequestProcessor claimingProcessor = spy(processor);
+
+        ThreadMessageQueue queue = new ThreadMessageQueue(2, 64);
+        RunAgentInput queuedInput =
+                RunAgentInput.builder()
+                        .threadId("thread-1")
+                        .runId("queued-run")
+                        .messages(List.of(AguiMessage.userMessage("queued-msg", "later")))
+                        .build();
+        assertEquals(
+                QueueAcceptance.Status.ACCEPTED, queue.offer("queued-msg", queuedInput).status());
+
+        // Hold the thread-state lock so the claim pauses after its first idle observation but
+        // before the authoritative recheck. The first isThreadIdle call signals the test.
+        ReentrantLock lock = processor.threadStateLock("thread-1");
+        CountDownLatch idleObserved = new CountDownLatch(1);
+        AtomicInteger idleCalls = new AtomicInteger();
+        doAnswer(
+                        invocation -> {
+                            boolean idle = (boolean) invocation.callRealMethod();
+                            if (idleCalls.getAndIncrement() == 0) {
+                                idleObserved.countDown();
+                            }
+                            return idle;
+                        })
+                .when(claimingProcessor)
+                .isThreadIdle("thread-1");
+
+        ExecutorService pool = Executors.newSingleThreadExecutor();
+        Future<Optional<QueuedMessage>> claim;
+        Disposable activeRun = null;
+        try {
+            lock.lock();
+            try {
+                claim = pool.submit(() -> claimingProcessor.claimIfIdle("thread-1", queue));
+                assertTrue(idleObserved.await(10, TimeUnit.SECONDS));
+                // Start the competing run while the claim is blocked on the lock. beginRun
+                // re-enters this lock on the test thread, exactly as the claim-time check expects.
+                activeRun = processor.process(request(input("direct-run"))).events().subscribe();
+                assertTrue(adapterStarted.await(10, TimeUnit.SECONDS));
+            } finally {
+                lock.unlock();
+            }
+
+            assertEquals(1, adapterRuns.get());
+            assertTrue(claim.get(10, TimeUnit.SECONDS).isEmpty());
+
+            // The message stayed queued, and the refused claim did not invoke the model.
+            QueueSnapshot snapshot = queue.snapshot(false, false);
+            assertEquals(1, snapshot.items().size());
+            assertEquals("queued-msg", snapshot.items().get(0).messageId());
+            assertEquals(1, adapterRuns.get());
+        } finally {
+            if (activeRun != null) {
+                activeRun.dispose();
+            }
+            pool.shutdownNow();
+        }
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+        while (processor.isRunActive("thread-1") && System.nanoTime() < deadline) {
+            Thread.sleep(10);
+        }
+        assertFalse(processor.isRunActive("thread-1"));
+
+        // Restoring the idle state delivers the same message exactly once.
+        Optional<QueuedMessage> claimed = claimingProcessor.claimIfIdle("thread-1", queue);
+        assertTrue(claimed.isPresent());
+        assertEquals("queued-msg", claimed.get().getMessageId());
+        assertEquals(0, queue.snapshot(false, false).items().size());
+
+        Disposable replayed =
+                processor.process(request(claimed.get().getInput())).events().subscribe();
+        try {
+            assertEquals(2, adapterRuns.get());
+        } finally {
+            replayed.dispose();
+        }
+        assertTrue(claimingProcessor.claimIfIdle("thread-1", queue).isEmpty());
+    }
+
+    @Test
+    void claimIfIdleDoesNotDeliverWhileARunIsActive() throws Exception {
+        AgentResolver resolver = mock(AgentResolver.class);
+        ReActAgent agent = mock(ReActAgent.class);
+        when(resolver.resolveAgent(eq("default"), eq("thread-1"), nullable(String.class)))
+                .thenReturn(agent);
+        CountDownLatch adapterStarted = new CountDownLatch(1);
+        AguiRequestProcessor processor =
+                AguiRequestProcessor.builder()
+                        .agentResolver(resolver)
+                        .adapterFactory(
+                                (resolvedAgent, config) ->
+                                        new AguiAgentAdapter(resolvedAgent, config) {
+                                            @Override
+                                            public Flux<AguiEvent> run(
+                                                    RunAgentInput input,
+                                                    RuntimeContext runtimeContext) {
+                                                adapterStarted.countDown();
+                                                return Flux.never();
+                                            }
+                                        })
+                        .build();
+
+        ThreadMessageQueue queue = new ThreadMessageQueue(2, 64);
+        RunAgentInput queuedInput =
+                RunAgentInput.builder()
+                        .threadId("thread-1")
+                        .runId("queued-run")
+                        .messages(List.of(AguiMessage.userMessage("queued-msg", "later")))
+                        .build();
+        assertEquals(
+                QueueAcceptance.Status.ACCEPTED, queue.offer("queued-msg", queuedInput).status());
+
+        Disposable activeRun = processor.process(request(input("active-run"))).events().subscribe();
+        try {
+            assertTrue(adapterStarted.await(10, TimeUnit.SECONDS));
+            assertTrue(processor.isRunActive("thread-1"));
+
+            // The busy fast path must not dequeue, and it must leave the message for a later claim.
+            assertTrue(processor.claimIfIdle("thread-1", queue).isEmpty());
+            assertEquals(1, queue.snapshot(false, false).items().size());
+        } finally {
+            activeRun.dispose();
+        }
+    }
+
+    @Test
+    void claimIfIdleDoesNotDeliverWhileAnInterruptIsUnresolved() throws Exception {
+        // The other half of the pause the maintainer asked for: observe idle, register an
+        // unresolved interrupt before releasing the claim, then restore the state and run once.
+        AgentResolver resolver = mock(AgentResolver.class);
+        ReActAgent agent = mock(ReActAgent.class);
+        when(resolver.resolveAgent(eq("default"), eq("thread-1"), nullable(String.class)))
+                .thenReturn(agent);
+        when(agent.streamEvents(anyList(), any(RuntimeContext.class)))
+                .thenReturn(Flux.just(new AgentEndEvent("reply-2")));
+        AtomicInteger adapterRuns = new AtomicInteger();
+        AguiRequestProcessor processor =
+                AguiRequestProcessor.builder()
+                        .agentResolver(resolver)
+                        .adapterFactory(
+                                (resolvedAgent, config) ->
+                                        adapterRuns.getAndIncrement() == 0
+                                                ? new InterruptingAdapter(resolvedAgent, config)
+                                                : new AguiAgentAdapter(resolvedAgent, config))
+                        .build();
+        AguiRequestProcessor claimingProcessor = spy(processor);
+
+        ThreadMessageQueue queue = new ThreadMessageQueue(2, 64);
+        RunAgentInput queuedInput =
+                RunAgentInput.builder()
+                        .threadId("thread-1")
+                        .runId("queued-run")
+                        .messages(List.of(AguiMessage.userMessage("queued-msg", "later")))
+                        .build();
+        assertEquals(
+                QueueAcceptance.Status.ACCEPTED, queue.offer("queued-msg", queuedInput).status());
+
+        ReentrantLock lock = processor.threadStateLock("thread-1");
+        CountDownLatch idleObserved = new CountDownLatch(1);
+        AtomicInteger idleCalls = new AtomicInteger();
+        doAnswer(
+                        invocation -> {
+                            boolean idle = (boolean) invocation.callRealMethod();
+                            if (idleCalls.getAndIncrement() == 0) {
+                                idleObserved.countDown();
+                            }
+                            return idle;
+                        })
+                .when(claimingProcessor)
+                .isThreadIdle("thread-1");
+
+        ExecutorService pool = Executors.newSingleThreadExecutor();
+        try {
+            Future<Optional<QueuedMessage>> claim;
+            lock.lock();
+            try {
+                claim = pool.submit(() -> claimingProcessor.claimIfIdle("thread-1", queue));
+                assertTrue(idleObserved.await(10, TimeUnit.SECONDS));
+                // Finish a run that leaves an interrupt open while the claim waits on the lock.
+                processor.process(request(input("interrupt-run"))).events().collectList().block();
+                assertFalse(processor.isRunActive("thread-1"));
+                assertFalse(processor.isThreadIdle("thread-1"));
+            } finally {
+                lock.unlock();
+            }
+
+            assertTrue(claim.get(10, TimeUnit.SECONDS).isEmpty());
+            assertEquals(1, queue.snapshot(false, false).items().size());
+            assertEquals(1, adapterRuns.get());
+
+            // Answer the interrupt: the same message is then claimable and runs once.
+            processor
+                    .process(
+                            request(
+                                    RunAgentInput.builder()
+                                            .threadId("thread-1")
+                                            .runId("resume-run")
+                                            .resume(
+                                                    List.of(
+                                                            new AguiResume(
+                                                                    "interrupt-from-server",
+                                                                    AguiResume.STATUS_RESOLVED,
+                                                                    Map.of("approved", true))))
+                                            .build()))
+                    .events()
+                    .collectList()
+                    .block();
+            assertTrue(processor.isThreadIdle("thread-1"));
+
+            Optional<QueuedMessage> claimed = claimingProcessor.claimIfIdle("thread-1", queue);
+            assertTrue(claimed.isPresent());
+            assertEquals("queued-msg", claimed.get().getMessageId());
+            assertEquals(0, queue.snapshot(false, false).items().size());
+
+            processor.process(request(claimed.get().getInput())).events().collectList().block();
+            assertEquals(3, adapterRuns.get());
+            assertTrue(claimingProcessor.claimIfIdle("thread-1", queue).isEmpty());
+        } finally {
+            pool.shutdownNow();
+        }
     }
 
     @Test

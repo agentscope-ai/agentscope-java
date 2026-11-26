@@ -41,6 +41,10 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  *     emit-token-usage: false
  *     emit-run-finished-after-error: false
  *     interrupt-on-disconnect: true
+ *     queue:
+ *       enabled: false
+ *       capacity: 16
+ *       idempotency-retention: 64
  * </pre>
  */
 @ConfigurationProperties(prefix = "agentscope.agui")
@@ -128,6 +132,14 @@ public class AguiProperties {
 
     /** Whether to interrupt the agent when the client disconnects. */
     private boolean interruptOnDisconnect = true;
+
+    /**
+     * Message queue settings for busy threads.
+     *
+     * <p>The queue is disabled by default: no queue endpoint is registered and the existing run
+     * endpoint behaves exactly as before.
+     */
+    private Queue queue = new Queue();
 
     public String getPathPrefix() {
         return pathPrefix;
@@ -271,5 +283,53 @@ public class AguiProperties {
 
     public void setInterruptOnDisconnect(boolean interruptOnDisconnect) {
         this.interruptOnDisconnect = interruptOnDisconnect;
+    }
+
+    public Queue getQueue() {
+        return queue;
+    }
+
+    public void setQueue(Queue queue) {
+        this.queue = queue;
+    }
+
+    /** Settings for the per-thread message queue. */
+    public static class Queue {
+
+        /** Whether the queue endpoints are enabled. */
+        private boolean enabled = false;
+
+        /** Maximum number of queued messages per thread. */
+        private int capacity = 16;
+
+        /**
+         * Maximum number of message identifiers kept for deduplication per thread. Must be at
+         * least {@code capacity}; a smaller value fails application startup.
+         */
+        private int idempotencyRetention = 64;
+
+        public boolean isEnabled() {
+            return enabled;
+        }
+
+        public void setEnabled(boolean enabled) {
+            this.enabled = enabled;
+        }
+
+        public int getCapacity() {
+            return capacity;
+        }
+
+        public void setCapacity(int capacity) {
+            this.capacity = capacity;
+        }
+
+        public int getIdempotencyRetention() {
+            return idempotencyRetention;
+        }
+
+        public void setIdempotencyRetention(int idempotencyRetention) {
+            this.idempotencyRetention = idempotencyRetention;
+        }
     }
 }
