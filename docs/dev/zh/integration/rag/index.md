@@ -3,9 +3,10 @@ title: RAG 知识库
 en_link: /dev/en/integration/rag/index
 ---
 
-选择下方指南，了解RAG 知识库的配置与使用。
+新应用请先阅读 [RAG 接入与迁移](/dev/zh/integration/rag/migration)。下面的后端指南介绍旧版兼容适配器及其配置方式。
 
 <CardGroup cols={2}>
+  <Card title="RAG 接入与迁移" href="/dev/zh/integration/rag/migration" />
   <Card title="百炼知识库" href="/dev/zh/integration/rag/bailian" />
   <Card title="Dify" href="/dev/zh/integration/rag/dify" />
   <Card title="HayStack" href="/dev/zh/integration/rag/haystack" />
