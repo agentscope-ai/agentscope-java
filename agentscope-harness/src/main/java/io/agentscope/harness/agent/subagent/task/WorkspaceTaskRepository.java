@@ -890,6 +890,11 @@ public class WorkspaceTaskRepository implements TaskRepository {
         return existing;
     }
 
+    /**
+     * Returns the status on record after the call: the existing status when a guard applies or
+     * {@link WorkspaceManager#writeTaskRecord} fails, {@code status} once the write lands, or
+     * {@code null} when no record is readable.
+     */
     private synchronized TaskStatus updateStatus(
             RuntimeContext rc,
             String sessionId,
@@ -931,14 +936,22 @@ public class WorkspaceTaskRepository implements TaskRepository {
             record.setErrorMessage(error);
         }
         persistRecord(rc, sessionId, record);
-        return status;
+        // writeTaskRecord is best-effort: storage failures are logged and swallowed, so only a
+        // read-back proves which status the task now exposes.
+        return workspaceManager
+                .readTaskRecord(rc, parentAgentId, sessionId, taskId)
+                .map(TaskRecord::getStatus)
+                .orElse(null);
     }
 
     /**
-     * Persists a terminal state and fires the settlement callback with the status actually
-     * persisted. When cancellation races a settlement, {@link #updateStatus} keeps the record's
-     * CANCELLED status, so the callback must also report CANCELLED — announcing FAILED for a task
-     * the user just cancelled would invite the parent agent to retry it.
+     * Persists a terminal state and reports the status that is actually on record. When
+     * cancellation races a settlement, {@link #updateStatus} keeps the record's CANCELLED status,
+     * so the callback must also report CANCELLED — announcing FAILED for a task the user just
+     * cancelled would invite the parent agent to retry it. When the terminal write does not land,
+     * no terminal status is announced: the result of a completed task exists only in memory and is
+     * handed over with the on-record status, while an unrecorded failure or cancellation has
+     * nothing to deliver and stays silent.
      */
     private void settleAndNotify(
             RuntimeContext rc,
@@ -949,7 +962,24 @@ public class WorkspaceTaskRepository implements TaskRepository {
             String result,
             String errorMessage) {
         TaskStatus effective = updateStatus(rc, sessionId, taskId, status, result, errorMessage);
-        if (effective == null || !effective.isTerminal()) {
+        if (effective == null) {
+            log.warn(
+                    "Task {} settlement notification withheld for session {}: no record is"
+                            + " readable",
+                    taskId,
+                    sessionId);
+            return;
+        }
+        if (!effective.isTerminal()) {
+            log.warn(
+                    "Task {} status {} was not persisted for session {} (on record: {})",
+                    taskId,
+                    status,
+                    sessionId,
+                    effective);
+            if (status == TaskStatus.COMPLETED) {
+                fireCompletionCallback(rc, taskId, subAgentId, sessionId, effective, result, null);
+            }
             return;
         }
         boolean asPersisted = effective == status;

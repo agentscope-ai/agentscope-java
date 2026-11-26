@@ -132,6 +132,10 @@ public interface TaskRepository {
      * {@code null} for failed and cancelled tasks. Use {@link TaskSettledCallback} to also receive
      * terminal status and errors.
      *
+     * <p>Through {@link TaskSettledCallback}, {@code status} is always the status on record. When
+     * a completed task's terminal state cannot be persisted, the callback reports the non-terminal
+     * status on record together with the result, so the in-memory result is not lost.
+     *
      * <p>Callers retaining execution ownership can set {@link #SUPPRESS_COMPLETION_CALLBACK}
      * in their RuntimeContext to suppress inbox/wakeup callbacks while preserving durable results.
      * Implementations supporting this callback should honor the flag.

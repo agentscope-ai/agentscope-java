@@ -30,6 +30,7 @@ import io.agentscope.harness.agent.HarnessAgent;
 import io.agentscope.harness.agent.bus.MessageBus;
 import io.agentscope.harness.agent.filesystem.local.LocalFilesystem;
 import io.agentscope.harness.agent.subagent.task.BackgroundTask;
+import io.agentscope.harness.agent.subagent.task.TaskRecord;
 import io.agentscope.harness.agent.subagent.task.TaskRepository;
 import io.agentscope.harness.agent.subagent.task.TaskRunSpec.LocalTaskRunSpec;
 import io.agentscope.harness.agent.subagent.task.TaskStatus;
@@ -188,6 +189,53 @@ class SubagentTaskSettledHintTest {
         assertDurableResult(rc, TaskStatus.FAILED, null, ERROR);
         assertEquals(List.of(), recordingBus.queued);
         assertEquals(List.of(), recordingBus.published);
+    }
+
+    @Test
+    void unpersistedCompletionHintCarriesResultAndWakesOriginalSession() throws Exception {
+        dropTerminalWrites();
+        RuntimeContext rc = runtimeContext(false);
+        BackgroundTask task = submitTask(rc, () -> OUTPUT);
+
+        String hint = awaitHintAndWakeup(task);
+
+        assertTrue(hint.contains(OUTPUT), hint);
+        assertTrue(hint.contains("could not be persisted"), hint);
+        assertFalse(hint.contains("has completed"), hint);
+        assertFalse(hint.contains("FAILED"), hint);
+        assertDurableResult(rc, TaskStatus.RUNNING, null, null);
+    }
+
+    @Test
+    void unpersistedFailureQueuesNeitherHintNorWakeup() throws Exception {
+        dropTerminalWrites();
+        BackgroundTask task = submitFailingTask(runtimeContext(false));
+
+        assertTrue(task.waitForCompletion(5_000), "task did not settle within 5 seconds");
+
+        assertEquals(List.of(), recordingBus.queued);
+        assertEquals(List.of(), recordingBus.published);
+    }
+
+    /** WorkspaceManager swallows storage failures, so a dropped write is how a failed one looks. */
+    private void dropTerminalWrites() {
+        workspaceManager =
+                new WorkspaceManager(tempDir) {
+                    @Override
+                    public void writeTaskRecord(
+                            RuntimeContext rc,
+                            String agentId,
+                            String sessionId,
+                            TaskRecord record) {
+                        if (record.getStatus() == null || !record.getStatus().isTerminal()) {
+                            super.writeTaskRecord(rc, agentId, sessionId, record);
+                        }
+                    }
+                };
+        repo = WorkspaceTaskRepository.forTests(workspaceManager, PARENT_ID);
+        recordingBus = new RecordingBus();
+        new SubagentsMiddleware(List.of(), repo, workspaceManager)
+                .wireMessageBus(recordingBus.bus, PARENT_ID);
     }
 
     private void wire(EntryMode mode) {

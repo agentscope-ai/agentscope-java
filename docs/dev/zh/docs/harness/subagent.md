@@ -168,7 +168,7 @@ RuntimeContext ctx = RuntimeContext.builder()
 
 自动交付和等待屏障会附上此次返回的完整结果。任务状态摘要用于查看执行状态。需要实际输出时，可以用 `task_output` 获取完整结果。
 
-消息总线通知会区分 `FAILED` 任务和正常完成，并报告固定的错误类别（执行失败），而非可能包含敏感数据的原始异常消息；完整错误仍可通过 `task_output` 从任务记录中获取。取消的任务会按持久化的终态播报为 `CANCELLED`。五参数 `TaskRepository.TaskCompletionCallback` 保持兼容；通过同一个 `setCompletionCallback` 方法注册 `TaskRepository.TaskSettledCallback` 可获取状态及错误。自定义任务仓库应在持久化终态后调用 `onSettled`；旧的 `onCompleted` 调用保留 null 结果表示失败的约定，但无法提供错误详情。
+消息总线通知会区分 `FAILED` 任务和正常完成，并报告固定的错误类别（执行失败），而非可能包含敏感数据的原始异常消息；完整错误仍可通过 `task_output` 从任务记录中获取。取消的任务会按持久化的终态播报为 `CANCELLED`。终态未能持久化时不播报任何终态：已完成任务的结果仍会附带"未落盘"提示送达一次，未落盘的失败或取消则不播报。五参数 `TaskRepository.TaskCompletionCallback` 保持兼容；通过同一个 `setCompletionCallback` 方法注册 `TaskRepository.TaskSettledCallback` 可获取状态及错误。自定义任务仓库应在持久化终态后调用 `onSettled`；旧的 `onCompleted` 调用保留 null 结果表示失败的约定，但无法提供错误详情。
 
 ### 后台任务工具
 

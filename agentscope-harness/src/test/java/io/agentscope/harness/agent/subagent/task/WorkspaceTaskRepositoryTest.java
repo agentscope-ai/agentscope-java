@@ -29,6 +29,8 @@ import io.agentscope.harness.agent.filesystem.remote.store.InMemoryStore;
 import io.agentscope.harness.agent.filesystem.remote.store.NamespaceFactory;
 import io.agentscope.harness.agent.filesystem.spec.RemoteFilesystemSpec;
 import io.agentscope.harness.agent.workspace.WorkspaceManager;
+import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.net.URL;
 import java.net.URLClassLoader;
 import java.nio.file.Files;
@@ -40,6 +42,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -51,6 +54,8 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 
 /**
  * Tests for {@link WorkspaceTaskRepository}:
@@ -480,6 +485,74 @@ class WorkspaceTaskRepositoryTest {
                                 RuntimeContext.empty(), "test-agent", "session", "local-cancel")
                         .orElseThrow();
         assertEquals(TaskStatus.CANCELLED, record.getStatus());
+    }
+
+    @ParameterizedTest
+    @CsvSource({"false,false", "false,true", "true,false", "true,true"})
+    void unpersistedTerminalStateIsNeverAnnounced(boolean taskFails, boolean writeThrows)
+            throws Exception {
+        // Storage may fail loudly (writeTaskRecord raises) or silently (WorkspaceManager logs the
+        // I/O error and returns normally). The record stays RUNNING either way, so the callback
+        // must never report a terminal status; only a completed result is handed over.
+        repo.shutdown();
+        workspaceManager =
+                new WorkspaceManager(tempDir) {
+                    @Override
+                    public void writeTaskRecord(
+                            RuntimeContext rc,
+                            String agentId,
+                            String sessionId,
+                            TaskRecord record) {
+                        if (record.getStatus() != null && record.getStatus().isTerminal()) {
+                            if (writeThrows) {
+                                throw new UncheckedIOException(new IOException("disk full"));
+                            }
+                            return;
+                        }
+                        super.writeTaskRecord(rc, agentId, sessionId, record);
+                    }
+                };
+        repo = WorkspaceTaskRepository.forTests(workspaceManager, "test-agent");
+        List<TaskDelivery> callbacks = new CopyOnWriteArrayList<>();
+        repo.setCompletionCallback(
+                (TaskRepository.TaskSettledCallback)
+                        (rc, taskId, agentId, sessionId, status, result, error) ->
+                                callbacks.add(
+                                        new TaskDelivery(
+                                                taskId, agentId, status, result, error, null)));
+        RuntimeContext rc = RuntimeContext.empty();
+
+        BackgroundTask task =
+                repo.putTask(
+                        rc,
+                        "unpersisted",
+                        "worker",
+                        "session",
+                        new TaskRunSpec.LocalTaskRunSpec(
+                                () -> {
+                                    if (taskFails) {
+                                        throw new IllegalStateException("boom");
+                                    }
+                                    return "done";
+                                }));
+
+        assertTrue(task.waitForCompletion(5_000), "task did not finish within 5 seconds");
+
+        assertEquals(
+                TaskStatus.RUNNING,
+                workspaceManager
+                        .readTaskRecord(rc, "test-agent", "session", "unpersisted")
+                        .orElseThrow()
+                        .getStatus());
+        assertTrue(repo.findPendingDeliveries(rc, "session").isEmpty());
+        if (taskFails) {
+            assertEquals(List.of(), callbacks);
+        } else {
+            assertEquals(1, callbacks.size());
+            assertEquals(TaskStatus.RUNNING, callbacks.get(0).status());
+            assertEquals("done", callbacks.get(0).result());
+            assertNull(callbacks.get(0).errorMessage());
+        }
     }
 
     @Test

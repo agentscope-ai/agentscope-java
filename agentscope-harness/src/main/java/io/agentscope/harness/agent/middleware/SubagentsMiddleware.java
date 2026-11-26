@@ -265,9 +265,20 @@ public class SubagentsMiddleware implements HarnessRuntimeMiddleware {
      * category — they never embed the raw exception message, which can leak internals (paths,
      * endpoints, credentials) into the conversation. The full message stays in the durable task
      * record, reachable via {@code task_output}.</p>
+     *
+     * <p>A non-terminal {@code status} means the task finished but its terminal state could not be
+     * persisted; the in-memory result is delivered once so it is not lost.</p>
      */
     public static String taskSettledHintContent(
             String taskId, String subAgentId, TaskStatus status, String result) {
+        if (!status.isTerminal()) {
+            return String.format(
+                    "<system-reminder>Background subagent task '%s' (agent=%s) finished and"
+                            + " produced a result, but its terminal state could not be persisted,"
+                            + " so task queries may still report it as running. Do not start it"
+                            + " again.\n\nResult:\n\n%s</system-reminder>",
+                    taskId, subAgentId, result != null ? result : "(no output)");
+        }
         if (status == TaskStatus.FAILED) {
             return String.format(
                     "<system-reminder>Background subagent task '%s' (agent=%s) FAILED and"
