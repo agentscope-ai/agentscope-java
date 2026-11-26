@@ -18,6 +18,7 @@ package io.agentscope.harness.agent;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.agent.RuntimeContext;
@@ -38,7 +39,10 @@ import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
 
 /** Dedicated compaction models must remain selected during overflow recovery. */
 class HarnessAgentCompactionModelRecoveryTest {
@@ -63,9 +67,11 @@ class HarnessAgentCompactionModelRecoveryTest {
         verifySelectedSummaryModel(50, true);
     }
 
-    @Test
-    void snapshotEmergencyCompactionWithoutDedicatedModelKeepsBuildTimeDefault() {
-        verifySelectedSummaryModel(50, false, false);
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void emergencyCompactionWithoutDedicatedModelPropagatesPerCallModelOverflow(
+            boolean nativeJournal) {
+        verifySelectedSummaryModel(50, nativeJournal, false);
     }
 
     private void verifySelectedSummaryModel(int triggerMessages) {
@@ -119,15 +125,28 @@ class HarnessAgentCompactionModelRecoveryTest {
             agent.getDelegate()
                     .updateAgentState(
                             ctx, "restore_history", state -> state.contextMutable().addAll(prior));
+            Mono<Msg> replyCall =
+                    agent.call(message(MsgRole.USER, "Continue with the next step."), ctx);
+            if (!dedicatedSummaryModel) {
+                // The per-call model is also selected for summaries. Its smaller window cannot
+                // summarize this history, so recovery propagates the overflow instead of using
+                // the larger build-time default model.
+                IllegalStateException error =
+                        assertThrows(IllegalStateException.class, () -> replyCall.block(WAIT));
+                assertEquals("context_length_exceeded", error.getMessage());
+                assertTrue(
+                        primary.summaryCalls.get() > 0,
+                        "The per-call model must handle the summary when no dedicated model is"
+                                + " set");
+                assertEquals(
+                        0,
+                        summary.calls.get(),
+                        "The build-time default must not replace the per-call summary model");
+                return;
+            }
             Msg reply =
                     assertDoesNotThrow(
-                            () ->
-                                    agent.call(
-                                                    message(
-                                                            MsgRole.USER,
-                                                            "Continue with the next step."),
-                                                    ctx)
-                                            .block(WAIT),
+                            () -> replyCall.block(WAIT),
                             () ->
                                     "The dedicated larger-context model can compact this history"
                                         + " and make the primary request fit; actual summary calls:"
@@ -137,9 +156,7 @@ class HarnessAgentCompactionModelRecoveryTest {
                                             + summary.calls.get());
             assertNotNull(reply);
             assertEquals("ok", reply.getTextContent());
-            assertTrue(
-                    summary.calls.get() > 0,
-                    "The dedicated or build-time default model must handle the summary");
+            assertTrue(summary.calls.get() > 0, "The dedicated model must handle the summary");
             assertEquals(
                     0,
                     primary.summaryCalls.get(),
