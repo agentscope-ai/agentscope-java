@@ -551,10 +551,32 @@ func (e *Engine) completedTeamCanResumeRoot(ctx context.Context, run *controlmod
 	if run.Mode != controlmodel.RunModeAdaptive || issue.AssigneeType != controlmodel.AssigneeTeam || issue.ArchivedAt != nil {
 		return false, nil
 	}
-	// A completed Run must not replay its old outcome over a newer human
-	// decision. Updates while it was still running are valid waiting input.
-	if run.CompletedAt != nil && issue.UpdatedAt.After(*run.CompletedAt) {
-		return false, nil
+	// A completed Run must not replay its old outcome over a newer blocking
+	// decision. Non-status edits do not affect resume eligibility.
+	if run.CompletedAt != nil {
+		for offset := 0; ; offset += 500 {
+			activities, activityErr := e.Store.Collaboration().ListActivities(ctx, issue.ID, 500, offset)
+			if activityErr != nil {
+				return false, activityErr
+			}
+			for _, activity := range activities {
+				if activity.Action != "issue.status_changed" || !activity.CreatedAt.After(*run.CompletedAt) {
+					continue
+				}
+				var transition struct {
+					To controlmodel.IssueStatus `json:"to"`
+				}
+				if err := json.Unmarshal(activity.Details, &transition); err != nil {
+					return false, err
+				}
+				if transition.To == controlmodel.IssueBlocked {
+					return false, nil
+				}
+			}
+			if len(activities) < 500 {
+				break
+			}
+		}
 	}
 	latest, err := e.Store.Orchestration().ListRuns(ctx, store.OrchestrationRunFilter{Tenant: run.Tenant, Namespace: run.Namespace, RootIssueID: run.RootIssueID, Mode: controlmodel.RunModeAdaptive, Limit: 1})
 	if err != nil || len(latest) == 0 || latest[0].ID != run.ID {

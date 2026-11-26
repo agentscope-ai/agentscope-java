@@ -140,6 +140,64 @@ func TestAdaptiveTeamRunResumesBlockedRootDespiteNewerDirectRuns(t *testing.T) {
 	}
 }
 
+func TestCompletedAdaptiveRunResumesBlockedRootAfterTitleOnlyUpdate(t *testing.T) {
+	ctx := context.Background()
+	st, err := store.Open(ctx, store.Config{Driver: store.DriverMemory})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+	issue, leader := setupBlockedTeamRoot(t, st, true)
+	output := json.RawMessage(`{"summary":"done"}`)
+	completed, _, err := (&collaboration.Service{Store: st}).CompleteTask(ctx, leader.ID,
+		store.TaskCompletion{ExpectedVersion: leader.Version, Result: output, Summary: "done"},
+		controlmodel.Actor{Type: controlmodel.ActorAgent, Ref: "leader"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	node, err := st.Orchestration().GetNode(ctx, completed.RunNodeID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = st.Orchestration().TransitionNode(ctx, node.ID, node.Version,
+		controlmodel.RunNodeSucceeded, output, "", ""); err != nil {
+		t.Fatal(err)
+	}
+	run, err := st.Orchestration().GetRun(ctx, leader.OrchestrationRunID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = st.Orchestration().TransitionRun(ctx, run.ID, run.Version,
+		controlmodel.RunSucceeded, output, "", ""); err != nil {
+		t.Fatal(err)
+	}
+	// Interleave a non-status edit after Run completion but before reconciliation.
+	time.Sleep(5 * time.Millisecond)
+	current, err := st.Collaboration().GetIssue(ctx, issue.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	current.Title = "renamed while waiting for reconciliation"
+	if _, err = st.Collaboration().UpdateIssue(ctx, current, current.Version,
+		controlmodel.Actor{Type: controlmodel.ActorHuman, Ref: "owner"}); err != nil {
+		t.Fatal(err)
+	}
+	engine := &Engine{Store: st}
+	if err = engine.ReconcileRun(ctx, leader.OrchestrationRunID); err != nil {
+		t.Fatal(err)
+	}
+	if err = engine.ReconcileRun(ctx, leader.OrchestrationRunID); err != nil {
+		t.Fatal(err)
+	}
+	current, err = st.Collaboration().GetIssue(ctx, issue.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if current.Status != controlmodel.IssueInReview {
+		t.Fatalf("title-only update blocked Team completion: status=%s", current.Status)
+	}
+}
+
 // A terminal Run may be reconciled again, but its old result must not override
 // a human decision to block the root for a new approval.
 func TestCompletedAdaptiveRunDoesNotResumeRootBlockedAgainByHuman(t *testing.T) {
