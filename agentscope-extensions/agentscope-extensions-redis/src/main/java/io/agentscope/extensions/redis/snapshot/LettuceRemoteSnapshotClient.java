@@ -108,9 +108,12 @@ public class LettuceRemoteSnapshotClient implements RemoteSnapshotClient {
     public void upload(String snapshotId, InputStream data) throws Exception {
         byte[] key = redisKey(snapshotId);
         byte[] value = data.readAllBytes();
-        stringCommands.set(key, value);
         if (ttlSeconds != null) {
-            keyCommands.expire(key, ttlSeconds);
+            // SETEX keeps the bytes and the expiry in one command: a failure between two separate
+            // SET and EXPIRE calls would leave the snapshot stored without any expiry at all.
+            stringCommands.setex(key, ttlSeconds, value);
+        } else {
+            stringCommands.set(key, value);
         }
     }
 
