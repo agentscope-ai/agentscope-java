@@ -33,6 +33,7 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.Base64;
 import java.util.List;
+import java.util.Locale;
 import javax.imageio.ImageIO;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -246,9 +247,12 @@ public class MediaUtils {
 
     /**
      * Determine MIME type from file extension.
+     *
+     * <p>Extension matching is case-insensitive and locale-independent: {@code "photo.GIF"} is
+     * {@code image/gif} regardless of the JVM default locale.
      */
     public static String determineMediaType(String path) {
-        String ext = getExtension(path).toLowerCase();
+        String ext = getExtension(path).toLowerCase(Locale.ROOT);
         return switch (ext) {
             // Image formats
             case "jpg", "jpeg" -> "image/jpeg";
@@ -322,7 +326,7 @@ public class MediaUtils {
      * Validate that an image file has a supported extension.
      */
     public static void validateImageExtension(String url) {
-        String ext = getExtension(url).toLowerCase();
+        String ext = getExtension(url).toLowerCase(Locale.ROOT);
         if (!SUPPORTED_IMAGE_EXTENSIONS.contains(ext)) {
             throw new IllegalArgumentException(
                     String.format(
@@ -334,7 +338,7 @@ public class MediaUtils {
      * Validate that an audio file has a supported extension.
      */
     public static void validateAudioExtension(String url) {
-        String ext = getExtension(url).toLowerCase();
+        String ext = getExtension(url).toLowerCase(Locale.ROOT);
         if (!SUPPORTED_AUDIO_EXTENSIONS.contains(ext)) {
             throw new IllegalArgumentException(
                     String.format(
@@ -347,7 +351,7 @@ public class MediaUtils {
      * Validate that a video file has a supported extension.
      */
     public static void validateVideoExtension(String url) {
-        String ext = getExtension(url).toLowerCase();
+        String ext = getExtension(url).toLowerCase(Locale.ROOT);
         if (!SUPPORTED_VIDEO_EXTENSIONS.contains(ext)) {
             throw new IllegalArgumentException(
                     String.format(
@@ -363,7 +367,7 @@ public class MediaUtils {
      * @return Audio format string ("wav" or "mp3")
      */
     public static String determineAudioFormat(String path) {
-        String ext = getExtension(path).toLowerCase();
+        String ext = getExtension(path).toLowerCase(Locale.ROOT);
         return ext.equals("wav") ? "wav" : "mp3";
     }
 
