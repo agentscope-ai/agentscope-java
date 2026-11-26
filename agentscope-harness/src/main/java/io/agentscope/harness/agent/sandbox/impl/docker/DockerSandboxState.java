@@ -63,6 +63,12 @@ public class DockerSandboxState extends SandboxState {
     private List<String> additionalRunArgs = new ArrayList<>();
 
     /**
+     * Per-stream byte cap for exec command output capture, stored so resumed sandboxes keep
+     * the configured cap. {@code null} means the default (512 KB).
+     */
+    private Integer outputTruncateBytes;
+
+    /**
      * Returns the Docker container ID.
      *
      * @return container ID, or {@code null} if the container has not been created yet
@@ -253,5 +259,23 @@ public class DockerSandboxState extends SandboxState {
                 this.additionalRunArgs.add(additionalRunArg);
             }
         }
+    }
+
+    /**
+     * Returns the per-stream byte cap for exec command output capture.
+     *
+     * @return output truncate cap in bytes, or {@code null} for the default (512 KB)
+     */
+    public Integer getOutputTruncateBytes() {
+        return outputTruncateBytes;
+    }
+
+    /**
+     * Sets the per-stream byte cap for exec command output capture.
+     *
+     * @param outputTruncateBytes cap in bytes, or {@code null} for the default (512 KB)
+     */
+    public void setOutputTruncateBytes(Integer outputTruncateBytes) {
+        this.outputTruncateBytes = outputTruncateBytes;
     }
 }
