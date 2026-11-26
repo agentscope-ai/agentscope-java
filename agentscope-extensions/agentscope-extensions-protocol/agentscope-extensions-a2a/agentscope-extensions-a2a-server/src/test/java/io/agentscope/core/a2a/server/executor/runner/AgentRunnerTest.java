@@ -184,9 +184,8 @@ class AgentRunnerTest {
 
         List<Msg> messages = List.of(mock(Msg.class));
 
-        Flux<AgentEvent> mockFlux = mock(Flux.class);
-        when(mockAgent.streamEvents(eq(messages), any(RuntimeContext.class))).thenReturn(mockFlux);
-        when(mockFlux.doFinally(any())).thenReturn(mockFlux);
+        when(mockAgent.streamEvents(eq(messages), any(RuntimeContext.class)))
+                .thenReturn(Flux.never());
 
         // When
         Flux<AgentEvent> result = runner.streamEvents(messages, requestOptions);
@@ -293,8 +292,8 @@ class AgentRunnerTest {
 
         List<Msg> messages = List.of(mock(Msg.class));
 
-        Flux<AgentEvent> mockFlux = mock(Flux.class);
-        when(mockAgent.streamEvents(eq(messages), any(RuntimeContext.class))).thenReturn(mockFlux);
+        when(mockAgent.streamEvents(eq(messages), any(RuntimeContext.class)))
+                .thenReturn(Flux.never());
 
         // First call to populate the cache
         runner.streamEvents(messages, requestOptions);
@@ -446,6 +445,51 @@ class AgentRunnerTest {
     }
 
     @Test
+    @DisplayName("Should free the task id before the subscriber sees the stream complete")
+    void testTaskIdFreedBeforeCompletionReachesSubscriber() {
+        requestOptions.setTaskId(UUID.randomUUID().toString());
+        List<Msg> messages = List.of(mock(Msg.class));
+        when(mockAgent.streamEvents(eq(messages), any(RuntimeContext.class)))
+                .thenReturn(Flux.empty());
+
+        // The executor reports input-required on completion, and the client may resume at once.
+        assertDoesNotThrow(
+                () ->
+                        runner.streamEvents(messages, requestOptions)
+                                .doOnComplete(() -> runner.streamEvents(messages, requestOptions))
+                                .blockLast());
+    }
+
+    @Test
+    @DisplayName("Should free the task id before the subscriber sees the stream fail")
+    void testTaskIdFreedBeforeErrorReachesSubscriber() {
+        requestOptions.setTaskId(UUID.randomUUID().toString());
+        List<Msg> messages = List.of(mock(Msg.class));
+        when(mockAgent.streamEvents(eq(messages), any(RuntimeContext.class)))
+                .thenReturn(Flux.error(new IllegalStateException("run failed")))
+                .thenReturn(Flux.empty());
+
+        assertDoesNotThrow(
+                () ->
+                        runner.streamEvents(messages, requestOptions)
+                                .onErrorResume(e -> runner.streamEvents(messages, requestOptions))
+                                .blockLast());
+    }
+
+    @Test
+    @DisplayName("Should free the task id when the subscriber cancels the stream")
+    void testTaskIdFreedOnCancel() {
+        requestOptions.setTaskId(UUID.randomUUID().toString());
+        List<Msg> messages = List.of(mock(Msg.class));
+        when(mockAgent.streamEvents(eq(messages), any(RuntimeContext.class)))
+                .thenReturn(Flux.never());
+
+        runner.streamEvents(messages, requestOptions).subscribe().dispose();
+
+        assertDoesNotThrow(() -> runner.streamEvents(messages, requestOptions));
+    }
+
+    @Test
     @DisplayName("Should stop agent and remove from cache")
     void testStopAgentAndRemoveFromCache() {
         // Given
@@ -454,9 +498,8 @@ class AgentRunnerTest {
 
         List<Msg> messages = List.of(mock(Msg.class));
 
-        Flux<AgentEvent> mockFlux = mock(Flux.class);
-        when(mockAgent.streamEvents(eq(messages), any(RuntimeContext.class))).thenReturn(mockFlux);
-        when(mockFlux.doFinally(any())).thenReturn(mockFlux);
+        when(mockAgent.streamEvents(eq(messages), any(RuntimeContext.class)))
+                .thenReturn(Flux.never());
         runner.streamEvents(messages, requestOptions);
 
         runner.stop(taskId);

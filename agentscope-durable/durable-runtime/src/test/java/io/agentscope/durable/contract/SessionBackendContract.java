@@ -2827,6 +2827,75 @@ public abstract class SessionBackendContract {
     }
 
     @Test
+    protected void lateHeartbeatFailureDoesNotInterruptTheCallerAfterTheInvocationReturns()
+            throws Exception {
+        var renewing = new CountDownLatch(1);
+        var returned = new CountDownLatch(1);
+        var delayed =
+                (SessionBackend)
+                        Proxy.newProxyInstance(
+                                SessionBackend.class.getClassLoader(),
+                                new Class<?>[] {SessionBackend.class},
+                                (proxy, method, args) -> {
+                                    if (method.getName().equals("renew")
+                                            && renewing.getCount() > 0) {
+                                        renewing.countDown();
+                                        // Fail this renewal only after tick() has returned.
+                                        returned.await(5, TimeUnit.SECONDS);
+                                    }
+                                    try {
+                                        return method.invoke(backend, args);
+                                    } catch (InvocationTargetException error) {
+                                        throw error.getCause();
+                                    }
+                                });
+        HarnessAdapter adapter =
+                new HarnessAdapter() {
+                    public Capabilities capabilities() {
+                        return new Capabilities(
+                                "1",
+                                RecoveryBoundary.CHECKPOINT,
+                                EventDelivery.COMPLETED,
+                                false,
+                                List.of("text"));
+                    }
+
+                    public void execute(HarnessContext context) throws Exception {
+                        assertTrue(renewing.await(5, TimeUnit.SECONDS));
+                        var frame = context.frame();
+                        context.commit(
+                                new Commit(
+                                        "done",
+                                        frame.turn().revision(),
+                                        frame.checkpoint(),
+                                        List.of(),
+                                        List.of(),
+                                        List.of(),
+                                        List.of(),
+                                        TurnStatus.SUCCEEDED,
+                                        null,
+                                        null,
+                                        null));
+                    }
+                };
+        var turn = submit();
+        var thread = new ThreadKey(key, "main");
+        try (var runtime =
+                DurableRuntime.builder()
+                        .backend(delayed)
+                        .harness("test", "v1", adapter)
+                        .leaseDuration(Duration.ofMillis(100))
+                        .onError((k, e) -> {})
+                        .build()) {
+            runtime.tick(thread);
+            returned.countDown();
+        }
+        // close() joins the heartbeat timer, so a late interrupt would already have landed.
+        assertFalse(Thread.interrupted());
+        assertEquals(TurnStatus.SUCCEEDED, backend.turn(thread, turn.turnId()).status());
+    }
+
+    @Test
     protected void failureReceiptIsIdempotentAfterLostReplyAndOldOwnerCannotAlterIt() {
         var turn = submit();
         var lease = claim();
