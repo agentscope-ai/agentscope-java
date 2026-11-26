@@ -84,6 +84,10 @@ BaseStore store = new RedisStore(jedis, "myapp:store:");
 
 **并发安全**：`put` / `putIfVersion` 使用 Lua 脚本保证原子性（version read + hash write + index update 单次 `EVAL`），`putIfVersion` 可作为分布式 CAS 原语。
 
+`search(namespace, limit, offset)` 包含指定命名空间及其所有后代命名空间。例如，搜索 `List.of("team")` 也会返回存储在 `List.of("team", "notes")` 下的记录，`List.of()` 则搜索所有命名空间。结果按记录的 key 排序，再对合并后的结果分页。已有的命名空间索引可以直接读取，无需迁移数据。
+
+前缀搜索通过增量 `SCAN` 遍历 Redis 键空间，发现匹配的命名空间索引，再读取索引中的记录并排序、分页。指定具体的命名空间前缀可以减少读取和排序的记录数量，索引发现仍然需要遍历键空间。
+
 ### 3. RedisSnapshotSpec
 
 沙箱快照存储到 Redis 二进制 key。适合小工作区 + 短 TTL 场景。
