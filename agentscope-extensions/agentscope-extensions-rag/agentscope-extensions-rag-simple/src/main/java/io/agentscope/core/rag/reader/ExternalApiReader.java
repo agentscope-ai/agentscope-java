@@ -183,6 +183,11 @@ public class ExternalApiReader extends AbstractChunkingReader {
         Exception lastException = null;
 
         for (int attempt = 0; attempt <= maxRetries; attempt++) {
+            if (Thread.currentThread().isInterrupted()) {
+                throw new ReaderException(
+                        "Request interrupted before external API attempt",
+                        new InterruptedException("Reader worker is interrupted"));
+            }
             try {
                 // Use custom requestBuilder to build request
                 Request request = requestBuilder.buildRequest(filePath, httpClient);
@@ -206,7 +211,13 @@ public class ExternalApiReader extends AbstractChunkingReader {
                     }
                 }
 
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw new ReaderException("Request interrupted during external API parsing", e);
             } catch (Exception e) {
+                if (Thread.currentThread().isInterrupted()) {
+                    throw new ReaderException("Request interrupted during external API parsing", e);
+                }
                 lastException = e;
                 if (attempt < maxRetries) {
                     try {

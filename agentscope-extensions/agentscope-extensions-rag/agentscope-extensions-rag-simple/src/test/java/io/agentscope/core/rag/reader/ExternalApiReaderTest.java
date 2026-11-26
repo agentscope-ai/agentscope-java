@@ -18,20 +18,31 @@ package io.agentscope.core.rag.reader;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.rag.exception.ReaderException;
+import java.io.IOException;
+import java.net.SocketTimeoutException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 import okhttp3.MediaType;
+import okhttp3.Protocol;
 import okhttp3.Request;
 import okhttp3.RequestBody;
+import okhttp3.Response;
+import okhttp3.ResponseBody;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import reactor.core.Exceptions;
 
 /**
@@ -41,6 +52,144 @@ import reactor.core.Exceptions;
 @Tag("unit")
 @DisplayName("ExternalApiReader Tests")
 class ExternalApiReaderTest {
+
+    @TempDir Path workspace;
+
+    @ParameterizedTest
+    @CsvSource({"request,0", "request,2", "response,0", "response,2", "io,0", "io,2"})
+    void interruptionStopsRetriesAndRestoresFlag(String stage, int retries) throws Exception {
+        Path file = Files.writeString(workspace.resolve("input.txt"), "content");
+        AtomicInteger attempts = new AtomicInteger();
+        Exception interruption =
+                stage.equals("io")
+                        ? new IOException("interrupted transport")
+                        : new InterruptedException("stop parsing");
+        ExternalApiReader reader =
+                ExternalApiReader.builder()
+                        .requestBuilder(
+                                (path, client) -> {
+                                    attempts.incrementAndGet();
+                                    if (stage.equals("request")) throw interruption;
+                                    if (stage.equals("io")) {
+                                        Thread.currentThread().interrupt();
+                                        throw interruption;
+                                    }
+                                    return new Request.Builder()
+                                            .url("http://localhost/parse")
+                                            .build();
+                                })
+                        .addInterceptor(
+                                chain ->
+                                        new Response.Builder()
+                                                .request(chain.request())
+                                                .protocol(Protocol.HTTP_1_1)
+                                                .code(200)
+                                                .message("OK")
+                                                .body(
+                                                        ResponseBody.create(
+                                                                "parsed", JSON_MEDIA_TYPE))
+                                                .build())
+                        .responseParser(
+                                (response, client) -> {
+                                    throw interruption;
+                                })
+                        .maxRetries(retries)
+                        .retryDelay(Duration.ZERO)
+                        .build();
+
+        AtomicReference<Throwable> failure = new AtomicReference<>();
+        AtomicReference<Boolean> interrupted = new AtomicReference<>();
+        Thread worker =
+                new Thread(
+                        () -> {
+                            try {
+                                reader.read(ReaderInput.fromString(file.toString())).block();
+                            } catch (Throwable error) {
+                                failure.set(Exceptions.unwrap(error));
+                            } finally {
+                                interrupted.set(Thread.currentThread().isInterrupted());
+                            }
+                        });
+        worker.start();
+        worker.join(10_000);
+        try {
+            assertFalse(worker.isAlive(), "Reader should terminate promptly");
+            assertEquals(1, attempts.get(), "An interruption must not resubmit parsing");
+            assertTrue(failure.get() instanceof ReaderException);
+            assertSame(interruption, failure.get().getCause());
+            assertEquals(Boolean.TRUE, interrupted.get(), "Preserve the worker interrupt flag");
+        } finally {
+            worker.interrupt();
+            worker.join(5_000);
+        }
+    }
+
+    @Test
+    void alreadyInterruptedWorkerDoesNotSubmitRequest() throws Exception {
+        Path file = Files.writeString(workspace.resolve("input.txt"), "content");
+        AtomicInteger attempts = new AtomicInteger();
+        ExternalApiReader reader =
+                ExternalApiReader.builder()
+                        .requestBuilder(
+                                (path, client) -> {
+                                    attempts.incrementAndGet();
+                                    throw new IOException("must not submit");
+                                })
+                        .responseParser((response, client) -> "parsed")
+                        .maxRetries(0)
+                        .build();
+        AtomicReference<Throwable> failure = new AtomicReference<>();
+        Thread worker =
+                new Thread(
+                        () -> {
+                            Thread.currentThread().interrupt();
+                            try {
+                                reader.read(ReaderInput.fromString(file.toString())).block();
+                            } catch (Throwable error) {
+                                failure.set(Exceptions.unwrap(error));
+                            }
+                        });
+        worker.start();
+        worker.join(10_000);
+        try {
+            assertFalse(worker.isAlive());
+            assertEquals(0, attempts.get());
+            assertTrue(failure.get() instanceof ReaderException);
+        } finally {
+            worker.interrupt();
+            worker.join(5_000);
+        }
+    }
+
+    @Test
+    void socketTimeoutRemainsRetryableWithoutInterrupt() throws Exception {
+        Path file = Files.writeString(workspace.resolve("input.txt"), "content");
+        AtomicInteger attempts = new AtomicInteger();
+        ExternalApiReader reader =
+                ExternalApiReader.builder()
+                        .requestBuilder(
+                                (path, client) ->
+                                        new Request.Builder().url("http://localhost/parse").build())
+                        .addInterceptor(
+                                chain -> {
+                                    if (attempts.incrementAndGet() == 1)
+                                        throw new SocketTimeoutException("timed out");
+                                    return new Response.Builder()
+                                            .request(chain.request())
+                                            .protocol(Protocol.HTTP_1_1)
+                                            .code(200)
+                                            .message("OK")
+                                            .body(ResponseBody.create("parsed", JSON_MEDIA_TYPE))
+                                            .build();
+                                })
+                        .responseParser((response, client) -> response.body().string())
+                        .maxRetries(1)
+                        .retryDelay(Duration.ZERO)
+                        .build();
+        assertEquals(1, reader.read(ReaderInput.fromString(file.toString())).block().size());
+        assertEquals(2, attempts.get());
+        assertFalse(Thread.currentThread().isInterrupted());
+    }
 
     private static final MediaType JSON_MEDIA_TYPE =
             MediaType.get("application/json; charset=utf-8");

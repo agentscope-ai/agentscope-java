@@ -67,6 +67,8 @@ The `io.agentscope.core.rag.reader` package contains readers for common formats;
 
 The resulting `Document` objects already carry metadata; pair with `TextChunker` and `SplitStrategy` for chunking.
 
+`ExternalApiReader` stops retrying when its worker is interrupted or a custom request builder or response parser throws `InterruptedException`. It preserves the interrupt flag and reports a `ReaderException` with the interruption as its cause. Ordinary network timeouts remain retryable according to `maxRetries`. Stopping local retries does not cancel a parsing task already accepted by the remote service; application-specific remote cancellation belongs in the integration.
+
 ## Built-in embedding providers
 
 | Class | Service | Mode |

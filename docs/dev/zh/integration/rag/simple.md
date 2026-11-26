@@ -67,6 +67,8 @@ List<Document> hits = knowledge.retrieve(
 
 读取出来的 `Document` 已经带有元数据，配合 `TextChunker` 与 `SplitStrategy` 做分块。
 
+当工作线程被中断，或自定义请求构造器、响应解析器抛出 `InterruptedException` 时，`ExternalApiReader` 会停止重试、保留线程的中断标记，并通过 `ReaderException` 保留原始异常。普通网络超时仍按 `maxRetries` 设置重试。停止本地重试不等于取消远端已经接收的解析任务；远端取消需要由具体集成处理。
+
 ## 内置 Embedding 提供方
 
 | 类 | 服务 | 模式 |
