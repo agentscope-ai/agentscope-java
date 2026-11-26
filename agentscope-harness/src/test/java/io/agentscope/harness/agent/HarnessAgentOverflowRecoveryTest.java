@@ -24,6 +24,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.event.AgentResultEvent;
+import io.agentscope.core.journal.InMemoryThreadJournalStore;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
@@ -263,6 +264,12 @@ class HarnessAgentOverflowRecoveryTest {
                 .workspace(workspace)
                 .toolkit(toolkit)
                 .journalEnabled(journal)
+                // The journal rows exercise recovery over the native Thread journal, not its
+                // persistence backend. The default workspace journal is SQLite on Windows and
+                // pays one durable transaction per storage operation: those rows took 6-38s there
+                // against 0.4-1.3s on ubuntu, and one call crossed the 30s deadline (#4042, #4426
+                // on 2026-11-26).
+                .threadJournalStore(new InMemoryThreadJournalStore())
                 .stateStore(store)
                 .compaction(CompactionConfig.builder().triggerMessages(1_000).build())
                 .memory(
