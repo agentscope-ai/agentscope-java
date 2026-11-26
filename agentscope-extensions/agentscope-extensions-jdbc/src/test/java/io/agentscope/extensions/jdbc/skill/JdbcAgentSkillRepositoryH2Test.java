@@ -18,6 +18,8 @@ package io.agentscope.extensions.jdbc.skill;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -27,6 +29,11 @@ import io.agentscope.core.skill.repository.AgentSkillRepositoryInfo;
 import io.agentscope.extensions.jdbc.H2TestSupport;
 import io.agentscope.extensions.jdbc.dialect.AbstractJdbcDialect;
 import io.agentscope.extensions.jdbc.dialect.vendor.H2Dialect;
+import java.io.IOException;
+import java.io.UncheckedIOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.sql.Connection;
 import java.sql.ResultSet;
 import java.sql.SQLException;
@@ -41,6 +48,7 @@ import javax.sql.DataSource;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 /**
  * H2 behavior tests for {@link JdbcAgentSkillRepository} — the interface-behavior cases of
@@ -54,10 +62,39 @@ import org.junit.jupiter.api.Test;
 @DisplayName("JdbcAgentSkillRepository (H2)")
 class JdbcAgentSkillRepositoryH2Test {
 
+    /**
+     * Explicit cache root shared by every test's repositories — reads route through the
+     * version-materialization cache, so no test ever touches the real home.
+     */
+    @TempDir Path cacheDir;
+
     /** Creates a repository over tables created by the builder's skill group. */
-    private static JdbcAgentSkillRepository newRepository(String dbName) {
+    private JdbcAgentSkillRepository newRepository(String dbName) {
         DataSource ds = H2TestSupport.createDataSource(dbName);
-        return new JdbcAgentSkillRepository(ds, skillDialect(ds));
+        return new JdbcAgentSkillRepository(ds, skillDialect(ds), "default", true, cacheDir);
+    }
+
+    /**
+     * Reads the SKILL.md body from the materialized origin directory — the descriptor
+     * contract keeps bodies on disk; {@code getSkill} summaries carry no content.
+     */
+    private static String skillBody(AgentSkill skill) {
+        try {
+            return Files.readString(
+                    skill.getOriginDir().orElseThrow().resolve("SKILL.md"), StandardCharsets.UTF_8);
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
+    }
+
+    /** Reads one resource from the materialized origin directory (descriptor contract). */
+    private static String skillResource(AgentSkill skill, String path) {
+        try {
+            return Files.readString(
+                    skill.getOriginDir().orElseThrow().resolve(path), StandardCharsets.UTF_8);
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
     }
 
     /** Assembles the dialect with the skill group enabled — the only schema entry point. */
@@ -83,20 +120,22 @@ class JdbcAgentSkillRepositoryH2Test {
     class CrudTests {
 
         @Test
-        @DisplayName("save then getSkill round-trips content, resources, and extended metadata")
+        @DisplayName("save then a null-version pull round-trips content, resources, and metadata")
         void saveAndGetRoundTrip() {
             JdbcAgentSkillRepository repo = newRepository("skill_repo_roundtrip");
 
             assertTrue(repo.save(List.of(sampleSkill("demo")), false));
 
-            AgentSkill loaded = repo.getSkill("demo");
+            AgentSkill loaded = repo.getSkill("demo", null);
             assertEquals("demo", loaded.getName());
             assertEquals("Description of demo", loaded.getDescription());
-            assertEquals("Content of demo", loaded.getSkillContent());
-            assertEquals("test", loaded.getSource());
+            assertTrue(skillBody(loaded).contains("Content of demo"));
+            // The summary form carries the serving repository's source, not the row's
+            // original source column.
+            assertEquals(repo.getSource(), loaded.getSource());
             assertEquals("https://example.com/demo", loaded.getMetadataValue("homepage"));
-            assertEquals("hello", loaded.getResource("docs/readme.md"));
-            assertEquals("world", loaded.getResource("docs/guide.md"));
+            assertEquals("hello", skillResource(loaded, "docs/readme.md"));
+            assertEquals("world", skillResource(loaded, "docs/guide.md"));
         }
 
         @Test
@@ -116,17 +155,18 @@ class JdbcAgentSkillRepositoryH2Test {
         }
 
         @Test
-        @DisplayName("getSkill of an unknown name throws IllegalArgumentException")
-        void unknownSkillThrows() {
+        @DisplayName("an unknown name resolves null through the serving method")
+        void unknownSkillResolvesNull() {
             JdbcAgentSkillRepository repo = newRepository("skill_repo_unknown");
-            assertThrows(IllegalArgumentException.class, () -> repo.getSkill("missing"));
+            assertNull(repo.getSkill("missing", null));
         }
 
         @Test
         @DisplayName("save without force throws listing conflicts; with force it replaces the row")
         void forceSemantics() throws Exception {
             DataSource ds = H2TestSupport.createDataSource("skill_repo_force");
-            JdbcAgentSkillRepository repo = new JdbcAgentSkillRepository(ds, skillDialect(ds));
+            JdbcAgentSkillRepository repo =
+                    new JdbcAgentSkillRepository(ds, skillDialect(ds), "default", true, cacheDir);
             repo.save(List.of(sampleSkill("conflict")), false);
 
             IllegalStateException conflict =
@@ -148,11 +188,14 @@ class JdbcAgentSkillRepositoryH2Test {
                             "test");
             assertTrue(repo.save(List.of(replacement), true));
 
-            AgentSkill loaded = repo.getSkill("conflict");
+            AgentSkill loaded = repo.getSkill("conflict", null);
             assertEquals("replaced", loaded.getDescription());
-            assertEquals("replaced content", loaded.getSkillContent());
-            assertEquals("new", loaded.getResource("docs/new.md"));
-            assertNull(loaded.getResource("docs/readme.md"), "old resources must be replaced");
+            assertTrue(skillBody(loaded).contains("replaced content"));
+            assertEquals("new", skillResource(loaded, "docs/new.md"));
+            assertFalse(
+                    Files.isRegularFile(
+                            loaded.getOriginDir().orElseThrow().resolve("docs/readme.md")),
+                    "old resources must be replaced");
             assertEquals(1, countRows(ds, "agentscope_skill_resources"));
         }
 
@@ -160,13 +203,14 @@ class JdbcAgentSkillRepositoryH2Test {
         @DisplayName("delete removes the skill with its resources; unknown skill returns false")
         void deleteSemantics() throws Exception {
             DataSource ds = H2TestSupport.createDataSource("skill_repo_delete");
-            JdbcAgentSkillRepository repo = new JdbcAgentSkillRepository(ds, skillDialect(ds));
+            JdbcAgentSkillRepository repo =
+                    new JdbcAgentSkillRepository(ds, skillDialect(ds), "default", true, cacheDir);
             assertFalse(repo.delete("missing"));
 
             repo.save(List.of(sampleSkill("doomed")), false);
             assertTrue(repo.delete("doomed"));
             assertFalse(repo.skillExists("doomed"));
-            assertThrows(IllegalArgumentException.class, () -> repo.getSkill("doomed"));
+            assertNull(repo.getSkill("doomed", null));
             assertEquals(0, countRows(ds, "agentscope_skill_resources"), "resources must be gone");
         }
 
@@ -257,7 +301,7 @@ class JdbcAgentSkillRepositoryH2Test {
 
             assertTrue(repo.save(List.of(bare), false));
 
-            assertTrue(repo.getSkill("bare").getResources().isEmpty());
+            assertTrue(repo.getSkill("bare", null).getResources().isEmpty());
             assertTrue(repo.getAllSkills().get(0).getResources().isEmpty());
         }
     }
@@ -270,51 +314,57 @@ class JdbcAgentSkillRepositoryH2Test {
         @DisplayName(
                 "the same name coexists in two namespaces and each namespace only sees its own")
         void sameNameCoexistsAcrossNamespaces() {
-            JdbcAgentSkillRepository repo = newRepository("skill_repo_ns_coexist");
-            AgentSkill teamA = sampleSkill("code-review");
-            AgentSkill teamB =
+            DataSource ds = H2TestSupport.createDataSource("skill_repo_ns_coexist");
+            AbstractJdbcDialect dialect = skillDialect(ds);
+            JdbcAgentSkillRepository teamA =
+                    new JdbcAgentSkillRepository(ds, dialect, "team-a", true, cacheDir);
+            JdbcAgentSkillRepository teamB =
+                    new JdbcAgentSkillRepository(ds, dialect, "team-b", true, cacheDir);
+            JdbcAgentSkillRepository defaults = new JdbcAgentSkillRepository(ds, dialect);
+            AgentSkill teamASkill = sampleSkill("code-review");
+            AgentSkill teamBSkill =
                     new AgentSkill(
                             Map.of("name", "code-review", "description", "team-b flavor"),
                             "Content of team-b",
                             Map.of("docs/team-b.md", "b"),
                             "test");
 
-            assertTrue(repo.save("team-a", List.of(teamA), false));
-            assertTrue(repo.save("team-b", List.of(teamB), false));
+            assertTrue(teamA.save(List.of(teamASkill), false));
+            assertTrue(teamB.save(List.of(teamBSkill), false));
 
-            assertEquals(List.of("code-review"), repo.getAllSkillNames("team-a"));
-            assertEquals(List.of("code-review"), repo.getAllSkillNames("team-b"));
-            assertEquals(
-                    "Content of code-review",
-                    repo.getSkill("team-a", "code-review").getSkillContent());
-            assertEquals(
-                    "Content of team-b", repo.getSkill("team-b", "code-review").getSkillContent());
+            assertEquals(List.of("code-review"), teamA.getAllSkillNames());
+            assertEquals(List.of("code-review"), teamB.getAllSkillNames());
+            assertTrue(
+                    skillBody(teamA.getSkill("code-review", null))
+                            .contains("Content of code-review"));
+            assertTrue(
+                    skillBody(teamB.getSkill("code-review", null)).contains("Content of team-b"));
             assertEquals(
                     "b",
-                    repo.getSkill("team-b", "code-review").getResource("docs/team-b.md"),
+                    skillResource(teamB.getSkill("code-review", null), "docs/team-b.md"),
                     "resources must be stitched to the owning namespace's row");
 
-            assertTrue(repo.skillExists("team-a", "code-review"));
-            assertFalse(repo.skillExists("team-a", "never-saved"));
+            assertTrue(teamA.skillExists("code-review"));
+            assertFalse(teamA.skillExists("never-saved"));
 
-            assertTrue(repo.getAllSkillNames().isEmpty(), "the default namespace stays empty");
+            assertTrue(defaults.getAllSkillNames().isEmpty(), "the default namespace stays empty");
         }
 
         @Test
         @DisplayName("getAllSkills loads one namespace only, resources included")
         void getAllSkillsIsNamespaced() {
-            JdbcAgentSkillRepository repo = newRepository("skill_repo_ns_list_all");
-            AgentSkill teamA = sampleSkill("alpha");
-            AgentSkill teamB =
-                    new AgentSkill(
-                            Map.of("name", "beta", "description", "team-b skill"),
-                            "Content of beta",
-                            Map.of("docs/team-b.md", "b"),
-                            "test");
-            repo.save("team-a", List.of(teamA), false);
-            repo.save("team-b", List.of(teamB), false);
+            DataSource ds = H2TestSupport.createDataSource("skill_repo_ns_list_all");
+            AbstractJdbcDialect dialect = skillDialect(ds);
+            JdbcAgentSkillRepository teamA =
+                    new JdbcAgentSkillRepository(ds, dialect, "team-a", true);
+            JdbcAgentSkillRepository teamB =
+                    new JdbcAgentSkillRepository(ds, dialect, "team-b", true);
+            JdbcAgentSkillRepository ghost =
+                    new JdbcAgentSkillRepository(ds, dialect, "ghost", true);
+            teamA.save(List.of(sampleSkill("alpha")), false);
+            teamB.save(List.of(sampleSkill("beta")), false);
 
-            List<AgentSkill> teamASkills = repo.getAllSkills("team-a");
+            List<AgentSkill> teamASkills = teamA.getAllSkills();
 
             assertEquals(List.of("alpha"), teamASkills.stream().map(AgentSkill::getName).toList());
             assertEquals(
@@ -322,16 +372,20 @@ class JdbcAgentSkillRepositoryH2Test {
                     teamASkills.get(0).getResource("docs/readme.md"),
                     "resources of the loaded namespace must be stitched");
             assertEquals("Content of alpha", teamASkills.get(0).getSkillContent());
-            assertTrue(
-                    repo.getAllSkills("ghost").isEmpty(), "an unknown namespace is simply empty");
+            assertTrue(ghost.getAllSkills().isEmpty(), "an unknown namespace is simply empty");
         }
 
         @Test
         @DisplayName("force=true overwrites only within the namespace, never across")
         void forceIsNamespaced() {
-            JdbcAgentSkillRepository repo = newRepository("skill_repo_ns_force");
-            repo.save("team-a", List.of(sampleSkill("shared")), false);
-            repo.save("team-b", List.of(sampleSkill("shared")), false);
+            DataSource ds = H2TestSupport.createDataSource("skill_repo_ns_force");
+            AbstractJdbcDialect dialect = skillDialect(ds);
+            JdbcAgentSkillRepository teamA =
+                    new JdbcAgentSkillRepository(ds, dialect, "team-a", true, cacheDir);
+            JdbcAgentSkillRepository teamB =
+                    new JdbcAgentSkillRepository(ds, dialect, "team-b", true, cacheDir);
+            teamA.save(List.of(sampleSkill("shared")), false);
+            teamB.save(List.of(sampleSkill("shared")), false);
 
             AgentSkill replacement =
                     new AgentSkill(
@@ -339,30 +393,37 @@ class JdbcAgentSkillRepositoryH2Test {
                             "replaced content",
                             Map.of("docs/new.md", "new"),
                             "test");
-            assertTrue(repo.save("team-a", List.of(replacement), true));
+            assertTrue(teamA.save(List.of(replacement), true));
 
-            assertEquals("replaced content", repo.getSkill("team-a", "shared").getSkillContent());
-            assertNull(repo.getSkill("team-a", "shared").getResource("docs/readme.md"));
-            assertEquals(
-                    "Content of shared",
-                    repo.getSkill("team-b", "shared").getSkillContent(),
+            assertTrue(skillBody(teamA.getSkill("shared", null)).contains("replaced content"));
+            assertFalse(
+                    Files.isRegularFile(
+                            teamA.getSkill("shared", null)
+                                    .getOriginDir()
+                                    .orElseThrow()
+                                    .resolve("docs/readme.md")),
+                    "the overwritten namespace no longer carries the old resource");
+            assertTrue(
+                    skillBody(teamB.getSkill("shared", null)).contains("Content of shared"),
                     "the other namespace's same-name skill must stay untouched");
             assertEquals(
                     "hello",
-                    repo.getSkill("team-b", "shared").getResource("docs/readme.md"),
+                    skillResource(teamB.getSkill("shared", null), "docs/readme.md"),
                     "the other namespace's resources must stay untouched");
         }
 
         @Test
         @DisplayName("a duplicate within one namespace is rejected by UNIQUE(namespace, name)")
         void duplicateWithinOneNamespaceRejected() {
-            JdbcAgentSkillRepository repo = newRepository("skill_repo_ns_unique");
-            repo.save("team-a", List.of(sampleSkill("dup")), false);
+            DataSource ds = H2TestSupport.createDataSource("skill_repo_ns_unique");
+            JdbcAgentSkillRepository repo =
+                    new JdbcAgentSkillRepository(ds, skillDialect(ds), "team-a", true);
+            repo.save(List.of(sampleSkill("dup")), false);
 
             IllegalStateException conflict =
                     assertThrows(
                             IllegalStateException.class,
-                            () -> repo.save("team-a", List.of(sampleSkill("dup")), false));
+                            () -> repo.save(List.of(sampleSkill("dup")), false));
             assertTrue(conflict.getMessage().contains("force=false"), conflict.getMessage());
         }
 
@@ -370,18 +431,22 @@ class JdbcAgentSkillRepositoryH2Test {
         @DisplayName("delete and clearAllSkills stay within the namespace")
         void deleteAndClearAreNamespaced() throws Exception {
             DataSource ds = H2TestSupport.createDataSource("skill_repo_ns_delete");
-            JdbcAgentSkillRepository repo = new JdbcAgentSkillRepository(ds, skillDialect(ds));
-            repo.save("team-a", List.of(sampleSkill("gone"), sampleSkill("kept")), false);
-            repo.save("team-b", List.of(sampleSkill("gone")), false);
+            AbstractJdbcDialect dialect = skillDialect(ds);
+            JdbcAgentSkillRepository teamA =
+                    new JdbcAgentSkillRepository(ds, dialect, "team-a", true);
+            JdbcAgentSkillRepository teamB =
+                    new JdbcAgentSkillRepository(ds, dialect, "team-b", true);
+            teamA.save(List.of(sampleSkill("gone"), sampleSkill("kept")), false);
+            teamB.save(List.of(sampleSkill("gone")), false);
 
-            assertTrue(repo.delete("team-a", "gone"));
-            assertFalse(repo.skillExists("team-a", "gone"));
-            assertTrue(repo.skillExists("team-b", "gone"), "the other namespace keeps its row");
-            assertEquals(List.of("kept"), repo.getAllSkillNames("team-a"));
+            assertTrue(teamA.delete("gone"));
+            assertFalse(teamA.skillExists("gone"));
+            assertTrue(teamB.skillExists("gone"), "the other namespace keeps its row");
+            assertEquals(List.of("kept"), teamA.getAllSkillNames());
 
-            assertEquals(1, repo.clearAllSkills("team-a"));
-            assertTrue(repo.getAllSkillNames("team-a").isEmpty());
-            assertTrue(repo.skillExists("team-b", "gone"));
+            assertEquals(1, teamA.clearAllSkills());
+            assertTrue(teamA.getAllSkillNames().isEmpty());
+            assertTrue(teamB.skillExists("gone"));
             assertEquals(
                     2,
                     countRows(ds, "agentscope_skill_resources"),
@@ -389,14 +454,49 @@ class JdbcAgentSkillRepositoryH2Test {
         }
 
         @Test
-        @DisplayName("invalid namespaces are rejected at the entry points")
+        @DisplayName("one instance addresses exactly its bound namespace — no namespace parameters")
+        void instancesAddressExactlyTheirBoundNamespace() {
+            DataSource ds = H2TestSupport.createDataSource("skill_repo_ns_aware");
+            JdbcAgentSkillRepository teamA =
+                    new JdbcAgentSkillRepository(ds, skillDialect(ds), "team-a", true);
+            JdbcAgentSkillRepository teamB =
+                    new JdbcAgentSkillRepository(ds, skillDialect(ds), "team-b", true);
+            teamA.save(List.of(sampleSkill("alpha")), false);
+            teamB.save(List.of(sampleSkill("beta")), false);
+
+            assertEquals(List.of("alpha"), teamA.getAllSkillNames());
+            assertEquals(List.of("beta"), teamB.getAllSkillNames());
+            assertTrue(teamA.skillExists("alpha"));
+            assertFalse(teamA.skillExists("beta"), "names never leak across scopes");
+
+            AgentSkill alpha = teamA.getAllSkills().get(0);
+            assertEquals("Content of alpha", alpha.getSkillContent());
+            assertEquals(
+                    "hello",
+                    alpha.getResource("docs/readme.md"),
+                    "the catalog fetch is full-form, resources included");
+            assertNotNull(
+                    alpha.getVersion(), "the full-form fetch stamps the row's current version");
+            assertEquals(
+                    List.of("beta"),
+                    teamB.getAllSkills().stream().map(AgentSkill::getName).toList());
+
+            assertTrue(teamB.delete("beta"));
+            assertFalse(teamB.skillExists("beta"));
+            assertEquals(1, teamA.clearAllSkills());
+            assertFalse(teamA.skillExists("alpha"));
+        }
+
+        @Test
+        @DisplayName("invalid namespaces are rejected at construction — the scope binding point")
         void invalidNamespacesRejected() {
-            JdbcAgentSkillRepository repo = newRepository("skill_repo_ns_invalid");
+            DataSource ds = H2TestSupport.createDataSource("skill_repo_ns_invalid");
+            AbstractJdbcDialect dialect = skillDialect(ds);
             for (String bad :
                     Arrays.asList(null, "", "   ", "team a", "team/a", "..", ".", "a".repeat(65))) {
                 assertThrows(
                         IllegalArgumentException.class,
-                        () -> repo.skillExists(bad, "any"),
+                        () -> new JdbcAgentSkillRepository(ds, dialect, bad, true),
                         "namespace must be rejected: " + bad);
             }
         }
@@ -405,14 +505,16 @@ class JdbcAgentSkillRepositoryH2Test {
         @DisplayName("a repository constructed with a namespace binds it as the default")
         void boundNamespaceConstructor() {
             DataSource ds = H2TestSupport.createDataSource("skill_repo_ns_bound");
+            AbstractJdbcDialect dialect = skillDialect(ds);
             JdbcAgentSkillRepository repo =
-                    new JdbcAgentSkillRepository(ds, skillDialect(ds), "team-a", true);
+                    new JdbcAgentSkillRepository(ds, dialect, "team-a", true);
+            JdbcAgentSkillRepository otherScope =
+                    new JdbcAgentSkillRepository(ds, dialect, "team-b", true);
 
             assertEquals("team-a", repo.getNamespace());
             assertTrue(repo.save(List.of(sampleSkill("bound")), false));
             assertTrue(repo.skillExists("bound"));
-            assertTrue(repo.skillExists("team-a", "bound"));
-            assertFalse(repo.skillExists("team-b", "bound"));
+            assertFalse(otherScope.skillExists("bound"), "another scope must not see this skill");
             assertEquals(List.of("bound"), repo.getAllSkillNames());
         }
     }
@@ -421,13 +523,13 @@ class JdbcAgentSkillRepositoryH2Test {
     @DisplayName("Validation and read-only")
     class ValidationTests {
         @Test
-        @DisplayName("getSkill rejects null, empty, over-length, and traversal names")
-        void skillNameValidation() {
+        @DisplayName("unusable skill names resolve null through the serving method")
+        void unusableNamesResolveNull() {
             JdbcAgentSkillRepository repo = newRepository("skill_repo_validate");
-            assertThrows(IllegalArgumentException.class, () -> repo.getSkill(null));
-            assertThrows(IllegalArgumentException.class, () -> repo.getSkill(""));
-            assertThrows(IllegalArgumentException.class, () -> repo.getSkill("../etc/passwd"));
-            assertThrows(IllegalArgumentException.class, () -> repo.getSkill("a".repeat(256)));
+            assertNull(repo.getSkill(null, null));
+            assertNull(repo.getSkill("", null));
+            assertNull(repo.getSkill("../etc/passwd", null));
+            assertNull(repo.getSkill("a".repeat(256), null));
         }
 
         @Test
@@ -657,7 +759,8 @@ class JdbcAgentSkillRepositoryH2Test {
                 "adopted legacy rows with traversal paths or separator names are refused on read")
         void legacyTraversalRowsRefusedOnRead() throws Exception {
             DataSource ds = H2TestSupport.createDataSource("skill_repo_legacy_paths");
-            JdbcAgentSkillRepository repo = new JdbcAgentSkillRepository(ds, skillDialect(ds));
+            JdbcAgentSkillRepository repo =
+                    new JdbcAgentSkillRepository(ds, skillDialect(ds), "default", true, cacheDir);
             try (Connection conn = ds.getConnection();
                     Statement stmt = conn.createStatement()) {
                 // Legacy repositories accepted absolute and .. paths on write.
@@ -674,15 +777,189 @@ class JdbcAgentSkillRepositoryH2Test {
                                 + " VALUES ('../evil', 'd', 'c', 'test')");
             }
 
-            IllegalArgumentException rejected =
-                    assertThrows(IllegalArgumentException.class, () -> repo.getSkill("legacy"));
-            assertTrue(rejected.getMessage().contains("../../escape.txt"), rejected.getMessage());
+            // The serving method refuses the row quietly: the loader's rejection of the
+            // traversal resource path surfaces as a null answer, never as served content.
+            assertNull(repo.getSkill("legacy", null), "traversal rows must not serve");
 
             assertTrue(repo.getAllSkills().isEmpty(), "the guard must extend to reads");
             // The name list shares the guard: invalid names are omitted (never loadable or
             // deletable); valid names stay listed and deletable despite poisoned resources.
             assertTrue(repo.getAllSkillNames().contains("legacy"));
             assertFalse(repo.getAllSkillNames().contains("../evil"));
+        }
+    }
+
+    @Nested
+    @DisplayName("Version route")
+    class VersionTests {
+
+        @Test
+        @DisplayName(
+                "the row's updated_at is the native version: probe, loads, and the raw row agree")
+        void rowIdIsTheNativeVersion() throws Exception {
+            DataSource ds = H2TestSupport.createDataSource("skill_repo_version_native");
+            JdbcAgentSkillRepository repo =
+                    new JdbcAgentSkillRepository(ds, skillDialect(ds), "default", true, cacheDir);
+            repo.save(List.of(sampleSkill("demo")), false);
+
+            String version = latestVersionOf(repo, "demo");
+            assertNotNull(version);
+            assertEquals(
+                    version,
+                    repo.getSkill("demo").getVersion(),
+                    "the deprecated shim delegates to the version route (version-carried)");
+            assertEquals(version, repo.getAllSkills().get(0).getVersion());
+
+            // The version is the row's id: every save is a delete plus insert, so each
+            // publish mints a fresh, monotonic token — collision-free and timezone-free.
+            long expected;
+            try (Connection conn = ds.getConnection();
+                    Statement stmt = conn.createStatement();
+                    ResultSet rs =
+                            stmt.executeQuery(
+                                    "SELECT id FROM agentscope_skills WHERE name =" + " 'demo'")) {
+                assertTrue(rs.next());
+                expected = rs.getLong("id");
+            }
+            assertEquals(String.valueOf(expected), version);
+        }
+
+        @Test
+        @DisplayName("a missing skill or unusable version reference resolves null")
+        void nullAnswers() {
+            DataSource ds = H2TestSupport.createDataSource("skill_repo_version_null");
+            JdbcAgentSkillRepository repo =
+                    new JdbcAgentSkillRepository(ds, skillDialect(ds), "default", true, cacheDir);
+
+            assertNull(latestVersionOf(repo, "missing"));
+            assertNull(latestVersionOf(repo, null));
+            assertNull(latestVersionOf(repo, ""));
+
+            repo.save(List.of(sampleSkill("demo")), false);
+            assertNotNull(
+                    repo.getSkill("demo", null), "a null version resolves the latest content");
+            assertNotNull(
+                    repo.getSkill("demo", "  "), "a blank version resolves the latest content");
+            assertNull(repo.getSkill("demo", "not-a-timestamp"));
+            assertNull(repo.getSkill("missing", "1"));
+        }
+
+        @Test
+        @DisplayName("the live row serves at its version, and only at its version")
+        void servesExactlyAtItsVersion() {
+            DataSource ds = H2TestSupport.createDataSource("skill_repo_version_serve");
+            JdbcAgentSkillRepository repo =
+                    new JdbcAgentSkillRepository(ds, skillDialect(ds), "default", true, cacheDir);
+            repo.save(List.of(sampleSkill("demo")), false);
+            String version = latestVersionOf(repo, "demo");
+
+            AgentSkill served = repo.getSkill("demo", version);
+            assertNotNull(served);
+            assertEquals("demo", served.getName());
+            assertEquals(version, served.getVersion());
+            assertNull(
+                    repo.getSkill("demo", "123"), "a foreign version must not serve (no-mismatch)");
+        }
+
+        @Test
+        @DisplayName("a row change mints a new version; the cache retains materialised history")
+        void rowChangeStrandsOldVersion() throws Exception {
+            DataSource ds = H2TestSupport.createDataSource("skill_repo_version_change");
+            JdbcAgentSkillRepository repo =
+                    new JdbcAgentSkillRepository(ds, skillDialect(ds), "default", true, cacheDir);
+            repo.save(List.of(sampleSkill("demo")), false);
+            // One null pull materializes the live version into the cache.
+            String live = latestVersionOf(repo, "demo");
+            assertNotNull(repo.getSkill("demo", live));
+
+            // A republish is a delete plus insert: the fresh row carries a strictly new id,
+            // so the token moves even when both saves land within the same second.
+            repo.save(
+                    List.of(sampleSkill("demo").toBuilder().skillContent("Changed").build()), true);
+            String changed = latestVersionOf(repo, "demo");
+            assertNotEquals(live, changed, "a republish must mint a distinct token");
+
+            // A reference never materialized while live answers null — the table keeps no
+            // history.
+            assertNull(
+                    repo.getSkill("demo", "123"),
+                    "a never-materialised old reference must not serve the changed row");
+            // A version materialized while live is retained by the cache and still serves.
+            AgentSkill retained = repo.getSkill("demo", live);
+            assertNotNull(retained, "a materialised version is retained by the cache");
+            assertEquals(live, retained.getVersion());
+            assertNotNull(repo.getSkill("demo", changed));
+        }
+
+        @Test
+        @DisplayName("two databases with the same table and namespace never share cache entries")
+        void sameTableDifferentDatabasesStayIsolated() throws Exception {
+            DataSource dsA = H2TestSupport.createDataSource("skill_repo_iso_a");
+            DataSource dsB = H2TestSupport.createDataSource("skill_repo_iso_b");
+            JdbcAgentSkillRepository repoA =
+                    new JdbcAgentSkillRepository(dsA, skillDialect(dsA), "default", true, cacheDir);
+            JdbcAgentSkillRepository repoB =
+                    new JdbcAgentSkillRepository(dsB, skillDialect(dsB), "default", true, cacheDir);
+            repoA.save(
+                    List.of(
+                            sampleSkill("demo").toBuilder()
+                                    .skillContent("Content of database A")
+                                    .build()),
+                    false);
+            repoB.save(
+                    List.of(
+                            sampleSkill("demo").toBuilder()
+                                    .skillContent("Content of database B")
+                                    .build()),
+                    false);
+
+            // Same explicit cache root, same table name, same namespace, same skill name —
+            // only the JDBC URL distinguishes the two instances, so served content must
+            // never cross between them.
+            assertTrue(skillBody(repoA.getSkill("demo")).contains("database A"));
+            assertTrue(skillBody(repoB.getSkill("demo")).contains("database B"));
+        }
+
+        @Test
+        @DisplayName("versioned reads are summary-form, cache-backed, and survive tree deletion")
+        void versionedReadsAreCacheBackedSummaries() throws Exception {
+            DataSource ds = H2TestSupport.createDataSource("skill_repo_version_cache");
+            JdbcAgentSkillRepository repo =
+                    new JdbcAgentSkillRepository(ds, skillDialect(ds), "default", true, cacheDir);
+            repo.save(List.of(sampleSkill("demo")), false);
+            String version = latestVersionOf(repo, "demo");
+
+            // First pull materializes: summary form — version stamped, empty resource map,
+            // originDir pointing at the materialized directory with the resource on disk.
+            AgentSkill served = repo.getSkill("demo", version);
+            assertNotNull(served);
+            assertEquals(version, served.getVersion());
+            assertTrue(served.getResources().isEmpty(), "summary form carries no resource map");
+            assertTrue(served.getOriginDir().isPresent(), "the summary carries its originDir");
+            assertEquals(
+                    "hello",
+                    served.getResource("docs/readme.md"),
+                    "resources are read from originDir on demand");
+            java.nio.file.Files.writeString(
+                    served.getOriginDir().get().resolve("docs").resolve("readme.md"), "changed");
+
+            // Second pull serves the same version directory again — no re-fetch, so the
+            // in-place edit above is visible.
+            AgentSkill again = repo.getSkill("demo", version);
+            assertEquals("changed", again.getResource("docs/readme.md"));
+
+            // Out-of-band deletion of the whole cache tree: a miss deterministically re-pulls.
+            try (var stream = java.nio.file.Files.walk(cacheDir)) {
+                for (Path p : stream.sorted(java.util.Comparator.reverseOrder()).toList()) {
+                    java.nio.file.Files.deleteIfExists(p);
+                }
+            }
+            AgentSkill repulled = repo.getSkill("demo", version);
+            assertNotNull(repulled, "a cache miss re-pulls deterministically");
+            assertEquals(
+                    "hello",
+                    repulled.getResource("docs/readme.md"),
+                    "the re-pulled copy restores the database content");
         }
     }
 
@@ -694,5 +971,14 @@ class JdbcAgentSkillRepositoryH2Test {
             rs.next();
             return rs.getInt(1);
         }
+    }
+
+    /**
+     * The skill's current version, read from a {@code null}-version pull's stamp; {@code
+     * null} when the skill does not resolve.
+     */
+    private static String latestVersionOf(JdbcAgentSkillRepository repo, String name) {
+        AgentSkill current = repo.getSkill(name, null);
+        return current != null ? current.getVersion() : null;
     }
 }

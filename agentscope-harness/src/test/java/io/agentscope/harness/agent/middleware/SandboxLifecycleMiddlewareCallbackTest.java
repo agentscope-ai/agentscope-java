@@ -22,7 +22,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import io.agentscope.core.agent.CapabilitySurface;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.skill.AgentSkill;
-import io.agentscope.core.skill.repository.AgentSkillRepository;
+import io.agentscope.core.skill.SkillFilter;
 import io.agentscope.core.skill.repository.AgentSkillRepositoryInfo;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.harness.agent.skill.runtime.MarketplaceStager;
@@ -61,7 +61,7 @@ class SandboxLifecycleMiddlewareCallbackTest {
                 new HarnessSkillMiddleware(
                         List.of(dbRepo),
                         new Toolkit(),
-                        null,
+                        SkillFilter.only("db-tool"),
                         null,
                         stager,
                         ShellPathPolicy.noShell());
@@ -92,7 +92,7 @@ class SandboxLifecycleMiddlewareCallbackTest {
                 new HarnessSkillMiddleware(
                         List.of(repo),
                         new Toolkit(),
-                        null,
+                        SkillFilter.only("idempotent-skill"),
                         null,
                         stager,
                         ShellPathPolicy.noShell());
@@ -131,7 +131,7 @@ class SandboxLifecycleMiddlewareCallbackTest {
                 new HarnessSkillMiddleware(
                         List.of(repo),
                         new Toolkit(),
-                        null,
+                        SkillFilter.only("callback-skill"),
                         null,
                         stager,
                         ShellPathPolicy.noShell());
@@ -254,8 +254,93 @@ class SandboxLifecycleMiddlewareCallbackTest {
                         + " narrows");
     }
 
-    /** Minimal repository stub that returns a fixed skill list. */
-    private static final class StubSkillRepository implements AgentSkillRepository {
+    @Test
+    void prestageForProjectionDescriptorStagingNarrowsAfterGrantShrinks() throws IOException {
+        // The descriptor flavor of the residue scenario: both skills are descriptor forms
+        // (empty resources, version-stamped origin trees), so staging copies whole trees
+        // instead of resource maps. Narrowing the grant must drop the denied name's subtree
+        // from the projection roots while its staged bytes stay on disk (shared cache).
+        Path alphaOrigin = writeOriginTree("alpha", "v1", "echo alpha");
+        Path betaOrigin = writeOriginTree("beta", "v1", "echo beta");
+        AgentSkill alpha =
+                AgentSkill.builder()
+                        .name("alpha")
+                        .description("Alpha")
+                        .originDir(alphaOrigin)
+                        .version("tok-alpha-1")
+                        .build();
+        AgentSkill beta =
+                AgentSkill.builder()
+                        .name("beta")
+                        .description("Beta")
+                        .originDir(betaOrigin)
+                        .version("tok-beta-1")
+                        .build();
+        StubSkillRepository repo = new StubSkillRepository(List.of(alpha, beta), "market");
+        MarketplaceStager stager = new MarketplaceStager(tempWorkspace);
+        HarnessSkillMiddleware middleware =
+                new HarnessSkillMiddleware(
+                        List.of(repo),
+                        new Toolkit(),
+                        null,
+                        null,
+                        stager,
+                        ShellPathPolicy.noShell());
+
+        RuntimeContext wide = RuntimeContext.builder().userId("u1").build();
+        wide.put(
+                CapabilitySurface.class,
+                new CapabilitySurface(java.util.Set.of("alpha", "beta"), null, null));
+        RuntimeContext narrow = RuntimeContext.builder().userId("u1").build();
+        narrow.put(
+                CapabilitySurface.class,
+                new CapabilitySurface(java.util.Set.of("alpha"), null, null));
+
+        // Act: a wide call stages both descriptor trees, then a narrow call re-prestages.
+        List<String> wideRoots = middleware.prestageForProjection(wide);
+        Path betaStaged = tempWorkspace.resolve(".skills-cache/u1/market/beta/run.sh");
+        assertTrue(Files.exists(betaStaged), "the wide call stages beta's tree");
+
+        List<String> narrowRoots = middleware.prestageForProjection(narrow);
+
+        // Assert: the projection narrows to the granted name; the residue stays on disk.
+        assertEquals(2, wideRoots.size(), "the wide call projected both subtrees");
+        assertEquals(
+                List.of(".skills-cache/u1/market/alpha"),
+                narrowRoots,
+                "the shrunken grant must drop beta's descriptor subtree from the projection");
+        assertTrue(
+                Files.exists(betaStaged),
+                "the staged bytes stay on the host (shared cache, grace-window GC)");
+        assertTrue(
+                Files.exists(tempWorkspace.resolve(".skills-cache/u1/market/alpha/run.sh")),
+                "the granted name's subtree remains projected");
+    }
+
+    /** Writes {@code <tempWorkspace>/origins/<name>/SKILL.md} and {@code run.sh}; returns the dir. */
+    private Path writeOriginTree(String name, String version, String script) throws IOException {
+        Path dir = Files.createDirectories(tempWorkspace.resolve("origins").resolve(name));
+        Files.writeString(
+                dir.resolve("SKILL.md"),
+                "---\nname: " + name + "\ndescription: d\nversion: " + version + "\n---\nbody\n");
+        Files.writeString(dir.resolve("run.sh"), "#!/bin/sh\n" + script + "\n");
+        return dir;
+    }
+
+    /**
+     * Minimal repository stub that returns a fixed skill list. Context-scoped so the harness
+     * middleware enumerates it per request (plain repositories are never enumerated without
+     * an explicit selection).
+     */
+    private static final class StubSkillRepository
+            implements io.agentscope.core.skill.repository.RuntimeContextSkillRepository {
+
+        /** Latest pull serves the stored skill; any explicit version answers {@code null}
+         * (no version capability on this stub). */
+        @Override
+        public AgentSkill getSkill(String name, String version) {
+            return version == null || version.isBlank() ? getSkill(name) : null;
+        }
 
         private final List<AgentSkill> skills;
         private final String source;
@@ -277,6 +362,11 @@ class SandboxLifecycleMiddlewareCallbackTest {
 
         @Override
         public List<AgentSkill> getAllSkills() {
+            return skills;
+        }
+
+        @Override
+        public List<AgentSkill> getAllSkills(io.agentscope.core.agent.RuntimeContext context) {
             return skills;
         }
 

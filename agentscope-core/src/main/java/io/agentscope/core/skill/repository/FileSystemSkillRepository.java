@@ -20,13 +20,8 @@ import io.agentscope.core.skill.util.SkillFileSystemHelper;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.attribute.BasicFileAttributes;
 import java.util.ArrayList;
-import java.util.HashSet;
 import java.util.List;
-import java.util.Map;
-import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Stream;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -34,10 +29,10 @@ import org.slf4j.LoggerFactory;
 /**
  * File system based implementation of AgentSkillRepository.
  *
- * <p>This repository stores skills in a local file system directory structure where each skill
- * is stored in its own subdirectory containing a SKILL.md file and optional resource files.
+ * <p>This repository stores skills in a local file system directory and serves it directly
+ * — no materialization cache is used. Two layouts are supported:
  *
- * <p>Directory structure:
+ * <p>Flat (unversioned):
  * <pre>{@code
  * baseDir/
  * ├── skill-name-1/
@@ -49,18 +44,37 @@ import org.slf4j.LoggerFactory;
  *     └── SKILL.md
  * }</pre>
  *
+ * <p>Versioned container:
+ * <pre>{@code
+ * baseDir/
+ * └── skill-name/
+ *     ├── 20260101120000/   # One directory per version, each a complete skill package
+ *     │   └── SKILL.md
+ *     └── 20260201130000/
+ *         └── SKILL.md
+ * }</pre>
+ *
  * <p>Example usage:
  * <pre>{@code
  * Path baseDir = Paths.get("/path/to/skills");
  * FileSystemSkillRepository repo = new FileSystemSkillRepository(baseDir);
- * AgentSkill skill = repo.getSkill("my-skill");
+ * AgentSkill skill = repo.getSkill("my-skill", null);
  * }</pre>
  *
+ * <p>Version semantics: the flat layout has <em>no</em> version capability — every pull
+ * serves the current bytes unstamped, and a non-null {@code version} has nothing to address
+ * and answers {@code null}. The versioned-container layout makes the version directory
+ * name the version reference: a {@code null} version serves the lexicographically greatest
+ * directory name (directory names must sort chronologically as strings; fixed-width
+ * timestamp names such as {@code 20260101120000} are the recommended form), and a non-null
+ * version serves exactly that directory or answers {@code null}. Mixing the two layouts in
+ * one repository is unsupported: once any skill serves a stamped pull, the loading
+ * middleware classifies the repository as version-capable and skips its unstamped skills
+ * (see {@link io.agentscope.core.skill.DynamicSkillMiddleware}).
  */
 public class FileSystemSkillRepository implements AgentSkillRepository {
 
     private static final Logger logger = LoggerFactory.getLogger(FileSystemSkillRepository.class);
-    private static final String SKILL_FILE_NAME = "SKILL.md";
 
     private final Path baseDir;
     private final String source;
@@ -75,11 +89,12 @@ public class FileSystemSkillRepository implements AgentSkillRepository {
     private final boolean lazy;
 
     /**
-     * Memoises (skillDirAbsolutePath → snapshot) so that repeated {@link #getAllSkills()} calls
-     * skip the {@code readString} of any SKILL.md whose mtime + size are unchanged.
+     * Creates a writable FileSystemSkillRepository on the given base directory serving
+     * resources eagerly (non-lazy).
+     *
+     * @param baseDir The base directory containing skill subdirectories (must not be null)
+     * @throws IllegalArgumentException if baseDir is null, doesn't exist, or is not a directory
      */
-    private final Map<Path, Snapshot> skillCache = new ConcurrentHashMap<>();
-
     public FileSystemSkillRepository(Path baseDir) {
         this(baseDir, true, null, false);
     }
@@ -152,75 +167,153 @@ public class FileSystemSkillRepository implements AgentSkillRepository {
         return lazy;
     }
 
+    /**
+     * Serves the skill from this repository's own directory — a direct read, no cache.
+     *
+     * <p>Flat layout ({@code baseDir/<name>/SKILL.md}): a {@code null}/blank version serves
+     * the current bytes <em>unstamped</em>; any non-null version has nothing to address and
+     * answers {@code null}.
+     *
+     * <p>Versioned-container layout ({@code baseDir/<name>/<version>/SKILL.md}): the
+     * version directory name is the version reference. {@code null}/blank serves the
+     * lexicographically greatest version directory; a non-null version serves exactly that
+     * directory or answers {@code null} — the requested string is matched against directory
+     * names, never resolved as a path. Served instances carry the version directory name as
+     * their stamp.
+     *
+     * <p>Both layouts return the summary form (empty resource map, {@code originDir} = the
+     * served directory; see {@link AgentSkillRepository#getSkill(String, String)}).
+     * Unresolvable references (missing directory, neither layout, unknown version,
+     * traversal attempt) answer {@code null}, never an exception.
+     */
     @Override
-    public AgentSkill getSkill(String name) {
-        // Single-skill lookup is rare on the hot path; just go through the same cache by
-        // running getAllSkills(), and pick the matching one. This keeps mtime invalidation
-        // logic in one place.
-        if (name == null || name.isEmpty()) {
+    public AgentSkill getSkill(String name, String version) {
+        Path skillDir = resolveSkillDir(name);
+        if (skillDir == null) {
             return null;
         }
-        for (AgentSkill skill : getAllSkills()) {
-            if (name.equals(skill.getName())) {
-                return skill;
+        if (SkillFileSystemHelper.hasSkillFile(skillDir)) {
+            // Flat layout: this directory is the skill, always current, never versioned.
+            if (version != null && !version.isBlank()) {
+                return null;
             }
+            return loadSummaryFrom(skillDir);
         }
-        // Fallback path for cases where a skill was just written and the cache hasn't seen
-        // it: read directly. Honour the lazy flag.
-        return SkillFileSystemHelper.loadSkill(baseDir, name, getSource());
+        Path versionDir = resolveVersionDir(skillDir, version);
+        return versionDir == null
+                ? null
+                : stampVersion(loadSummaryFrom(versionDir), versionDir.getFileName().toString());
     }
 
+    /**
+     * Loads a directory's SKILL.md as the summary form (empty resource map, {@code
+     * originDir} set); {@code null} when the directory is not a loadable skill (missing,
+     * invalid or unreadable SKILL.md) — never an exception.
+     */
+    private AgentSkill loadSummaryFrom(Path skillDir) {
+        try {
+            return SkillFileSystemHelper.loadSkillFromDirectory(skillDir, getSource(), false);
+        } catch (RuntimeException e) {
+            logger.warn("Failed to load skill from '{}': {}", skillDir, e.getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * Resolves the version directory to serve from a versioned container: the
+     * lexicographically greatest version directory name for a {@code null}/blank version,
+     * or the exact-name match for a specific version. The requested version is only
+     * compared against listed directory names — never resolved as a path — so traversal
+     * attempts simply miss. {@code null} when the container holds no matching version
+     * directory.
+     */
+    private Path resolveVersionDir(Path skillDir, String version) {
+        boolean exact = version != null && !version.isBlank();
+        Path latest = null;
+        try (Stream<Path> children = Files.list(skillDir)) {
+            for (Path dir : (Iterable<Path>) children::iterator) {
+                if (!SkillFileSystemHelper.isVersionDirectory(dir)) {
+                    continue;
+                }
+                if (exact) {
+                    if (version.equals(dir.getFileName().toString())) {
+                        return dir;
+                    }
+                } else if (latest == null
+                        || latest.getFileName().toString().compareTo(dir.getFileName().toString())
+                                < 0) {
+                    latest = dir;
+                }
+            }
+        } catch (IOException e) {
+            logger.warn(
+                    "Failed to list version directories under '{}': {}", skillDir, e.getMessage());
+            return null;
+        }
+        return latest;
+    }
+
+    /**
+     * Discovery for both layouts, keyed on the directory name — the same key the serving
+     * method resolves ({@code baseDir/<name>}): a flat skill directory holds a direct
+     * SKILL.md, a versioned container holds version directories. The SKILL.md metadata
+     * name is not a discovery key; a skill whose metadata name differs from its directory
+     * name is listed and served under the directory name.
+     */
     @Override
     public List<String> getAllSkillNames() {
-        return SkillFileSystemHelper.getAllSkillNames(baseDir);
-    }
-
-    @Override
-    public List<AgentSkill> getAllSkills() {
-        List<AgentSkill> out = new ArrayList<>();
-        Set<Path> seenDirs = new HashSet<>();
-        try (Stream<Path> subdirs = Files.list(baseDir)) {
-            for (Path dir : (Iterable<Path>) subdirs::iterator) {
-                if (!Files.isDirectory(dir)) {
+        List<String> names = new ArrayList<>();
+        try (Stream<Path> children = Files.list(baseDir)) {
+            for (Path dir : (Iterable<Path>) children::iterator) {
+                Path fileName = dir.getFileName();
+                if (fileName == null
+                        || fileName.toString().startsWith(".")
+                        || !Files.isDirectory(dir)) {
                     continue;
                 }
-                Path skillFile = dir.resolve(SKILL_FILE_NAME);
-                if (!Files.exists(skillFile)) {
-                    continue;
-                }
-                Path key = dir.toAbsolutePath().normalize();
-                seenDirs.add(key);
-                try {
-                    BasicFileAttributes attrs =
-                            Files.readAttributes(skillFile, BasicFileAttributes.class);
-                    long mtime = attrs.lastModifiedTime().toMillis();
-                    long size = attrs.size();
-                    Snapshot cached = skillCache.get(key);
-                    if (cached != null && cached.mtime == mtime && cached.size == size) {
-                        out.add(cached.skill);
-                        continue;
-                    }
-                    AgentSkill skill =
-                            SkillFileSystemHelper.loadSkillFromDirectory(dir, getSource(), !lazy);
-                    skillCache.put(key, new Snapshot(mtime, size, skill));
-                    out.add(skill);
-                } catch (IOException e) {
-                    logger.warn("Failed to stat SKILL.md for '{}': {}", dir, e.getMessage(), e);
-                } catch (Exception e) {
-                    logger.warn("Failed to load skill from '{}': {}", dir, e.getMessage(), e);
+                if (SkillFileSystemHelper.hasSkillFile(dir)
+                        || SkillFileSystemHelper.hasVersionedLayout(dir)) {
+                    names.add(fileName.toString());
                 }
             }
         } catch (IOException e) {
             throw new RuntimeException("Failed to list skill directories", e);
         }
-        // Evict entries whose backing directory disappeared between calls so the cache does
-        // not pin removed skills.
-        skillCache.keySet().retainAll(seenDirs);
-        return out;
+        names.sort(String::compareTo);
+        return names;
     }
 
-    /** Cache entry pairing the SKILL.md mtime/size with the parsed AgentSkill. */
-    private record Snapshot(long mtime, long size, AgentSkill skill) {}
+    /**
+     * Bulk read retained for compatibility: a flat-directory scan matching SKILL.md metadata
+     * names, loading resources per the {@code lazy} flag. Versioned containers are not
+     * included — they are served through {@link #getSkill(String, String)} at
+     * their latest version once {@link #getAllSkillNames()} lists them.
+     */
+    @Override
+    public List<AgentSkill> getAllSkills() {
+        return SkillFileSystemHelper.getAllSkills(baseDir, getSource(), !lazy);
+    }
+
+    /**
+     * Resolves the named skill's directory as {@code baseDir/<name>} (the write path's
+     * convention), rejecting traversal; {@code null} when no such directory exists.
+     */
+    private Path resolveSkillDir(String name) {
+        if (name == null || name.isBlank()) {
+            return null;
+        }
+        try {
+            Path dir = SkillFileSystemHelper.validateAndResolvePath(baseDir, name);
+            return Files.isDirectory(dir) ? dir : null;
+        } catch (IllegalArgumentException e) {
+            return null;
+        }
+    }
+
+    /** Stamps a loaded skill with its version; {@code null} skills pass through. */
+    private static AgentSkill stampVersion(AgentSkill skill, String version) {
+        return skill == null ? null : skill.toBuilder().version(version).build();
+    }
 
     @Override
     public boolean save(List<AgentSkill> skills, boolean force) {
@@ -233,9 +326,7 @@ public class FileSystemSkillRepository implements AgentSkillRepository {
             return false;
         }
 
-        boolean ok = SkillFileSystemHelper.saveSkills(baseDir, skills, force);
-        skillCache.clear();
-        return ok;
+        return SkillFileSystemHelper.saveSkills(baseDir, skills, force);
     }
 
     @Override
@@ -245,14 +336,18 @@ public class FileSystemSkillRepository implements AgentSkillRepository {
             return false;
         }
 
-        boolean ok = SkillFileSystemHelper.deleteSkill(baseDir, skillName);
-        skillCache.clear();
-        return ok;
+        return SkillFileSystemHelper.deleteSkill(baseDir, skillName);
     }
 
     @Override
     public boolean skillExists(String skillName) {
-        return SkillFileSystemHelper.skillExists(baseDir, skillName);
+        if (SkillFileSystemHelper.skillExists(baseDir, skillName)) {
+            return true; // legacy flat lookup matching the SKILL.md metadata name
+        }
+        Path dir = resolveSkillDir(skillName);
+        return dir != null
+                && (SkillFileSystemHelper.hasSkillFile(dir)
+                        || SkillFileSystemHelper.hasVersionedLayout(dir));
     }
 
     @Override

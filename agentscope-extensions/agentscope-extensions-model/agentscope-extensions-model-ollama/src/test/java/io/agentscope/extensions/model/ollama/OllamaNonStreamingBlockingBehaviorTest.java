@@ -17,6 +17,7 @@ package io.agentscope.extensions.model.ollama;
 
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
@@ -100,8 +101,12 @@ class OllamaNonStreamingBlockingBehaviorTest {
                         },
                         error -> latch.countDown());
 
-        latch.await(3, TimeUnit.SECONDS);
-        assertNotNull(streamThreadName.get());
+        // Generous bound: under a fully parallel build the delayed response can take far
+        // longer than the 500ms server delay; the happy path still returns immediately.
+        assertTrue(
+                latch.await(30, TimeUnit.SECONDS),
+                "stream() did not signal within 30 seconds; the response never arrived");
+        assertNotNull(streamThreadName.get(), "stream() must deliver on a worker thread");
         assertNotEquals(
                 currentThreadName,
                 streamThreadName.get(),

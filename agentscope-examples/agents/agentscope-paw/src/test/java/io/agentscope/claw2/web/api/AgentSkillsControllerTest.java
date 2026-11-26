@@ -562,6 +562,13 @@ class AgentSkillsControllerTest {
             return skill;
         }
 
+        /** Latest pull delegates to the 1-arg read; an explicit version answers {@code null}
+         * (the in-memory store has no version capability). */
+        @Override
+        public AgentSkill getSkill(String name, String version) {
+            return version == null || version.isBlank() ? getSkill(name) : null;
+        }
+
         @Override
         public List<String> getAllSkillNames() {
             return new ArrayList<>(store.keySet());

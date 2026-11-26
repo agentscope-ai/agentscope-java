@@ -119,6 +119,7 @@ class LazyFileSystemSkillLoadingTest {
                         .stateStore(new InMemoryAgentStateStore())
                         .threadJournalStore(new InMemoryThreadJournalStore())
                         .skillRepository(repository)
+                        .skillFilter(SkillFilter.only("alpha"))
                         .build()) {
             assertNotNull(
                     agent.call(
@@ -131,7 +132,9 @@ class LazyFileSystemSkillLoadingTest {
 
     @Test
     void missingResourcesListDiskFilesAndRejectTraversal() throws IOException {
-        var middleware = new HarnessSkillMiddleware(List.of(repository()), new Toolkit());
+        var middleware =
+                new HarnessSkillMiddleware(
+                        List.of(repository()), new Toolkit(), SkillFilter.only("alpha"));
         RuntimeContext ctx = RuntimeContext.empty();
         middleware.onSystemPrompt(null, ctx, "").block();
         String missing = load(ctx, "missing.md");
@@ -154,7 +157,8 @@ class LazyFileSystemSkillLoadingTest {
         Path root = repo.getSkill("alpha").getOriginDir().orElseThrow();
         byte[] content = "base64:aGVsbG8=".getBytes(StandardCharsets.UTF_8);
         Files.write(root.resolve("literal.txt"), content);
-        var middleware = new HarnessSkillMiddleware(List.of(repo), new Toolkit());
+        var middleware =
+                new HarnessSkillMiddleware(List.of(repo), new Toolkit(), SkillFilter.only("alpha"));
         RuntimeContext ctx = RuntimeContext.empty();
         middleware.onSystemPrompt(null, ctx, "").block();
         assertArrayEquals(
@@ -196,7 +200,8 @@ class LazyFileSystemSkillLoadingTest {
             }
         }
         var middleware =
-                new HarnessSkillMiddleware(List.of(new DenyingRepository()), new Toolkit());
+                new HarnessSkillMiddleware(
+                        List.of(new DenyingRepository()), new Toolkit(), SkillFilter.only("alpha"));
         RuntimeContext ctx = RuntimeContext.empty();
         middleware.onSystemPrompt(null, ctx, "").block();
         assertFalse(load(ctx, "references/guide.md").contains("GUIDE_FROM_DISK"));
