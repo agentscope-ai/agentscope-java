@@ -147,7 +147,9 @@ final class ReflectiveFunctionTool extends ToolBase {
                         .externalTool(annotation.externalTool())
                         .stateInjected(annotation.stateInjected())
                         .returnDirect(annotation.returnDirect())
-                        .system(annotation.system());
+                        .system(annotation.system())
+                        .evictable(annotation.evictable())
+                        .prunable(annotation.prunable());
         if (annotation.dangerousFiles().length > 0) {
             builder.dangerousFiles(List.of(annotation.dangerousFiles()));
         }

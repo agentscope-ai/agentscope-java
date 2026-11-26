@@ -7082,7 +7082,7 @@
           ]
         },
         "status": {
-          "const": "accepted"
+          "enum": ["accepted", "ignored"]
         },
         "cursor": {
           "type": "string",

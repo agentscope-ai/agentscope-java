@@ -92,6 +92,11 @@ public final class InvocationRecorder {
     private final Map<String, String> actionIds = new ConcurrentHashMap<>();
     private final Map<String, String> messageModelCalls = new ConcurrentHashMap<>();
     private String previousState;
+    private String pendingModelCallId;
+    private String previousPendingModelCallId;
+    private String modelAnswerId;
+    private String previousModelAnswerId;
+    private final String modelContinuationTurnId;
     private List<String> previousMessages = List.of();
     private final Set<String> recordedMessages = new HashSet<>();
     private final Set<String> inputMessages = new HashSet<>();
@@ -137,6 +142,11 @@ public final class InvocationRecorder {
                         "Explicit reconciliation required for unknown tool outcomes: "
                                 + initial.uncertainToolCalls());
             previousState = initial.stateJson();
+            pendingModelCallId = history.pendingModelCallId;
+            previousPendingModelCallId = pendingModelCallId;
+            modelAnswerId = history.modelAnswerId;
+            previousModelAnswerId = modelAnswerId;
+            modelContinuationTurnId = history.modelContinuationTurnId;
             boolean continuing = history.continues(initial);
             interruptedStep = continuing ? history.interruptedStep : null;
             if (continuing && initial.executionPosition() != null) {
@@ -161,6 +171,9 @@ public final class InvocationRecorder {
         private String latestTurn;
         private boolean finished;
         private String interruptedStep;
+        private String pendingModelCallId;
+        private String modelAnswerId;
+        private String modelContinuationTurnId;
 
         private InvocationHistory(String turnId) {
             this.turnId = turnId;
@@ -173,6 +186,14 @@ public final class InvocationRecorder {
                 latestTurn = null;
                 interruptedStep = null;
                 finished = true;
+                pendingModelCallId = null;
+                modelAnswerId = null;
+                modelContinuationTurnId = null;
+            }
+            if ("state/checkpoint".equals(event.type())) {
+                pendingModelCallId = (String) data.get("pendingModelCallId");
+                modelAnswerId = (String) data.get("modelAnswerId");
+                modelContinuationTurnId = event.turnId();
             }
             if ("run/start".equals(event.type())) {
                 if (turnId == null && (finished || event.turnId() != null)) interruptedStep = null;
@@ -578,6 +599,8 @@ public final class InvocationRecorder {
         String json = state.toJson();
         if (json.equals(previousState)
                 && executionPosition.equals(previousPosition)
+                && Objects.equals(pendingModelCallId, previousPendingModelCallId)
+                && Objects.equals(modelAnswerId, previousModelAnswerId)
                 && state.getContext().stream()
                         .allMatch(message -> recordedMessages.contains(message.getId()))) return;
         var messages = messageJson(state);
@@ -639,19 +662,26 @@ public final class InvocationRecorder {
         append("state/checkpoint", checkpointData(json, reason));
         previousState = json;
         previousPosition = executionPosition;
+        previousPendingModelCallId = pendingModelCallId;
+        previousModelAnswerId = modelAnswerId;
         previousMessages = messages;
     }
 
     private Map<String, Object> checkpointData(String json, String reason) {
-        return Map.of(
-                "projectorVersion",
-                1,
-                "stateJson",
-                json,
-                "reason",
-                reason,
-                "executionPosition",
-                executionPosition);
+        var data =
+                new LinkedHashMap<String, Object>(
+                        Map.of(
+                                "projectorVersion",
+                                1,
+                                "stateJson",
+                                json,
+                                "reason",
+                                reason,
+                                "executionPosition",
+                                executionPosition));
+        if (pendingModelCallId != null) data.put("pendingModelCallId", pendingModelCallId);
+        if (modelAnswerId != null) data.put("modelAnswerId", modelAnswerId);
+        return data;
     }
 
     /** Native progress is committed with state, never inferred from Run/Step counts. */
@@ -749,7 +779,37 @@ public final class InvocationRecorder {
 
     /** A logical decision has entered native state; transport retries do not call this again. */
     public synchronized void reasoningCompleted(int iteration) {
+        reasoningCompleted(iteration, null);
+    }
+
+    /** Preserve a terminal model answer until this Run finishes. */
+    public synchronized void reasoningCompleted(int iteration, Msg answer) {
         executionPosition = new AgentExecutionPosition(Math.addExact(iteration, 1), iteration);
+        if (pendingModelCallId != null && answer != null) modelAnswerId = answer.getId();
+        pendingModelCallId = null;
+    }
+
+    public synchronized String pendingModelCallId() {
+        return pendingModelCallId;
+    }
+
+    /** Check ownership of a suspended model call before recording the next Run or its inputs. */
+    public void verifyModelContinuation(boolean hasHost, List<Msg> input) {
+        if (pendingModelCallId == null && modelAnswerId == null) return;
+        if (!hasHost
+                || turnId == null
+                || !turnId.equals(modelContinuationTurnId)
+                || input != null && !input.isEmpty())
+            throw new JournalException(
+                    "Thread requires a model continuation on Turn " + modelContinuationTurnId);
+    }
+
+    public Msg modelAnswer(AgentState state) {
+        if (modelAnswerId == null) return null;
+        return state.getContext().stream()
+                .filter(message -> modelAnswerId.equals(message.getId()))
+                .findFirst()
+                .orElseThrow(() -> new JournalException("Missing model answer " + modelAnswerId));
     }
 
     /** A new Step in this Run continues the prior acting phase without another model decision. */
@@ -802,12 +862,16 @@ public final class InvocationRecorder {
         return Mono.defer(
                         () -> {
                             synchronized (this) {
-                                captureState(state, "run_" + status);
                                 RunOutcome invocation =
                                         "completed".equals(status) && resultOutcome != null
                                                 ? resultOutcome
                                                 : new RunOutcome(
                                                         RunOutcome.Status.fromValue(status), null);
+                                if (invocation.status() == RunOutcome.Status.COMPLETED) {
+                                    pendingModelCallId = null;
+                                    modelAnswerId = null;
+                                }
+                                captureState(state, "run_" + status);
                                 String terminal = invocation.status().value();
                                 if (resultJson != null && !terminal.equals("suspended"))
                                     append(
@@ -968,9 +1032,24 @@ public final class InvocationRecorder {
 
     public Mono<Void> prepareModel(
             ModelCallInput input, String callId, String purpose, AgentState state) {
+        return prepareModel(input, callId, purpose, state, false);
+    }
+
+    Mono<Void> prepareModelHandoff(
+            ModelCallInput input, String callId, String purpose, AgentState state) {
+        return prepareModel(input, callId, purpose, state, true);
+    }
+
+    private Mono<Void> prepareModel(
+            ModelCallInput input,
+            String callId,
+            String purpose,
+            AgentState state,
+            boolean handoff) {
         return Mono.defer(
                 () -> {
                     synchronized (this) {
+                        if (handoff) pendingModelCallId = callId;
                         captureState(state, "before_model");
                         var payload = new LinkedHashMap<String, Object>();
                         payload.put("modelCallId", callId);

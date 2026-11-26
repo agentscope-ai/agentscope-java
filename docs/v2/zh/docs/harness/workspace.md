@@ -190,6 +190,7 @@ env:
 - **每轮都重新拼。** 你改了 `AGENTS.md` 或 `MEMORY.md`，下一次 `call()` 立刻生效，不需要重启或重建 agent。
 - **`MEMORY.md` 估算 token 后才注入。** 超出剩余预算就按字符截断并附一行提示，引导模型用 `memory_search` 工具查老内容。
 - **`knowledge/` 是目录索引 + 入口文件**。完整内容不会全量塞进 prompt——只把 `KNOWLEDGE.md` 全文加上其它文件的路径清单注入，让模型用 `read_file` 自己取需要的。
+- **宿主信息随执行后端而定。** `## Runtime Environment` 中的宿主操作系统、宿主 workspace 和 JVM 临时目录只用于本地执行和远程模板兜底场景。纯沙箱执行面省略这些信息：它们在沙箱内不可操作，也会与沙箱对文件和 shell 路径的描述相矛盾。沙箱根目录只取自本次调用仍有效的沙箱 workspace 元数据，不会从文件系统代理 ID 猜测容器 ID 或未知根目录。
 
 ### 两层读架构（filesystem-first + 本地兜底）
 

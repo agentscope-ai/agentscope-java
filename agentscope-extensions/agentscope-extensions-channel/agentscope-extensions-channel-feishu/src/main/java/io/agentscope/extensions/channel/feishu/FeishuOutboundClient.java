@@ -74,17 +74,18 @@ public final class FeishuOutboundClient {
         this.responseTimeout = responseTimeout;
     }
 
-    /** Sends each message to the resolved peer. */
+    /** Sends each message to the addressed thread, or to the chat when no thread is specified. */
     public Mono<Void> send(OutboundAddress address, List<Msg> messages) {
         if (messages == null || messages.isEmpty()) {
             return Mono.empty();
         }
         PeerTarget target = parseAddress(address);
+        String threadId = address.threadId();
         return Mono.defer(tokenProvider::token)
                 .flatMapMany(
                         token ->
                                 reactor.core.publisher.Flux.fromIterable(messages)
-                                        .concatMap(msg -> sendOne(token, target, msg)))
+                                        .concatMap(msg -> sendOne(token, target, msg, threadId)))
                 .then();
     }
 
@@ -108,8 +109,8 @@ public final class FeishuOutboundClient {
                                         : Mono.just(id));
     }
 
-    private Mono<Void> sendOne(String token, PeerTarget target, Msg msg) {
-        return sendOneReceipt(token, target, msg, null, null).then();
+    private Mono<Void> sendOne(String token, PeerTarget target, Msg msg, String threadId) {
+        return sendOneReceipt(token, target, msg, threadId, null).then();
     }
 
     private Mono<String> sendOneReceipt(

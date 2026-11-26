@@ -27,7 +27,7 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 /**
- * Middleware provides interception mechanisms at 6 key execution points
+ * Middleware provides interception mechanisms at key execution points
  * in the Agent lifecycle.
  *
  * <p><b>Onion Pattern</b> (4 hooks — wrap execution with before/after logic):
@@ -47,11 +47,12 @@ import reactor.core.publisher.Mono;
  * delegation):
  * <ul>
  *   <li>{@link #onAgentStateReady} — notified once this call's AgentState is ready</li>
+ *   <li>{@link #onAgentEvent} — observes an event at its production boundary</li>
  * </ul>
  *
  * <p>Each onion/transformer hook has a default implementation that delegates
  * directly to {@code next}, so subclasses only need to override the hooks they
- * care about; {@link #onAgentStateReady} defaults to a no-op. Every
+ * care about; notification hooks default to a no-op. Every
  * implementation should additionally declare the points it participates in via
  * {@link #activePoints()}; an undeclared middleware (returning {@code null})
  * has its participation set inferred from the hooks its class actually
@@ -97,6 +98,7 @@ public interface MiddlewareBase {
         ON_MODEL_CALL("onModelCall"),
         ON_SYSTEM_PROMPT("onSystemPrompt"),
         ON_AGENT_STATE_READY("onAgentStateReady"),
+        ON_AGENT_EVENT("onAgentEvent"),
         ON_AGENT_FINISH("onAgentFinish");
 
         private final String hookMethod;
@@ -282,6 +284,24 @@ public interface MiddlewareBase {
      */
     default void onAgentStateReady(
             Agent agent, RuntimeContext ctx, AgentState state, List<Msg> inputMessages) {}
+
+    /**
+     * Observes an event synchronously at this call's production boundary, after execution
+     * identity is attached and before buffering or forwarding. Delivery does not depend on
+     * subscriber demand. This is not a notification for events injected by an external emitter
+     * or for the outer stream's lifecycle envelope.
+     *
+     * <p>Participants run in {@link #order()} sequence (higher first); equal orders retain builder
+     * registration order. Implementations must treat the event as read-only,
+     * must not block or re-enter the agent, and should return promptly. Observer exceptions are
+     * logged and ignored so observation cannot change execution facts or suppress delivery to
+     * the remaining observers.
+     *
+     * @param agent the agent producing the event
+     * @param ctx per-call runtime context
+     * @param event the produced event; do not mutate it
+     */
+    default void onAgentEvent(Agent agent, RuntimeContext ctx, AgentEvent event) {}
 
     /**
      * Runs after a successful call result, before native checkpoints and writer release.

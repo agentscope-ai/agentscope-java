@@ -355,6 +355,25 @@
                         </goals>
                         <phase>test</phase>
                     </execution>
+                    <execution>
+                        <id>merge-reactor-coverage</id>
+                        <phase>none</phase>
+                        <inherited>false</inherited>
+                        <goals>
+                            <goal>merge</goal>
+                        </goals>
+                        <configuration>
+                            <fileSets>
+                                <fileSet>
+                                    <directory>${project.basedir}</directory>
+                                    <includes>
+                                        <include>agentscope-*/**/target/jacoco.exec</include>
+                                    </includes>
+                                </fileSet>
+                            </fileSets>
+                            <destFile>${project.build.directory}/jacoco-merged.exec</destFile>
+                        </configuration>
+                    </execution>
                 </executions>
             </plugin>
             <plugin>
