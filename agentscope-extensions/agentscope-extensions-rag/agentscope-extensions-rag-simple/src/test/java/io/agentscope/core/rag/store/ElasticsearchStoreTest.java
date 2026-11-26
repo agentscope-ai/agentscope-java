@@ -21,6 +21,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.mockConstruction;
 import static org.mockito.Mockito.verify;
@@ -30,8 +31,11 @@ import co.elastic.clients.elasticsearch.ElasticsearchClient;
 import co.elastic.clients.elasticsearch._types.Result;
 import co.elastic.clients.elasticsearch._types.mapping.DenseVectorSimilarity;
 import co.elastic.clients.elasticsearch._types.mapping.Property;
+import co.elastic.clients.elasticsearch._types.query_dsl.TermQuery;
 import co.elastic.clients.elasticsearch.core.BulkRequest;
 import co.elastic.clients.elasticsearch.core.BulkResponse;
+import co.elastic.clients.elasticsearch.core.DeleteByQueryRequest;
+import co.elastic.clients.elasticsearch.core.DeleteByQueryResponse;
 import co.elastic.clients.elasticsearch.core.DeleteResponse;
 import co.elastic.clients.elasticsearch.core.SearchRequest;
 import co.elastic.clients.elasticsearch.core.SearchResponse;
@@ -42,6 +46,7 @@ import co.elastic.clients.elasticsearch.indices.CreateIndexResponse;
 import co.elastic.clients.elasticsearch.indices.ElasticsearchIndicesClient;
 import co.elastic.clients.elasticsearch.indices.ExistsRequest;
 import co.elastic.clients.transport.endpoints.BooleanResponse;
+import co.elastic.clients.util.ObjectBuilder;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.rag.exception.VectorStoreException;
 import io.agentscope.core.rag.model.Document;
@@ -60,6 +65,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.mockito.InOrder;
 import org.mockito.MockedConstruction;
 import reactor.test.StepVerifier;
 
@@ -545,5 +551,89 @@ public class ElasticsearchStoreTest {
         StepVerifier.create(store.delete(null))
                 .expectError(IllegalArgumentException.class)
                 .verify();
+    }
+
+    @Test
+    @DisplayName("deleteByDocId should refresh, then delete by a doc_id term query")
+    @SuppressWarnings("unchecked")
+    void testDeleteByDocId() throws Exception {
+        List<DeleteByQueryRequest> requests = new ArrayList<>();
+        ElasticsearchClient[] client = new ElasticsearchClient[1];
+        ElasticsearchIndicesClient[] indices = new ElasticsearchIndicesClient[1];
+        try (MockedConstruction<ElasticsearchClient> ignored =
+                mockConstruction(
+                        ElasticsearchClient.class,
+                        (mock, context) -> {
+                            client[0] = mock;
+                            indices[0] = mock(ElasticsearchIndicesClient.class);
+                            when(mock.indices()).thenReturn(indices[0]);
+                            BooleanResponse exists = mock(BooleanResponse.class);
+                            when(exists.value()).thenReturn(true);
+                            when(indices[0].exists(any(ExistsRequest.class))).thenReturn(exists);
+
+                            DeleteByQueryResponse response = mock(DeleteByQueryResponse.class);
+                            when(response.deleted()).thenReturn(3L);
+                            when(mock.deleteByQuery(any(Function.class)))
+                                    .thenAnswer(
+                                            invocation -> {
+                                                Function<
+                                                                DeleteByQueryRequest.Builder,
+                                                                ObjectBuilder<DeleteByQueryRequest>>
+                                                        fn = invocation.getArgument(0);
+                                                requests.add(
+                                                        fn.apply(new DeleteByQueryRequest.Builder())
+                                                                .build());
+                                                return response;
+                                            });
+                        })) {
+            store =
+                    ElasticsearchStore.builder()
+                            .url(TEST_URL)
+                            .indexName(TEST_INDEX)
+                            .dimensions(TEST_DIMENSIONS)
+                            .build();
+        }
+
+        StepVerifier.create(store.deleteByDocId("doc-1"))
+                .assertNext(Assertions::assertTrue)
+                .verifyComplete();
+
+        InOrder order = inOrder(indices[0], client[0]);
+        order.verify(indices[0]).refresh(any(Function.class));
+        order.verify(client[0]).deleteByQuery(any(Function.class));
+        TermQuery term = requests.get(0).query().term();
+        assertEquals("doc_id", term.field());
+        assertEquals("doc-1", term.value().stringValue());
+    }
+
+    @Test
+    @DisplayName("deleteByDocId should return false when nothing was deleted")
+    @SuppressWarnings("unchecked")
+    void testDeleteByDocIdNotFound() throws Exception {
+        try (MockedConstruction<ElasticsearchClient> ignored =
+                mockConstruction(
+                        ElasticsearchClient.class,
+                        (mock, context) -> {
+                            ElasticsearchIndicesClient indicesClient =
+                                    mock(ElasticsearchIndicesClient.class);
+                            when(mock.indices()).thenReturn(indicesClient);
+                            BooleanResponse exists = mock(BooleanResponse.class);
+                            when(exists.value()).thenReturn(true);
+                            when(indicesClient.exists(any(ExistsRequest.class))).thenReturn(exists);
+                            DeleteByQueryResponse response = mock(DeleteByQueryResponse.class);
+                            when(response.deleted()).thenReturn(0L);
+                            when(mock.deleteByQuery(any(Function.class))).thenReturn(response);
+                        })) {
+            store =
+                    ElasticsearchStore.builder()
+                            .url(TEST_URL)
+                            .indexName(TEST_INDEX)
+                            .dimensions(TEST_DIMENSIONS)
+                            .build();
+        }
+
+        StepVerifier.create(store.deleteByDocId("doc-1"))
+                .assertNext(Assertions::assertFalse)
+                .verifyComplete();
     }
 }

@@ -174,14 +174,26 @@ public class InMemoryStore implements VDBStoreBase {
 
     @Override
     public Mono<Boolean> delete(final String id) {
-        if (id == null) {
-            return Mono.error(new IllegalArgumentException("Document ID cannot be null"));
+        if (id == null || id.trim().isEmpty()) {
+            return Mono.error(new IllegalArgumentException("Document ID cannot be null or empty"));
         }
         return Mono.fromCallable(
                 () -> {
                     Document removed = documents.remove(id);
                     return removed != null;
                 });
+    }
+
+    @Override
+    public Mono<Boolean> deleteByDocId(final String docId) {
+        if (docId == null || docId.trim().isEmpty()) {
+            return Mono.error(new IllegalArgumentException("Doc ID cannot be null or empty"));
+        }
+        return Mono.fromCallable(
+                () ->
+                        documents
+                                .values()
+                                .removeIf(doc -> docId.equals(doc.getMetadata().getDocId())));
     }
 
     /**
