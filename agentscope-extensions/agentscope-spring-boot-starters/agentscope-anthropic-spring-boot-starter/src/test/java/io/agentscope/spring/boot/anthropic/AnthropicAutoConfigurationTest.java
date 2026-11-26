@@ -190,7 +190,13 @@ class AnthropicAutoConfigurationTest {
                                                         null,
                                                         null)
                                                 .collectList()
-                                                .block(Duration.ofSeconds(10));
+                                                // The first gateway test in the class pays the
+                                                // SDK client's cold start (the other three take
+                                                // under 1s): 5-11s on windows-latest and 9-12s on
+                                                // ubuntu even when green, and run
+                                                // 45137197507 (#2363, 2026-11-23) crossed the
+                                                // former 10s read at 15.66s elapsed.
+                                                .block(Duration.ofSeconds(30));
 
                                 assertThat(responses).hasSize(1);
                                 assertThat(responses.get(0).getContent())
