@@ -270,12 +270,24 @@ public class ScheduleConfig {
          * <p>This is only applicable for CRON schedules. If not specified, the system default
          * time zone will be used.
          *
-         * <p>Examples: "Asia/Shanghai", "America/New_York", "UTC", "Europe/London"
+         * <p>Examples: "Asia/Shanghai", "America/New_York", "UTC", "Europe/London". Offset
+         * forms such as {@code "+01:00"} are also accepted. The id is validated at build time:
+         * an unknown id fails construction instead of silently falling back to GMT when the
+         * Quartz trigger resolves it later (#3310).
          *
          * @param zoneIdStr The time zone ID string (e.g., "Asia/Shanghai")
          * @return This builder
+         * @throws IllegalArgumentException if zoneIdStr is non-blank and not a valid zone id
          */
         public Builder zoneId(String zoneIdStr) {
+            if (zoneIdStr != null && !zoneIdStr.isBlank()) {
+                try {
+                    java.time.ZoneId.of(zoneIdStr);
+                } catch (java.time.DateTimeException e) {
+                    throw new IllegalArgumentException(
+                            "Invalid time zone ID: \"" + zoneIdStr + "\"", e);
+                }
+            }
             this.zoneId = zoneIdStr;
             return this;
         }
