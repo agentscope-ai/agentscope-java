@@ -67,7 +67,8 @@ public record RunOutcome(Status status, String reason) {
                                     MIDDLEWARE_STOP_REQUESTED ->
                                     Status.SUSPENDED;
                             case INTERRUPTED -> Status.INTERRUPTED;
-                            case MAX_ITERATIONS, ALL_TOOLS_DENIED -> Status.FAILED;
+                            case MAX_ITERATIONS, ALL_TOOLS_DENIED, REPEATED_TOOL_CALL ->
+                                    Status.FAILED;
                             default -> Status.COMPLETED;
                         };
         return new RunOutcome(status, reason == null ? null : reason.name());

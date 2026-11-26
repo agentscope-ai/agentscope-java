@@ -227,6 +227,21 @@ ReActAgent agent =
                 .build();
 ```
 
+### RepetitionGuardMiddleware
+
+如果连续请求同一工具通常意味着没有进展，可以显式启用此中间件：
+
+```java
+import io.agentscope.core.middleware.RepetitionGuardMiddleware;
+import java.util.Set;
+
+var guard = new RepetitionGuardMiddleware(3, 5, Set.of("poll_status"));
+var agent = ReActAgent.builder().name("assistant").model(model).toolkit(toolkit)
+        .middleware(guard).build();
+```
+
+连续第 3 次请求同一本地工具且参数相同时，下次推理会收到改变策略的提醒。达到第 5 次时，整批尚未派发的调用会被跳过，返回 `GenerateReason.REPEATED_TOOL_CALL`。被跳过的调用有对应的错误结果，之前轮次的操作不会回滚。权限检查仍优先执行。比较时忽略调用 ID 和 JSON 对象的键顺序，但区分工具名、参数值和数组顺序。排除的工具和外部工具不参与计数。每次调用独立计数，不跨轮次会话累积；未启用时行为不变。
+
 ### FinalAnswerFilterMiddleware
 
 `FinalAnswerFilterMiddleware` 仅输出 ReAct 最终推理轮次的文本。产生工具调用的中间轮次文本会被过滤，工具事件及其他非文本事件仍会正常流式输出。

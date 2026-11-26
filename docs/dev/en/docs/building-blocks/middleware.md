@@ -227,6 +227,21 @@ ReActAgent agent =
                 .build();
 ```
 
+### RepetitionGuardMiddleware
+
+Use this opt-in guard when retrying the same tool request is unlikely to make progress:
+
+```java
+import io.agentscope.core.middleware.RepetitionGuardMiddleware;
+import java.util.Set;
+
+var guard = new RepetitionGuardMiddleware(3, 5, Set.of("poll_status"));
+var agent = ReActAgent.builder().name("assistant").model(model).toolkit(toolkit)
+        .middleware(guard).build();
+```
+
+The third consecutive identical local tool request prompts the model to change strategy on its next reasoning step. If the fifth request is reached, the agent skips the entire not-yet-dispatched batch and returns `GenerateReason.REPEATED_TOOL_CALL`. Skipped calls receive error results; prior rounds are not rolled back. Permission checks still run first. Call IDs and JSON object key order do not affect equality; tool names, argument values and array order do. Excluded and external tools are not counted. Counts are per invocation, not per session. Without the middleware, nothing changes.
+
 ### FinalAnswerFilterMiddleware
 
 `FinalAnswerFilterMiddleware` exposes only the text from the final ReAct reasoning round. Text from rounds that produce tool calls is suppressed, while tool and other non-text events continue to stream normally.

@@ -110,6 +110,7 @@ import io.agentscope.core.middleware.MiddlewareChain;
 import io.agentscope.core.middleware.ModelCallInput;
 import io.agentscope.core.middleware.ModelRequestPreparer;
 import io.agentscope.core.middleware.ReasoningInput;
+import io.agentscope.core.middleware.RepetitionGuardMiddleware;
 import io.agentscope.core.middleware.TaskReminderMiddleware;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.ChatUsage;
@@ -4239,7 +4240,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                 // Every call ungranted: resolve the whole batch without the permission
                 // pipeline (no confirmation can be requested for non-existent tools).
                 resultHolder.set(ungranted);
-                return ungrantedEvents(ungranted, replyId).doOnNext(this::publishEvent);
+                return syntheticErrorEvents(ungranted, replyId).doOnNext(this::publishEvent);
             }
 
             return evaluatePermissions(granted)
@@ -4276,7 +4277,12 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
 
                                 if (pending.isEmpty()) {
                                     return runToolBatch(
-                                            granted, autoDenied, replyId, resultHolder, ungranted);
+                                            toolCalls,
+                                            granted,
+                                            autoDenied,
+                                            replyId,
+                                            resultHolder,
+                                            ungranted);
                                 }
 
                                 // Permission HITL: surface the pending tool calls, persist any
@@ -4292,7 +4298,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                 if (!ungranted.isEmpty()) {
                                     // Same in-place stance as auto-denied results: ungranted
                                     // calls are resolved now so resume does not see them pending.
-                                    writeUngrantedResults(ungranted);
+                                    writeResolvedResults(ungranted);
                                 }
                                 // resultHolder may be inspected by the caller after stream
                                 // completion;
@@ -4301,7 +4307,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                 persistPendingRequestReplyId(
                                         Msg.METADATA_CONFIRM_REQUEST_REPLY_ID, replyId);
                                 Flux<AgentEvent> autoDeniedEvents =
-                                        ungrantedEvents(ungranted, replyId)
+                                        syntheticErrorEvents(ungranted, replyId)
                                                 .concatWith(
                                                         Flux.fromIterable(granted)
                                                                 .filter(
@@ -4394,6 +4400,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
          * and emitted as a stream of fine-grained {@link AgentEvent}s.
          */
         private Flux<AgentEvent> runToolBatch(
+                List<ToolUseBlock> requested,
                 List<ToolUseBlock> toolCalls,
                 Set<String> deniedIds,
                 String replyId,
@@ -4415,7 +4422,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             }
 
             Flux<AgentEvent> deniedEvents =
-                    ungrantedEvents(ungranted, replyId)
+                    syntheticErrorEvents(ungranted, replyId)
                             .concatWith(
                                     Flux.fromIterable(deniedEntries)
                                             .concatMap(
@@ -4533,7 +4540,43 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                                 sink.onCancel(toolCallsDisposable);
                                             }));
 
-            return deniedEvents.concatWith(approvedEvents);
+            return deniedEvents.concatWith(
+                    Flux.deferContextual(
+                            view -> {
+                                if (!RepetitionGuardMiddleware.stopsDispatch(
+                                        view, rc, requested, approved)) {
+                                    return approvedEvents;
+                                }
+                                String reason =
+                                        "Tool batch not dispatched: consecutive identical tool"
+                                                + " calls reached the repetition limit.";
+                                var skipped =
+                                        approved.stream()
+                                                .map(
+                                                        call ->
+                                                                Map.entry(
+                                                                        call,
+                                                                        ToolResultBlock.error(
+                                                                                        reason)
+                                                                                .withIdAndName(
+                                                                                        call
+                                                                                                .getId(),
+                                                                                        call
+                                                                                                .getName())))
+                                                .toList();
+                                var resolved =
+                                        combineResolvedResults(ungranted, deniedEntries, skipped);
+                                resultHolder.set(resolved);
+                                // A terminal middleware stop bypasses the normal post-acting
+                                // persistence.
+                                // Close every tool_use, including genuine denials from this same
+                                // batch.
+                                writeResolvedResults(resolved);
+                                return syntheticErrorEvents(skipped, replyId)
+                                        .concatWithValues(
+                                                new RequestStopEvent(
+                                                        reason, GenerateReason.REPEATED_TOOL_CALL));
+                            }));
         }
 
         /**
@@ -4697,36 +4740,37 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         }
 
         /**
-         * Event stream for ungranted calls, observed through {@link ActionObservations} exactly
+         * Event stream for calls skipped with an error, observed through {@link ActionObservations} exactly
          * like permission-denied calls so session recordings keep a complete action timeline
          * for every resolved tool call.
          */
-        private Flux<AgentEvent> ungrantedEvents(
+        private Flux<AgentEvent> syntheticErrorEvents(
                 List<Map.Entry<ToolUseBlock, ToolResultBlock>> entries, String replyId) {
             return Flux.fromIterable(entries)
                     .concatMap(
                             entry -> {
                                 ToolUseBlock use = entry.getKey();
-                                ToolCallParam ungrantedParam =
+                                ToolCallParam skippedParam =
                                         ToolCallParam.builder()
                                                 .toolUseBlock(use)
                                                 .agent(ReActAgent.this)
                                                 .runtimeContext(buildMergedRuntimeContext(rc))
                                                 .build();
                                 return ActionObservations.observe(
-                                                ungrantedParam, () -> Mono.just(entry.getValue()))
+                                                skippedParam, () -> Mono.just(entry.getValue()))
                                         .thenMany(
                                                 Flux.fromIterable(
-                                                        ungrantedToolResultEvents(entry, replyId)));
+                                                        syntheticErrorResultEvents(
+                                                                entry, replyId)));
                             });
         }
 
         /**
-         * Build the synthesized ERROR tool-result lifecycle for an ungranted call. The delta
+         * Build the synthesized ERROR tool-result lifecycle for a skipped call. The delta
          * text is taken from the result block itself, so the event stream and the recorded
          * result can never drift apart.
          */
-        private List<AgentEvent> ungrantedToolResultEvents(
+        private List<AgentEvent> syntheticErrorResultEvents(
                 Map.Entry<ToolUseBlock, ToolResultBlock> entry, String replyId) {
             ToolUseBlock use = entry.getKey();
             String text = ((TextBlock) entry.getValue().getOutput().get(0)).getText();
@@ -4740,11 +4784,9 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
         }
 
         /**
-         * Append ungranted results to the conversation context so a permission pause does not
-         * leave them pending on resume (the same in-place stance as {@code
-         * writeAutoDeniedResults}).
+         * Record resolved calls before a pause or terminal stop bypasses post-acting persistence.
          */
-        private void writeUngrantedResults(List<Map.Entry<ToolUseBlock, ToolResultBlock>> entries) {
+        private void writeResolvedResults(List<Map.Entry<ToolUseBlock, ToolResultBlock>> entries) {
             for (Map.Entry<ToolUseBlock, ToolResultBlock> entry : entries) {
                 Msg msg =
                         ToolResultMessageBuilder.buildToolResultMsg(
