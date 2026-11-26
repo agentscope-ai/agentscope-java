@@ -263,8 +263,17 @@ final class NotifyingSessionBackend implements SessionBackend {
     }
 
     @Override
-    public Optional<Lease> claim(ThreadKey session, String owner, Duration duration) {
-        var result = delegate.claim(session, owner, duration);
+    public Optional<Lease> claim(ThreadKey key, String owner, Duration duration) {
+        return claim(key, owner, duration, null);
+    }
+
+    @Override
+    public Optional<Lease> claim(
+            ThreadKey session,
+            String owner,
+            Duration duration,
+            io.agentscope.durable.DurableTypes.RecoveryPolicy policy) {
+        var result = delegate.claim(session, owner, duration, policy);
         if (result.isPresent()) changed(session);
         return result;
     }
@@ -359,6 +368,12 @@ final class NotifyingSessionBackend implements SessionBackend {
     public void acceptExecutionEvent(ExecutionMessages.Event event) {
         delegate.acceptExecutionEvent(event);
         changed(event.request().session());
+    }
+
+    @Override
+    public void acceptResult(Lease lease, String executionId, ExecutionResult result) {
+        delegate.acceptResult(lease, executionId, result);
+        changed(lease.thread());
     }
 
     @Override

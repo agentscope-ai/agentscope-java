@@ -170,6 +170,15 @@ public interface SessionBackend extends AutoCloseable {
 
     Optional<Lease> claim(ThreadKey session, String owner, Duration duration);
 
+    /** Scheduled claims carry the host policy. Explicit claims can repair a parked native Turn. */
+    default Optional<Lease> claim(
+            ThreadKey session,
+            String owner,
+            Duration duration,
+            DurableTypes.RecoveryPolicy policy) {
+        return claim(session, owner, duration);
+    }
+
     void renew(Lease lease, Duration duration);
 
     void release(Lease lease, Duration delay);
@@ -206,6 +215,9 @@ public interface SessionBackend extends AutoCloseable {
     void acceptExecutionEvent(ExecutionMessages.Event event);
 
     void acceptResult(ThreadKey session, String executionId, ExecutionResult result);
+
+    /** Persist a nonterminal direct executor observation under the active Brain lease. */
+    void acceptResult(Lease lease, String executionId, ExecutionResult result);
 
     void signal(ThreadKey session, String turnId, Signal signal);
 

@@ -1386,6 +1386,20 @@ public abstract class SessionBackendContract {
     }
 
     @Test
+    protected void repeatedExpiryOfUnfinishedRunsStopsInvocationRecovery() {
+        submit();
+        var thread = new ThreadKey(key, "main");
+        var policy = new RecoveryPolicy(2, 100, 500);
+        var lease = backend.claim(thread, "owner", Duration.ofSeconds(1), policy).orElseThrow();
+        for (int i = 0; i <= policy.maxRetries(); i++) {
+            backend.prepareRun(lease, "invoke-" + i);
+            clock.set(lease.expiresAt() + 1);
+            lease = claim();
+        }
+        assertFalse(backend.frame(lease).turn().recovery().retryAllowed());
+    }
+
+    @Test
     protected void changedProgressIsReplayableEvenWhenAnEarlierStateReturns() {
         submit();
         var lease = claim();
@@ -1401,7 +1415,18 @@ public abstract class SessionBackendContract {
         var id = backend.frame(lease).tools().get(0).request().executionId();
         backend.beginDispatch(lease, id);
         var running = new ExecutionResult(ExecutionState.RUNNING, "original", null, null);
-        backend.acceptResult(new ThreadKey(key, "main"), id, running);
+        backend.release(lease, Duration.ZERO);
+        var replacement = claim();
+        backend.acceptResult(replacement, id, running);
+        assertEquals(
+                DurableException.Code.FENCED,
+                assertThrows(
+                                DurableException.class,
+                                () ->
+                                        backend.acceptResult(
+                                                lease, id, ExecutionResult.unknown("late")))
+                        .code());
+        assertEquals("original", backend.frame(replacement).tools().get(0).result().handle());
         backend.acceptResult(new ThreadKey(key, "main"), id, running);
         backend.acceptResult(
                 new ThreadKey(key, "main"), id, ExecutionResult.unknown("temporarily unreachable"));
@@ -2909,6 +2934,7 @@ public abstract class SessionBackendContract {
         assertTrue(backend.claim(thread, "early", Duration.ofSeconds(1)).isEmpty());
         assertEquals(1, backend.turn(thread, turn.turnId()).recovery().failures());
         backend.cancel(thread, turn.turnId(), "cancel");
+        backend.cancel(thread, turn.turnId(), "cancel-again");
         var cancellation = claim();
         assertTrue(backend.frame(cancellation).turn().cancellationRequested());
         assertEquals(1, backend.frame(cancellation).turn().recovery().failures());
@@ -3262,6 +3288,33 @@ public abstract class SessionBackendContract {
                         other, new ThreadBinding("test", "v1", "1"), DurableJson.value(null)));
         code(DurableException.Code.INVALID, () -> backend.events(other, snapshot.cursor(), 10));
         assertEquals(snapshot.projection(), backend.snapshot(key).projection());
+    }
+
+    @Test
+    protected void acceptedCancellationFencesLateModelAndCompletionCommits() {
+        var turn = submit();
+        var owner = claim();
+        var stale = backend.frame(owner);
+        backend.cancel(owner.thread(), turn.turnId(), "cancel");
+        for (var frame : List.of(stale, backend.frame(owner))) {
+            for (var status : List.of(TurnStatus.RUNNING, TurnStatus.SUCCEEDED)) {
+                var late = commit(frame, "late-" + status, status, List.of(), List.of(), List.of());
+                code(DurableException.Code.FENCED, () -> backend.commit(owner, late));
+                assertTrue(
+                        backend.receipt(owner.thread(), turn.turnId(), late.commitId()).isEmpty());
+            }
+        }
+        assertEquals(TurnStatus.CANCELLING, backend.frame(owner).turn().status());
+        backend.commit(
+                owner,
+                commit(
+                        backend.frame(owner),
+                        "settle",
+                        TurnStatus.CANCELLED,
+                        List.of(),
+                        List.of(),
+                        List.of()));
+        assertEquals(TurnStatus.CANCELLED, backend.turn(owner.thread(), turn.turnId()).status());
     }
 
     @Test

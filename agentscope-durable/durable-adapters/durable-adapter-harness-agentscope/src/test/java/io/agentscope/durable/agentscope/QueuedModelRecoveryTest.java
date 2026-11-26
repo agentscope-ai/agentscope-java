@@ -644,14 +644,17 @@ class QueuedModelRecoveryTest {
         try (var next = effectRuntime(db, QueuedModelRecoveryTest::unexpectedDispatch, false)) {
             var turn = next.getSession(KEY).getTurn(sent.get().turnId());
             long until = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
-            while (turn.status().recovery() == null && System.nanoTime() < until) {
+            while (!io.agentscope.durable.DurableTypes.WaitCondition.NATIVE_RECONCILIATION.equals(
+                            turn.status().waiting())
+                    && System.nanoTime() < until) {
                 next.tick(THREAD);
                 Thread.sleep(25);
             }
             assertEquals(TurnStatus.WAITING, turn.status().status());
-            assertTrue(turn.status().error().contains("effect-1"));
-            assertTrue(turn.status().error().contains("reconciliation"));
-            assertEquals(false, turn.status().recovery().retryAllowed());
+            assertEquals(
+                    io.agentscope.durable.DurableTypes.WaitCondition.NATIVE_RECONCILIATION,
+                    turn.status().waiting());
+            next.tick(THREAD);
             assertEquals(List.of("effect-1"), Files.readAllLines(directory.resolve("receipts")));
         }
     }

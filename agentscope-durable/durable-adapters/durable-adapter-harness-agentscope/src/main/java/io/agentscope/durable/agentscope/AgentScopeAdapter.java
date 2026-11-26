@@ -17,6 +17,7 @@
 package io.agentscope.durable.agentscope;
 
 import io.agentscope.core.ReActAgent;
+import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.AgentExecutionHost;
 import io.agentscope.core.agent.RunOutcome;
 import io.agentscope.core.agent.RuntimeContext;
@@ -84,15 +85,36 @@ public final class AgentScopeAdapter implements HarnessAdapter {
     private interface NativeAgent extends AutoCloseable {
         ThreadJournal log(RuntimeContext context);
 
+        ToolResultBlock replay(ToolUseBlock call, RuntimeContext context);
+
         Flux<AgentEvent> stream(List<Msg> input, RuntimeContext context);
 
         @Override
         void close();
     }
 
+    private static ToolResultBlock replayNative(
+            Toolkit toolkit, Agent agent, ToolUseBlock call, RuntimeContext context) {
+        if (toolkit.getTool(call.getName()) == null || toolkit.isExternalTool(call.getName())) {
+            return null;
+        }
+        return toolkit.callTool(
+                        ToolCallParam.builder()
+                                .toolUseBlock(call)
+                                .input(call.getInput())
+                                .agent(agent)
+                                .runtimeContext(context)
+                                .propagateErrors(true)
+                                .build())
+                .map(result -> result.withState(result.completedState()))
+                .block();
+    }
+
     private final Function<InvocationBinding, NativeAgent> factory;
     private final Map<String, String> executors;
     private final Map<String, ToolBinding> bindings;
+    private final Map<String, NativeToolRecovery.Replay> replay;
+    private final NativeToolRecovery.ModelCheck modelCheck;
     private final QueuedModelRequest.Publisher publisher;
     private final ModelExecutions modelExecutions;
     private final String modelRoute;
@@ -106,6 +128,8 @@ public final class AgentScopeAdapter implements HarnessAdapter {
                 factory,
                 executors,
                 bindings,
+                Map.of(),
+                null,
                 null,
                 null,
                 null,
@@ -116,10 +140,14 @@ public final class AgentScopeAdapter implements HarnessAdapter {
             Function<InvocationBinding, NativeAgent> factory,
             Map<String, String> executors,
             Map<String, ToolBinding> bindings,
+            Map<String, NativeToolRecovery.Replay> replay,
+            NativeToolRecovery.ModelCheck modelCheck,
             QueuedModelRequest.Publisher publisher,
             ModelExecutions modelExecutions,
             String modelRoute,
             Duration replyTimeout) {
+        this.replay = Map.copyOf(replay);
+        this.modelCheck = modelCheck;
         this.replyTimeout = replyTimeout;
         this.publisher = publisher;
         this.modelExecutions = modelExecutions;
@@ -127,6 +155,23 @@ public final class AgentScopeAdapter implements HarnessAdapter {
         this.factory = factory;
         this.executors = Map.copyOf(executors);
         this.bindings = Map.copyOf(bindings);
+    }
+
+    /** Configure native dispatches by tool name. Unlisted tools default to NEVER. */
+    public AgentScopeAdapter withNativeToolRecovery(
+            Map<String, NativeToolRecovery.Replay> policies, NativeToolRecovery.ModelCheck check) {
+        if (policies.keySet().stream().anyMatch(executors::containsKey))
+            throw new IllegalArgumentException("Replay policies apply only to native tools");
+        return new AgentScopeAdapter(
+                factory,
+                executors,
+                bindings,
+                policies,
+                check,
+                publisher,
+                modelExecutions,
+                modelRoute,
+                replyTimeout);
     }
 
     /** Dispatch reasoning model calls to a durable message queue. */
@@ -143,6 +188,8 @@ public final class AgentScopeAdapter implements HarnessAdapter {
                 factory,
                 executors,
                 bindings,
+                replay,
+                modelCheck,
                 Objects.requireNonNull(publisher),
                 null,
                 null,
@@ -162,6 +209,8 @@ public final class AgentScopeAdapter implements HarnessAdapter {
                 factory,
                 executors,
                 bindings,
+                replay,
+                modelCheck,
                 null,
                 Objects.requireNonNull(executions),
                 DurableJson.text(route, "model route"),
@@ -214,6 +263,10 @@ public final class AgentScopeAdapter implements HarnessAdapter {
                             return agent.threadJournal(context);
                         }
 
+                        public ToolResultBlock replay(ToolUseBlock call, RuntimeContext context) {
+                            return replayNative(agent.getToolkit(), agent, call, context);
+                        }
+
                         public Flux<AgentEvent> stream(List<Msg> input, RuntimeContext context) {
                             return agent.streamEvents(input, context);
                         }
@@ -262,6 +315,10 @@ public final class AgentScopeAdapter implements HarnessAdapter {
                     return new NativeAgent() {
                         public ThreadJournal log(RuntimeContext context) {
                             return agent.threadJournal(context);
+                        }
+
+                        public ToolResultBlock replay(ToolUseBlock call, RuntimeContext context) {
+                            return replayNative(agent.getToolkit(), agent, call, context);
                         }
 
                         public Flux<AgentEvent> stream(List<Msg> input, RuntimeContext context) {
@@ -328,16 +385,84 @@ public final class AgentScopeAdapter implements HarnessAdapter {
                 List.of("text", "image", "audio", "video"));
     }
 
+    /** Operator-only repair under a claimed Turn lease. The host verifies the external evidence. */
+    public void reconcileNativeTools(
+            HarnessContext context,
+            String requestId,
+            String evidenceRef,
+            Map<String, ToolResultBlock> verified) {
+        DurableJson.text(requestId, "requestId");
+        DurableJson.text(evidenceRef, "evidenceRef");
+        var outcomes = Map.copyOf(verified);
+        if (outcomes.isEmpty()
+                || outcomes.values().stream()
+                        .anyMatch(
+                                result ->
+                                        result.getState() == null
+                                                || result.getState() == ToolResultState.RUNNING
+                                                || result.isSuspended()
+                                                || result.getExecutionDetails() != null
+                                                        && "UNKNOWN"
+                                                                .equals(
+                                                                        result.getExecutionDetails()
+                                                                                .outcome()
+                                                                                .name()))) {
+            throw new DurableException(
+                    DurableException.Code.INVALID, "Verified terminal outcomes required");
+        }
+        var log = new BackendThreadJournal(context, executors, bindings, replay);
+        String turn = context.lease().turnId();
+        String key = "native-reconciliation:" + DurableJson.hash(List.of(turn, requestId)) + ":";
+        String reason = key + DurableJson.hash(outcomes) + ":" + evidenceRef;
+        for (var event : log.scanMetadata(log.recoveryCursor(), log.head().seq())) {
+            if (!turn.equals(event.turnId()) || !"recovery/applied".equals(event.type())) continue;
+            if (event.data().get("reason") instanceof String stored && stored.startsWith(key)) {
+                if (stored.equals(reason)) return;
+                throw new DurableException(
+                        DurableException.Code.CONFLICT, "Reconciliation request changed");
+            }
+        }
+        var projection = JournalProjection.read(log);
+        if (!turn.equals(projection.positionTurnId())
+                || !projection.uncertainToolCalls().equals(outcomes.keySet())
+                || context.frame().tools().stream()
+                        .anyMatch(tool -> outcomes.containsKey(tool.request().call().callId()))) {
+            throw new DurableException(
+                    DurableException.Code.CONFLICT,
+                    "Outcomes must match this Turn's unresolved native calls");
+        }
+        io.agentscope.core.journal.ThreadRecovery.reconcile(log, outcomes, reason);
+    }
+
     @Override
     public void execute(HarnessContext context) {
         if (pauseIfRequested(context)) return;
-        var log = new BackendThreadJournal(context, executors, bindings);
+        var log = new BackendThreadJournal(context, executors, bindings, replay);
         var host =
                 new AgentScopeExecutionHost(
                         context, log, publisher, modelExecutions, modelRoute, replyTimeout);
         if (host.pending()) host.restoreEntry();
         else if (completeInvocation(context, log)) return;
         var frame = context.frame();
+        var nativeCalls = new HashSet<>(JournalProjection.read(log).uncertainToolCalls());
+        frame.tools().forEach(tool -> nativeCalls.remove(tool.request().call().callId()));
+        var dispatches = new ArrayList<NativeToolRecovery.Dispatch>();
+        if (!nativeCalls.isEmpty()) {
+            for (var event : log.scan(log.recoveryCursor(), log.head().seq())) {
+                if ("tool/dispatch".equals(event.type())
+                        && frame.turn().turnId().equals(event.turnId())
+                        && nativeCalls.contains(event.data().get("toolCallId"))
+                        && event.data().get("name") instanceof String) {
+                    var dispatch = NativeToolRecovery.dispatch(frame.definition().key(), event);
+                    if (dispatch.replay() == NativeToolRecovery.Replay.SAFE || modelCheck != null)
+                        dispatches.add(dispatch);
+                }
+            }
+        }
+        if (!nativeCalls.isEmpty() && dispatches.isEmpty()) {
+            waitFor(context, WaitCondition.NATIVE_RECONCILIATION);
+            return;
+        }
         var input = new ArrayList<Msg>();
         var results = new ArrayList<ToolResultBlock>();
         var confirmations = new ArrayList<ConfirmResult>();
@@ -450,6 +575,39 @@ public final class AgentScopeAdapter implements HarnessAdapter {
                 throw new DurableException(
                         DurableException.Code.INCOMPATIBLE,
                         "Adapter did not install the invocation journal");
+            if (!nativeCalls.isEmpty()) {
+                for (var dispatch : dispatches) {
+                    if (!nativeCalls.contains(dispatch.call().getId())) continue;
+                    if (pauseIfRequested(context)) return;
+                    context.frame();
+                    runtimeContext.setAgentState(JournalProjection.read(log).restore());
+                    ToolResultBlock result;
+                    String reason;
+                    if (dispatch.replay() == NativeToolRecovery.Replay.SAFE) {
+                        result = agent.replay(dispatch.call(), runtimeContext);
+                        reason = "safe replay " + dispatch.actionId();
+                    } else {
+                        var verified = modelCheck.check(dispatch);
+                        if (verified.isEmpty()) continue;
+                        result = verified.get().result();
+                        reason =
+                                "verified "
+                                        + dispatch.actionId()
+                                        + " "
+                                        + verified.get().evidenceRef();
+                    }
+                    if (!NativeToolRecovery.terminal(result)) continue;
+                    if (!dispatch.call().getId().equals(result.getId())
+                            || !dispatch.call().getName().equals(result.getName()))
+                        throw new DurableException(
+                                DurableException.Code.CONFLICT,
+                                "Native recovery result identity differs");
+                    io.agentscope.core.journal.ThreadRecovery.reconcileOne(log, result, reason);
+                    nativeCalls.remove(dispatch.call().getId());
+                }
+                if (!nativeCalls.isEmpty()) waitFor(context, WaitCondition.NATIVE_RECONCILIATION);
+                return;
+            }
             agent.stream(List.copyOf(input), runtimeContext).blockLast();
         } catch (DurableException failure) {
             throw failure;
@@ -524,7 +682,7 @@ public final class AgentScopeAdapter implements HarnessAdapter {
         String runId = null;
         RunOutcome outcome = null;
         Msg output = null;
-        for (var event : log.scanMetadata(0, log.head().seq())) {
+        for (var event : log.scanMetadata(log.recoveryCursor(), log.head().seq())) {
             if ("state/restored".equals(event.type())) {
                 runId = null;
                 outcome = null;
@@ -550,7 +708,7 @@ public final class AgentScopeAdapter implements HarnessAdapter {
 
     private static boolean hasInitialInput(ThreadJournal log, String turnId) {
         boolean received = false;
-        for (var event : log.scanMetadata(0, log.head().seq())) {
+        for (var event : log.scanMetadata(log.recoveryCursor(), log.head().seq())) {
             if ("state/restored".equals(event.type())) received = false;
             if ("input/received".equals(event.type()) && turnId.equals(event.turnId()))
                 received = true;
@@ -586,7 +744,7 @@ public final class AgentScopeAdapter implements HarnessAdapter {
                     new Commit(
                             "native-finished:" + invocation.runId(),
                             frame.turn().revision(),
-                            frame.checkpoint(),
+                            log.settledCheckpoint(frame.checkpoint()),
                             List.of(),
                             List.of(),
                             List.of(),
@@ -662,13 +820,16 @@ public final class AgentScopeAdapter implements HarnessAdapter {
             throw new DurableException(
                     DurableException.Code.CONFLICT,
                     "External tool outcome requires reconciliation");
-        var log = new BackendThreadJournal(context, executors, bindings);
+        var log = new BackendThreadJournal(context, executors, bindings, replay);
         var projection = JournalProjection.read(log);
         var reconciled =
                 frame.tools().stream().map(tool -> tool.request().call().callId()).toList();
-        if (projection.uncertainToolCalls().stream().anyMatch(id -> !reconciled.contains(id)))
-            throw new DurableException(
-                    DurableException.Code.CONFLICT, "Native tool outcome requires reconciliation");
+        var uncertain = new HashSet<>(projection.uncertainToolCalls());
+        uncertain.removeAll(reconciled);
+        if (!uncertain.isEmpty() && status != TurnStatus.CANCELLED) {
+            waitFor(context, WaitCondition.NATIVE_RECONCILIATION);
+            return;
+        }
         var state = projection.restore();
         if (state == null) state = AgentState.builder().build();
         var facts = new ArrayList<Map.Entry<String, Object>>();
@@ -711,6 +872,30 @@ public final class AgentScopeAdapter implements HarnessAdapter {
                             "tool/result",
                             Map.of("message", message, "synthetic", execution.isEmpty())));
         }
+        for (String id : uncertain) {
+            var name =
+                    state.contextMutable().stream()
+                            .flatMap(msg -> msg.getContentBlocks(ToolUseBlock.class).stream())
+                            .filter(call -> id.equals(call.getId()))
+                            .map(ToolUseBlock::getName)
+                            .findFirst()
+                            .orElse("unknown");
+            var outcome =
+                    ToolResultBlock.text("Turn cancelled; external outcome unverified.")
+                            .withIdAndName(id, name)
+                            .withState(ToolResultState.INTERRUPTED)
+                            .withExecutionDetails(
+                                    new io.agentscope.core.message.ToolExecutionDetails(
+                                            "native",
+                                            io.agentscope.core.message.ToolExecutionDetails.Outcome
+                                                    .UNKNOWN,
+                                            null,
+                                            false));
+            var message = ToolResultMessage.builder().id("cancelled:" + id).result(outcome).build();
+            state.contextMutable().add(message);
+            calls.add(id);
+            facts.add(Map.entry("tool/result", Map.of("message", message, "synthetic", true)));
+        }
         var messages = state.contextMutable();
         for (int i = 0; i < messages.size(); i++) {
             var content = new ArrayList<ContentBlock>();
@@ -739,7 +924,11 @@ public final class AgentScopeAdapter implements HarnessAdapter {
                                     "interruptedRuns",
                                     projection.activeRuns(),
                                     "resolvedToolCallIds",
-                                    reconciled,
+                                    java.util.stream.Stream.concat(
+                                                    reconciled.stream(), uncertain.stream())
+                                            .toList(),
+                                    "unverifiedToolCallIds",
+                                    uncertain,
                                     "reason",
                                     reason)));
         log.append(context.lease().turnId(), facts, status, error);

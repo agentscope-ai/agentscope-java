@@ -29,6 +29,11 @@ import reactor.core.publisher.Mono;
 /** Optional call-scoped host replay boundary. Invoking next preserves recording and model policy. */
 @FunctionalInterface
 public interface ModelInvocation {
+    /** Transport options for this recorded dispatch. The journal retains the original input. */
+    default GenerateOptions providerOptions(String callId, GenerateOptions options) {
+        return options;
+    }
+
     /** Resume an already selected fallback without reporting another provider failure. */
     default boolean resumingFallback(String purpose) {
         return false;

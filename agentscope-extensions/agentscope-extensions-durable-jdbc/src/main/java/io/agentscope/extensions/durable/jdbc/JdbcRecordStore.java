@@ -46,6 +46,16 @@ public final class JdbcRecordStore implements RecordStore {
 
     private final Connections connections;
     private final Dialect dialect;
+    private final java.util.concurrent.atomic.AtomicLong idleMillis =
+            new java.util.concurrent.atomic.AtomicLong(30_000);
+
+    @Override
+    public void boundIdleTransactionTime(java.time.Duration leaseDuration) {
+        long millis = leaseDuration.toMillis();
+        if (millis < 1) throw new IllegalArgumentException("Positive lease duration required");
+        idleMillis.accumulateAndGet(millis, Math::min);
+    }
+
     private final AtomicBoolean closed = new AtomicBoolean();
 
     @Override
@@ -160,6 +170,22 @@ public final class JdbcRecordStore implements RecordStore {
         try (Connection c = connect()) {
             c.setAutoCommit(false);
             try {
+                if (dialect == Dialect.POSTGRESQL) {
+                    // Use the shorter of the database limit and the leases served by this host.
+                    try (var statement =
+                            c.prepareStatement(
+                                    "SELECT set_config('idle_in_transaction_session_timeout', ?"
+                                        + " ,true) WHERE"
+                                        + " current_setting('idle_in_transaction_session_timeout')::interval"
+                                        + " = interval '0' OR"
+                                        + " current_setting('idle_in_transaction_session_timeout')::interval"
+                                        + " > ?::interval")) {
+                        String timeout = idleMillis.get() + "ms";
+                        statement.setString(1, timeout);
+                        statement.setString(2, timeout);
+                        statement.execute();
+                    }
+                }
                 try (var s =
                         c.prepareStatement(
                                 "INSERT INTO durable_records(record_key,payload) VALUES (?,NULL) ON"

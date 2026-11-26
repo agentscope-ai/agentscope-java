@@ -52,7 +52,7 @@ class OpenAIStreamTerminationTest {
      * completes ({@link Flux#never()}) — simulating a gateway that holds the connection open
      * after {@code [DONE]}.
      */
-    private static HttpTransport keepAliveTransportAfterDone() {
+    private static HttpTransport transport(Flux<String> frames) {
         return new HttpTransport() {
             @Override
             public HttpResponse execute(HttpRequest request) {
@@ -61,12 +61,26 @@ class OpenAIStreamTerminationTest {
 
             @Override
             public Flux<String> stream(HttpRequest request) {
-                return Flux.just(CHUNK_CONTENT, CHUNK_FINISH, "[DONE]").concatWith(Flux.never());
+                return frames;
             }
 
             @Override
             public void close() {}
         };
+    }
+
+    @Test
+    void truncatedStreamErrorsButFinishReasonPermitsCleanEof() {
+        for (boolean complete : List.of(false, true)) {
+            var frames =
+                    complete ? Flux.just(CHUNK_CONTENT, CHUNK_FINISH) : Flux.just(CHUNK_CONTENT);
+            var stream =
+                    new OpenAIClient(transport(frames))
+                            .stream("test", "http://localhost", sampleRequest(), null);
+            var expectation = StepVerifier.create(stream).expectNextCount(complete ? 2 : 1);
+            if (complete) expectation.verifyComplete();
+            else expectation.verifyError(java.io.EOFException.class);
+        }
     }
 
     private static OpenAIRequest sampleRequest() {
@@ -79,7 +93,11 @@ class OpenAIStreamTerminationTest {
     @Test
     @DisplayName("Stream should complete on [DONE] even if the connection stays open")
     void streamCompletesOnDoneSentinelWithoutWaitingForConnectionClose() {
-        OpenAIClient client = new OpenAIClient(keepAliveTransportAfterDone());
+        OpenAIClient client =
+                new OpenAIClient(
+                        transport(
+                                Flux.just(CHUNK_CONTENT, CHUNK_FINISH, "[DONE]")
+                                        .concatWith(Flux.never())));
 
         StepVerifier.create(
                         client.stream(

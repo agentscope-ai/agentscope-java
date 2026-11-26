@@ -215,7 +215,15 @@ public final class SessionBackendHandler implements HttpHandler {
                                     backend.claim(
                                                     thread,
                                                     text(p, "owner"),
-                                                    Duration.ofMillis(p.path("duration").asLong()))
+                                                    Duration.ofMillis(p.path("duration").asLong()),
+                                                    p.hasNonNull("policy")
+                                                            ? get(
+                                                                    p,
+                                                                    "policy",
+                                                                    io.agentscope.durable
+                                                                            .DurableTypes
+                                                                            .RecoveryPolicy.class)
+                                                            : null)
                                             .orElse(null);
                     case "renew" -> {
                         backend.renew(lease, Duration.ofMillis(p.path("duration").asLong()));
@@ -278,10 +286,15 @@ public final class SessionBackendHandler implements HttpHandler {
                         result = null;
                     }
                     case "acceptResult" -> {
-                        backend.acceptResult(
-                                thread,
-                                text(p, "executionId"),
-                                get(p, "result", ExecutionResult.class));
+                        var id = text(p, "executionId");
+                        var observation = get(p, "result", ExecutionResult.class);
+                        if (lease == null) backend.acceptResult(thread, id, observation);
+                        else {
+                            if (!thread.equals(lease.thread()))
+                                throw new DurableException(
+                                        DurableException.Code.INVALID, "Lease scope differs");
+                            backend.acceptResult(lease, id, observation);
+                        }
                         result = null;
                     }
                     case "signal" -> {

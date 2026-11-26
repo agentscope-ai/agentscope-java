@@ -260,8 +260,10 @@ public final class TransactionalSessionBackend implements SessionBackend {
         public JsonNode output;
         public String error;
         public WaitCondition waiting;
+        public DurableTypes.RecoveryPolicy claimPolicy;
         public RecoveryView recovery;
         public long failedEpoch;
+        public int consecutiveLostRuns;
         @JsonIgnore public Map<String, ToolData> tools = new LinkedHashMap<>();
         @JsonIgnore public Map<String, Signal> signals = new LinkedHashMap<>();
         public List<String> consumed = new ArrayList<>();
@@ -363,6 +365,7 @@ public final class TransactionalSessionBackend implements SessionBackend {
         if (turn.status == TurnStatus.PAUSED) return -1;
         if (turn.owner != null && turn.expiresAt > now) return turn.expiresAt;
         if (turn.cancel || turn.status == TurnStatus.PAUSING) return turn.nextAttemptAt;
+        if (WaitCondition.NATIVE_RECONCILIATION.equals(turn.waiting)) return -1;
         long ready = turn.nextAttemptAt;
         if (turn.recovery != null) {
             if (!turn.recovery.retryAllowed()) return ready;
@@ -1081,8 +1084,18 @@ public final class TransactionalSessionBackend implements SessionBackend {
 
     @Override
     public Optional<Lease> claim(ThreadKey key, String owner, Duration duration) {
+        return claim(key, owner, duration, null);
+    }
+
+    @Override
+    public Optional<Lease> claim(
+            ThreadKey key,
+            String owner,
+            Duration duration,
+            io.agentscope.durable.DurableTypes.RecoveryPolicy policy) {
         DurableJson.text(owner, "owner");
         long ttl = positive(duration);
+        store.boundIdleTransactionTime(duration);
         return change(
                 key,
                 (s, now) -> {
@@ -1092,8 +1105,43 @@ public final class TransactionalSessionBackend implements SessionBackend {
                         return Optional.of(
                                 new Lease(key, turn.id, owner, turn.epoch, turn.expiresAt));
                     long ready = readyAt(s, now);
-                    if (ready < 0 || ready > now) return Optional.empty();
-                    invocations(s, turn).abandon(now, true);
+                    boolean repair =
+                            policy == null
+                                    && turn.status == TurnStatus.WAITING
+                                    && WaitCondition.NATIVE_RECONCILIATION.equals(turn.waiting)
+                                    && (turn.owner == null || turn.expiresAt <= now);
+                    if (!repair && (ready < 0 || ready > now)) return Optional.empty();
+                    if (turn.claimPolicy == null)
+                        turn.claimPolicy =
+                                policy == null ? DurableTypes.RecoveryPolicy.defaults() : policy;
+                    var records = invocations(s, turn);
+                    if (turn.owner != null
+                            && turn.lastRunId != null
+                            && !records.run(turn.lastRunId).status().terminal()
+                            && (turn.recovery == null || turn.recovery.retryAllowed())) {
+                        var lostPolicy =
+                                turn.recovery == null ? turn.claimPolicy : turn.recovery.policy();
+                        if (++turn.consecutiveLostRuns > lostPolicy.maxRetries()) {
+                            turn.error =
+                                    "Repeated ownership loss without completed execution progress";
+                            turn.recovery =
+                                    new RecoveryView(
+                                            lostPolicy.maxRetries() + 1,
+                                            lostPolicy,
+                                            false,
+                                            null,
+                                            turn.error);
+                            turn.revision++;
+                            append(
+                                    s,
+                                    turn,
+                                    new EventInput(
+                                            "lost-limit:" + turn.id + ":" + turn.epoch,
+                                            "turn.recovery",
+                                            DurableJson.value(turn.recovery)));
+                        }
+                    }
+                    records.abandon(now, true);
                     turn.owner = owner;
                     turn.epoch = ++s.thread.epoch;
                     turn.expiresAt = Math.addExact(now, ttl);
@@ -1134,6 +1182,7 @@ public final class TransactionalSessionBackend implements SessionBackend {
                         return null;
                     }
                     invocations(s, r).abandon(n, false);
+                    r.consecutiveLostRuns = 0;
                     r.owner = null;
                     r.expiresAt = 0;
                     r.nextAttemptAt = Math.max(r.nextAttemptAt, Math.addExact(n, delay.toMillis()));
@@ -1274,6 +1323,10 @@ public final class TransactionalSessionBackend implements SessionBackend {
                         return old;
                     }
                     owned(s, lease, now);
+                    // Cancellation and native commits serialize on this record. A late inference
+                    // must not publish an answer or checkpoint before cancellation settlement.
+                    if (r.cancel && command.status() != TurnStatus.CANCELLED)
+                        throw error(DurableException.Code.FENCED, "Invocation cancelled");
                     policy.check(s.tx, s.thread.definition, lease, command);
                     if (command.journal() != null) {
                         var append = command.journal();
@@ -1292,6 +1345,9 @@ public final class TransactionalSessionBackend implements SessionBackend {
                     if (r.revision != command.expectedRevision())
                         throw error(DurableException.Code.CONFLICT, "Revision changed");
                     var effectPositions = new ArrayList<RunStepRef>();
+                    if (command.steps().stream()
+                            .anyMatch(step -> step.status() == DurableTypes.StepStatus.COMPLETED))
+                        r.consecutiveLostRuns = 0;
                     for (var call : command.tools())
                         if (!r.tools.containsKey(executionId(lease.thread(), r.id, call.callId())))
                             effectPositions.add(call.origin());
@@ -1489,8 +1545,6 @@ public final class TransactionalSessionBackend implements SessionBackend {
                     r.waiting = ModelReplyProtocol.waiting(r.signals.values(), command.waiting());
                     r.output = DurableJson.copy(command.output());
                     r.error = command.error();
-                    if (r.cancel)
-                        next = next.terminal() ? TurnStatus.CANCELLED : TurnStatus.CANCELLING;
                     r.status = next;
                     for (EventInput event : command.events()) {
                         if (event.type().startsWith("session.")
@@ -1823,7 +1877,16 @@ public final class TransactionalSessionBackend implements SessionBackend {
     }
 
     @Override
+    public void acceptResult(Lease lease, String id, ExecutionResult result) {
+        acceptResult(lease.thread(), lease, id, result);
+    }
+
+    @Override
     public void acceptResult(ThreadKey key, String id, ExecutionResult result) {
+        acceptResult(key, null, id, result);
+    }
+
+    private void acceptResult(ThreadKey key, Lease lease, String id, ExecutionResult result) {
         Objects.requireNonNull(result);
         if (result.state() == ExecutionState.NOT_FOUND)
             throw error(DurableException.Code.INVALID, "NOT_FOUND is not an accepted outcome");
@@ -1833,7 +1896,7 @@ public final class TransactionalSessionBackend implements SessionBackend {
                     String turnId = s.executions.get(id);
                     if (turnId == null)
                         throw error(DurableException.Code.NOT_FOUND, "Execution not found");
-                    TurnData r = requireTurn(s, turnId);
+                    TurnData r = lease == null ? requireTurn(s, turnId) : owned(s, lease, n);
                     ToolData t = requireTool(r, id);
                     acceptResult(s, r, t, id, result);
                     return null;
@@ -2307,7 +2370,7 @@ public final class TransactionalSessionBackend implements SessionBackend {
         }
         TurnData r = requireTurn(s, turnId);
         s.commands.put(command, turnId);
-        if (!r.status.terminal()) {
+        if (!r.status.terminal() && !r.cancel) {
             r.cancel = true;
             boolean queued = r.epoch == 0;
             r.status = queued ? TurnStatus.CANCELLED : TurnStatus.CANCELLING;

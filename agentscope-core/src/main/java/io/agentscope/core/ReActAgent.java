@@ -99,6 +99,7 @@ import io.agentscope.core.message.ToolCallState;
 import io.agentscope.core.message.ToolErrorKind;
 import io.agentscope.core.message.ToolErrorMetadata;
 import io.agentscope.core.message.ToolResultBlock;
+import io.agentscope.core.message.ToolResultMessage;
 import io.agentscope.core.message.ToolResultState;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.message.UserMessage;
@@ -2713,6 +2714,31 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                 msgs = List.of();
             }
 
+            if (state.getReturnDirectTurn() != null) {
+                boolean resume = state.getReturnDirectTurn().equals(rc.getTurnId());
+                state.setReturnDirectTurn(null);
+                if (resume) {
+                    var messages = state.contextMutable();
+                    var calls = MessageUtils.extractRecentToolCalls(messages, getName());
+                    var results = new java.util.HashMap<String, ToolResultBlock>();
+                    while (!messages.isEmpty()
+                            && messages.get(messages.size() - 1)
+                                    instanceof ToolResultMessage message) {
+                        for (var result : message.getContentBlocks(ToolResultBlock.class))
+                            results.put(result.getId(), result);
+                        messages.remove(messages.size() - 1);
+                    }
+                    var pairs =
+                            calls.stream()
+                                    .map(call -> Map.entry(call, results.get(call.getId())))
+                                    .toList();
+                    for (var pair : pairs)
+                        messages.add(
+                                buildReturnDirectPlaceholderMsg(pair.getKey(), pair.getValue()));
+                    return Mono.just(finalizeReturnDirect(pairs, state.getReplyId()));
+                }
+            }
+
             Set<String> pendingIds = MessageUtils.pendingToolUseIds(state.contextMutable());
 
             // No pending tools -> normal processing
@@ -3266,7 +3292,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
          * Build placeholder-shaped copies of the caller-supplied messages for a returnDirect
          * short-circuit: every {@link ToolResultBlock}'s output is replaced with the
          * returnDirect placeholder sentence (id/name preserved, state normalized via {@link
-         * #determineToolResultState(ToolResultBlock)} like the in-framework path) while
+         * ToolResultBlock#completedState()} like the in-framework path) while
          * non-tool-result content passes through unchanged. New {@link Msg}s are built — the
          * caller's objects are never mutated — keeping the context invariant {@code [tool_use,
          * tool_result(placeholder), assistant(full result)]}.
@@ -3288,7 +3314,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                 return block;
             }
             return placeholderResultBlock(
-                    result.getId(), result.getName(), determineToolResultState(result));
+                    result.getId(), result.getName(), result.completedState());
         }
 
         /**
@@ -3911,8 +3937,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             }
 
             events.add(
-                    new ToolResultEndEvent(
-                                    replyId, toolId, toolName, determineToolResultState(result))
+                    new ToolResultEndEvent(replyId, toolId, toolName, result.completedState())
                             .withMetadata(eventMetadata));
 
             return events;
@@ -4871,7 +4896,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
                                         replyId,
                                         call.getId(),
                                         call.getName(),
-                                        determineToolResultState(result))
+                                        result.completedState())
                                 .withMetadata(metadata));
             }
 
@@ -4879,25 +4904,6 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             private ToolResultBlock resolvedResult(ToolUseBlock call) {
                 return combineResolvedResults.get(call.getId());
             }
-        }
-
-        private ToolResultState determineToolResultState(ToolResultBlock result) {
-            if (result.isSuspended()) {
-                return ToolResultState.SUSPENDED;
-            }
-            if (result.getState() != null && result.getState() != ToolResultState.RUNNING) {
-                return result.getState();
-            }
-            if (result.getOutput() != null
-                    && result.getOutput().stream()
-                            .anyMatch(
-                                    b ->
-                                            b instanceof TextBlock tb
-                                                    && tb.getText() != null
-                                                    && tb.getText().startsWith("[ERROR]"))) {
-                return ToolResultState.ERROR;
-            }
-            return ToolResultState.SUCCESS;
         }
 
         /**
@@ -5167,7 +5173,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             // adding to contextMutable(), so that history queries via
             // agent.getAgentState(ctx).contextMutable() reflect the correct
             // final state instead of always showing RUNNING.
-            ToolResultState finalState = determineToolResultState(result);
+            ToolResultState finalState = result.completedState();
             ToolResultBlock updatedResult = result.withState(finalState);
 
             Msg toolMsg =
@@ -5232,7 +5238,7 @@ public class ReActAgent extends AgentBase implements AutoCloseable {
             if (tool == null || !tool.isReturnDirect()) {
                 return false;
             }
-            return determineToolResultState(entry.getValue()) == ToolResultState.SUCCESS;
+            return entry.getValue().completedState() == ToolResultState.SUCCESS;
         }
 
         /** Builds the placeholder tool_result, replacing only the output while keeping id/name/state. */

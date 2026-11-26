@@ -63,6 +63,19 @@ public final class AgentState implements State {
     private String summary;
     private final List<Msg> context;
     private String replyId;
+    private String returnDirectTurn;
+
+    @JsonProperty("return_direct_turn")
+    @com.fasterxml.jackson.annotation.JsonInclude(
+            com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
+    public String getReturnDirectTurn() {
+        return returnDirectTurn;
+    }
+
+    public void setReturnDirectTurn(String turnId) {
+        returnDirectTurn = turnId;
+    }
+
     private int curIter;
     private boolean shutdownInterrupted;
     private PermissionContextState permissionContext;

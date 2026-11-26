@@ -41,14 +41,28 @@ public final class TransactionalExecutionStore implements ExecutionStore {
     private final RecordStore records;
     private final String prefix;
 
+    public static final int DEFAULT_UNKNOWN_LIMIT = 8;
+    private final int unknownLimit;
+
     public TransactionalExecutionStore(RecordStore records) {
-        this.records = records;
-        prefix = "execution:";
+        this(records, null, DEFAULT_UNKNOWN_LIMIT);
     }
 
     public TransactionalExecutionStore(RecordStore records, String pool) {
+        this(records, DurableJson.text(pool, "pool"), DEFAULT_UNKNOWN_LIMIT);
+    }
+
+    /** Freeze the maximum consecutive uncertain provider observations when admitting an execution. */
+    public TransactionalExecutionStore(RecordStore records, String pool, int unknownLimit) {
+        if (unknownLimit < 1) throw new IllegalArgumentException("unknownLimit must be positive");
+        this.unknownLimit = unknownLimit;
         this.records = records;
-        prefix = "execution-pool:" + DurableJson.hash(DurableJson.text(pool, "pool")) + ":";
+        prefix =
+                pool == null
+                        ? "execution:"
+                        : "execution-pool:"
+                                + DurableJson.hash(DurableJson.text(pool, "pool"))
+                                + ":";
     }
 
     public static final class State {
@@ -62,6 +76,8 @@ public final class TransactionalExecutionStore implements ExecutionStore {
         public long createdAt;
         public long publicationPendingAt;
         public int consecutiveFailures;
+        public int unknownLimit = DEFAULT_UNKNOWN_LIMIT;
+        public int unknownObservations;
         public boolean outputEnabled;
         public boolean attempted;
         public boolean cancelled;
@@ -106,25 +122,25 @@ public final class TransactionalExecutionStore implements ExecutionStore {
                 state.request.executionId(),
                 state.publishedSequence < state.sequence ? 0 : -1,
                 DurableJson.value(null));
-        boolean settled = state.result.state().terminal() && state.outputSealed;
+        boolean stopAutomaticWork =
+                state.result.state().terminal() && state.outputSealed
+                        || state.unknownObservations >= state.unknownLimit;
         boolean recovery = state.attempted || state.cancelled;
         long readyAt = Math.max(state.expiresAt, state.nextAttemptAt);
         state.tx.schedule(
                 "hands-start:" + prefix,
                 state.request.executionId(),
-                settled || recovery ? -1 : readyAt,
+                stopAutomaticWork || recovery ? -1 : readyAt,
                 DurableJson.value(null));
         state.tx.schedule(
                 "hands-recovery:" + prefix,
                 state.request.executionId(),
-                settled || !recovery ? -1 : readyAt,
+                stopAutomaticWork || !recovery ? -1 : readyAt,
                 DurableJson.value(null));
         state.tx.schedule(
                 "hands:" + prefix,
                 state.request.executionId(),
-                state.result.state().terminal() && state.outputSealed
-                        ? -1
-                        : Math.max(state.expiresAt, state.nextAttemptAt),
+                stopAutomaticWork ? -1 : Math.max(state.expiresAt, state.nextAttemptAt),
                 DurableJson.value(state.request.call().executor()));
     }
 
@@ -146,10 +162,11 @@ public final class TransactionalExecutionStore implements ExecutionStore {
             throw failure(DurableException.Code.CONFLICT, "Execution identity content changed");
     }
 
-    private static State create(RecordStore.Transaction tx, ExecutionRequest request) {
+    private State create(RecordStore.Transaction tx, ExecutionRequest request) {
         var state = new State();
         state.tx = tx;
         state.createdAt = tx.now();
+        state.unknownLimit = unknownLimit;
         state.request = request;
         state.digest = DurableJson.hash(request);
         emit(state, publicResult(state), null);
@@ -196,8 +213,10 @@ public final class TransactionalExecutionStore implements ExecutionStore {
     }
 
     private static void cancel(State state) {
+        if (state.cancelled) return;
         state.cancelled = true;
         state.nextAttemptAt = 0;
+        state.unknownObservations = 0;
         if (!state.attempted && !state.result.state().terminal()) {
             state.result = new ExecutionResult(ExecutionState.CANCELLED, null, null, null);
             state.outputSealed = true;
@@ -379,9 +398,11 @@ public final class TransactionalExecutionStore implements ExecutionStore {
                 key,
                 (state, now) -> {
                     if (request != null) same(state, request);
+                    boolean parked = state.unknownObservations >= state.unknownLimit;
                     if (state.result.state().terminal() && state.outputSealed
                             || state.expiresAt > now
-                            || state.nextAttemptAt > now) return Optional.empty();
+                            || (parked ? request == null : state.nextAttemptAt > now))
+                        return Optional.empty();
                     state.owner = owner;
                     state.epoch++;
                     state.expiresAt = now + lease.toMillis();
@@ -462,12 +483,35 @@ public final class TransactionalExecutionStore implements ExecutionStore {
                 work.key(),
                 (state, now) -> {
                     fence(state, work, now);
+                    var observation = result;
+                    if (result.state() == ExecutionState.UNKNOWN
+                            && work.cancellationRequested() == state.cancelled) {
+                        if (state.unknownObservations < state.unknownLimit
+                                && ++state.unknownObservations == state.unknownLimit) {
+                            observation =
+                                    new ExecutionResult(
+                                            ExecutionState.UNKNOWN,
+                                            result.handle(),
+                                            null,
+                                            "Automatic recovery paused after "
+                                                    + state.unknownLimit
+                                                    + " UNKNOWN observations; external"
+                                                    + " reconciliation required");
+                            System.getLogger(TransactionalExecutionStore.class.getName())
+                                    .log(
+                                            System.Logger.Level.WARNING,
+                                            "Hands execution {0} parked after {1} UNKNOWN"
+                                                    + " observations",
+                                            state.request.executionId(),
+                                            state.unknownLimit);
+                        }
+                    } else state.unknownObservations = 0;
                     if (state.result.state().terminal()) {
                         if (!state.result.equals(result))
                             throw failure(
                                     DurableException.Code.CONFLICT, "Terminal result changed");
-                    } else if (!state.result.equals(result)) {
-                        state.result = result;
+                    } else if (!state.result.equals(observation)) {
+                        state.result = observation;
                         if (!result.state().terminal() || state.outputSealed)
                             emit(state, publicResult(state), null);
                     }

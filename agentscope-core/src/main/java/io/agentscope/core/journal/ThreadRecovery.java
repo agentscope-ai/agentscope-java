@@ -17,11 +17,16 @@ package io.agentscope.core.journal;
 
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolResultMessage;
+import io.agentscope.core.message.ToolResultState;
+import io.agentscope.core.message.ToolUseBlock;
+import io.agentscope.core.state.AgentState;
 import io.agentscope.core.util.JsonUtils;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Objects;
 import java.util.UUID;
 
 /** Explicit operator reconciliation, never automatic re-execution of an uncertain side effect. */
@@ -30,12 +35,27 @@ public final class ThreadRecovery {
 
     public static void reconcile(
             ThreadJournal log, Map<String, ToolResultBlock> outcomes, String reason) {
+        reconcile(log, outcomes, reason, false);
+    }
+
+    /** Persist one independently verified outcome while other dispatches may still need evidence. */
+    public static void reconcileOne(ThreadJournal log, ToolResultBlock outcome, String reason) {
+        reconcile(log, Map.of(outcome.getId(), outcome), reason, true);
+    }
+
+    private static void reconcile(
+            ThreadJournal log,
+            Map<String, ToolResultBlock> outcomes,
+            String reason,
+            boolean partial) {
         if (reason == null || reason.isBlank())
             throw new IllegalArgumentException("A reconciliation reason is required");
         var writer = log.acquire(UUID.randomUUID().toString(), Duration.ofMinutes(2));
         try {
             var projection = JournalProjection.read(log);
-            if (!projection.uncertainToolCalls().equals(outcomes.keySet()))
+            boolean complete = projection.uncertainToolCalls().equals(outcomes.keySet());
+            if (!complete
+                    && !(partial && projection.uncertainToolCalls().containsAll(outcomes.keySet())))
                 throw new IllegalArgumentException("Supply exactly the unresolved tool outcomes");
             var state = projection.restore();
             if (state == null) throw new JournalException("No recoverable state baseline");
@@ -46,6 +66,9 @@ public final class ThreadRecovery {
                             "Mismatched or suspended reconciliation result");
                 state.contextMutable()
                         .add(ToolResultMessage.builder().result(entry.getValue()).build());
+            }
+            if (complete && !outcomes.isEmpty() && returnsDirectly(log, projection, state)) {
+                state.setReturnDirectTurn(projection.positionTurnId());
             }
             long seq = projection.asOfSeq();
             String run = projection.positionRunId();
@@ -91,7 +114,9 @@ public final class ThreadRecovery {
                                                     "outcomes",
                                                     outcomes,
                                                     "interruptedRuns",
-                                                    projection.activeRuns())));
+                                                    complete
+                                                            ? projection.activeRuns()
+                                                            : java.util.List.of())));
             var checkpointData = new LinkedHashMap<String, Object>();
             checkpointData.put("stateJson", state.toJson());
             checkpointData.put("projectorVersion", 1);
@@ -114,5 +139,34 @@ public final class ThreadRecovery {
         } finally {
             log.release(writer);
         }
+    }
+
+    private static boolean returnsDirectly(
+            ThreadJournal log, JournalProjection projection, AgentState state) {
+        var messages = state.contextMutable();
+        int index = messages.size() - 1;
+        var successful = new HashSet<String>();
+        while (index >= 0 && messages.get(index) instanceof ToolResultMessage message) {
+            for (var result : message.getContentBlocks(ToolResultBlock.class)) {
+                if (result.getState() != ToolResultState.SUCCESS) return false;
+                successful.add(result.getId());
+            }
+            index--;
+        }
+        if (index < 0) return false;
+        var calls = messages.get(index).getContentBlocks(ToolUseBlock.class);
+        if (calls.isEmpty() || calls.size() != successful.size()) return false;
+        var direct = new HashSet<String>();
+        for (var event : log.scanMetadata(log.recoveryCursor(), projection.asOfSeq())) {
+            if ("tool/dispatch".equals(event.type())
+                    && Objects.equals(projection.positionTurnId(), event.turnId())) {
+                String id = (String) event.data().get("toolCallId");
+                if (Boolean.TRUE.equals(event.data().get("returnDirect"))) direct.add(id);
+                else direct.remove(id);
+            }
+        }
+        return calls.stream()
+                .allMatch(
+                        call -> successful.contains(call.getId()) && direct.contains(call.getId()));
     }
 }

@@ -101,6 +101,8 @@ final class AgentScopeExecutionHost implements AgentExecutionHost, ModelInvocati
 
     private Frame frame;
     private long replayAfter;
+    // Unfinished provider requests present at takeover, consumed once per matching replay.
+    private final Map<String, String> pendingProviderKeys = new LinkedHashMap<>();
     private final Set<String> replayed = new HashSet<>();
     private boolean completed;
     private volatile boolean active;
@@ -198,10 +200,20 @@ final class AgentScopeExecutionHost implements AgentExecutionHost, ModelInvocati
         this.modelExecutions = modelExecutions;
         this.modelRoute = modelRoute;
         this.replyIdleMillis = replyTimeout.toMillis();
-        for (var event : log.scan(0, log.head().seq())) {
-            if ("state/checkpoint".equals(event.type())) replayAfter = event.seq();
+        for (var event : log.scan(log.recoveryCursor(), log.head().seq())) {
+            if ("state/checkpoint".equals(event.type())) {
+                replayAfter = event.seq();
+                pendingProviderKeys.clear();
+            }
             if (!durable.lease().turnId().equals(event.turnId())) continue;
             var data = event.data();
+            if ("request/prepared".equals(event.type())
+                    && data.get("durableRequestHash") instanceof String hash
+                    && data.get("durableProviderKey") instanceof String key)
+                pendingProviderKeys.put(hash, key);
+            if ("model/end".equals(event.type())
+                    && data.get(ModelCapture.OUTCOME) instanceof Map<?, ?> outcome)
+                pendingProviderKeys.remove(outcome.get("replayHash"));
             if (DurableEventSchemas.QUEUED_MODEL.equals(event.type())) {
                 pendingRequest =
                         DurableJson.convert(
@@ -363,7 +375,7 @@ final class AgentScopeExecutionHost implements AgentExecutionHost, ModelInvocati
                             String hash = requestHash(model, purpose, messages, tools, options);
                             String id = null;
                             long checkpoint = 0;
-                            var history = log.scan(0, log.head().seq());
+                            var history = log.scan(log.recoveryCursor(), log.head().seq());
                             if (active) {
                                 int index = slot.getAndIncrement();
                                 for (var event : history) {
@@ -433,14 +445,33 @@ final class AgentScopeExecutionHost implements AgentExecutionHost, ModelInvocati
                                             ? prepareQueued(
                                                     candidate, model, messages, tools, options)
                                             : candidate;
+                            String priorKey = pendingProviderKeys.remove(hash);
                             log.modelStarted(
                                     call,
                                     new ModelCapture(
-                                            model, purpose, messages, tools, options, hash));
+                                            model,
+                                            purpose,
+                                            messages,
+                                            tools,
+                                            options,
+                                            hash,
+                                            priorKey == null ? call : priorKey));
                             return Flux.defer(() -> next.apply(call))
                                     .doOnNext(chunk -> log.modelChunk(call, chunk));
                         })
                 .subscribeOn(Schedulers.boundedElastic());
+    }
+
+    @Override
+    public GenerateOptions providerOptions(String callId, GenerateOptions options) {
+        if (options != null
+                && options.getAdditionalHeaders().keySet().stream()
+                        .anyMatch("Idempotency-Key"::equalsIgnoreCase)) return options;
+        return GenerateOptions.mergeOptions(
+                options,
+                GenerateOptions.builder()
+                        .additionalHeader("Idempotency-Key", log.providerKey(callId))
+                        .build());
     }
 
     private String prepareQueued(

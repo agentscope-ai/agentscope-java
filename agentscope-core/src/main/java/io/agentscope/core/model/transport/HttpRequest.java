@@ -31,12 +31,18 @@ public class HttpRequest {
     private final String method;
     private final Map<String, String> headers;
     private final String body;
+    private final boolean includeSseDone;
 
     private HttpRequest(Builder builder) {
         this.url = builder.url;
         this.method = builder.method;
         this.headers = Collections.unmodifiableMap(new HashMap<>(builder.headers));
         this.body = builder.body;
+        this.includeSseDone = builder.includeSseDone;
+    }
+
+    public boolean includeSseDone() {
+        return includeSseDone;
     }
 
     /**
@@ -92,6 +98,13 @@ public class HttpRequest {
         private String method = "GET";
         private final Map<String, String> headers = new HashMap<>();
         private String body;
+        private boolean includeSseDone;
+
+        /** Deliver the terminal SSE marker to protocols that validate stream completion. */
+        public Builder includeSseDone(boolean value) {
+            includeSseDone = value;
+            return this;
+        }
 
         /**
          * Set the request URL.

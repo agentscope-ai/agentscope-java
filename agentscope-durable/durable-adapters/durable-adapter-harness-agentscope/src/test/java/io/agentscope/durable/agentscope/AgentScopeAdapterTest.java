@@ -184,6 +184,58 @@ class AgentScopeAdapterTest {
         }
     }
 
+    @Test
+    void nativeEvidenceCheckRequiresMatchingIndependentEvidence() {
+        var original = ToolUseBlock.builder().id("call").name("charge").input(Map.of()).build();
+        var dispatch =
+                new NativeToolRecovery.Dispatch(
+                        new ThreadKey(new SessionKey("app", "session"), "thread"),
+                        "turn",
+                        "action",
+                        original,
+                        NativeToolRecovery.Replay.NEVER);
+        var check =
+                new NativeToolRecovery.ModelCheck(
+                        new ScriptedModel(false),
+                        (operation, hint) -> {
+                            throw new AssertionError(
+                                    "A prose response must not trigger evidence lookup");
+                        });
+        assertTrue(check.check(dispatch).isEmpty());
+
+        var model = org.mockito.Mockito.mock(Model.class);
+        var query =
+                ToolUseBlock.builder()
+                        .id("lookup")
+                        .name("verify_outcome")
+                        .input(Map.of("hint", "receipt"))
+                        .build();
+        doReturn(Flux.just(ChatResponse.builder().content(List.of(query)).build()))
+                .when(model)
+                .stream(any(), any(), any());
+        var wrongReceipt =
+                new NativeToolRecovery.Evidence(
+                        "receipt-1",
+                        ToolResultBlock.success("ok").withIdAndName("another-call", "charge"));
+        var lookups = new AtomicInteger();
+        check =
+                new NativeToolRecovery.ModelCheck(
+                        model,
+                        (operation, hint) -> {
+                            assertEquals(dispatch, operation);
+                            assertEquals("receipt", hint);
+                            lookups.incrementAndGet();
+                            return java.util.Optional.of(wrongReceipt);
+                        });
+        assertTrue(check.check(dispatch).isEmpty());
+        assertEquals(1, lookups.get());
+        assertThrows(
+                IllegalArgumentException.class,
+                () ->
+                        new NativeToolRecovery.Evidence(
+                                "receipt-1", ToolResultBlock.text("still running")));
+    }
+
     AgentScopeAdapter adapter(Model model, PermissionMode mode, Map<String, String> bindings) {
         return AgentScopeAdapter.forReAct(
                 binding -> {
@@ -239,6 +291,77 @@ class AgentScopeAdapterTest {
                         .pollInterval(Duration.ofMillis(1));
         if (executor != null) builder.executor("jobs", executor);
         return builder.build();
+    }
+
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(booleans = {false, true})
+    void parkedNativeToolCanBeCancelledOrReconciled(boolean cancel) {
+        var adapter = adapter(new ScriptedModel(false), PermissionMode.BYPASS, Map.of());
+        try (var backend = LocalBackend.open(directory.resolve("repair"));
+                var runtime = runtime(backend, adapter, null)) {
+            var turn = runtime.createSession(key, "agent").submit("request", "hello");
+            var lease =
+                    backend.claim(new ThreadKey(key, "main"), "repair", Duration.ofMinutes(1))
+                            .orElseThrow();
+            var context = new HarnessContext(backend, lease, new AtomicBoolean());
+            var log = new BackendThreadJournal(context, Map.of());
+            log.append(
+                    turn.turnId(),
+                    List.of(
+                            Map.entry(
+                                    "state/checkpoint",
+                                    Map.of(
+                                            "stateJson",
+                                            io.agentscope.core.state.AgentState.builder()
+                                                    .userId(key.namespace())
+                                                    .sessionId(key.sessionId())
+                                                    .threadId("main")
+                                                    .build()
+                                                    .toJson(),
+                                            "projectorVersion",
+                                            1)),
+                            Map.entry("tool/dispatch", Map.of("toolCallId", "local-1"))));
+            adapter.execute(context);
+            assertEquals(TurnStatus.WAITING, turn.status().status());
+            var thread = new ThreadKey(key, "main");
+            assertTrue(
+                    backend.claim(
+                                    thread,
+                                    "scheduler",
+                                    Duration.ofMinutes(1),
+                                    io.agentscope.durable.DurableTypes.RecoveryPolicy.defaults())
+                            .isEmpty());
+            if (cancel) {
+                backend.cancel(thread, turn.turnId(), "cancel-1");
+                backend.cancel(thread, turn.turnId(), "cancel-2");
+                runtime.tick(thread);
+                assertEquals(TurnStatus.CANCELLED, turn.status().status());
+                return;
+            }
+            var repairContext =
+                    new HarnessContext(
+                            backend,
+                            backend.claim(thread, "operator", Duration.ofMinutes(1)).orElseThrow(),
+                            new AtomicBoolean());
+            var outcomes =
+                    Map.of(
+                            "local-1",
+                            ToolResultBlock.text("verified")
+                                    .withIdAndName("local-1", "local")
+                                    .withState(ToolResultState.SUCCESS));
+            adapter.reconcileNativeTools(repairContext, "repair-1", "audit/123", outcomes);
+            long position = new BackendThreadJournal(repairContext, Map.of()).head().seq();
+            adapter.reconcileNativeTools(repairContext, "repair-1", "audit/123", outcomes);
+            assertEquals(position, new BackendThreadJournal(repairContext, Map.of()).head().seq());
+            assertThrows(
+                    DurableException.class,
+                    () ->
+                            adapter.reconcileNativeTools(
+                                    repairContext, "repair-1", "other", outcomes));
+            backend.release(repairContext.lease(), Duration.ZERO);
+            runtime.tick(thread);
+            assertEquals(TurnStatus.SUCCEEDED, turn.status().status());
+        }
     }
 
     @Test
@@ -464,6 +587,60 @@ class AgentScopeAdapterTest {
                 assertFalse(
                         fact.path(ModelCapture.OUTCOME).has("usage"),
                         "Replay must not inherit usage from a failed transport attempt");
+            }
+        }
+    }
+
+    @Test
+    void inFlightModelReusesProviderKeyAcrossTakeover() throws Exception {
+        var calls = new CopyOnWriteArrayList<String>();
+        Model model =
+                new Model() {
+                    public String getModelName() {
+                        return "counting";
+                    }
+
+                    public Flux<ChatResponse> stream(
+                            List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
+                        calls.add(options.getAdditionalHeaders().get("Idempotency-Key"));
+                        return Flux.just(
+                                ChatResponse.builder()
+                                        .content(List.of(TextBlock.builder().text("done").build()))
+                                        .build());
+                    }
+                };
+        var thread = new ThreadKey(key, "main");
+        try (var storage = LocalBackend.open(directory.resolve("in-flight-model"))) {
+            var interrupted = spy(storage);
+            doAnswer(
+                            invocation -> {
+                                if (!calls.isEmpty())
+                                    throw new DurableException(
+                                            DurableException.Code.UNAVAILABLE,
+                                            "Interrupted after provider admission");
+                                return invocation.callRealMethod();
+                            })
+                    .when(interrupted)
+                    .commit(any(), any());
+            String turn;
+            try (var runtime =
+                    runtime(interrupted, adapter(model, PermissionMode.BYPASS, Map.of()), null)) {
+                turn = runtime.createSession(key, "agent").submit("one", "hello").turnId();
+                runtime.tick(thread);
+                assertEquals(1, calls.size());
+            }
+            Thread.sleep(5);
+            try (var runtime =
+                    runtime(storage, adapter(model, PermissionMode.BYPASS, Map.of()), null)) {
+                runtime.tick(thread);
+                assertEquals(TurnStatus.SUCCEEDED, storage.turn(thread, turn).status());
+                assertEquals(2, calls.size());
+                assertNotNull(calls.get(0));
+                assertEquals(calls.get(0), calls.get(1));
+                runtime.getSession(key).submit("two", "hello");
+                runtime.tick(thread);
+                assertEquals(3, calls.size());
+                assertFalse(calls.get(0).equals(calls.get(2)));
             }
         }
     }
@@ -2012,14 +2189,31 @@ class AgentScopeAdapterTest {
         }
         var reopened = new TransactionalSessionBackend(JdbcRecordStore.sqlite(file));
         var model = new ScriptedModel(false);
+        var reads = new CopyOnWriteArrayList<Long>();
+        var observed =
+                (SessionBackend)
+                        java.lang.reflect.Proxy.newProxyInstance(
+                                SessionBackend.class.getClassLoader(),
+                                new Class<?>[] {SessionBackend.class},
+                                (proxy, method, args) -> {
+                                    if ("journal".equals(method.getName()))
+                                        reads.add((Long) args[1]);
+                                    try {
+                                        return method.invoke(reopened, args);
+                                    } catch (java.lang.reflect.InvocationTargetException error) {
+                                        throw error.getCause();
+                                    }
+                                });
         try (var runtime =
-                runtime(reopened, adapter(model, PermissionMode.BYPASS, Map.of()), null)) {
+                runtime(observed, adapter(model, PermissionMode.BYPASS, Map.of()), null)) {
             var turn = runtime.getSession(key).submit("two", "continue");
             runtime.tick(new ThreadKey(key, "main"));
             assertNull(runtime.lastFailure(new ThreadKey(key, "main")));
             assertEquals(
                     TurnStatus.SUCCEEDED,
                     reopened.turn(new ThreadKey(key, "main"), turn.turnId()).status());
+            assertFalse(reads.isEmpty());
+            assertTrue(reads.stream().allMatch(after -> after > 0), reads.toString());
             assertTrue(
                     model.inputs.get(0).stream()
                             .anyMatch(m -> m.getTextContent().contains("remember this")));
@@ -2963,6 +3157,16 @@ class AgentScopeAdapterTest {
             assertEquals(
                     TurnStatus.CANCELLED,
                     backend.turn(new ThreadKey(key, "main"), turn.turnId()).status());
+            var thread = new ThreadKey(key, "main");
+            var checkpoints = backend.checkpoints(thread, 0, 1000);
+            long position = Long.parseLong(checkpoints.get(checkpoints.size() - 1).position());
+            var checkpoint = backend.checkpoint(thread, position);
+            assertTrue(checkpoint.settled());
+            long cursor = checkpoint.checkpoint().required("recoveryCursor").asLong();
+            assertTrue(cursor > 0);
+            var first = backend.checkpointJournal(thread, position, cursor, 1).get(0);
+            assertEquals("state/checkpoint", first.required("type").asText());
+            assertEquals(turn.turnId(), first.required("turnId").asText());
         }
         var nextModel = new ScriptedModel(false);
         try (var runtime =

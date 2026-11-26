@@ -37,6 +37,38 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 class PostgresBackendConfigurationTest {
+    /** Run against a disposable PostgreSQL database with a non-C default collation. */
+    @Test
+    @org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable(
+            named = "DURABLE_TEST_POSTGRES_URL",
+            matches = ".+")
+    void prefixDiscoveryAndPaginationUseBinaryOrdering() {
+        String prefix = "test:" + java.util.UUID.randomUUID() + ":";
+        var keys = java.util.List.of(prefix + "A", prefix + "a", prefix + "😀");
+        try (var store =
+                JdbcRecordStore.postgres(
+                        System.getenv("DURABLE_TEST_POSTGRES_URL"), new java.util.Properties())) {
+            for (var key : keys)
+                store.transaction(
+                        key,
+                        tx -> {
+                            tx.put("", io.agentscope.durable.DurableJson.value(1));
+                            return null;
+                        });
+            assertEquals(keys, store.keys(prefix, null, 10));
+            assertEquals(keys.subList(1, 3), store.keys(prefix, keys.get(0), 10));
+            store.transaction(
+                    prefix,
+                    tx -> {
+                        for (var key : keys)
+                            tx.put(key, io.agentscope.durable.DurableJson.value(1));
+                        assertEquals(keys, tx.keys(prefix, null, 10));
+                        assertEquals(keys.subList(1, 3), tx.keys(prefix, keys.get(0), 10));
+                        return null;
+                    });
+        }
+    }
+
     DataSource source;
     Connection connection;
     Statement statement;

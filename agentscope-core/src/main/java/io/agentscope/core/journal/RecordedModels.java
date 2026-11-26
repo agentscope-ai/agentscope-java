@@ -136,7 +136,16 @@ public final class RecordedModels {
                                                 "Cannot call the model while waiting for "
                                                         + pending));
                             admission = before(callId);
-                            responses = Flux.defer(() -> delegate.stream(messages, tools, options));
+                            responses =
+                                    Flux.defer(
+                                            () ->
+                                                    delegate.stream(
+                                                            messages,
+                                                            tools,
+                                                            host == null
+                                                                    ? options
+                                                                    : host.providerOptions(
+                                                                            callId, options)));
                         }
                         var last = new AtomicReference<ChatResponse>();
                         var usage = new AtomicReference<ChatUsage>();

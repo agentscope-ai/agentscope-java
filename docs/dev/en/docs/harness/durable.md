@@ -869,6 +869,14 @@ a stopped Run is not necessarily a terminal Turn.
 
 ## Recovery limits
 
+Direct executor progress is fenced by the observing Brain's lease. A stale observation cannot replace the new owner's operation handle. A confirmed terminal result for the same execution may still arrive late.
+
+When unfinished runs repeatedly lose ownership beyond the persisted recovery policy's retry limit (three retries before a policy is recorded), the replacement host settles the failure. Completing an execution step or releasing the lease normally resets consecutive losses.
+
+For an uncertain native tool, an authorized host independently verifies the outcomes, claims the original Turn, constructs a `HarnessContext` with that lease, and calls `AgentScopeAdapter.reconcileNativeTools(context, requestId, evidenceRef, outcomes)`. Supply terminal outcomes for all unresolved native call IDs and release the lease afterwards. Use a reference to an access-controlled audit record; omit sensitive payloads. Identical requests can be retried on the same Turn. Reconciliation repairs native state and preserves prior cancellation or exhausted recovery decisions.
+
+When a Turn completes normally, its terminal commit records the location of the most recent native state snapshot. The next invocation recovers from that snapshot and subsequent journal entries. Explicit historical reads retain the complete prefix. A single long unfinished Turn still replays entries since the previous snapshot.
+
 Threads pin Harness and native-state versions. Restarts need matching factories,
 tool bindings and execution environments. A shared backend does not permit switching
 native kernels. The supplied implementation is Java; other language integrations require
@@ -1119,3 +1127,21 @@ through the core request observer. These events describe collector observation, 
 replacement starts a new observation of persisted replies.
 
 Collectors subscribe to the configured backend wakeups before reading replies and unsubscribe on completion, failure or cancellation. Lost hints are repaired by bounded backoff polling up to one second. Beginning a worker generation keeps the Turn suspended until its first response arrives.
+
+### Uncertain Hands executions
+
+Hands keeps querying an admitted provider handle across worker replacement. A missing lookup retains that handle. Before a handle exists, repeated start requires provider-side idempotency across all workers. After eight consecutive UNKNOWN observations by default, the transactional Hands ledger pauses automatic recovery. RocketMQ hosts can set `RocketMqWorker.Builder.unknownLimit` for new executions. The ledger freezes the limit at admission. An operator can claim the exact execution and reconcile with external evidence. The first cancellation wakes parked work to check cancellation; duplicate cancellations preserve its budget.
+
+### Interrupted native tools
+
+A successfully reconciled return-direct tool batch delivers the original tool output without another reasoning request. The first dispatch records the return-direct setting.
+
+Configure per-tool recovery on the AgentScope adapter:
+
+```java
+var recovery = adapter.withNativeToolRecovery(
+        Map.of("lookup", NativeToolRecovery.Replay.SAFE, "charge", NativeToolRecovery.Replay.NEVER),
+        new NativeToolRecovery.ModelCheck(checkModel, evidenceLookup));
+```
+
+The first dispatch freezes the policy and admitted arguments. Choose `SAFE` for tools that tolerate repeated execution. A replacement Brain can call them again under the original call identity. Unlisted tools default to `NEVER`. For these, a model can suggest a lookup hint. The application's read-only `EvidenceLookup` must match the original operation against an independent record and return a terminal result with the original tool name, call ID and an evidence reference. An inconclusive check parks the Turn for explicit reconciliation or cancellation. Pass `null` for the model check to use operator reconciliation only.

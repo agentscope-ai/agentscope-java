@@ -189,6 +189,26 @@ public final class ToolResultBlock extends ContentBlock {
         return state;
     }
 
+    /** Resolve the final state of a returned local tool invocation, including plain text results. */
+    public ToolResultState completedState() {
+        if (isSuspended()) {
+            return ToolResultState.SUSPENDED;
+        }
+        if (getState() != null && getState() != ToolResultState.RUNNING) {
+            return getState();
+        }
+        if (getOutput() != null
+                && getOutput().stream()
+                        .anyMatch(
+                                b ->
+                                        b instanceof TextBlock tb
+                                                && tb.getText() != null
+                                                && tb.getText().startsWith("[ERROR]"))) {
+            return ToolResultState.ERROR;
+        }
+        return ToolResultState.SUCCESS;
+    }
+
     /**
      * Returns a copy of this block with the given state.
      *

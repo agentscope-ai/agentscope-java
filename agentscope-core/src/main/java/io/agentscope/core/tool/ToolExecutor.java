@@ -430,7 +430,12 @@ class ToolExecutor {
         // Without interceptors, retain the dispatch path with an optional final check.
         if (interceptors.isEmpty()) {
             return applyResultErrorMapping(
-                    dispatchRecord(recorder, executionParam, toolCall, mergedInput)
+                    dispatchRecord(
+                                    recorder,
+                                    executionParam,
+                                    toolCall,
+                                    mergedInput,
+                                    tool.isReturnDirect())
                             .then(Mono.defer(() -> invokeTool(tool, executionParam))),
                     toolCall,
                     param.isPropagateErrors());
@@ -445,7 +450,12 @@ class ToolExecutor {
         String agentName = callingAgent != null ? callingAgent.getName() : null;
         Function<ToolInvocation, Mono<ToolResultBlock>> terminal =
                 iv ->
-                        dispatchRecord(recorder, executionParam, toolCall, iv.input())
+                        dispatchRecord(
+                                        recorder,
+                                        executionParam,
+                                        toolCall,
+                                        iv.input(),
+                                        tool.isReturnDirect())
                                 .then(
                                         Mono.defer(
                                                 () ->
@@ -496,7 +506,8 @@ class ToolExecutor {
             InvocationRecorder recorder,
             ToolCallParam executionParam,
             ToolUseBlock toolCall,
-            Map<String, Object> arguments) {
+            Map<String, Object> arguments,
+            boolean returnDirect) {
         if (recorder == null) {
             return Mono.empty();
         }
@@ -518,6 +529,8 @@ class ToolExecutor {
                                     recorder.actionId(toolCall.getId()),
                                     "name",
                                     toolCall.getName(),
+                                    "returnDirect",
+                                    returnDirect,
                                     "arguments",
                                     arguments));
                 });
