@@ -300,12 +300,16 @@ public class SkillBox {
         if (path == null || path.trim().isEmpty()) {
             throw new IllegalArgumentException("Missing or empty required parameter: path");
         }
+        boolean reload = SkillToolFactory.lenientBoolean(input.get("reload"));
         return skillToolFactory.loadSkillResourceImpl(
                 skillId,
                 path,
                 skillToolFactory.resolveToolContext(param),
-                // Not gated here: the single decision lives in loadSkillResourceImpl.
-                param.getRuntimeContext());
+                // Not gated here: grant resolution and the entry-delivery dedup decision both
+                // live in loadSkillResourceImpl; this call site only feeds it the inputs.
+                param.getRuntimeContext(),
+                SkillToolFactory.scopeOf(param),
+                reload);
     }
 
     /**
