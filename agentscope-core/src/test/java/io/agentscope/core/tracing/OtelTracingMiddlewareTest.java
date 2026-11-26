@@ -24,6 +24,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import com.fasterxml.jackson.databind.JsonNode;
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.Event;
+import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.agent.StreamOptions;
 import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.event.AgentStartEvent;
@@ -35,6 +36,7 @@ import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.middleware.ActingInput;
 import io.agentscope.core.middleware.AgentInput;
 import io.agentscope.core.middleware.ModelCallInput;
+import io.agentscope.core.middleware.ModelRequestPreparer;
 import io.agentscope.core.model.ChatUsage;
 import io.opentelemetry.api.GlobalOpenTelemetry;
 import io.opentelemetry.api.OpenTelemetry;
@@ -263,6 +265,76 @@ class OtelTracingMiddlewareTest {
                         .get(
                                 io.opentelemetry.api.common.AttributeKey.longKey(
                                         "gen_ai.usage.input_tokens")));
+    }
+
+    @Test
+    void onModelCall_reportsPostPreparationViewFromThePreparedRequest() {
+        // Compaction rewrites the conversation inside the preparer after this middleware's span
+        // opened with the caller-side snapshot; the span must end reporting the as-sent view
+        // (#4269). The preparer publishes a PreparedRequestView keyed by the end event's callId.
+        Agent agent = stubAgent("model-agent-view", "agent-view");
+        RuntimeContext rc = RuntimeContext.builder().build();
+        rc.put(
+                ModelRequestPreparer.PREPARED_VIEW_ATTRIBUTE_PREFIX + "call-42",
+                new ModelRequestPreparer.PreparedRequestView(
+                        3, 900, java.util.List.of("history_compaction")));
+        ModelCallEndEvent mce = new ModelCallEndEvent("reply-view", null, "call-42");
+
+        ModelCallInput input = new ModelCallInput(List.of(), null, null, new StubModel("gpt-4o"));
+        middleware.onModelCall(agent, rc, input, in -> Flux.just(mce)).collectList().block();
+
+        List<SpanData> spans = spanExporter.getFinishedSpanItems();
+        assertEquals(1, spans.size());
+        SpanData span = spans.get(0);
+        assertEquals(
+                3L,
+                span.getAttributes()
+                        .get(
+                                io.opentelemetry.api.common.AttributeKey.longKey(
+                                        "gen_ai.request.messages.count")),
+                "post-preparation message count must overwrite the caller-side count");
+        assertEquals(
+                900L,
+                span.getAttributes()
+                        .get(
+                                io.opentelemetry.api.common.AttributeKey.longKey(
+                                        "agentscope.context.estimated_input_tokens")));
+        assertEquals(
+                "history_compaction",
+                span.getAttributes()
+                        .get(
+                                io.opentelemetry.api.common.AttributeKey.stringKey(
+                                        "agentscope.context.transforms")));
+    }
+
+    @Test
+    void onModelCall_withoutPreparedView_keepsCallerSideAttributes() {
+        // End events without a callId (or with no published view) must not disturb the span.
+        Agent agent = stubAgent("model-agent-plain", "agent-plain");
+        RuntimeContext rc = RuntimeContext.builder().build();
+        ModelCallEndEvent mce = new ModelCallEndEvent("reply-plain", null);
+
+        ModelCallInput input =
+                new ModelCallInput(
+                        List.of(io.agentscope.core.message.Msg.builder().build()),
+                        null,
+                        null,
+                        new StubModel("gpt-4o"));
+        middleware.onModelCall(agent, rc, input, in -> Flux.just(mce)).collectList().block();
+
+        SpanData span = spanExporter.getFinishedSpanItems().get(0);
+        assertEquals(
+                1L,
+                span.getAttributes()
+                        .get(
+                                io.opentelemetry.api.common.AttributeKey.longKey(
+                                        "gen_ai.request.messages.count")));
+        assertEquals(
+                null,
+                span.getAttributes()
+                        .get(
+                                io.opentelemetry.api.common.AttributeKey.stringKey(
+                                        "agentscope.context.transforms")));
     }
 
     @Test
