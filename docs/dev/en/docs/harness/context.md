@@ -275,7 +275,7 @@ Compaction changes the conversation list, not the independently stored task, pla
 
 The estimator cannot exactly predict every provider's token accounting. When the provider reports a recognized context overflow, enabled compaction can force a smaller conversation and retry that reasoning request once within the same execution. Both `call()` and `streamEvents()` use this recovery with native session logging or the legacy state store. The retry preserves the request's output constraints and continues with the results of tools that already ran. If compaction is disabled, recovery cannot reduce the input, or the retry fails, the error propagates.
 
-Emergency summaries use the dedicated model configured with `CompactionConfig.model(...)`. In snapshot mode (`journalEnabled(false)`), recovery falls back to the Agent's configured default model when no dedicated model is configured, including when `RuntimeContext` selects another model for the call. Native Thread journal recovery continues to use the call's effective model as its fallback. Ordinary compaction also uses the call's effective model when no dedicated model is configured.
+Conversation summaries use the dedicated model configured with `CompactionConfig.model(...)`. When none is configured, they use the effective model for the current call, including a `RuntimeContext` model override, or the Agent's configured model when there is no override. This selection applies to both ordinary compaction and overflow recovery with native Thread journaling or the legacy state store.
 
 <span id="letting-the-agent-inspect-its-own-history" />
 
