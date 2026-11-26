@@ -15,6 +15,7 @@
  */
 package io.agentscope.core.model.transport;
 
+import io.agentscope.core.model.ModelSchedulers;
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStream;
@@ -50,7 +51,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
-import reactor.core.scheduler.Schedulers;
+import reactor.core.scheduler.Scheduler;
 
 /**
  * Pure JDK implementation of the HttpTransport interface.
@@ -75,6 +76,7 @@ public class JdkHttpTransport implements HttpTransport {
 
     private final HttpClient client;
     private final HttpTransportConfig config;
+    private final Scheduler streamScheduler;
     private final AtomicBoolean closed = new AtomicBoolean(false);
 
     /**
@@ -91,8 +93,7 @@ public class JdkHttpTransport implements HttpTransport {
      * @throws NullPointerException if config is null
      */
     JdkHttpTransport(HttpTransportConfig config) {
-        this.config = Objects.requireNonNull(config, "config must not be null");
-        this.client = buildClient(config);
+        this(buildClient(Objects.requireNonNull(config, "config must not be null")), config);
     }
 
     /**
@@ -106,8 +107,14 @@ public class JdkHttpTransport implements HttpTransport {
      * @throws NullPointerException if client or config is null
      */
     public JdkHttpTransport(HttpClient client, HttpTransportConfig config) {
+        this(client, config, ModelSchedulers.streams());
+    }
+
+    private JdkHttpTransport(
+            HttpClient client, HttpTransportConfig config, Scheduler streamScheduler) {
         this.client = Objects.requireNonNull(client, "client must not be null");
         this.config = Objects.requireNonNull(config, "config must not be null");
+        this.streamScheduler = Objects.requireNonNull(streamScheduler, "streamScheduler");
     }
 
     private static HttpClient buildClient(HttpTransportConfig config) {
@@ -301,7 +308,7 @@ public class JdkHttpTransport implements HttpTransport {
     }
 
     /**
-     * Parse SSE or NDJSON lines on a bounded elastic worker because BufferedReader blocks.
+     * Parse SSE or NDJSON lines on {@code streamScheduler} because BufferedReader blocks.
      */
     private Flux<String> processStreamResponse(InputStream inputStream, HttpRequest request) {
         if (inputStream == null) {
@@ -326,7 +333,7 @@ public class JdkHttpTransport implements HttpTransport {
                             return isNdjson ? readNdJsonLines(reader) : readSseLines(reader);
                         })
                 // reader.lines() uses blocking I/O internally
-                .subscribeOn(Schedulers.boundedElastic());
+                .subscribeOn(streamScheduler);
     }
 
     /**
@@ -489,7 +496,7 @@ public class JdkHttpTransport implements HttpTransport {
     private Mono<String> readInputStreamAsync(InputStream inputStream) {
         return Mono.fromCallable(() -> readInputStream(inputStream))
                 .defaultIfEmpty("")
-                .subscribeOn(Schedulers.boundedElastic());
+                .subscribeOn(streamScheduler);
     }
 
     /**
@@ -578,6 +585,19 @@ public class JdkHttpTransport implements HttpTransport {
     public static class Builder {
         private HttpTransportConfig config = HttpTransportConfig.defaults();
         private HttpClient existingClient = null;
+        private Scheduler streamScheduler;
+
+        /**
+         * Use a caller-owned scheduler for blocking stream reads. The transport never disposes it.
+         * Defaults to {@link ModelSchedulers#streams()}.
+         *
+         * @param scheduler the stream scheduler
+         * @return this builder
+         */
+        public Builder streamScheduler(Scheduler scheduler) {
+            this.streamScheduler = Objects.requireNonNull(scheduler, "scheduler");
+            return this;
+        }
 
         /**
          * Set the transport configuration.
@@ -610,10 +630,11 @@ public class JdkHttpTransport implements HttpTransport {
          * @return a new JdkHttpTransport instance
          */
         public JdkHttpTransport build() {
-            if (existingClient != null) {
-                return new JdkHttpTransport(existingClient, config);
-            }
-            return new JdkHttpTransport(config);
+            Objects.requireNonNull(config, "config must not be null");
+            return new JdkHttpTransport(
+                    existingClient != null ? existingClient : buildClient(config),
+                    config,
+                    streamScheduler != null ? streamScheduler : ModelSchedulers.streams());
         }
     }
 
