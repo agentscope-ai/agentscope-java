@@ -317,7 +317,7 @@ builder.compaction(CompactionConfig.builder()
 
 估算通过后，供应商仍可能报告上下文溢出。启用压缩时，Harness 会尝试强制压缩，并在**同一次执行中重试当前推理一次**。原生 Thread 日志和旧版 StateStore 下的 `call()`、`streamEvents()` 都使用这一恢复路径。重试保留请求的输出约束，并使用已执行工具的结果继续推理。如果压缩已禁用、无法缩减上下文，或重试仍失败，错误会返回给调用方。
 
-快照模式的超限恢复会使用通过 `CompactionConfig.model(...)` 配置的专用摘要模型。未配置摘要模型时，它使用构建 Agent 时指定的默认模型，而不是为当前调用选择的模型。
+会话摘要优先使用通过 `CompactionConfig.model(...)` 配置的专用模型。未配置时，使用本次调用的有效模型，包括 `RuntimeContext` 中覆盖的模型。没有覆盖时，使用 Agent 配置的模型。普通压缩和溢出恢复遵循相同规则，适用于原生 Thread 日志和旧版 StateStore。
 
 <span id="什么时候刷新" />
 
