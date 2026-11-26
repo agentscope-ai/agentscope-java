@@ -443,10 +443,8 @@ public class PostgresAgentStateStore implements AgentStateStore {
         validateSessionId(slotId);
         validateStateKey(key);
 
-        if (values.isEmpty()) {
-            return;
-        }
-
+        // An empty list still flows through the shrink path below so that clearing a list
+        // deletes the stored items instead of being a silent no-op (full-replacement contract).
         String hashKey = key + HASH_KEY_SUFFIX;
 
         try (Connection conn = dataSource.getConnection()) {

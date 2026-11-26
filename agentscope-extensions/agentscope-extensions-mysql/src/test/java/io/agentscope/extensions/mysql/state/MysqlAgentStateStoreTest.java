@@ -22,6 +22,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -31,6 +32,7 @@ import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.util.List;
 import javax.sql.DataSource;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -254,5 +256,48 @@ class MysqlAgentStateStoreTest {
         assertTrue(ddl.contains("state_key VARCHAR(255) COLLATE utf8mb4_bin NOT NULL"));
         assertTrue(ddl.contains("state_data LONGTEXT NOT NULL"));
         assertFalse(ddl.contains("LONGTEXT COLLATE"));
+    }
+
+    // ------------------------------------------------------------------
+    //  save(List) with an empty list — full-replacement contract
+    // ------------------------------------------------------------------
+
+    @Test
+    @DisplayName("save with an empty list deletes stored items and persists the cleared hash")
+    void saveListEmptyDeletesExistingItemsAndPersistsClearedState() throws SQLException {
+        // Regression: save(...) with an empty list must not be a silent no-op. The save(List)
+        // contract is full replacement, so clearing must delete the stored items and persist
+        // the empty-list hash — otherwise a cleared list resurrects after a restart.
+        MysqlAgentStateStore store = newStore();
+        // Constructor: database check, table check, version-column COUNT. Save: stored hash
+        // row exists ("stale_hash"), and one list item row is present (max_index = 0,
+        // wasNull = false -> existingCount = 1).
+        when(resultSet.next()).thenReturn(true, true, true, true, true, false);
+        when(resultSet.getString("state_data")).thenReturn("stale_hash");
+        when(resultSet.getInt("max_index")).thenReturn(0);
+
+        store.save("user", "session", "list", List.of());
+
+        // Exactly two updates ran: the item DELETE and the hash upsert. The rewrite pass
+        // re-inserts nothing (a single empty executeBatch).
+        verify(preparedStatement, times(2)).executeUpdate();
+        verify(preparedStatement, times(1)).executeBatch();
+        ArgumentCaptor<String> sqlCaptor = ArgumentCaptor.forClass(String.class);
+        verify(connection, atLeastOnce()).prepareStatement(sqlCaptor.capture());
+        List<String> statements = sqlCaptor.getAllValues();
+        assertTrue(
+                statements.stream()
+                        .anyMatch(
+                                sql ->
+                                        sql.startsWith("DELETE FROM")
+                                                && sql.contains("state_key = ?")),
+                "Expected the stored list items to be deleted, got: " + statements);
+        assertTrue(
+                statements.stream().anyMatch(sql -> sql.contains("ON DUPLICATE KEY UPDATE")),
+                "Expected the cleared-list hash to be upserted, got: " + statements);
+
+        // After the delete, reading the list back yields nothing.
+        when(resultSet.next()).thenReturn(false);
+        assertTrue(store.getList("user", "session", "list", TestState.class).isEmpty());
     }
 }

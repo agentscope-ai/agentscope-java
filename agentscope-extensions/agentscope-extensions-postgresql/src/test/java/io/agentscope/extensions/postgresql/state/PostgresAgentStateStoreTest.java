@@ -26,6 +26,7 @@ import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.reset;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -43,6 +44,7 @@ import javax.sql.DataSource;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
 
@@ -249,11 +251,43 @@ class PostgresAgentStateStoreTest {
     }
 
     @Test
-    void saveListEmptyDoesNothing() throws SQLException {
+    void saveListEmptyDeletesExistingItemsAndPersistsClearedState() throws SQLException {
+        // Regression: save(...) with an empty list must not be a silent no-op. The save(List)
+        // contract is full replacement, so clearing must delete the stored items and persist
+        // the empty-list hash — otherwise a cleared list resurrects after a restart.
         PostgresAgentStateStore store =
                 PostgresAgentStateStore.builder(dataSource).createIfNotExist(false).build();
+        when(preparedStatement.executeUpdate()).thenReturn(1);
+        when(preparedStatement.executeBatch()).thenReturn(new int[] {});
+        // Constructor: schema check, table check. Save: stored hash row exists ("stale_hash"),
+        // and one list item row is present (max_index = 0, wasNull = false -> existingCount = 1).
+        when(resultSet.next()).thenReturn(true, true, true, true, false);
+        when(resultSet.getString("state_data")).thenReturn("stale_hash");
+        when(resultSet.getInt("max_index")).thenReturn(0);
+
         store.save("user", "session", "list", List.of());
-        verify(preparedStatement, never()).executeBatch();
+
+        // Exactly two updates ran: the item DELETE and the hash upsert. The rewrite pass
+        // re-inserts nothing (a single empty executeBatch).
+        verify(preparedStatement, times(2)).executeUpdate();
+        verify(preparedStatement, times(1)).executeBatch();
+        ArgumentCaptor<String> sqlCaptor = ArgumentCaptor.forClass(String.class);
+        verify(connection, atLeastOnce()).prepareStatement(sqlCaptor.capture());
+        List<String> statements = sqlCaptor.getAllValues();
+        assertTrue(
+                statements.stream()
+                        .anyMatch(
+                                sql ->
+                                        sql.startsWith("DELETE FROM")
+                                                && sql.contains("state_key = ?")),
+                "Expected the stored list items to be deleted, got: " + statements);
+        assertTrue(
+                statements.stream().anyMatch(sql -> sql.contains("ON CONFLICT")),
+                "Expected the cleared-list hash to be upserted, got: " + statements);
+
+        // After the delete, reading the list back yields nothing.
+        when(resultSet.next()).thenReturn(false);
+        assertTrue(store.getList("user", "session", "list", TestState.class).isEmpty());
     }
 
     @Test
