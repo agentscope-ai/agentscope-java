@@ -79,52 +79,57 @@ public class McpStdioExample {
                         .block();
         System.out.println(" Connected!\n");
 
-        Toolkit toolkit = new Toolkit();
-        System.out.print("Registering MCP tools ...");
-        toolkit.registerMcpClient(mcpClient).block();
-        System.out.println(" Done (registered: " + toolkit.getToolNames() + ")\n");
+        // try-with-resources: the wrapper is AutoCloseable — the spawned subprocess and
+        // its stdio pipes are shut down deterministically when the chat ends.
+        try (mcpClient) {
+            Toolkit toolkit = new Toolkit();
+            System.out.print("Registering MCP tools ...");
+            toolkit.registerMcpClient(mcpClient).block();
+            System.out.println(" Done (registered: " + toolkit.getToolNames() + ")\n");
 
-        ReActAgent agent =
-                ReActAgent.builder()
-                        .name("FilesystemAgent")
-                        .sysPrompt(
-                                "You are a filesystem assistant. Use the available MCP tools to "
-                                        + "help the user navigate and read files under /tmp.")
-                        .model(
-                                DashScopeChatModel.builder()
-                                        .apiKey(apiKey)
-                                        .modelName("qwen-max")
-                                        .stream(true)
-                                        .formatter(new DashScopeChatFormatter())
-                                        .build())
-                        .toolkit(toolkit)
-                        .build();
+            ReActAgent agent =
+                    ReActAgent.builder()
+                            .name("FilesystemAgent")
+                            .sysPrompt(
+                                    "You are a filesystem assistant. Use the available MCP tools"
+                                            + " to help the user navigate and read files under"
+                                            + " /tmp.")
+                            .model(
+                                    DashScopeChatModel.builder()
+                                            .apiKey(apiKey)
+                                            .modelName("qwen-max")
+                                            .stream(true)
+                                            .formatter(new DashScopeChatFormatter())
+                                            .build())
+                            .toolkit(toolkit)
+                            .build();
 
-        System.out.println("Try: 'List files in /tmp' or 'What is in /tmp/test.txt?'\n");
-        BufferedReader reader = new BufferedReader(new InputStreamReader(System.in));
-        System.out.println("Chat started. Type 'exit' to quit.\n");
+            System.out.println("Try: 'List files in /tmp' or 'What is in /tmp/test.txt?'\n");
+            BufferedReader reader = new BufferedReader(new InputStreamReader(System.in));
+            System.out.println("Chat started. Type 'exit' to quit.\n");
 
-        while (true) {
-            System.out.print("You: ");
-            String input = reader.readLine();
-            if (input == null || input.trim().equalsIgnoreCase("exit")) {
-                System.out.println("\nGoodbye!");
-                break;
+            while (true) {
+                System.out.print("You: ");
+                String input = reader.readLine();
+                if (input == null || input.trim().equalsIgnoreCase("exit")) {
+                    System.out.println("\nGoodbye!");
+                    break;
+                }
+                if (input.isBlank()) {
+                    continue;
+                }
+                Msg userMsg = new UserMessage(input.trim());
+                System.out.print("\nAgent: ");
+                agent.streamEvents(userMsg)
+                        .doOnNext(
+                                event -> {
+                                    if (event instanceof TextBlockDeltaEvent e) {
+                                        System.out.print(e.getDelta());
+                                    }
+                                })
+                        .blockLast();
+                System.out.println("\n");
             }
-            if (input.isBlank()) {
-                continue;
-            }
-            Msg userMsg = new UserMessage(input.trim());
-            System.out.print("\nAgent: ");
-            agent.streamEvents(userMsg)
-                    .doOnNext(
-                            event -> {
-                                if (event instanceof TextBlockDeltaEvent e) {
-                                    System.out.print(e.getDelta());
-                                }
-                            })
-                    .blockLast();
-            System.out.println("\n");
         }
     }
 }
