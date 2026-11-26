@@ -17,7 +17,7 @@ package io.agentscope.core.agent;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -203,14 +203,29 @@ class ReActAgentCallFailurePersistenceTest {
     }
 
     @Test
-    @DisplayName("empty model response persists the user input")
+    @DisplayName("empty model response retries with reminders and ends with a fallback message")
     void emptyModelResponsePersistsUserInput() {
         InMemoryAgentStateStore store = new InMemoryAgentStateStore();
-        ReActAgent agent = agent(new EmptyResponseModel(), store);
+        // Explicit bound so the reminder assertion below pins the value this agent was
+        // built with, independent of the builder's default maxIters.
+        final int maxIters = 3;
+        ReActAgent agent =
+                ReActAgent.builder()
+                        .name("asst")
+                        .sysPrompt("system prompt")
+                        .model(new EmptyResponseModel())
+                        .stateStore(store)
+                        .maxIters(maxIters)
+                        .build();
 
-        assertNull(
-                agent.call(List.of(userMsg("empty response request"))).block(),
-                "an empty model response should complete without a result message");
+        Msg result = agent.call(List.of(userMsg("empty response request"))).block();
+
+        assertNotNull(result, "a permanently empty model must still end with a result message");
+        assertEquals("(no output)", result.getTextContent());
+        assertEquals(
+                Boolean.TRUE,
+                result.getMetadata().get(Msg.METADATA_SYNTHETIC),
+                "the fallback result must carry the synthetic marker");
 
         AgentState persisted =
                 store.get(
@@ -220,9 +235,29 @@ class ReActAgentCallFailurePersistenceTest {
                                         .stateEntry("agent_state"),
                                 AgentState.class)
                         .orElseThrow();
-        assertEquals(List.of("empty response request"), textContents(persisted.getContext()));
+        List<String> texts = textContents(persisted.getContext());
+        assertEquals("empty response request", texts.get(0), "user input must be persisted");
         assertEquals(
-                List.of(MsgRole.USER), persisted.getContext().stream().map(Msg::getRole).toList());
+                1,
+                texts.stream().filter("(no output)"::equals).count(),
+                "the fallback must be persisted exactly once");
+        assertEquals(
+                maxIters,
+                texts.stream().filter(t -> t.startsWith("<system-reminder>")).count(),
+                "retry reminders must stay bounded by the maxIters this agent was built with");
+        assertTrue(
+                texts.stream()
+                        .allMatch(
+                                t ->
+                                        t.equals("empty response request")
+                                                || t.startsWith("<system-reminder>")
+                                                || t.equals("(no output)")),
+                "only the user input, bounded reminders and the fallback may persist");
+        assertFalse(
+                persisted.getContext().stream()
+                        .flatMap(msg -> msg.getContent().stream())
+                        .anyMatch(ToolUseBlock.class::isInstance),
+                "no tool calls may be persisted");
     }
 
     @Test
@@ -231,10 +266,14 @@ class ReActAgentCallFailurePersistenceTest {
         InMemoryAgentStateStore store = new InMemoryAgentStateStore();
         ReActAgent agent = agent(new EmptyResponseModel(), store);
 
-        assertNull(
+        Msg result =
                 agent.call(List.of(userMsg("empty fallback request")), StructuredReply.class)
-                        .block());
+                        .block();
 
+        assertNotNull(
+                result,
+                "a structured call on a permanently empty model must still end with a result"
+                        + " message");
         AgentState persisted =
                 store.get(
                                 null,
@@ -243,7 +282,16 @@ class ReActAgentCallFailurePersistenceTest {
                                         .stateEntry("agent_state"),
                                 AgentState.class)
                         .orElseThrow();
-        assertEquals(List.of("empty fallback request"), textContents(persisted.getContext()));
+        List<String> texts = textContents(persisted.getContext());
+        assertTrue(texts.contains("empty fallback request"));
+        assertTrue(
+                texts.stream()
+                        .allMatch(
+                                t ->
+                                        t.equals("empty fallback request")
+                                                || t.startsWith("<system-reminder>")
+                                                || t.equals("(no output)")),
+                "only the user input, bounded reminders and the fallback may persist");
     }
 
     @Test
@@ -252,10 +300,13 @@ class ReActAgentCallFailurePersistenceTest {
         InMemoryAgentStateStore store = new InMemoryAgentStateStore();
         ReActAgent agent = agent(new EmptyResponseModel(true), store);
 
-        assertNull(
-                agent.call(List.of(userMsg("empty native request")), StructuredReply.class)
-                        .block());
+        Msg result =
+                agent.call(List.of(userMsg("empty native request")), StructuredReply.class).block();
 
+        assertNotNull(
+                result,
+                "a structured call on a permanently empty model must still end with a result"
+                        + " message");
         AgentState persisted =
                 store.get(
                                 null,
@@ -264,7 +315,16 @@ class ReActAgentCallFailurePersistenceTest {
                                         .stateEntry("agent_state"),
                                 AgentState.class)
                         .orElseThrow();
-        assertEquals(List.of("empty native request"), textContents(persisted.getContext()));
+        List<String> texts = textContents(persisted.getContext());
+        assertTrue(texts.contains("empty native request"));
+        assertTrue(
+                texts.stream()
+                        .allMatch(
+                                t ->
+                                        t.equals("empty native request")
+                                                || t.startsWith("<system-reminder>")
+                                                || t.equals("(no output)")),
+                "only the user input, bounded reminders and the fallback may persist");
     }
 
     private static ReActAgent agent(ChatModelBase model, InMemoryAgentStateStore store) {
