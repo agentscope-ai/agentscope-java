@@ -142,6 +142,16 @@ public class LocalFilesystem implements AbstractFilesystem {
     }
 
     /**
+     * Creates a local filesystem with the default search file size limit.
+     *
+     * @param rootDir root directory for all operations ({@code null} means CWD)
+     * @param virtualMode when true, all paths are anchored to rootDir and traversal is blocked
+     */
+    public LocalFilesystem(Path rootDir, boolean virtualMode) {
+        this(rootDir, virtualMode, DEFAULT_MAX_FILE_SIZE_MB);
+    }
+
+    /**
      * Creates a abstract filesystem with explicit configuration.
      *
      * @param rootDir root directory for all operations ({@code null} means CWD)

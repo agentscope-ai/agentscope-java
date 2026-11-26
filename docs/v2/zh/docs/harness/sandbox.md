@@ -142,6 +142,12 @@ HarnessAgent.builder()
 
 内置实现：`RedisSandboxExecutionGuard`（Redis `SET NX PX`）、`JdbcSandboxExecutionGuard`（MySQL `GET_LOCK()`）。也可以实现 `SandboxExecutionGuard` 接口接其他锁后端（Zookeeper / etcd 等）。
 
+## 消息总线和异步工具记录
+
+沙箱模式下，默认消息总线和异步工具注册表使用宿主工作区的 `.agentscope/bus` 目录。工具文件仍使用沙箱文件系统，因此释放本轮沙箱后仍可检查收件箱和投递异步结果。
+
+显式设置的 `messageBus(...)` 和 `asyncToolRegistry(...)` 优先，其次是 `distributedStore(...)` 提供的组件。调用可能分配到不同副本时，请使用共享实现。旧沙箱快照中的待处理消息和工具记录不会自动迁移到宿主。
+
 ## 自管沙箱实例（高级）
 
 默认沙箱的整个生命周期由框架托管。三种"我自己管"的场景：

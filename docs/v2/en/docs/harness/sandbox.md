@@ -142,6 +142,12 @@ To customize lock parameters, set the guard explicitly on the `SandboxFilesystem
 
 Built-in implementations: `RedisSandboxExecutionGuard` (Redis `SET NX PX`), `JdbcSandboxExecutionGuard` (MySQL `GET_LOCK()`). You can also implement `SandboxExecutionGuard` to plug in Zookeeper, etcd, or other lock stores.
 
+## Message bus and async tool records
+
+In sandbox mode, the default message bus and async tool registry use the host workspace directory `.agentscope/bus`. Tool files still use the sandbox filesystem. This lets inbox checks and async results continue after a call releases its sandbox.
+
+Explicit `messageBus(...)` and `asyncToolRegistry(...)` settings take priority, followed by the components provided by `distributedStore(...)`. Use shared implementations when calls can run on different replicas. Pending messages and tool records in old sandbox snapshots are not moved to the host automatically.
+
 ## Self-managed sandbox instances (advanced)
 
 By default the framework owns the whole sandbox lifecycle. Three "I'll manage it myself" scenarios:

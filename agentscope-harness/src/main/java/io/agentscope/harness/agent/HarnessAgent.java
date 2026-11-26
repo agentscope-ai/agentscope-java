@@ -74,6 +74,7 @@ import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
 import io.agentscope.harness.agent.filesystem.CompositeFilesystem;
 import io.agentscope.harness.agent.filesystem.OverlayFilesystem;
 import io.agentscope.harness.agent.filesystem.RoutedSandboxFilesystem;
+import io.agentscope.harness.agent.filesystem.local.LocalFilesystem;
 import io.agentscope.harness.agent.filesystem.local.LocalFilesystemWithShell;
 import io.agentscope.harness.agent.filesystem.remote.store.NamespaceFactory;
 import io.agentscope.harness.agent.filesystem.sandbox.AbstractSandboxFilesystem;
@@ -3008,17 +3009,20 @@ public class HarnessAgent implements Agent, AutoCloseable {
                     };
 
             // ---- MessageBus / AsyncToolRegistry: workspace defaults ----
-            // If not set explicitly or via DistributedStore, fall back to workspace-backed
-            // implementations that use the same AbstractFilesystem as the rest of the agent.
-            if (messageBus == null && filesystem != null) {
+            // Control data must remain available after a call releases its sandbox.
+            AbstractFilesystem controlFilesystem = filesystem;
+            if (capturedSandboxFs != null && (messageBus == null || asyncToolRegistry == null)) {
+                controlFilesystem = new LocalFilesystem(resolvedWorkspace, true);
+            }
+            if (messageBus == null && controlFilesystem != null) {
                 messageBus =
                         new io.agentscope.harness.agent.bus.WorkspaceMessageBus(
-                                filesystem, ".agentscope/bus");
+                                controlFilesystem, ".agentscope/bus");
             }
-            if (asyncToolRegistry == null && filesystem != null) {
+            if (asyncToolRegistry == null && controlFilesystem != null) {
                 asyncToolRegistry =
                         new io.agentscope.harness.agent.bus.WorkspaceAsyncToolRegistry(
-                                filesystem, ".agentscope/bus/async-tools");
+                                controlFilesystem, ".agentscope/bus/async-tools");
             }
 
             // Long-term memory is opt-in. Fold the opt-in into the existing disable flags so the
