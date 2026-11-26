@@ -51,6 +51,36 @@ public final class DurableJson {
         return MAPPER.valueToTree(value);
     }
 
+    /** Check a best-effort payload limit without allocating its full serialized representation. */
+    static boolean fitsEncodedLimit(Object value, int maxBytes) {
+        var counter =
+                new java.io.OutputStream() {
+                    private int remaining = maxBytes;
+
+                    @Override
+                    public void write(int value) throws IOException {
+                        consume(1);
+                    }
+
+                    @Override
+                    public void write(byte[] bytes, int offset, int length) throws IOException {
+                        consume(length);
+                    }
+
+                    private void consume(int bytes) throws IOException {
+                        if (bytes > remaining)
+                            throw new IOException("Preview exceeds its encoded size limit");
+                        remaining -= bytes;
+                    }
+                };
+        try {
+            MAPPER.writeValue(counter, value);
+            return true;
+        } catch (IOException invalidOrOversized) {
+            return false;
+        }
+    }
+
     public static JsonNode copy(JsonNode value) {
         return value == null ? NullNode.instance : value.deepCopy();
     }

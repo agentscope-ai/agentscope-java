@@ -51,6 +51,7 @@ final class DurableOperations {
                     "control",
                     "interactions",
                     "snapshot",
+                    "previewEligibility",
                     "events",
                     "checkpoints",
                     "restore",
@@ -137,6 +138,13 @@ final class DurableOperations {
                                     thread,
                                     DurableJson.convert(p.get("command"), ControlCommand.class));
                     case "interactions" -> backend.interactions(thread, p.path("turnId").asText());
+                    case "previewEligibility" ->
+                            backend.previewEligibility(
+                                    key,
+                                    List.of(
+                                            DurableJson.convert(
+                                                    p.required("identities"),
+                                                    DurableTypes.PreviewIdentity[].class)));
                     case "snapshot" -> filter(key, p).select(backend.snapshot(key));
                     case "events" ->
                             filter(key, p)

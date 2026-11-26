@@ -268,6 +268,12 @@ they do not reconstruct state from private native logs. A control receipt confir
 admission, while application events or the resulting Turn state confirm processing.
 User input does not acquire system privileges, and public events exclude private reasoning.
 
+A client that displays an answer and crashes before saving its cursor can receive the same completion again. Upsert the answer by `messageId` within its Session for both snapshots and replay. Consumers that need an event-by-event audit must retain the events before pruning.
+
+Each subscription buffers up to 128 live previews and processes up to 32 per poll. A full queue drops incoming previews. A preview larger than 64 KiB of encoded JSON is also dropped. Committed events continue through backend paging. Delivery checks each preview against the current message or tool projection, including completions before the subscription cursor. Callbacks share `observerParallelism` execution slots (default 2). Each blocked callback occupies one slot.
+
+The Session-scoped `previewEligibility` operation checks up to 32 identities and returns booleans in input order. Clients send only `messageId`, the projection’s `toolKey`, `attempt` and `revision`.
+
 ## 6. Capabilities, errors and recovery
 
 Public capabilities reports operations, registered definition names and checkpoint bindings;

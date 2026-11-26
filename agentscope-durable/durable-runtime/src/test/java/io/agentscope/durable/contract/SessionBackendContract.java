@@ -3256,6 +3256,15 @@ public abstract class SessionBackendContract {
         backend.pruneEvents(key, snapshot.cursor());
         code(DurableException.Code.CURSOR_EXPIRED, () -> backend.events(key, old, 10));
         assertTrue(backend.events(key, snapshot.cursor(), 10).events().isEmpty());
+        assertEquals(
+                List.of(false, true),
+                backend.previewEligibility(
+                        key,
+                        List.of(
+                                new io.agentscope.durable.DurableTypes.PreviewIdentity(
+                                        "m", null, 0, 0),
+                                new io.agentscope.durable.DurableTypes.PreviewIdentity(
+                                        "uncommitted", null, 0, 0))));
         SessionKey other = new SessionKey("other", "session");
         backend.create(
                 new SessionSpec(
